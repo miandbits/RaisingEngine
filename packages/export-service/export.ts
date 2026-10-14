@@ -3,10 +3,14 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } 
 import path from 'node:path';
 import type { ContentSnapshot } from '../core/model.js';
 import type { ExportTarget, GameBundle } from './model.js';
+import type { PreparedExtensions } from '../plugin-host/bundle.js';
+import { PluginError } from '../plugin-host/zip.js';
 
 export interface ExportOptions {
   content: ContentSnapshot; projectRoot: string; destination: string; target: ExportTarget;
   runtimes: { web: string; windows: string };
+  /** Plugin runtime modules + documents from StudioEditor.exportExtensions (null/absent when no plugin element is used). */
+  extensions?: PreparedExtensions | null | undefined;
   /** Recheck the source immediately before publishing the owned staging directory. */
   beforePublish?: () => Promise<void>;
 }
@@ -67,9 +71,21 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     if(visual.viewportMode==='responsive')requiredFeatures.push('responsive-v1');
     if(elements.some(element=>['diets','services','sell'].includes(element.kind)||['sell','setDiet','useService'].includes(element.action??''))&&!requiredFeatures.includes('facilities-v1'))requiredFeatures.push('facilities-v1');
   }
+  const pluginElementCount=visual?visual.screens.reduce((n,screen)=>n+screen.elements.filter(element=>element.kind==='plugin').length,0):0;
+  if(pluginElementCount)requiredFeatures.push('plugin-elements-v1');
   const supportedFeatures=Array.isArray(capabilities.visualFeatures)?capabilities.visualFeatures:[];
   const missingFeatures=requiredFeatures.filter(feature=>!supportedFeatures.includes(feature));
   if(missingFeatures.length)throw new Error(`${target} 플레이어가 지원하지 않는 UI 기능입니다: ${missingFeatures.join(', ')}. 내보내기용 플레이어를 다시 빌드해 주세요.`);
+  // Every plugin used on a screen must ship its runtime; never export a game that silently drops it.
+  const extensions = options.extensions ?? null;
+  if (pluginElementCount && !extensions) throw new PluginError('PLUGIN_RUNTIME_MISSING', '화면에 플러그인 요소가 있지만 플러그인 런타임을 준비하지 않았습니다. 내보내기를 중단했습니다.');
+  if (extensions) {
+    const used = new Set(visual!.screens.flatMap(screen => screen.elements.flatMap(element => element.kind === 'plugin' && element.extension ? [element.extension.plugin] : [])));
+    const missing = [...used].filter(id => !extensions.game.plugins.some(plugin => plugin.id === id));
+    if (missing.length) throw new PluginError('PLUGIN_RUNTIME_MISSING', `플러그인 런타임이 없습니다: ${missing.join(', ')}. 내보내기를 중단했습니다.`);
+    for (const file of extensions.files) if (!/^plugins\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(file.target) || /\.\./.test(file.target))
+      throw new PluginError('PLUGIN_RUNTIME_MISSING', `잘못된 플러그인 런타임 경로: ${file.target}`);
+  }
   for (const asset of content.assets) {
     const supported = asset.kind === 'font' ? capabilities.fontExtensions??[] : asset.kind === 'image' ? capabilities.imageExtensions : capabilities.audioExtensions;
     if (!supported.includes(path.extname(asset.path).toLowerCase()))
@@ -99,7 +115,15 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
       const relative = `assets/${asset.id}${extension}`;
       await writeFile(path.join(staging, relative), bytes, { flag: 'wx' }); assets[asset.id] = relative;
     }
-    const bundle: GameBundle = { formatVersion: '1', content, assets };
+    if (extensions) for (const file of extensions.files) {
+      const bytes = await readFile(file.source);
+      // The store is re-read here: a module replaced after preparation must not be shipped.
+      if (hash(bytes) !== file.sha256) throw new PluginError('PLUGIN_RUNTIME_MISSING', `준비 이후 플러그인 런타임 파일이 변경되었습니다: ${file.target}`);
+      await mkdir(path.dirname(path.join(staging, file.target)), { recursive: true });
+      await writeFile(path.join(staging, file.target), bytes, { flag: 'wx' });
+    }
+    // `extensions` is omitted entirely for plugin-free games so their bundles stay byte-identical.
+    const bundle: GameBundle = extensions ? { formatVersion: '1', content, assets, extensions: extensions.game } : { formatVersion: '1', content, assets };
     await writeFile(path.join(staging, 'game.json'), JSON.stringify(bundle), { flag: 'wx' });
     await writeFile(path.join(staging, 'README.txt'), target === 'web'
       ? `${content.project.title}\n\n이 폴더 전체를 정적 웹 호스팅에 올리세요. index.html은 HTTP 또는 HTTPS에서 열어야 합니다.\n저장하기는 JSON 파일을 내려받고 불러오기는 그 파일을 선택합니다.\nC++ 코어의 WebAssembly 빌드로 실행합니다.\n`

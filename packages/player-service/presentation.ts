@@ -2,7 +2,7 @@ import type {ContentSnapshot,RunState} from '../core/model.js';
 import {planActivityTimeline,createTimelineCursor,validateTimelineCursor,advanceTimeline,skipTimeline,type TimelineCursor,type TimelinePlan} from '../visual/timeline.js';
 import {validateBattleSelection,type BattleSelection} from './battle.js';
 
-export interface PlayerPresentationEnvelope {version:1;timeline:TimelineCursor|null;battleSelection?:BattleSelection|null}
+export interface PlayerPresentationEnvelope {version:1;timeline:TimelineCursor|null;battleSelection?:BattleSelection|null;/** Opaque per-plugin state (plugin-host CONTRACT §8), keyed by plugin id. */extensions?:Record<string,unknown>}
 export interface TimelineView {plan:TimelinePlan;cursor:TimelineCursor}
 export type TimelineAction={type:'timelineTick';deltaMs:number}|{type:'timelinePause'}|{type:'timelineSpeed'}|{type:'timelineSkip'};
 
@@ -26,7 +26,7 @@ export class PlayerPresentation {
     return {version:1,timeline:this.view(content,state)?.cursor??null,...(selection?{battleSelection:selection}:{})};
   }
   restore(content:ContentSnapshot,state:RunState,envelope:PlayerPresentationEnvelope|undefined):string|null {
-    if(envelope!==undefined&&(!envelope||typeof envelope!=='object'||!Object.hasOwn(envelope,'timeline')||Object.keys(envelope).some(key=>!['timeline','version','battleSelection'].includes(key))||envelope.version!==1))return '지원하지 않는 연출 저장 구조입니다.';
+    if(envelope!==undefined&&(!envelope||typeof envelope!=='object'||!Object.hasOwn(envelope,'timeline')||Object.keys(envelope).some(key=>!['timeline','version','battleSelection','extensions'].includes(key))||envelope.version!==1))return '지원하지 않는 연출 저장 구조입니다.';
     const plan=planActivityTimeline(content,state),cursor=envelope?.timeline;
     if(envelope&&envelope.version!==1)return '지원하지 않는 연출 저장 버전입니다.';
     if(cursor&&(!plan||!validateTimelineCursor(plan,cursor)))return '연출 저장 위치가 확정된 활동 결과와 일치하지 않습니다.';

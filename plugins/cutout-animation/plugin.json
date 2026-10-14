@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "cutout-animation",
+  "name": "컷아웃 캐릭터 애니메이션",
+  "version": "1.0.0",
+  "description": "본·이미지 파츠 기반 2D 컷아웃 애니메이션(raising-cutout-v1). 게임 신호에 맞춰 대기·동작·표정 클립을 재생합니다.",
+  "engineApi": { "min": 1, "max": 1 },
+  "documentTypes": [
+    { "type": "rig", "label": "캐릭터 리그", "schema": "schema/rig.schema.json" },
+    { "type": "controller", "label": "애니메이션 연결", "schema": "schema/controller.schema.json" }
+  ],
+  "elementTypes": [ { "type": "character", "label": "애니메이션 캐릭터", "refType": "controller" } ],
+  "modules": [
+    { "role": "authoring", "platform": "windows-qt6.10-mingw64", "path": "authoring/windows/cutout-studio.dll" },
+    { "role": "runtime", "platform": "windows-x64", "abi": "raising-extension-1", "path": "runtime/windows/cutout-runtime.dll" },
+    { "role": "runtime", "platform": "web-wasm", "abi": "raising-extension-1", "path": "runtime/web/cutout-runtime.mjs", "files": ["runtime/web/cutout-runtime.wasm"] },
+    { "role": "service", "platform": "node", "path": "service/index.mjs" }
+  ],
+  "exportTargets": ["windows", "web"],
+  "capabilities": ["cutout-animation-v1"],
+  "files": {}
+}

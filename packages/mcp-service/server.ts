@@ -9,11 +9,12 @@ const edit = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('replace'), file, data: z.json() }),
   z.strictObject({ type: z.literal('add'), kind: z.enum(['activity', 'event', 'ending', 'character']), id }),
   z.strictObject({ type: z.literal('delete'), file }),
+  z.strictObject({ type: z.literal('create'), file, data: z.json() }),
 ]);
 
-export function createMcpServer(root: string, readOnly = false, workerUrl?: URL): McpServer {
+export function createMcpServer(root: string, readOnly = false, workerUrl?: URL, hostOptions: { pluginStore?: string } = {}): McpServer {
   const server = new McpServer({ name: 'raising-engine', version: '0.1.0' });
-  const workspace = new McpWorkspace(root, readOnly, workerUrl);
+  const workspace = new McpWorkspace(root, readOnly, workerUrl, hostOptions.pluginStore);
   // Serialize calls from a single client; cross-process writers use commitProject's lock.
   let queue: Promise<unknown> = Promise.resolve();
   function call(action: () => Promise<Record<string, unknown>>) {
@@ -35,15 +36,15 @@ export function createMcpServer(root: string, readOnly = false, workerUrl?: URL)
     inputSchema: z.strictObject({ file, expectedVersion: version }), annotations: read,
   }, args => call(() => workspace.readDocument(args.file, args.expectedVersion)));
   server.registerTool('get_schema', {
-    description: 'Read the same authoritative JSON Schema used by the editor. References resolve to other schemas returned by this tool.',
-    inputSchema: z.strictObject({ name: z.enum(['common', 'project', 'attributes', 'flags', 'character', 'activity', 'event', 'ending', 'assets', 'scenario']) }), annotations: read,
-  }, args => call(() => workspace.readSchema(args.name)));
+    description: 'Read the same authoritative JSON Schema used by the editor. References resolve to other schemas returned by this tool. name "extension" alone is the plugin document envelope; with plugin + type it is that plugin\'s data schema for the version pinned in plugins/lock.json.',
+    inputSchema: z.strictObject({ name: z.enum(['common', 'project', 'attributes', 'flags', 'character', 'activity', 'event', 'ending', 'assets', 'scenario', 'extension', 'plugin-lock']), plugin: id.optional(), type: id.optional() }), annotations: read,
+  }, args => call(() => workspace.readSchema(args.name, args.plugin, args.type)));
   server.registerTool('validate_project', {
     description: 'Validate structures, references, ranges, narrative flow and assets using the editor snapshot service. Returns file, JSON Pointer, line and column diagnostics.',
     inputSchema: z.strictObject({ expectedVersion: version }), annotations: read,
   }, args => call(() => workspace.validate(args.expectedVersion)));
   server.registerTool('apply_project_changes', {
-    description: 'Save a batch through StudioEditor. All changes require the version from read_project and a reason. add creates the same template as the GUI; follow with replace to fill it. Default rejects all errors; allowInvalidDraft permits semantic errors only. A conflict or rejected batch writes no proposed changes. No force overwrite.',
+    description: 'Save a batch through StudioEditor. All changes require the version from read_project and a reason. add creates the same template as the GUI; follow with replace to fill it. create makes a new plugin document (plugins/lock.json or plugins/<plugin>/<type>/<id>.json, full envelope) and fails if it exists. Default rejects all errors; allowInvalidDraft permits semantic errors only. A conflict or rejected batch writes no proposed changes. No force overwrite.',
     inputSchema: z.strictObject({ expectedVersion: version, edits: z.array(edit).min(1).max(100), reason: z.string().trim().min(1).max(1000), allowInvalidDraft: z.boolean().default(false) }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, args => call(() => workspace.apply(args.expectedVersion, args.edits, args.reason, args.allowInvalidDraft)));
@@ -55,6 +56,14 @@ export function createMcpServer(root: string, readOnly = false, workerUrl?: URL)
     description: 'Replay a scenario up to afterCommands accepted CORE commands (not scenario commands). Explain event window, completion, requirements and priority with actual/expected values. afterCommands=0 means initial state; decisions are actionable only at period-end.',
     inputSchema: z.strictObject({ expectedVersion: version, scenarioId: id, afterCommands: z.number().int().min(0).max(100000) }), annotations: read,
   }, args => call(() => workspace.explainEvents(args.expectedVersion, args.scenarioId, args.afterCommands)));
+  server.registerTool('plugin_status', {
+    description: 'Installed engine plugins and this project\'s plugins/lock.json resolution (active/disabled/missing/incompatible with diagnostics, document and element types).',
+    inputSchema: z.strictObject({}), annotations: read,
+  }, () => call(() => workspace.pluginStatus()));
+  server.registerTool('plugin_call', {
+    description: 'Run a plugin service op for a locked, enabled plugin (e.g. cutout-animation: validate, sample, template, edit). Never writes files: apply returned data with apply_project_changes using the same expectedVersion.',
+    inputSchema: z.strictObject({ expectedVersion: version, plugin: id, op: z.string().regex(/^[a-zA-Z][a-zA-Z0-9]{0,63}$/), payload: z.record(z.string(), z.json()).default({}) }), annotations: read,
+  }, args => call(() => workspace.pluginCall(args.expectedVersion, args.plugin, args.op, args.payload)));
   const jobId = z.string().uuid();
   server.registerTool('search_content', { description: 'Search the same item index as Studio, including individual attributes and flags. Returns keys for relationship lookup.', inputSchema: z.strictObject({ expectedVersion: version, query: z.strictObject({ kind: z.string().optional(), text: z.string().optional(), tag: z.string().optional(), person: z.string().optional(), period: z.number().int().min(0).optional(), issuesOnly: z.boolean().optional(), sort: z.enum(['label','id','period','priority']).optional(), descending: z.boolean().optional() }).default({}), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(200).default(100) }), annotations: read }, a => call(() => workspace.searchContent(a.expectedVersion, JSON.parse(JSON.stringify(a.query)), a.offset, a.limit)));
   server.registerTool('content_relationships', { description: 'Bounded direct/read/write relation graph. A relation is not proof of reachability; AND/OR/NOT context and JSON pointers are retained.', inputSchema: z.strictObject({ expectedVersion: version, key: z.string(), depth: z.number().int().min(1).max(3).default(1) }), annotations: read }, a => call(() => workspace.relationships(a.expectedVersion,a.key,a.depth)));

@@ -14,6 +14,9 @@ import {PlayerPresentation,type PlayerPresentationEnvelope} from '../player-serv
 
 export const SAVE_VERSION = '1.0.0';
 export const MAX_SAVE_BYTES = 16 * 1024 * 1024;
+/** Per-plugin opaque presentation state (CONTRACT §8); bounded so animation can never crowd out game state. */
+export const MAX_EXTENSION_STATE_BYTES = 1024 * 1024;
+export const MAX_EXTENSIONS_BYTES = 4 * 1024 * 1024;
 type SaveEnvelope = { saveVersion: typeof SAVE_VERSION; coreVersion: string; contentFingerprint: string; playerPresentation?:PlayerPresentationEnvelope } & RunSession;
 export type LoadedSessionResult=SessionResult&{playerPresentation?:PlayerPresentationEnvelope};
 type Failure = { ok: false; error: CoreError };
@@ -55,9 +58,26 @@ async function restore(content: ContentSnapshot, value: unknown): Promise<Loaded
   }
   if (canonicalJson(state) !== canonicalJson(saved.state))
     return fail('SAVE_STATE_MISMATCH', '저장 상태가 초기값과 명령 기록의 재현 결과와 다릅니다.', '/state');
-  const presentationError=new PlayerPresentation().restore(content,state,saved.playerPresentation);
+  // Plugin state is opaque here: it is size-checked and carried through unchanged, never
+  // interpreted, so a missing plugin cannot block loading (unknown ids round-trip).
+  const {extensions,...corePresentation}=saved.playerPresentation??{version:1 as const,timeline:null};
+  const extensionError=checkExtensions(extensions);
+  if(extensionError)return fail('SAVE_PRESENTATION',extensionError,'/playerPresentation/extensions');
+  const presentationError=new PlayerPresentation().restore(content,state,saved.playerPresentation?corePresentation:undefined);
   if(presentationError)return fail('SAVE_PRESENTATION',presentationError,'/playerPresentation');
   return { ok: true, session: freeze({ origin: structuredClone(saved.origin), commands: structuredClone(saved.commands), state }),...(saved.playerPresentation?{playerPresentation:structuredClone(saved.playerPresentation)}:{}) };
+}
+
+function checkExtensions(extensions: unknown): string | null {
+  if (extensions === undefined) return null;
+  if (!extensions || typeof extensions !== 'object' || Array.isArray(extensions)) return '플러그인 연출 저장은 객체여야 합니다.';
+  let total = 0;
+  for (const [id, state] of Object.entries(extensions)) {
+    const size = Buffer.byteLength(canonicalJson(state) ?? 'null', 'utf8');
+    if (size > MAX_EXTENSION_STATE_BYTES) return `플러그인 '${id}'의 연출 저장이 1 MiB를 넘습니다.`;
+    total += size;
+  }
+  return total > MAX_EXTENSIONS_BYTES ? '플러그인 연출 저장 합계가 4 MiB를 넘습니다.' : null;
 }
 
 export async function decodeSave(content: ContentSnapshot, text: string): Promise<LoadedSessionResult> {

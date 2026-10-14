@@ -4,7 +4,8 @@ import { connect, fixture } from './helpers.mjs';
 
 for (const modern of [false, true]) test(`stdio SDK ${modern ? '2026' : 'legacy'} connects, discovers tools, validates input and executes scenarios`, { timeout: 30000 }, async t => {
   const root = await fixture(); const mcp = await connect(t, root, { modern });
-  const tools = await mcp.client.listTools(); assert.equal(tools.tools.length, 15);
+  const tools = await mcp.client.listTools(); assert.equal(tools.tools.length, 17);
+  assert.ok(['plugin_status', 'plugin_call'].every(name => tools.tools.some(t => t.name === name)));
   assert.ok(tools.tools.find(t => t.name === 'import_sprites').inputSchema.required.includes('expectedVersion'));
   assert.ok(tools.tools.find(t => t.name === 'apply_project_changes').inputSchema.required.includes('expectedVersion'));
   const project = await mcp.call('read_project'); assert.equal(project.ok, true);

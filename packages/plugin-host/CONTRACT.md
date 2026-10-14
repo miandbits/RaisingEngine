@@ -38,6 +38,11 @@ max 64 MiB unpacked, max 2000 entries) whose root contains `plugin.json`:
 exported games) and the node service module (validation / authoring helpers used by
 the shared Studio/MCP service, never exported).
 
+Versions are plain `MAJOR.MINOR.PATCH` (no prerelease/build tags); dependency ranges are
+`^x.y.z`, `~x.y.z` or exact `x.y.z`. At most one module per `role`+`platform`; runtime
+modules need `abi`. The package file itself must be ≤ 128 MiB. `files` must list every
+entry except `plugin.json` (extra, missing or mismatching entries are refused).
+
 ## 2. Engine store
 
 * Location: `$RAISING_PLUGIN_STORE` or `<engineRoot>/plugin-store/`.
@@ -47,6 +52,10 @@ the shared Studio/MCP service, never exported).
   different hash is refused (`PLUGIN_VERSION_CONFLICT`).
 * Install is staged into `<store>/.staging-<uuid>` then renamed. Remote download (later)
   must save the archive to a temporary file and call the same `installPackage` path.
+* `installPackage` refuses a package whose `engineApi` excludes this engine
+  (`PLUGIN_API_INCOMPATIBLE`); an incompatible version can still be present when the store
+  is shared with another engine build, and projects then report it (§3).
+* `<store>/.lock` (owner pid) serializes installs/uninstalls across processes.
 
 ## 3. Project files
 
@@ -79,6 +88,17 @@ the plugin (its JSON schema, then its service module). The path must equal
 
 Saving a project re-serializes only documents whose data changed; untouched extension
 files keep their bytes.
+
+Lock-entry diagnostics (`PLUGIN_DISABLED`, `PLUGIN_MISSING`, `PLUGIN_API_INCOMPATIBLE`,
+`PLUGIN_DEPENDENCY`, `PLUGIN_LOCK_DUPLICATE`, `PLUGIN_SERVICE_ERROR`) are reported once on
+`plugins/lock.json` at `/plugins/<i>…`; `PLUGIN_NOT_LOCKED` on each document (`/plugin`).
+Screen elements of a disabled/missing/unlocked plugin get the same code as a warning at
+`…/extension/plugin`. Other engine codes: `EXTENSION_PATH` (path ≠ envelope; also a loader
+warning for unreadable names under `plugins/`), `EXTENSION_TYPE_UNKNOWN`,
+`PLUGIN_ELEMENT_TYPE`, `PLUGIN_ELEMENT_REF` (engine checks `refType` only when the plugin
+has no service), `UI_EXTENSION_KIND` (`extension` on a non-plugin element), and
+`SCHEMA_INVALID` under `/data…` for plugin-schema failures — like engine schema errors these
+block saving. Engine semantic checks never walk plugin `data`.
 
 ## 4. Edits (shared by Qt, Electron and MCP)
 
@@ -122,6 +142,10 @@ Runtime module files are copied to `plugins/<id>/` in the export. Authoring and 
 modules are never copied. Content snapshot and `contentFingerprint` do not include
 extension documents: changing animation never invalidates saves.
 
+Only plugins referenced by a screen element are exported; `documents` holds all of that
+plugin's documents sorted by `type`, `id`. Module files are flattened to their basename and
+re-hashed against `manifest.files` while copying.
+
 ## 7. Runtime extension ABI (`raising-extension-1`)
 
 Exports (DLL: C symbols; Wasm: ES module default factory, `cwrap` of the same names):
@@ -155,10 +179,37 @@ time and is never consulted by game logic. Hosts ignore notifications for gamepl
 
 `playerPresentation.extensions` (optional) = `{ "<pluginId>": <saveAll state> }`.
 Unknown plugin ids are preserved on load+save round trips when possible and otherwise
-ignored; a missing plugin never blocks loading the game state.
+ignored; a missing plugin never blocks loading the game state. Limits: ≤ 32 plugin ids,
+≤ 1 MiB canonical JSON per plugin, ≤ 4 MiB total (`SAVE_PRESENTATION` otherwise).
+`runtime-service/save.ts` strips `extensions` before `PlayerPresentation.restore` and
+carries it through unchanged; other hosts restoring an envelope must do the same.
 
 ## 9. Qt authoring ABI (`raising-studio-plugin-1`)
 
 `native/studio/plugin-api.hpp` (Qt plugin interface IID `com.raising.StudioPlugin/1`).
 The DLL receives a `StudioHost*` and must perform every document change through
 `StudioHost::request("edit", …)`; widget state is only a cache of the service view.
+
+## 10. Node service module and host API (engine TS)
+
+```js
+// service/index.mjs (role "service", platform "node"); loaded once per installed id@version
+export async function createService({ pluginDir, manifest }) {
+  return {
+    // documents/elements are only those of this plugin that passed envelope + plugin schema
+    validate({ documents: [{ file, type, id, data }], assets: [{ id, kind, path, absolutePath }],
+               elements: [{ file, pointer, element }] }) { return [{ file, pointer, code, severity, message, relatedIds }]; },
+    call(op, payload) { return json; }   // pure: never writes project files
+  };
+}
+```
+
+`packages/plugin-host` exports `installPackage`, `inspectPackage`, `uninstallPlugin`,
+`listInstalled`, `resolveProjectPlugins`, `pluginStatus`, `callProjectPlugin`,
+`loadService`, `exportBundle`. `StudioEditor({ pluginStore })` adds `plugins()` and
+`exportExtensions(revision, content, target)`; `exportGame({ …, extensions })` refuses
+plugin elements without prepared extensions. Hosts: Qt service methods `pluginStatus`,
+`pluginInstall {file}`, `pluginEnable {id, version?, revision}`, `pluginDisable {id, revision}`,
+`pluginCall {plugin, op, payload}` and a `plugins` member in every reply; MCP tools
+`plugin_status`, `plugin_call`, `get_schema {name:"extension", plugin, type}` and the
+`create` edit in `apply_project_changes`.

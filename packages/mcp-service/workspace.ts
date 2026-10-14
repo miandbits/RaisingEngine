@@ -12,6 +12,9 @@ import { createSession, dispatchSession } from '../runtime-service/session.js';
 import { evaluateCondition, evaluateNumber } from '../core/evaluation.js';
 import { inspectEvents } from '../core/narrative.js';
 import type { ContentSnapshot, RunState } from '../core/model.js';
+import { callProjectPlugin, resolveProjectPlugins } from '../plugin-host/resolve.js';
+import { readDocumentSchema } from '../plugin-host/service.js';
+import { pluginStorePath } from '../plugin-host/store.js';
 
 export class ToolFault extends Error {
   constructor(readonly code: string, message: string, readonly details: Record<string, unknown> = {}) { super(message); }
@@ -20,7 +23,10 @@ export class ToolFault extends Error {
 /** One on-disk project. A call owns its private draft; rejected batches never leak edits. */
 export class McpWorkspace {
   private jobs: AnalysisJobs;
-  constructor(readonly root: string, readonly readOnly = false, workerUrl?: URL) { this.jobs = new AnalysisJobs(workerUrl); }
+  readonly pluginStore: string;
+  constructor(readonly root: string, readonly readOnly = false, workerUrl?: URL, pluginStore?: string) {
+    this.jobs = new AnalysisJobs(workerUrl); this.pluginStore = pluginStorePath(pluginStore);
+  }
 
   async importSprites(expectedVersion:string,input:SpriteImportInput){
     if(this.readOnly)throw new ToolFault('READ_ONLY','이 MCP 서버는 읽기 전용입니다.');
@@ -74,7 +80,7 @@ export class McpWorkspace {
   }
 
   private async open(expectedVersion?: string): Promise<StudioEditor> {
-    const editor = new StudioEditor();
+    const editor = new StudioEditor({ pluginStore: this.pluginStore });
     // Reads must not perform recovery. Startup/write recovery is an explicit host concern.
     await editor.open(this.root, true);
     await editor.assertDiskUnchanged();
@@ -101,11 +107,34 @@ export class McpWorkspace {
     return { ok: true, version: editor.diskVersion(), fileVersion: editor.fileVersions()[file], document: doc };
   }
 
-  async readSchema(name: string) {
-    const allowed = ['common', 'project', 'attributes', 'flags', 'character', 'activity', 'event', 'ending', 'assets', 'scenario'];
+  async readSchema(name: string, plugin?: string, type?: string) {
+    const allowed = ['common', 'project', 'attributes', 'flags', 'character', 'activity', 'event', 'ending', 'assets', 'scenario', 'extension', 'plugin-lock'];
     if (!allowed.includes(name)) throw new ToolFault('INVALID_ARGUMENT', '알 수 없는 스키마입니다.');
+    if (name === 'extension' && (plugin !== undefined || type !== undefined)) {
+      // The `data` schema of a plugin document type, from the version this project pins.
+      if (!plugin || !type) throw new ToolFault('INVALID_ARGUMENT', 'plugin과 type을 함께 지정하세요.');
+      const editor = await this.open();
+      const lock = editor.documents.find(d => d.kind === 'pluginLock')?.data ?? null;
+      const resolved = (await resolveProjectPlugins(this.pluginStore, lock)).find(p => p.id === plugin);
+      if (!resolved || resolved.state !== 'active') throw new ToolFault(resolved?.diagnostics[0]?.code ?? 'PLUGIN_NOT_LOCKED', resolved?.diagnostics[0]?.message ?? `플러그인 '${plugin}'가 이 프로젝트의 잠금 파일에 없습니다.`);
+      try { return { ok: true, name, plugin, version: resolved.version, type, envelope: 'extension', schema: await readDocumentSchema({ directory: resolved.directory!, manifest: resolved.manifest! }, type) }; }
+      catch (error) { throw new ToolFault((error as { code?: string }).code ?? 'PLUGIN_ERROR', error instanceof Error ? error.message : String(error)); }
+    }
     const schema: unknown = JSON.parse(await readFile(new URL(`../schema/${name}.schema.json`, import.meta.url), 'utf8'));
     return { ok: true, name, schema };
+  }
+
+  /** Installed plugins and this project's lock resolution (same view as Qt replies' `plugins`). */
+  async pluginStatus() {
+    const editor = await this.open();
+    return { ok: true, version: editor.diskVersion(), ...await editor.plugins() };
+  }
+  /** Read-only plugin service op (e.g. cutout `sample`, `validate`, `template`, `edit` previews). Results are applied with apply_project_changes. */
+  async pluginCall(expectedVersion: string, plugin: string, op: string, payload: unknown) {
+    const editor = await this.open(expectedVersion);
+    const lock = editor.documents.find(d => d.kind === 'pluginLock')?.data ?? null;
+    try { return { ok: true, version: editor.diskVersion(), plugin, op, result: await callProjectPlugin(this.pluginStore, lock, plugin, op, payload) as unknown }; }
+    catch (error) { throw new ToolFault((error as { code?: string }).code ?? 'PLUGIN_ERROR', error instanceof Error ? error.message : String(error)); }
   }
 
   async validate(expectedVersion: string) {

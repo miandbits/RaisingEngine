@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/plugin-lock.schema.json",
+  "title": "Plugin lock",
+  "description": "plugins/lock.json: exact plugin versions used by this project. Missing, disabled or incompatible plugins never delete documents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "plugins"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "formatVersion": { "const": "0.1.0" },
+    "plugins": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "enabled"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" },
+          "version": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,8})[.](0|[1-9][0-9]{0,8})[.](0|[1-9][0-9]{0,8})$" },
+          "enabled": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
