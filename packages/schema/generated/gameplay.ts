@@ -367,6 +367,7 @@ export interface Action {
   locationIds?: string[];
   rejectNoEffect?: boolean;
   eventId?: string;
+  expeditionId?: string;
   /**
    * @maxItems 128
    */

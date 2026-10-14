@@ -15,6 +15,9 @@ import { RuleDebugSession, ruleImpact } from '../../dist/packages/rule-debug/ind
 import {AnalysisJobs} from '../../dist/packages/analysis-service/jobs.js';
 import { validateProject } from '../../dist/packages/validation/index.js';
 import { installPackage, listInstalled, pluginStorePath, compareVersions, callProjectPlugin, PluginError } from '../../dist/packages/plugin-host/index.js';
+import { createRun } from '../../dist/packages/core/run.js';
+import { evaluateCondition } from '../../dist/packages/core/evaluation.js';
+import { resolveScreenElements } from '../../dist/packages/visual/components.js';
 
 const engineRoot = fileURLToPath(new URL('../..', import.meta.url));
 const LOCK_FILE = 'plugins/lock.json';
@@ -51,6 +54,19 @@ export class QtStudioService {
     }
     let extra = {};
     switch (method) {
+      case 'conditionPreview': {
+        const content=await this.debugSnapshot(params.revision);
+        const created=createRun(content,42,{mode:'full',initialOverrides:{attributes:params.attributes??{},flags:{},relationships:{}}});
+        if(!created.ok)throw new Error(created.error?.message??'미리보기 값이 올바르지 않습니다.');
+        const phase=params.phase??'planning';
+        if(!['planning','result','dialogue','choice','finished'].includes(phase))throw new Error('지원하지 않는 미리보기 상태입니다.');
+        const hidden={};
+        for(const screen of content.project.visual.screens)hidden[screen.id]=resolveScreenElements(content.project.visual,screen.id).filter(e=>
+          e.hidden||((e.visibleWhen??'always')!=='always'&&e.visibleWhen!==phase)||(e.visibleCondition&&!evaluateCondition(content,created.state,e.visibleCondition))
+        ).map(e=>e.id);
+        extra={conditionPreview:{revision:params.revision,attributes:created.state.attributes,phase,hidden}};
+        break;
+      }
       case 'analysisStart': {
         const content=await this.debugSnapshot(params.revision);
         const job=await this.analysisJobs.start(this.editor.root,content,this.editor.draftVersion(),params.revision,{runs:5000,seed:42,strategy:'random',maxCommands:1000,timeoutMs:3600000,...params.options});

@@ -196,7 +196,15 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
       case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction':
         applySystems(content, draft, command, soundCues); break;
       case 'navigate': case 'visit': case 'buy': case 'interact': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy':
-        applyGameplay(content, draft, command, soundCues); break;
+        applyGameplay(content, draft, command, soundCues);
+        if (command.type === 'executeAction') {
+          const expeditionId = content.project.gameplay?.actions?.find(a => a.id === command.actionId)?.expeditionId;
+          if (expeditionId) {
+            startExpedition(content, draft, expeditionId, soundCues);
+            draft.systems!.expedition!.returnPhase = state.phase as 'planning' | 'ready';
+          }
+        }
+        break;
       case 'setSchedule': {
         requireCore(state.phase === 'planning' || state.phase === 'ready', 'WRONG_PHASE', '일정 편집을 기다리는 상태가 아닙니다.', '/phase');
         command.activityIds.forEach((id, i) => {

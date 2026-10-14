@@ -46,6 +46,8 @@ void executeDefinedAction(const J &c, J &s, const J &action, int64_t quantity,
   need(!scheduled || !action.contains("eventId"), "ACTION_TRIGGER_EVENT",
        "사건 행동은 일정 트리거에서 실행할 수 없습니다.", "/command/actionId");
   ActionFrame frame(str(action, "id"));
+  need(!action.contains("expeditionId") || (!scheduled && !action.contains("eventId") && quantity == 1),
+       "ACTION_EXPEDITION_CONTEXT", "탐험은 사건 연결 없이 직접 한 번 실행해야 합니다.", "/command/actionId");
   auto changeStart = changes.size();
   need(!action.contains("requirements") || condition(c, s, action["requirements"], path + "/requirements"),
        "ACTION_LOCKED", "행동 조건을 만족하지 않습니다.", "/command/actionId");

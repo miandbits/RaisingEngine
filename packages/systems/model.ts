@@ -26,7 +26,7 @@ export interface SystemsState {
   quests: Record<string, { status: 'accepted' | 'completed' | 'claimed'; progress: number }>;
   unlockedStages: string[];
   pendingStageEvents: string[];
-  expedition: null | { expeditionId: string; nodeId: string; clearedNodes: string[]; heroHp: number; stats: CombatStats; returnPresentation: PresentationState };
+  expedition: null | { expeditionId: string; nodeId: string; clearedNodes: string[]; heroHp: number; stats: CombatStats; returnPresentation: PresentationState; returnPhase?: 'planning' | 'ready' };
   battle: null | { enemyId: string; enemyHp: number; turn: number; log?: BattleLogEntry[] };
   lastBattle: null | { enemyId: string; outcome: 'victory' | 'defeat' | 'fled'; turn: number; heroDamage: number; enemyDamage: number; discardedItems: { itemId: string; quantity: number }[]; log?: BattleLogEntry[]; rewardChanges?: Change[] };
   lastExpedition: null | { expeditionId: string; outcome: 'completed' | 'retreated' | 'defeated'; clearedNodes: string[] };

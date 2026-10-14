@@ -254,6 +254,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   previewSizeField->addItem(tr("설계 크기 · 배치 가능"),0.0);previewSizeField->addItem(tr("16:9 미리보기"),16.0/9);previewSizeField->addItem(tr("4:3 미리보기"),4.0/3);previewSizeField->addItem(tr("9:16 미리보기"),9.0/16);canvasTools->addWidget(previewSizeField);
   previewSizeField->setToolTip(tr("미리보기에서는 배치를 잠급니다. 위치·크기는 기준 설계 좌표로 편집하세요."));
   connect(previewSizeField,qOverload<int>(&QComboBox::activated),this,[this]{refresh(true);});
+  auto conditions=canvasTools->addAction(tr("조건 보기…"),this,[this]{editConditionPreview();});
+  conditions->setObjectName("conditionPreviewAction");
+  conditions->setToolTip(tr("게임 데이터를 바꾸지 않고 임시 값으로 표시 조건을 검사합니다."));
+  auto allElements=canvasTools->addAction(tr("전체 요소"),this,[this]{conditionPreview={};refresh();});
+  allElements->setObjectName("conditionPreviewClear");
   canvasTools->addAction(tr("화면 맞춤"), this,
                          [this] { canvas->fitCanvas(); });
   auto snap = canvasTools->addAction(tr("8px 스냅"));
@@ -1021,6 +1026,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
+      conditionPreview={};
       validatedRevision=-1;
       validationSummary->setText(tr("검증을 누르면 결과와 오류 위치를 표시합니다."));
       openScreens.clear();
@@ -1124,6 +1130,11 @@ void StudioWindow::refresh(bool fit) {
       }
   }
   preview["_previewPortraits"] = previewPortraits;
+  if(!conditionPreview.isEmpty()&&conditionPreview["revision"]==view["revision"]){
+    preview["_previewHiddenIds"]=conditionPreview["hidden"].toObject()[screenId];
+    const auto values=conditionPreview["attributes"].toObject();
+    for(auto it=values.begin();it!=values.end();++it){auto a=previewAttributes[it.key()].toObject();a["initial"]=it.value();previewAttributes[it.key()]=a;}
+  } else if(!conditionPreview.isEmpty())conditionPreview={};
   preview["_previewAttributes"] = previewAttributes;
   preview["_defaultFontPath"] = engineRoot+"/dist/native-player-app/fonts/NotoSansKR.ttf";
   const auto aspect=previewSizeField->currentData().toDouble();const auto visual=project["visual"].toObject();
