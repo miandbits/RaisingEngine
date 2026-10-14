@@ -43,7 +43,7 @@ test('web player renders plugin items with matrix transforms, observes commands 
   await tick(page,500);
   await page.waitForFunction(()=>document.querySelector('.visual-plugin-item')?.style.transform.replace(/\s/g,'')==='matrix(1.5,0,0,1.5,90,84)');
   const items=await page.locator('.visual-plugin-item').evaluateAll(list=>list.map(img=>({id:img.dataset.imageAssetId,transform:img.style.transform.replace(/\s/g,''),origin:getComputedStyle(img).transformOrigin,loaded:img.complete&&img.naturalWidth>0})));
-  assert.deepEqual(items.map(i=>i.id),['anim-torso','anim-face','anim-eyes-open']);
+  assert.deepEqual(items.map(i=>i.id),['anim-torso-summer','anim-face','anim-eyes-open'],'props.skin picks the outfit');
   assert.ok(items.every(i=>i.transform.startsWith('matrix(1.5,0,0,1.5,')&&i.origin==='0px 0px'));
   await page.waitForFunction(()=>[...document.querySelectorAll('.visual-plugin-item')].every(i=>i.complete&&i.naturalWidth>0));
   // Element-local placement: torso (80x120 at scale 1.5) starts 90px right of the element's left edge.
@@ -53,8 +53,10 @@ test('web player renders plugin items with matrix transforms, observes commands 
   const before=Number(await money(page));
   await cheer(page);
   await page.waitForFunction(()=>window.raisingExtensions.observations===1);
-  d=await describe(page);assert.equal(track(d,0).clip,'joy');
+  d=await describe(page);assert.equal(track(d,0).clip,'joy');assert.equal(d.instance.state.skin,'winter');
   assert.deepEqual(d.lastObserve.plugins['cutout-animation'].matched,[`${INSTANCE}:cheer-joy`]);
+  // The binding's skin swap shows the winter torso, decoded like every other part.
+  await page.waitForFunction(()=>{const i=document.querySelector('.visual-plugin-item');return i?.dataset.imageAssetId==='anim-torso-winter'&&i.complete&&i.naturalWidth>0;});
   assert.equal(Number(await money(page)),before+1);
   await tick(page,300);d=await describe(page);assert.equal(track(d,0).timeMs,300);
   await mkdir(EVIDENCE,{recursive:true});await page.screenshot({path:resolve(EVIDENCE,'web-joy-300.png')});
@@ -67,6 +69,9 @@ test('web player renders plugin items with matrix transforms, observes commands 
   const chooser=page.waitForEvent('filechooser');await page.locator('[data-element-id="load"] button').click();await (await chooser).setFiles(savePath);
   await page.waitForFunction(id=>{const i=window.raisingExtensions.describe().instances.find(x=>x.instance===id);return i?.state?.tracks?.[0]?.clip==='joy';},INSTANCE);
   d=await describe(page);assert.equal(track(d,0).timeMs,300,'one-shot resumes at its saved time');
+  assert.equal(saved.playerPresentation.extensions['cutout-animation'].instances[INSTANCE].state.skin,'winter');
+  assert.equal(d.instance.state.skin,'winter','skin restored');
+  assert.equal(await page.locator('.visual-plugin-item').first().getAttribute('data-image-asset-id'),'anim-torso-winter');
   assert.equal(Number(await money(page)),before+1);
   await page.screenshot({path:resolve(EVIDENCE,'web-loaded.png')});
   assert.deepEqual(errors,[]);

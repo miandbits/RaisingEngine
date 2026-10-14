@@ -47,6 +47,11 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'sample', payload: { rig: rigData(), clip: 'idle', timeMs: 250 } } });
   assert.equal(reply.pluginResult.ok, true);
   assert.equal(reply.pluginResult.pose.bones.body.y, -102);
+  // LLM edit path (plugin 1.2.0 ops): a refused edit answers {ok:false} and the module keeps working.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addSkin', id: 'Bad Id' } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /스킨 ID/);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addSkin', id: 'winter', name: '겨울' } } } });
+  assert.equal(reply.pluginResult.ok, true); assert.deepEqual(reply.pluginResult.rig.skins, [{ id: 'winter', name: '겨울', attachments: [] }]);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });

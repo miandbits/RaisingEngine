@@ -51,6 +51,26 @@ QString joinPairs(const QJsonObject& o) {
   for (auto it = o.begin(); it != o.end(); ++it) parts << it.key() + "=" + it.value().toString();
   return parts.join(", ");
 }
+QStringList idsOf(const Json& data, const char* list) {
+  QStringList out;
+  for (const auto& x : listOf(data, list)) out << qs(x.value("id", std::string()));
+  return out;
+}
+QString uniqueId(const Json& data, const char* list, const QString& base) {
+  const QStringList ids = idsOf(data, list);
+  QString id = base;
+  for (int n = 2; ids.contains(id); n++) id = QString("%1-%2").arg(base).arg(n);
+  return id;
+}
+/** Names a slot can show: default attachments first, then names only skins provide. */
+QStringList slotNames(const Json& data, const std::string& slot) {
+  QStringList out;
+  for (const auto& a : listOf(data, "attachments")) if (a.value("slot", std::string()) == slot) out << qs(a.value("name", std::string()));
+  for (const auto& s : listOf(data, "skins"))
+    for (const auto& a : listOf(s, "attachments"))
+      if (a.value("slot", std::string()) == slot && !out.contains(qs(a.value("name", std::string())))) out << qs(a.value("name", std::string()));
+  return out;
+}
 }  // namespace
 
 const QVector<SignalInfo>& signalVocabulary() {
@@ -226,7 +246,7 @@ QWidget* spacer() {
 
 // Spine-like single layout, the same in the host workspace and in an old host's dock:
 //   mode bar (always visible)
-//   [ left: 계층 / 그리기 순서 / 캐릭터 | center: tools + canvas | right: 속성 · 키 / 진단 ]
+//   [ left: 계층 / 그리기 순서 / 캐릭터 | center: tools + canvas | right: 속성 · 키 / 스킨 · 표정 / 진단 ]
 //   [ bottom tabs: 애니메이션 (clips | transport + dopesheet/graph | mix) · 게임 연결 ]
 // Every pane is a splitter child with a small minimum: lists scroll and tool rows overflow
 // instead of imposing a large minimum height/width on the window.
@@ -383,6 +403,16 @@ void CutoutPanel::setFullView(bool on) {
 }
 bool CutoutPanel::fullView() const { return leftPane_ && leftPane_->isHidden(); }
 bool CutoutPanel::eventFilter(QObject* watched, QEvent* event) {
+  // PNG/asset drops on the skin's attachment list go to the selected part of the previewed skin.
+  if (skinAttachments_ && watched == skinAttachments_->viewport()) {
+    if (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove) { static_cast<QDragMoveEvent*>(event)->acceptProposedAction(); return true; }
+    if (event->type() == QEvent::Drop) {
+      auto* drop = static_cast<QDropEvent*>(event);
+      drop->acceptProposedAction();
+      dropImages(drop->mimeData(), QString());
+      return true;
+    }
+  }
   if (event->type() == QEvent::KeyPress) {
     auto* key = static_cast<QKeyEvent*>(event);
     if (key->key() == Qt::Key_Tab && !(key->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier))) {
@@ -434,6 +464,97 @@ QWidget* CutoutPanel::buildCharacters() {
   layout->addWidget(characterList_, 1);
   layout->addWidget(buttons);
   return section("캐릭터 · 게임 연결", "cutoutSectionCharacters", body);
+}
+
+// Skins (outfits) and expressions: one tabbed section. Pages scroll so the section never forces
+// the left pane taller than a 1280x720 window allows.
+QWidget* CutoutPanel::buildLooks() {
+  lookTabs_ = new QTabWidget;
+  lookTabs_->setObjectName("cutoutLookTabs");
+  lookTabs_->setDocumentMode(true);
+  auto page = [](const char* name) {
+    auto* inner = new QWidget;
+    auto* layout = new QVBoxLayout(inner);
+    layout->setContentsMargins(0, 2, 0, 0);
+    layout->setSpacing(2);
+    auto* scroll = new QScrollArea;
+    scroll->setObjectName(name);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidget(inner);
+    scroll->setMinimumHeight(30);
+    return std::pair<QScrollArea*, QVBoxLayout*>{scroll, layout};
+  };
+  auto button = [this](QToolBar* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
+    auto* b = new QPushButton(text);
+    b->setObjectName(name);
+    b->setToolTip(tip);
+    connect(b, &QPushButton::clicked, this, [fn] { fn(); });
+    row->addWidget(b);
+  };
+  auto list = [](const char* name, const QString& tip) {
+    auto* l = new QListWidget;
+    l->setObjectName(name);
+    l->setToolTip(tip);
+    l->setMinimumHeight(24);
+    l->setIconSize(QSize(20, 20));
+    return l;
+  };
+  auto [skinPage, skins] = page("cutoutSkinPage");
+  skinList_ = list("cutoutSkinList", "고른 스킨(의상)이 캔버스 미리 보기에 입혀집니다(편집기 전용, 저장되지 않음).\n클립은 그림 이름만 키로 쓰므로 스킨을 바꿔도 같은 애니메이션이 그대로 재생됩니다.");
+  connect(skinList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
+    if (!filling_ && item) setPreviewSkin(item->data(Qt::UserRole).toString());
+  });
+  auto* skinTools = toolRow("cutoutSkinTools");
+  button(skinTools, "새 스킨", "cutoutNewSkin", "빈 스킨을 만듭니다. 캔버스의 조각에 PNG를 끌어 놓으면 이 스킨의 그림이 됩니다.", [this] { return newSkin(); });
+  button(skinTools, "복제", "cutoutDuplicateSkin", "고른 스킨을 복사합니다(색만 다른 의상 등).", [this] { return duplicateSkin(); });
+  button(skinTools, "이름 변경", "cutoutRenameSkin", "스킨 ID를 바꿉니다. 게임 연결의 기본 스킨·연결 규칙도 함께 바뀝니다.", [this] { return renameSkin(); });
+  button(skinTools, "삭제", "cutoutDeleteSkin", "고른 스킨을 삭제합니다(게임 연결에서 쓰는 곳도 함께 지움).", [this] { return deleteSkin(); });
+  skinHint_ = new QLabel;
+  skinHint_->setObjectName("cutoutSkinHint");
+  skinHint_->setWordWrap(true);
+  skinHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  skinHint_->setStyleSheet("color:#a7b4c2;");
+  skinAttachments_ = list("cutoutSkinAttachments", "이 스킨이 바꾸는 그림 · PNG나 이미지를 여기에 끌어 놓으면 고른 조각에 들어갑니다.");
+  skinAttachments_->setAcceptDrops(true);
+  skinAttachments_->viewport()->setAcceptDrops(true);
+  skinAttachments_->viewport()->installEventFilter(this);
+  connect(skinAttachments_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
+    if (!filling_ && item) selectItem("slot:" + item->data(Qt::UserRole).toString());
+  });
+  auto* attachmentTools = toolRow("cutoutSkinAttachmentTools");
+  button(attachmentTools, "그림 지정…", "cutoutSkinAssign", "고른 조각에 이 스킨의 그림(프로젝트 이미지 또는 PNG)을 지정합니다.", [this] { return assignSkinImageInteractive(); });
+  button(attachmentTools, "빼기", "cutoutSkinRemoveAttachment", "이 스킨에서 그림을 빼면 그 조각은 기본 첨부를 보여 줍니다.", [this] { return removeSkinAttachment(); });
+  skins->addWidget(skinList_, 1);
+  skins->addWidget(skinTools);
+  skins->addWidget(skinHint_);
+  skins->addWidget(skinAttachments_, 1);
+  skins->addWidget(attachmentTools);
+
+  auto [expressionPage, expressions] = page("cutoutExpressionPage");
+  expressionList_ = list("cutoutExpressionList", "고른 표정을 캔버스에 미리 봅니다(편집기 전용). 표정은 기본 동작(트랙 0) 위, 레이어(눈깜빡임 등) 아래에 겹칩니다.");
+  connect(expressionList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
+    if (!filling_ && item) setPreviewExpression(item->data(Qt::UserRole).toString());
+  });
+  auto* expressionTools = toolRow("cutoutExpressionTools");
+  button(expressionTools, "현재 상태로 표정 만들기", "cutoutCaptureExpression",
+         "애니메이션 모드에서 눈·입 그림이나 본을 바꾼 뒤(K로 키를 넣기 전에) 누르면, 바뀐 부분만 새 표정이 됩니다.\n바꾼 것이 없으면 이 시간 자세가 기본 자세와 다른 부분을 담습니다.", [this] { return captureExpression(); });
+  button(expressionTools, "다시 담기", "cutoutRecaptureExpression", "고른 표정을 지금 상태로 덮어씁니다(이름 유지).", [this] { return recaptureExpression(); });
+  button(expressionTools, "이름 변경", "cutoutRenameExpression", "표정 ID를 바꿉니다. 표정 키와 게임 연결도 함께 바뀝니다.", [this] { return renameExpression(); });
+  button(expressionTools, "삭제", "cutoutDeleteExpression", "고른 표정과 그 표정 키를 삭제합니다(게임 연결에서 쓰는 곳도 함께 지움).", [this] { return deleteExpression(); });
+  expressionTable_ = new QTableWidget(0, 2);
+  expressionTable_->setObjectName("cutoutExpressionTable");
+  expressionTable_->setHorizontalHeaderLabels({"대상", "표정 값"});
+  expressionTable_->horizontalHeader()->setStretchLastSection(true);
+  expressionTable_->verticalHeader()->hide();
+  expressionTable_->setMinimumHeight(40);
+  expressionTable_->setToolTip("조각: 표정이 바꿀 그림(— = 표정에 넣지 않음, 숨김 = 감춤) · 본: rotation=10, y=-3 처럼 덮을 값(비우면 뺌)");
+  expressions->addWidget(expressionList_, 1);
+  expressions->addWidget(expressionTools);
+  expressions->addWidget(expressionTable_, 2);
+  lookTabs_->addTab(skinPage, "스킨");
+  lookTabs_->addTab(expressionPage, "표정");
+  return section("스킨 · 표정", "cutoutSectionLooks", lookTabs_);
 }
 
 QWidget* CutoutPanel::buildWorkspace() {
@@ -586,6 +707,7 @@ QWidget* CutoutPanel::buildWorkspace() {
   canvas_->onTool = [this](int t) { setTool(t); };
   canvas_->onKey = [this] { keySelected(); };
   canvas_->onOnion = [this] { setOnionSkin(!onion_.enabled); };
+  canvas_->onDropImage = [this](const QMimeData* mime, const QString& slot) { dropImages(mime, slot); };
   connect(fit, &QToolButton::clicked, canvas_, &RigCanvas::fitToCanvas);
   middleLayout->addWidget(tools);
   middleLayout->addWidget(canvas_, 1);
@@ -666,8 +788,11 @@ QWidget* CutoutPanel::buildWorkspace() {
   rightSplit_->setObjectName("cutoutRightSplitter");
   rightSplit_->setChildrenCollapsible(false);
   rightSplit_->addWidget(section("속성 · 키", "cutoutSectionProperties", propertiesScroll));
+  // Skins/expressions sit by the properties (the look of the selected part); the left column
+  // already holds three sections at the 1280x720 minimum.
+  rightSplit_->addWidget(buildLooks());
   rightSplit_->addWidget(section("진단", "cutoutSectionDiagnostics", diagnostics_));
-  rightSplit_->setSizes({700, 200});
+  rightSplit_->setSizes({520, 320, 160});
   rightPane_ = rightSplit_;
   rightPane_->setMinimumWidth(210);
 
@@ -828,6 +953,8 @@ QWidget* CutoutPanel::buildAnimateTab() {
   connect(copyPoseButton, &QPushButton::clicked, this, [this] { copyPose(); });
   keyRow->addWidget(copyPoseButton);
   keyRow->addWidget(toolButton("포즈 붙여넣기", "cutoutPastePose", "복사한 자세를 재생 헤드 시간에 키로 넣습니다(다른 클립에도 됩니다).", [this] { pastePose(); }));
+  keyRow->addSeparator();
+  keyRow->addWidget(toolButton("표정 키", "cutoutKeyExpression", "「스킨 · 표정」에서 고른 표정(없으면 표정 없음)을 재생 헤드 시간에 키로 넣습니다(계단 전환).\n도프시트의 「표정」 행에 보입니다.", [this] { keyExpression(); }));
 
   dopesheet_ = new Dopesheet;
   dopesheet_->setTimeView(timeView_);
@@ -839,7 +966,10 @@ QWidget* CutoutPanel::buildAnimateTab() {
   dopesheet_->onCommand = [this](const QString& command) { keyCommand(command); };
   dopesheet_->onStep = [this](int steps) { stepPlayhead(steps); };
   dopesheet_->onRowSelected = [this](int row) {
-    if (row >= 0 && row < dopesheet_->rows().size()) selectItem(dopesheet_->rows()[row].target);
+    if (row < 0 || row >= dopesheet_->rows().size()) return;
+    // The rig expression row has no canvas item: show the expression list instead.
+    if (dopesheet_->rows()[row].target == "rig") { if (lookTabs_) lookTabs_->setCurrentIndex(1); return; }
+    selectItem(dopesheet_->rows()[row].target);
   };
   auto* scroll = new QScrollArea;
   scroll->setObjectName("cutoutDopesheetScroll");
@@ -998,6 +1128,18 @@ QWidget* CutoutPanel::buildControllerTab() {
   top->addWidget(defaultClipCombo_);
   top->addWidget(new QLabel("게임 인물"));
   top->addWidget(characterCombo_);
+  defaultSkinCombo_ = new QComboBox;
+  defaultSkinCombo_->setObjectName("cutoutControllerDefaultSkin");
+  defaultSkinCombo_->setToolTip("새로 배치된 캐릭터의 스킨(의상). 화면 요소 속성 props.skin이 있으면 그것이 우선합니다.");
+  connect(defaultSkinCombo_, &QComboBox::activated, this, [this] { commitControllerFromUi(); });
+  defaultExpressionCombo_ = new QComboBox;
+  defaultExpressionCombo_->setObjectName("cutoutControllerDefaultExpression");
+  defaultExpressionCombo_->setToolTip("처음 표정. 연결 규칙(예: portraitChanged → 표정)이나 클립의 표정 키가 바꿉니다.");
+  connect(defaultExpressionCombo_, &QComboBox::activated, this, [this] { commitControllerFromUi(); });
+  top->addWidget(new QLabel("기본 스킨"));
+  top->addWidget(defaultSkinCombo_);
+  top->addWidget(new QLabel("기본 표정"));
+  top->addWidget(defaultExpressionCombo_);
   auto* tables = new QHBoxLayout;
   auto* layers = new QVBoxLayout;
   layerTable_ = new QTableWidget(0, 2);
@@ -1018,9 +1160,10 @@ QWidget* CutoutPanel::buildControllerTab() {
   layers->addWidget(layerTable_, 1);
   layers->addLayout(layerButtons);
   auto* bindings = new QVBoxLayout;
-  bindingTable_ = new QTableWidget(0, 8);
+  bindingTable_ = new QTableWidget(0, 10);
   bindingTable_->setObjectName("cutoutBindingTable");
-  bindingTable_->setHorizontalHeaderLabels({"ID", "게임 신호", "조건 (키=값, …)", "클립", "트랙", "반복", "끝나면", "중지 신호"});
+  bindingTable_->setHorizontalHeaderLabels({"ID", "게임 신호", "조건 (키=값, …)", "클립", "트랙", "반복", "끝나면", "중지 신호", "스킨", "표정"});
+  bindingTable_->setToolTip("클립 없이 스킨·표정만 바꾸는 연결도 됩니다(트랙을 차지하지 않음).\n예: portraitChanged (portraitId=smile, self=true) → 표정 smile");
   bindingTable_->horizontalHeader()->setStretchLastSection(true);
   bindingTable_->verticalHeader()->hide();
   auto* bindingButtons = new QHBoxLayout;
@@ -1252,7 +1395,10 @@ void CutoutPanel::rebuildDisplay(bool full) {
       rig_ = std::make_shared<const cutout::Rig>(std::move(r));
     } catch (const std::exception& e) { rigError_ = qs(e.what()); }
   }
-  displayGeneration_++;  // every rebuild may change the data: ghost poses are resampled
+  displayGeneration_++;  // every rebuild may change the data (or the preview look): ghost poses are resampled
+  // The preview look follows the data: a deleted (or undone) skin/expression stops being previewed.
+  if (!previewSkin_.isEmpty() && !findIn(data, "skins", ss(previewSkin_))) previewSkin_.clear();
+  if (!previewExpression_.isEmpty() && !findIn(data, "expressions", ss(previewExpression_))) previewExpression_.clear();
   if (full) {
     const QStringList clips = clipIds();
     if (!clips.contains(clipId_)) {
@@ -1270,6 +1416,7 @@ void CutoutPanel::rebuildDisplay(bool full) {
     refreshGraph();
     refreshMix();
     refreshController();
+    refreshLooks();
     refreshModeUi();
   }
   refreshProperties();
@@ -1383,18 +1530,33 @@ bool CutoutPanel::showingPreview() const {
   return rig_ && bottomTabs_ && bottomTabs_->currentIndex() == 1 && preview_ && !dragPreview_ && preview_->rig().bones.size() == rig_->bones.size() &&
          preview_->rig().slots.size() == rig_->slots.size();
 }
-cutout::Pose CutoutPanel::currentPose() const {
+cutout::Look CutoutPanel::lookFor(const cutout::Rig& rig) const {
+  cutout::Look look;
+  look.skin = previewSkin_.isEmpty() ? -1 : rig.skinIndex(ss(previewSkin_));
+  look.expression = previewExpression_.isEmpty() ? -1 : rig.expressionIndex(ss(previewExpression_));
+  return look;
+}
+QString CutoutPanel::skinProviding(const QString& slot, const QString& name) const {
+  if (previewSkin_.isEmpty()) return {};
+  if (const Json* skin = findIn(displayData(), "skins", ss(previewSkin_)))
+    for (const auto& a : listOf(*skin, "attachments"))
+      if (qs(a.value("slot", std::string())) == slot && qs(a.value("name", std::string())) == name) return previewSkin_;
+  return {};
+}
+cutout::Pose CutoutPanel::currentPose(bool expressions) const {
   if (!rig_) return {};
   if (showingPreview()) return preview_->pose();
-  if (mode_ == Mode::Animate) return cutout::samplePose(*rig_, rig_->clipIndex(ss(clipId_)), playheadExact_);
-  return cutout::samplePose(*rig_, -1, 0);
+  cutout::Look look = lookFor(*rig_);
+  look.expressions = expressions;
+  if (mode_ == Mode::Animate) return cutout::samplePose(*rig_, rig_->clipIndex(ss(clipId_)), playheadExact_, look);
+  return cutout::samplePose(*rig_, -1, 0, look);
 }
 
 void CutoutPanel::refreshProperties() {
   filling_ = true;
   const QString kind = refKind(selection_), id = refId(selection_);
   const Json data = displayData();
-  const cutout::Pose pose = currentPose();
+  const cutout::Pose pose = currentPose(false);  // keyable values (a previewed expression only overlays the canvas)
   const bool animate = mode_ == Mode::Animate;
   QMap<QString, double> values;
   QMap<QString, bool> enabled;
@@ -1418,17 +1580,20 @@ void CutoutPanel::refreshProperties() {
       const std::optional<std::string> current = size_t(i) < pose.attachments.size() ? pose.attachments[size_t(i)] : slot.attachment;
       attachmentCombo_->addItem("(없음 · 숨김)", QString());
       for (const auto& a : rig_->attachments) if (a.slot == slot.id) attachmentCombo_->addItem(qs(a.name), qs(a.name));
+      // Names only a skin provides (an outfit-only part) are keyable too.
+      for (const QString& n : slotNames(data, slot.id)) if (attachmentCombo_->findData(n) < 0) attachmentCombo_->addItem(n + " (스킨)", n);
       attachmentCombo_->setCurrentIndex(current ? std::max(0, attachmentCombo_->findData(qs(*current))) : 0);
       attachmentCombo_->setEnabled(true);
       values["alpha"] = size_t(i) < pose.alpha.size() ? pose.alpha[size_t(i)] : slot.alpha;
       enabled["alpha"] = true;
-      if (current) if (const cutout::Attachment* att = rig_->attachment(slot.id, *current)) {
+      if (current) if (const cutout::Attachment* att = rig_->attachment(slot.id, *current, pose.skin)) {
         values["x"] = att->offset.x; values["y"] = att->offset.y; values["rotation"] = att->offset.rotation;
         values["scaleX"] = att->offset.scaleX; values["scaleY"] = att->offset.scaleY; values["pivotX"] = att->pivotX; values["pivotY"] = att->pivotY;
         // Attachment placement is setup data; in Animate mode only alpha/attachment are keyable.
         if (!animate) for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY"}) enabled[p] = true;
       }
       label = QString("조각 %1 · 본 %2%3").arg(id, qs(slot.bone), animate ? " · 키: 첨부 그림·투명도" : " · 첨부 배치");
+      if (current && !skinProviding(id, qs(*current)).isEmpty()) label += QString(" · 스킨 「%1」의 그림").arg(previewSkin_);
     }
   }
   for (auto it = props_.begin(); it != props_.end(); ++it) {
@@ -1494,8 +1659,8 @@ void CutoutPanel::refreshDopesheet() {
       Dopesheet::Row row;
       row.target = qs(t.value("target", std::string()));
       row.property = qs(t.value("property", std::string()));
-      row.attachment = row.property == "attachment";
-      row.label = QString("%1 %2").arg(refId(row.target), propertyLabel(row.property));
+      row.attachment = row.property == "attachment" || row.property == "expression";  // both switch (step)
+      row.label = row.target == "rig" ? QString("표정 (리그)") : QString("%1 %2").arg(refId(row.target), propertyLabel(row.property));
       for (const auto& k : listOf(t, "keys")) {
         row.times << int(k.value("timeMs", int64_t(0)));
         row.step << (interpOf(k) == "step");
@@ -1611,7 +1776,16 @@ void CutoutPanel::refreshMix() {
 void CutoutPanel::refreshController() {
   filling_ = true;
   const Json c = committedController();
-  const QStringList clips = clipIds();
+  const QStringList clips = clipIds(), skins = idsOf(displayData(), "skins"), expressions = idsOf(displayData(), "expressions");
+  for (auto [combo, key, none, ids] : {std::tuple{defaultSkinCombo_, "defaultSkin", "(기본 첨부)", &skins}, std::tuple{defaultExpressionCombo_, "defaultExpression", "(없음)", &expressions}}) {
+    QSignalBlocker b(combo);
+    combo->clear();
+    combo->addItem(none, QString());
+    for (const QString& id : *ids) combo->addItem(id, id);
+    const QString current = qs(c.contains(key) && c.at(key).is_string() ? c.at(key).get<std::string>() : std::string());
+    if (!current.isEmpty() && combo->findData(current) < 0) combo->addItem(current + " (리그에 없음)", current);
+    combo->setCurrentIndex(std::max(0, combo->findData(current)));
+  }
   {
     QSignalBlocker b(controllerCombo_);
     controllerCombo_->clear();
@@ -1691,8 +1865,11 @@ void CutoutPanel::refreshController() {
     matchEdit->setToolTip("이 신호의 값: " + params);
     bindingTable_->setCellWidget(row, 2, matchEdit);
     auto* clip = combo("cutoutBindingClip");
-    clip->addItems(clips);
-    clip->setCurrentText(qs(b.value("clip", std::string())));
+    clip->addItem("— (클립 없음)", QString());
+    for (const QString& id : clips) clip->addItem(id, id);
+    const QString clipValue = qs(b.contains("clip") && b.at("clip").is_string() ? b.at("clip").get<std::string>() : std::string());
+    if (!clipValue.isEmpty() && clip->findData(clipValue) < 0) clip->addItem(clipValue, clipValue);
+    clip->setCurrentIndex(std::max(0, clip->findData(clipValue)));
     bindingTable_->setCellWidget(row, 3, clip);
     auto* track = new QSpinBox;
     track->setObjectName("cutoutBindingTrack" + n);
@@ -1716,6 +1893,22 @@ void CutoutPanel::refreshController() {
     QStringList stops;
     for (const auto& s : listOf(b, "stopOn")) if (s.is_string()) stops << qs(s.get<std::string>());
     bindingTable_->setCellWidget(row, 7, line("cutoutBindingStopOn", stops.join(", "), "예: dialogueEnded"));
+    auto* skin = combo("cutoutBindingSkin");
+    skin->addItem("—", QString());
+    for (const QString& id : skins) skin->addItem(id, id);
+    const QString skinValue = qs(b.contains("skin") && b.at("skin").is_string() ? b.at("skin").get<std::string>() : std::string());
+    if (!skinValue.isEmpty() && skin->findData(skinValue) < 0) skin->addItem(skinValue, skinValue);
+    skin->setCurrentIndex(std::max(0, skin->findData(skinValue)));
+    bindingTable_->setCellWidget(row, 8, skin);
+    auto* expression = combo("cutoutBindingExpression");
+    expression->addItem("— (바꾸지 않음)", "-");
+    expression->addItem("(표정 없음으로)", QString());
+    for (const QString& id : expressions) expression->addItem(id, id);
+    QString expressionValue = "-";
+    if (b.contains("expression")) expressionValue = b.at("expression").is_string() ? qs(b.at("expression").get<std::string>()) : QString();
+    if (expression->findData(expressionValue) < 0) expression->addItem(expressionValue, expressionValue);
+    expression->setCurrentIndex(std::max(0, expression->findData(expressionValue)));
+    bindingTable_->setCellWidget(row, 9, expression);
     row++;
   }
   bindingTable_->resizeColumnsToContents();
@@ -1952,7 +2145,7 @@ void CutoutPanel::updateOnion() {
   for (const auto& t : times) {
     const QColor tint = t.offset < 0 ? onion_.beforeColor : onion_.afterColor;
     const double alpha = ghostAlpha(onion_, t.offset, counts[t.offset > 0]);
-    ghosts.push_back({rig_, ghostCache_.pose(*rig_, displayGeneration_, clip, t.sampleMs), tint, alpha, t.offset,
+    ghosts.push_back({rig_, ghostCache_.pose(*rig_, displayGeneration_, clip, t.sampleMs, lookFor(*rig_)), tint, alpha, t.offset,
                       quint64(qHashMulti(0, displayGeneration_, clip, qint64(std::llround(t.sampleMs * 1000))))});
     ghostInfo_.push_back({t.sampleMs, t.offset, alpha, tint, false});
   }
@@ -1962,9 +2155,9 @@ void CutoutPanel::updateOnion() {
     const int savedClip = saved ? saved->clipIndex(ss(clipId_)) : -1;
     if (saved && savedClip >= 0 && saved->bones.size() == rig_->bones.size()) {
       const double t = std::clamp(playheadExact_, 0.0, double(saved->clips[size_t(savedClip)].durationMs));
-      const quint64 generation = quint64(qHashMulti(0, committedParsedKey_, saved.get() == rig_.get() ? displayGeneration_ : 0));
+      const quint64 generation = quint64(qHashMulti(0, committedParsedKey_, saved.get() == rig_.get() ? displayGeneration_ : 0, previewSkin_, previewExpression_));
       const QColor gray("#d1d5db");
-      ghosts.push_back({saved, committedCache_.pose(*saved, generation, savedClip, t), gray, ghostAlpha(onion_, 0, 1), 0,
+      ghosts.push_back({saved, committedCache_.pose(*saved, generation, savedClip, t, lookFor(*saved)), gray, ghostAlpha(onion_, 0, 1), 0,
                         quint64(qHashMulti(1, generation, savedClip, qint64(std::llround(t * 1000))))});
       ghostInfo_.push_back({t, 0, ghostAlpha(onion_, 0, 1), gray, true});
     }
@@ -1988,7 +2181,7 @@ void CutoutPanel::updateTrail(int clip) {
   trailTimes_ = cutout_studio::trailTimes(double(c.durationMs));
   trailPoints_.clear();
   auto origin = [&](double t) {
-    const cutout::Pose pose = cutout::samplePose(*rig_, clip, t);
+    const cutout::Pose pose = cutout::samplePose(*rig_, clip, t, lookFor(*rig_));
     return QPointF(pose.world[size_t(bone)].e, pose.world[size_t(bone)].f);
   };
   for (double t : trailTimes_) trailPoints_ << origin(t);
@@ -2011,6 +2204,8 @@ void CutoutPanel::selectRig(const QString& id) {
   selection_.clear();
   clipId_.clear();
   controllerId_.clear();
+  previewSkin_.clear();
+  previewExpression_.clear();
   lastSetupDelta_.reset();
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
     if (qs(it->data.value("rig", std::string())) == id) { controllerId_ = it.key(); break; }
@@ -2088,7 +2283,7 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   const QString name = QFileInfo(file).completeBaseName();
   if (file.startsWith(RIG_DIR)) selectRig(name);
   else if (file.startsWith(CONTROLLER_DIR)) { selectController(name); showControllerTab(); return; }
-  static const QRegularExpression re("/(bones|slots|clips|attachments)/(\\d+)");
+  static const QRegularExpression re("/(bones|slots|clips|attachments|skins|expressions)/(\\d+)");
   const auto m = re.match(pointer);
   if (!m.hasMatch()) return;
   const Json data = committedRig();
@@ -2096,6 +2291,12 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   const Json& list = listOf(data, ss(m.captured(1)).c_str());
   if (index >= list.size()) return;
   const QString kind = m.captured(1);
+  if (kind == "skins" || kind == "expressions") {
+    lookTabs_->setCurrentIndex(kind == "skins" ? 0 : 1);
+    if (kind == "skins") setPreviewSkin(qs(list[index].value("id", std::string())));
+    else setPreviewExpression(qs(list[index].value("id", std::string())));
+    return;
+  }
   if (kind == "bones") selectItem("bone:" + qs(list[index].value("id", std::string())));
   else if (kind == "slots") selectItem("slot:" + qs(list[index].value("id", std::string())));
   else if (kind == "attachments") selectItem("slot:" + qs(list[index].value("slot", std::string())));
@@ -2252,7 +2453,7 @@ QPointF CutoutPanel::manipulationOrigin(const QString& ref) const {
     if (si < 0) return {};
     bone = qs(rig_->slots[size_t(si)].bone);
     if (mode_ == Mode::Setup && size_t(si) < pose.attachments.size() && pose.attachments[size_t(si)])
-      if (const auto* att = rig_->attachment(ss(id), *pose.attachments[size_t(si)])) {
+      if (const auto* att = rig_->attachment(ss(id), *pose.attachments[size_t(si)], pose.skin)) {
         double x, y;
         pose.world[size_t(rig_->slots[size_t(si)].boneIndex)].apply(att->offset.x, att->offset.y, x, y);
         return {x, y};
@@ -2283,10 +2484,13 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   if (kind == "slot" && !animate) {
     const int si = rig.slotIndex(ss(id));
     if (si < 0 || size_t(si) >= pose.attachments.size() || !pose.attachments[size_t(si)]) return {};
-    const auto* att = rig.attachment(ss(id), *pose.attachments[size_t(si)]);
+    const auto* att = rig.attachment(ss(id), *pose.attachments[size_t(si)], pose.skin);
     if (!att) return {};
     const cutout::Affine& boneWorld = pose.world[size_t(rig.slots[size_t(si)].boneIndex)];
-    Json op = {{"op", "setAttachment"}, {"slot", ss(id)}, {"name", att->name}};
+    // The previewed skin's own image is placed in that skin; otherwise the default attachment.
+    const QString skin = skinProviding(id, qs(att->name));
+    Json op = skin.isEmpty() ? Json{{"op", "setAttachment"}, {"slot", ss(id)}, {"name", att->name}}
+                             : Json{{"op", "setSkinAttachment"}, {"skin", ss(skin)}, {"slot", ss(id)}, {"name", att->name}};
     if (d.tool == RigCanvas::Move) {
       double ax, ay;
       boneWorld.apply(att->offset.x, att->offset.y, ax, ay);
@@ -2343,7 +2547,7 @@ void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
     dragActive_ = true;
     dragBase_ = working_ ? *working_ : committedRig();
     dragRig_ = rig_;
-    dragPose_ = currentPose();
+    dragPose_ = currentPose(false);  // deltas apply to the keyable values, never to a previewed expression
   }
   if (mode_ == Mode::Animate && clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); if (finished) dragActive_ = false; return; }
   if (d.tool == RigCanvas::Pivot && mode_ == Mode::Animate) { setStatus("회전 중심은 조립 모드에서만 바꿀 수 있습니다.", true); if (finished) dragActive_ = false; return; }
@@ -2393,7 +2597,9 @@ void CutoutPanel::commitProperty(const QString& property, double value) {
     }
     const QString name = attachmentCombo_->currentData().toString();
     if (animate || name.isEmpty()) { setStatus("조각 배치는 조립 모드에서 표시 중인 첨부에 대해 바꿉니다.", true); refreshProperties(); return; }
-    runOps({{{"op", "setAttachment"}, {"slot", ss(id)}, {"name", ss(name)}, {ss(property), value}}}, false);
+    if (const QString skin = skinProviding(id, name); !skin.isEmpty())
+      runOps({{{"op", "setSkinAttachment"}, {"skin", ss(skin)}, {"slot", ss(id)}, {"name", ss(name)}, {ss(property), value}}}, false);
+    else runOps({{{"op", "setAttachment"}, {"slot", ss(id)}, {"name", ss(name)}, {ss(property), value}}}, false);
   }
 }
 void CutoutPanel::commitAttachmentChoice() {
@@ -2416,8 +2622,8 @@ bool CutoutPanel::keySelected() {
     r.data = *working_;
     return commitRig(r);
   }
-  if (!rig_ || selection_.isEmpty()) { setStatus("키를 넣을 본이나 조각을 선택하세요.", true); return false; }
-  const cutout::Pose pose = currentPose();
+  if (!rig_ || selection_.isEmpty() || refKind(selection_) == "rig") { setStatus("키를 넣을 본이나 조각을 선택하세요(표정은 「표정 키」).", true); return false; }
+  const cutout::Pose pose = currentPose(false);
   const QString kind = refKind(selection_), id = refId(selection_);
   std::vector<Json> ops;
   auto key = [&](const char* prop, const Json& v) {
@@ -2833,6 +3039,10 @@ void CutoutPanel::commitControllerFromUi() {
   c["defaultClip"] = ss(defaultClipCombo_->currentText());
   const QString character = characterCombo_->currentData().toString();
   if (character.isEmpty()) c.erase("characterId"); else c["characterId"] = ss(character);
+  for (auto [combo, key] : {std::pair{defaultSkinCombo_, "defaultSkin"}, std::pair{defaultExpressionCombo_, "defaultExpression"}}) {
+    const QString value = combo->currentData().toString();
+    if (value.isEmpty()) c.erase(key); else c[key] = ss(value);
+  }
   Json layers = Json::array();
   for (int r = 0; r < layerTable_->rowCount(); r++) {
     auto* track = qobject_cast<QSpinBox*>(layerTable_->cellWidget(r, 0));
@@ -2852,7 +3062,12 @@ void CutoutPanel::commitControllerFromUi() {
     auto* then = qobject_cast<QComboBox*>(cell(6));
     auto* stop = qobject_cast<QLineEdit*>(cell(7));
     if (!id || !signal || !match || !clip || !track || !loop || !then || !stop) continue;
-    Json b = {{"id", ss(id->text().trimmed())}, {"signal", ss(signal->currentData().toString())}, {"clip", ss(clip->currentText())}};
+    Json b = {{"id", ss(id->text().trimmed())}, {"signal", ss(signal->currentData().toString())}};
+    if (!clip->currentData().toString().isEmpty()) b["clip"] = ss(clip->currentData().toString());
+    // Skin/expression columns: "" = no skin change; expression "-" = no change, "" = clear (null).
+    if (auto* skin = qobject_cast<QComboBox*>(cell(8)); skin && !skin->currentData().toString().isEmpty()) b["skin"] = ss(skin->currentData().toString());
+    if (auto* expression = qobject_cast<QComboBox*>(cell(9)); expression && expression->currentData().toString() != "-")
+      b["expression"] = expression->currentData().toString().isEmpty() ? Json(nullptr) : Json(ss(expression->currentData().toString()));
     const auto pairs = parsePairs(match->text());
     if (!pairs.isEmpty()) { Json m = Json::object(); for (auto it = pairs.begin(); it != pairs.end(); ++it) m[ss(it.key())] = ss(it.value()); b["match"] = m; }
     if (track->value() != 0) b["track"] = track->value();
@@ -2941,6 +3156,293 @@ QStringList CutoutPanel::previewSignal(const QString& name, const QMap<QString, 
   timer_->start();
   updateCanvas();
   return matched;
+}
+
+// ---------------------------------------------------------------- skins / expressions
+void CutoutPanel::refreshLooks() {
+  if (!skinList_) return;
+  filling_ = true;
+  const Json data = displayData();
+  {
+    QSignalBlocker block(skinList_);
+    skinList_->clear();
+    (new QListWidgetItem("(기본 첨부 · 스킨 없음)", skinList_))->setData(Qt::UserRole, QString());
+    for (const auto& s : listOf(data, "skins")) {
+      const QString id = qs(s.value("id", std::string())), name = qs(s.value("name", std::string()));
+      auto* item = new QListWidgetItem(QString("%1%2 · 그림 %3").arg(id, name.isEmpty() || name == id ? QString() : " (" + name + ")").arg(listOf(s, "attachments").size()), skinList_);
+      item->setData(Qt::UserRole, id);
+    }
+    for (int i = 0; i < skinList_->count(); i++) if (skinList_->item(i)->data(Qt::UserRole).toString() == previewSkin_) skinList_->setCurrentRow(i);
+  }
+  {
+    QSignalBlocker block(skinAttachments_);
+    skinAttachments_->clear();
+    if (const Json* skin = findIn(data, "skins", ss(previewSkin_)))
+      for (const auto& a : listOf(*skin, "attachments")) {
+        const QString slot = qs(a.value("slot", std::string())), name = qs(a.value("name", std::string())), asset = qs(a.value("imageAssetId", std::string()));
+        auto* item = new QListWidgetItem(QIcon(images_.path(asset)), QString("%1 · %2 ← %3").arg(slot, name, asset), skinAttachments_);
+        item->setData(Qt::UserRole, slot);
+        item->setData(Qt::UserRole + 1, name);
+        if ("slot:" + slot == selection_) skinAttachments_->setCurrentItem(item);
+      }
+    skinHint_->setText(previewSkin_.isEmpty() ? "스킨을 고르면 캔버스의 조각(▣)에 PNG를 끌어 놓아 그 스킨의 그림을 넣습니다. 클립은 그림 이름만 키로 쓰므로 의상을 바꿔도 새 애니메이션이 필요 없습니다."
+                                              : QString("「%1」 스킨의 그림 · 없는 조각은 기본 첨부가 보입니다. 캔버스 조각에 PNG를 끌어 놓거나 「그림 지정…」").arg(previewSkin_));
+  }
+  {
+    QSignalBlocker block(expressionList_);
+    expressionList_->clear();
+    (new QListWidgetItem("(표정 없음)", expressionList_))->setData(Qt::UserRole, QString());
+    for (const auto& e : listOf(data, "expressions")) {
+      const QString id = qs(e.value("id", std::string())), name = qs(e.value("name", std::string()));
+      const size_t slots = e.contains("slots") && e.at("slots").is_object() ? e.at("slots").size() : 0, bones = e.contains("bones") && e.at("bones").is_object() ? e.at("bones").size() : 0;
+      auto* item = new QListWidgetItem(QString("%1%2 · 그림 %3 · 본 %4").arg(id, name.isEmpty() || name == id ? QString() : " (" + name + ")").arg(slots).arg(bones), expressionList_);
+      item->setData(Qt::UserRole, id);
+    }
+    for (int i = 0; i < expressionList_->count(); i++) if (expressionList_->item(i)->data(Qt::UserRole).toString() == previewExpression_) expressionList_->setCurrentRow(i);
+  }
+  expressionTable_->setRowCount(0);
+  if (const Json* e = findIn(data, "expressions", ss(previewExpression_))) {
+    const Json slots = e->contains("slots") && e->at("slots").is_object() ? e->at("slots") : Json::object();
+    int row = 0;
+    auto label = [&](const QString& text) {
+      auto* item = new QTableWidgetItem(text);
+      item->setFlags(Qt::ItemIsEnabled);
+      expressionTable_->setItem(row, 0, item);
+    };
+    for (const auto& s : listOf(data, "slots")) {
+      const std::string sid = s.value("id", std::string());
+      expressionTable_->insertRow(row);
+      label("▣ " + qs(sid));
+      auto* combo = new QComboBox;
+      combo->setObjectName("cutoutExpressionSlot" + qs(sid));
+      combo->addItem("— (표정에 넣지 않음)", "-");
+      combo->addItem("(숨김)", QString());
+      for (const QString& n : slotNames(data, sid)) combo->addItem(n, n);
+      combo->setCurrentIndex(!slots.contains(sid) ? 0 : slots.at(sid).is_string() ? std::max(0, combo->findData(qs(slots.at(sid).get<std::string>()))) : 1);
+      connect(combo, &QComboBox::activated, this, [this, sid, combo] { setExpressionSlot(qs(sid), combo->currentData().toString()); });
+      expressionTable_->setCellWidget(row++, 1, combo);
+    }
+    if (e->contains("bones") && e->at("bones").is_object())
+      for (auto it = e->at("bones").begin(); it != e->at("bones").end(); ++it) {
+        const QString bone = qs(it.key());
+        QStringList parts;
+        for (const char* k : {"x", "y", "rotation", "scaleX", "scaleY"})
+          if (it.value().contains(k) && it.value().at(k).is_number()) parts << QString("%1=%2").arg(k).arg(it.value().at(k).get<double>());
+        expressionTable_->insertRow(row);
+        label("◉ " + bone);
+        auto* edit = new QLineEdit(parts.join(", "));
+        edit->setObjectName("cutoutExpressionBone" + bone);
+        edit->setPlaceholderText("rotation=10, y=-3 (비우면 뺌)");
+        connect(edit, &QLineEdit::editingFinished, this, [this, bone, edit] {
+          QMap<QString, double> values;
+          const auto pairs = parsePairs(edit->text());
+          for (auto p = pairs.begin(); p != pairs.end(); ++p) { bool ok = false; const double v = p.value().toDouble(&ok); if (ok) values.insert(p.key(), v); }
+          setExpressionBone(bone, values);
+        });
+        expressionTable_->setCellWidget(row++, 1, edit);
+      }
+    expressionTable_->resizeColumnToContents(0);
+  }
+  filling_ = false;
+}
+
+void CutoutPanel::setPreviewSkin(const QString& id) {
+  if (!id.isEmpty() && !findIn(displayData(), "skins", ss(id))) { setStatus("없는 스킨입니다: " + id, true); return; }
+  if (id == previewSkin_) return;
+  previewSkin_ = id;
+  rebuildDisplay();  // new display generation: canvas, ghosts and properties follow the look
+  setStatus(id.isEmpty() ? QString("미리 보기: 기본 첨부(스킨 없음)") : QString("미리 보기 스킨 「%1」 · 편집기 전용이라 문서·게임에는 저장되지 않습니다.").arg(id));
+}
+void CutoutPanel::setPreviewExpression(const QString& id) {
+  if (!id.isEmpty() && !findIn(displayData(), "expressions", ss(id))) { setStatus("없는 표정입니다: " + id, true); return; }
+  if (id == previewExpression_) return;
+  previewExpression_ = id;
+  rebuildDisplay();
+  setStatus(id.isEmpty() ? QString("미리 보기: 표정 없음")
+                         : QString("미리 보기 표정 「%1」 · 표정이 덮는 그림·본 채널은 키를 바꿔도 캔버스에서 그대로 보입니다(편집기 전용).").arg(id));
+}
+bool CutoutPanel::newSkin() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  const QString id = askText("새 스킨", "스킨 ID (영문 소문자, 예: winter, uniform)", uniqueId(displayData(), "skins", "skin"));
+  if (id.isEmpty()) return false;
+  const QString before = previewSkin_;
+  previewSkin_ = id;  // the commit rebuild previews the new skin
+  if (runOps({{{"op", "addSkin"}, {"id", ss(id)}}}, false)) {
+    setStatus(QString("스킨 「%1」를 만들었습니다. 캔버스의 조각에 PNG를 끌어 놓거나 「그림 지정…」으로 그림을 넣으세요.").arg(id));
+    return true;
+  }
+  previewSkin_ = before;
+  return false;
+}
+bool CutoutPanel::duplicateSkin() {
+  if (previewSkin_.isEmpty()) { setStatus("복제할 스킨을 고르세요.", true); return false; }
+  const QString id = askText("스킨 복제", "새 스킨 ID", uniqueId(displayData(), "skins", previewSkin_ + "-copy"));
+  if (id.isEmpty()) return false;
+  const QString from = previewSkin_;
+  previewSkin_ = id;
+  if (runOps({{{"op", "duplicateSkin"}, {"skin", ss(from)}, {"id", ss(id)}}}, false)) return true;
+  previewSkin_ = from;
+  return false;
+}
+bool CutoutPanel::renameSkin() {
+  if (previewSkin_.isEmpty()) { setStatus("이름을 바꿀 스킨을 고르세요.", true); return false; }
+  const QString id = askText("스킨 이름 변경", "새 스킨 ID (게임 연결의 기본 스킨·연결 규칙도 함께 바뀝니다)", previewSkin_);
+  if (id.isEmpty() || id == previewSkin_) return false;
+  const QString from = previewSkin_;
+  Json op = {{"op", "renameSkin"}, {"skin", ss(from)}, {"id", ss(id)}};
+  if (const Json* skin = findIn(displayData(), "skins", ss(from)); skin && qs(skin->value("name", std::string())) == from) op["name"] = ss(id);
+  previewSkin_ = id;
+  if (runOps({op}, false)) return true;
+  previewSkin_ = from;
+  return false;
+}
+bool CutoutPanel::deleteSkin() {
+  if (previewSkin_.isEmpty()) { setStatus("삭제할 스킨을 고르세요.", true); return false; }
+  if (!askConfirm("스킨 삭제", QString("스킨 「%1」와 그 그림 지정을 삭제할까요? 게임 연결에서 이 스킨을 쓰는 곳도 함께 지웁니다. 되돌리기(Ctrl+Z)로 복구할 수 있습니다.").arg(previewSkin_)))
+    return false;
+  return runOps({{{"op", "deleteSkin"}, {"skin", ss(previewSkin_)}, {"force", true}}}, false);
+}
+bool CutoutPanel::assignSkinImage(const QString& slot, const QString& assetId, const QString& name) {
+  if (previewSkin_.isEmpty()) { setStatus("먼저 스킨을 고르거나 만드세요(「새 스킨」). 기본 그림은 「이미지 조각 추가…」로 바꿉니다.", true); return false; }
+  if (slot.isEmpty() || !rig_ || rig_->slotIndex(ss(slot)) < 0) { setStatus("그림을 넣을 조각(▣)을 고르세요.", true); return false; }
+  const QSize size = images_.pixelSize(assetId);
+  if (!size.isValid() || size.isEmpty()) { setStatus("이미지 크기를 읽을 수 없습니다: " + assetId, true); return false; }
+  Json op = {{"op", "setSkinAttachment"}, {"skin", ss(previewSkin_)}, {"slot", ss(slot)}, {"imageAssetId", ss(assetId)}, {"width", size.width()}, {"height", size.height()}};
+  // The name shown right now (setup, or the keyed one at the playhead, e.g. closed eyes) gets the outfit image.
+  const cutout::Pose pose = currentPose(false);
+  const int si = rig_->slotIndex(ss(slot));
+  if (!name.isEmpty()) op["name"] = ss(name);
+  else if (size_t(si) < pose.attachments.size() && pose.attachments[size_t(si)]) op["name"] = *pose.attachments[size_t(si)];
+  const QString before = selection_;
+  selection_ = "slot:" + slot;
+  if (runOps({op}, false)) {
+    setStatus(QString("스킨 「%1」의 조각 「%2」에 그림 %3을 넣었습니다. 되돌리기: Ctrl+Z").arg(previewSkin_, slot, assetId));
+    return true;
+  }
+  selection_ = before;
+  return false;
+}
+void CutoutPanel::importAndAssignSkinImage(const QString& file, const QString& slot) {
+  if (busy()) return;
+  QPointer<CutoutPanel> self(this);
+  inSubmit_ = true;
+  host_->request("importImage", {{"file", file}}, [self, slot](QJsonObject reply) {
+    if (!self) return;
+    const QString id = reply.value("importedAssetId").toString();
+    if (!reply.value("error").toString().isEmpty() || id.isEmpty()) {
+      self->setStatus("PNG를 가져오지 못했습니다: " + reply.value("error").toString(), true);
+      return;
+    }
+    // Next turn: the host is idle again and assets() includes the image (same as importAndAddPart).
+    QTimer::singleShot(0, self, [self, id, slot] {
+      if (!self || !self->host_) return;
+      self->images_.setAssets(self->host_->assets());
+      self->assignSkinImage(slot, id);
+    });
+  });
+  inSubmit_ = false;
+}
+bool CutoutPanel::assignSkinImageInteractive() {
+  if (previewSkin_.isEmpty()) { setStatus("먼저 스킨을 고르거나 만드세요(「새 스킨」).", true); return false; }
+  PartChoice choice;
+  choice.slot = refKind(selection_) == "slot" ? refId(selection_) : QString();
+  choice.bone = selectedBone();
+  if (!askPart || !askPart(choice)) return false;
+  if (choice.slot.isEmpty()) { setStatus("그림을 넣을 조각 ID를 고르세요.", true); return false; }
+  if (!choice.importFile.isEmpty()) { importAndAssignSkinImage(choice.importFile, choice.slot); return true; }
+  return assignSkinImage(choice.slot, choice.assetId, choice.name);
+}
+bool CutoutPanel::removeSkinAttachment() {
+  QListWidgetItem* item = skinAttachments_ ? skinAttachments_->currentItem() : nullptr;
+  if (previewSkin_.isEmpty() || !item) { setStatus("뺄 스킨 그림을 목록에서 고르세요.", true); return false; }
+  return runOps({{{"op", "removeSkinAttachment"}, {"skin", ss(previewSkin_)}, {"slot", ss(item->data(Qt::UserRole).toString())}, {"name", ss(item->data(Qt::UserRole + 1).toString())}}}, false);
+}
+bool CutoutPanel::dropImages(const QMimeData* mime, const QString& slotRef) {
+  if (!mime) return false;
+  const QString slot = refKind(slotRef) == "slot" ? refId(slotRef) : refKind(selection_) == "slot" ? refId(selection_) : QString();
+  if (previewSkin_.isEmpty()) { setStatus("스킨을 먼저 고르세요(「스킨 · 표정」). 기본 그림은 「이미지 조각 추가…」로 넣습니다.", true); return false; }
+  if (slot.isEmpty()) { setStatus("그림을 놓을 조각 위에 놓거나 조각을 먼저 고르세요.", true); return false; }
+  for (const QUrl& url : mime->urls())
+    if (url.isLocalFile() && url.toLocalFile().endsWith(".png", Qt::CaseInsensitive)) { importAndAssignSkinImage(url.toLocalFile(), slot); return true; }
+  const QString text = mime->text().trimmed();
+  const QString asset = text.startsWith("asset:") ? text.mid(6) : text;
+  if (!asset.isEmpty() && images_.imageAssetIds().contains(asset)) return assignSkinImage(slot, asset);
+  setStatus("PNG 파일이나 프로젝트 이미지만 놓을 수 있습니다.", true);
+  return false;
+}
+bool CutoutPanel::captureExpressionAs(const QString& idIn, bool replace) {
+  if (!rigDoc() || !rig_) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
+  QString id = idIn;
+  if (id.isEmpty()) id = askText("현재 상태로 표정 만들기", "표정 ID (영문 소문자, 예: smile, angry, sad)", uniqueId(committedRig(), "expressions", "expression"));
+  if (id.isEmpty()) return false;
+  Json op = {{"op", "captureExpression"}, {"id", ss(id)}};
+  if (replace) op["replace"] = true;
+  if (mode_ == Mode::Animate && !clipId_.isEmpty()) {
+    op["clip"] = ss(clipId_);
+    op["timeMs"] = playheadMs_;
+    if (working_) op["from"] = *working_;  // only the unsaved changes (not the clip's own motion) become the expression
+  }
+  cutout::EditResult result;
+  try {
+    result = cutout::applyEdit(committedRig(), op, controllersFor(rigId_));
+  } catch (const std::exception& e) { setStatus(qs(e.what()), true); return false; }
+  const QString before = previewExpression_;
+  previewExpression_ = id;
+  // One edit; the pending change was turned into the expression, so it is not kept as keys.
+  if (!commitRig(result)) { previewExpression_ = before; return false; }
+  const Json& e = result.extra.at("expression");
+  setStatus(QString("표정 「%1」을 %2했습니다(그림 %3 · 본 %4). 게임 연결에서 신호(예: portraitChanged)에 연결하거나 「표정 키」로 클립에 넣으세요.")
+                .arg(id, replace ? "다시 담기" : "만들기").arg(e.contains("slots") ? e.at("slots").size() : 0).arg(e.contains("bones") ? e.at("bones").size() : 0));
+  return true;
+}
+bool CutoutPanel::captureExpression() { return captureExpressionAs(QString(), false); }
+bool CutoutPanel::recaptureExpression() {
+  if (previewExpression_.isEmpty()) { setStatus("다시 담을 표정을 고르세요.", true); return false; }
+  return captureExpressionAs(previewExpression_, true);
+}
+bool CutoutPanel::renameExpression() {
+  if (previewExpression_.isEmpty()) { setStatus("이름을 바꿀 표정을 고르세요.", true); return false; }
+  const QString id = askText("표정 이름 변경", "새 표정 ID (표정 키와 게임 연결도 함께 바뀝니다)", previewExpression_);
+  if (id.isEmpty() || id == previewExpression_) return false;
+  const QString from = previewExpression_;
+  Json op = {{"op", "renameExpression"}, {"expression", ss(from)}, {"id", ss(id)}};
+  if (const Json* e = findIn(displayData(), "expressions", ss(from)); e && qs(e->value("name", std::string())) == from) op["name"] = ss(id);
+  previewExpression_ = id;
+  if (runOps({op}, false)) return true;
+  previewExpression_ = from;
+  return false;
+}
+bool CutoutPanel::deleteExpression() {
+  if (previewExpression_.isEmpty()) { setStatus("삭제할 표정을 고르세요.", true); return false; }
+  if (!askConfirm("표정 삭제", QString("표정 「%1」과 그 표정 키를 삭제할까요? 게임 연결에서 쓰는 곳도 함께 지웁니다. 되돌리기(Ctrl+Z)로 복구할 수 있습니다.").arg(previewExpression_)))
+    return false;
+  return runOps({{{"op", "deleteExpression"}, {"expression", ss(previewExpression_)}, {"force", true}}}, false);
+}
+bool CutoutPanel::setExpressionSlot(const QString& slot, const QString& value) {
+  if (filling_ || previewExpression_.isEmpty()) return false;
+  Json op = {{"op", "setExpressionSlot"}, {"expression", ss(previewExpression_)}, {"slot", ss(slot)}};
+  if (value == "-") op["remove"] = true;
+  else op["attachment"] = value.isEmpty() ? Json(nullptr) : Json(ss(value));
+  if (!runOps({op}, false)) { refreshLooks(); return false; }
+  return true;
+}
+bool CutoutPanel::setExpressionBone(const QString& bone, const QMap<QString, double>& values) {
+  if (filling_ || previewExpression_.isEmpty()) return false;
+  Json op = {{"op", "setExpressionBone"}, {"expression", ss(previewExpression_)}, {"bone", ss(bone)}};
+  if (values.isEmpty()) op["remove"] = true;
+  else for (const char* k : {"x", "y", "rotation", "scaleX", "scaleY"}) op[k] = values.contains(k) ? Json(values.value(k)) : Json(nullptr);
+  // Unchanged text (focus-out) must not issue an edit: the core reports "no change" and refreshes.
+  if (!runOps({op}, false)) { refreshLooks(); return false; }
+  return true;
+}
+bool CutoutPanel::keyExpression() {
+  if (mode_ != Mode::Animate) { setStatus("표정 키는 애니메이션 모드에서 넣습니다.", true); return false; }
+  if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return false; }
+  const Json value = previewExpression_.isEmpty() ? Json(nullptr) : Json(ss(previewExpression_));
+  if (!runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", "rig"}, {"property", "expression"}, {"timeMs", playheadMs_}, {"value", value}}}, false)) return false;
+  setStatus(QString("「%1」 %2ms에 표정 키(%3)를 넣었습니다. 다음 키까지 이 표정이 유지됩니다(계단). 되돌리기: Ctrl+Z")
+                .arg(clipId_).arg(playheadMs_).arg(previewExpression_.isEmpty() ? QString("표정 없음") : previewExpression_));
+  return true;
 }
 
 // ---------------------------------------------------------------- playback

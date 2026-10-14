@@ -29,6 +29,7 @@ class QFrame;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QMimeData;
 class QPushButton;
 class QScrollBar;
 class QSpinBox;
@@ -137,6 +138,35 @@ class CutoutPanel : public QWidget {
   bool removeLayer();
   bool addBinding();
   bool removeBinding();
+  // ---- Skins (outfits) and expressions. The preview look of the canvas is editor-only state;
+  // every change of skins/expressions themselves is one core edit (addSkin, captureExpression...).
+  void setPreviewSkin(const QString& id);        // "" = default attachments only
+  void setPreviewExpression(const QString& id);  // "" = no expression
+  QString previewSkin() const { return previewSkin_; }
+  QString previewExpression() const { return previewExpression_; }
+  bool newSkin();
+  bool duplicateSkin();
+  bool renameSkin();
+  bool deleteSkin();
+  /** Image `assetId` for `slot` in the preview skin, as attachment `name` (default: the name shown now). */
+  bool assignSkinImage(const QString& slot, const QString& assetId, const QString& name = QString());
+  /** importImage (asset gesture) then assignSkinImage (edit gesture). */
+  void importAndAssignSkinImage(const QString& file, const QString& slot);
+  bool assignSkinImageInteractive();  // 그림 지정…: image picker for the selected part
+  bool removeSkinAttachment();        // selected entry of the skin's attachment list
+  /** Drop of PNG files / an asset id onto part `slot` ("" = selected part): goes into the preview skin. */
+  bool dropImages(const QMimeData* mime, const QString& slot);
+  /** 현재 상태로 표정 만들기: the shown changes (Animate: unsaved changes at the playhead) -> new expression. */
+  bool captureExpression();
+  bool recaptureExpression();  // same, overwriting the previewed expression
+  bool renameExpression();
+  bool deleteExpression();
+  /** Expression table: value "-" = not part of the expression, "" = hidden (null), else an attachment name. */
+  bool setExpressionSlot(const QString& slot, const QString& value);
+  /** Bone override channels ("x", "rotation"...); channels missing from `values` are dropped, empty = remove. */
+  bool setExpressionBone(const QString& bone, const QMap<QString, double>& values);
+  /** 표정 키: rig expression key (the previewed expression, or none) at the playhead. */
+  bool keyExpression();
   // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
   struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
   const OnionSettings& onionSettings() const { return onion_; }
@@ -199,6 +229,7 @@ class CutoutPanel : public QWidget {
   QMap<QString, Doc> rigs_, controllers_;
   QJsonArray characters_;  // project characters (kind "character") for characterId
   QString rigId_, controllerId_, selection_, clipId_, status_;
+  QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   Mode mode_ = Mode::Setup;
   int playheadMs_ = 0, lastRevision_ = -1;
   double playheadExact_ = 0;
@@ -275,6 +306,11 @@ class CutoutPanel : public QWidget {
   QSpinBox* mixDefault_ = nullptr;
   QTableWidget* mixTable_ = nullptr;
   QComboBox *defaultClipCombo_ = nullptr, *characterCombo_ = nullptr, *controllerCombo_ = nullptr;
+  QComboBox *defaultSkinCombo_ = nullptr, *defaultExpressionCombo_ = nullptr;
+  QTabWidget* lookTabs_ = nullptr;
+  QListWidget *skinList_ = nullptr, *skinAttachments_ = nullptr, *expressionList_ = nullptr;
+  QLabel* skinHint_ = nullptr;
+  QTableWidget* expressionTable_ = nullptr;
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;
@@ -285,6 +321,11 @@ class CutoutPanel : public QWidget {
 
   void buildUi();
   QWidget* buildCharacters();
+  QWidget* buildLooks();
+  void refreshLooks();
+  cutout::Look lookFor(const cutout::Rig& rig) const;  // preview skin/expression ids -> indices of `rig`
+  /** Preview skin when it provides (slot, name): setup edits of that attachment go to the skin. */
+  QString skinProviding(const QString& slot, const QString& name) const;
   QWidget* buildWorkspace();
   QWidget* section(const QString& title, const char* name, QWidget* body);
   QWidget* buildAnimateTab();
@@ -318,6 +359,7 @@ class CutoutPanel : public QWidget {
   void syncTimeScroll();
   bool commitRig(const cutout::EditResult& result);
   bool commitController(const cutout::Json& data);
+  bool captureExpressionAs(const QString& id, bool replace);
   bool busy();
   void setStatus(const QString& text, bool error = false);
 
@@ -336,7 +378,8 @@ class CutoutPanel : public QWidget {
   void refreshController();
   void refreshModeUi();
   void updateCanvas();
-  cutout::Pose currentPose() const;
+  /** Canvas pose; expressions=false gives the raw (keyable) values: properties, K and drags use it. */
+  cutout::Pose currentPose(bool expressions = true) const;
   int boneIndex(const QString& id) const;
   QString selectedBone() const;  // bone of the selection (slot -> its bone)
   QPointF manipulationOrigin(const QString& ref) const;

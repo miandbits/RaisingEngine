@@ -148,6 +148,40 @@ test('animation edits never change contentFingerprint; plugin element edits do',
   await rm(path.join(root, '.studio'), { recursive: true, force: true });
 });
 
+test('skins and expressions (plugin 1.2.0): schema-valid documents, per-skin image checks, element props.skin', async () => {
+  const root = await newProject();
+  const rig = rigData({
+    skins: [{ id: 'winter', name: '겨울', attachments: [
+      { slot: 'torso', name: 'torso', imageAssetId: 'hero-torso', width: 44, height: 60, pivotX: 0.5, pivotY: 1 },
+      { slot: 'torso', name: 'scarf', imageAssetId: 'no-image', width: 10, height: 10 }] }],
+    expressions: [{ id: 'calm', name: '차분', slots: { torso: null }, bones: { body: { rotation: 3 } } }],
+  });
+  rig.clips[0].tracks.push({ target: 'rig', property: 'expression', keys: [{ timeMs: 0, value: 'calm' }, { timeMs: 500, value: null }] });
+  await addCutout(root, { rig, controller: controllerData({ defaultSkin: 'winter', defaultExpression: null, bindings: [{ id: 'face', signal: 'portraitChanged', match: { portraitId: 'calm' }, expression: 'calm' }] }) });
+  await addElement(root, { plugin: 'cutout-animation', type: 'character', ref: 'hero-main', props: { scale: 1, skin: 'winter' } });
+  const element = `project.json/visual/screens/0/elements/${JSON.parse(await readFile(path.join(root, 'project.json'), 'utf8')).visual.screens[0].elements.length - 1}/extension`;
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID')), false, all.join('\n'));
+  assert.ok(all.includes(`error:ANIM_IMAGE_MISSING:${RIG}/data/skins/0/attachments/1/imageAssetId`), all.join('\n'));
+  assert.ok(all.includes(`warning:ANIM_IMAGE_SIZE_MISMATCH:${RIG}/data/skins/0/attachments/0/width`), 'skin images get the PNG size check too');
+  assert.deepEqual(all.filter(c => c.startsWith(`error:`) && c.includes(CONTROLLER)), [], 'clip-less expression binding and defaultSkin are valid');
+  assert.deepEqual(codes(editor, 'project.json').filter(c => c.includes('ANIM_')), [], 'props.skin naming a rig skin is fine');
+  const project = structuredClone(doc(editor, 'project.json').data);
+  project.visual.screens[0].elements.at(-1).extension.props.skin = 'summer';
+  editor.edit({ type: 'replace', file: 'project.json', data: project }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`warning:ANIM_SKIN_UNKNOWN:${element}/props/skin`), codes(editor).join('\n'));
+  project.visual.screens[0].elements.at(-1).extension.props.skin = 7;
+  editor.edit({ type: 'replace', file: 'project.json', data: project }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`error:ANIM_ELEMENT_PROP:${element}/props/skin`));
+  // A rig track may only key expression (the schema allows the shape, the core checks the pairing).
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.clips[0].tracks.at(-1).property = 'x';
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.some(c => c.startsWith(`error:ANIM_PROPERTY:${RIG}/data/clips/0/tracks/1/property`)), all.join('\n'));
+});
+
 test('host-reserved posterAssetId must name an image asset, also without the plugin, and the cutout service ignores it', async () => {
   const root = await newProject();
   await addCutout(root); await addElement(root, { plugin: 'cutout-animation', type: 'character', ref: 'hero-main', props: { scale: 1, posterAssetId: 'hero-torso' } });

@@ -4,6 +4,7 @@
 #include <functional>
 #include <set>
 #include "cutout/curve.hpp"
+#include "cutout/runtime.hpp"
 
 namespace cutout {
 namespace {
@@ -31,6 +32,11 @@ Affine local(const Transform& t) { return Affine::compose(t.x, t.y, t.rotation, 
 Json& arr(Json& d, const char* k) {
   if (!d.contains(k) || !d.at(k).is_array()) d[k] = Json::array();
   return d[k];
+}
+/** Read-only list lookup that never adds the key (optional skins/expressions stay absent). */
+const Json& listOr(const Json& d, const char* k) {
+  static const Json empty = Json::array();
+  return d.is_object() && d.contains(k) && d.at(k).is_array() ? d.at(k) : empty;
 }
 const Str& reqStr(const Json& op, const char* k) {
   if (!op.contains(k) || !op.at(k).is_string() || op.at(k).get_ref<const Str&>().empty()) throw EditError(Str(k) + " 값이 필요합니다.");
@@ -132,10 +138,31 @@ void removeTracks(Json& d, const std::set<Str>& targets) {
     tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [&](const Json& t) { return targets.count(t.value("target", Str())) > 0; }), tracks.end());
   }
 }
+/** Names a slot can show: the default list plus every skin (an outfit-only part is keyable too). */
 std::set<Str> attachmentNames(Json& d, const Str& slotId) {
   std::set<Str> out;
   for (auto& a : arr(d, "attachments")) if (a.value("slot", Str()) == slotId) out.insert(a.value("name", Str()));
+  for (const auto& s : listOr(d, "skins"))
+    for (const auto& a : listOr(s, "attachments")) if (optStr(a, "slot") == slotId) out.insert(optStr(a, "name"));
   return out;
+}
+/** Deleted slots/bones leave no dangling skin attachments or expression entries behind. */
+void purgeLookRefs(Json& d, const std::set<Str>& slots, const std::set<Str>& bones) {
+  if (d.contains("skins") && d["skins"].is_array())
+    for (auto& s : d["skins"]) {
+      if (!s.is_object() || !s.contains("attachments") || !s["attachments"].is_array()) continue;
+      auto& list = s["attachments"];
+      list.erase(std::remove_if(list.begin(), list.end(), [&](const Json& a) { return slots.count(optStr(a, "slot")) > 0; }), list.end());
+    }
+  if (d.contains("expressions") && d["expressions"].is_array())
+    for (auto& e : d["expressions"]) {
+      if (!e.is_object()) continue;
+      for (const auto& [key, ids] : {std::pair<const char*, const std::set<Str>*>{"slots", &slots}, {"bones", &bones}}) {
+        if (!e.contains(key) || !e[key].is_object()) continue;
+        for (const auto& id : *ids) e[key].erase(id);
+        if (e[key].empty()) e.erase(key);
+      }
+    }
 }
 void ensureUniqueBone(Json& d, const Str& id) {
   if (!validId(id)) throw EditError("ID는 소문자 영문·숫자·하이픈 형식이어야 합니다: " + id);
@@ -145,11 +172,17 @@ void ensureUniqueClip(Json& d, const Str& id) {
   if (!validId(id)) throw EditError("클립 ID는 소문자 영문·숫자·하이픈 형식이어야 합니다: " + id);
   if (findIndex(arr(d, "clips"), "id", id) >= 0) throw EditError("이미 있는 클립 ID입니다: " + id);
 }
-struct Target { bool bone; Str id; Property property; };
+struct Target { bool bone; Str id; Property property; bool rig = false; };
 Target target(Json& d, const Json& op) {
   const Str target = reqStr(op, "target"), prop = reqStr(op, "property");
   const auto p = parseProperty(prop);
   if (!p) throw EditError("알 수 없는 속성입니다: " + prop);
+  // The rig-level track keys the active expression (step only).
+  if (target == "rig") {
+    if (*p != Property::Expression) throw EditError("rig 트랙의 속성은 expression뿐입니다.");
+    return {false, "", *p, true};
+  }
+  if (*p == Property::Expression) throw EditError("표정 키의 대상은 rig입니다(target: \"rig\").");
   const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0;
   if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id> 또는 slot:<id> 형식입니다.");
   const Str id = target.substr(5);
@@ -337,6 +370,7 @@ void deleteBone(EditResult& r, const Json& op) {
   auto& atts = arr(d, "attachments");
   atts.erase(std::remove_if(atts.begin(), atts.end(), [&](const Json& a) { return slotsOn.count(a.value("slot", Str())) > 0; }), atts.end());
   removeTracks(d, targets);
+  purgeLookRefs(d, slotsOn, {id});
   auto& bones = arr(d, "bones");
   bones.erase(bones.begin() + findIndex(bones, "id", id));
   r.affected.push_back("bone:" + id);
@@ -434,6 +468,7 @@ void deleteSlot(EditResult& r, const Json& op) {
   auto& atts = arr(d, "attachments");
   atts.erase(std::remove_if(atts.begin(), atts.end(), [&](const Json& a) { return a.value("slot", Str()) == id; }), atts.end());
   removeTracks(d, {"slot:" + id});
+  purgeLookRefs(d, {id}, {});
   r.affected.push_back("slot:" + id);
 }
 void moveSlot(EditResult& r, const Json& op) {
@@ -461,7 +496,10 @@ void setKey(EditResult& r, const Json& op) {
   if (t < 0 || t > duration) throw EditError("키 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
   if (!op.contains("value")) throw EditError("키 값이 필요합니다.");
   Json value = op.at("value");
-  if (tg.property == Property::Attachment) {
+  if (tg.property == Property::Expression) {
+    if (!value.is_null() && (!value.is_string() || findIndex(listOr(d, "expressions"), "id", value.get<Str>()) < 0))
+      throw EditError("없는 표정입니다: " + (value.is_string() ? value.get<Str>() : value.dump()));
+  } else if (tg.property == Property::Attachment) {
     if (!value.is_null() && (!value.is_string() || !attachmentNames(d, tg.id).count(value.get<Str>())))
       throw EditError("이 조각에 없는 첨부입니다: " + (value.is_string() ? value.get<Str>() : value.dump()));
   } else {
@@ -477,10 +515,11 @@ void setKey(EditResult& r, const Json& op) {
   for (auto& k : arr(*tr, "keys")) if (k.value("timeMs", int64_t(-1)) == t) key = &k;
   if (!key) { arr(*tr, "keys").push_back({{"timeMs", t}}); key = &arr(*tr, "keys").back(); }
   (*key)["value"] = value;
-  if (tg.property == Property::Attachment) { key->erase("interp"); key->erase("curve"); }
+  const bool stepOnly = tg.property == Property::Attachment || tg.property == Property::Expression;
+  if (stepOnly) { key->erase("interp"); key->erase("curve"); }
   sortKeys(*tr);
   // After sorting: "auto" handles read the neighbours including this key's new value.
-  if (tg.property != Property::Attachment) writeInterp(keyAt(*tr, t), op, *tr);
+  if (!stepOnly) writeInterp(keyAt(*tr, t), op, *tr);
   r.affected.push_back(keyRef(clipId, op, t));
 }
 Json& existingTrack(Json& d, const Json& op, Json*& clipOut) {
@@ -519,7 +558,7 @@ void moveKey(EditResult& r, const Json& op) {
 void setInterp(EditResult& r, const Json& op) {
   Json* c = nullptr;
   Json& tr = existingTrack(r.data, op, c);
-  if (op.value("property", Str()) == "attachment") throw EditError("첨부 키는 항상 계단(step) 전환입니다.");
+  if (op.value("property", Str()) == "attachment" || op.value("property", Str()) == "expression") throw EditError("첨부·표정 키는 항상 계단(step) 전환입니다.");
   const int64_t t = ms(op, "timeMs");
   if (!has(op, "preset")) reqStr(op, "interp");
   writeInterp(keyAt(tr, t), op, tr);
@@ -528,7 +567,7 @@ void setInterp(EditResult& r, const Json& op) {
 void setCurve(EditResult& r, const Json& op) {
   Json* c = nullptr;
   Json& tr = existingTrack(r.data, op, c);
-  if (op.value("property", Str()) == "attachment") throw EditError("첨부 키는 항상 계단(step) 전환입니다.");
+  if (op.value("property", Str()) == "attachment" || op.value("property", Str()) == "expression") throw EditError("첨부·표정 키는 항상 계단(step) 전환입니다.");
   const int64_t t = ms(op, "timeMs");
   Json& key = keyAt(tr, t);
   key["interp"] = "bezier";
@@ -649,7 +688,7 @@ void copyKeys(EditResult& r, const Json& op) {
       const int64_t t = k.value("timeMs", int64_t(-1));
       if (!p.times.count(t)) continue;
       Json e{{"target", p.target}, {"property", p.property}, {"offsetMs", t - lo}, {"value", k.contains("value") ? k.at("value") : Json(nullptr)}};
-      if (p.property != "attachment") {
+      if (p.property != "attachment" && p.property != "expression") {
         e["interp"] = k.contains("interp") && k.at("interp").is_string() ? k.at("interp") : Json("linear");
         if (e["interp"] == "bezier") e["curve"] = curveJson(curveOf(k));
       }
@@ -887,6 +926,329 @@ void applySetupDeltaToKeys(EditResult& r, const Json& op) {
   r.extra["keys"] = count;
 }
 
+// ---- Skins and expressions (plugin 1.2.0) ----
+Json& skinAt(Json& d, const Str& id) {
+  const int i = findIndex(listOr(d, "skins"), "id", id);
+  if (i < 0) throw EditError("없는 스킨입니다: " + id);
+  return d["skins"][size_t(i)];
+}
+Json& expressionAt(Json& d, const Str& id) {
+  const int i = findIndex(listOr(d, "expressions"), "id", id);
+  if (i < 0) throw EditError("없는 표정입니다: " + id);
+  return d["expressions"][size_t(i)];
+}
+void ensureUniqueIn(const Json& d, const char* list, const Str& id, const Str& what) {
+  if (!validId(id)) throw EditError(what + " ID는 소문자 영문·숫자·하이픈 형식이어야 합니다: " + id);
+  if (findIndex(listOr(d, list), "id", id) >= 0) throw EditError("이미 있는 " + what + " ID입니다: " + id);
+}
+Str displayName(const Json& op, const Str& fallback) {
+  const Str n = has(op, "name") ? optStr(op, "name") : fallback;
+  if (n.size() > 80) throw EditError("이름이 너무 깁니다(80자 이하).");
+  return n.empty() ? fallback : n;
+}
+void eraseFrom(Json& d, const char* list, const Str& id) {
+  auto& a = arr(d, list);
+  a.erase(a.begin() + findIndex(a, "id", id));
+  if (a.empty()) d.erase(list);  // the last skin/expression gone: the document returns to the 1.1 shape
+}
+/** Controllers live in other documents: `fn` rewrites a copy and returns true when it changed it. */
+void rewriteControllers(EditResult& r, const Json& controllers, const std::function<bool(Json&)>& fn) {
+  Json changed = Json::array(), refs = Json::array();
+  if (controllers.is_array())
+    for (const auto& entry : controllers) {
+      if (!entry.is_object() || !entry.contains("data") || !entry.at("data").is_object()) continue;
+      Json data = entry.at("data");
+      if (fn(data)) { changed.push_back({{"id", entry.value("id", Str())}, {"data", data}}); refs.push_back(entry.value("id", Str())); }
+    }
+  r.extra["controllers"] = changed;
+  r.extra["controllerRefs"] = refs;
+}
+/** Controller ids whose `defaultField` or any binding `field` names `id`. */
+std::vector<Str> controllerLookRefs(const Json& controllers, const char* defaultField, const char* field, const Str& id) {
+  std::vector<Str> out;
+  if (!controllers.is_array()) return out;
+  for (const auto& entry : controllers) {
+    if (!entry.is_object() || !entry.contains("data") || !entry.at("data").is_object()) continue;
+    const Json& c = entry.at("data");
+    bool used = optStr(c, defaultField) == id;
+    for (const auto& b : listOr(c, "bindings")) used |= optStr(b, field) == id;
+    if (used) out.push_back(entry.value("id", Str()));
+  }
+  return out;
+}
+/** Rename (to non-empty) or drop (to empty) controller refs; bindings left with nothing to do are removed. */
+bool retargetLook(Json& c, const char* defaultField, const char* field, const Str& from, const Str& to) {
+  bool touched = false;
+  if (optStr(c, defaultField) == from) { if (to.empty()) c.erase(defaultField); else c[defaultField] = to; touched = true; }
+  auto& bindings = arr(c, "bindings");
+  for (auto& b : bindings)
+    if (b.is_object() && optStr(b, field) == from) { if (to.empty()) b.erase(field); else b[field] = to; touched = true; }
+  bindings.erase(std::remove_if(bindings.begin(), bindings.end(), [](const Json& b) {
+    return b.is_object() && !b.contains("clip") && !b.contains("skin") && !b.contains("expression");
+  }), bindings.end());
+  return touched;
+}
+Str refList(const std::vector<Str>& refs) { Str list; for (const auto& x : refs) list += (list.empty() ? "" : ", ") + x; return list; }
+
+void addSkin(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "id");
+  ensureUniqueIn(d, "skins", id, "스킨");
+  Json skin{{"id", id}, {"name", displayName(op, id)}, {"attachments", Json::array()}};
+  if (has(op, "from")) skin["attachments"] = listOr(skinAt(d, reqStr(op, "from")), "attachments");
+  arr(d, "skins").push_back(skin);
+  r.affected.push_back("skin:" + id);
+}
+void duplicateSkin(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "skin"), id = reqStr(op, "id");
+  Json skin = skinAt(d, from);
+  ensureUniqueIn(d, "skins", id, "스킨");
+  skin["id"] = id;
+  skin["name"] = displayName(op, optStr(skin, "name", from) + " 복사");
+  arr(d, "skins").push_back(skin);
+  r.affected.push_back("skin:" + id);
+}
+void renameSkin(EditResult& r, const Json& op, const Json& controllers) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "skin");
+  Json& s = skinAt(d, from);
+  const Str to = has(op, "id") ? reqStr(op, "id") : from;
+  if (has(op, "name")) s["name"] = displayName(op, to);
+  r.affected.push_back("skin:" + to);
+  if (to == from) return;
+  ensureUniqueIn(d, "skins", to, "스킨");
+  s["id"] = to;
+  rewriteControllers(r, controllers, [&](Json& c) { return retargetLook(c, "defaultSkin", "skin", from, to); });
+}
+void deleteSkin(EditResult& r, const Json& op, const Json& controllers) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "skin");
+  skinAt(d, id);
+  const auto refs = controllerLookRefs(controllers, "defaultSkin", "skin", id);
+  if (!refs.empty() && !(has(op, "force") && op.at("force").is_boolean() && op.at("force").get<bool>()))
+    throw EditError("게임 연결에서 사용 중인 스킨입니다: " + refList(refs) + " (force로 연결에서도 지웁니다)");
+  eraseFrom(d, "skins", id);
+  if (!refs.empty()) rewriteControllers(r, controllers, [&](Json& c) { return retargetLook(c, "defaultSkin", "skin", id, ""); });
+  else r.extra["controllerRefs"] = Json::array();
+  r.affected.push_back("skin:" + id);
+}
+/**
+ * Add or update one skin attachment (slot, name). `name` defaults to the slot's setup
+ * attachment, so "import an outfit image for this part" needs only skin + slot + image. A new
+ * entry starts from the placement of the default attachment of that name (or the part's shown
+ * one): the outfit lands where the base image was, even at a different pixel size.
+ */
+void setSkinAttachment(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str skinId = reqStr(op, "skin"), slotId = reqStr(op, "slot");
+  Json& s = skinAt(d, skinId);
+  const Json& sl = slot(d, slotId);
+  Str name = optStr(op, "name");
+  if (name.empty()) name = optStr(sl, "attachment");
+  if (name.empty()) throw EditError("첨부 이름이 필요합니다(이 조각에는 기본 첨부가 없습니다).");
+  if (!validName(name)) throw EditError("첨부 이름 형식이 올바르지 않습니다: " + name);
+  auto& list = arr(s, "attachments");
+  Json* att = nullptr;
+  for (auto& a : list) if (optStr(a, "slot") == slotId && optStr(a, "name") == name) att = &a;
+  if (!att) {
+    const Str asset = reqStr(op, "imageAssetId");
+    const double w = num(op, "width", 0), h = num(op, "height", 0);
+    if (w <= 0 || h <= 0) throw EditError("이미지 크기를 알 수 없습니다(0보다 커야 합니다).");
+    Json a{{"slot", slotId}, {"name", name}, {"imageAssetId", asset}, {"width", clean(w)}, {"height", clean(h)}, {"x", 0}, {"y", 0}};
+    const Json* base = nullptr;
+    for (const Str& want : {name, optStr(sl, "attachment")})
+      for (const auto& x : listOr(d, "attachments")) if (!base && optStr(x, "slot") == slotId && optStr(x, "name") == want) base = &x;
+    for (const auto& x : listOr(d, "attachments")) if (!base && optStr(x, "slot") == slotId) base = &x;
+    for (const char* k : {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY"}) if (base && base->contains(k)) a[k] = base->at(k);
+    list.push_back(a);
+    att = &list.back();
+    r.extra["created"] = true;
+  } else if (has(op, "imageAssetId")) (*att)["imageAssetId"] = reqStr(op, "imageAssetId");
+  for (const char* k : {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "width", "height"}) if (has(op, k)) (*att)[k] = clean(num(op, k, 0));
+  r.affected.push_back("skin:" + skinId);
+  r.affected.push_back("slot:" + slotId);
+  r.extra["attachment"] = name;
+}
+void removeSkinAttachment(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str skinId = reqStr(op, "skin"), slotId = reqStr(op, "slot"), name = reqStr(op, "name");
+  auto& list = arr(skinAt(d, skinId), "attachments");
+  const auto before = list.size();
+  list.erase(std::remove_if(list.begin(), list.end(), [&](const Json& a) { return optStr(a, "slot") == slotId && optStr(a, "name") == name; }), list.end());
+  if (list.size() == before) throw EditError("이 스킨에 없는 첨부입니다: " + slotId + "/" + name);
+  r.affected.push_back("skin:" + skinId);
+  r.affected.push_back("slot:" + slotId);
+}
+
+void addExpression(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "id");
+  ensureUniqueIn(d, "expressions", id, "표정");
+  Json e{{"id", id}, {"name", displayName(op, id)}};
+  for (const char* k : {"slots", "bones"}) {
+    if (!has(op, k)) continue;
+    if (!op.at(k).is_object()) throw EditError(Str(k) + "는 객체여야 합니다.");
+    if (!op.at(k).empty()) e[k] = op.at(k);
+  }
+  arr(d, "expressions").push_back(e);
+  r.affected.push_back("expression:" + id);
+}
+/** Clip keys of the rig expression track naming `from`: renamed to `to`, or removed when `to` is empty. */
+size_t retargetExpressionKeys(Json& d, const Str& from, const Str& to) {
+  size_t count = 0;
+  for (auto& c : arr(d, "clips")) {
+    for (auto& t : arr(c, "tracks")) {
+      if (t.value("target", Str()) != "rig") continue;
+      auto& keys = arr(t, "keys");
+      for (auto& k : keys) if (optStr(k, "value") == from) { count++; if (!to.empty()) k["value"] = to; }
+      if (to.empty()) keys.erase(std::remove_if(keys.begin(), keys.end(), [&](const Json& k) { return optStr(k, "value") == from; }), keys.end());
+    }
+    auto& tracks = arr(c, "tracks");
+    tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [](const Json& t) { return !t.contains("keys") || !t.at("keys").is_array() || t.at("keys").empty(); }), tracks.end());
+  }
+  return count;
+}
+void renameExpression(EditResult& r, const Json& op, const Json& controllers) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "expression");
+  Json& e = expressionAt(d, from);
+  const Str to = has(op, "id") ? reqStr(op, "id") : from;
+  if (has(op, "name")) e["name"] = displayName(op, to);
+  r.affected.push_back("expression:" + to);
+  if (to == from) return;
+  ensureUniqueIn(d, "expressions", to, "표정");
+  e["id"] = to;
+  r.extra["keys"] = retargetExpressionKeys(d, from, to);
+  rewriteControllers(r, controllers, [&](Json& c) { return retargetLook(c, "defaultExpression", "expression", from, to); });
+}
+void deleteExpression(EditResult& r, const Json& op, const Json& controllers) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "expression");
+  expressionAt(d, id);
+  const auto refs = controllerLookRefs(controllers, "defaultExpression", "expression", id);
+  size_t keyed = 0;
+  for (const auto& c : listOr(d, "clips"))
+    for (const auto& t : listOr(c, "tracks"))
+      if (t.value("target", Str()) == "rig") for (const auto& k : listOr(t, "keys")) keyed += optStr(k, "value") == id;
+  if ((!refs.empty() || keyed) && !(has(op, "force") && op.at("force").is_boolean() && op.at("force").get<bool>()))
+    throw EditError("사용 중인 표정입니다" + Str(refs.empty() ? "" : ": 게임 연결 " + refList(refs)) + (keyed ? " · 표정 키 " + std::to_string(keyed) + "개" : "") + " (force로 함께 지웁니다)");
+  eraseFrom(d, "expressions", id);
+  r.extra["keys"] = retargetExpressionKeys(d, id, "");
+  if (!refs.empty()) rewriteControllers(r, controllers, [&](Json& c) { return retargetLook(c, "defaultExpression", "expression", id, ""); });
+  else r.extra["controllerRefs"] = Json::array();
+  r.affected.push_back("expression:" + id);
+}
+void setExpressionSlot(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "expression"), slotId = reqStr(op, "slot");
+  Json& e = expressionAt(d, id);
+  slot(d, slotId);
+  if (has(op, "remove") && op.at("remove").is_boolean() && op.at("remove").get<bool>()) {
+    if (e.contains("slots") && e["slots"].is_object()) { e["slots"].erase(slotId); if (e["slots"].empty()) e.erase("slots"); }
+  } else {
+    if (!op.contains("attachment")) throw EditError("attachment(첨부 이름 또는 null)가 필요합니다.");
+    const Json& v = op.at("attachment");
+    if (!v.is_null() && (!v.is_string() || !attachmentNames(d, slotId).count(v.get<Str>())))
+      throw EditError("이 조각에 없는 첨부입니다: " + (v.is_string() ? v.get<Str>() : v.dump()));
+    if (!e.contains("slots") || !e["slots"].is_object()) e["slots"] = Json::object();
+    e["slots"][slotId] = v;
+  }
+  r.affected.push_back("expression:" + id);
+}
+const char* const BONE_CHANNELS[] = {"x", "y", "rotation", "scaleX", "scaleY"};
+void setExpressionBone(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "expression"), boneId = reqStr(op, "bone");
+  Json& e = expressionAt(d, id);
+  bone(d, boneId);
+  if (!e.contains("bones") || !e["bones"].is_object()) e["bones"] = Json::object();
+  Json& bones = e["bones"];
+  if (has(op, "remove") && op.at("remove").is_boolean() && op.at("remove").get<bool>()) bones.erase(boneId);
+  else {
+    Json entry = bones.contains(boneId) && bones[boneId].is_object() ? bones[boneId] : Json::object();
+    for (const char* k : BONE_CHANNELS) {
+      if (!op.contains(k)) continue;
+      if (op.at(k).is_null()) entry.erase(k);  // null drops the channel (it animates again)
+      else entry[k] = clean(num(op, k, 0));
+    }
+    if (entry.empty()) bones.erase(boneId); else bones[boneId] = entry;
+  }
+  if (bones.empty()) e.erase("bones");
+  r.affected.push_back("expression:" + id);
+}
+/**
+ * "현재 상태로 표정 만들기": sample a pose (`from` rig data or this rig, at clip/timeMs or the
+ * setup pose) and store what differs from the baseline as expression `id`. Baseline: the setup
+ * pose, or with `from` the same clip time of this rig, so only the unsaved editor changes are
+ * captured. Listed `slots`/`bones` are captured whole instead (all five channels). Expressions
+ * never apply while sampling. `replace: true` overwrites an existing expression (keeps its name).
+ */
+void captureExpression(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "id");
+  const bool replace = has(op, "replace") && op.at("replace").is_boolean() && op.at("replace").get<bool>();
+  const int existing = findIndex(listOr(d, "expressions"), "id", id);
+  if (existing < 0 || !replace) ensureUniqueIn(d, "expressions", id, "표정");
+  const bool fromOther = has(op, "from");
+  Rig target, src;
+  try {
+    target = parseRig("capture", d);
+    src = fromOther ? parseRig("capture-from", op.at("from")) : target;
+  } catch (const std::exception& e) { throw EditError(Str("표정을 담을 리그를 읽을 수 없습니다: ") + e.what()); }
+  const Str clipId = optStr(op, "clip");
+  const double t = has(op, "timeMs") ? double(ms(op, "timeMs")) : 0;
+  auto clipIn = [&](const Rig& rig) {
+    const int c = clipId.empty() ? -1 : rig.clipIndex(clipId);
+    if (!clipId.empty() && c < 0) throw EditError("없는 클립입니다: " + clipId);
+    return c;
+  };
+  Look raw;
+  raw.expressions = false;
+  const Pose now = samplePose(src, clipIn(src), t, raw);
+  const Pose base = fromOther ? samplePose(target, clipIn(target), t, raw) : samplePose(target, -1, 0, raw);
+  auto listed = [&](const char* key, bool isBone) {
+    std::set<Str> out;
+    if (!has(op, key)) return out;
+    if (!op.at(key).is_array()) throw EditError(Str(key) + "는 ID 배열입니다.");
+    for (const auto& v : op.at(key)) {
+      const Str x = v.is_string() ? v.get<Str>() : Str();
+      if (isBone) bone(d, x); else slot(d, x);
+      out.insert(x);
+    }
+    return out;
+  };
+  const std::set<Str> wantSlots = listed("slots", false), wantBones = listed("bones", true);
+  Json slots = Json::object(), bones = Json::object();
+  for (size_t i = 0; i < target.slots.size(); i++) {
+    const Str& sid = target.slots[i].id;
+    const int si = src.slotIndex(sid);
+    if (si < 0 || (has(op, "slots") && !wantSlots.count(sid))) continue;
+    const auto& value = now.attachments[size_t(si)];
+    if (has(op, "slots") || value != base.attachments[i]) slots[sid] = value ? Json(*value) : Json(nullptr);
+  }
+  for (size_t i = 0; i < target.bones.size(); i++) {
+    const Str& bid = target.bones[i].id;
+    const int bi = src.boneIndex(bid);
+    if (bi < 0 || (has(op, "bones") && !wantBones.count(bid))) continue;
+    const Transform& a = now.bones[size_t(bi)];
+    const Transform& b = base.bones[i];
+    const double av[] = {a.x, a.y, a.rotation, a.scaleX, a.scaleY}, bv[] = {b.x, b.y, b.rotation, b.scaleX, b.scaleY};
+    Json entry = Json::object();
+    for (size_t k = 0; k < 5; k++) if (has(op, "bones") || std::fabs(av[k] - bv[k]) > 1e-6) entry[BONE_CHANNELS[k]] = clean(av[k]);
+    if (!entry.empty()) bones[bid] = entry;
+  }
+  if (slots.empty() && bones.empty())
+    throw EditError("기본과 달라진 그림·자세가 없어 표정으로 담을 것이 없습니다. 애니메이션 모드에서 눈·입 그림이나 본을 바꾼 뒤 다시 누르세요.");
+  Json e{{"id", id}, {"name", displayName(op, existing >= 0 ? optStr(d["expressions"][size_t(existing)], "name", id) : id)}};
+  if (!slots.empty()) e["slots"] = slots;
+  if (!bones.empty()) e["bones"] = bones;
+  if (existing >= 0) d["expressions"][size_t(existing)] = e;
+  else arr(d, "expressions").push_back(e);
+  r.affected.push_back("expression:" + id);
+  r.extra["expression"] = e;
+}
+
 void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth) {
   if (!op.is_object()) throw EditError("편집 명령은 객체여야 합니다.");
   const Str name = reqStr(op, "op");
@@ -911,10 +1273,16 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"copyPose", copyPose}, {"pastePose", pastePose},
     {"addClip", addClip}, {"duplicateClip", duplicateClip}, {"setClip", setClip}, {"setMix", setMix}, {"setCanvas", setCanvas},
     {"applySetupDeltaToKeys", applySetupDeltaToKeys},
+    {"addSkin", addSkin}, {"duplicateSkin", duplicateSkin}, {"setSkinAttachment", setSkinAttachment}, {"removeSkinAttachment", removeSkinAttachment},
+    {"addExpression", addExpression}, {"setExpressionSlot", setExpressionSlot}, {"setExpressionBone", setExpressionBone}, {"captureExpression", captureExpression},
   };
   if (auto it = simple.find(name); it != simple.end()) return it->second(r, op);
   if (name == "renameClip") return renameClip(r, op, controllers);
   if (name == "deleteClip") return deleteClip(r, op, controllers);
+  if (name == "renameSkin") return renameSkin(r, op, controllers);
+  if (name == "deleteSkin") return deleteSkin(r, op, controllers);
+  if (name == "renameExpression") return renameExpression(r, op, controllers);
+  if (name == "deleteExpression") return deleteExpression(r, op, controllers);
   if (name == "setName") {
     const Str n = optStr(op, "name");
     if (n.size() > 240) throw EditError("이름이 너무 깁니다.");

@@ -88,6 +88,53 @@ Json bezierRig() {
   ]})"));
   return d;
 }
+/** rigData() + skins (outfits) + expressions + a clip keying the rig expression track (plugin 1.2.0). */
+Json lookRig() {
+  Json d = rigData();
+  d["skins"] = Json::parse(R"([
+    {"id": "winter", "name": "겨울", "attachments": [
+      {"slot": "torso", "name": "torso", "imageAssetId": "img-torso-winter", "width": 90, "height": 130, "pivotX": 0.5, "pivotY": 1},
+      {"slot": "eyes", "name": "closed", "imageAssetId": "img-eyes-closed-winter", "width": 40, "height": 10}]},
+    {"id": "summer", "attachments": [
+      {"slot": "torso", "name": "torso", "imageAssetId": "img-torso-summer", "width": 70, "height": 110, "pivotX": 0.5, "pivotY": 1, "x": 2}]}
+  ])");
+  d["expressions"] = Json::parse(R"([
+    {"id": "happy", "name": "기쁨", "slots": {"eyes": "closed"}, "bones": {"head": {"rotation": 10}}},
+    {"id": "surprised", "slots": {"eyes": "open", "face": null}, "bones": {"head": {"y": -90, "scaleY": 1.1}}}
+  ])");
+  d["clips"].push_back(Json::parse(R"({"id": "talk-face", "durationMs": 1000, "loop": false, "tracks": [
+    {"target": "rig", "property": "expression", "keys": [{"timeMs": 0, "value": "happy"}, {"timeMs": 500, "value": null}]},
+    {"target": "bone:body", "property": "x", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 1000, "value": 10}]}
+  ]})"));
+  return d;
+}
+Json lookController() {
+  Json c = controllerData();
+  c["defaultSkin"] = "winter";
+  c["bindings"].push_back(Json::parse(R"({"id": "face-happy", "signal": "portraitChanged", "match": {"portraitId": "happy"}, "expression": "happy"})"));
+  c["bindings"].push_back(Json::parse(R"({"id": "face-clear", "signal": "portraitChanged", "match": {"portraitId": "none"}, "expression": null})"));
+  c["bindings"].push_back(Json::parse(R"({"id": "dress-summer", "signal": "phaseChanged", "match": {"phase": "summer"}, "skin": "summer"})"));
+  return c;
+}
+/** Host op script for the native/Wasm look parity check (tests/plugins/cutout-look-parity.test.mjs). */
+Json lookScript() {
+  Json c = lookController();
+  c.erase("defaultSkin");
+  c["defaultExpression"] = "surprised";
+  const Json element = {{"type", "character"}, {"ref", "hero-main"}, {"width", 300}, {"height", 450}, {"props", {{"skin", "winter"}, {"scale", 1}}}};
+  const auto frame = Json{{"op", "frame"}, {"instance", "a"}};
+  return Json::array({
+    {{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "hero"}, {"data", lookRig()}}, {{"type", "controller"}, {"id", "hero-main"}, {"data", c}}})}},
+    {{"op", "mount"}, {"instance", "a"}, {"element", element}}, frame,
+    {{"op", "update"}, {"dtMs", 1850}}, frame,  // blink layer closes the eyes over the expression
+    {{"op", "signal"}, {"instance", "a"}, {"name", "portraitChanged"}, {"params", {{"portraitId", "happy"}}}}, {{"op", "update"}, {"dtMs", 10}}, frame,
+    {{"op", "setSkin"}, {"instance", "a"}, {"skin", "summer"}}, frame,
+    {{"op", "setExpression"}, {"instance", "a"}, {"expression", nullptr}}, frame,
+    {{"op", "play"}, {"instance", "a"}, {"clip", "talk-face"}, {"mixMs", 0}, {"then", "hold"}}, {{"op", "update"}, {"dtMs", 250}}, frame,
+    {{"op", "update"}, {"dtMs", 300}}, frame,
+    {{"op", "setSkin"}, {"instance", "a"}, {"skin", ""}}, frame,
+  });
+}
 const std::vector<double>& parityTimes() {
   static const std::vector<double> t = {0, 1, 33.25, 100, 125, 250, 333.3333, 399.9, 400, 512.5, 600, 650.75, 777.7, 899, 999.99, 1000};
   return t;
@@ -107,6 +154,14 @@ int main(int argc, char** argv) {
     for (double t : parityTimes())
       samples.push_back({{"timeMs", t}, {"pose", host.handle({{"op", "sample"}, {"rig", bezierRig()}, {"clip", "ease"}, {"timeMs", t}})["pose"]}});
     std::cout << Json({{"rig", bezierRig()}, {"clip", "ease"}, {"samples", samples}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--look-parity") {
+    // Native reference for skin/expression draw lists (replayed through the Wasm runtime).
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : lookScript()) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", lookScript()}, {"replies", replies}}).dump() << "\n";
     return 0;
   }
   test("valid fixture has no diagnostics", [] {
@@ -795,6 +850,309 @@ int main(int argc, char** argv) {
     check(!joyKey(r.data, "bone:body", "scaleY", 0).is_null(), "animated channel keyed");
     check(validateRig(r.data).empty() && r.extra["keys"].size() == 3, "pose paste reports its keys (body y, body scaleY, head rotation)");
     check(refused(base, {{"op", "pastePose"}, {"clip", "joy"}, {"timeMs", 500}, {"pose", pose}}), "pose past the end refused");
+  });
+
+  // ---- Skins and expressions (plugin 1.2.0) ----
+  auto imageOf = [](const std::vector<DrawItem>& items, const std::string& slot) {
+    for (const auto& i : items) if (i.slot == slot) return i.imageAssetId;
+    return std::string("-");
+  };
+  test("skins: lookup order and draw lists", [&] {
+    check(validateRig(lookRig()).empty(), "look fixture validates");
+    check(validateController(lookController(), std::make_shared<const Rig>(parseRig("hero", lookRig())).get()).empty(), "look controller validates");
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    check(r->skins.size() == 2 && r->expressions.size() == 2 && r->skinIndex("summer") == 1 && r->expressionIndex("surprised") == 1, "parsed");
+    check(r->attachment("torso", "torso", 0)->imageAssetId == "img-torso-winter" && r->attachment("torso", "torso")->imageAssetId == "img-torso", "skin first, then default");
+    check(r->attachment("face", "face", 0)->imageAssetId == "img-face" && r->attachment("eyes", "closed", 1)->imageAssetId == "img-eyes-closed", "missing in skin falls back to default");
+    Instance inst(r);
+    check(imageOf(inst.drawList(), "torso") == "img-torso" && inst.skin().empty(), "no skin = default attachments");
+    check(inst.setSkin("winter") && inst.skin() == "winter", "setSkin");
+    auto items = inst.drawList();
+    check(imageOf(items, "torso") == "img-torso-winter" && items[0].width == 90 && imageOf(items, "face") == "img-face", "outfit overrides only what it provides");
+    check(!inst.setSkin("nope") && inst.skin() == "winter", "unknown skin refused, nothing changes");
+    inst.play(0, "blink", true, 1, Then::Default, 0);
+    inst.update(1850);
+    check(imageOf(inst.drawList(), "eyes") == "img-eyes-closed-winter", "clips key names; the skin resolves them (no new animation)");
+    check(inst.setSkin("") && imageOf(inst.drawList(), "eyes") == "img-eyes-closed", "back to default attachments");
+    check(samplePose(*r, -1, 0, {1}).skin == 1 && samplePose(*r, -1, 0).skin == -1, "samplePose carries the skin");
+  });
+
+  test("skins and expressions: validation codes", [&] {
+    auto bad = [](const std::function<void(Json&)>& change, const std::string& code) {
+      Json d = lookRig();
+      change(d);
+      return hasCode(validateRig(d), code);
+    };
+    check(bad([](Json& d) { d["skins"][0]["attachments"][0]["slot"] = "tail"; }, "ANIM_SLOT_MISSING"), "skin attachment on unknown slot");
+    check(bad([](Json& d) { d["skins"][0]["attachments"].push_back(d["skins"][0]["attachments"][0]); }, "ANIM_DUP_ID"), "duplicate (slot,name) inside a skin");
+    check(!bad([](Json& d) { d["skins"][1]["attachments"].push_back(d["skins"][0]["attachments"][1]); }, "ANIM_DUP_ID"), "same (slot,name) in two skins is fine");
+    check(bad([](Json& d) { d["skins"][0]["attachments"][0]["imageAssetId"] = ""; }, "ANIM_IMAGE_MISSING"), "skin attachment without image");
+    check(bad([](Json& d) { d["skins"][0]["attachments"][0]["width"] = 0; }, "ANIM_IMAGE_SIZE"), "skin attachment size");
+    check(bad([](Json& d) { d["skins"][1]["id"] = "winter"; }, "ANIM_DUP_ID"), "duplicate skin id");
+    check(bad([](Json& d) { d["expressions"][0]["slots"]["tail"] = "x"; }, "ANIM_SLOT_MISSING"), "expression on unknown slot");
+    check(bad([](Json& d) { d["expressions"][0]["slots"]["eyes"] = "wink"; }, "ANIM_ATTACHMENT_UNKNOWN"), "expression names an unknown attachment");
+    check(bad([](Json& d) { d["expressions"][0]["bones"]["tail"] = {{"rotation", 1}}; }, "ANIM_BONE_MISSING"), "expression on unknown bone");
+    check(bad([](Json& d) { d["expressions"][0]["bones"]["head"]["alpha"] = 1; }, "ANIM_PROPERTY"), "expression bone channel");
+    check(bad([](Json& d) { d["expressions"][1]["id"] = "happy"; }, "ANIM_DUP_ID"), "duplicate expression id");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][0]["keys"][1]["value"] = "angry"; }, "ANIM_EXPRESSION_UNKNOWN"), "expression key names an unknown expression");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][0]["keys"][0]["interp"] = "bezier"; d["clips"][3]["tracks"][0]["keys"][0]["curve"] = {0, 0, 1, 1}; }, "ANIM_INTERP"), "expression keys are step only");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][0]["property"] = "x"; }, "ANIM_PROPERTY"), "rig track only keys expression");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][1]["property"] = "expression"; }, "ANIM_PROPERTY"), "expression only on the rig track");
+    // An outfit-only part: valid (some skin provides it); a skin lacking it gets a warning.
+    Json d = lookRig();
+    d["slots"].push_back({{"id", "hat"}, {"bone", "head"}, {"attachment", "cap"}});
+    d["skins"][0]["attachments"].push_back({{"slot", "hat"}, {"name", "cap"}, {"imageAssetId", "img-cap"}, {"width", 30}, {"height", 20}});
+    auto ds = validateRig(d);
+    bool error = false, warnSummer = false, warnWinter = false;
+    for (const auto& x : ds) {
+      error |= x.severity == "error";
+      if (x.code == "ANIM_SKIN_MISSING_ATTACHMENT") { warnSummer |= x.pointer == "/skins/1"; warnWinter |= x.pointer == "/skins/0"; }
+    }
+    check(!error && warnSummer && !warnWinter, "ANIM_SKIN_MISSING_ATTACHMENT only for the skin lacking a shown name");
+    d["slots"].back()["attachment"] = "crown";
+    check(hasCode(validateRig(d), "ANIM_ATTACHMENT_UNKNOWN"), "a name no list provides is an error");
+    Instance bare(std::make_shared<const Rig>(parseRig("h", [&] { Json x = lookRig(); x["slots"].push_back({{"id", "hat"}, {"bone", "head"}, {"attachment", "cap"}}); x["skins"][0]["attachments"].push_back({{"slot", "hat"}, {"name", "cap"}, {"imageAssetId", "img-cap"}, {"width", 30}, {"height", 20}}); return x; }())));
+    check(imageOf(bare.drawList(), "hat") == "-" && bare.setSkin("winter") && imageOf(bare.drawList(), "hat") == "img-cap", "outfit-only part appears with its skin");
+  });
+
+  test("expression layer order: after track 0, before layer tracks (blink still blinks)", [&] {
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    Json c = lookController();
+    c["defaultExpression"] = "happy";
+    Instance inst(r, parseController("hero-main", c));
+    auto eyes = [&] { return *inst.pose().attachments[2]; };
+    auto headRotation = [&] { return inst.pose().bones[2].rotation; };
+    check(inst.expression() == std::optional<std::string>("happy"), "controller defaultExpression");
+    check(eyes() == "open" && near(headRotation(), 10), "blink layer (track 1) keys the eyes over the expression; head follows the expression");
+    inst.update(1850);
+    check(eyes() == "closed", "blink closes");
+    Json noBlink = c;
+    noBlink["layers"] = Json::array();
+    Instance calm(r, parseController("hero-main", noBlink));
+    check(*calm.pose().attachments[2] == "closed" && calm.pose().expression == 0, "without a layer the expression shows");
+    // Track 0 action keys head rotation: the expression still wins (it applies after track 0)...
+    calm.signal("actionResult", {{"outcome", "success"}});
+    calm.update(300);  // joy alone would turn the head to 15
+    check(calm.describe()["tracks"][0]["clip"] == "joy" && near(calm.pose().bones[2].rotation, 10), "expression overrides track 0");
+    check(near(calm.pose().bones[1].scaleY, 1.2), "unlisted channels keep animating");
+    // ...but a layer track keying the same channel wins over the expression.
+    calm.play(2, "joy", false, 1, Then::Hold, 0);
+    calm.update(300);
+    check(near(calm.pose().bones[2].rotation, 15), "track 2 joy overrides the expression's head rotation");
+  });
+
+  test("expression keys: step, override the instance expression", [&] {
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    Instance inst(r);
+    check(inst.setExpression(std::string("surprised")) && inst.pose().expression == 1 && !inst.pose().attachments[1], "setExpression (surprised hides the face)");
+    check(near(inst.pose().bones[2].y, -90) && near(inst.pose().bones[2].scaleY, 1.1), "bone overrides");
+    check(!inst.setExpression(std::string("angry")) && inst.expression() == std::optional<std::string>("surprised"), "unknown expression refused");
+    inst.play(0, "talk-face", false, 1, Then::Hold, 0);
+    inst.update(250);
+    check(inst.describe()["activeExpression"] == "happy" && *inst.pose().attachments[2] == "closed" && near(inst.pose().bones[2].rotation, 10), "clip key overrides the instance expression");
+    inst.update(249);
+    check(inst.describe()["activeExpression"] == "happy", "step: still happy at 499 ms");
+    inst.update(2);
+    check(inst.describe()["activeExpression"].is_null() && *inst.pose().attachments[2] == "open" && near(inst.pose().bones[2].y, -80), "null key = no expression from 500 ms");
+    check(inst.describe()["expression"] == "surprised", "instance expression itself unchanged");
+    inst.stop(0, 0);
+    check(inst.pose().expression == 1, "clip gone: instance expression again");
+    // samplePose: look expression, overridden by the clip's keys; expressions=false = raw clip.
+    check(samplePose(*r, -1, 0, {-1, 1}).expression == 1 && samplePose(*r, 3, 100, {-1, 1}).expression == 0 && samplePose(*r, 3, 700, {-1, 1}).expression == -1, "samplePose look + clip keys");
+    Look raw; raw.expressions = false;
+    check(*samplePose(*r, 3, 100, raw).attachments[2] == "open", "expressions=false samples raw values");
+  });
+
+  test("controller skin/expression bindings and save/restore", [&] {
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    Instance inst(r, parseController("hero-main", lookController()));
+    check(inst.skin() == "winter" && !inst.expression(), "defaultSkin applied");
+    auto matched = inst.signal("portraitChanged", {{"portraitId", "happy"}, {"characterId", "alice"}});
+    check(matched == std::vector<std::string>{"face-happy"} && inst.expression() == std::optional<std::string>("happy"), "expression-only binding");
+    check(inst.describe()["tracks"].size() == 2 && inst.describe()["tracks"][0]["clip"] == "idle", "it takes no track");
+    check(inst.signal("phaseChanged", {{"phase", "summer"}}) == std::vector<std::string>{"dress-summer"} && inst.skin() == "summer", "skin binding");
+    inst.signal("actionResult", {{"outcome", "success"}});
+    inst.update(100);
+    const Json saved = inst.saveState();
+    check(saved["skin"] == "summer" && saved["expression"] == "happy", "saveState includes the look");
+    Instance other(r, parseController("hero-main", lookController()));
+    other.restoreState(saved);
+    check(other.skin() == "summer" && other.expression() == std::optional<std::string>("happy") && other.describe()["tracks"][0]["clip"] == "joy", "restore both (and the clip)");
+    check(other.signal("portraitChanged", {{"portraitId", "none"}}) == std::vector<std::string>{"face-clear"} && !other.expression(), "expression: null clears it");
+    Json stale = saved;
+    stale["skin"] = "gone";
+    stale["expression"] = "gone";
+    other.restoreState(stale);
+    check(other.skin() == "winter" && !other.expression(), "ids removed since the save fall back to the controller defaults");
+    Json old = saved;
+    old.erase("skin"); old.erase("expression");
+    other.setSkin("summer");
+    other.restoreState(old);
+    check(other.skin() == "summer", "1.x saves without a look keep the current one");
+    // Validation.
+    auto codes = [&](const std::function<void(Json&)>& change) { Json c = lookController(); change(c); return validateController(c, r.get()); };
+    check(hasCode(codes([](Json& c) { c["defaultSkin"] = "autumn"; }), "ANIM_SKIN_UNKNOWN"), "unknown defaultSkin");
+    check(hasCode(codes([](Json& c) { c["defaultExpression"] = "angry"; }), "ANIM_EXPRESSION_UNKNOWN"), "unknown defaultExpression");
+    check(hasCode(codes([](Json& c) { c["bindings"][2]["expression"] = "angry"; }), "ANIM_EXPRESSION_UNKNOWN"), "unknown binding expression");
+    check(hasCode(codes([](Json& c) { c["bindings"][4]["skin"] = "autumn"; }), "ANIM_SKIN_UNKNOWN"), "unknown binding skin");
+    check(hasCode(codes([](Json& c) { c["bindings"][2].erase("expression"); }), "ANIM_CLIP_UNKNOWN"), "binding needs a clip, skin or expression");
+    check(codes([](Json& c) { c["bindings"][0]["expression"] = "surprised"; }).empty(), "clip + expression binding");
+    check(validateController(lookController(), nullptr).empty(), "structure-only check without the rig");
+  });
+
+  test("host protocol: mount props.skin, setSkin/setExpression, sample look", [&] {
+    Host host;
+    const Json docs = Json::array({{{"type", "rig"}, {"id", "hero"}, {"data", lookRig()}}, {{"type", "controller"}, {"id", "hero-main"}, {"data", controllerData()}}});
+    check(host.handle({{"op", "init"}, {"documents", docs}})["diagnostics"].empty(), "init");
+    Json element = {{"type", "character"}, {"ref", "hero-main"}, {"width", 100}, {"height", 150}, {"props", {{"skin", "winter"}}}};
+    auto torso = [&] { return host.handle({{"op", "frame"}, {"instance", "s/hero"}})["items"][0]["imageAssetId"]; };
+    check(host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}}).value("ok", false) && torso() == "img-torso-winter", "props.skin picks the outfit");
+    check(host.handle({{"op", "setSkin"}, {"instance", "s/hero"}, {"skin", "summer"}}).value("ok", false) && torso() == "img-torso-summer", "setSkin op");
+    host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}});
+    check(torso() == "img-torso-summer", "re-mount with the same props keeps the instance look");
+    element["props"]["skin"] = "winter-2";
+    check(host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}}).value("ok", false) && torso() == "img-torso-summer", "unknown props.skin ignored (service reports it)");
+    element["props"]["skin"] = "winter";
+    host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}});
+    check(torso() == "img-torso-winter", "a changed props.skin is applied");
+    check(!host.request(Json({{"op", "setSkin"}, {"instance", "s/hero"}, {"skin", "nope"}}).dump()).value("ok", true), "unknown skin rejected");
+    check(host.handle({{"op", "setExpression"}, {"instance", "s/hero"}, {"expression", "happy"}}).value("ok", false), "setExpression");
+    check(host.handle({{"op", "describe"}, {"instance", "s/hero"}})["state"]["expression"] == "happy", "describe shows it");
+    const Json saved = host.handle({{"op", "saveAll"}})["state"];
+    check(saved["instances"]["s/hero"]["state"]["skin"] == "winter" && saved["instances"]["s/hero"]["state"]["expression"] == "happy", "saveAll carries the look");
+    check(host.handle({{"op", "setExpression"}, {"instance", "s/hero"}, {"expression", nullptr}}).value("ok", false) &&
+              host.handle({{"op", "describe"}, {"instance", "s/hero"}})["state"]["expression"].is_null(), "null clears");
+    host.handle({{"op", "restoreAll"}, {"state", saved}});
+    check(host.handle({{"op", "describe"}, {"instance", "s/hero"}})["state"]["expression"] == "happy", "restoreAll restores it");
+    const Json pose = host.handle({{"op", "sample"}, {"rig", lookRig()}, {"skin", "winter"}, {"expression", "happy"}})["pose"];
+    check(pose["skin"] == "winter" && pose["expression"] == "happy" && pose["slots"]["eyes"]["attachment"] == "closed" && near(pose["bones"]["head"]["rotation"].get<double>(), 10), "sample with a look");
+    check(!host.request(Json({{"op", "sample"}, {"rig", lookRig()}, {"skin", "nope"}}).dump()).value("ok", true), "sample refuses unknown skin");
+    const Json script = lookScript();
+    Host replay;
+    std::vector<Json> frames;
+    for (const auto& op : script) { const Json reply = replay.handle(op); check(reply.value("ok", false), "script op " + op.value("op", std::string())); if (op["op"] == "frame") frames.push_back(reply["items"]); }
+    auto item = [&](size_t f, const char* slot) { for (const auto& i : frames[f]) if (i["slot"] == slot) return i; return Json(); };
+    auto image = [&](size_t f, const char* slot) { const Json i = item(f, slot); return i.is_null() ? std::string("-") : i["imageAssetId"].get<std::string>(); };
+    check(frames.size() == 8 && image(0, "torso") == "img-torso-winter" && image(0, "face") == "-" && image(0, "eyes") == "img-eyes-open", "parity script: props.skin + defaultExpression (face hidden)");
+    check(image(1, "eyes") == "img-eyes-closed-winter" && image(2, "eyes") == "img-eyes-closed-winter" && image(2, "face") == "img-face", "blink over the expression; portrait binding");
+    check(image(3, "torso") == "img-torso-summer" && image(3, "eyes") == "img-eyes-closed", "setSkin: summer has no closed eyes, default used");
+    check(item(4, "face")["matrix"][1] == 0 && item(5, "face")["matrix"][1] != 0 && item(6, "face")["matrix"][1] == 0, "clip expression key (head turn) then null");
+    check(image(7, "torso") == "img-torso", "back to default attachments");
+  });
+
+  test("edit ops: skins", [&] {
+    const Json base = lookRig();
+    const Json ctrls = Json::array({{{"id", "hero-main"}, {"data", lookController()}}});
+    auto r = applyEdit(base, {{"op", "addSkin"}, {"id", "autumn"}, {"name", "가을"}});
+    check(r.data["skins"][2] == Json({{"id", "autumn"}, {"name", "가을"}, {"attachments", Json::array()}}) && validateRig(r.data).empty(), "addSkin");
+    check(refused(base, {{"op", "addSkin"}, {"id", "winter"}}) && refused(base, {{"op", "addSkin"}, {"id", "Bad Id"}}), "duplicate / invalid id refused");
+    r = applyEdit(r.data, {{"op", "setSkinAttachment"}, {"skin", "autumn"}, {"slot", "torso"}, {"imageAssetId", "img-torso-autumn"}, {"width", 84}, {"height", 126}});
+    const Json made = r.data["skins"][2]["attachments"][0];
+    check(made["name"] == "torso" && made["pivotY"] == 1 && made["x"] == 0 && r.extra["created"] == true, "name = slot's setup attachment, placement copied from the default");
+    r = applyEdit(r.data, {{"op", "setSkinAttachment"}, {"skin", "autumn"}, {"slot", "torso"}, {"imageAssetId", "img-torso-autumn-2"}, {"x", 3}});
+    check(r.data["skins"][2]["attachments"].size() == 1 && r.data["skins"][2]["attachments"][0]["imageAssetId"] == "img-torso-autumn-2" && r.data["skins"][2]["attachments"][0]["x"] == 3, "update in place");
+    check(refused(r.data, {{"op", "setSkinAttachment"}, {"skin", "autumn"}, {"slot", "eyes"}, {"name", "wink"}}), "new entry needs an image and size");
+    r = applyEdit(r.data, {{"op", "removeSkinAttachment"}, {"skin", "autumn"}, {"slot", "torso"}, {"name", "torso"}});
+    check(r.data["skins"][2]["attachments"].empty(), "removeSkinAttachment");
+    r = applyEdit(base, {{"op", "duplicateSkin"}, {"skin", "winter"}, {"id", "winter-b"}});
+    check(r.data["skins"][2]["attachments"] == base["skins"][0]["attachments"] && r.data["skins"][2]["name"] == "겨울 복사", "duplicateSkin");
+    r = applyEdit(base, {{"op", "renameSkin"}, {"skin", "summer"}, {"id", "beach"}}, ctrls);
+    check(r.data["skins"][1]["id"] == "beach" && r.extra["controllerRefs"] == Json::array({"hero-main"}), "renameSkin reports controllers");
+    check(r.extra["controllers"][0]["data"]["bindings"][4]["skin"] == "beach", "binding skin rewritten");
+    r = applyEdit(base, {{"op", "renameSkin"}, {"skin", "winter"}, {"id", "snow"}}, ctrls);
+    check(r.extra["controllers"][0]["data"]["defaultSkin"] == "snow", "defaultSkin rewritten");
+    check(refused(base, {{"op", "deleteSkin"}, {"skin", "winter"}}, ctrls), "delete of a used skin refused");
+    r = applyEdit(base, {{"op", "deleteSkin"}, {"skin", "summer"}, {"force", true}}, ctrls);
+    const Json forced = r.extra["controllers"][0]["data"];
+    check(r.data["skins"].size() == 1 && forced["bindings"].size() == 4 && validateController(forced, std::make_shared<const Rig>(parseRig("x", r.data)).get()).empty(), "force removes the skin-only binding");
+    r = applyEdit(applyEdit(base, {{"op", "deleteSkin"}, {"skin", "summer"}}).data, {{"op", "deleteSkin"}, {"skin", "winter"}});
+    check(!r.data.contains("skins"), "last skin gone: no empty skins list");
+    // Deleting a slot/bone leaves no dangling skin attachments or expression entries.
+    r = applyEdit(base, {{"op", "deleteSlot"}, {"slot", "eyes"}});
+    check(r.data["skins"][0]["attachments"].size() == 1 && !r.data["expressions"][0].contains("slots") && validateRig(r.data).empty(), "deleteSlot purges skins/expressions");
+    r = applyEdit(base, {{"op", "deleteBone"}, {"bone", "head"}, {"cascade", true}});
+    check(!r.data["expressions"][0].contains("bones") && validateRig(r.data).empty(), "deleteBone purges expression bones");
+    // Attachment names from skins are keyable; 1.x documents never grow skins/expressions keys.
+    Json d = base;
+    d["slots"].push_back({{"id", "hat"}, {"bone", "head"}, {"attachment", nullptr}});
+    d["skins"][0]["attachments"].push_back({{"slot", "hat"}, {"name", "cap"}, {"imageAssetId", "img-cap"}, {"width", 30}, {"height", 20}});
+    check(applyEdit(d, {{"op", "setKey"}, {"clip", "joy"}, {"target", "slot:hat"}, {"property", "attachment"}, {"timeMs", 0}, {"value", "cap"}}).data != d, "skin-only name keyable");
+    r = applyEdit(rigData(), {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "x"}, {"timeMs", 100}, {"value", 2}});
+    check(!r.data.contains("skins") && !r.data.contains("expressions"), "unrelated edits keep 1.x documents unchanged in shape");
+  });
+
+  test("edit ops: expressions, keys, capture", [&] {
+    const Json base = lookRig();
+    const Json ctrls = Json::array({{{"id", "hero-main"}, {"data", lookController()}}});
+    auto r = applyEdit(base, {{"op", "addExpression"}, {"id", "sleepy"}, {"slots", {{"eyes", "closed"}}}});
+    check(r.data["expressions"][2] == Json({{"id", "sleepy"}, {"name", "sleepy"}, {"slots", {{"eyes", "closed"}}}}), "addExpression");
+    check(refused(base, {{"op", "addExpression"}, {"id", "x"}, {"slots", {{"eyes", "wink"}}}}), "invalid expression content refused");
+    r = applyEdit(r.data, {{"op", "setExpressionSlot"}, {"expression", "sleepy"}, {"slot", "face"}, {"attachment", nullptr}});
+    check(r.data["expressions"][2]["slots"]["face"].is_null(), "slot hidden by the expression");
+    r = applyEdit(r.data, {{"op", "setExpressionSlot"}, {"expression", "sleepy"}, {"slot", "face"}, {"remove", true}});
+    check(!r.data["expressions"][2]["slots"].contains("face"), "slot removed from the expression");
+    check(refused(r.data, {{"op", "setExpressionSlot"}, {"expression", "sleepy"}, {"slot", "eyes"}, {"attachment", "wink"}}), "unknown attachment refused");
+    r = applyEdit(r.data, {{"op", "setExpressionBone"}, {"expression", "sleepy"}, {"bone", "head"}, {"rotation", -8}, {"y", -78}});
+    check(r.data["expressions"][2]["bones"]["head"] == Json({{"rotation", -8}, {"y", -78}}), "setExpressionBone");
+    r = applyEdit(r.data, {{"op", "setExpressionBone"}, {"expression", "sleepy"}, {"bone", "head"}, {"rotation", nullptr}});
+    check(r.data["expressions"][2]["bones"]["head"] == Json({{"y", -78}}), "null drops a channel");
+    r = applyEdit(r.data, {{"op", "setExpressionBone"}, {"expression", "sleepy"}, {"bone", "head"}, {"remove", true}});
+    check(!r.data["expressions"][2].contains("bones"), "bone override removed");
+    // Rig expression keys.
+    r = applyEdit(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "rig"}, {"property", "expression"}, {"timeMs", 200}, {"value", "surprised"}, {"interp", "linear"}});
+    check(trackOf(r.data, "joy", "rig", "expression") == Json::array({{{"timeMs", 200}, {"value", "surprised"}}}) && validateRig(r.data).empty(), "expression key (no interp stored)");
+    check(refused(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "rig"}, {"property", "expression"}, {"timeMs", 0}, {"value", "angry"}}), "unknown expression key refused");
+    check(refused(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "rig"}, {"property", "x"}, {"timeMs", 0}, {"value", 1}}), "rig only keys expression");
+    check(refused(base, {{"op", "setInterp"}, {"clip", "talk-face"}, {"target", "rig"}, {"property", "expression"}, {"timeMs", 0}, {"interp", "linear"}}), "expression interp refused");
+    const Json board = applyEdit(base, {{"op", "copyKeys"}, {"clip", "talk-face"}, {"keys", Json::array({ref("rig", "expression", 0), ref("rig", "expression", 500)})}}).extra["clipboard"];
+    check(!board["keys"][0].contains("interp") && board["keys"][1]["value"].is_null(), "copied expression keys carry no interp");
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "idle"}, {"timeMs", 0}, {"keys", board["keys"]}});
+    check(trackOf(r.data, "idle", "rig", "expression").size() == 2, "paste expression keys");
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "talk-face"}, {"keys", Json::array({ref("rig", "expression", 500)})}, {"deltaMs", 100}});
+    check(trackOf(r.data, "talk-face", "rig", "expression")[1]["timeMs"] == 600, "move expression keys");
+    // Rename/delete keep clips and controllers consistent.
+    Json c = lookController();
+    c["defaultExpression"] = "happy";
+    const Json withDefault = Json::array({{{"id", "hero-main"}, {"data", c}}});
+    r = applyEdit(base, {{"op", "renameExpression"}, {"expression", "happy"}, {"id", "joyful"}, {"name", "즐거움"}}, withDefault);
+    check(trackOf(r.data, "talk-face", "rig", "expression")[0]["value"] == "joyful" && r.extra["keys"] == 1 && r.data["expressions"][0]["name"] == "즐거움", "renameExpression rewrites clip keys");
+    check(r.extra["controllers"][0]["data"]["defaultExpression"] == "joyful" && r.extra["controllers"][0]["data"]["bindings"][2]["expression"] == "joyful", "and controllers");
+    check(refused(base, {{"op", "deleteExpression"}, {"expression", "happy"}}, ctrls), "used (keys + binding) expression refused");
+    r = applyEdit(base, {{"op", "deleteExpression"}, {"expression", "happy"}, {"force", true}}, ctrls);
+    check(trackOf(r.data, "talk-face", "rig", "expression").size() == 1 && r.extra["controllers"][0]["data"]["bindings"].size() == 4 && validateRig(r.data).empty(), "force removes keys and the expression-only binding");
+    check(applyEdit(base, {{"op", "deleteExpression"}, {"expression", "surprised"}}).data["expressions"].size() == 1, "unused expression deletes");
+    // Capture: the pending editor change (from) at a clip time becomes the expression.
+    Json pending = applyEdit(base, {{"op", "setKey"}, {"clip", "idle"}, {"target", "slot:eyes"}, {"property", "attachment"}, {"timeMs", 500}, {"value", "closed"}}).data;
+    pending = applyEdit(pending, {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 500}, {"value", -6}}).data;
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "wink"}, {"name", "윙크"}, {"clip", "idle"}, {"timeMs", 500}, {"from", pending}});
+    check(r.data["expressions"][2] == Json({{"id", "wink"}, {"name", "윙크"}, {"slots", {{"eyes", "closed"}}}, {"bones", {{"head", {{"rotation", -6}}}}}}), "only the pending differences (idle's body bob is not captured)");
+    check(trackOf(r.data, "idle", "slot:eyes", "attachment").is_null(), "pending keys themselves are not committed");
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "joy-pose"}, {"clip", "joy"}, {"timeMs", 400}});
+    check(r.data["expressions"][2]["bones"]["head"] == Json({{"rotation", 20}}) && r.data["expressions"][2]["bones"]["body"] == Json({{"scaleY", 1.2}}) && !r.data["expressions"][2].contains("slots"), "without from: differences from the setup pose");
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "eyes-only"}, {"slots", {"eyes"}}, {"bones", Json::array()}});
+    check(r.data["expressions"][2] == Json({{"id", "eyes-only"}, {"name", "eyes-only"}, {"slots", {{"eyes", "open"}}}}), "listed slots captured whole");
+    check(refused(base, {{"op", "captureExpression"}, {"id", "same"}}), "nothing differs: refused");
+    check(refused(base, {{"op", "captureExpression"}, {"id", "happy"}, {"clip", "joy"}, {"timeMs", 400}}), "existing id refused without replace");
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "happy"}, {"clip", "joy"}, {"timeMs", 400}, {"replace", true}});
+    check(r.data["expressions"][0]["name"] == "기쁨" && !r.data["expressions"][0].contains("slots"), "replace keeps the name");
+    // LLM path = editor path.
+    Host host;
+    const Json op = {{"op", "captureExpression"}, {"id", "wink"}, {"clip", "idle"}, {"timeMs", 500}, {"from", pending}};
+    check(host.handle({{"op", "edit"}, {"rig", base}, {"operation", op}})["rig"] == applyEdit(base, op).data, "host edit = core edit");
+  });
+
+  test("1.x documents: no skins/expressions, same behaviour", [&] {
+    check(validateRig(rigData()).empty() && validateRig(bezierRig()).empty(), "1.0/1.1 rigs validate unchanged");
+    const auto r = rig();
+    check(r->skins.empty() && r->expressions.empty(), "nothing parsed");
+    Instance inst(r, parseController("hero-main", controllerData()));
+    const Json s = inst.saveState();
+    check(s["skin"] == "" && s["expression"].is_null() && inst.pose().skin == -1 && inst.pose().expression == -1, "default look");
+    Json old = s;
+    old.erase("skin"); old.erase("expression");
+    Instance back(r, parseController("hero-main", controllerData()));
+    back.restoreState(old);
+    check(back.describe()["tracks"].size() == s["tracks"].size(), "1.x save restores");
   });
 
   test("host sample op evaluates bezier like samplePose", [] {

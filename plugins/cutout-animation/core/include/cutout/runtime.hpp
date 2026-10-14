@@ -12,7 +12,10 @@ enum class Then { Default, Hold, Stop };
 struct Binding {
   std::string id, signal;
   std::map<std::string, std::string> match;  // all listed params must equal; absent = any
-  std::string clip;
+  std::string clip;                           // empty = no clip (a skin/expression-only binding)
+  std::optional<std::string> skin;            // set this skin on match ("" never: validation needs an id)
+  bool setsExpression = false;                // `expression` present: id, or null (= none)
+  std::optional<std::string> expression;
   int track = 0;
   std::optional<bool> loop;                   // absent = clip's own loop flag
   double speed = 1;
@@ -22,6 +25,7 @@ struct Binding {
 struct Layer { int track = 1; std::string clip; };
 struct Controller {
   std::string id, rig, defaultClip;
+  std::string defaultSkin, defaultExpression;  // optional ("" = default attachments / no expression)
   std::string characterId;  // optional: adds param self="true" when a signal names this character
   std::vector<Layer> layers;
   std::vector<Binding> bindings;
@@ -44,7 +48,17 @@ struct DrawItem {
   double width = 0, height = 0, alpha = 1;
 };
 
-struct Pose { std::vector<Transform> bones; std::vector<Affine> world; std::vector<std::optional<std::string>> attachments; std::vector<double> alpha; };
+/**
+ * Pose: channel values plus the skin its attachment names resolve in (-1 = default list only)
+ * and the expression that was applied (-1 = none). Drawing always looks attachments up with
+ * Rig::attachment(slot, name, pose.skin).
+ */
+struct Pose {
+  std::vector<Transform> bones; std::vector<Affine> world; std::vector<std::optional<std::string>> attachments; std::vector<double> alpha;
+  int skin = -1, expression = -1;
+};
+/** Skin/expression for samplePose. expressions=false skips every expression (raw clip values). */
+struct Look { int skin = -1; int expression = -1; bool expressions = true; };
 
 class Instance {
  public:
@@ -64,13 +78,19 @@ class Instance {
   bool paused() const { return paused_; }
   /** Editor scrubbing: set track time without emitting events. */
   void seek(int track, double timeMs);
+  /** "" = default attachments only. Unknown ids are refused (false) and change nothing. */
+  bool setSkin(const std::string& skin);
+  /** nullopt = no expression. Clip expression keys still override it while they play. */
+  bool setExpression(const std::optional<std::string>& expression);
+  std::string skin() const;
+  std::optional<std::string> expression() const;
 
   Pose pose() const;
   std::vector<DrawItem> drawList() const;
   std::vector<Notification> takeNotifications();
 
   Json saveState() const;
-  /** Restores clip/expression state; looping clips restart at 0 by policy. */
+  /** Restores clip, skin and expression state; looping clips restart at 0 by policy. */
   void restoreState(const Json& state);
   Json describe() const;
 
@@ -91,14 +111,19 @@ class Instance {
   uint64_t nextSerial_ = 1;
   double timeScale_ = 1;
   bool paused_ = false;
+  int skin_ = -1, expression_ = -1;  // instance look (controller defaults, bindings, setSkin/setExpression)
 
   void advance(int track, TrackState& state, double dtMs);
   void finish(int track, TrackState& state);
   void startDefaults();
   void sampleClip(const Entry& entry, Pose& pose, std::vector<char>* touched, double weight, bool attachments) const;
+  int activeExpression() const;
 };
 
-/** Sample one clip at a time without an instance (editor/test helper). */
-Pose samplePose(const Rig& rig, int clip, double timeMs);
+/** Sample one clip at a time without an instance (editor/test helper). The clip plays as the
+ *  base track: `look.expression` (overridden by the clip's own expression keys) applies after it. */
+Pose samplePose(const Rig& rig, int clip, double timeMs, const Look& look = {});
+/** Apply expression `index` (>= 0) onto `pose`: listed slots/bone channels are set absolutely. */
+void applyExpression(const Rig& rig, int index, Pose& pose);
 double sampleTrack(const Track& track, double timeMs, double fallback);
 }  // namespace cutout

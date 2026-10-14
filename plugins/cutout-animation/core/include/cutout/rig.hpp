@@ -39,14 +39,26 @@ struct Attachment {
   double width = 0, height = 0;       // source image pixels (checked against PNG by the service)
 };
 
-enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment };
+/** Expression is the rig-level track `{"target":"rig","property":"expression"}` (step only). */
+enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression };
 enum class Interp { Step, Linear, Bezier };
 /** `curve` is used only when interp is Bezier (segment from this key to the next). */
 struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; };
-struct Track { bool bone = true; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; };
+/** bone=false + rig=true: the rig expression track (target "", targetIndex -1, key.name = expression id). */
+struct Track { bool bone = true; bool rig = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; };
 struct ClipEvent { int64_t timeMs = 0; std::string name; };
 struct Clip { std::string id, name; int64_t durationMs = 1000; bool loop = true; std::vector<Track> tracks; std::vector<ClipEvent> events; };
 struct MixPair { std::string from, to; int64_t durationMs = 0; };
+/** Outfit/variant set: provides or overrides attachments by (slot, name); clips keep keying names. */
+struct Skin { std::string id, name; std::vector<Attachment> attachments; };
+/** Absolute override of listed bone channels (unlisted channels keep the animated value). */
+struct BoneOverride { int bone = -1; std::optional<double> x, y, rotation, scaleX, scaleY; };
+/** Named facial/pose set applied as an override layer (see Instance::pose for the order). */
+struct Expression {
+  std::string id, name;
+  std::vector<std::pair<int, std::optional<std::string>>> slots;  // slot index -> attachment name (nullopt = hidden)
+  std::vector<BoneOverride> bones;
+};
 
 struct Rig {
   std::string id;
@@ -59,11 +71,16 @@ struct Rig {
   std::vector<Clip> clips;
   int64_t defaultMixMs = 0;
   std::vector<MixPair> mixes;
+  std::vector<Skin> skins;
+  std::vector<Expression> expressions;
 
   int boneIndex(const std::string& id) const;
   int slotIndex(const std::string& id) const;
   int clipIndex(const std::string& id) const;
-  const Attachment* attachment(const std::string& slot, const std::string& name) const;
+  int skinIndex(const std::string& id) const;        // -1 = unknown / "" (default attachments only)
+  int expressionIndex(const std::string& id) const;  // -1 = unknown / none
+  /** Lookup order: skin `skin` (when >= 0) first, then the rig's default attachments. */
+  const Attachment* attachment(const std::string& slot, const std::string& name, int skin = -1) const;
   int64_t mixDuration(const std::string& from, const std::string& to) const;
 };
 

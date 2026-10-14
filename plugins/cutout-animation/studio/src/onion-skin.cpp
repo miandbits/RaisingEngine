@@ -102,7 +102,7 @@ double ghostAlpha(const OnionSettings& s, int offset, int count) {
   return std::clamp(s.opacity * (1 - s.falloff * double(k - 1) / std::max(1, count)), 0.0, 1.0);
 }
 
-std::shared_ptr<const cutout::Pose> GhostPoseCache::pose(const cutout::Rig& rig, quint64 generation, int clip, double timeMs) {
+std::shared_ptr<const cutout::Pose> GhostPoseCache::pose(const cutout::Rig& rig, quint64 generation, int clip, double timeMs, const cutout::Look& look) {
   if (generation != generation_ || clip != clip_) {
     poses_.clear();
     generation_ = generation;
@@ -113,7 +113,7 @@ std::shared_ptr<const cutout::Pose> GhostPoseCache::pose(const cutout::Rig& rig,
   auto it = poses_.constFind(key);
   if (it != poses_.constEnd()) return *it;
   samples_++;
-  auto pose = std::make_shared<const cutout::Pose>(cutout::samplePose(rig, clip, timeMs));
+  auto pose = std::make_shared<const cutout::Pose>(cutout::samplePose(rig, clip, timeMs, look));
   poses_.insert(key, pose);
   return pose;
 }

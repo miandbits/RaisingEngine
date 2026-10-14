@@ -84,12 +84,12 @@ const char* propertyName(Property p) {
   switch (p) {
     case Property::X: return "x"; case Property::Y: return "y"; case Property::Rotation: return "rotation";
     case Property::ScaleX: return "scaleX"; case Property::ScaleY: return "scaleY";
-    case Property::Alpha: return "alpha"; case Property::Attachment: return "attachment";
+    case Property::Alpha: return "alpha"; case Property::Attachment: return "attachment"; case Property::Expression: return "expression";
   }
   return "";
 }
 std::optional<Property> parseProperty(const std::string& n) {
-  for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment})
+  for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment, Property::Expression})
     if (n == propertyName(p)) return p;
   return std::nullopt;
 }
@@ -97,7 +97,11 @@ std::optional<Property> parseProperty(const std::string& n) {
 int Rig::boneIndex(const std::string& id) const { for (size_t i = 0; i < bones.size(); i++) if (bones[i].id == id) return int(i); return -1; }
 int Rig::slotIndex(const std::string& id) const { for (size_t i = 0; i < slots.size(); i++) if (slots[i].id == id) return int(i); return -1; }
 int Rig::clipIndex(const std::string& id) const { for (size_t i = 0; i < clips.size(); i++) if (clips[i].id == id) return int(i); return -1; }
-const Attachment* Rig::attachment(const std::string& slot, const std::string& name) const {
+int Rig::skinIndex(const std::string& id) const { for (size_t i = 0; i < skins.size(); i++) if (skins[i].id == id) return int(i); return -1; }
+int Rig::expressionIndex(const std::string& id) const { for (size_t i = 0; i < expressions.size(); i++) if (expressions[i].id == id) return int(i); return -1; }
+const Attachment* Rig::attachment(const std::string& slot, const std::string& name, int skin) const {
+  if (skin >= 0 && skin < int(skins.size()))
+    for (const auto& a : skins[size_t(skin)].attachments) if (a.slot == slot && a.name == name) return &a;
   for (const auto& a : attachments) if (a.slot == slot && a.name == name) return &a;
   return nullptr;
 }
@@ -151,22 +155,76 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     const double alpha = number(c, slots[i], p, "alpha", 1);
     if (alpha < 0 || alpha > 1) c.error(at(p, "alpha"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
   }
-  const auto& attachments = arrayOr(data, "attachments");
-  std::set<std::pair<std::string, std::string>> attachmentIds;
-  for (size_t i = 0; i < attachments.size(); i++) {
-    const std::string p = at("/attachments", i), slot = text(attachments[i], "slot"), name = text(attachments[i], "name");
+  using SlotName = std::pair<std::string, std::string>;
+  // One attachment entry (default list or a skin's list); `seen` holds the list's (slot, name) pairs.
+  auto checkAttachment = [&](const Json& a, const std::string& p, std::set<SlotName>& seen) {
+    const std::string slot = text(a, "slot"), name = text(a, "name");
     if (!slotIds.count(slot)) c.error(at(p, "slot"), "ANIM_SLOT_MISSING", "첨부가 없는 슬롯을 참조합니다: " + slot);
     if (name.empty()) c.error(at(p, "name"), "ANIM_ID_MISSING", "첨부 이름이 필요합니다.");
-    else if (!attachmentIds.insert({slot, name}).second) c.error(at(p, "name"), "ANIM_DUP_ID", "같은 슬롯에 중복된 첨부 이름: " + name);
-    if (text(attachments[i], "imageAssetId").empty()) c.error(at(p, "imageAssetId"), "ANIM_IMAGE_MISSING", "첨부에 이미지가 지정되지 않았습니다.");
-    checkTransform(c, attachments[i], p);
-    for (const char* k : {"pivotX", "pivotY"}) number(c, attachments[i], p, k, 0.5);
-    for (const char* k : {"width", "height"}) if (number(c, attachments[i], p, k, 0) <= 0) c.error(at(p, k), "ANIM_IMAGE_SIZE", "이미지 크기는 0보다 커야 합니다.");
+    else if (!seen.insert({slot, name}).second) c.error(at(p, "name"), "ANIM_DUP_ID", "같은 슬롯에 중복된 첨부 이름: " + name);
+    if (text(a, "imageAssetId").empty()) c.error(at(p, "imageAssetId"), "ANIM_IMAGE_MISSING", "첨부에 이미지가 지정되지 않았습니다.");
+    checkTransform(c, a, p);
+    for (const char* k : {"pivotX", "pivotY"}) number(c, a, p, k, 0.5);
+    for (const char* k : {"width", "height"}) if (number(c, a, p, k, 0) <= 0) c.error(at(p, k), "ANIM_IMAGE_SIZE", "이미지 크기는 0보다 커야 합니다.");
+  };
+  const auto& attachments = arrayOr(data, "attachments");
+  std::set<SlotName> attachmentIds;
+  for (size_t i = 0; i < attachments.size(); i++) checkAttachment(attachments[i], at("/attachments", i), attachmentIds);
+
+  // Skins (plugin 1.2.0): per-skin attachment lists keyed like the default list.
+  const auto& skins = arrayOr(data, "skins");
+  std::set<std::string> skinIds;
+  std::vector<std::set<SlotName>> skinNames(skins.size());
+  std::set<SlotName> anySkin;  // (slot, name) provided by at least one skin
+  for (size_t i = 0; i < skins.size(); i++) {
+    const std::string p = at("/skins", i), id = text(skins[i], "id");
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "스킨 ID가 필요합니다.");
+    else if (!skinIds.insert(id).second) c.error(at(p, "id"), "ANIM_DUP_ID", "중복된 스킨 ID: " + id);
+    const auto& list = arrayOr(skins[i], "attachments");
+    for (size_t k = 0; k < list.size(); k++) checkAttachment(list[k], at(at(p, "attachments"), k), skinNames[i]);
+    anySkin.insert(skinNames[i].begin(), skinNames[i].end());
   }
+  // A name is usable when the default list or any skin provides it (an outfit-only part).
+  auto knownName = [&](const std::string& slot, const std::string& name) { return attachmentIds.count({slot, name}) || anySkin.count({slot, name}); };
+  std::set<SlotName> referenced;  // names that setup/keys/expressions show: every skin should resolve them
   for (size_t i = 0; i < slots.size(); i++) {
     if (!slots[i].contains("attachment") || !slots[i].at("attachment").is_string()) continue;
     const auto name = slots[i].at("attachment").get<std::string>();
-    if (!attachmentIds.count({text(slots[i], "id"), name})) c.error(at(at("/slots", i), "attachment"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯 기본 첨부가 없습니다: " + name);
+    if (!knownName(text(slots[i], "id"), name)) c.error(at(at("/slots", i), "attachment"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯 기본 첨부가 없습니다: " + name);
+    else referenced.insert({text(slots[i], "id"), name});
+  }
+
+  // Expressions (plugin 1.2.0): {id, name, slots: {slot: name|null}, bones: {bone: {channel: value}}}.
+  const auto& expressions = arrayOr(data, "expressions");
+  std::set<std::string> expressionIds;
+  for (size_t i = 0; i < expressions.size(); i++) {
+    const auto& e = expressions[i];
+    const std::string p = at("/expressions", i), id = text(e, "id");
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "표정 ID가 필요합니다.");
+    else if (!expressionIds.insert(id).second) c.error(at(p, "id"), "ANIM_DUP_ID", "중복된 표정 ID: " + id);
+    if (e.is_object() && e.contains("slots") && e.at("slots").is_object())
+      for (auto it = e.at("slots").begin(); it != e.at("slots").end(); ++it) {
+        const std::string sp = at(at(p, "slots"), it.key());
+        if (!slotIds.count(it.key())) { c.error(sp, "ANIM_SLOT_MISSING", "표정이 없는 슬롯을 참조합니다: " + it.key()); continue; }
+        if (it.value().is_null()) continue;
+        if (!it.value().is_string()) c.error(sp, "ANIM_KEY_VALUE", "표정의 슬롯 값은 첨부 이름 또는 null입니다.");
+        else if (!knownName(it.key(), it.value().get<std::string>())) c.error(sp, "ANIM_ATTACHMENT_UNKNOWN", "슬롯에 없는 첨부를 가리킵니다: " + it.value().get<std::string>());
+        else referenced.insert({it.key(), it.value().get<std::string>()});
+      }
+    else if (e.is_object() && e.contains("slots")) c.error(at(p, "slots"), "ANIM_STRUCTURE", "표정 slots는 객체입니다.");
+    if (e.is_object() && e.contains("bones") && e.at("bones").is_object())
+      for (auto it = e.at("bones").begin(); it != e.at("bones").end(); ++it) {
+        const std::string bp = at(at(p, "bones"), it.key());
+        if (!parentOf.count(it.key())) { c.error(bp, "ANIM_BONE_MISSING", "표정이 없는 본을 참조합니다: " + it.key()); continue; }
+        if (!it.value().is_object()) { c.error(bp, "ANIM_STRUCTURE", "표정의 본 값은 {rotation, x, y, scaleX, scaleY} 객체입니다."); continue; }
+        for (auto ch = it.value().begin(); ch != it.value().end(); ++ch) {
+          const auto prop = parseProperty(ch.key());
+          if (!prop || *prop == Property::Alpha || *prop == Property::Attachment || *prop == Property::Expression)
+            c.error(at(bp, ch.key()), "ANIM_PROPERTY", "표정의 본 속성은 x, y, rotation, scaleX, scaleY입니다: " + ch.key());
+          else if (!finiteNumber(ch.value())) c.error(at(bp, ch.key()), "ANIM_NONFINITE", ch.key() + " 값은 유한한 숫자여야 합니다.");
+        }
+      }
+    else if (e.is_object() && e.contains("bones")) c.error(at(p, "bones"), "ANIM_STRUCTURE", "표정 bones는 객체입니다.");
   }
 
   // Clips.
@@ -187,11 +245,14 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       const auto& track = tracks[ti];
       const std::string tp = at(at(p, "tracks"), ti), target = text(track, "target"), propertyText = text(track, "property");
       const auto property = parseProperty(propertyText);
-      const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0;
+      const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0, isRig = target == "rig";
       const std::string targetId = target.size() > 5 ? target.substr(5) : "";
       if (!property) { c.error(at(tp, "property"), "ANIM_PROPERTY", "알 수 없는 트랙 속성: " + propertyText); continue; }
       const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment;
-      if ((!isBone && !isSlot) || (isBone && !parentOf.count(targetId)) || (isSlot && !slotIds.count(targetId)))
+      if (isRig != (*property == Property::Expression))
+        c.error(at(tp, "property"), "ANIM_PROPERTY", isRig ? "rig 트랙의 속성은 expression뿐입니다." : "expression 속성은 rig 트랙에만 씁니다.");
+      else if (isRig) {}
+      else if ((!isBone && !isSlot) || (isBone && !parentOf.count(targetId)) || (isSlot && !slotIds.count(targetId)))
         c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙 대상이 없습니다: " + target);
       else if (isBone == slotProperty) c.error(at(tp, "property"), "ANIM_PROPERTY", "대상 종류에 맞지 않는 속성입니다: " + propertyText);
       if (!targets.insert(target + "#" + propertyText).second) c.error(tp, "ANIM_DUP_TRACK", "같은 대상·속성 트랙이 중복됩니다.");
@@ -208,13 +269,19 @@ std::vector<Diagnostic> validateRig(const Json& data) {
         previous = t;
         const std::string interp = text(key, "interp");
         if (!interp.empty() && interp != "step" && interp != "linear" && interp != "bezier") c.error(at(kp, "interp"), "ANIM_INTERP", "보간은 step, linear, bezier 중 하나입니다.");
-        else if (interp == "bezier" && *property == Property::Attachment) c.error(at(kp, "interp"), "ANIM_INTERP", "첨부 키는 항상 계단(step) 전환입니다.");
+        else if (interp == "bezier" && (*property == Property::Attachment || *property == Property::Expression))
+          c.error(at(kp, "interp"), "ANIM_INTERP", "첨부·표정 키는 항상 계단(step) 전환입니다.");
         if (interp == "bezier") checkCurve(c, key, kp);
         else if (key.contains("curve")) c.warn(at(kp, "curve"), "ANIM_CURVE_UNUSED", "bezier가 아닌 키의 curve는 쓰이지 않습니다.");
-        if (*property == Property::Attachment) {
+        if (*property == Property::Expression) {
+          if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "표정 키 값은 표정 ID 또는 null입니다.");
+          else if (key.at("value").is_string() && !expressionIds.count(key.at("value").get<std::string>()))
+            c.error(at(kp, "value"), "ANIM_EXPRESSION_UNKNOWN", "없는 표정을 가리킵니다: " + key.at("value").get<std::string>());
+        } else if (*property == Property::Attachment) {
           if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "첨부 키 값은 이름 또는 null입니다.");
-          else if (key.at("value").is_string() && !attachmentIds.count({targetId, key.at("value").get<std::string>()}))
+          else if (key.at("value").is_string() && !knownName(targetId, key.at("value").get<std::string>()))
             c.error(at(kp, "value"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯에 없는 첨부를 가리킵니다: " + key.at("value").get<std::string>());
+          else if (key.at("value").is_string()) referenced.insert({targetId, key.at("value").get<std::string>()});
         } else if (!key.contains("value") || !finiteNumber(key.at("value"))) c.error(at(kp, "value"), "ANIM_NONFINITE", "키 값은 유한한 숫자여야 합니다.");
         else if (*property == Property::Alpha && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp, "value"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
       }
@@ -227,6 +294,12 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       if (text(events[ei], "name").empty()) c.error(at(ep, "name"), "ANIM_ID_MISSING", "이벤트 이름이 필요합니다.");
     }
   }
+  // A skin that cannot resolve a shown name (neither it nor the default list has it) draws
+  // nothing there while active: allowed (a deliberately bare part), but worth a warning.
+  for (size_t i = 0; i < skins.size(); i++)
+    for (const auto& [slot, name] : referenced)
+      if (!attachmentIds.count({slot, name}) && !skinNames[i].count({slot, name}))
+        c.warn(at("/skins", i), "ANIM_SKIN_MISSING_ATTACHMENT", "스킨 「" + text(skins[i], "id") + "」에 쓰이는 첨부가 없습니다(그 자리는 비어 보입니다): " + slot + "/" + name);
   if (data.contains("mix") && data.at("mix").is_object()) {
     const auto& mix = data.at("mix");
     if (mix.contains("defaultMs") && (!mix.at("defaultMs").is_number_integer() || mix.at("defaultMs").get<int64_t>() < 0 || mix.at("defaultMs").get<int64_t>() > 10000))
@@ -269,22 +342,43 @@ Rig parseRig(const std::string& id, const Json& data) {
     slot.boneIndex = rig.boneIndex(slot.bone);
     rig.slots.push_back(slot);
   }
-  for (const auto& a : arrayOr(data, "attachments")) {
+  auto readAttachment = [](const Json& a) {
     Attachment att; att.slot = a.at("slot"); att.name = a.at("name"); att.imageAssetId = a.at("imageAssetId");
     att.offset = readTransform(a); att.pivotX = a.value("pivotX", 0.5); att.pivotY = a.value("pivotY", 0.5);
     att.width = a.at("width"); att.height = a.at("height");
-    rig.attachments.push_back(att);
+    return att;
+  };
+  for (const auto& a : arrayOr(data, "attachments")) rig.attachments.push_back(readAttachment(a));
+  for (const auto& s : arrayOr(data, "skins")) {
+    Skin skin; skin.id = s.at("id"); skin.name = s.value("name", skin.id);
+    for (const auto& a : arrayOr(s, "attachments")) skin.attachments.push_back(readAttachment(a));
+    rig.skins.push_back(skin);
+  }
+  for (const auto& e : arrayOr(data, "expressions")) {
+    Expression x; x.id = e.at("id"); x.name = e.value("name", x.id);
+    if (e.contains("slots") && e.at("slots").is_object())
+      for (auto it = e.at("slots").begin(); it != e.at("slots").end(); ++it)
+        x.slots.push_back({rig.slotIndex(it.key()), it.value().is_string() ? std::optional<std::string>(it.value().get<std::string>()) : std::nullopt});
+    if (e.contains("bones") && e.at("bones").is_object())
+      for (auto it = e.at("bones").begin(); it != e.at("bones").end(); ++it) {
+        BoneOverride o; o.bone = rig.boneIndex(it.key());
+        auto get = [&](const char* k) { return it.value().contains(k) ? std::optional<double>(it.value().at(k).get<double>()) : std::nullopt; };
+        o.x = get("x"); o.y = get("y"); o.rotation = get("rotation"); o.scaleX = get("scaleX"); o.scaleY = get("scaleY");
+        x.bones.push_back(o);
+      }
+    rig.expressions.push_back(x);
   }
   for (const auto& c : arrayOr(data, "clips")) {
     Clip clip; clip.id = c.at("id"); clip.name = c.value("name", clip.id); clip.durationMs = c.at("durationMs"); clip.loop = c.value("loop", true);
     for (const auto& t : arrayOr(c, "tracks")) {
       Track track; const std::string target = t.at("target");
-      track.bone = target.rfind("bone:", 0) == 0; track.target = target.substr(5);
-      track.targetIndex = track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
+      track.rig = target == "rig";
+      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(5);
+      track.targetIndex = track.rig ? -1 : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
       track.property = *parseProperty(t.at("property"));
       for (const auto& k : arrayOr(t, "keys")) {
         Key key; key.timeMs = k.at("timeMs");
-        if (track.property == Property::Attachment) { key.interp = Interp::Step; if (k.at("value").is_string()) key.name = k.at("value").get<std::string>(); }
+        if (track.property == Property::Attachment || track.property == Property::Expression) { key.interp = Interp::Step; if (k.at("value").is_string()) key.name = k.at("value").get<std::string>(); }
         else {
           key.value = k.at("value");
           const std::string interp = text(k, "interp");

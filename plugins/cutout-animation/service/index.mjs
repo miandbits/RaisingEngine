@@ -53,8 +53,11 @@ export async function createService({ pluginDir, manifest }) {
       const reply = request({ op: 'validate', rig: rig.data, rigPointer: '/data' });
       if (!reply.ok) { push(rig.file, '/data', 'ANIM_CORE', `리그를 검사할 수 없습니다: ${reply.error}`, [rig.id]); continue; }
       fromCore(rig, reply.diagnostics);
-      for (const [i, attachment] of (Array.isArray(rig.data.attachments) ? rig.data.attachments : []).entries()) {
-        const id = attachment?.imageAssetId, pointer = `/data/attachments/${i}`;
+      // Default attachments and every skin's attachments get the same image checks.
+      const lists = [['/data/attachments', rig.data.attachments]];
+      for (const [s, skin] of (Array.isArray(rig.data.skins) ? rig.data.skins : []).entries()) lists.push([`/data/skins/${s}/attachments`, skin?.attachments]);
+      for (const [base, list] of lists) for (const [i, attachment] of (Array.isArray(list) ? list : []).entries()) {
+        const id = attachment?.imageAssetId, pointer = `${base}/${i}`;
         if (typeof id !== 'string' || !id) continue; // empty ids are reported by the core
         const asset = images.get(id);
         if (!asset || asset.kind !== 'image') { push(rig.file, `${pointer}/imageAssetId`, 'ANIM_IMAGE_MISSING', asset ? `에셋 '${id}'는 이미지가 아닙니다.` : `이미지 에셋 '${id}'가 없습니다. 에셋 목록에 PNG를 등록하세요.`, [rig.id, id]); continue; }
@@ -79,11 +82,16 @@ export async function createService({ pluginDir, manifest }) {
       if (ext.type !== 'character') continue;
       if (!controllers.has(ext.ref)) push(file, `${pointer}/extension/ref`, 'PLUGIN_ELEMENT_REF', `애니메이션 연결(controller) '${ext.ref}'가 없습니다.`, [String(ext.ref)]);
       const props = ext.props ?? {};
+      const skins = (rigs.get(controllers.get(ext.ref)?.data?.rig)?.data?.skins ?? []).map(s => s?.id);
       for (const [key, value] of Object.entries(props)) {
         if (key === 'scale' && !(typeof value === 'number' && value > 0 && value <= 10)) push(file, `${pointer}/extension/props/scale`, 'ANIM_ELEMENT_PROP', '배율(scale)은 0보다 크고 10 이하인 숫자입니다.');
         else if (key === 'flipX' && typeof value !== 'boolean') push(file, `${pointer}/extension/props/flipX`, 'ANIM_ELEMENT_PROP', '좌우 반전(flipX)은 true/false입니다.');
+        // props.skin (plugin 1.2.0): outfit of this placed instance; "" = the controller default.
+        else if (key === 'skin' && typeof value !== 'string') push(file, `${pointer}/extension/props/skin`, 'ANIM_ELEMENT_PROP', '스킨(skin)은 리그의 스킨 ID 문자열입니다.');
+        else if (key === 'skin' && value !== '' && controllers.has(ext.ref) && !skins.includes(value))
+          push(file, `${pointer}/extension/props/skin`, 'ANIM_SKIN_UNKNOWN', `스킨 '${value}'가 리그에 없습니다. 연결의 기본 스킨으로 표시됩니다.`, [String(ext.ref), String(value)], 'warning');
         // posterAssetId is host-reserved (engine CONTRACT §5) and checked by the engine.
-        else if (key !== 'scale' && key !== 'flipX' && key !== 'posterAssetId' && SCALAR.has(typeof value)) push(file, `${pointer}/extension/props/${key}`, 'ANIM_ELEMENT_PROP', `알 수 없는 속성 '${key}'는 무시됩니다.`, [], 'warning');
+        else if (!['scale', 'flipX', 'skin', 'posterAssetId'].includes(key) && SCALAR.has(typeof value)) push(file, `${pointer}/extension/props/${key}`, 'ANIM_ELEMENT_PROP', `알 수 없는 속성 '${key}'는 무시됩니다.`, [], 'warning');
       }
     }
     return out;

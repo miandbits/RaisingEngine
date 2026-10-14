@@ -25,6 +25,57 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * Editor-only visibility (eye icon) is never stored. Hiding a part in the game is
   `attachment: null` or `alpha: 0`, both keyable.
 
+## Skins (plugin 1.2.0)
+
+* `skins: [{id, name?, attachments: [<attachment>]}]` — outfit/variant sets. Skin attachments
+  have exactly the fields of `attachments` entries (slot, name, imageAssetId, placement, size).
+* Lookup of a shown name (slot setup attachment, attachment key, expression slot value):
+  **active skin first, then the default `attachments`**. Clips keep keying attachment
+  *names*, so changing the outfit needs no new animation (blink keys `closed`; the winter
+  skin's `eyes/closed` image is drawn while it is active).
+* A name is valid when the default list or *any* skin provides it (an outfit-only part such as
+  a hat); `ANIM_ATTACHMENT_UNKNOWN` otherwise. A skin that provides neither the name nor has it
+  in the default list draws nothing there while active: warning `ANIM_SKIN_MISSING_ATTACHMENT`
+  (pointer `/skins/<i>`). Per skin: unknown slot `ANIM_SLOT_MISSING`, duplicate (slot, name)
+  inside one skin `ANIM_DUP_ID` (the same pair in two skins is the point), no image
+  `ANIM_IMAGE_MISSING`, size `ANIM_IMAGE_SIZE`; the service checks skin images like default
+  ones (`ANIM_IMAGE_MISSING` for unknown assets, `ANIM_IMAGE_SIZE_MISMATCH` against the PNG).
+* The active skin of an instance: controller `defaultSkin`, overridden by the placed element's
+  `props.skin` (per instance; the host passes props through untouched), then by bindings
+  (`skin`) and `setSkin`. `""` = default attachments only. An unknown `props.skin` is ignored
+  by the runtime (controller default stays) and reported by the service (`ANIM_SKIN_UNKNOWN`,
+  warning). Re-mounting the same element keeps the instance's skin; only a changed
+  `props.skin` is applied again.
+
+## Expressions (plugin 1.2.0)
+
+* `expressions: [{id, name?, slots?: {"<slot>": "<attachmentName>" | null}, bones?: {"<bone>":
+  {x?, y?, rotation?, scaleX?, scaleY?}}}]` — named facial/pose sets. Slot values replace the
+  shown attachment (`null` hides the slot); bone channels are **absolute** values like keys;
+  unlisted slots and channels keep animating.
+* **Layer order** (the rule every runtime and the editor use): track 0 → *expression* →
+  tracks 1..15. The expression is a base-layer override, so it wins over the base action
+  (an action keying the head cannot undo a smile's head tilt) while layer tracks still win over
+  it: a blink layer on track 1 keying the eyes keeps blinking. Trade-off: a layer that keys a
+  slot the expression also sets shows the layer's value; put expression-specific eye shapes
+  into the blink clip's own names, or let the expression leave the eyes out.
+* Which expression is active: the instance expression (controller `defaultExpression`,
+  bindings `expression`, `setExpression`), overridden while a playing clip keys the rig
+  expression track. The highest track whose current clip keys it wins; during a cross-fade the
+  keyed value switches at the halfway point like attachments.
+* Rig expression track: `{"target": "rig", "property": "expression", "keys": [{timeMs, value:
+  "<id>" | null}]}` — step only (`bezier` → `ANIM_INTERP`; other interp values are ignored),
+  `null` = no expression from that key on (it also overrides the instance expression), before
+  the first key the first value holds. `rig` tracks only key `expression` and `expression` is
+  only keyed on `rig` (`ANIM_PROPERTY`); unknown ids are `ANIM_EXPRESSION_UNKNOWN`.
+* Validation: unknown slot `ANIM_SLOT_MISSING`, unknown bone `ANIM_BONE_MISSING`, unknown
+  attachment name `ANIM_ATTACHMENT_UNKNOWN`, channels other than x/y/rotation/scaleX/scaleY
+  `ANIM_PROPERTY`, duplicate ids `ANIM_DUP_ID`.
+* `samplePose(rig, clip, t, look)` samples one clip as the base track; `look.expression` (or
+  the clip's own expression keys) applies after it, `look.skin` is carried in `Pose.skin` for
+  drawing. `look.expressions = false` gives the raw keyable values (the editor's properties,
+  K and drags use them so a previewed expression never gets baked into keys).
+
 ## Clips and keys
 
 * Keys store **absolute** values (not offsets from the setup pose). Editing the setup pose
@@ -80,7 +131,7 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
     at that time keep their interpolation.
   * Re-timing and paste ops report the resulting keys as `keys` in the reply (`extra.keys`).
 * Editor-only state is never stored in documents: time zoom/scroll, the key selection, the
-  clipboards and the preview loop range (in/out markers; editor playback loops inside it,
+  clipboards, the previewed skin/expression of the canvas (스킨 · 표정 lists) and the preview loop range (in/out markers; editor playback loops inside it,
   remembered per clip for the session). Runtimes always play whole clips.
 * The authoring layout is editor-only too: the 애니메이션 작업 공간 (host workspace) switch,
   splitter sizes and collapsed sections (QSettings `plugins/cutout-animation/layout/*`) and
@@ -100,6 +151,38 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   ancestors.
 * Compatibility: schemaVersion stays 1 and every 1.0.0 document loads and plays unchanged.
   Documents that use `bezier` need plugin 1.1.0 or newer (1.0.0 rejects the interp value).
+  Documents with `skins`, `expressions`, rig expression tracks or the controller fields
+  `defaultSkin`/`defaultExpression`/binding `skin`/`expression` need plugin 1.2.0; documents
+  without them are unchanged (editing ops never add empty `skins`/`expressions` lists, and
+  deleting the last skin or expression removes the list).
+* Skin/expression editing ops (`edit`, plugin 1.2.0; each is one undo step in the editor):
+  * `addSkin {id, name?, from?}` (`from` copies another skin's attachments),
+    `duplicateSkin {skin, id, name?}`, `renameSkin {skin, id?, name?}` and
+    `deleteSkin {skin, force?}`. Rename returns rewritten controllers (`controllers`,
+    `controllerRefs`: `defaultSkin` and binding `skin`) like `renameClip`; delete is refused
+    while a controller uses the skin unless `force`, which also drops those refs (a binding
+    left with no clip/skin/expression is removed).
+  * `setSkinAttachment {skin, slot, name?, imageAssetId, width, height, x?, y?, rotation?,
+    scaleX?, scaleY?, pivotX?, pivotY?}` adds or updates one skin attachment ("import an image
+    into this skin for a part"). `name` defaults to the slot's setup attachment; a new entry
+    copies the placement of the default attachment with that name (or the part's shown one),
+    so the outfit image lands where the base image was. `removeSkinAttachment {skin, slot, name}`.
+  * `addExpression {id, name?, slots?, bones?}`, `renameExpression {expression, id?, name?}`
+    (also rewrites rig expression keys; `keys` = count), `deleteExpression {expression, force?}`
+    (refused while keyed or used by a controller unless `force`, which removes those keys and
+    refs), `setExpressionSlot {expression, slot, attachment: name|null}` or `{…, remove: true}`,
+    `setExpressionBone {expression, bone, x?..scaleY?}` (`null` drops a channel) or `{…, remove: true}`.
+  * `captureExpression {id, name?, clip?, timeMs?, slots?, bones?, from?, replace?}` ("현재
+    상태로 표정 만들기"): samples a pose (`from` rig data or this rig, at `clip`/`timeMs` or the
+    setup pose, expressions off) and stores what differs from the baseline — the setup pose,
+    or with `from` the same clip time of this rig, so only the editor's unsaved changes become
+    the expression. Listed `slots`/`bones` are captured whole (bones: all five channels).
+    Nothing different → refused. `replace: true` overwrites an existing id (keeps its name).
+    `extra.expression` is the stored entry.
+  * Expression keys use the ordinary key ops with `target: "rig", property: "expression"`
+    (`setKey` value id|null, `moveKeys`, `copyKeys`/`pasteKeys` without interp, `deleteKeys`);
+    `setInterp`/`setCurve` on them are refused.
+  * Deleting a slot or bone also removes its skin attachments and expression entries.
 * Rotation interpolates numerically (no shortest-path wrapping): 0→350 turns 350°.
 * Times are integer milliseconds, strictly increasing per track, within `0..durationMs`.
 * Events: `{timeMs, name}`. An event fires once per occurrence in the half-open interval
@@ -110,6 +193,8 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 * Tracks 0..15 applied in ascending order; a higher track overrides only the properties
   its clip keys. Track 0 is the base action; controller `layers` (e.g. blink) run on 1..15.
+  The active expression (plugin 1.2.0) applies between track 0 and track 1; the instance skin
+  resolves every attachment name at draw time.
 * `play` replaces the track entry. If the mix duration (`mix.pairs` → `mix.defaultMs`, or
   explicit) is > 0, the old entry keeps animating and is cross-faded linearly; attachments
   switch at the halfway point. Events and completions of the outgoing entry are suppressed.
@@ -141,6 +226,28 @@ If the controller sets `characterId`, every signal also gets `self=true|false`
 params must be equal), `clip`, `track`, `loop`, `speed`, `then`, `stopOn` (signals that end
 the clip early, e.g. `["dialogueEnded"]`). The first matching binding per track wins.
 
+Skins and expressions (plugin 1.2.0): controller `defaultSkin` (skin id) and
+`defaultExpression` (expression id or null) set the look of new instances. A binding may carry
+`skin` and/or `expression` (id, or `null` = no expression); `clip` is then optional. On a
+match the skin/expression is set; it persists until something changes it (a clip ending does
+not revert it). Skin/expression-only bindings never take a track, and the first matching
+binding that names a skin (an expression) sets it. Unknown ids are `ANIM_SKIN_UNKNOWN` /
+`ANIM_EXPRESSION_UNKNOWN`; a binding with none of clip/skin/expression is `ANIM_CLIP_UNKNOWN`.
+The signal vocabulary is unchanged. `portraitChanged` is the natural expression signal, e.g.:
+
+```json
+{"id": "face-smile", "signal": "portraitChanged", "match": {"portraitId": "smile", "self": "true"}, "expression": "smile"},
+{"id": "face-reset", "signal": "dialogueEnded", "match": {"self": "true"}, "expression": null},
+{"id": "dress-festival", "signal": "phaseChanged", "match": {"phase": "festival"}, "skin": "festival"}
+```
+
+Runtime ops (generic extension protocol additions, plugin 1.2.0): `setSkin {instance, skin}`
+(`""`/null = default attachments) and `setExpression {instance, expression: id|null}`, both
+refused (`ok:false`) for unknown ids; `sample` accepts `skin`/`expression` and its pose reports
+`skin`/`expression`; `describe` reports `skin`, `expression` (instance) and
+`activeExpression` (after clip keys). The Wasm runtime is built with exception catching, so
+refused ops answer `{ok:false, error}` there exactly like the native DLL. No new notifications.
+
 Game effects (costs, stats, RNG) are fully committed before any signal exists. Animation
 completion only changes presentation (e.g. return to idle) and can never submit a command,
 so it cannot duplicate a game effect.
@@ -148,7 +255,11 @@ so it cannot duplicate a game effect.
 ## Save / load
 
 `playerPresentation.extensions["cutout-animation"]` stores per mounted instance:
-controller ref, active clip per track, binding, `then`, `stopOn`, speed.
+controller ref, active clip per track, binding, `then`, `stopOn`, speed, and (plugin 1.2.0)
+`skin` and `expression`.
+
+* Policy: skin and expression are both restored. An id removed since the save falls back to
+  the controller default; saves without these fields (1.x) keep the current look.
 
 * One-shot clips resume at their saved time.
 * Looping (decorative) clips — idle, breathing, blink — restart at 0. Their phase is not

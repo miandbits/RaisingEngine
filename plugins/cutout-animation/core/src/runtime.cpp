@@ -51,6 +51,31 @@ static std::optional<std::string> sampleAttachment(const Track& track, double t)
   return chosen->name;
 }
 
+/** Expression keyed by `clip` at time t into `out` (-1 = keyed null). False when the clip does not key it. */
+static bool clipExpression(const Rig& rig, const Clip& clip, double t, int& out) {
+  for (const auto& tr : clip.tracks) {
+    if (!tr.rig || tr.property != Property::Expression || tr.keys.empty()) continue;
+    const auto name = sampleAttachment(tr, t);
+    out = name ? rig.expressionIndex(*name) : -1;
+    return true;
+  }
+  return false;
+}
+void applyExpression(const Rig& rig, int index, Pose& pose) {
+  if (index < 0 || index >= int(rig.expressions.size())) return;
+  const Expression& e = rig.expressions[size_t(index)];
+  for (const auto& [slot, name] : e.slots) if (slot >= 0 && size_t(slot) < pose.attachments.size()) pose.attachments[size_t(slot)] = name;
+  for (const auto& o : e.bones) {
+    if (o.bone < 0 || size_t(o.bone) >= pose.bones.size()) continue;
+    Transform& t = pose.bones[size_t(o.bone)];
+    if (o.x) t.x = *o.x;
+    if (o.y) t.y = *o.y;
+    if (o.rotation) t.rotation = *o.rotation;
+    if (o.scaleX) t.scaleX = *o.scaleX;
+    if (o.scaleY) t.scaleY = *o.scaleY;
+  }
+  pose.expression = index;
+}
 static Pose setupPose(const Rig& rig) {
   Pose pose;
   for (const auto& b : rig.bones) pose.bones.push_back(b.setup);
@@ -94,9 +119,17 @@ static Pose blend(const Pose& a, const Pose& b, double alpha) {
   return out;
 }
 
-Pose samplePose(const Rig& rig, int clip, double timeMs) {
+Pose samplePose(const Rig& rig, int clip, double timeMs, const Look& look) {
   Pose pose = setupPose(rig);
-  if (clip >= 0 && clip < int(rig.clips.size())) applyClip(rig, rig.clips[clip], clipTime(rig.clips[clip], timeMs, rig.clips[clip].loop), pose);
+  pose.skin = look.skin >= 0 && look.skin < int(rig.skins.size()) ? look.skin : -1;
+  int expression = look.expression;
+  if (clip >= 0 && clip < int(rig.clips.size())) {
+    const double t = clipTime(rig.clips[clip], timeMs, rig.clips[clip].loop);
+    applyClip(rig, rig.clips[clip], t, pose);
+    clipExpression(rig, rig.clips[clip], t, expression);
+  }
+  // The sampled clip plays as the base track, so the expression applies after it (Instance::pose rule).
+  if (look.expressions) applyExpression(rig, expression, pose);
   computeWorld(rig, pose);
   return pose;
 }
@@ -107,6 +140,11 @@ std::vector<Diagnostic> validateController(const Json& data, const Rig* rig) {
   if (!data.is_object()) { error("", "ANIM_STRUCTURE", "컨트롤러 데이터는 객체여야 합니다."); return out; }
   if (data.value("schemaVersion", 0) != SCHEMA_VERSION) error("/schemaVersion", "ANIM_SCHEMA_VERSION", "지원하는 컨트롤러 schemaVersion은 1입니다.");
   auto clipKnown = [&](const Json& v) { return v.is_string() && (!rig || rig->clipIndex(v.get<std::string>()) >= 0); };
+  auto skinKnown = [&](const Json& v) { return v.is_string() && !v.get<std::string>().empty() && (!rig || rig->skinIndex(v.get<std::string>()) >= 0); };
+  // null = "no expression" wherever an expression may be named.
+  auto expressionKnown = [&](const Json& v) { return v.is_null() || (v.is_string() && !v.get<std::string>().empty() && (!rig || rig->expressionIndex(v.get<std::string>()) >= 0)); };
+  if (data.contains("defaultSkin") && !skinKnown(data.at("defaultSkin"))) error("/defaultSkin", "ANIM_SKIN_UNKNOWN", "기본 스킨이 리그에 없습니다.");
+  if (data.contains("defaultExpression") && !expressionKnown(data.at("defaultExpression"))) error("/defaultExpression", "ANIM_EXPRESSION_UNKNOWN", "기본 표정이 리그에 없습니다.");
   if (!data.contains("rig") || !data.at("rig").is_string()) error("/rig", "ANIM_RIG_MISSING", "컨트롤러가 사용할 리그를 지정하세요.");
   if (!data.contains("defaultClip") || !clipKnown(data.at("defaultClip"))) error("/defaultClip", "ANIM_CLIP_UNKNOWN", "기본 대기 클립이 리그에 없습니다.");
   std::set<int> layerTracks;
@@ -127,7 +165,11 @@ std::vector<Diagnostic> validateController(const Json& data, const Rig* rig) {
     if (id.empty()) error(p + "/id", "ANIM_ID_MISSING", "연결 ID가 필요합니다.");
     else if (!ids.insert(id).second) error(p + "/id", "ANIM_DUP_ID", "중복된 연결 ID: " + id);
     if (b.value("signal", std::string()).empty()) error(p + "/signal", "ANIM_SIGNAL", "연결할 게임 신호를 지정하세요.");
-    if (!b.contains("clip") || !clipKnown(b.at("clip"))) error(p + "/clip", "ANIM_CLIP_UNKNOWN", "연결 클립이 리그에 없습니다.");
+    // clip is optional when the binding only changes the skin and/or the expression.
+    const bool look = b.contains("skin") || b.contains("expression");
+    if (b.contains("clip") ? !clipKnown(b.at("clip")) : !look) error(p + "/clip", "ANIM_CLIP_UNKNOWN", look || b.contains("clip") ? "연결 클립이 리그에 없습니다." : "연결할 클립(또는 스킨·표정)을 지정하세요.");
+    if (b.contains("skin") && !skinKnown(b.at("skin"))) error(p + "/skin", "ANIM_SKIN_UNKNOWN", "연결 스킨이 리그에 없습니다.");
+    if (b.contains("expression") && !expressionKnown(b.at("expression"))) error(p + "/expression", "ANIM_EXPRESSION_UNKNOWN", "연결 표정이 리그에 없습니다.");
     const int track = b.value("track", 0);
     if (track < 0 || track > 15) error(p + "/track", "ANIM_TRACK_RANGE", "트랙은 0..15입니다.");
     if (b.contains("speed") && (!b.at("speed").is_number() || !std::isfinite(b.at("speed").get<double>()) || b.at("speed").get<double>() <= 0 || b.at("speed").get<double>() > 10))
@@ -141,9 +183,14 @@ std::vector<Diagnostic> validateController(const Json& data, const Rig* rig) {
 Controller parseController(const std::string& id, const Json& data) {
   for (const auto& d : validateController(data, nullptr)) if (d.severity == "error") throw std::runtime_error(d.code + " " + d.pointer + ": " + d.message);
   Controller c; c.id = id; c.rig = data.at("rig"); c.defaultClip = data.at("defaultClip"); c.characterId = data.value("characterId", std::string());
+  c.defaultSkin = data.value("defaultSkin", std::string());
+  if (data.contains("defaultExpression") && data.at("defaultExpression").is_string()) c.defaultExpression = data.at("defaultExpression").get<std::string>();
   for (const auto& l : arrayOr(data, "layers")) c.layers.push_back({l.value("track", 1), l.at("clip").get<std::string>()});
   for (const auto& b : arrayOr(data, "bindings")) {
-    Binding x; x.id = b.at("id"); x.signal = b.at("signal"); x.clip = b.at("clip"); x.track = b.value("track", 0);
+    Binding x; x.id = b.at("id"); x.signal = b.at("signal"); x.clip = b.value("clip", std::string()); x.track = b.value("track", 0);
+    if (b.contains("skin") && b.at("skin").is_string()) x.skin = b.at("skin").get<std::string>();
+    x.setsExpression = b.contains("expression");
+    if (x.setsExpression && b.at("expression").is_string()) x.expression = b.at("expression").get<std::string>();
     if (b.contains("loop") && b.at("loop").is_boolean()) x.loop = b.at("loop").get<bool>();
     x.speed = b.value("speed", 1.0); x.then = parseThen(b.value("then", std::string("default")));
     if (b.contains("match") && b.at("match").is_object()) for (auto it = b.at("match").begin(); it != b.at("match").end(); ++it) if (it.value().is_string()) x.match[it.key()] = it.value().get<std::string>();
@@ -156,8 +203,26 @@ Controller parseController(const std::string& id, const Json& data) {
 Instance::Instance(std::shared_ptr<const Rig> rig, std::optional<Controller> controller) : rig_(std::move(rig)), controller_(std::move(controller)) {
   if (!rig_) throw std::runtime_error("rig is required");
   startDefaults();
+  if (controller_) {
+    setSkin(controller_->defaultSkin);
+    setExpression(controller_->defaultExpression.empty() ? std::nullopt : std::optional<std::string>(controller_->defaultExpression));
+  }
   pending_.clear();  // construction is not an observable transition
 }
+bool Instance::setSkin(const std::string& id) {
+  const int i = id.empty() ? -1 : rig_->skinIndex(id);
+  if (!id.empty() && i < 0) return false;
+  skin_ = i;
+  return true;
+}
+bool Instance::setExpression(const std::optional<std::string>& id) {
+  const int i = !id || id->empty() ? -1 : rig_->expressionIndex(*id);
+  if (id && !id->empty() && i < 0) return false;
+  expression_ = i;
+  return true;
+}
+std::string Instance::skin() const { return skin_ >= 0 ? rig_->skins[size_t(skin_)].id : std::string(); }
+std::optional<std::string> Instance::expression() const { return expression_ >= 0 ? std::optional<std::string>(rig_->expressions[size_t(expression_)].id) : std::nullopt; }
 void Instance::startDefaults() {
   if (!controller_) return;
   if (rig_->clipIndex(controller_->defaultClip) >= 0) play(0, controller_->defaultClip, std::nullopt, 1, Then::Hold, 0);
@@ -223,17 +288,26 @@ std::vector<std::string> Instance::signal(const std::string& name, const std::ma
   for (auto& [track, state] : tracks_) if (state.current && std::find(state.stopOn.begin(), state.stopOn.end(), name) != state.stopOn.end()) stopping.push_back(track);
   for (int track : stopping) { auto& state = tracks_[track]; state.current->then = state.current->then == Then::Hold ? Then::Stop : state.current->then; finish(track, state); }
   if (!controller_) return matched;
+  // First match wins per track for clips; skin/expression-only bindings never take a track,
+  // and the first matching binding that names a skin (an expression) sets it.
   std::set<int> used;
+  bool skinSet = false, expressionSet = false;
   for (const auto& b : controller_->bindings) {
-    if (b.signal != name || used.count(b.track)) continue;
+    const bool hasClip = !b.clip.empty();
+    if (b.signal != name || (hasClip && used.count(b.track))) continue;
     bool ok = true;
     for (const auto& [k, v] : b.match) { auto it = params.find(k); if (it == params.end() || it->second != v) { ok = false; break; } }
     if (!ok) continue;
-    if (play(b.track, b.clip, b.loop, b.speed, b.then, -1)) {
+    bool applied = false;
+    if (hasClip && play(b.track, b.clip, b.loop, b.speed, b.then, -1)) {
       auto& state = tracks_[b.track];
       state.current->binding = b.id; state.stopOn = b.stopOn;
-      used.insert(b.track); matched.push_back(b.id);
+      used.insert(b.track);
+      applied = true;
     }
+    if (b.skin && !skinSet) { skinSet = true; applied = setSkin(*b.skin) || applied; }
+    if (b.setsExpression && !expressionSet) { expressionSet = true; applied = setExpression(b.expression) || applied; }
+    if (applied) matched.push_back(b.id);
   }
   return matched;
 }
@@ -303,9 +377,28 @@ void Instance::sampleClip(const Entry& entry, Pose& pose, std::vector<char>*, do
   applyClip(*rig_, clip, clipTime(clip, entry.timeMs, entry.loop), pose);
 }
 
+int Instance::activeExpression() const {
+  int expression = expression_;
+  for (const auto& [track, state] : tracks_) {  // ascending: the highest track keying it wins
+    const Entry* e = state.current ? &*state.current : nullptr;
+    // Like attachments, a cross-fade switches a keyed expression at its halfway point.
+    if (state.from && state.mixDuration > 0 && state.mixElapsed / state.mixDuration < 0.5) e = &*state.from;
+    if (!e) continue;
+    const Clip& clip = rig_->clips[size_t(e->clip)];
+    clipExpression(*rig_, clip, clipTime(clip, e->timeMs, e->loop), expression);
+  }
+  return expression;
+}
+
 Pose Instance::pose() const {
   Pose pose = setupPose(*rig_);
+  pose.skin = skin_;
+  const int expression = activeExpression();
+  bool expressed = false;
   for (const auto& [track, state] : tracks_) {
+    // The expression is a base-layer override: after track 0, before layer tracks 1..15, so a
+    // blink layer keying the eyes still blinks over any expression.
+    if (!expressed && track >= 1) { applyExpression(*rig_, expression, pose); expressed = true; }
     Pose to = pose;
     if (state.current) sampleClip(*state.current, to, nullptr, 1, true);
     if (state.from && state.mixDuration > 0) {
@@ -314,6 +407,7 @@ Pose Instance::pose() const {
       pose = blend(from, to, std::clamp(state.mixElapsed / state.mixDuration, 0.0, 1.0));
     } else pose = to;
   }
+  if (!expressed) applyExpression(*rig_, expression, pose);
   computeWorld(*rig_, pose);
   return pose;
 }
@@ -325,7 +419,7 @@ std::vector<DrawItem> Instance::drawList() const {
   for (size_t i = 0; i < rig_->slots.size(); i++) {
     const auto& slot = rig_->slots[i];
     if (!pose.attachments[i] || pose.alpha[i] <= 0 || slot.boneIndex < 0) continue;
-    const Attachment* att = rig_->attachment(slot.id, *pose.attachments[i]);
+    const Attachment* att = rig_->attachment(slot.id, *pose.attachments[i], pose.skin);
     if (!att) continue;
     const auto& o = att->offset;
     const Affine m = origin * pose.world[slot.boneIndex] * Affine::compose(o.x, o.y, o.rotation, o.scaleX, o.scaleY)
@@ -349,7 +443,9 @@ Json Instance::saveState() const {
     tracks.push_back({{"track", track}, {"clip", rig_->clips[e.clip].id}, {"timeMs", e.loop ? 0.0 : e.timeMs}, {"loop", e.loop},
                       {"speed", e.speed}, {"then", thenName(e.then)}, {"binding", e.binding}, {"stopOn", state.stopOn}, {"ended", e.ended}});
   }
-  return {{"version", 1}, {"timeScale", timeScale_}, {"paused", paused_}, {"tracks", tracks}};
+  const auto expression = this->expression();
+  return {{"version", 1}, {"timeScale", timeScale_}, {"paused", paused_}, {"tracks", tracks},
+          {"skin", skin()}, {"expression", expression ? Json(*expression) : Json(nullptr)}};
 }
 
 void Instance::restoreState(const Json& state) {
@@ -374,6 +470,14 @@ void Instance::restoreState(const Json& state) {
     for (const auto& [k, v] : saved) if (k != 0) tracks_[k] = v;
     pending_.clear();
   }
+  // Policy: skin and expression are restored too (saves without them keep the current look);
+  // an id removed since the save falls back to the controller default.
+  if (state.contains("skin") && state.at("skin").is_string() && !setSkin(state.at("skin").get<std::string>()))
+    setSkin(controller_ ? controller_->defaultSkin : std::string());
+  if (state.contains("expression") && (state.at("expression").is_null() || state.at("expression").is_string())) {
+    const std::optional<std::string> saved = state.at("expression").is_string() ? std::optional<std::string>(state.at("expression").get<std::string>()) : std::nullopt;
+    if (!setExpression(saved)) setExpression(controller_ && !controller_->defaultExpression.empty() ? std::optional<std::string>(controller_->defaultExpression) : std::nullopt);
+  }
 }
 
 Json Instance::describe() const {
@@ -384,6 +488,10 @@ Json Instance::describe() const {
     if (state.from) t["mixFrom"] = rig_->clips[state.from->clip].id, t["mixElapsedMs"] = state.mixElapsed, t["mixDurationMs"] = state.mixDuration;
     tracks.push_back(t);
   }
-  return {{"tracks", tracks}, {"paused", paused_}, {"timeScale", timeScale_}};
+  const auto expression = this->expression();
+  const int active = activeExpression();
+  return {{"tracks", tracks}, {"paused", paused_}, {"timeScale", timeScale_}, {"skin", skin()},
+          {"expression", expression ? Json(*expression) : Json(nullptr)},
+          {"activeExpression", active >= 0 ? Json(rig_->expressions[size_t(active)].id) : Json(nullptr)}};
 }
 }  // namespace cutout

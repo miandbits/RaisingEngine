@@ -43,7 +43,7 @@ class CutoutStudioPlugin : public QObject, public raising::StudioPlugin, public 
   QPointer<QLabel> launcherPreview_, launcherSummary_;
   QList<QPointer<QAction>> actions_;
   ImageCache images_;
-  QHash<QString, Cached> cache_;  // controller id -> parsed rig + first default frame
+  QHash<QString, Cached> cache_;  // controller id + "\n" + props.skin -> parsed rig + first default frame
   void showDock();
   void updateLauncher();
 };

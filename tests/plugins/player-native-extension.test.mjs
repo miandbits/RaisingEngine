@@ -37,18 +37,23 @@ test('native player draws extension items, binds committed actions to clips and 
   const r=await run(f,'main',steps);
   const home=r.instance('home');
   assert.equal(home.available,true,home.error);
-  assert.deepEqual(home.items.map(i=>i.imageAssetId),['anim-torso','anim-face','anim-eyes-open']);
+  // props.skin 'summer' reaches the runtime through the host's element spec untouched.
+  assert.deepEqual(home.items.map(i=>i.imageAssetId),['anim-torso-summer','anim-face','anim-eyes-open']);
   // Rig 200x300 fits the 300x450 element at scale 1.5; torso pivot (0.5,1) sits on the body bone 100px above the origin.
   near(home.items[0].matrix,[1.5,0,0,1.5,90,90],'torso setup matrix');
-  near(home.items[0].matrix,(await reference([])).find(i=>i.imageAssetId==='anim-torso').matrix,'parity with core');
+  near(home.items[0].matrix,(await reference([])).find(i=>i.imageAssetId==='anim-torso-summer').matrix,'parity with core');
   assert.equal(r.ui('home').texts['hero-anim'].includes('raising-extension'),true);
   // Idle loop advanced on the presentation clock only.
   const idle=r.instance('idle');assert.equal(track(idle,0).clip,'idle');assert.equal(track(idle,0).timeMs,500);
   near(idle.items[0].matrix,[1.5,0,0,1.5,90,84],'idle body y=-104 at 500ms');
-  near(idle.items[0].matrix,(await reference([100,100,100,100,100])).find(i=>i.imageAssetId==='anim-torso').matrix,'idle parity');
+  near(idle.items[0].matrix,(await reference([100,100,100,100,100])).find(i=>i.imageAssetId==='anim-torso-summer').matrix,'idle parity');
   assert.deepEqual(r.ui('idle').state,r.ui('home').state,'animation never changes game state');
   // executeAction success -> controller binding -> joy one-shot on track 0.
   const joy=r.instance('joy');assert.equal(track(joy,0).clip,'joy');
+  // The same binding swaps the outfit (skin): identical geometry, the winter image, same items as the core.
+  assert.deepEqual(joy.items.map(i=>i.imageAssetId),['anim-torso-winter','anim-face','anim-eyes-open']);
+  assert.equal(joy.state.skin,'winter');
+  assert.deepEqual(joy.items.map(i=>i.imageAssetId),(await reference([100,100,100,100,100,0],5)).map(i=>i.imageAssetId),'skin swap parity');
   const observed=r.ui('joy').extensions.lastObserve;
   assert.equal(observed.command.type,'executeAction');
   assert.deepEqual(observed.plugins['cutout-animation'].matched,[`${INSTANCE}:cheer-joy`]);
@@ -63,6 +68,8 @@ test('native player draws extension items, binds committed actions to clips and 
   assert.equal(state.instances[INSTANCE].ref,'hero-main');
   assert.equal(saved.playerPresentation.timeline,null);
   const loaded=r.instance('loaded');assert.equal(track(loaded,0).clip,'joy');assert.equal(track(loaded,0).timeMs,300);
+  assert.equal(state.instances[INSTANCE].state.skin,'winter');
+  assert.equal(loaded.items[0].imageAssetId,'anim-torso-winter','skin restored with the clip');
   assert.equal(track(r.instance('loaded-done'),0).clip,'idle');
   assert.deepEqual(r.ui('loaded').state,r.ui('joy-300').state);
   for(const name of ['joy-300','loaded'])await copyFile(resolve(f.root,`${name}.png`),resolve(EVIDENCE,`windows-${name}.png`));

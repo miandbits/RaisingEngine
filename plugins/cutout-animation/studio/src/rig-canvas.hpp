@@ -3,6 +3,7 @@
 // Onion-skin ghosts and the motion trail are handed in ready-made (editor-only overlays).
 #pragma once
 #include <QHash>
+#include <QMimeData>
 #include <QPolygonF>
 #include <QWidget>
 #include <functional>
@@ -55,7 +56,8 @@ class RigCanvas : public QWidget {
   QTransform viewTransform() const;
   QPointF widgetToRig(const QPointF& p) const;
   QPointF rigToWidget(const QPointF& p) const;
-  QString hitTest(const QPointF& widgetPos) const;
+  /** Ref under a widget point; bones=false skips bone handles (parts only). */
+  QString hitTest(const QPointF& widgetPos, bool bones = true) const;
   bool dragging() const { return drag_.has_value(); }
 
   std::function<void(const QString&)> onSelect;
@@ -64,8 +66,13 @@ class RigCanvas : public QWidget {
   std::function<void(int)> onTool;
   std::function<void()> onKey;
   std::function<void()> onOnion;
+  /** PNG files / asset ids dropped on the canvas; `slotRef` = part under the cursor ("" = none). */
+  std::function<void(const QMimeData* mime, const QString& slotRef)> onDropImage;
 
  protected:
+  void dragEnterEvent(QDragEnterEvent*) override;
+  void dragMoveEvent(QDragMoveEvent*) override;
+  void dropEvent(QDropEvent*) override;
   void paintEvent(QPaintEvent*) override;
   void mousePressEvent(QMouseEvent*) override;
   void mouseMoveEvent(QMouseEvent*) override;

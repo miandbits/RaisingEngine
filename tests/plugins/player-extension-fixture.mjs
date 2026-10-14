@@ -20,7 +20,8 @@ export function png(width,height,[r,g,b,a=255]){
   const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(width,0);ihdr.writeUInt32BE(height,4);ihdr.set([8,6,0,0,0],8);
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);
 }
-export const IMAGES={'anim-torso':[80,120,[220,120,80]],'anim-face':[60,60,[250,214,170]],'anim-eyes-open':[40,10,[40,40,90]],'anim-eyes-closed':[40,10,[200,40,40]]};
+export const IMAGES={'anim-torso':[80,120,[220,120,80]],'anim-face':[60,60,[250,214,170]],'anim-eyes-open':[40,10,[40,40,90]],'anim-eyes-closed':[40,10,[200,40,40]],
+  'anim-torso-summer':[80,120,[235,200,60]],'anim-torso-winter':[80,120,[70,110,220]]};
 export const rig={schemaVersion:1,canvas:{width:200,height:300,originX:100,originY:280},
   bones:[{id:'root',parent:null,x:100,y:280},{id:'body',parent:'root',x:0,y:-100},{id:'head',parent:'body',x:0,y:-80}],
   slots:[{id:'torso',bone:'body',attachment:'torso'},{id:'face',bone:'head',attachment:'face'},{id:'eyes',bone:'head',attachment:'open'}],
@@ -32,11 +33,15 @@ export const rig={schemaVersion:1,canvas:{width:200,height:300,originX:100,origi
     {id:'blink',durationMs:2000,loop:true,tracks:[{target:'slot:eyes',property:'attachment',keys:[{timeMs:0,value:'open'},{timeMs:1800,value:'closed'},{timeMs:1900,value:'open'}]}]},
     {id:'joy',durationMs:600,loop:false,tracks:[{target:'bone:head',property:'rotation',keys:[{timeMs:0,value:0},{timeMs:300,value:20},{timeMs:600,value:0}]},
       {target:'bone:body',property:'scaleY',keys:[{timeMs:0,value:1},{timeMs:300,value:1.15},{timeMs:600,value:1}]}]}],
-  mix:{defaultMs:0}};
+  mix:{defaultMs:0},
+  // Outfits (plugin 1.2.0): same torso geometry, other images. The placed element wears summer
+  // (props.skin); the cheer binding swaps to winter, and a save/load keeps it.
+  skins:[{id:'summer',attachments:[{slot:'torso',name:'torso',imageAssetId:'anim-torso-summer',width:80,height:120,pivotX:0.5,pivotY:1}]},
+    {id:'winter',attachments:[{slot:'torso',name:'torso',imageAssetId:'anim-torso-winter',width:80,height:120,pivotX:0.5,pivotY:1}]}]};
 export const controller={schemaVersion:1,rig:'hero',defaultClip:'idle',layers:[{track:1,clip:'blink'}],
-  bindings:[{id:'cheer-joy',signal:'actionResult',match:{actionId:'cheer',outcome:'success'},clip:'joy',then:'default'}]};
+  bindings:[{id:'cheer-joy',signal:'actionResult',match:{actionId:'cheer',outcome:'success'},clip:'joy',skin:'winter',then:'default'}]};
 export const pluginElement={id:'hero-anim',kind:'plugin',x:440,y:130,width:300,height:450,
-  extension:{plugin:'cutout-animation',type:'character',ref:'hero-main',props:{scale:1,flipX:false}}};
+  extension:{plugin:'cutout-animation',type:'character',ref:'hero-main',props:{scale:1,flipX:false,skin:'summer'}}};
 
 /**
  * target: 'windows' | 'web'. runtime: true copies the runtime module, false leaves it missing.

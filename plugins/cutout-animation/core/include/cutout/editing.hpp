@@ -31,7 +31,16 @@ struct EditResult {
  * without changing data; pasteKeys {clip, timeMs, keys, target?} writes it back (same-time
  * keys overwritten). copyPose {clip?, timeMs, bones?} returns extra.pose; pastePose
  * {clip, timeMs, pose} keys it. Re-timing/paste ops report the resulting keys in extra.keys.
- * `controllers` = [{id, data}] lets clip rename/delete report (and rewrite) controller refs.
+ * Skins/expressions (plugin 1.2.0): addSkin {id, name?, from?} duplicateSkin {skin, id}
+ * renameSkin {skin, id?, name?} deleteSkin {skin, force?} setSkinAttachment {skin, slot, name?
+ * (= slot's setup attachment), imageAssetId, width, height, x.. pivotY} removeSkinAttachment
+ * {skin, slot, name}; addExpression {id, name?, slots?, bones?} renameExpression {expression,
+ * id?, name?} (also rewrites clip expression keys) deleteExpression {expression, force?}
+ * setExpressionSlot {expression, slot, attachment|null | remove} setExpressionBone {expression,
+ * bone, x?..scaleY? (null drops a channel) | remove} captureExpression {id, name?, clip?,
+ * timeMs?, slots?, bones?, from?, replace?}. Expression keys: setKey {target:"rig",
+ * property:"expression", value: id|null} (step only).
+ * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */
 EditResult applyEdit(const Json& rig, const Json& operation, const Json& controllers = Json::array());

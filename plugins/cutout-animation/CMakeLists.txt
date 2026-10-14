@@ -15,10 +15,13 @@ if(MINGW)
 endif()
 
 if(EMSCRIPTEN)
+  # Refused ops (unknown skin/clip, EditError...) are thrown and answered {ok:false}; without
+  # catching enabled Emscripten aborts the whole module instead (service/LLM edit path, players).
+  target_compile_options(cutout_core PUBLIC -fexceptions)
   add_executable(cutout-runtime core/src/api.cpp)
   target_link_libraries(cutout-runtime PRIVATE cutout_core)
   set_target_properties(cutout-runtime PROPERTIES SUFFIX ".mjs")
-  target_link_options(cutout-runtime PRIVATE -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,node -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1MB
+  target_link_options(cutout-runtime PRIVATE -fexceptions -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,node -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1MB
     -sEXPORTED_FUNCTIONS=_raising_extension_request,_raising_extension_api_version,_malloc,_free -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORT_NAME=createCutoutRuntime)
   return()
 endif()

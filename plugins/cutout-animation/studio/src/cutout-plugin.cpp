@@ -118,7 +118,10 @@ bool CutoutStudioPlugin::paintElement(QPainter* painter, const QJsonObject& elem
   const QString ref = ext.value("ref").toString();
   if (ref.isEmpty()) return false;
   const QJsonObject props = ext.value("props").toObject();
-  auto it = cache_.find(ref);
+  // props.skin picks this placed instance's outfit (as the runtime does on mount).
+  const QString skin = props.value("skin").toString();
+  const QString key = ref + "\n" + skin;
+  auto it = cache_.find(key);
   if (it == cache_.end()) {
     QJsonObject controller, rig;
     const QJsonArray docs = host_->view().value("documents").toArray();
@@ -135,10 +138,14 @@ bool CutoutStudioPlugin::paintElement(QPainter* painter, const QJsonObject& elem
     Cached c;
     try {
       c.rig = std::make_shared<const cutout::Rig>(cutout::parseRig(ss(controller.value("rig").toString()), toJson(rig)));
-      // First frame of the default clip, as the runtime shows right after mount.
-      c.pose = cutout::samplePose(*c.rig, c.rig->clipIndex(ss(controller.value("defaultClip").toString())), 0);
+      // First frame of the default clip with the instance look, as the runtime shows right after mount.
+      cutout::Look look;
+      look.skin = c.rig->skinIndex(ss(controller.value("defaultSkin").toString()));
+      if (const int s = c.rig->skinIndex(ss(skin)); s >= 0) look.skin = s;
+      look.expression = c.rig->expressionIndex(ss(controller.value("defaultExpression").toString()));
+      c.pose = cutout::samplePose(*c.rig, c.rig->clipIndex(ss(controller.value("defaultClip").toString())), 0, look);
     } catch (const std::exception&) { return false; }
-    it = cache_.insert(ref, c);
+    it = cache_.insert(key, c);
   }
   painter->save();
   painter->setClipRect(rect, Qt::IntersectClip);

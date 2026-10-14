@@ -47,10 +47,11 @@ QVector<GhostTime> onionTimes(const OnionSettings& s, double playheadMs, double 
 double ghostAlpha(const OnionSettings& s, int offset, int count);
 
 /** Poses sampled for ghosts, shared until the displayed rig changes (generation) or the clip
- *  changes. Scrubbing back and forth or redrawing never resamples a time already seen. */
+ *  changes. Scrubbing back and forth or redrawing never resamples a time already seen. The
+ *  preview look (skin/expression) is part of `generation`: the panel bumps it when it changes. */
 class GhostPoseCache {
  public:
-  std::shared_ptr<const cutout::Pose> pose(const cutout::Rig& rig, quint64 generation, int clip, double timeMs);
+  std::shared_ptr<const cutout::Pose> pose(const cutout::Rig& rig, quint64 generation, int clip, double timeMs, const cutout::Look& look = {});
   int samples() const { return samples_; }  // cache misses since creation (tests)
   void clear() { poses_.clear(); }
 

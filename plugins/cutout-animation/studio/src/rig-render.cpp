@@ -42,7 +42,7 @@ cutout::Affine attachmentMatrix(const cutout::Rig& rig, const cutout::Pose& pose
   if (i < 0 || i >= int(rig.slots.size()) || size_t(i) >= pose.attachments.size()) return {};
   const auto& slot = rig.slots[size_t(i)];
   if (!pose.attachments[size_t(i)] || slot.boneIndex < 0 || size_t(slot.boneIndex) >= pose.world.size()) return {};
-  const cutout::Attachment* att = rig.attachment(slot.id, *pose.attachments[size_t(i)]);
+  const cutout::Attachment* att = rig.attachment(slot.id, *pose.attachments[size_t(i)], pose.skin);  // skin first, then default
   if (!att) return {};
   *out = att;
   const auto& o = att->offset;

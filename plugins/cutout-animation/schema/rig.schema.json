@@ -45,20 +45,47 @@
       }
     },
     "attachments": {
+      "description": "Default attachments. An active skin is looked up first, then this list.",
       "type": "array", "maxItems": 1024,
+      "items": { "$ref": "#/$defs/attachment" }
+    },
+    "skins": {
+      "description": "Outfit/variant sets (plugin 1.2.0): provide or override attachments by (slot, name). Clips keep keying names.",
+      "type": "array", "maxItems": 64,
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["slot", "name", "imageAssetId", "width", "height"],
+        "type": "object", "additionalProperties": false, "required": ["id", "attachments"],
         "properties": {
-          "slot": { "$ref": "#/$defs/id" },
-          "name": { "$ref": "#/$defs/name" },
-          "imageAssetId": { "type": "string", "minLength": 1, "maxLength": 64 },
-          "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
-          "rotation": { "$ref": "#/$defs/angle" },
-          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
-          "pivotX": { "type": "number", "minimum": -4, "maximum": 4 },
-          "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
-          "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
-          "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 }
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "attachments": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/attachment" } }
+        }
+      }
+    },
+    "expressions": {
+      "description": "Named facial/pose sets (plugin 1.2.0), applied after track 0 and before layer tracks 1..15.",
+      "type": "array", "maxItems": 128,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "slots": {
+            "description": "slot id -> attachment name, or null to hide the slot.",
+            "type": "object", "maxProperties": 256, "propertyNames": { "$ref": "#/$defs/id" },
+            "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/name" }, { "type": "null" }] }
+          },
+          "bones": {
+            "description": "bone id -> absolute channel values (unlisted channels keep animating).",
+            "type": "object", "maxProperties": 256, "propertyNames": { "$ref": "#/$defs/id" },
+            "additionalProperties": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
+                "rotation": { "$ref": "#/$defs/angle" },
+                "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" }
+              }
+            }
+          }
         }
       }
     },
@@ -76,8 +103,8 @@
             "items": {
               "type": "object", "additionalProperties": false, "required": ["target", "property", "keys"],
               "properties": {
-                "target": { "type": "string", "pattern": "^(bone|slot):[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
-                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment"] },
+                "target": { "description": "bone:<id>, slot:<id>, or rig (property expression, step keys of expression ids / null).", "type": "string", "pattern": "^(?:(bone|slot):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
+                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression"] },
                 "keys": {
                   "type": "array", "maxItems": 4096,
                   "items": {
@@ -128,6 +155,21 @@
     }
   },
   "$defs": {
+    "attachment": {
+      "type": "object", "additionalProperties": false, "required": ["slot", "name", "imageAssetId", "width", "height"],
+      "properties": {
+        "slot": { "$ref": "#/$defs/id" },
+        "name": { "$ref": "#/$defs/name" },
+        "imageAssetId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
+        "rotation": { "$ref": "#/$defs/angle" },
+        "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
+        "pivotX": { "type": "number", "minimum": -4, "maximum": 4 },
+        "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 }
+      }
+    },
     "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 64 },
     "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$", "maxLength": 64 },
     "coord": { "type": "number", "minimum": -100000, "maximum": 100000 },

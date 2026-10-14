@@ -1099,6 +1099,199 @@ class StudioTests : public QObject {
     QCOMPARE(find<QTabWidget>("cutoutBottomTabs")->currentIndex(), 1);
   }
 
+  void skinsAndExpressions() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);  // the canvas shows the edited rig, not the controller preview
+    panel->setMode(CutoutPanel::Mode::Setup);
+    pump();
+    auto image = [](const std::vector<cutout::DrawItem>& items, const std::string& slot) {
+      for (const auto& i : items) if (i.slot == slot) return qs(i.imageAssetId);
+      return QString("-");
+    };
+    auto drawWith = [&](const std::string& skin) {
+      cutout::Instance inst(std::make_shared<const cutout::Rig>(cutout::parseRig("hero", rig())));
+      inst.setSkin(skin);
+      return inst.drawList();
+    };
+    auto same = [](const Json& a, const Json& b) {
+      if (a != b) qWarning("%s != %s", a.dump().c_str(), b.dump().c_str());
+      return a == b;
+    };
+    auto painted = [&](const QImage& img) { qint64 sum = 0; for (int y = 0; y < img.height(); y++) for (int x = 0; x < img.width(); x++) sum += qBlue(img.pixel(x, y)) * qAlpha(img.pixel(x, y)); return sum; };
+    // 스킨: create, fill a part with an imported PNG, drop another PNG on the canvas.
+    answers = {"winter"};
+    QVERIFY(gesture("new skin", 1, [&] { click("cutoutNewSkin"); }));
+    QCOMPARE(qs(rig()["skins"][0]["id"].get<std::string>()), QString("winter"));
+    QCOMPARE(panel->previewSkin(), QString("winter"));
+    const QImage plain = [&] { const QString keep = panel->previewSkin(); panel->setPreviewSkin(""); const QImage i = panel->thumbnail(QSize(160, 240)); panel->setPreviewSkin(keep); return i; }();
+    const QString coat = png("body-winter", QSize(70, 110), QColor("#2563eb"));
+    QVERIFY(gesture("import outfit image for the body", 1, [&] { panel->importAndAssignSkinImage(coat, "body"); }));
+    const Json made = rig()["skins"][0]["attachments"][0];
+    QCOMPARE(qs(made["slot"].get<std::string>() + "/" + made["name"].get<std::string>()), QString("body/body"));  // the part's shown name
+    QCOMPARE(made["width"].get<double>(), 70.0);
+    QCOMPARE(image(drawWith("winter"), "body"), QString("img-body-winter"));
+    QCOMPARE(image(drawWith(""), "body"), QString("img-body"));
+    // Canvas drop: a PNG file dropped on the eyes goes into the previewed skin for that part.
+    const QString goggles = png("eyes-winter", QSize(30, 12), QColor("#0ea5e9"));
+    // Center of the eyes image on the canvas (from the core draw list: instance space + rig origin).
+    cutout::DrawItem eyeItem;
+    for (const auto& i : drawWith("")) if (i.slot == "eyes") eyeItem = i;
+    double ex = 0, ey = 0;
+    eyeItem.matrix.apply(eyeItem.width / 2, eyeItem.height / 2, ex, ey);
+    const QPointF eyes = panel->canvas()->rigToWidget(QPointF(ex + rig()["canvas"]["originX"].get<double>(), ey + rig()["canvas"]["originY"].get<double>()));
+    QVERIFY(gesture("drop PNG on the eyes", 1, [&] {
+      QMimeData mime;
+      mime.setUrls({QUrl::fromLocalFile(goggles)});
+      QDragEnterEvent enter(eyes.toPoint(), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(panel->canvas(), &enter);
+      QVERIFY(enter.isAccepted());
+      QDropEvent drop(eyes, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(panel->canvas(), &drop);
+    }));
+    QCOMPARE(image(drawWith("winter"), "eyes"), QString("img-eyes-winter"));
+    QCOMPARE(panel->selection(), QString("slot:eyes"));
+    QVERIFY(painted(panel->thumbnail(QSize(160, 240))) != painted(plain));  // the canvas shows the outfit
+    // A placed element picks its outfit with props.skin (paintElement = what the runtime mounts).
+    auto element = [](const QJsonObject& props) {
+      return QJsonObject{{"id", "hero-on-title"}, {"kind", "plugin"}, {"width", 300}, {"height", 450},
+                         {"extension", QJsonObject{{"plugin", "cutout-animation"}, {"type", "character"}, {"ref", "hero"}, {"props", props}}}};
+    };
+    auto paintProps = [&](const QJsonObject& props) {
+      QImage img(300, 450, QImage::Format_ARGB32_Premultiplied);
+      img.fill(Qt::transparent);
+      QPainter p(&img);
+      if (!plugin.paintElement(&p, element(props), QRectF(0, 0, 300, 450))) return qint64(-1);
+      p.end();
+      return painted(img);
+    };
+    const qint64 basePaint = paintProps({}), winterPaint = paintProps({{"skin", "winter"}});
+    QVERIFY(basePaint > 0 && winterPaint > basePaint);  // the blue coat
+    // 그림 지정… with an explicit name (the closed eyes of this outfit), then 빼기.
+    nextPart = CutoutPanel::PartChoice{"img-eye-open", QString(), "eyes", "closed", QString()};
+    QVERIFY(gesture("assign closed-eye image", 1, [&] { click("cutoutSkinAssign"); }));
+    QCOMPARE(rig()["skins"][0]["attachments"].size(), size_t(3));
+    auto* list = find<QListWidget>("cutoutSkinAttachments");
+    QCOMPARE(list->count(), 3);
+    list->setCurrentRow(2);
+    QVERIFY(gesture("remove skin attachment", 1, [&] { click("cutoutSkinRemoveAttachment"); }));
+    QCOMPARE(rig()["skins"][0]["attachments"].size(), size_t(2));
+    QVERIFY(gesture("no skin: drop refused", 0, [&] { panel->setPreviewSkin(""); QMimeData mime; mime.setText("img-body"); QVERIFY(!panel->dropImages(&mime, "slot:eyes")); }));
+    // Switching the preview is editor-only.
+    auto* skins = find<QListWidget>("cutoutSkinList");
+    QVERIFY(gesture("preview skin from the list", 0, [&] { skins->setCurrentRow(1); }));
+    QCOMPARE(panel->previewSkin(), QString("winter"));
+    answers = {"winter-b"};
+    QVERIFY(gesture("duplicate skin", 1, [&] { click("cutoutDuplicateSkin"); }));
+    answers = {"snow"};
+    QVERIFY(gesture("rename skin", 1, [&] { click("cutoutRenameSkin"); }));
+    QCOMPARE(qs(rig()["skins"][1]["id"].get<std::string>()), QString("snow"));
+    QVERIFY(same(rig()["skins"][1]["attachments"], rig()["skins"][0]["attachments"]));
+    QVERIFY(gesture("delete skin", 1, [&] { click("cutoutDeleteSkin"); }));
+    QCOMPARE(rig()["skins"].size(), size_t(1));
+    QCOMPARE(panel->previewSkin(), QString());  // deleted skin stops being previewed
+
+    // 표정: change the eyes and the head in Animate mode (pending), capture them as an expression.
+    panel->setAutoKey(false);
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("idle");
+    panel->setPlayhead(0);
+    panel->selectItem("slot:eyes");
+    QVERIFY(gesture("eyes closed (pending)", 0, [&] {
+      auto* combo = find<QComboBox>("cutoutPropAttachment");
+      combo->setCurrentIndex(combo->findData("closed"));
+      Q_EMIT combo->activated(combo->currentIndex());
+    }));
+    panel->selectItem("bone:head");
+    QVERIFY(gesture("head tilt (pending)", 0, [&] { setSpin("cutoutPropRotation", 12); }));
+    QVERIFY(panel->hasPending());
+    const Json idleBefore = [&] { for (const auto& c : rig()["clips"]) if (c["id"] == "idle") return c; return Json(); }();
+    answers = {"smile"};
+    QVERIFY(gesture("capture expression", 1, [&] { click("cutoutCaptureExpression"); }));
+    const Json smile = rig()["expressions"][0];
+    QCOMPARE(qs(smile["id"].get<std::string>()), QString("smile"));
+    QVERIFY(same(smile["slots"], Json({{"eyes", "closed"}})));
+    QVERIFY(same(smile["bones"]["head"], Json({{"rotation", 12}})));
+    QVERIFY(!panel->hasPending());
+    QVERIFY(same([&] { for (const auto& c : rig()["clips"]) if (c["id"] == "idle") return c; return Json(); }(), idleBefore));  // pending keys not committed
+    QCOMPARE(panel->previewExpression(), QString("smile"));
+    QVERIFY(gesture("nothing changed: capture refused", 0, [&] { panel->setMode(CutoutPanel::Mode::Setup); answers = {"same"}; QVERIFY(!panel->captureExpression()); }));
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("idle");
+    // Expression table: slot value and bone override.
+    QVERIFY(gesture("expression hides the eyes", 1, [&] {
+      auto* combo = find<QComboBox>("cutoutExpressionSloteyes");
+      QVERIFY(combo);
+      combo->setCurrentIndex(combo->findData(QString()));
+      Q_EMIT combo->activated(combo->currentIndex());
+    }));
+    QVERIFY(rig()["expressions"][0]["slots"]["eyes"].is_null());
+    QVERIFY(gesture("expression bone text", 1, [&] {
+      auto* edit = find<QLineEdit>("cutoutExpressionBonehead");
+      QVERIFY(edit);
+      edit->setText("rotation=8, y=-70");
+      Q_EMIT edit->editingFinished();
+    }));
+    QVERIFY(same(rig()["expressions"][0]["bones"]["head"], Json({{"rotation", 8}, {"y", -70}})));
+    QVERIFY(gesture("expression eyes back", 1, [&] {
+      auto* combo = find<QComboBox>("cutoutExpressionSloteyes");
+      combo->setCurrentIndex(combo->findData("closed"));
+      Q_EMIT combo->activated(combo->currentIndex());
+    }));
+    // 표정 키 at the playhead; the dopesheet shows the rig expression row.
+    panel->setPlayhead(300);
+    QVERIFY(gesture("key expression", 1, [&] { click("cutoutKeyExpression"); }));
+    QVERIFY(same(*track("idle", "rig", "expression"), Json({{"target", "rig"}, {"property", "expression"}, {"keys", {{{"timeMs", 300}, {"value", "smile"}}}}})));
+    const int row = rowOf("rig", "expression");
+    QVERIFY(row >= 0);
+    QCOMPARE(panel->dopesheet()->rows()[row].label, QString("표정 (리그)"));
+    auto* expressions = find<QListWidget>("cutoutExpressionList");
+    QVERIFY(gesture("preview no expression", 0, [&] { expressions->setCurrentRow(0); }));
+    QCOMPARE(panel->previewExpression(), QString());
+    panel->setPlayhead(600);
+    QVERIFY(gesture("key no expression", 1, [&] { click("cutoutKeyExpression"); }));
+    QVERIFY(keyOf("idle", "rig", "expression", 600)["value"].is_null());
+    const auto parsed = std::make_shared<const cutout::Rig>(cutout::parseRig("hero", rig()));
+    QCOMPARE(cutout::samplePose(*parsed, parsed->clipIndex("idle"), 400).expression, 0);
+    QCOMPARE(cutout::samplePose(*parsed, parsed->clipIndex("idle"), 700).expression, -1);
+    // 게임 연결: default skin, and a clip-less binding portraitChanged(portraitId=smile) -> expression smile.
+    panel->showControllerTab();
+    QVERIFY(gesture("default skin", 1, [&] {
+      auto* combo = find<QComboBox>("cutoutControllerDefaultSkin");
+      combo->setCurrentIndex(combo->findData("winter"));
+      Q_EMIT combo->activated(combo->currentIndex());
+    }));
+    QCOMPARE(qs(controller()["defaultSkin"].get<std::string>()), QString("winter"));
+    QVERIFY(gesture("add binding", 1, [&] { click("cutoutBindingAdd"); }));
+    const QString n = QString::number(controller()["bindings"].size() - 1);
+    auto cellCombo = [&](const char* name, const QVariant& value) {
+      auto* combo = panel->findChild<QComboBox*>(name + n);
+      QVERIFY2(combo, name);
+      combo->setCurrentIndex(combo->findData(value));
+      QVERIFY2(combo->currentIndex() >= 0, name);
+      Q_EMIT combo->activated(combo->currentIndex());
+    };
+    QVERIFY(gesture("binding signal", 1, [&] { cellCombo("cutoutBindingSignal", "portraitChanged"); }));
+    QVERIFY(gesture("binding match", 1, [&] { auto* e = panel->findChild<QLineEdit*>("cutoutBindingMatch" + n); e->setText("portraitId=smile"); Q_EMIT e->editingFinished(); }));
+    QVERIFY(gesture("binding expression", 1, [&] { cellCombo("cutoutBindingExpression", "smile"); }));
+    QVERIFY(gesture("binding without clip", 1, [&] { cellCombo("cutoutBindingClip", QString()); }));
+    const Json binding = controller()["bindings"].back();
+    QVERIFY(same(binding, Json({{"id", binding["id"]}, {"signal", "portraitChanged"}, {"match", {{"portraitId", "smile"}}}, {"expression", "smile"}})));
+    QVERIFY(gesture("binding skin column", 1, [&] { cellCombo("cutoutBindingSkin", "winter"); }));
+    QCOMPARE(qs(controller()["bindings"].back()["skin"].get<std::string>()), QString("winter"));
+    QVERIFY(gesture("preview the expression binding (no edit)", 0, [&] {
+      QCOMPARE(panel->previewSignal("portraitChanged", {{"portraitId", "smile"}}), QStringList{qs(binding["id"].get<std::string>())});
+    }));
+    // Undo walks back through the same edits; the placed element can pick the skin (props.skin).
+    undo();
+    QVERIFY(!controller()["bindings"].back().contains("skin"));
+    redo();
+    // The controller default skin now dresses elements without props.skin (and unknown ids).
+    QCOMPARE(paintProps({}), paintProps({{"skin", "winter"}}));
+    QCOMPARE(paintProps({{"skin", "nope"}}), paintProps({{"skin", "winter"}}));
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+  }
+
   void paintElementDrawsPixels() {
     QImage img(300, 450, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);

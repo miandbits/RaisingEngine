@@ -1,5 +1,6 @@
 #include "rig-canvas.hpp"
 #include <QKeyEvent>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -20,6 +21,7 @@ RigCanvas::RigCanvas(QWidget* parent) : QWidget(parent) {
   setMouseTracking(false);
   setFocusPolicy(Qt::StrongFocus);
   setAttribute(Qt::WA_OpaquePaintEvent);
+  setAcceptDrops(true);  // PNG/asset drops onto a part (skin images)
 }
 
 void RigCanvas::setScene(std::shared_ptr<const cutout::Rig> rig, const cutout::Pose& pose) {
@@ -126,10 +128,10 @@ QTransform RigCanvas::viewTransform() const {
 QPointF RigCanvas::widgetToRig(const QPointF& p) const { return QPointF((p.x() - pan_.x()) / zoom_, (p.y() - pan_.y()) / zoom_); }
 QPointF RigCanvas::rigToWidget(const QPointF& p) const { return QPointF(p.x() * zoom_ + pan_.x(), p.y() * zoom_ + pan_.y()); }
 
-QString RigCanvas::hitTest(const QPointF& w) const {
+QString RigCanvas::hitTest(const QPointF& w, bool bones) const {
   if (!rig_ || pose_.world.size() != rig_->bones.size()) return {};
   // Bone handles win over images so a bone buried under its part stays selectable.
-  for (size_t i = rig_->bones.size(); i-- > 0;) {
+  for (size_t i = bones ? rig_->bones.size() : 0; i-- > 0;) {
     const QPointF o = rigToWidget(QPointF(pose_.world[i].e, pose_.world[i].f));
     if (std::hypot(o.x() - w.x(), o.y() - w.y()) <= 7) return "bone:" + qs(rig_->bones[i].id);
   }
@@ -311,6 +313,15 @@ void RigCanvas::wheelEvent(QWheelEvent* e) {
   update();
 }
 void RigCanvas::resizeEvent(QResizeEvent*) { if (autoFit_) fitToCanvas(); }
+static bool imageDrop(const QMimeData* m) { return m && (m->hasUrls() || m->hasText()); }
+void RigCanvas::dragEnterEvent(QDragEnterEvent* e) { if (onDropImage && imageDrop(e->mimeData())) e->acceptProposedAction(); }
+void RigCanvas::dragMoveEvent(QDragMoveEvent* e) { if (onDropImage && imageDrop(e->mimeData())) e->acceptProposedAction(); }
+void RigCanvas::dropEvent(QDropEvent* e) {
+  if (!onDropImage || !imageDrop(e->mimeData())) return;
+  e->acceptProposedAction();
+  // The part under the cursor (bone handles ignored: an image always lands on a part).
+  onDropImage(e->mimeData(), hitTest(e->position(), false));
+}
 void RigCanvas::keyPressEvent(QKeyEvent* e) {
   const int tools[] = {Qt::Key_V, Qt::Key_R, Qt::Key_S, Qt::Key_P};
   for (int i = 0; i < 4; i++) if (e->key() == tools[i] && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) { if (onTool) onTool(i); return; }
