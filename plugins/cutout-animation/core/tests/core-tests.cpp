@@ -284,6 +284,32 @@ int main() {
     check(inst.describe()["tracks"].size() == 2, "dialogueEnded stops talk track");
   });
 
+  test("generic extension protocol: init, mount, frame, saveAll", [] {
+    Host host;
+    const Json docs = Json::array({{{"type", "rig"}, {"id", "hero"}, {"data", rigData()}}, {{"type", "controller"}, {"id", "hero-main"}, {"data", controllerData()}}});
+    check(host.handle({{"op", "init"}, {"documents", docs}})["diagnostics"].empty(), "init loads rig and controller");
+    // Element 100x150 is half the 200x300 canvas: scale 0.5, rig origin (100,280) -> (50,140).
+    const Json element = {{"type", "character"}, {"ref", "hero-main"}, {"width", 100}, {"height", 150}};
+    check(host.handle({{"op", "mount"}, {"instance", "title/hero"}, {"element", element}}).value("ok", false), "mount");
+    const auto items = host.handle({{"op", "frame"}, {"instance", "title/hero"}})["items"];
+    // torso pivot point (40,120) of image sits at body bone (instance 0,-100) => element (50, 140-50)
+    const auto m = items[0]["matrix"];
+    const double x = m[0].get<double>() * 40 + m[2].get<double>() * 120 + m[4].get<double>();
+    const double y = m[1].get<double>() * 40 + m[3].get<double>() * 120 + m[5].get<double>();
+    check(near(x, 50) && near(y, 90), "element-local placement with contain fit");
+    host.handle({{"op", "observe"}, {"before", Json::object()}, {"after", Json::object()}, {"command", {{"type", "executeAction"}, {"actionId", "study"}}}});
+    host.handle({{"op", "update"}, {"dtMs", 120}});
+    const Json saved = host.handle({{"op", "saveAll"}})["state"];
+    check(saved["instances"]["title/hero"]["state"]["tracks"][0]["clip"] == "joy", "observe routed action success to binding");
+    Host other;
+    other.handle({{"op", "init"}, {"documents", docs}});
+    other.handle({{"op", "mount"}, {"instance", "title/hero"}, {"element", element}});
+    const auto restored = other.handle({{"op", "restoreAll"}, {"state", saved}});
+    check(restored["skipped"].empty(), "restore into same mount");
+    check(other.handle({{"op", "describe"}, {"instance", "title/hero"}})["state"]["tracks"][0]["clip"] == "joy", "restored clip");
+    check(!other.request(Json({{"op", "mount"}, {"instance", "x"}, {"element", {{"type", "character"}, {"ref", "missing"}, {"width", 10}, {"height", 10}}}}).dump()).value("ok", true), "unknown controller rejected");
+  });
+
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;
 }

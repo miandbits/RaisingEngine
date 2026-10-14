@@ -6,9 +6,6 @@
  */
 #ifndef CUTOUT_API_H
 #define CUTOUT_API_H
-#ifdef __cplusplus
-extern "C" {
-#endif
 #if defined(_WIN32) && defined(CUTOUT_BUILD_DLL)
 #define CUTOUT_EXPORT __declspec(dllexport)
 #elif defined(__EMSCRIPTEN__)
@@ -17,9 +14,14 @@ extern "C" {
 #else
 #define CUTOUT_EXPORT
 #endif
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define CUTOUT_API_VERSION 1
-CUTOUT_EXPORT int cutout_api_version(void);
-CUTOUT_EXPORT const char* cutout_request(const char* request_json);
+/* Generic RaisingEngine runtime-extension ABI (extension api 1): every runtime
+ * plugin exports these two symbols; the player host knows nothing else. */
+CUTOUT_EXPORT int raising_extension_api_version(void);
+CUTOUT_EXPORT const char* raising_extension_request(const char* request_json);
 #ifdef __cplusplus
 }
 #endif

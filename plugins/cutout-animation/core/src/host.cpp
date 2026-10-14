@@ -1,5 +1,6 @@
 #include "cutout/host.hpp"
 #include "cutout/signals.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace cutout {
@@ -34,6 +35,19 @@ Json poseJson(const Rig& rig, const Pose& pose) {
   for (size_t i = 0; i < rig.slots.size(); i++)
     slots[rig.slots[i].id] = {{"attachment", pose.attachments[i] ? Json(*pose.attachments[i]) : Json(nullptr)}, {"alpha", pose.alpha[i]}};
   return {{"bones", bones}, {"slots", slots}};
+}
+
+Affine Host::placement(const std::string& id, const Rig& rig) const {
+  auto it = mounts_.find(id);
+  if (it == mounts_.end()) return {};
+  const Mount& m = it->second;
+  // Fit the authoring canvas into the element box ("contain"), centered; rig origin follows the canvas.
+  const double rw = rig.width > 0 ? rig.width : m.width, rh = rig.height > 0 ? rig.height : m.height;
+  const double s = (rw > 0 && rh > 0 ? std::min(m.width / rw, m.height / rh) : 1) * m.scale;
+  const double tx = (m.width - rw * s) / 2, ty = (m.height - rh * s) / 2;
+  Affine a = Affine::compose(tx, ty, 0, s, s) * Affine::compose(rig.originX, rig.originY, 0, 1, 1);
+  if (m.flipX) a = Affine::compose(m.width, 0, 0, -1, 1) * a;
+  return a;
 }
 
 Instance* Host::instance(const std::string& id) {
@@ -92,8 +106,66 @@ Json Host::handle(const Json& r) {
     instances_[str(r, "instance")] = std::make_unique<Instance>(rig->second, controller);
     return {{"ok", true}};
   }
-  if (op == "destroy") { instances_.erase(str(r, "instance")); return {{"ok", true}}; }
-  if (op == "reset") { instances_.clear(); rigs_.clear(); return {{"ok", true}}; }
+  if (op == "destroy" || op == "unmount") { instances_.erase(str(r, "instance")); mounts_.erase(str(r, "instance")); return {{"ok", true}}; }
+  if (op == "reset") { instances_.clear(); rigs_.clear(); controllers_.clear(); mounts_.clear(); return {{"ok", true}}; }
+  // ---- Generic runtime-extension protocol (host knows only these ops) ----
+  if (op == "init") {
+    instances_.clear(); rigs_.clear(); controllers_.clear(); mounts_.clear();
+    Json diagnostics = Json::array();
+    const Json docs = r.value("documents", Json::array());
+    for (const auto& d : docs) {
+      const std::string type = d.value("type", std::string()), id = d.value("id", std::string());
+      if (type == "rig") {
+        try { rigs_[id] = std::make_shared<const Rig>(parseRig(id, d.at("data"))); }
+        catch (const std::exception& e) { diagnostics.push_back({{"document", id}, {"message", e.what()}}); }
+      }
+    }
+    for (const auto& d : docs) if (d.value("type", std::string()) == "controller") controllers_[d.value("id", std::string())] = d.at("data");
+    return {{"ok", true}, {"api", 1}, {"diagnostics", diagnostics}};
+  }
+  if (op == "mount") {
+    const std::string id = str(r, "instance");
+    const Json element = r.value("element", Json::object());
+    Mount m; m.ref = element.value("ref", std::string());
+    m.width = element.value("width", 0.0); m.height = element.value("height", 0.0);
+    const Json props = element.value("props", Json::object());
+    m.scale = props.value("scale", 1.0); m.flipX = props.value("flipX", false);
+    if (element.value("type", std::string()) != "character") throw std::runtime_error("unknown element type");
+    auto c = controllers_.find(m.ref);
+    if (c == controllers_.end()) throw std::runtime_error("unknown controller: " + m.ref);
+    auto rig = rigs_.find(c->second.value("rig", std::string()));
+    if (rig == rigs_.end()) throw std::runtime_error("controller rig not loaded: " + c->second.value("rig", std::string()));
+    if (instances_.size() >= MAX_INSTANCES && !instances_.count(id)) throw std::runtime_error("too many instances");
+    const auto issues = validateController(c->second, rig->second.get());
+    for (const auto& d : issues) if (d.severity == "error") throw std::runtime_error(d.code + " " + d.pointer + ": " + d.message);
+    // Re-mounting the same element (screen rebuild) keeps its playback state.
+    if (!instances_.count(id) || mounts_[id].ref != m.ref) instances_[id] = std::make_unique<Instance>(rig->second, parseController(m.ref, c->second));
+    mounts_[id] = m;
+    return {{"ok", true}};
+  }
+  if (op == "saveAll") {
+    Json state = Json::object();
+    for (const auto& [id, inst] : instances_) state[id] = {{"ref", mounts_.count(id) ? mounts_.at(id).ref : ""}, {"state", inst->saveState()}};
+    return {{"ok", true}, {"state", {{"version", 1}, {"instances", state}}}};
+  }
+  if (op == "restoreAll") {
+    const Json state = r.value("state", Json::object());
+    if (state.value("version", 0) != 1) throw std::runtime_error("unknown extension state version");
+    Json skipped = Json::array();
+    const Json saved = state.value("instances", Json::object());
+    for (auto it = saved.begin(); it != saved.end(); ++it) {
+      auto* inst = instance(it.key());
+      // Only restore into an instance mounted with the same controller; anything else is stale.
+      if (!inst || !mounts_.count(it.key()) || mounts_.at(it.key()).ref != it.value().value("ref", std::string())) { skipped.push_back(it.key()); continue; }
+      inst->restoreState(it.value().at("state"));
+    }
+    return {{"ok", true}, {"skipped", skipped}};
+  }
+  if (op == "describeAll") {
+    Json out = Json::object();
+    for (const auto& [id, inst] : instances_) out[id] = inst->describe();
+    return {{"ok", true}, {"instances", out}};
+  }
   if (op == "signal") {
     std::map<std::string, std::string> params;
     if (r.contains("params") && r.at("params").is_object())
@@ -138,8 +210,11 @@ Json Host::handle(const Json& r) {
     return {{"ok", true}, {"notifications", notes}};
   }
   if (op == "frame") {
+    auto& inst = need("instance");
+    // Mounted instances get element-local pixels; raw instances stay in rig-origin space.
+    const Affine place = placement(str(r, "instance"), inst.rig());
     Json items = Json::array();
-    for (const auto& item : need("instance").drawList()) items.push_back(drawItemJson(item));
+    for (auto item : inst.drawList()) { item.matrix = place * item.matrix; items.push_back(drawItemJson(item)); }
     return {{"ok", true}, {"items", items}};
   }
   if (op == "save") return {{"ok", true}, {"state", need("instance").saveState()}};

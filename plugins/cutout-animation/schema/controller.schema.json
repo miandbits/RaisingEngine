@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising.local/plugins/cutout-animation/controller.schema.json",
+  "title": "Cutout controller data (schemaVersion 1)",
+  "description": "Envelope `data` for documents of type `controller`: maps game signals to clips for one rig.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "rig", "defaultClip", "layers", "bindings"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "rig": { "$ref": "#/$defs/id" },
+    "characterId": { "$ref": "#/$defs/id", "description": "Game character this controller represents; signals naming it get param self=true." },
+    "defaultClip": { "$ref": "#/$defs/id" },
+    "layers": {
+      "description": "Always-on loops on tracks 1..15 (e.g. blink).",
+      "type": "array", "maxItems": 15,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["track", "clip"],
+        "properties": { "track": { "type": "integer", "minimum": 1, "maximum": 15 }, "clip": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "bindings": {
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "signal", "clip"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "signal": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$", "maxLength": 64 },
+          "match": { "type": "object", "maxProperties": 8, "additionalProperties": { "type": "string", "maxLength": 128 } },
+          "clip": { "$ref": "#/$defs/id" },
+          "track": { "type": "integer", "minimum": 0, "maximum": 15 },
+          "loop": { "type": "boolean" },
+          "speed": { "type": "number", "exclusiveMinimum": 0, "maximum": 10 },
+          "then": { "enum": ["default", "hold", "stop"] },
+          "stopOn": { "type": "array", "maxItems": 8, "items": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$" } }
+        }
+      }
+    }
+  },
+  "$defs": { "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 64 } }
+}

@@ -12,8 +12,12 @@ class Host {
   Instance* instance(const std::string& id);
 
  private:
+  struct Mount { double width = 0, height = 0, scale = 1; bool flipX = false; std::string ref; };
   std::map<std::string, std::shared_ptr<const Rig>> rigs_;
+  std::map<std::string, Json> controllers_;
   std::map<std::string, std::unique_ptr<Instance>> instances_;
+  std::map<std::string, Mount> mounts_;
+  Affine placement(const std::string& instance, const Rig& rig) const;
 };
 Json drawItemJson(const DrawItem& item);
 Json poseJson(const Rig& rig, const Pose& pose);

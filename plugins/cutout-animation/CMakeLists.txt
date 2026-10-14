@@ -18,7 +18,7 @@ if(EMSCRIPTEN)
   target_link_libraries(cutout-runtime PRIVATE cutout_core)
   set_target_properties(cutout-runtime PROPERTIES SUFFIX ".mjs")
   target_link_options(cutout-runtime PRIVATE -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,node -sALLOW_MEMORY_GROWTH=1
-    -sEXPORTED_FUNCTIONS=_cutout_request,_cutout_api_version -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORT_NAME=createCutoutRuntime)
+    -sEXPORTED_FUNCTIONS=_raising_extension_request,_raising_extension_api_version,_malloc,_free -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORT_NAME=createCutoutRuntime)
   return()
 endif()
 
