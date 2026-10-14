@@ -230,6 +230,26 @@ class StudioTests : public QObject {
     for (int i = 0; i < rows.size(); i++) if (rows[i].target == target && rows[i].property == property) return i;
     return -1;
   }
+  void tap(QWidget* w, QPointF at, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+    QMouseEvent press(QEvent::MouseButtonPress, at, w->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, mods);
+    QCoreApplication::sendEvent(w, &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, at, w->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, mods);
+    QCoreApplication::sendEvent(w, &release);
+  }
+  void wheel(QWidget* w, QPointF at, int steps, Qt::KeyboardModifiers mods) {
+    for (int i = 0; i < std::abs(steps); i++) {
+      QWheelEvent e(at, w->mapToGlobal(at), QPoint(), QPoint(0, steps > 0 ? 120 : -120), Qt::NoButton, mods, Qt::NoScrollPhase, false);
+      QCoreApplication::sendEvent(w, &e);
+    }
+  }
+  void undo() { host.request("edit", {{"edit", QJsonObject{{"type", "undo"}}}}, {}); pump(); }
+  void redo() { host.request("edit", {{"edit", QJsonObject{{"type", "redo"}}}}, {}); pump(); }
+  QVector<int> timesOf(const char* clip, const char* target, const char* property) const {
+    QVector<int> out;
+    if (const Json* t = track(clip, target, property)) for (const auto& k : (*t)["keys"]) out << k["timeMs"].get<int>();
+    return out;
+  }
+  static QSet<KeyRef> asSet(const QVector<KeyRef>& keys) { return QSet<KeyRef>(keys.begin(), keys.end()); }
 
  private Q_SLOTS:
   void initTestCase() {
@@ -450,7 +470,8 @@ class StudioTests : public QObject {
     panel->selectClip("joy");
     panel->selectItem("bone:head");
     pump();
-    QVERIFY(graph->isVisible() && graph->isEnabled() && graph->width() > 300 && graph->height() > 120);
+    QVERIFY2(graph->isVisible() && graph->isEnabled() && graph->width() > 300 && graph->height() > 120,
+             qPrintable(QString("graph %1x%2 visible %3 enabled %4").arg(graph->width()).arg(graph->height()).arg(graph->isVisible()).arg(graph->isEnabled())));
     // View switch: graph only, then both stacked again (the default).
     click("cutoutViewGraph");
     QVERIFY(graph->isVisible() && !panel->dopesheet()->isVisible());
@@ -556,6 +577,244 @@ class StudioTests : public QObject {
     sheet->selectKey(-1, -1);
     QVERIFY(gesture("preset without keys (refused)", 0, [&] { click("cutoutPresetBack"); }));
     panel->selectItem("bone:head");
+  }
+
+  void dopesheetZoomSelectionAndClipboard() {
+    Dopesheet* sheet = panel->dopesheet();
+    GraphEditor* graph = panel->graph();
+    TimeView* view = panel->timeView();
+    QVERIFY(sheet->timeView() == view && graph->timeView() == view);
+    auto* rowsScroll = find<QScrollArea>("cutoutDopesheetScroll")->verticalScrollBar();
+    rowsScroll->setValue(0);
+    const KeyRef r1580{"bone:head", "rotation", 1580}, r1600{"bone:head", "rotation", 1600}, x1580{"bone:head", "x", 1580};
+    // A long clip with two keys 20 ms apart: the case that used to draw both on one pixel.
+    answers = {"timing"};
+    QVERIFY(gesture("new clip timing", 1, [&] { click("cutoutNewClip"); }));
+    QVERIFY(gesture("timing 8000 ms", 1, [&] { auto* s = find<QSpinBox>("cutoutClipDuration"); s->setValue(8000); Q_EMIT s->editingFinished(); }));
+    panel->selectItem("bone:head");
+    panel->setAutoKey(true);
+    for (const auto& [t, v] : {std::pair{0, 10.0}, std::pair{1580, 20.0}, std::pair{1600, 30.0}, std::pair{6000, 5.0}}) {
+      panel->setPlayhead(t);
+      QVERIFY(gesture("auto-key rotation", 1, [&] { setSpin("cutoutPropRotation", v); }));
+    }
+    for (int t : {1580, 6000}) { panel->setPlayhead(t); QVERIFY(gesture("auto-key x", 1, [&] { setSpin("cutoutPropX", 3 + t / 1000.0); })); }
+    panel->setAutoKey(false);
+    const int rot = rowOf("bone:head", "rotation"), xr = rowOf("bone:head", "x");
+    QVERIFY(rot >= 0 && xr >= 0);
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1580, 1600, 6000}));
+
+    // Fitted to 8000 ms the two keys are ~2 px apart: one cluster marker, clicks cycle through it.
+    click("cutoutTimeFit");
+    QVERIFY(view->fitted() && view->pxPerMs() * 20 < Dopesheet::CLUSTER_PX);
+    bool clustered = false;
+    for (const auto& g : sheet->clusters(rot)) clustered |= g == QVector<int>{1, 2};
+    QVERIFY(clustered);
+    const QPointF cluster(sheet->timeToX(1590), sheet->rowCenterY(rot));
+    QVERIFY(gesture("cluster click selects the first key", 0, [&] { tap(sheet, cluster); }));
+    QCOMPARE(view->selection(), QVector<KeyRef>{r1580});
+    QVERIFY(gesture("second click cycles to the next key", 0, [&] { tap(sheet, cluster); }));
+    QCOMPARE(view->selection(), QVector<KeyRef>{r1600});
+    QCOMPARE(graph->selectedKeys(), QVector<KeyRef>{r1600});  // one selection for both views
+    // Ctrl+wheel zooms around the cursor until the keys separate; the time under it stays put.
+    const double underCursor = view->xToTime(cluster.x());
+    QVERIFY(gesture("ctrl+wheel zoom", 0, [&] { wheel(sheet, cluster, 12, Qt::ControlModifier); }));
+    QVERIFY(!view->fitted() && view->pxPerMs() * 20 >= 20);
+    QVERIFY(std::fabs(view->xToTime(cluster.x()) - underCursor) < 1e-6);
+    for (const auto& g : sheet->clusters(rot)) QCOMPARE(g.size(), 1);
+    QVERIFY(gesture("click 1580 alone", 0, [&] { tap(sheet, QPointF(sheet->timeToX(1580), sheet->rowCenterY(rot))); }));
+    QCOMPARE(view->selection(), QVector<KeyRef>{r1580});
+    QVERIFY(gesture("click 1600 alone", 0, [&] { tap(sheet, QPointF(sheet->timeToX(1600), sheet->rowCenterY(rot))); }));
+    QCOMPARE(view->selection(), QVector<KeyRef>{r1600});
+    // Pan: Shift+wheel and the horizontal scrollbar drive the same view (graph follows).
+    const double scroll0 = view->scrollMs();
+    QVERIFY(gesture("shift+wheel pans", 0, [&] { wheel(sheet, cluster, -2, Qt::ShiftModifier); }));
+    QVERIFY(view->scrollMs() > scroll0);
+    auto* bar = find<QScrollBar>("cutoutTimeScroll");
+    QVERIFY(bar && bar->maximum() > 0 && bar->value() == int(std::lround(view->scrollMs() * 10)));
+    view->zoomAround(1600, 1.0 / view->pxPerMs());  // 1 px = 1 ms for exact drags below
+    bar->setValue(13000);
+    QVERIFY(std::fabs(view->scrollMs() - 1300) < 0.2 && std::fabs(view->pxPerMs() - 1) < 1e-9);
+    QCOMPARE(graph->timeToX(1700), sheet->timeToX(1700));  // both views share the mapping
+
+    // Precise playhead: numeric field, steps, ruler snapping (10 ms, Shift 1 ms), arrow keys.
+    auto* field = find<QSpinBox>("cutoutTimeField");
+    QVERIFY(gesture("time field", 0, [&] { field->setValue(1587); Q_EMIT field->editingFinished(); }));
+    QCOMPARE(panel->playhead(), 1587);
+    QVERIFY(gesture("step forward", 0, [&] { click("cutoutStepForward"); }));
+    QCOMPARE(panel->playhead(), 1597);
+    find<QSpinBox>("cutoutStepSize")->setValue(1);
+    QVERIFY(gesture("step back 1 ms", 0, [&] { click("cutoutStepBack"); }));
+    QCOMPARE(panel->playhead(), 1596);
+    QCOMPARE(field->value(), 1596);
+    find<QSpinBox>("cutoutStepSize")->setValue(10);
+    QVERIFY(gesture("ruler click snaps to 10 ms", 0, [&] { tap(sheet, QPointF(sheet->timeToX(1643), 10)); }));
+    QCOMPARE(panel->playhead(), 1640);
+    QVERIFY(gesture("shift ruler click = 1 ms", 0, [&] { tap(sheet, QPointF(sheet->timeToX(1643), 10), Qt::ShiftModifier); }));
+    QCOMPARE(panel->playhead(), 1643);
+    QTest::keyClick(sheet, Qt::Key_Right);
+    QCOMPARE(panel->playhead(), 1653);
+
+    // Selection: row header, Alt+click column, Ctrl+A, rubber band.
+    QVERIFY(gesture("row header selects the row", 0, [&] { tap(sheet, QPointF(40, sheet->rowCenterY(rot))); }));
+    QCOMPARE(view->selection().size(), 4);
+    QVERIFY(gesture("alt+click selects the column", 0, [&] { tap(sheet, QPointF(sheet->timeToX(1580), sheet->rowCenterY(rot)), Qt::AltModifier); }));
+    QCOMPARE(asSet(view->selection()), (QSet<KeyRef>{r1580, x1580}));
+    QTest::keyClick(sheet, Qt::Key_A, Qt::ControlModifier);
+    QCOMPARE(view->selection().size(), 6);
+    QVERIFY(gesture("ctrl+click toggles", 0, [&] { tap(sheet, QPointF(sheet->timeToX(1600), sheet->rowCenterY(rot)), Qt::ControlModifier); }));
+    QVERIFY(view->selection().size() == 5 && !view->isSelected(r1600));
+    const int top = std::min(rot, xr), bottom = std::max(rot, xr);
+    QVERIFY(gesture("box select", 0, [&] {
+      drag(sheet, QPointF(sheet->timeToX(1500), sheet->rowCenterY(top) - 8), QPointF(sheet->timeToX(1700), sheet->rowCenterY(bottom) + 8));
+    }));
+    QCOMPARE(asSet(view->selection()), (QSet<KeyRef>{r1580, r1600, x1580}));
+    QCOMPARE(asSet(graph->selectedKeys()), asSet(view->selection()));
+
+    // Dragging one selected key moves the whole selection: ONE edit, spacing kept.
+    QVERIFY(gesture("drag selection +100 ms = one edit", 1, [&] {
+      drag(sheet, QPointF(sheet->timeToX(1600), sheet->rowCenterY(rot)), QPointF(sheet->timeToX(1700), sheet->rowCenterY(rot)));
+    }));
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1680, 1700, 6000}));
+    QCOMPARE(timesOf("timing", "bone:head", "x"), (QVector<int>{1680, 6000}));
+    const KeyRef r1680{"bone:head", "rotation", 1680}, r1700{"bone:head", "rotation", 1700}, x1680{"bone:head", "x", 1680};
+    QCOMPARE(asSet(view->selection()), (QSet<KeyRef>{r1680, r1700, x1680}));  // selection follows the keys
+    undo();
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1580, 1600, 6000}));
+    redo();
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1680, 1700, 6000}));
+    // Offset field: collisions and the clip end refuse the whole move; otherwise one edit.
+    view->setSelection({r1680, r1700, x1680});
+    find<QSpinBox>("cutoutKeyOffset")->setValue(4300);
+    QVERIFY(gesture("offset onto an existing key (refused)", 0, [&] { click("cutoutKeyOffsetApply"); }));
+    QVERIFY(panel->status().contains("이미 키"));
+    find<QSpinBox>("cutoutKeyOffset")->setValue(7000);
+    QVERIFY(gesture("offset past the end (refused)", 0, [&] { click("cutoutKeyOffsetApply"); }));
+    QVERIFY(panel->status().contains("범위"));
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1680, 1700, 6000}));
+    find<QSpinBox>("cutoutKeyOffset")->setValue(20);
+    QVERIFY(gesture("offset +20 ms", 1, [&] { click("cutoutKeyOffsetApply"); }));
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1700, 1720, 6000}));
+    const KeyRef r1720{"bone:head", "rotation", 1720}, x1700{"bone:head", "x", 1700};
+
+    // Timing scale: eased keys keep their curves (normalized handles) when the spacing changes.
+    QVERIFY(gesture("ease the selection", 1, [&] { click("cutoutPresetEaseInOut"); }));
+    const auto handle = sheet->scaleHandle(true);
+    QVERIFY(handle && std::fabs(handle->x() - sheet->timeToX(1720)) <= 1);
+    QVERIFY(gesture("scale handle x2 = one edit", 1, [&] { drag(sheet, *handle, QPointF(sheet->timeToX(1740), handle->y())); }));
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1700, 1740, 6000}));
+    QCOMPARE(timesOf("timing", "bone:head", "x"), (QVector<int>{1700, 6000}));
+    QVERIFY(keyOf("timing", "bone:head", "rotation", 1700)["curve"] == Json::array({0.42, 0, 0.58, 1}));
+    QVERIFY(view->isSelected({"bone:head", "rotation", 1740}));
+    find<QSpinBox>("cutoutKeyScale")->setValue(50);
+    QVERIFY(gesture("scale field 50%", 1, [&] { click("cutoutKeyScaleApply"); }));
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1700, 1720, 6000}));
+    undo();
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1700, 1740, 6000}));
+    redo();
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1700, 1720, 6000}));
+    // Delete removes the whole selection in one edit.
+    view->setSelection({r1700, r1720, x1700});
+    QVERIFY(gesture("Delete selection", 1, [&] { QTest::keyClick(sheet, Qt::Key_Delete); }));
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 6000}));
+    QCOMPARE(timesOf("timing", "bone:head", "x"), (QVector<int>{6000}));
+    undo();
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1700, 1720, 6000}));
+
+    // Copy in one clip, paste at the playhead of another (same target), then onto another bone.
+    view->setSelection({r1700, r1720});
+    QVERIFY(gesture("Ctrl+C (no edit)", 0, [&] { QTest::keyClick(sheet, Qt::Key_C, Qt::ControlModifier); }));
+    QCOMPARE(panel->clipboardKeys(), 2);
+    const Json v1700 = keyOf("timing", "bone:head", "rotation", 1700)["value"], v1720 = keyOf("timing", "bone:head", "rotation", 1720)["value"];
+    panel->selectClip("joy");
+    QVERIFY(view->selection().isEmpty() && view->fitted());  // a clip switch refits and clears the selection
+    panel->setPlayhead(100);
+    QVERIFY(gesture("Ctrl+V into joy = one edit", 1, [&] { QTest::keyClick(sheet, Qt::Key_V, Qt::ControlModifier); }));
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 100)["value"] == v1700 && keyOf("joy", "bone:head", "rotation", 120)["value"] == v1720);
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 100)["curve"] == Json::array({0.42, 0, 0.58, 1}));
+    QCOMPARE(asSet(view->selection()), (QSet<KeyRef>{{"bone:head", "rotation", 100}, {"bone:head", "rotation", 120}}));
+    undo();
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 100).is_null());
+    redo();
+    QVERIFY(!keyOf("joy", "bone:head", "rotation", 120).is_null());
+    panel->selectItem("bone:arm");
+    panel->setPlayhead(300);
+    QVERIFY(gesture("paste a row onto the selected bone", 1, [&] { click("cutoutPasteKeys"); }));
+    QVERIFY(panel->status().contains("arm"));
+    QVERIFY(keyOf("joy", "bone:arm", "rotation", 300)["value"] == v1700 && !keyOf("joy", "bone:arm", "rotation", 320).is_null());
+    panel->setPlayhead(590);
+    QVERIFY(gesture("paste past the clip end (refused)", 0, [&] { click("cutoutPasteKeys"); }));
+    QVERIFY(panel->status().contains("범위"));
+    // Ctrl+D duplicates the selection (the pasted arm keys) at the playhead; clipboard untouched.
+    panel->setPlayhead(400);
+    QVERIFY(gesture("Ctrl+D duplicates at the playhead", 1, [&] { QTest::keyClick(sheet, Qt::Key_D, Qt::ControlModifier); }));
+    QVERIFY(!keyOf("joy", "bone:arm", "rotation", 400).is_null() && !keyOf("joy", "bone:arm", "rotation", 420).is_null());
+    QCOMPARE(panel->clipboardKeys(), 2);
+
+    // Pose copy/paste: head + its child arm at joy 600 ms become keys at timing 4000 ms.
+    panel->selectItem("bone:head");
+    panel->setPlayhead(600);
+    QVERIFY(gesture("copy pose (no edit)", 0, [&] { click("cutoutCopyPose"); }));
+    QVERIFY(panel->status().contains("본 2개"));
+    const auto parsed = cutout::parseRig("hero", rig());
+    const auto pose = cutout::samplePose(parsed, parsed.clipIndex("joy"), 600);
+    panel->selectClip("timing");
+    panel->setPlayhead(4000);
+    QVERIFY(gesture("paste pose = one edit", 1, [&] { click("cutoutPastePose"); }));
+    QVERIFY(std::fabs(keyOf("timing", "bone:head", "rotation", 4000)["value"].get<double>() - pose.bones[size_t(parsed.boneIndex("head"))].rotation) < 1e-6);
+    QVERIFY(std::fabs(keyOf("timing", "bone:arm", "rotation", 4000)["value"].get<double>() - pose.bones[size_t(parsed.boneIndex("arm"))].rotation) < 1e-6);
+    undo();
+    QVERIFY(keyOf("timing", "bone:arm", "rotation", 4000).is_null());
+    redo();
+    QVERIFY(!keyOf("timing", "bone:arm", "rotation", 4000).is_null());
+
+    // Graph: dragging one of two selected keys sideways moves both (one edit).
+    view->zoomAround(1700, 1.0 / view->pxPerMs());
+    view->setScroll(1300);
+    view->setSelection({r1700, r1720});
+    const int ch = graph->channelIndex("bone:head", "rotation");
+    QVERIFY(ch >= 0);
+    int k1700 = -1;
+    for (int k = 0; k < graph->channels()[ch].keys.size(); k++) if (graph->channels()[ch].keys[k].timeMs == 1700) k1700 = k;
+    const QPointF kp = graph->keyPoint(ch, k1700);
+    QVERIFY(gesture("graph group drag = one edit", 1, [&] { drag(graph, kp, kp + QPointF(50 * view->pxPerMs(), 0)); }));
+    QCOMPARE(timesOf("timing", "bone:head", "rotation"), (QVector<int>{0, 1750, 1770, 4000, 6000}));
+
+    // Preview loop range: editor-only (no edit), markers drag on the ruler, playback loops inside, per clip.
+    click("cutoutTimeFit");
+    QVERIFY(gesture("loop range buttons", 0, [&] { panel->setPlayhead(1000); click("cutoutLoopIn"); panel->setPlayhead(2000); click("cutoutLoopOut"); }));
+    QVERIFY(view->loopActive() && view->loopIn() == 1000 && view->loopOut() == 2000);
+    QVERIFY(gesture("drag the out marker", 0, [&] { drag(sheet, QPointF(view->timeToX(2000), 18), QPointF(view->timeToX(2500), 18)); }));
+    QCOMPARE(view->loopOut(), 2500);
+    panel->setPlayhead(3000);
+    click("cutoutPlay");
+    QVERIFY(panel->playhead() >= 1000 && panel->playhead() < 1200);  // starts at the range start
+    panel->setPlayhead(2450);
+    QTest::qWait(150);
+    QVERIFY2(panel->playhead() >= 1000 && panel->playhead() < 2400, qPrintable(QString::number(panel->playhead())));  // wrapped inside the range
+    click("cutoutPlay");
+    panel->selectClip("joy");
+    QVERIFY(!view->loopActive());
+    panel->selectClip("timing");
+    QVERIFY(view->loopActive() && view->loopIn() == 1000 && view->loopOut() == 2500);
+    click("cutoutLoopClear");
+    QVERIFY(!view->loopActive());
+    // The inactive out marker sits at the clip end: a click on the ruler labels there still scrubs.
+    QVERIFY(gesture("ruler click at the clip end", 0, [&] { tap(sheet, QPointF(view->timeToX(8000), 8)); }));
+    QCOMPARE(panel->playhead(), 8000);
+    QVERIFY(rig().dump().find("loopIn") == std::string::npos);  // editor-only: never stored
+
+    panel->selectClip("joy");
+    pump();
+    // The ruler stays at the top of the visible rows: scrolled down, a click there still scrubs.
+    if (rowsScroll->maximum() > 0) {
+      rowsScroll->setValue(rowsScroll->maximum());
+      pump();
+      QVERIFY(sheet->y() < 0);
+      QVERIFY(gesture("sticky ruler click", 0, [&] { tap(sheet, QPointF(sheet->timeToX(250), -sheet->y() + 10)); }));
+      QCOMPARE(panel->playhead(), 250);
+      rowsScroll->setValue(0);
+    }
+    panel->setPlayhead(0);
   }
 
   void mixTable() {

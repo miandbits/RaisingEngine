@@ -52,6 +52,36 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   `step` | `linear` | `bezier` (+ `curve`) | a preset name (or `preset: <name>`);
   `setCurve {…, curve}` sets one key's handles; `setKey` accepts the same interp fields.
   `linear`/`step` remove `curve`. Many keys at once = one `batch` (one undo step).
+* Key selections (plugin 1.1.0 editing ops; the data format is unchanged). A selection is
+  `keys: [{target, property, timeMs}]` inside one `clip` (at most 5000). Every op checks all
+  keys first and changes nothing when any is refused, so a dopesheet gesture is one edit:
+  * `moveKeys {clip, keys, deltaMs, clamp?}`: every key moves by `deltaMs` (spacing kept).
+    Refused when a key would leave `0..durationMs` or land on an unselected key of its track
+    (selected keys may land on each other's old times). `clamp: true` first limits the delta
+    so the group stops at the clip edge.
+  * `scaleKeys {clip, keys, factor, pivotMs?}`: `t' = pivot + round((t - pivot) · factor)`,
+    pivot defaults to the earliest key, `0 < factor ≤ 1000`. Refused when keys of one track
+    would merge, collide with unselected keys or leave the clip.
+  * Re-timing never touches `curve`: handles are normalized to their segment, so x stays in
+    0..1 and each segment keeps its shape at the new timing.
+  * `deleteKeys {clip, keys}` (empty tracks are removed).
+  * `copyKeys {clip, keys}` changes nothing and returns `clipboard: {fromMs, keys: [{target,
+    property, offsetMs, value, interp?, curve?}]}` (offsets from the earliest copied key;
+    numeric entries always carry `interp`, attachment entries never).
+  * `pasteKeys {clip, timeMs, keys, target?}` writes such entries at `timeMs + offsetMs`
+    (any clip). Same-time keys are overwritten (value, and interp/curve when the entry has
+    them). `target` re-targets a clipboard holding a single target (copy a row, paste it onto
+    another bone or part); values are validated on the new target. Entries past the clip end
+    refuse the whole paste.
+  * `copyPose {clip?, timeMs, bones?}` returns `pose: [{bone, x, y, rotation, scaleX, scaleY}]`
+    sampled exactly like the runtime (setup pose without `clip`; all bones without `bones`).
+    `pastePose {clip, timeMs, pose}` keys it; a channel the clip does not animate and whose
+    value equals the setup value is skipped (it already shows that value), and existing keys
+    at that time keep their interpolation.
+  * Re-timing and paste ops report the resulting keys as `keys` in the reply (`extra.keys`).
+* Editor-only state is never stored in documents: time zoom/scroll, the key selection, the
+  clipboards and the preview loop range (in/out markers; editor playback loops inside it,
+  remembered per clip for the session). Runtimes always play whole clips.
 * Compatibility: schemaVersion stays 1 and every 1.0.0 document loads and plays unchanged.
   Documents that use `bezier` need plugin 1.1.0 or newer (1.0.0 rejects the interp value).
 * Rotation interpolates numerically (no shortest-path wrapping): 0→350 turns 350°.

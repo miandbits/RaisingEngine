@@ -1,24 +1,17 @@
-// Dopesheet: one row per track (target/property), keys as diamonds.
-// Key drags commit on release; the panel refuses collisions through the core moveKey op.
+// Dopesheet: one row per track (target/property), keys as diamonds on the shared TimeView
+// (zoom, scroll, playhead and selection are the graph editor's too). Gestures only preview
+// locally; each reports ONE commit on release (move/scale/delete of the whole selection),
+// which the panel turns into one core edit op, so undo/redo and LLM ops stay identical.
 #pragma once
 #include <QWidget>
 #include <functional>
+#include <optional>
 #include "cutout/curve.hpp"
+#include "time-view.hpp"
 
 class QPainter;
 
 namespace cutout_studio {
-/** Time axis shared by the dopesheet and the graph editor, so keys line up in both views. */
-namespace timeline {
-constexpr int LABEL = 170, RULER = 22, RIGHT = 20;
-int timeToX(int width, int durationMs, double ms);
-double xToTime(int width, int durationMs, double x);
-/** 10 ms grid by default keeps keys on readable times; `fine` (Shift) gives single-ms placement. */
-int snap(double ms, bool fine, int durationMs);
-/** Ruler band with adaptive tick spacing so labels never overlap. */
-void paintRuler(QPainter& painter, int width, int durationMs);
-}  // namespace timeline
-
 /** Interpolation choices of the dopesheet menu, graph menu and preset bar (core preset names). */
 struct InterpPreset { const char* id; const char* label; const char* suffix; const char* tip; };
 const QVector<InterpPreset>& interpPresets();
@@ -34,22 +27,49 @@ class Dopesheet : public QWidget {
     QVector<cutout::Curve> curves;  // per key, used when interps[i] == "bezier"
     bool attachment = false;
   };
+  /** Row height, selection strip (extent + scale handles) and the key distance below which keys cluster. */
+  static constexpr int ROW = 20, STRIP = 10, CLUSTER_PX = 7;
+
   explicit Dopesheet(QWidget* parent = nullptr);
+  /** Share zoom/scroll/playhead/selection with other views (the panel's TimeView). */
+  void setTimeView(TimeView* view);
+  TimeView* timeView() const { return view_; }
+  /** Replace rows; selected keys that no longer exist are dropped from the shared selection. */
   void setRows(const QVector<Row>& rows, int durationMs);
-  void setPlayhead(int ms) { playhead_ = ms; update(); }
+  void setPlayhead(int ms) { view_->setPlayhead(ms); }
   const QVector<Row>& rows() const { return rows_; }
-  int selectedRow() const { return selRow_; }
-  int selectedTime() const { return selTime_; }
-  void selectKey(int row, int ms) { selRow_ = row; selTime_ = ms; update(); }
-  /** Widget x of a time (used by automation to drag keys). */
+  /** First selected key's row/time (-1 when nothing is selected). */
+  int selectedRow() const;
+  int selectedTime() const;
+  /** Select exactly one key (row < 0 clears the selection). */
+  void selectKey(int row, int ms);
+  QVector<KeyRef> selectedKeys() const { return view_->selection(); }
+  KeyRef refOf(int row, int ms) const { return {rows_[row].target, rows_[row].property, ms}; }
+  QVector<KeyRef> rowKeys(int row) const;
+  QVector<KeyRef> keysAt(int ms) const;  // column: every key at that time
+  QVector<KeyRef> allKeys() const;
+  int rowOf(const QString& target, const QString& property) const;
+
+  // Geometry (shared with automation/tests).
   int timeToX(double ms) const;
   int rowCenterY(int row) const;
+  /** Key-index groups of a row closer than CLUSTER_PX at the current zoom (size 1 = lone key). */
+  QVector<QVector<int>> clusters(int row) const;
+  /** Center of the selection strip's scale handle (left/right end), nullopt below 2 distinct times. */
+  std::optional<QPointF> scaleHandle(bool right) const;
 
   std::function<void(int ms)> onScrub;
-  std::function<bool(int row, int fromMs, int toMs)> onMoveKey;
-  std::function<bool(int row, int ms)> onDeleteKey;
-  /** interp = "step" | "linear" | a core preset name (easeIn, easeOut, easeInOut, auto, back). */
-  std::function<bool(int row, int ms, const QString& interp)> onInterp;
+  /** Release of a selection drag: every key moves by deltaMs. Return false when refused. */
+  std::function<bool(const QVector<KeyRef>& keys, int deltaMs)> onMoveKeys;
+  /** Release of a scale-handle drag: times become pivot + (t - pivot) * factor. */
+  std::function<bool(const QVector<KeyRef>& keys, int pivotMs, double factor)> onScaleKeys;
+  std::function<bool(const QVector<KeyRef>& keys)> onDeleteKeys;
+  /** Interp/preset (core name) for the selected keys (context menu). */
+  std::function<void(const QString& preset)> onPreset;
+  /** "copy" | "paste" | "duplicate" (Ctrl+C / Ctrl+V / Ctrl+D, menu). */
+  std::function<void(const QString& command)> onCommand;
+  /** Arrow keys: step the playhead by `steps` (Shift = 10 steps). */
+  std::function<void(int steps)> onStep;
   std::function<void(int row)> onRowSelected;
 
  protected:
@@ -57,20 +77,37 @@ class Dopesheet : public QWidget {
   void mousePressEvent(QMouseEvent*) override;
   void mouseMoveEvent(QMouseEvent*) override;
   void mouseReleaseEvent(QMouseEvent*) override;
+  void mouseDoubleClickEvent(QMouseEvent*) override;
+  void wheelEvent(QWheelEvent*) override;
   void keyPressEvent(QKeyEvent*) override;
   void contextMenuEvent(QContextMenuEvent*) override;
+  void resizeEvent(QResizeEvent*) override;
+  void moveEvent(QMoveEvent*) override { update(); }  // the sticky header must repaint on scroll
 
  private:
-  static constexpr int LABEL = timeline::LABEL, RULER = timeline::RULER, ROW = 20;
-  double xToTime(double x) const;
-  int rowAt(int y) const;
-  int keyAt(const QPoint& p, int* row) const;
-  int snap(double ms, bool fine) const;
-  void paintSegments(QPainter& p, const Row& row, int r, int y) const;
+  static constexpr int LABEL = TimeView::LABEL, RULER = TimeView::RULER;
+  enum class Drag { None, Pan, Scrub, LoopIn, LoopOut, Keys, ScaleLeft, ScaleRight, Band };
+  struct Hit { int row = -1; QVector<int> times; };  // a lone key or a cluster
+  TimeView* view_ = nullptr;
   QVector<Row> rows_;
-  int duration_ = 1000, playhead_ = 0, selRow_ = -1, selTime_ = -1;
-  enum class DragMode { None, Scrub, Key } dragMode_ = DragMode::None;
-  int dragRow_ = -1, dragFrom_ = 0, dragTo_ = 0;
-  bool dragMoved_ = false;
+  Drag drag_ = Drag::None;
+  QPointF pressPos_, lastPos_;
+  int pressTime10_ = 0, pressTime1_ = 0, delta_ = 0, pivot_ = 0, edge_ = 0;
+  double factor_ = 1;
+  bool moved_ = false, bandAdd_ = false;
+  std::optional<KeyRef> pendingSingle_;
+  QRectF band_;
+
+  double xToTime(double x) const { return view_->xToTime(x); }
+  /** Ruler + selection strip stay at the top of the visible area when the rows scroll. */
+  int headerTop() const { return std::max(0, -y()); }
+  int rowTop(int row) const { return RULER + STRIP + row * ROW; }
+  int rowAt(int y) const;
+  Hit hitAt(QPointF p) const;
+  KeyRef pickInCluster(const Hit& hit) const;
+  bool selectionExtent(int& lo, int& hi) const;  // over the selected keys' committed times
+  int shownTime(int row, int t) const;           // drag/scale preview of a key time
+  QVector<QVector<int>> groups(const QVector<int>& times) const;
+  void paintSegments(QPainter& p, const Row& row, const QVector<int>& times, int y) const;
 };
 }  // namespace cutout_studio

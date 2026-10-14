@@ -5,8 +5,8 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Test)
 set(CMAKE_AUTOMOC ON)
 
 add_library(cutout_studio_obj OBJECT
-  src/rig-render.cpp src/rig-canvas.cpp src/dopesheet.cpp src/graph-editor.cpp src/cutout-panel.cpp src/cutout-plugin.cpp
-  src/rig-render.hpp src/rig-canvas.hpp src/dopesheet.hpp src/graph-editor.hpp src/cutout-panel.hpp src/cutout-plugin.hpp)
+  src/rig-render.cpp src/rig-canvas.cpp src/time-view.cpp src/dopesheet.cpp src/graph-editor.cpp src/cutout-panel.cpp src/cutout-plugin.cpp
+  src/rig-render.hpp src/rig-canvas.hpp src/time-view.hpp src/dopesheet.hpp src/graph-editor.hpp src/cutout-panel.hpp src/cutout-plugin.hpp)
 target_include_directories(cutout_studio_obj PUBLIC src "${RAISING_ENGINE_ROOT}/native/studio")
 target_link_libraries(cutout_studio_obj PUBLIC Qt6::Widgets cutout_core)
 # Qt keywords (signals/slots/emit) would clash with plain identifiers in shared core headers.

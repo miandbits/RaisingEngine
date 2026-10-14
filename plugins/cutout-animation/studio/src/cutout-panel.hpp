@@ -17,6 +17,7 @@
 #include "plugin-api.hpp"
 #include "rig-canvas.hpp"
 #include "rig-render.hpp"
+#include "time-view.hpp"
 
 class QCheckBox;
 class QComboBox;
@@ -25,6 +26,7 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QScrollBar;
 class QSpinBox;
 class QTabWidget;
 class QTableWidget;
@@ -103,6 +105,27 @@ class CutoutPanel : public QWidget {
   bool moveGraphKey(const QString& target, const QString& property, int fromMs, int toMs, double value);
   /** Graph handle drag: setCurve of the segment starting at `ms`. */
   bool setKeyCurve(const QString& target, const QString& property, int ms, const cutout::Curve& curve);
+  // Key selection gestures (selection shared by dopesheet and graph = timeView()->selection()).
+  /** Move keys by deltaMs (core moveKeys: spacing kept, collisions/range refused) and set
+   *  `values` (original ref -> new value) at the moved times: one edit. */
+  bool moveKeys(const QVector<KeyRef>& keys, int deltaMs, const QHash<KeyRef, double>& values = {});
+  bool scaleKeys(const QVector<KeyRef>& keys, int pivotMs, double factor);
+  bool deleteKeys(const QVector<KeyRef>& keys);
+  bool offsetSelectedKeys(int deltaMs);   // offset field
+  bool scaleSelectedKeys(double factor);  // timing scale field, around the first selected key
+  bool copyKeys();                        // selection -> clipboard (no edit)
+  /** Clipboard at the playhead of the current clip (same-time keys overwritten). A clipboard of
+   *  one target goes onto the selected bone/part when that is another target of the same kind. */
+  bool pasteKeys();
+  bool duplicateKeys();  // selection copied to the playhead (clipboard untouched)
+  /** Pose of the selected bone and its children (all bones when none is selected) at the playhead. */
+  bool copyPose();
+  bool pastePose();      // copied pose as keys at the playhead of the current clip
+  void stepPlayhead(int steps);  // by the step field (10 ms default)
+  /** Editor-only preview loop range of the current clip (never stored in documents). */
+  void setLoopRange(int inMs, int outMs);
+  void clearLoopRange();
+  int clipboardKeys() const;
   bool addMixPair();
   bool removeMixPair();
   bool addLayer();
@@ -125,6 +148,7 @@ class CutoutPanel : public QWidget {
   RigCanvas* canvas() const { return canvas_; }
   Dopesheet* dopesheet() const { return dopesheet_; }
   GraphEditor* graph() const { return graph_; }
+  TimeView* timeView() const { return timeView_; }
   /** Rig data currently shown (pending/drag preview included). */
   const cutout::Json& displayData() const;
   const cutout::Json& committedRig() const;
@@ -157,6 +181,10 @@ class CutoutPanel : public QWidget {
   QSet<QString> hidden_;                     // editor-only eye toggles: never stored
   std::unique_ptr<cutout::Instance> preview_;
   QString previewKey_;
+  TimeView* timeView_ = nullptr;             // zoom/scroll/playhead/loop/selection of dopesheet + graph
+  cutout::Json clipboard_, poseClipboard_;   // editor-only (core copyKeys/copyPose results)
+  QMap<QString, QPair<int, int>> loops_;     // "<rig>/<clip>" -> preview loop range, editor-only
+  QString viewClip_;                         // clip the time view currently shows
   struct SetupDelta { QString bone; cutout::Json delta; };
   std::optional<SetupDelta> lastSetupDelta_;
 
@@ -182,6 +210,9 @@ class CutoutPanel : public QWidget {
   QCheckBox* loopPreview_ = nullptr;
   QComboBox* speedCombo_ = nullptr;
   QLabel* timeLabel_ = nullptr;
+  QSpinBox *timeField_ = nullptr, *stepField_ = nullptr, *offsetField_ = nullptr, *scaleField_ = nullptr;
+  QScrollBar* timeScroll_ = nullptr;
+  QVector<QWidget*> timelineTools_;  // enabled in Animate mode only
   Dopesheet* dopesheet_ = nullptr;
   GraphEditor* graph_ = nullptr;
   QCheckBox* graphNormalize_ = nullptr;
@@ -212,7 +243,14 @@ class CutoutPanel : public QWidget {
   // edit pipeline
   bool submit(const QJsonArray& edits);
   QJsonObject replaceEdit(const Doc& doc, const QJsonObject& data) const;
-  bool runOps(const std::vector<cutout::Json>& ops, bool keyGesture);
+  /** `accepted` runs after the core accepted the ops and before the commit (selection follow-up). */
+  bool runOps(const std::vector<cutout::Json>& ops, bool keyGesture, const std::function<void(const cutout::EditResult&)>& accepted = {});
+  bool refusePending();  // true (and a status) while uncommitted pose changes exist
+  cutout::Json refsJson(const QVector<KeyRef>& keys) const;
+  void selectKeysFrom(const cutout::Json& refs);
+  void keyCommand(const QString& command);
+  void updateTimeUi(int duration);
+  void syncTimeScroll();
   bool commitRig(const cutout::EditResult& result);
   bool commitController(const cutout::Json& data);
   bool busy();

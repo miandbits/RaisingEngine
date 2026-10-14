@@ -1,5 +1,6 @@
 #include "cutout-panel.hpp"
 #include <QtWidgets>
+#include <climits>
 #include <cmath>
 #include <set>
 #include <tuple>
@@ -250,7 +251,7 @@ void CutoutPanel::buildUi() {
   vertical->addWidget(bottomTabs_);
   vertical->setStretchFactor(0, 0);
   vertical->setStretchFactor(1, 3);
-  vertical->setStretchFactor(2, 2);
+  vertical->setStretchFactor(2, 3);  // timeline rows + dopesheet + graph need about as much as the canvas
   root->addWidget(vertical, 1);
   statusLabel_ = new QLabel;
   statusLabel_->setObjectName("cutoutStatus");
@@ -268,6 +269,8 @@ void CutoutPanel::buildUi() {
   shortcut(Qt::Key_P, "cutoutShortcutPivot", [this] { setTool(RigCanvas::Pivot); });
   shortcut(Qt::Key_K, "cutoutShortcutKey", [this] { keySelected(); });
   shortcut(Qt::Key_Space, "cutoutShortcutPlay", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
+  shortcut(Qt::Key_Comma, "cutoutShortcutStepBack", [this] { if (mode_ == Mode::Animate) stepPlayhead(-1); });
+  shortcut(Qt::Key_Period, "cutoutShortcutStepForward", [this] { if (mode_ == Mode::Animate) stepPlayhead(1); });
   refreshModeUi();
 }
 
@@ -545,24 +548,93 @@ QWidget* CutoutPanel::buildAnimateTab() {
   transport->addWidget(speedCombo_);
   transport->addStretch();
   transport->addWidget(timeLabel_);
+  // One time view for both views: zoom, scroll, playhead, loop range and key selection.
+  timeView_ = new TimeView(this);
+  auto tool = [this](QWidget* w, const char* name, const QString& tip) {
+    w->setObjectName(name);
+    w->setToolTip(tip);
+    timelineTools_ << w;
+    return w;
+  };
+  auto toolButton = [&](const QString& text, const char* name, const QString& tip, std::function<void()> fn) {
+    auto* b = new QPushButton(text);
+    tool(b, name, tip);
+    connect(b, &QPushButton::clicked, this, [fn] { fn(); });
+    return b;
+  };
+  auto msField = [&](const char* name, int lo, int hi, int value, const QString& tip) {
+    auto* s = new QSpinBox;
+    s->setRange(lo, hi);
+    s->setValue(value);
+    s->setSuffix(" ms");
+    s->setKeyboardTracking(false);
+    tool(s, name, tip);
+    return s;
+  };
+  // Precise time: numeric playhead, frame steps (, . or arrow keys), zoom, loop range.
+  auto* timeRow = new QHBoxLayout;
+  timeField_ = msField("cutoutTimeField", 0, 600000, 0, "재생 헤드 시간(ms)을 정확히 입력합니다.");
+  connect(timeField_, &QSpinBox::editingFinished, this, [this] { setPlayhead(timeField_->value()); });
+  stepField_ = msField("cutoutStepSize", 1, 10000, 10, "◀ ▶ 버튼·쉼표/마침표·화살표 키가 옮기는 간격입니다.");
+  timeRow->addWidget(new QLabel("시간"));
+  timeRow->addWidget(timeField_);
+  timeRow->addWidget(toolButton("◀", "cutoutStepBack", "이전 간격으로 (쉼표 , 또는 ←)", [this] { stepPlayhead(-1); }));
+  timeRow->addWidget(toolButton("▶", "cutoutStepForward", "다음 간격으로 (마침표 . 또는 →)", [this] { stepPlayhead(1); }));
+  timeRow->addWidget(new QLabel("간격"));
+  timeRow->addWidget(stepField_);
+  timeRow->addSpacing(12);
+  timeRow->addWidget(toolButton("[ 구간 시작", "cutoutLoopIn", "재생 헤드를 미리 보기 반복 구간의 시작으로 (편집기 전용, 저장 안 됨)",
+                                [this] { setLoopRange(playheadMs_, playheadMs_ < timeView_->loopOut() ? timeView_->loopOut() : -1); }));
+  timeRow->addWidget(toolButton("구간 끝 ]", "cutoutLoopOut", "재생 헤드를 미리 보기 반복 구간의 끝으로 (눈금자의 초록 표시를 끌어도 됩니다)",
+                                [this] { setLoopRange(playheadMs_ > timeView_->loopIn() ? timeView_->loopIn() : 0, playheadMs_); }));
+  timeRow->addWidget(toolButton("구간 해제", "cutoutLoopClear", "미리 보기 반복 구간을 클립 전체로 되돌립니다.", [this] { clearLoopRange(); }));
+  timeRow->addStretch();
+  timeRow->addWidget(toolButton("−", "cutoutZoomOut", "시간 축소 (Ctrl+휠)", [this] { timeView_->zoomAround(timeView_->scrollMs() + timeView_->visibleMs() / 2, 0.8); }));
+  timeRow->addWidget(toolButton("+", "cutoutZoomIn", "시간 확대 (Ctrl+휠)", [this] { timeView_->zoomAround(timeView_->scrollMs() + timeView_->visibleMs() / 2, 1.25); }));
+  timeRow->addWidget(toolButton("맞춤", "cutoutTimeFit", "클립 전체가 보이도록 시간 축을 맞춥니다.", [this] { timeView_->fit(); }));
+  // Key tools: clipboard, offset, timing scale, pose copy.
+  auto* keyRow = new QHBoxLayout;
+  keyRow->addWidget(toolButton("복사", "cutoutCopyKeys", "고른 키를 복사합니다 (Ctrl+C).", [this] { copyKeys(); }));
+  keyRow->addWidget(toolButton("붙여넣기", "cutoutPasteKeys", "복사한 키를 재생 헤드 시간에 붙여넣습니다 (Ctrl+V). 다른 클립에도 됩니다.\n한 대상만 복사했다면 지금 고른 본·조각에 붙습니다.", [this] { pasteKeys(); }));
+  keyRow->addWidget(toolButton("복제", "cutoutDuplicateKeys", "고른 키를 재생 헤드 시간에 복제합니다 (Ctrl+D).", [this] { duplicateKeys(); }));
+  keyRow->addSpacing(12);
+  offsetField_ = msField("cutoutKeyOffset", -600000, 600000, 100, "고른 키 전부를 이만큼 옮깁니다(음수 = 앞으로).");
+  keyRow->addWidget(offsetField_);
+  keyRow->addWidget(toolButton("만큼 이동", "cutoutKeyOffsetApply", "고른 키를 간격을 유지한 채 옮깁니다. 다른 키와 겹치거나 클립 밖이면 거부됩니다.", [this] { offsetSelectedKeys(offsetField_->value()); }));
+  scaleField_ = new QSpinBox;
+  scaleField_->setRange(1, 100000);
+  scaleField_->setValue(100);
+  scaleField_->setSuffix(" %");
+  scaleField_->setKeyboardTracking(false);
+  tool(scaleField_, "cutoutKeyScale", "고른 키들의 시간 간격 배율(첫 키 기준). 선택 띠 양 끝 손잡이를 끌어도 됩니다(Alt: 재생 헤드 기준).");
+  keyRow->addWidget(scaleField_);
+  keyRow->addWidget(toolButton("간격 배율", "cutoutKeyScaleApply", "고른 키들의 시간 간격을 배율만큼 늘이거나 줄입니다.", [this] { scaleSelectedKeys(scaleField_->value() / 100.0); }));
+  keyRow->addSpacing(12);
+  auto* copyPoseButton = new QPushButton("포즈 복사");
+  copyPoseButton->setObjectName("cutoutCopyPose");
+  copyPoseButton->setToolTip("고른 본과 그 자식 본(없으면 모든 본)의 현재 자세를 복사합니다.");
+  connect(copyPoseButton, &QPushButton::clicked, this, [this] { copyPose(); });
+  keyRow->addWidget(copyPoseButton);
+  keyRow->addWidget(toolButton("포즈 붙여넣기", "cutoutPastePose", "복사한 자세를 재생 헤드 시간에 키로 넣습니다(다른 클립에도 됩니다).", [this] { pastePose(); }));
+  keyRow->addStretch();
+
   dopesheet_ = new Dopesheet;
+  dopesheet_->setTimeView(timeView_);
   dopesheet_->onScrub = [this](int ms) { setPlayhead(ms); };
-  dopesheet_->onMoveKey = [this](int row, int from, int to) { return moveKey(row, from, to); };
-  dopesheet_->onDeleteKey = [this](int row, int ms) { return deleteKey(row, ms); };
-  dopesheet_->onInterp = [this](int row, int ms, const QString& interp) { return setKeyInterp(row, ms, interp); };
+  dopesheet_->onMoveKeys = [this](const QVector<KeyRef>& keys, int delta) { return moveKeys(keys, delta); };
+  dopesheet_->onScaleKeys = [this](const QVector<KeyRef>& keys, int pivot, double factor) { return scaleKeys(keys, pivot, factor); };
+  dopesheet_->onDeleteKeys = [this](const QVector<KeyRef>& keys) { return deleteKeys(keys); };
+  dopesheet_->onPreset = [this](const QString& preset) { applyPreset(preset); };
+  dopesheet_->onCommand = [this](const QString& command) { keyCommand(command); };
+  dopesheet_->onStep = [this](int steps) { stepPlayhead(steps); };
   dopesheet_->onRowSelected = [this](int row) {
-    if (row < 0 || row >= dopesheet_->rows().size()) return;
-    const Dopesheet::Row r = dopesheet_->rows()[row];
-    selectItem(r.target);
-    // A key clicked in the dopesheet is also the graph's selection (presets, handles).
-    if (dopesheet_->selectedRow() == row && dopesheet_->selectedTime() >= 0 && !r.attachment)
-      graph_->setSelectedKeys({{r.target, r.property, dopesheet_->selectedTime()}});
+    if (row >= 0 && row < dopesheet_->rows().size()) selectItem(dopesheet_->rows()[row].target);
   };
   auto* scroll = new QScrollArea;
   scroll->setObjectName("cutoutDopesheetScroll");
   scroll->setWidgetResizable(true);
   scroll->setWidget(dopesheet_);
-  // Graph editor below the dopesheet: same width and time mapping, so key columns line up.
+  // Graph editor below the dopesheet: same time view, so key columns line up at any zoom.
   auto* graphPanel = new QWidget;
   graphPanel->setObjectName("cutoutGraphPanel");
   auto* graphLayout = new QVBoxLayout(graphPanel);
@@ -573,7 +645,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   for (const auto& preset : interpPresets()) {
     auto* b = new QPushButton(preset.label);
     b->setObjectName(QString("cutoutPreset") + preset.suffix);
-    b->setToolTip(QString(preset.tip) + "\n그래프에서 고른 키(없으면 도프시트에서 고른 키)부터 다음 키까지의 구간에 적용합니다.");
+    b->setToolTip(QString(preset.tip) + "\n고른 키(도프시트·그래프 공통 선택)부터 다음 키까지의 구간에 적용합니다.");
     const QString id = preset.id;
     connect(b, &QPushButton::clicked, this, [this, id] { applyPreset(id); });
     presetRow->addWidget(b);
@@ -585,12 +657,18 @@ QWidget* CutoutPanel::buildAnimateTab() {
   graphNormalize_->setToolTip("값 범위가 다른 채널(회전 각도와 크기 등)을 각자 높이에 맞춰 모양을 비교합니다.");
   presetRow->addWidget(graphNormalize_);
   graph_ = new GraphEditor;
+  graph_->setTimeView(timeView_);
   graph_->setToolTip("키 드래그: 위아래 = 값, 좌우 = 시간(Alt: 둘 다, Shift: 1ms) · 고른 키의 손잡이를 끌어 곡선 조절\n"
-                     "Ctrl+클릭: 여러 키 · Ctrl+A: 모두 · 빈 곳 클릭: 시간 이동 · 오른쪽 클릭: 프리셋 · 범례 클릭: 채널 숨김");
+                     "Ctrl+클릭: 토글 · Shift+클릭: 추가 · 빈 곳 드래그: 상자 선택 · Ctrl+A: 모두 · 빈 곳 클릭: 시간 이동\n"
+                     "Ctrl+휠: 시간 확대 · 휠/가운데 버튼 드래그: 시간 이동 · 오른쪽 클릭: 프리셋 · 범례 클릭: 채널 숨김");
   graph_->onScrub = [this](int ms) { setPlayhead(ms); };
   graph_->onMoveKey = [this](const GraphEditor::KeyRef& k, int to, double value) { return moveGraphKey(k.target, k.property, k.timeMs, to, value); };
+  graph_->onMoveKeys = [this](const QVector<KeyRef>& keys, int delta, const QHash<KeyRef, double>& values) { return moveKeys(keys, delta, values); };
   graph_->onCurve = [this](const GraphEditor::KeyRef& k, const cutout::Curve& curve) { return setKeyCurve(k.target, k.property, k.timeMs, curve); };
   graph_->onPreset = [this](const QString& preset) { applyPreset(preset); };
+  graph_->onDeleteKeys = [this](const QVector<KeyRef>& keys) { return deleteKeys(keys); };
+  graph_->onCommand = [this](const QString& command) { keyCommand(command); };
+  graph_->onStep = [this](int steps) { stepPlayhead(steps); };
   connect(graphNormalize_, &QCheckBox::toggled, graph_, &GraphEditor::setNormalized);
   graphLayout->addLayout(presetRow);
   graphLayout->addWidget(graph_, 1);
@@ -607,18 +685,37 @@ QWidget* CutoutPanel::buildAnimateTab() {
     b->setToolTip("아래 영역에 도프시트, 값 곡선 그래프 또는 둘 다를 보여 줍니다.");
     viewGroup->addButton(b);
     transport->insertWidget(at++, b);
-    connect(b, &QPushButton::clicked, this, [scroll, graphPanel, sheet = sheet, curves = curves] { scroll->setVisible(sheet); graphPanel->setVisible(curves); });
+    connect(b, &QPushButton::clicked, this, [scroll, graphPanel, sheet = sheet, curves = curves] {
+      // Hiding the focused dopesheet makes QScrollArea "ensure visible" it (rows jump): keep the row scroll.
+      const int rowsAt = scroll->verticalScrollBar()->value();
+      scroll->setVisible(sheet);
+      graphPanel->setVisible(curves);
+      scroll->verticalScrollBar()->setValue(rowsAt);
+    });
   }
   auto* timelineSplit = new QSplitter(Qt::Vertical);
   timelineSplit->setObjectName("cutoutTimelineSplitter");
   timelineSplit->addWidget(scroll);
   timelineSplit->addWidget(graphPanel);
   timelineSplit->setChildrenCollapsible(false);
-  timelineSplit->setStretchFactor(0, 1);
-  timelineSplit->setStretchFactor(1, 1);
+  timelineSplit->setStretchFactor(0, 2);
+  timelineSplit->setStretchFactor(1, 3);
+  // Horizontal time scrollbar (units of 0.1 ms so deep zoom still scrolls smoothly).
+  timeScroll_ = new QScrollBar(Qt::Horizontal);
+  timeScroll_->setObjectName("cutoutTimeScroll");
+  connect(timeScroll_, &QScrollBar::valueChanged, this, [this](int v) { timeView_->setScroll(v / 10.0); });
+  connect(timeView_, &TimeView::changed, this, [this] { syncTimeScroll(); });
   timeline->addLayout(transport);
+  timeline->addLayout(timeRow);
+  timeline->addLayout(keyRow);
   timeline->addWidget(timelineSplit, 1);
-  timeline->addWidget(new QLabel("드래그: 키 이동(10ms 단위, Shift 1ms) · Delete: 삭제 · 오른쪽 클릭: 보간 프리셋 · 눈금자 클릭: 시간 이동 · 그래프: 값·곡선 손잡이"));
+  timeline->addWidget(timeScroll_);
+  // The gesture list is the dopesheet tooltip: docks are often short, rows of help text cost key rows.
+  dopesheet_->setToolTip("클릭: 키 선택 · 겹친 키 묶음(숫자 표시)은 누를 때마다 다음 키, 더블클릭: 확대\n"
+                         "Ctrl+클릭: 토글 · Shift+클릭: 추가 · 빈 곳 드래그: 상자 선택 · 행 이름 클릭: 행 전체 · Alt+클릭: 같은 시간 전체 · Ctrl+A: 모두\n"
+                         "드래그: 고른 키 함께 이동(10ms, Shift 1ms) · 선택 띠 양 끝: 시간 간격 배율(Alt: 재생 헤드 기준)\n"
+                         "Delete: 삭제 · Ctrl+C/V/D: 복사/붙여넣기/복제(재생 헤드) · ←/→ 또는 , .: 한 간격 이동\n"
+                         "Ctrl+휠: 시간 확대 · Shift+휠/가운데 버튼 드래그: 시간 이동 · 눈금자: 재생 헤드(10ms, Shift 1ms), 초록 표시: 반복 구간");
   // Mix table.
   auto* mix = new QVBoxLayout;
   mixDefault_ = new QSpinBox;
@@ -819,7 +916,7 @@ bool CutoutPanel::submit(const QJsonArray& edits) {
 bool CutoutPanel::commitRig(const cutout::EditResult& result) {
   const Doc* doc = rigDoc();
   if (!doc) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
-  if (result.data == doc->data && !result.extra.contains("controllers")) { working_.reset(); rebuildDisplay(); return false; }
+  if (result.data == doc->data && !result.extra.contains("controllers")) { working_.reset(); setStatus("바뀐 것이 없습니다."); rebuildDisplay(); return false; }
   QJsonArray edits{replaceEdit(*doc, toQtObject(result.data))};
   if (result.extra.contains("controllers"))
     for (const auto& c : result.extra.at("controllers")) {
@@ -835,7 +932,7 @@ bool CutoutPanel::commitRig(const cutout::EditResult& result) {
   rebuildDisplay();
   return true;
 }
-bool CutoutPanel::runOps(const std::vector<Json>& ops, bool keyGesture) {
+bool CutoutPanel::runOps(const std::vector<Json>& ops, bool keyGesture, const std::function<void(const cutout::EditResult&)>& accepted) {
   if (!rigDoc()) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
   if (ops.empty()) return false;
   cutout::EditResult result;
@@ -853,6 +950,7 @@ bool CutoutPanel::runOps(const std::vector<Json>& ops, bool keyGesture) {
     rebuildDisplay();
     return true;
   }
+  if (accepted) accepted(result);
   return commitRig(result);
 }
 bool CutoutPanel::commitController(const Json& data) {
@@ -1174,12 +1272,40 @@ void CutoutPanel::refreshDopesheet() {
       rows << row;
     }
   }
+  // Another clip (or character): its own fitted zoom and remembered preview loop range.
+  const QString viewClip = rigId_ + "/" + clipId_;
+  if (viewClip != viewClip_) {
+    if (!viewClip_.isEmpty()) {
+      if (timeView_->loopActive()) loops_[viewClip_] = {timeView_->loopIn(), timeView_->loopOut()};
+      else loops_.remove(viewClip_);
+    }
+    viewClip_ = viewClip;
+    timeView_->clearSelection();
+    timeView_->setDuration(duration);
+    timeView_->fit();
+    const auto loop = loops_.value(viewClip, {0, -1});
+    timeView_->setLoop(loop.first, loop.second);
+  }
   dopesheet_->setRows(rows, duration);
   playheadMs_ = std::clamp(playheadMs_, 0, duration);
   playheadExact_ = std::clamp(playheadExact_, 0.0, double(duration));
-  dopesheet_->setPlayhead(playheadMs_);
-  graph_->setPlayhead(playheadMs_);
+  timeView_->setPlayhead(playheadMs_);
+  updateTimeUi(duration);
+}
+void CutoutPanel::updateTimeUi(int duration) {
   timeLabel_->setText(QString("%1 / %2 ms").arg(playheadMs_).arg(duration));
+  QSignalBlocker block(timeField_);
+  timeField_->setRange(0, duration);
+  timeField_->setValue(playheadMs_);
+}
+void CutoutPanel::syncTimeScroll() {
+  if (!timeScroll_) return;
+  QSignalBlocker block(timeScroll_);
+  const double visible = timeView_->visibleMs();
+  timeScroll_->setRange(0, int(std::lround(std::max(0.0, timeView_->duration() - visible) * 10)));
+  timeScroll_->setPageStep(std::max(1, int(visible * 10)));
+  timeScroll_->setSingleStep(std::max(1, int(visible)));
+  timeScroll_->setValue(int(std::lround(timeView_->scrollMs() * 10)));
 }
 
 QString CutoutPanel::graphTarget() const {
@@ -1379,6 +1505,7 @@ void CutoutPanel::refreshModeUi() {
   toolButtons_[RigCanvas::Pivot]->setEnabled(!animate);
   for (QWidget* w : {static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(playButton_), static_cast<QWidget*>(graph_)}) w->setEnabled(animate);
   for (QPushButton* b : presetButtons_) b->setEnabled(animate);
+  for (QWidget* w : timelineTools_) w->setEnabled(animate);
   autoKeyCheck_->setEnabled(animate);
   if (canvas_) canvas_->setAnimateMode(animate);
   bool keyed = false;
@@ -1470,9 +1597,9 @@ void CutoutPanel::setPlayhead(int ms) {
   if (ms != playheadMs_ && working_) { working_.reset(); setStatus("시간을 옮겨 키로 저장하지 않은 변경을 버렸습니다."); rebuildDisplay(); }
   playheadMs_ = ms;
   playheadExact_ = ms;
-  dopesheet_->setPlayhead(ms);
-  graph_->setPlayhead(ms);
-  timeLabel_->setText(QString("%1 / %2 ms").arg(ms).arg(duration));
+  timeView_->setPlayhead(ms);
+  timeView_->reveal(ms);
+  updateTimeUi(duration);
   refreshModeUi();
   refreshProperties();
   updateCanvas();
@@ -2008,10 +2135,7 @@ bool CutoutPanel::setKeyCurve(const QString& target, const QString& property, in
 }
 bool CutoutPanel::applyPreset(const QString& preset) {
   if (working_) { setStatus("먼저 K로 변경을 키로 저장하거나 변경을 취소하세요.", true); return false; }
-  QVector<GraphEditor::KeyRef> keys = graph_->selectedKeys();
-  const int row = dopesheet_->selectedRow();
-  if (keys.isEmpty() && row >= 0 && row < dopesheet_->rows().size() && dopesheet_->selectedTime() >= 0)
-    keys.push_back({dopesheet_->rows()[row].target, dopesheet_->rows()[row].property, dopesheet_->selectedTime()});
+  const QVector<KeyRef> keys = timeView_->selection();  // shared by dopesheet and graph
   std::vector<Json> ops;
   for (const auto& k : keys)
     if (k.property != "attachment")
@@ -2023,6 +2147,163 @@ bool CutoutPanel::applyPreset(const QString& preset) {
   setStatus(QString("키 %1개에 「%2」 보간을 적용했습니다. 되돌리기: Ctrl+Z").arg(ops.size()).arg(label));
   return true;
 }
+
+// ---------------------------------------------------------------- key selection gestures
+// Each gesture is one core op (moveKeys, scaleKeys, deleteKeys, pasteKeys, pastePose) in one
+// host edit; the selection follows the keys to their new times before the commit rebuild.
+bool CutoutPanel::refusePending() {
+  if (!working_) return false;
+  setStatus("먼저 K로 변경을 키로 저장하거나 변경을 취소하세요.", true);
+  return true;
+}
+Json CutoutPanel::refsJson(const QVector<KeyRef>& keys) const {
+  Json out = Json::array();
+  for (const auto& k : keys) out.push_back({{"target", ss(k.target)}, {"property", ss(k.property)}, {"timeMs", k.timeMs}});
+  return out;
+}
+void CutoutPanel::selectKeysFrom(const Json& refs) {
+  QVector<KeyRef> keys;
+  if (refs.is_array())
+    for (const auto& r : refs) keys.push_back({qs(r.value("target", std::string())), qs(r.value("property", std::string())), int(r.value("timeMs", int64_t(0)))});
+  timeView_->setSelection(keys);
+}
+void CutoutPanel::keyCommand(const QString& command) {
+  if (command == "copy") copyKeys();
+  else if (command == "paste") pasteKeys();
+  else if (command == "duplicate") duplicateKeys();
+}
+bool CutoutPanel::moveKeys(const QVector<KeyRef>& keysIn, int deltaMs, const QHash<KeyRef, double>& values) {
+  const QVector<KeyRef> keys = keysIn;  // callers may pass the live selection
+  if (refusePending()) { refreshGraph(); return false; }
+  if (keys.isEmpty() || clipId_.isEmpty()) { setStatus("옮길 키를 먼저 고르세요.", true); return false; }
+  std::vector<Json> ops;
+  if (deltaMs != 0) ops.push_back({{"op", "moveKeys"}, {"clip", ss(clipId_)}, {"keys", refsJson(keys)}, {"deltaMs", deltaMs}});
+  // Values are set at the moved times, after the move (graph drags on the value axis).
+  for (auto it = values.begin(); it != values.end(); ++it)
+    ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(it.key().target)}, {"property", ss(it.key().property)}, {"timeMs", it.key().timeMs + deltaMs}, {"value", it.value()}});
+  if (ops.empty()) return false;
+  const bool ok = runOps(ops, false, [&](const cutout::EditResult&) {
+    QVector<KeyRef> moved;
+    for (const auto& k : keys) moved.push_back({k.target, k.property, k.timeMs + deltaMs});
+    timeView_->setSelection(moved);
+  });
+  if (!ok) { timeView_->setSelection(keys); refreshDopesheet(); refreshGraph(); return false; }
+  setStatus(deltaMs ? QString("키 %1개를 %2ms 옮겼습니다(간격 유지). 되돌리기: Ctrl+Z").arg(keys.size()).arg(deltaMs)
+                    : QString("키 %1개의 값을 바꿨습니다. 되돌리기: Ctrl+Z").arg(values.size()));
+  return true;
+}
+bool CutoutPanel::scaleKeys(const QVector<KeyRef>& keysIn, int pivotMs, double factor) {
+  const QVector<KeyRef> keys = keysIn;
+  if (refusePending()) return false;
+  if (keys.size() < 2 || clipId_.isEmpty()) { setStatus("시간 간격을 바꿀 키를 2개 이상 고르세요.", true); return false; }
+  const bool ok = runOps({{{"op", "scaleKeys"}, {"clip", ss(clipId_)}, {"keys", refsJson(keys)}, {"pivotMs", pivotMs}, {"factor", factor}}}, false,
+                         [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); });
+  if (!ok) { refreshDopesheet(); return false; }
+  setStatus(QString("키 %1개의 시간 간격을 %2%로 바꿨습니다(기준 %3ms, 곡선 모양 유지). 되돌리기: Ctrl+Z").arg(keys.size()).arg(factor * 100, 0, 'f', 1).arg(pivotMs));
+  return true;
+}
+bool CutoutPanel::deleteKeys(const QVector<KeyRef>& keysIn) {
+  const QVector<KeyRef> keys = keysIn;
+  if (refusePending()) return false;
+  if (keys.isEmpty() || clipId_.isEmpty()) { setStatus("삭제할 키를 먼저 고르세요.", true); return false; }
+  if (!runOps({{{"op", "deleteKeys"}, {"clip", ss(clipId_)}, {"keys", refsJson(keys)}}}, false)) return false;
+  setStatus(QString("키 %1개를 삭제했습니다. 되돌리기: Ctrl+Z").arg(keys.size()));
+  return true;
+}
+bool CutoutPanel::offsetSelectedKeys(int deltaMs) {
+  if (deltaMs == 0) return false;
+  return moveKeys(timeView_->selection(), deltaMs);
+}
+bool CutoutPanel::scaleSelectedKeys(double factor) {
+  const QVector<KeyRef> keys = timeView_->selection();
+  int pivot = INT_MAX;
+  for (const auto& k : keys) pivot = std::min(pivot, k.timeMs);
+  if (factor == 1) return false;
+  return scaleKeys(keys, keys.isEmpty() ? 0 : pivot, factor);
+}
+int CutoutPanel::clipboardKeys() const { return clipboard_.is_object() && clipboard_.contains("keys") ? int(clipboard_.at("keys").size()) : 0; }
+bool CutoutPanel::copyKeys() {
+  const QVector<KeyRef> keys = timeView_->selection();
+  if (keys.isEmpty() || clipId_.isEmpty()) { setStatus("복사할 키를 먼저 고르세요(클릭, Ctrl/Shift+클릭, 빈 곳 드래그).", true); return false; }
+  try {
+    clipboard_ = cutout::applyEdit(displayData(), {{"op", "copyKeys"}, {"clip", ss(clipId_)}, {"keys", refsJson(keys)}}).extra.at("clipboard");
+  } catch (const std::exception& e) { setStatus(qs(e.what()), true); return false; }
+  setStatus(QString("키 %1개를 복사했습니다(%2ms부터). 재생 헤드를 옮기고(다른 클립도 됩니다) Ctrl+V로 붙여넣으세요.")
+                .arg(clipboardKeys()).arg(clipboard_.value("fromMs", int64_t(0))));
+  return true;
+}
+bool CutoutPanel::pasteKeys() {
+  if (refusePending()) return false;
+  if (!clipboardKeys()) { setStatus("먼저 키를 복사하세요(Ctrl+C).", true); return false; }
+  if (mode_ != Mode::Animate || clipId_.isEmpty()) { setStatus("키는 애니메이션 모드에서 클립에 붙여넣습니다.", true); return false; }
+  Json op = {{"op", "pasteKeys"}, {"clip", ss(clipId_)}, {"timeMs", playheadMs_}, {"keys", clipboard_.at("keys")}};
+  std::set<std::string> targets;
+  for (const auto& k : clipboard_.at("keys")) targets.insert(k.value("target", std::string()));
+  // A copied row (one target) lands on the selected bone/part when that is another target of the same kind.
+  QString onto;
+  if (targets.size() == 1 && !selection_.isEmpty() && ss(selection_) != *targets.begin() && refKind(selection_) == refKind(qs(*targets.begin()))) {
+    op["target"] = ss(selection_);
+    onto = selection_;
+  }
+  if (!runOps({op}, false, [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); })) return false;
+  setStatus(QString("키 %1개를 「%2」 %3ms에 붙여넣었습니다%4. 되돌리기: Ctrl+Z").arg(clipboardKeys()).arg(clipId_).arg(playheadMs_)
+                .arg(onto.isEmpty() ? QString() : " (대상: " + refId(onto) + ")"));
+  return true;
+}
+bool CutoutPanel::duplicateKeys() {
+  if (refusePending()) return false;
+  const QVector<KeyRef> keys = timeView_->selection();
+  if (keys.isEmpty() || clipId_.isEmpty()) { setStatus("복제할 키를 먼저 고르세요.", true); return false; }
+  Json board;
+  try {
+    board = cutout::applyEdit(displayData(), {{"op", "copyKeys"}, {"clip", ss(clipId_)}, {"keys", refsJson(keys)}}).extra.at("clipboard");
+  } catch (const std::exception& e) { setStatus(qs(e.what()), true); return false; }
+  if (board.value("fromMs", int64_t(-1)) == playheadMs_) { setStatus("재생 헤드를 복제할 시간으로 옮기세요(지금은 고른 키의 시작 시간입니다).", true); return false; }
+  if (!runOps({{{"op", "pasteKeys"}, {"clip", ss(clipId_)}, {"timeMs", playheadMs_}, {"keys", board.at("keys")}}}, false,
+              [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); }))
+    return false;
+  setStatus(QString("키 %1개를 %2ms에 복제했습니다. 되돌리기: Ctrl+Z").arg(keys.size()).arg(playheadMs_));
+  return true;
+}
+bool CutoutPanel::copyPose() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
+  // The selected bone with all of its children (a whole limb), or the whole skeleton.
+  std::vector<std::string> bones;
+  if (const QString root = selectedBone(); !root.isEmpty()) {
+    bones.push_back(ss(root));
+    for (size_t i = 0; i < bones.size(); i++)
+      for (const auto& b : listOf(displayData(), "bones")) {
+        const std::string id = b.value("id", std::string());
+        if (b.contains("parent") && b.at("parent").is_string() && b.at("parent").get<std::string>() == bones[i] && std::find(bones.begin(), bones.end(), id) == bones.end())
+          bones.push_back(id);
+      }
+  }
+  Json op = {{"op", "copyPose"}};
+  if (!bones.empty()) op["bones"] = bones;
+  const bool animated = mode_ == Mode::Animate && !clipId_.isEmpty();
+  if (animated) { op["clip"] = ss(clipId_); op["timeMs"] = playheadMs_; }
+  try { poseClipboard_ = cutout::applyEdit(displayData(), op).extra.at("pose"); } catch (const std::exception& e) { setStatus(qs(e.what()), true); return false; }
+  setStatus(QString("포즈를 복사했습니다: 본 %1개 (%2). 다른 시간·클립에서 「포즈 붙여넣기」를 누르세요.")
+                .arg(poseClipboard_.size()).arg(animated ? QString("%1 %2ms").arg(clipId_).arg(playheadMs_) : QString("기본 자세")));
+  return true;
+}
+bool CutoutPanel::pastePose() {
+  if (refusePending()) return false;
+  if (!poseClipboard_.is_array() || poseClipboard_.empty()) { setStatus("먼저 「포즈 복사」를 누르세요.", true); return false; }
+  if (mode_ != Mode::Animate || clipId_.isEmpty()) { setStatus("포즈는 애니메이션 모드에서 클립에 키로 넣습니다.", true); return false; }
+  if (!runOps({{{"op", "pastePose"}, {"clip", ss(clipId_)}, {"timeMs", playheadMs_}, {"pose", poseClipboard_}}}, false,
+              [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); }))
+    return false;
+  setStatus(QString("포즈(본 %1개)를 「%2」 %3ms에 키로 넣었습니다. 되돌리기: Ctrl+Z").arg(poseClipboard_.size()).arg(clipId_).arg(playheadMs_));
+  return true;
+}
+void CutoutPanel::stepPlayhead(int steps) { setPlayhead(playheadMs_ + steps * stepField_->value()); }
+void CutoutPanel::setLoopRange(int inMs, int outMs) {
+  timeView_->setLoop(inMs, outMs);
+  setStatus(timeView_->loopActive() ? QString("미리 보기 반복 구간 %1–%2ms (편집기 전용, 저장되지 않음)").arg(timeView_->loopIn()).arg(timeView_->loopOut())
+                                    : QString("미리 보기 반복 구간 = 클립 전체"));
+}
+void CutoutPanel::clearLoopRange() { setLoopRange(0, -1); }
 
 // ---------------------------------------------------------------- mix
 void CutoutPanel::commitMixTable() {
@@ -2188,6 +2469,12 @@ void CutoutPanel::togglePlay(bool on) {
   playing_ = on && mode_ == Mode::Animate;
   playButton_->setText(playing_ ? "⏸ 일시정지" : "▶ 재생");
   if (playing_ && working_) { working_.reset(); setStatus("재생하려고 키로 저장하지 않은 변경을 버렸습니다."); rebuildDisplay(); }
+  // Starting outside the preview loop range jumps to its start.
+  if (playing_ && timeView_->loopActive() && (playheadExact_ < timeView_->loopIn() || playheadExact_ >= timeView_->loopOut())) {
+    playheadMs_ = timeView_->loopIn();
+    playheadExact_ = playheadMs_;
+    timeView_->setPlayhead(playheadMs_);
+  }
   lastTick_ = QDateTime::currentMSecsSinceEpoch();
   if (playing_ || bottomTabs_->currentIndex() == 1) timer_->start(); else timer_->stop();
   if (!playing_) { refreshProperties(); refreshModeUi(); }
@@ -2200,15 +2487,17 @@ void CutoutPanel::tick() {
     const int ci = rig_->clipIndex(ss(clipId_));
     if (ci >= 0) {
       const double d = double(rig_->clips[size_t(ci)].durationMs);
+      // The editor-only loop range narrows playback to [in, out] (whole clip by default).
+      const double lo = timeView_->loopActive() ? timeView_->loopIn() : 0, hi = timeView_->loopActive() ? std::min<double>(timeView_->loopOut(), d) : d;
       playheadExact_ += dt * speedCombo_->currentData().toDouble();
-      if (playheadExact_ > d) {
-        if (loopPreview_->isChecked()) playheadExact_ = std::fmod(playheadExact_, d);
-        else { playheadExact_ = d; playButton_->setChecked(false); }
+      if (playheadExact_ > hi) {
+        if (loopPreview_->isChecked() && hi > lo) playheadExact_ = lo + std::fmod(playheadExact_ - lo, hi - lo);
+        else { playheadExact_ = hi; playButton_->setChecked(false); }
       }
       playheadMs_ = int(playheadExact_);
-      dopesheet_->setPlayhead(playheadMs_);
-      graph_->setPlayhead(playheadMs_);
-      timeLabel_->setText(QString("%1 / %2 ms").arg(playheadMs_).arg(int(d)));
+      timeView_->setPlayhead(playheadMs_);
+      timeView_->reveal(playheadMs_);
+      updateTimeUi(int(d));
     }
   }
   if (bottomTabs_->currentIndex() == 1 && preview_) {

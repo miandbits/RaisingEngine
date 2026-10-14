@@ -19,11 +19,18 @@ struct EditResult {
 /**
  * Apply one operation {op, ...}. Ops: addBone setBone reparentBone setPivot deleteBone
  * addPart setSlot setAttachment deleteSlot moveSlot setKey deleteKey moveKey setInterp
- * setCurve addClip duplicateClip renameClip setClip deleteClip setMix setCanvas setName
- * applySetupDeltaToKeys batch.
+ * setCurve moveKeys scaleKeys deleteKeys copyKeys pasteKeys copyPose pastePose addClip
+ * duplicateClip renameClip setClip deleteClip setMix setCanvas setName applySetupDeltaToKeys batch.
  * Interpolation (setKey/setInterp): interp step|linear|bezier (+curve [x1,y1,x2,y2]) or a
  * preset name (easeIn easeOut easeInOut auto flat back) as `interp` or `preset`; setCurve
  * sets one key's handles (x clamped to 0..1). Many keys = one `batch`.
+ * Key selections (one clip, keys = [{target, property, timeMs}], all-or-nothing):
+ * moveKeys {deltaMs, clamp?} and scaleKeys {factor, pivotMs?=first key} re-time keys with
+ * their curves (refusing collisions/out-of-range), deleteKeys; copyKeys returns
+ * extra.clipboard {keys: [{target, property, offsetMs, value, interp?, curve?}], fromMs}
+ * without changing data; pasteKeys {clip, timeMs, keys, target?} writes it back (same-time
+ * keys overwritten). copyPose {clip?, timeMs, bones?} returns extra.pose; pastePose
+ * {clip, timeMs, pose} keys it. Re-timing/paste ops report the resulting keys in extra.keys.
  * `controllers` = [{id, data}] lets clip rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

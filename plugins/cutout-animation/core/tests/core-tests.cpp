@@ -687,6 +687,116 @@ int main(int argc, char** argv) {
     check(near(pb.world[2].e, pa.world[2].e + pa.world[2].a * 10, 1e-4) && near(pb.world[2].f, pa.world[2].f + pa.world[2].b * 10, 1e-4), "pivot key compensation at a bezier key time");
   });
 
+  // ---- Key selections (dopesheet multi-key gestures) ----
+  auto ref = [](const char* target, const char* property, int t) { return Json{{"target", target}, {"property", property}, {"timeMs", t}}; };
+  auto easeKeys = [](const Json& d, size_t track) { return d["clips"][3]["tracks"][track]["keys"]; };
+  auto trackOf = [](const Json& d, const char* clip, const char* target, const char* property) {
+    for (const auto& c : d["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property) return t["keys"];
+    return Json();
+  };
+  test("edit moveKeys keeps spacing and curves, refuses collisions and range", [&] {
+    const Json base = bezierRig();  // clip 3 "ease": body y 0/600/1000, head rotation 0/400/700/1000, face alpha 100/900
+    const Json sel = Json::array({ref("bone:body", "y", 600), ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)});
+    auto r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", sel}, {"deltaMs", 50}});
+    check(easeKeys(r.data, 0)[1]["timeMs"] == 650 && easeKeys(r.data, 0)[1]["curve"] == Json::array({0, 0, 0.58, 1}), "bezier key moves with its curve");
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 450 && easeKeys(r.data, 1)[1]["interp"] == "step" && easeKeys(r.data, 1)[2]["timeMs"] == 750, "relative spacing kept");
+    check(easeKeys(r.data, 1)[0]["timeMs"] == 0 && easeKeys(r.data, 1)[3]["timeMs"] == 1000, "unselected keys stay");
+    check(r.extra["keys"].size() == 3 && r.extra["keys"][0] == ref("bone:body", "y", 650) && validateRig(r.data).empty(), "extra.keys = moved keys, still valid");
+    check(refused(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400)})}, {"deltaMs", 300}}), "collision with an unselected key refused");
+    check(refused(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", sel}, {"deltaMs", 400}}), "out of range refused (no partial move)");
+    check(refused(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 401)})}, {"deltaMs", 10}}), "unknown key refused");
+    // Selected keys landing on each other's old times is fine (all move together).
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)})}, {"deltaMs", -300}});
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 100 && easeKeys(r.data, 1)[2]["timeMs"] == 400 && easeKeys(r.data, 1)[2]["value"] == 5, "group lands on its own old time");
+    // clamp stops the group at the clip edge.
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("slot:face", "alpha", 100), ref("slot:face", "alpha", 900)})}, {"deltaMs", 500}, {"clamp", true}});
+    check(r.extra["deltaMs"] == 100 && easeKeys(r.data, 3)[0]["timeMs"] == 200 && easeKeys(r.data, 3)[1]["timeMs"] == 1000, "clamp keeps spacing at the end");
+    check(easeKeys(r.data, 3)[0]["curve"] == Json::array({0.9, -0.4, 0.1, 1.4}), "overshoot curve kept");
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:body", "y", 0)})}, {"deltaMs", -40}, {"clamp", true}});
+    check(r.data == base && r.extra["deltaMs"] == 0, "clamped to zero = no change");
+  });
+
+  test("edit scaleKeys and deleteKeys", [&] {
+    const Json base = bezierRig();
+    const Json rot = Json::array({ref("bone:head", "rotation", 0), ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)});
+    auto r = applyEdit(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", rot}, {"factor", 0.5}});
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 200 && easeKeys(r.data, 1)[2]["timeMs"] == 350 && easeKeys(r.data, 1)[3]["timeMs"] == 1000, "scaled around the first key");
+    bool xValid = true;
+    for (const auto& k : easeKeys(r.data, 1)) if (k.contains("curve")) for (size_t i : {0, 2}) xValid &= k["curve"][i].get<double>() >= 0 && k["curve"][i].get<double>() <= 1;
+    check(easeKeys(r.data, 1)[0]["curve"] == Json::array({0.34, 1.56, 0.64, 1}) && xValid && validateRig(r.data).empty(), "curves preserved, x stays in 0..1");
+    // Normalized handles: the shape follows the new timing (half the time = same fraction).
+    const Rig before = parseRig("a", base), after = parseRig("b", r.data);
+    check(near(samplePose(after, 3, 100).bones[2].rotation, samplePose(before, 3, 200).bones[2].rotation, 1e-9), "scaled segment samples the same fraction");
+    r = applyEdit(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)})}, {"factor", 0.5}, {"pivotMs", 1000}});
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 700 && easeKeys(r.data, 1)[1]["value"] == 20 && easeKeys(r.data, 1)[2]["timeMs"] == 850, "pivot at the playhead, lands on a selected key's old time");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 700), ref("bone:head", "rotation", 1000)})}, {"factor", 0.001}}), "keys merging refused");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 700)})}, {"factor", 0.0001}, {"pivotMs", 1000}}), "landing on an unselected key refused");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", rot}, {"factor", 2}}), "scaling past the end refused");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", rot}, {"factor", -1}}), "negative factor refused");
+    r = applyEdit(base, {{"op", "deleteKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("slot:face", "alpha", 100), ref("slot:face", "alpha", 900), ref("bone:body", "y", 600)})}});
+    check(r.data["clips"][3]["tracks"].size() == 3 && easeKeys(r.data, 0).size() == 2 && r.affected.size() == 3, "deleteKeys removes keys and empty tracks");
+  });
+
+  test("edit copyKeys / pasteKeys across clips", [&] {
+    const Json base = bezierRig();
+    auto r = applyEdit(base, {{"op", "copyKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700), ref("bone:body", "y", 600)})}});
+    const Json board = r.extra["clipboard"];
+    check(r.data == base && board["fromMs"] == 400 && board["keys"].size() == 3, "copy changes nothing, offsets from the earliest key");
+    check(board["keys"][2] == Json({{"target", "bone:body"}, {"property", "y"}, {"offsetMs", 200}, {"value", -112}, {"interp", "bezier"}, {"curve", {0, 0, 0.58, 1}}}), "entry carries value, interp and curve");
+    // Paste into another clip at 0: overwrites joy's rotation key at 0 and keeps the curve.
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 0}, {"keys", board["keys"]}});
+    const Json rotKeys = trackOf(r.data, "joy", "bone:head", "rotation");
+    check(rotKeys.size() == 3 && rotKeys[0]["value"] == 20 && rotKeys[0]["interp"] == "step" && rotKeys[1]["timeMs"] == 300 && rotKeys[1]["value"] == 5, "overwrite same time + insert");
+    check(trackOf(r.data, "joy", "bone:body", "y")[0]["timeMs"] == 200 && trackOf(r.data, "joy", "bone:body", "y")[0]["curve"] == Json::array({0, 0, 0.58, 1}), "new track with the bezier curve");
+    check(r.extra["keys"].size() == 3 && validateRig(r.data).empty(), "pasted keys reported");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 200}, {"keys", board["keys"]}}), "paste past the clip end refused");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 0}, {"keys", board["keys"]}, {"target", "bone:root"}}), "multi-target clipboard cannot retarget");
+    // Single-row copy pasted onto another bone.
+    const Json row = applyEdit(base, {{"op", "copyKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 0), ref("bone:head", "rotation", 400)})}}).extra["clipboard"]["keys"];
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "ease"}, {"timeMs", 500}, {"keys", row}, {"target", "bone:body"}});
+    const Json bodyRot = trackOf(r.data, "ease", "bone:body", "rotation");
+    check(bodyRot.size() == 2 && bodyRot[0]["timeMs"] == 500 && bodyRot[0]["curve"] == Json::array({0.34, 1.56, 0.64, 1}) && bodyRot[1]["timeMs"] == 900, "row retargeted");
+    // Attachment keys: value names are checked on the target slot.
+    const Json blink = applyEdit(base, {{"op", "copyKeys"}, {"clip", "blink"}, {"keys", Json::array({ref("slot:eyes", "attachment", 1800), ref("slot:eyes", "attachment", 1900)})}}).extra["clipboard"]["keys"];
+    check(!blink[0].contains("interp"), "attachment entries have no interp");
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 100}, {"keys", blink}});
+    check(trackOf(r.data, "joy", "slot:eyes", "attachment")[1] == Json({{"timeMs", 200}, {"value", "open"}}), "attachment keys pasted");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 100}, {"keys", blink}, {"target", "slot:face"}}), "unknown attachment on the new slot refused");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 100}, {"keys", row}, {"target", "slot:face"}}), "bone property onto a slot refused");
+    // The LLM path (host op `edit`, plugin_call) returns the same clipboard and the same paste.
+    Host host;
+    const Json copyOp = {{"op", "copyKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 0), ref("bone:head", "rotation", 400)})}};
+    const Json copied = host.handle({{"op", "edit"}, {"rig", base}, {"operation", copyOp}});
+    check(copied.value("ok", false) && copied["clipboard"]["keys"] == row && copied["rig"] == base, "host edit returns the clipboard");
+    const Json pasteOp = {{"op", "pasteKeys"}, {"clip", "ease"}, {"timeMs", 500}, {"keys", row}, {"target", "bone:body"}};
+    const Json pastedReply = host.handle({{"op", "edit"}, {"rig", base}, {"operation", pasteOp}});
+    check(pastedReply["rig"] == applyEdit(base, pasteOp).data && pastedReply["keys"].size() == 2, "host paste = editor paste");
+  });
+
+  test("edit copyPose / pastePose", [&] {
+    Json base = bezierRig();
+    // joy's rotation key at 0 is eased: pasting a pose there must keep its interpolation.
+    base = applyEdit(base, {{"op", "setInterp"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}, {"interp", "easeIn"}}).data;
+    auto r = applyEdit(base, {{"op", "copyPose"}, {"clip", "ease"}, {"timeMs", 300}, {"bones", {"body", "head"}}});
+    const Json pose = r.extra["pose"];
+    const Rig parsed = parseRig("p", base);
+    const auto sampled = samplePose(parsed, 3, 300);
+    check(r.data == base && pose.size() == 2 && pose[0]["bone"] == "body", "copyPose changes nothing");
+    check(near(pose[0]["y"].get<double>(), sampled.bones[1].y, 1e-6) && near(pose[1]["rotation"].get<double>(), sampled.bones[2].rotation, 1e-6), "sampled like the runtime");
+    check(pose[0]["x"] == 0 && pose[0]["scaleX"] == 1, "unanimated channels = setup");
+    check(applyEdit(base, {{"op", "copyPose"}}).extra["pose"].size() == 3, "no clip = setup pose of every bone");
+    r = applyEdit(base, {{"op", "pastePose"}, {"clip", "joy"}, {"timeMs", 0}, {"pose", pose}});
+    auto joyKey = [&](const Json& d, const char* target, const char* property, int t) {
+      for (const auto& k : trackOf(d, "joy", target, property)) if (k["timeMs"] == t) return k;
+      return Json();
+    };
+    check(near(joyKey(r.data, "bone:head", "rotation", 0)["value"].get<double>(), pose[1]["rotation"].get<double>()) && joyKey(r.data, "bone:head", "rotation", 0)["interp"] == "bezier", "overwrites value, keeps interp");
+    check(!joyKey(r.data, "bone:body", "y", 0).is_null() && joyKey(r.data, "bone:body", "x", 0).is_null(), "setup-valued unanimated channels skipped");
+    check(!joyKey(r.data, "bone:body", "scaleY", 0).is_null(), "animated channel keyed");
+    check(validateRig(r.data).empty() && r.extra["keys"].size() == 3, "pose paste reports its keys (body y, body scaleY, head rotation)");
+    check(refused(base, {{"op", "pastePose"}, {"clip", "joy"}, {"timeMs", 500}, {"pose", pose}}), "pose past the end refused");
+  });
+
   test("host sample op evaluates bezier like samplePose", [] {
     Host host;
     const auto reply = host.handle({{"op", "sample"}, {"rig", bezierRig()}, {"clip", "ease"}, {"timeMs", 300}});

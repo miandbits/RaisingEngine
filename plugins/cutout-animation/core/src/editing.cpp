@@ -536,6 +536,217 @@ void setCurve(EditResult& r, const Json& op) {
   r.affected.push_back(keyRef(op.at("clip").get<Str>(), op, t));
 }
 
+// ---- Multi-key ops: one dopesheet selection gesture = one op = one undo step ----
+// A selection is `keys: [{target, property, timeMs}]` inside one clip. Ops validate every
+// key first and change nothing when any of them is refused (collision, range, unknown key).
+constexpr size_t MAX_KEYS = 5000;
+struct Picked { Json* track; std::set<int64_t> times; Str target, property; };
+Json refJson(const Str& target, const Str& property, int64_t t) { return {{"target", target}, {"property", property}, {"timeMs", t}}; }
+std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op) {
+  if (!has(op, "keys") || !op.at("keys").is_array() || op.at("keys").empty() || op.at("keys").size() > MAX_KEYS)
+    throw EditError("keys는 1.." + std::to_string(MAX_KEYS) + "개의 [{target, property, timeMs}] 배열입니다.");
+  std::vector<Picked> out;
+  for (const auto& k : op.at("keys")) {
+    if (!k.is_object()) throw EditError("keys 항목은 {target, property, timeMs} 객체입니다.");
+    target(d, k);
+    const Str tg = k.at("target").get<Str>(), prop = k.at("property").get<Str>();
+    const int64_t t = ms(k, "timeMs");
+    Json* tr = findTrack(c, tg, prop);
+    if (!tr) throw EditError("이 대상·속성에는 키가 없습니다: " + tg + " " + prop);
+    keyAt(*tr, t);
+    auto it = std::find_if(out.begin(), out.end(), [&](const Picked& p) { return p.track == tr; });
+    if (it == out.end()) { out.push_back({tr, {}, tg, prop}); it = out.end() - 1; }
+    it->times.insert(t);  // duplicates in the list are harmless
+  }
+  return out;
+}
+/** Re-time the picked keys with `map`; refuses out-of-range, merged and colliding keys before changing anything. */
+void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& picked, const std::function<int64_t(int64_t)>& map) {
+  const int64_t duration = c.value("durationMs", int64_t(0));
+  for (const auto& p : picked) {
+    std::set<int64_t> mapped;
+    for (int64_t t : p.times) {
+      const int64_t to = map(t);
+      if (to < 0 || to > duration) throw EditError("옮긴 키가 클립 범위(0.." + std::to_string(duration) + "ms) 밖으로 나갑니다: " + std::to_string(to) + "ms");
+      if (!mapped.insert(to).second) throw EditError("간격이 너무 좁아져 키가 같은 시간에 겹칩니다: " + p.target + " " + p.property + " " + std::to_string(to) + "ms");
+    }
+    for (auto& k : arr(*p.track, "keys")) {
+      const int64_t t = k.value("timeMs", int64_t(-1));
+      if (!p.times.count(t) && mapped.count(t)) throw EditError("같은 시간에 이미 키가 있습니다: " + p.target + " " + p.property + " " + std::to_string(t) + "ms");
+    }
+  }
+  Json moved = Json::array();
+  for (auto& p : picked) {
+    // Each key is visited once and mapped from its original time, so a key landing on
+    // another selected key's old time is never mapped twice.
+    for (auto& k : arr(*p.track, "keys")) {
+      const int64_t t = k.value("timeMs", int64_t(-1));
+      if (!p.times.count(t)) continue;
+      const int64_t to = map(t);
+      k["timeMs"] = to;
+      moved.push_back(refJson(p.target, p.property, to));
+      r.affected.push_back("key:" + clipId + "/" + p.target + "/" + p.property + "@" + std::to_string(to));
+    }
+    // Normalized curves ride along with their key: segment shapes stay, only their timing changes.
+    sortKeys(*p.track);
+  }
+  r.extra["keys"] = moved;
+}
+void moveKeys(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip");
+  Json& c = clip(d, clipId);
+  auto picked = pickKeys(d, c, op);
+  int64_t delta = ms(op, "deltaMs");
+  int64_t lo = INT64_MAX, hi = INT64_MIN;
+  for (const auto& p : picked) { lo = std::min(lo, *p.times.begin()); hi = std::max(hi, *p.times.rbegin()); }
+  // clamp: a drag past the clip edge stops the whole group there and keeps its spacing.
+  if (op.value("clamp", false)) delta = std::clamp<int64_t>(delta, -lo, std::max<int64_t>(-lo, c.value("durationMs", int64_t(0)) - hi));
+  r.extra["deltaMs"] = delta;
+  if (delta == 0) { r.extra["keys"] = Json::array(); return; }
+  retimeKeys(r, c, clipId, picked, [delta](int64_t t) { return t + delta; });
+}
+void scaleKeys(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip");
+  Json& c = clip(d, clipId);
+  auto picked = pickKeys(d, c, op);
+  const double factor = num(op, "factor", 1);
+  if (!(factor > 0) || factor > 1000) throw EditError("factor(시간 배율)는 0보다 크고 1000 이하여야 합니다.");
+  int64_t pivot = INT64_MAX;
+  for (const auto& p : picked) pivot = std::min(pivot, *p.times.begin());
+  if (has(op, "pivotMs")) pivot = ms(op, "pivotMs");
+  if (factor == 1) { r.extra["keys"] = Json::array(); return; }
+  retimeKeys(r, c, clipId, picked, [pivot, factor](int64_t t) { return pivot + int64_t(std::llround(double(t - pivot) * factor)); });
+}
+void deleteKeys(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip");
+  Json& c = clip(d, clipId);
+  auto picked = pickKeys(d, c, op);
+  for (auto& p : picked) {
+    auto& keys = arr(*p.track, "keys");
+    keys.erase(std::remove_if(keys.begin(), keys.end(), [&](const Json& k) { return p.times.count(k.value("timeMs", int64_t(-1))) > 0; }), keys.end());
+    for (int64_t t : p.times) r.affected.push_back("key:" + clipId + "/" + p.target + "/" + p.property + "@" + std::to_string(t));
+  }
+  auto& tracks = arr(c, "tracks");
+  tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [](const Json& t) { return !t.contains("keys") || !t.at("keys").is_array() || t.at("keys").empty(); }), tracks.end());
+}
+/**
+ * Clipboard of keys (no data change): extra.clipboard = {keys: [{target, property, offsetMs,
+ * value, interp?, curve?}], fromMs} with offsets from the earliest copied key, so it can be
+ * pasted at any time of any clip. Numeric keys always carry their interp; attachment keys never do.
+ */
+void copyKeys(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Json& c = clip(d, reqStr(op, "clip"));
+  const auto picked = pickKeys(d, c, op);
+  int64_t lo = INT64_MAX;
+  for (const auto& p : picked) lo = std::min(lo, *p.times.begin());
+  Json keys = Json::array();
+  for (const auto& p : picked)
+    for (const auto& k : p.track->at("keys")) {
+      const int64_t t = k.value("timeMs", int64_t(-1));
+      if (!p.times.count(t)) continue;
+      Json e{{"target", p.target}, {"property", p.property}, {"offsetMs", t - lo}, {"value", k.contains("value") ? k.at("value") : Json(nullptr)}};
+      if (p.property != "attachment") {
+        e["interp"] = k.contains("interp") && k.at("interp").is_string() ? k.at("interp") : Json("linear");
+        if (e["interp"] == "bezier") e["curve"] = curveJson(curveOf(k));
+      }
+      keys.push_back(e);
+    }
+  r.extra["clipboard"] = {{"keys", keys}, {"fromMs", lo}};
+}
+/**
+ * Paste a clipboard at `timeMs` of `clip`. Same-time keys are overwritten (value and, when
+ * the entry has one, interpolation). `target` re-targets a clipboard that holds one target
+ * only (copy a row, paste onto another bone). Out-of-range offsets refuse the whole paste.
+ */
+void pasteKeys(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip");
+  Json& c = clip(d, clipId);
+  const int64_t at = ms(op, "timeMs"), duration = c.value("durationMs", int64_t(0));
+  if (!has(op, "keys") || !op.at("keys").is_array() || op.at("keys").empty() || op.at("keys").size() > MAX_KEYS)
+    throw EditError("붙여넣을 keys는 1.." + std::to_string(MAX_KEYS) + "개의 배열입니다.");
+  if (at < 0) throw EditError("붙여넣을 시간은 0 이상이어야 합니다.");
+  std::set<Str> targets;
+  size_t outside = 0;
+  for (const auto& e : op.at("keys")) {
+    if (!e.is_object()) throw EditError("붙여넣을 키는 {target, property, offsetMs, value} 객체입니다.");
+    targets.insert(reqStr(e, "target"));
+    const int64_t offset = ms(e, "offsetMs");
+    if (offset < 0) throw EditError("offsetMs는 0 이상이어야 합니다.");
+    outside += at + offset > duration;
+  }
+  const Str retarget = optStr(op, "target");
+  if (!retarget.empty() && targets.size() != 1) throw EditError("여러 대상의 키는 한 대상으로 붙여넣을 수 없습니다. 같은 대상으로 붙이세요.");
+  if (outside) throw EditError("붙여넣을 키 " + std::to_string(outside) + "개가 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다. 재생 헤드를 앞으로 옮기세요.");
+  Json pasted = Json::array();
+  for (const auto& e : op.at("keys")) {
+    const Str tg = retarget.empty() ? e.at("target").get<Str>() : retarget, prop = optStr(e, "property");
+    const int64_t t = at + ms(e, "offsetMs");
+    Json set{{"clip", clipId}, {"target", tg}, {"property", prop}, {"timeMs", t}};
+    if (e.contains("value")) set["value"] = e.at("value");
+    for (const char* k : {"interp", "curve"}) if (has(e, k)) set[k] = e.at(k);
+    setKey(r, set);
+    pasted.push_back(refJson(tg, prop, t));
+  }
+  r.extra["keys"] = pasted;
+}
+const char* const POSE_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY"};
+double setupValue(const Json& b, const Str& prop) {
+  const Transform t = readT(b);
+  return prop == "x" ? t.x : prop == "y" ? t.y : prop == "rotation" ? t.rotation : prop == "scaleX" ? t.scaleX : t.scaleY;
+}
+/** Bone transforms sampled at clip time (setup pose without `clip`): extra.pose = [{bone, x, y, rotation, scaleX, scaleY}]. */
+void copyPose(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Json* c = has(op, "clip") ? &clip(d, reqStr(op, "clip")) : nullptr;
+  const int64_t t = c ? ms(op, "timeMs") : 0;
+  if (c && (t < 0 || t > c->value("durationMs", int64_t(0)))) throw EditError("포즈를 복사할 시간이 클립 범위 밖입니다.");
+  std::vector<Str> ids;
+  if (has(op, "bones")) {
+    if (!op.at("bones").is_array()) throw EditError("bones는 본 ID 배열입니다.");
+    for (const auto& b : op.at("bones")) ids.push_back(b.is_string() ? b.get<Str>() : Str());
+  } else for (auto& b : arr(d, "bones")) ids.push_back(b.value("id", Str()));
+  Json pose = Json::array();
+  for (const auto& id : ids) {
+    const Json& b = bone(d, id);
+    Json e{{"bone", id}};
+    for (const char* prop : POSE_PROPS) e[prop] = clean(sampleJson(c ? findTrack(*c, "bone:" + id, prop) : nullptr, double(t), setupValue(b, prop)));
+    pose.push_back(e);
+  }
+  r.extra["pose"] = pose;
+}
+/**
+ * Key a copied pose at `timeMs`: every channel of every listed bone, except channels that
+ * the clip does not animate and whose value is the setup value (they already show it).
+ * Existing keys at that time keep their interpolation.
+ */
+void pastePose(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip");
+  Json& c = clip(d, clipId);
+  const int64_t t = ms(op, "timeMs");
+  if (!has(op, "pose") || !op.at("pose").is_array() || op.at("pose").empty()) throw EditError("pose는 [{bone, x, y, rotation, scaleX, scaleY}] 배열입니다.");
+  Json pasted = Json::array();
+  for (const auto& e : op.at("pose")) {
+    const Str id = reqStr(e, "bone");
+    const double setup[] = {setupValue(bone(d, id), "x"), setupValue(bone(d, id), "y"), setupValue(bone(d, id), "rotation"),
+                            setupValue(bone(d, id), "scaleX"), setupValue(bone(d, id), "scaleY")};
+    for (size_t i = 0; i < 5; i++) {
+      const char* prop = POSE_PROPS[i];
+      if (!has(e, prop)) continue;
+      const double v = clean(num(e, prop, 0));
+      if (!findTrack(c, "bone:" + id, prop) && std::fabs(v - clean(setup[i])) < 1e-9) continue;
+      setKey(r, {{"clip", clipId}, {"target", "bone:" + id}, {"property", prop}, {"timeMs", t}, {"value", v}});
+      pasted.push_back(refJson("bone:" + id, prop, t));
+    }
+  }
+  r.extra["keys"] = pasted;
+}
+
 // ---- Clips ----
 void addClip(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -696,6 +907,8 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"addBone", addBone}, {"setBone", setBone}, {"reparentBone", reparentBone}, {"setPivot", setPivot}, {"deleteBone", deleteBone},
     {"addPart", addPart}, {"setSlot", setSlot}, {"setAttachment", setAttachment}, {"deleteSlot", deleteSlot}, {"moveSlot", moveSlot},
     {"setKey", setKey}, {"deleteKey", deleteKey}, {"moveKey", moveKey}, {"setInterp", setInterp}, {"setCurve", setCurve},
+    {"moveKeys", moveKeys}, {"scaleKeys", scaleKeys}, {"deleteKeys", deleteKeys}, {"copyKeys", copyKeys}, {"pasteKeys", pasteKeys},
+    {"copyPose", copyPose}, {"pastePose", pastePose},
     {"addClip", addClip}, {"duplicateClip", duplicateClip}, {"setClip", setClip}, {"setMix", setMix}, {"setCanvas", setCanvas},
     {"applySetupDeltaToKeys", applySetupDeltaToKeys},
   };

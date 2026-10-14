@@ -5,31 +5,10 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <climits>
 #include <cmath>
 
 namespace cutout_studio {
-namespace timeline {
-int timeToX(int width, int duration, double ms) { return LABEL + 8 + int(std::lround(ms * (width - LABEL - RIGHT) / double(std::max(1, duration)))); }
-double xToTime(int width, int duration, double x) { return (x - LABEL - 8) * double(std::max(1, duration)) / std::max(1, width - LABEL - RIGHT); }
-int snap(double ms, bool fine, int duration) {
-  const int step = fine ? 1 : 10;
-  return std::clamp(int(std::lround(ms / step)) * step, 0, std::max(1, duration));
-}
-void paintRuler(QPainter& p, int width, int duration) {
-  duration = std::max(1, duration);
-  p.fillRect(QRect(0, 0, width, RULER), QColor("#2a3038"));
-  const double pxPerMs = double(width - LABEL - RIGHT) / duration;
-  int tick = 10;
-  for (int c : {10, 50, 100, 250, 500, 1000, 2000, 5000, 10000}) { tick = c; if (c * pxPerMs >= 48) break; }
-  p.setPen(QColor("#8a949e"));
-  for (int t = 0; t <= duration; t += tick) {
-    const int x = timeToX(width, duration, t);
-    p.drawLine(x, RULER - 6, x, RULER);
-    p.drawText(QRect(x + 2, 2, 60, RULER - 6), Qt::AlignLeft | Qt::AlignVCenter, QString::number(t));
-  }
-}
-}  // namespace timeline
-
 const QVector<InterpPreset>& interpPresets() {
   static const QVector<InterpPreset> presets = {
     {"linear", "선형", "Linear", "일정한 속도로 다음 키까지 변합니다."},
@@ -46,38 +25,117 @@ const QVector<InterpPreset>& interpPresets() {
 Dopesheet::Dopesheet(QWidget* parent) : QWidget(parent) {
   setObjectName("cutoutDopesheet");
   setFocusPolicy(Qt::StrongFocus);
-  setMinimumHeight(RULER + ROW * 3);
+  setMinimumHeight(RULER + STRIP + ROW * 3);
+  setTimeView(new TimeView(this));
+}
+void Dopesheet::setTimeView(TimeView* view) {
+  if (view_) disconnect(view_, nullptr, this, nullptr);
+  view_ = view;
+  connect(view_, &TimeView::changed, this, qOverload<>(&QWidget::update));
+  view_->addView(this);
+  update();
 }
 void Dopesheet::setRows(const QVector<Row>& rows, int durationMs) {
   rows_ = rows;
-  duration_ = std::max(1, durationMs);
-  if (selRow_ >= rows_.size() || (selRow_ >= 0 && !rows_[selRow_].times.contains(selTime_))) selRow_ = selTime_ = -1;
-  setMinimumHeight(RULER + ROW * std::max<int>(3, int(rows_.size())) + 6);
+  drag_ = Drag::None;
+  view_->setDuration(durationMs);
+  const QVector<KeyRef> all = allKeys();
+  view_->pruneSelection(QSet<KeyRef>(all.begin(), all.end()));
+  setMinimumHeight(rowTop(std::max<int>(3, int(rows_.size()))) + 6);
   update();
 }
-int Dopesheet::timeToX(double ms) const { return timeline::timeToX(width(), duration_, ms); }
-double Dopesheet::xToTime(double x) const { return timeline::xToTime(width(), duration_, x); }
-int Dopesheet::rowCenterY(int row) const { return RULER + row * ROW + ROW / 2; }
-int Dopesheet::rowAt(int y) const { const int r = (y - RULER) / ROW; return y < RULER || r >= rows_.size() ? -1 : r; }
-int Dopesheet::snap(double ms, bool fine) const { return timeline::snap(ms, fine, duration_); }
-int Dopesheet::keyAt(const QPoint& p, int* row) const {
-  const int r = rowAt(p.y());
-  *row = r;
-  if (r < 0) return -1;
-  for (int t : rows_[r].times) if (std::abs(timeToX(t) - p.x()) <= 6) return t;
+int Dopesheet::selectedRow() const {
+  const auto& sel = view_->selection();
+  return sel.isEmpty() ? -1 : rowOf(sel.front().target, sel.front().property);
+}
+int Dopesheet::selectedTime() const { return selectedRow() < 0 ? -1 : view_->selection().front().timeMs; }
+void Dopesheet::selectKey(int row, int ms) {
+  if (row < 0 || row >= rows_.size()) view_->clearSelection(); else view_->setSelection({refOf(row, ms)});
+}
+QVector<KeyRef> Dopesheet::rowKeys(int row) const {
+  QVector<KeyRef> out;
+  if (row >= 0 && row < rows_.size()) for (int t : rows_[row].times) out << refOf(row, t);
+  return out;
+}
+QVector<KeyRef> Dopesheet::keysAt(int ms) const {
+  QVector<KeyRef> out;
+  for (int r = 0; r < rows_.size(); r++) if (rows_[r].times.contains(ms)) out << refOf(r, ms);
+  return out;
+}
+QVector<KeyRef> Dopesheet::allKeys() const {
+  QVector<KeyRef> out;
+  for (int r = 0; r < rows_.size(); r++) out << rowKeys(r);
+  return out;
+}
+int Dopesheet::rowOf(const QString& target, const QString& property) const {
+  for (int i = 0; i < rows_.size(); i++) if (rows_[i].target == target && rows_[i].property == property) return i;
   return -1;
+}
+int Dopesheet::timeToX(double ms) const { return int(std::lround(view_->timeToX(ms))); }
+int Dopesheet::rowCenterY(int row) const { return rowTop(row) + ROW / 2; }
+int Dopesheet::rowAt(int y) const {
+  const int r = (y - RULER - STRIP) / ROW;
+  return y < headerTop() + RULER + STRIP || r >= rows_.size() ? -1 : r;
+}
+QVector<QVector<int>> Dopesheet::groups(const QVector<int>& times) const {
+  // Keys closer than CLUSTER_PX would draw on the same pixels: they become one cluster marker.
+  QVector<QVector<int>> out;
+  for (int i = 0; i < times.size(); i++) {
+    if (!out.isEmpty() && view_->timeToX(times[i]) - view_->timeToX(times[out.back().back()]) < CLUSTER_PX) out.back() << i;
+    else out.push_back({i});
+  }
+  return out;
+}
+QVector<QVector<int>> Dopesheet::clusters(int row) const { return row >= 0 && row < rows_.size() ? groups(rows_[row].times) : QVector<QVector<int>>{}; }
+Dopesheet::Hit Dopesheet::hitAt(QPointF p) const {
+  const int r = rowAt(int(p.y()));
+  if (r < 0 || p.x() < LABEL) return {};
+  const auto& times = rows_[r].times;
+  for (const auto& g : groups(times)) {
+    const double x0 = view_->timeToX(times[g.front()]), x1 = view_->timeToX(times[g.back()]);
+    if (p.x() < x0 - 6 || p.x() > x1 + 6) continue;
+    Hit hit{r, {}};
+    for (int i : g) hit.times << times[i];
+    return hit;
+  }
+  return {};
+}
+KeyRef Dopesheet::pickInCluster(const Hit& hit) const {
+  // Clicking a cluster cycles through its keys, so keys a few ms apart stay separately
+  // selectable at any zoom; with several already selected the click grabs the selection.
+  QVector<int> selected;
+  for (int i = 0; i < hit.times.size(); i++) if (view_->isSelected(refOf(hit.row, hit.times[i]))) selected << i;
+  if (hit.times.size() == 1 || selected.isEmpty()) return refOf(hit.row, hit.times.front());
+  if (selected.size() == 1) return refOf(hit.row, hit.times[(selected.front() + 1) % hit.times.size()]);
+  return refOf(hit.row, hit.times[selected.front()]);
+}
+bool Dopesheet::selectionExtent(int& lo, int& hi) const {
+  lo = INT_MAX; hi = INT_MIN;
+  for (const auto& k : view_->selection()) { lo = std::min(lo, k.timeMs); hi = std::max(hi, k.timeMs); }
+  return lo <= hi;
+}
+int Dopesheet::shownTime(int row, int t) const {
+  if ((drag_ != Drag::Keys && drag_ != Drag::ScaleLeft && drag_ != Drag::ScaleRight) || !view_->isSelected(refOf(row, t))) return t;
+  if (drag_ == Drag::Keys) return t + delta_;
+  return pivot_ + int(std::llround(double(t - pivot_) * factor_));  // same rounding as core scaleKeys
+}
+std::optional<QPointF> Dopesheet::scaleHandle(bool right) const {
+  int lo, hi;
+  if (!selectionExtent(lo, hi) || lo == hi) return std::nullopt;
+  return QPointF(view_->timeToX(right ? hi : lo), headerTop() + RULER + STRIP / 2.0);
 }
 
 // Segments show their interpolation: straight = linear, dotted = step, and a small teal
 // curve for bezier drawn from the real normalized handles (shape only, not direction).
-void Dopesheet::paintSegments(QPainter& p, const Row& row, int r, int y) const {
-  QVector<int> times = row.times;
-  if (dragMode_ == DragMode::Key && r == dragRow_)
-    for (int& t : times) if (t == dragFrom_) t = dragTo_;
+void Dopesheet::paintSegments(QPainter& p, const Row& row, const QVector<int>& times, int y) const {
   const double mid = y + ROW / 2.0, half = ROW / 2.0 - 4;
-  for (int i = 0; i + 1 < times.size(); i++) {
-    const double x0 = timeToX(times[i]), x1 = timeToX(times[i + 1]);
-    if (x1 - x0 < 3) continue;
+  QVector<int> order(times.size());
+  for (int i = 0; i < order.size(); i++) order[i] = i;
+  std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return times[a] < times[b]; });
+  for (int s = 0; s + 1 < order.size(); s++) {
+    const int i = order[s];
+    const double x0 = view_->timeToX(times[i]), x1 = view_->timeToX(times[order[s + 1]]);
+    if (x1 - x0 < 3 || x1 < LABEL || x0 > width()) continue;
     const QString interp = row.attachment ? "step" : row.interps.value(i, row.step.value(i) ? "step" : "linear");
     if (interp == "bezier") {
       const cutout::Curve c = row.curves.value(i, cutout::LINEAR_CURVE);
@@ -105,111 +163,338 @@ void Dopesheet::paintSegments(QPainter& p, const Row& row, int r, int y) const {
 void Dopesheet::paintEvent(QPaintEvent*) {
   QPainter p(this);
   p.fillRect(rect(), QColor("#1f242a"));
-  timeline::paintRuler(p, width(), duration_);
   for (int r = 0; r < rows_.size(); r++) {
-    const int y = RULER + r * ROW;
+    const int y = rowTop(r);
     p.fillRect(QRect(0, y, width(), ROW), r % 2 ? QColor("#22282f") : QColor("#262c33"));
     p.setPen(QColor("#d0d6dc"));
     p.drawText(QRect(6, y, LABEL - 10, ROW), Qt::AlignLeft | Qt::AlignVCenter, fontMetrics().elidedText(rows_[r].label, Qt::ElideMiddle, LABEL - 10));
-    p.setRenderHint(QPainter::Antialiasing, true);
-    paintSegments(p, rows_[r], r, y);
-    for (int i = 0; i < rows_[r].times.size(); i++) {
-      int t = rows_[r].times[i];
-      const bool dragged = dragMode_ == DragMode::Key && r == dragRow_ && t == dragFrom_;
-      if (dragged) t = dragTo_;
-      const QPointF c(timeToX(t), y + ROW / 2.0);
-      const bool selected = r == selRow_ && rows_[r].times[i] == selTime_;
-      const bool bezier = !rows_[r].attachment && rows_[r].interps.value(i) == "bezier";
-      QColor fill = rows_[r].attachment ? QColor("#c49bff") : rows_[r].step.value(i) ? QColor("#f0b35a") : bezier ? QColor("#5eead4") : QColor("#9fd0ff");
+  }
+  p.save();
+  p.setClipRect(QRect(LABEL + 1, RULER + STRIP, width() - LABEL - 1, height()));
+  if (view_->loopActive()) {
+    // Outside the preview loop range is dimmed (the range itself is editor-only).
+    const QColor dim(0, 0, 0, 60);
+    p.fillRect(QRectF(LABEL, RULER + STRIP, view_->timeToX(view_->loopIn()) - LABEL, height()), dim);
+    p.fillRect(QRectF(view_->timeToX(view_->loopOut()), RULER + STRIP, width(), height()), dim);
+  }
+  p.setRenderHint(QPainter::Antialiasing, true);
+  QFont small = font();
+  small.setPixelSize(10);
+  small.setBold(true);
+  for (int r = 0; r < rows_.size(); r++) {
+    const Row& row = rows_[r];
+    const int y = rowTop(r);
+    QVector<int> shown = row.times;
+    for (int& t : shown) t = shownTime(r, t);
+    paintSegments(p, row, shown, y);
+    QVector<int> order(shown.size());
+    for (int i = 0; i < order.size(); i++) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return shown[a] < shown[b]; });
+    QVector<int> sortedTimes;
+    for (int i : order) sortedTimes << shown[i];
+    for (const auto& g : groups(sortedTimes)) {
+      const double cy = y + ROW / 2.0;
+      if (g.size() > 1) {
+        // Cluster marker: keys too close to tell apart at this zoom, with their count.
+        int selected = 0;
+        for (int gi : g) selected += view_->isSelected(refOf(r, row.times[order[gi]]));
+        const double x0 = view_->timeToX(sortedTimes[g.front()]) - 6, x1 = view_->timeToX(sortedTimes[g.back()]) + 6;
+        const QRectF box(x0, cy - 6, std::max(14.0, x1 - x0), 12);
+        p.setBrush(selected ? QColor("#ffd34d") : QColor("#8fa3b8"));
+        p.setPen(QPen(selected == g.size() ? QColor("#ffffff") : QColor("#111"), 1));
+        p.drawRoundedRect(box, 6, 6);
+        p.setFont(small);
+        p.setPen(QColor("#111"));
+        p.drawText(box, Qt::AlignCenter, selected && selected < g.size() ? QString("%1/%2").arg(selected).arg(g.size()) : QString::number(g.size()));
+        p.setFont(font());
+        continue;
+      }
+      const int i = order[g.front()];
+      const QPointF c(view_->timeToX(shown[i]), cy);
+      const bool selected = view_->isSelected(refOf(r, row.times[i]));
+      const bool bezier = !row.attachment && row.interps.value(i) == "bezier";
+      QColor fill = row.attachment ? QColor("#c49bff") : row.step.value(i) ? QColor("#f0b35a") : bezier ? QColor("#5eead4") : QColor("#9fd0ff");
       if (selected) fill = QColor("#ffd34d");
       p.setBrush(fill);
-      p.setPen(QPen(QColor("#111"), 1));
-      if (rows_[r].step.value(i) || rows_[r].attachment) p.drawRect(QRectF(c.x() - 4.5, c.y() - 4.5, 9, 9));  // step = square
-      else if (bezier) p.drawEllipse(c, 5.5, 5.5);                                                          // eased = round
+      p.setPen(QPen(selected ? QColor("#ffffff") : QColor("#111"), 1));
+      if (row.step.value(i) || row.attachment) p.drawRect(QRectF(c.x() - 4.5, c.y() - 4.5, 9, 9));  // step = square
+      else if (bezier) p.drawEllipse(c, 5.5, 5.5);                                                // eased = round
       else p.drawPolygon(QPolygonF({c + QPointF(0, -6), c + QPointF(6, 0), c + QPointF(0, 6), c + QPointF(-6, 0)}));
     }
-    p.setRenderHint(QPainter::Antialiasing, false);
   }
+  p.setRenderHint(QPainter::Antialiasing, false);
+  if (drag_ == Drag::Band && moved_) {
+    p.setPen(QPen(QColor("#ffd34d"), 1, Qt::DashLine));
+    p.setBrush(QColor(255, 211, 77, 30));
+    p.drawRect(band_);
+  }
+  p.restore();
+  // Header last, at the top of the visible area: it stays usable while rows scroll.
+  const int top = headerTop();
+  p.translate(0, top);
+  view_->paintRuler(p, width());
+  // Selection strip: extent of the selection (preview included) with scale handles.
+  p.fillRect(QRect(0, RULER, width(), STRIP), QColor("#191d22"));
+  int lo, hi;
+  if (selectionExtent(lo, hi)) {
+    int slo = INT_MAX, shi = INT_MIN;
+    for (const auto& k : view_->selection()) {
+      const int r = rowOf(k.target, k.property);
+      const int t = r >= 0 ? shownTime(r, k.timeMs) : k.timeMs;
+      slo = std::min(slo, t); shi = std::max(shi, t);
+    }
+    p.save();
+    p.setClipRect(QRect(LABEL, RULER, width() - LABEL, STRIP));
+    const double x0 = view_->timeToX(slo), x1 = view_->timeToX(shi);
+    p.fillRect(QRectF(x0, RULER + 3, std::max(2.0, x1 - x0), STRIP - 6), QColor(255, 211, 77, 110));
+    if (lo != hi)
+      for (double x : {x0, x1}) p.fillRect(QRectF(x - 3, RULER + 1, 6, STRIP - 2), QColor("#ffd34d"));
+    p.restore();
+  }
+  p.setPen(QColor("#6b7580"));
+  p.drawText(QRect(6, RULER, LABEL - 10, STRIP), Qt::AlignLeft | Qt::AlignVCenter,
+             view_->selection().isEmpty() ? QString() : QString("선택 %1개").arg(view_->selection().size()));
+  p.translate(0, -top);
   if (rows_.isEmpty()) {
     p.setPen(QColor("#8a949e"));
-    p.drawText(rect().adjusted(LABEL, RULER, 0, 0), Qt::AlignCenter, "키가 없습니다. 캔버스에서 포즈를 바꾸고 K(키 추가)를 누르세요.");
+    p.drawText(rect().adjusted(LABEL, RULER + STRIP, 0, 0), Qt::AlignCenter, "키가 없습니다. 캔버스에서 포즈를 바꾸고 K(키 추가)를 누르세요.");
   }
   p.setPen(QColor("#56606c"));
   p.drawLine(LABEL, 0, LABEL, height());
-  const int x = timeToX(playhead_);
-  p.setPen(QPen(QColor("#ef4444"), 2));
-  p.drawLine(x, 0, x, height());
+  const double x = view_->timeToX(view_->playhead());
+  if (x >= LABEL) {
+    p.setPen(QPen(QColor("#ef4444"), 2));
+    p.drawLine(QPointF(x, 0), QPointF(x, height()));
+  }
 }
 
 void Dopesheet::mousePressEvent(QMouseEvent* e) {
   setFocus(Qt::MouseFocusReason);
-  if (e->button() != Qt::LeftButton || e->position().x() < LABEL) {
-    const int r = rowAt(int(e->position().y()));
-    if (e->button() == Qt::LeftButton && r >= 0 && onRowSelected) onRowSelected(r);
+  const QPointF pos = e->position();
+  pressPos_ = lastPos_ = pos;
+  moved_ = false;
+  pendingSingle_.reset();
+  if (e->button() == Qt::MiddleButton) { drag_ = Drag::Pan; return; }
+  if (e->button() != Qt::LeftButton) return;
+  const bool ctrl = e->modifiers() & Qt::ControlModifier, shift = e->modifiers() & Qt::ShiftModifier, alt = e->modifiers() & Qt::AltModifier;
+  pressTime10_ = view_->snap(xToTime(pos.x()), false);
+  pressTime1_ = view_->snap(xToTime(pos.x()), true);
+  delta_ = 0;
+  factor_ = 1;
+  const int top = headerTop();
+  if (pos.y() < top + RULER) {
+    if (pos.x() < LABEL) return;
+    if (const int marker = view_->loopMarkerAt(pos.x(), pos.y() - top)) { drag_ = marker == 1 ? Drag::LoopIn : Drag::LoopOut; return; }
+    // Ruler: scrubbing samples poses only; it never fires clip events.
+    drag_ = Drag::Scrub;
+    if (onScrub) onScrub(shift ? pressTime1_ : pressTime10_);
     return;
   }
-  int row = -1;
-  const int t = keyAt(e->position().toPoint(), &row);
-  if (t >= 0) {
-    selRow_ = row; selTime_ = t;
-    dragMode_ = DragMode::Key; dragRow_ = row; dragFrom_ = dragTo_ = t; dragMoved_ = false;
-    if (onRowSelected) onRowSelected(row);
-  } else {
-    // Scrubbing samples poses only; it never fires clip events.
-    dragMode_ = DragMode::Scrub;
-    if (onScrub) onScrub(snap(xToTime(e->position().x()), e->modifiers() & Qt::ShiftModifier));
+  if (pos.y() < top + RULER + STRIP) {
+    int lo, hi;
+    if (!selectionExtent(lo, hi)) return;
+    for (bool right : {true, false})
+      if (auto h = scaleHandle(right); h && std::fabs(h->x() - pos.x()) <= 6) {
+        // Scale around the opposite end (Alt: around the playhead).
+        drag_ = right ? Drag::ScaleRight : Drag::ScaleLeft;
+        edge_ = right ? hi : lo;
+        pivot_ = alt ? view_->playhead() : right ? lo : hi;
+        return;
+      }
+    if (pos.x() >= view_->timeToX(lo) - 4 && pos.x() <= view_->timeToX(hi) + 4) drag_ = Drag::Keys;  // drag the strip = move all
+    return;
   }
-  update();
+  if (pos.x() < LABEL) {
+    // Row header: the whole row (Ctrl/Shift adds).
+    const int r = rowAt(int(pos.y()));
+    if (r < 0) return;
+    if (ctrl || shift) view_->add(rowKeys(r)); else view_->setSelection(rowKeys(r));
+    if (onRowSelected) onRowSelected(r);
+    return;
+  }
+  const Hit hit = hitAt(pos);
+  if (hit.row < 0) {
+    drag_ = Drag::Band;
+    bandAdd_ = ctrl || shift;
+    band_ = QRectF(pos, pos);
+    return;
+  }
+  QVector<KeyRef> refs;
+  for (int t : hit.times) refs << refOf(hit.row, t);
+  if (alt) {
+    // Column: every key at that time across all rows.
+    const QVector<KeyRef> column = keysAt(pickInCluster(hit).timeMs);
+    if (ctrl || shift) view_->add(column); else view_->setSelection(column);
+    if (onRowSelected) onRowSelected(hit.row);
+    return;
+  }
+  if (ctrl) {
+    // Toggle the key (a cluster toggles as a whole: all on unless all are already on).
+    bool all = true;
+    for (const auto& k : refs) all &= view_->isSelected(k);
+    QVector<KeyRef> next = view_->selection();
+    for (const auto& k : refs) { next.removeAll(k); if (!all) next << k; }
+    view_->setSelection(next);
+    return;
+  }
+  const KeyRef ref = pickInCluster(hit);
+  int inCluster = 0;
+  for (const auto& k : refs) inCluster += view_->isSelected(k);
+  if (shift) view_->add({ref});
+  else if (hit.times.size() > 1 && inCluster >= 2) {}           // grab the selected cluster keys as they are
+  else if (hit.times.size() > 1 || !view_->isSelected(ref)) view_->setSelection({ref});  // cluster click cycles
+  else if (view_->selection().size() > 1) pendingSingle_ = ref;  // click (no drag) on a selected key keeps only it
+  drag_ = Drag::Keys;
+  if (onRowSelected) onRowSelected(hit.row);
 }
 void Dopesheet::mouseMoveEvent(QMouseEvent* e) {
+  const QPointF pos = e->position();
   const bool fine = e->modifiers() & Qt::ShiftModifier;
-  if (dragMode_ == DragMode::Scrub && onScrub) onScrub(snap(xToTime(e->position().x()), fine));
-  if (dragMode_ == DragMode::Key) {
-    const int to = snap(xToTime(e->position().x()), fine);
-    dragMoved_ |= to != dragFrom_;
-    dragTo_ = to;
-    update();
+  const int t = view_->snap(xToTime(pos.x()), fine);
+  moved_ |= std::fabs(pos.x() - pressPos_.x()) + std::fabs(pos.y() - pressPos_.y()) >= 3;
+  switch (drag_) {
+    case Drag::Pan: view_->panPixels(pos.x() - lastPos_.x()); break;
+    case Drag::Scrub: if (onScrub) onScrub(t); break;
+    case Drag::LoopIn: view_->setLoop(std::min(t, view_->loopOut() - 1), view_->loopOut()); break;
+    case Drag::LoopOut: view_->setLoop(view_->loopIn(), std::max(t, view_->loopIn() + 1)); break;
+    case Drag::Keys: {
+      int lo, hi;
+      if (!selectionExtent(lo, hi)) break;
+      // Grid-snapped delta keeps relative spacing; the group stops at the clip edges.
+      delta_ = std::clamp(t - (fine ? pressTime1_ : pressTime10_), -lo, view_->duration() - hi);
+      update();
+      break;
+    }
+    case Drag::ScaleLeft:
+    case Drag::ScaleRight: {
+      const bool right = drag_ == Drag::ScaleRight;
+      const double span = right ? edge_ - pivot_ : pivot_ - edge_;
+      if (span <= 0) { factor_ = 1; break; }
+      const int to = right ? std::clamp(t, pivot_ + 1, view_->duration()) : std::clamp(t, 0, pivot_ - 1);
+      factor_ = (right ? to - pivot_ : pivot_ - to) / span;
+      update();
+      break;
+    }
+    case Drag::Band: band_ = QRectF(pressPos_, pos).normalized(); update(); break;
+    case Drag::None: break;
   }
+  lastPos_ = pos;
 }
-void Dopesheet::mouseReleaseEvent(QMouseEvent*) {
-  const DragMode mode = dragMode_;
-  dragMode_ = DragMode::None;
-  if (mode == DragMode::Key && dragMoved_ && dragTo_ != dragFrom_ && onMoveKey) {
-    const int row = dragRow_, from = dragFrom_, to = dragTo_;
-    if (onMoveKey(row, from, to)) { selRow_ = row; selTime_ = to; }
+void Dopesheet::mouseReleaseEvent(QMouseEvent* e) {
+  const Drag mode = drag_;
+  const int delta = delta_;
+  const double factor = factor_;
+  // Clear the preview before committing: the commit may rebuild the rows synchronously.
+  drag_ = Drag::None;
+  delta_ = 0;
+  factor_ = 1;
+  const QVector<KeyRef> keys = view_->selection();
+  if (mode == Drag::Keys) {
+    if (delta != 0 && onMoveKeys) onMoveKeys(keys, delta);
+    else if (!moved_ && pendingSingle_) view_->setSelection({*pendingSingle_});
+  } else if ((mode == Drag::ScaleLeft || mode == Drag::ScaleRight) && factor != 1 && onScaleKeys) {
+    onScaleKeys(keys, pivot_, factor);
+  } else if (mode == Drag::Band) {
+    if (!moved_) {
+      // A plain click on empty space: deselect and place the playhead there.
+      if (!bandAdd_) view_->clearSelection();
+      if (onScrub) onScrub(view_->snap(xToTime(e->position().x()), e->modifiers() & Qt::ShiftModifier));
+    } else {
+      QVector<KeyRef> inside;
+      for (int r = 0; r < rows_.size(); r++) {
+        if (rowTop(r) + ROW < band_.top() || rowTop(r) > band_.bottom()) continue;
+        for (int t : rows_[r].times) if (view_->timeToX(t) >= band_.left() - 3 && view_->timeToX(t) <= band_.right() + 3) inside << refOf(r, t);
+      }
+      if (bandAdd_) view_->add(inside); else view_->setSelection(inside);
+    }
   }
+  pendingSingle_.reset();
   update();
 }
+void Dopesheet::mouseDoubleClickEvent(QMouseEvent* e) {
+  const Hit hit = hitAt(e->position());
+  if (hit.row < 0 || hit.times.size() < 2) { mousePressEvent(e); return; }
+  // Double-click a cluster: zoom in until its keys are ~24 px apart.
+  int gap = INT_MAX;
+  for (int i = 1; i < hit.times.size(); i++) gap = std::min(gap, hit.times[i] - hit.times[i - 1]);
+  const double center = (hit.times.front() + hit.times.back()) / 2.0;
+  view_->zoomAround(center, 24.0 / std::max(1, gap) / view_->pxPerMs());
+  view_->setScroll(center - view_->visibleMs() / 2);
+}
+void Dopesheet::wheelEvent(QWheelEvent* e) {
+  const QPoint a = e->angleDelta();
+  if (e->modifiers() & Qt::ControlModifier) {
+    view_->zoomAround(xToTime(e->position().x()), std::pow(1.25, a.y() / 120.0));
+    e->accept();
+    return;
+  }
+  // Plain wheel scrolls rows when they overflow the scroll area; otherwise (or with Shift) it pans time.
+  const bool overflow = parentWidget() && height() > parentWidget()->height();
+  if (!(e->modifiers() & Qt::ShiftModifier) && a.x() == 0 && overflow) { e->ignore(); return; }
+  view_->panPixels((a.x() ? a.x() : a.y()) / 120.0 * 80);
+  e->accept();
+}
 void Dopesheet::keyPressEvent(QKeyEvent* e) {
-  if ((e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) && selRow_ >= 0 && onDeleteKey) {
-    const int row = selRow_, t = selTime_;
-    if (onDeleteKey(row, t)) selRow_ = selTime_ = -1;
-    update();
+  const auto& sel = view_->selection();
+  if ((e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) && !sel.isEmpty() && onDeleteKeys) { onDeleteKeys(sel); return; }
+  if (e->matches(QKeySequence::SelectAll)) { view_->setSelection(allKeys()); return; }
+  if (e->matches(QKeySequence::Copy) && onCommand) { onCommand("copy"); return; }
+  if (e->matches(QKeySequence::Paste) && onCommand) { onCommand("paste"); return; }
+  if (e->key() == Qt::Key_D && e->modifiers() == Qt::ControlModifier && onCommand) { onCommand("duplicate"); return; }
+  if (e->key() == Qt::Key_Escape) { view_->clearSelection(); return; }
+  if ((e->key() == Qt::Key_Left || e->key() == Qt::Key_Right) && onStep) {
+    onStep((e->key() == Qt::Key_Left ? -1 : 1) * (e->modifiers() & Qt::ShiftModifier ? 10 : 1));
     return;
   }
   QWidget::keyPressEvent(e);
 }
 void Dopesheet::contextMenuEvent(QContextMenuEvent* e) {
-  int row = -1;
-  const int t = keyAt(e->pos(), &row);
-  if (t < 0) return;
-  selRow_ = row; selTime_ = t;
-  update();
+  const Hit hit = hitAt(e->pos());
+  const int row = hit.row;
+  // Resolved before exec(): the menu runs an event loop and rows may be rebuilt meanwhile.
+  const int columnMs = row >= 0 ? pickInCluster(hit).timeMs : -1;
+  const bool attachmentRow = row >= 0 && rows_[row].attachment;
+  if (row >= 0) {
+    const KeyRef ref = pickInCluster(hit);
+    if (!view_->isSelected(ref)) view_->setSelection({ref});
+  }
   QMenu menu(this);
   menu.setObjectName("cutoutKeyMenu");
   QMap<QAction*, QString> choices;
-  for (const auto& preset : interpPresets()) {
-    QAction* a = menu.addAction(QString("%1 · %2").arg(preset.label, preset.tip));
-    a->setObjectName(QString("cutoutInterp") + preset.suffix);
-    a->setEnabled(!rows_[row].attachment);  // attachment keys always switch (step)
-    choices.insert(a, preset.id);
-    if (QString(preset.id) == "step") menu.addSeparator();
+  if (row >= 0) {
+    for (const auto& preset : interpPresets()) {
+      QAction* a = menu.addAction(QString("%1 · %2").arg(preset.label, preset.tip));
+      a->setObjectName(QString("cutoutInterp") + preset.suffix);
+      a->setEnabled(!attachmentRow);  // attachment keys always switch (step)
+      choices.insert(a, preset.id);
+      if (QString(preset.id) == "step") menu.addSeparator();
+    }
+    menu.addSeparator();
   }
-  menu.addSeparator();
-  auto del = menu.addAction("키 삭제 (Delete)");
-  del->setObjectName("cutoutKeyDelete");
+  QMap<QAction*, QString> commands;
+  auto command = [&](const char* text, const char* name, const char* id, bool enabled) {
+    QAction* a = menu.addAction(text);
+    a->setObjectName(name);
+    a->setEnabled(enabled);
+    commands.insert(a, id);
+  };
+  command("복사 (Ctrl+C)", "cutoutKeyCopy", "copy", !view_->selection().isEmpty());
+  command("재생 헤드에 붙여넣기 (Ctrl+V)", "cutoutKeyPaste", "paste", true);
+  command("재생 헤드에 복제 (Ctrl+D)", "cutoutKeyDuplicate", "duplicate", !view_->selection().isEmpty());
+  QAction* column = row >= 0 ? menu.addAction("이 시간의 키 모두 선택 (Alt+클릭)") : nullptr;
+  if (column) column->setObjectName("cutoutKeySelectColumn");
+  QAction* del = row >= 0 ? menu.addAction("선택한 키 삭제 (Delete)") : nullptr;
+  if (del) del->setObjectName("cutoutKeyDelete");
+  update();
   QAction* chosen = menu.exec(e->globalPos());
-  if (chosen && choices.contains(chosen) && onInterp) onInterp(row, t, choices.value(chosen));
-  else if (chosen == del && onDeleteKey) onDeleteKey(row, t);
+  if (!chosen) return;
+  if (choices.contains(chosen) && onPreset) onPreset(choices.value(chosen));
+  else if (commands.contains(chosen) && onCommand) onCommand(commands.value(chosen));
+  else if (chosen == column) view_->setSelection(keysAt(columnMs));
+  else if (chosen == del && onDeleteKeys) onDeleteKeys(view_->selection());
+}
+void Dopesheet::resizeEvent(QResizeEvent* e) {
+  QWidget::resizeEvent(e);
+  view_->viewResized();
 }
 }  // namespace cutout_studio
