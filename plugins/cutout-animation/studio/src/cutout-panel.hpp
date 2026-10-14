@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include "cutout/editing.hpp"
+#include "onion-skin.hpp"
 #include "plugin-api.hpp"
 #include "rig-canvas.hpp"
 #include "rig-render.hpp"
@@ -22,6 +23,7 @@
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
+class QFrame;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -132,6 +134,19 @@ class CutoutPanel : public QWidget {
   bool removeLayer();
   bool addBinding();
   bool removeBinding();
+  // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
+  struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
+  const OnionSettings& onionSettings() const { return onion_; }
+  void setOnionSettings(const OnionSettings& settings);  // syncs the UI and saves to QSettings
+  void setOnionSkin(bool on);                            // toolbar toggle / O
+  /** Ghosts currently drawn (empty when off, outside Animate mode or in the controller preview). */
+  const QVector<GhostInfo>& ghosts() const { return ghostInfo_; }
+  int ghostSamples() const { return ghostCache_.samples() + committedCache_.samples(); }
+  QSet<QString> ghostHiddenSlots() const;
+  const QVector<double>& trailTimes() const { return trailTimes_; }
+  const QPolygonF& trailPoints() const { return trailPoints_; }
+  const QPolygonF& trailKeyPoints() const { return trailKeys_; }
+  const QVector<int>& trailKeyTimes() const { return trailKeyTimes_; }
   /** Fire a signal into the local preview instance (never the game). Returns matched binding ids. */
   QStringList previewSignal(const QString& name, const QMap<QString, QString>& params);
 
@@ -185,6 +200,18 @@ class CutoutPanel : public QWidget {
   cutout::Json clipboard_, poseClipboard_;   // editor-only (core copyKeys/copyPose results)
   QMap<QString, QPair<int, int>> loops_;     // "<rig>/<clip>" -> preview loop range, editor-only
   QString viewClip_;                         // clip the time view currently shows
+  // onion skin / motion trail (editor-only)
+  OnionSettings onion_;
+  GhostPoseCache ghostCache_, committedCache_;
+  quint64 displayGeneration_ = 0;            // ++ whenever rig_ is rebuilt: ghost caches key on it
+  std::shared_ptr<const cutout::Rig> committedParsed_;  // includeCurrent: the saved rig
+  QString committedParsedKey_;
+  QVector<GhostInfo> ghostInfo_;
+  QString trailKey_;
+  QVector<double> trailTimes_;
+  QPolygonF trailPoints_, trailKeys_;
+  QVector<int> trailKeyTimes_;
+  bool onionFilling_ = false;
   struct SetupDelta { QString bone; cutout::Json delta; };
   std::optional<SetupDelta> lastSetupDelta_;
 
@@ -202,6 +229,11 @@ class CutoutPanel : public QWidget {
   QPushButton *keyButton_ = nullptr, *discardButton_ = nullptr, *deltaButton_ = nullptr;
   QCheckBox* autoKeyCheck_ = nullptr;
   QLabel* selectionLabel_ = nullptr;
+  QToolButton *onionButton_ = nullptr, *onionSettingsButton_ = nullptr, *trailButton_ = nullptr;
+  QFrame* onionPopup_ = nullptr;
+  QSpinBox *onionBefore_ = nullptr, *onionAfter_ = nullptr, *onionStep_ = nullptr, *onionOpacity_ = nullptr, *onionFalloff_ = nullptr;
+  QComboBox *onionMode_ = nullptr, *onionBeforeColor_ = nullptr, *onionAfterColor_ = nullptr;
+  QCheckBox *onionCurrent_ = nullptr, *onionSubtree_ = nullptr;
   QTabWidget* bottomTabs_ = nullptr;
   QListWidget* clipList_ = nullptr;
   QSpinBox* clipDuration_ = nullptr;
@@ -233,6 +265,15 @@ class CutoutPanel : public QWidget {
   QWidget* buildWorkspace();
   QWidget* buildAnimateTab();
   QWidget* buildControllerTab();
+  QFrame* buildOnionSettings();
+  void syncOnionUi();
+  void onionFromUi();
+  void updateOnion();     // ghosts + trail for the current canvas pose
+  void updateTrail(int clip);
+  bool showingPreview() const;  // canvas shows the controller preview instance, not the clip
+  QSet<int> boneSubtree(int bone) const;
+  QVector<int> onionKeyTimes(int clip) const;
+  std::shared_ptr<const cutout::Rig> committedParsed();
 
   // documents
   const Doc* rigDoc() const;

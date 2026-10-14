@@ -82,6 +82,19 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * Editor-only state is never stored in documents: time zoom/scroll, the key selection, the
   clipboards and the preview loop range (in/out markers; editor playback loops inside it,
   remembered per clip for the session). Runtimes always play whole clips.
+* Onion skin and motion trail are editor-only views; their settings are a per-user
+  preference (QSettings `plugins/cutout-animation/onionSkin/*`), never rig/controller data
+  (not even an `editor` block). Ghosts are pure `samplePose` results of the clip being edited
+  at `playhead ± k·stepMs` (step mode) or at the nearest key times of the selected target
+  (keys-only mode; nothing keyed there = all visible tracks): looping clips wrap like the
+  runtime (`t mod duration`), one-shots clamp to `[0, duration]` and repeated boundary times
+  collapse into one ghost. They never fire clip events, touch preview instances or edit.
+  The controller preview (bindings, mixes, layers) is runtime state without a fixed time, so
+  no ghosts are drawn while the canvas shows it. "Include current" ghosts the saved
+  (committed) pose at the playhead, which differs from the live pose only while a change is
+  pending or a drag is in progress. The trail samples the selected bone's world origin over
+  `[0, duration]` (end inclusive, editor scrubbing rule); dots mark keys of the bone and its
+  ancestors.
 * Compatibility: schemaVersion stays 1 and every 1.0.0 document loads and plays unchanged.
   Documents that use `bezier` need plugin 1.1.0 or newer (1.0.0 rejects the interp value).
 * Rotation interpolates numerically (no shortest-path wrapping): 0→350 turns 350°.

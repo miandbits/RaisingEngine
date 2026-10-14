@@ -174,6 +174,7 @@ class PartDialog : public QDialog {
 // ============================================================================
 CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(parent), host_(host) {
   setObjectName("cutoutPanel");
+  onion_ = OnionSettings::load();
   askText = [this](const QString& title, const QString& label, const QString& value) {
     bool ok = false;
     const QString text = QInputDialog::getText(this, title, label, QLineEdit::Normal, value, &ok);
@@ -268,10 +269,12 @@ void CutoutPanel::buildUi() {
   shortcut(Qt::Key_S, "cutoutShortcutScale", [this] { setTool(RigCanvas::Scale); });
   shortcut(Qt::Key_P, "cutoutShortcutPivot", [this] { setTool(RigCanvas::Pivot); });
   shortcut(Qt::Key_K, "cutoutShortcutKey", [this] { keySelected(); });
+  shortcut(Qt::Key_O, "cutoutShortcutOnion", [this] { setOnionSkin(!onion_.enabled); });
   shortcut(Qt::Key_Space, "cutoutShortcutPlay", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
   shortcut(Qt::Key_Comma, "cutoutShortcutStepBack", [this] { if (mode_ == Mode::Animate) stepPlayhead(-1); });
   shortcut(Qt::Key_Period, "cutoutShortcutStepForward", [this] { if (mode_ == Mode::Animate) stepPlayhead(1); });
   refreshModeUi();
+  syncOnionUi();
 }
 
 QWidget* CutoutPanel::buildHeader() {
@@ -404,6 +407,37 @@ QWidget* CutoutPanel::buildWorkspace() {
   auto* fit = new QToolButton;
   fit->setObjectName("cutoutFitView");
   fit->setText("화면 맞춤 (F)");
+  tools->addSpacing(12);
+  onionButton_ = new QToolButton;
+  onionButton_->setObjectName("cutoutOnionSkin");
+  onionButton_->setText("어니언 스킨 (O)");
+  onionButton_->setCheckable(true);
+  onionButton_->setToolTip("앞뒤 시간의 자세를 반투명하게 겹쳐 보여 줍니다(편집기 전용, 저장되지 않음).");
+  connect(onionButton_, &QToolButton::toggled, this, [this](bool on) { if (!onionFilling_) setOnionSkin(on); });
+  onionSettingsButton_ = new QToolButton;
+  onionSettingsButton_->setObjectName("cutoutOnionSettingsButton");
+  onionSettingsButton_->setText("▾");
+  onionSettingsButton_->setToolTip("어니언 스킨 설정");
+  trailButton_ = new QToolButton;
+  trailButton_->setObjectName("cutoutMotionTrail");
+  trailButton_->setText("궤적");
+  trailButton_->setCheckable(true);
+  trailButton_->setToolTip("선택한 본의 원점이 클립 동안 지나는 길(점 = 키 위치)");
+  connect(trailButton_, &QToolButton::toggled, this, [this](bool on) {
+    if (onionFilling_) return;
+    OnionSettings s = onion_;
+    s.trail = on;
+    setOnionSettings(s);
+  });
+  onionPopup_ = buildOnionSettings();
+  connect(onionSettingsButton_, &QToolButton::clicked, this, [this] {
+    onionPopup_->adjustSize();
+    onionPopup_->move(onionSettingsButton_->mapToGlobal(QPoint(0, onionSettingsButton_->height())));
+    onionPopup_->show();
+  });
+  tools->addWidget(onionButton_);
+  tools->addWidget(onionSettingsButton_);
+  tools->addWidget(trailButton_);
   tools->addStretch();
   tools->addWidget(fit);
   canvas_ = new RigCanvas;
@@ -413,6 +447,7 @@ QWidget* CutoutPanel::buildWorkspace() {
   canvas_->onDrag = [this](const RigCanvas::Drag& d, bool finished) { onCanvasDrag(d, finished); };
   canvas_->onTool = [this](int t) { setTool(t); };
   canvas_->onKey = [this] { keySelected(); };
+  canvas_->onOnion = [this] { setOnionSkin(!onion_.enabled); };
   connect(fit, &QToolButton::clicked, canvas_, &RigCanvas::fitToCanvas);
   middleLayout->addLayout(tools);
   middleLayout->addWidget(canvas_, 1);
@@ -1023,6 +1058,7 @@ void CutoutPanel::rebuildDisplay(bool full) {
       rig_ = std::make_shared<const cutout::Rig>(std::move(r));
     } catch (const std::exception& e) { rigError_ = qs(e.what()); }
   }
+  displayGeneration_++;  // every rebuild may change the data: ghost poses are resampled
   if (full) {
     const QStringList clips = clipIds();
     if (!clips.contains(clipId_)) {
@@ -1148,11 +1184,13 @@ QString CutoutPanel::selectedBone() const {
   return {};
 }
 
+bool CutoutPanel::showingPreview() const {
+  return rig_ && bottomTabs_ && bottomTabs_->currentIndex() == 1 && preview_ && !dragPreview_ && preview_->rig().bones.size() == rig_->bones.size() &&
+         preview_->rig().slots.size() == rig_->slots.size();
+}
 cutout::Pose CutoutPanel::currentPose() const {
   if (!rig_) return {};
-  if (bottomTabs_ && bottomTabs_->currentIndex() == 1 && preview_ && !dragPreview_ && preview_->rig().bones.size() == rig_->bones.size() &&
-      preview_->rig().slots.size() == rig_->slots.size())
-    return preview_->pose();
+  if (showingPreview()) return preview_->pose();
   if (mode_ == Mode::Animate) return cutout::samplePose(*rig_, rig_->clipIndex(ss(clipId_)), playheadExact_);
   return cutout::samplePose(*rig_, -1, 0);
 }
@@ -1522,6 +1560,252 @@ void CutoutPanel::updateCanvas() {
   canvas_->setMessage(rigId_.isEmpty() ? "캐릭터가 없습니다. 「새 캐릭터」를 눌러 시작하세요."
                                        : !rigError_.isEmpty() ? "리그 데이터 오류: " + rigError_ : QString());
   canvas_->setScene(rig_, currentPose());
+  updateOnion();
+}
+
+// ---------------------------------------------------------------- onion skin / motion trail
+QFrame* CutoutPanel::buildOnionSettings() {
+  // A popup frame (not a QWidgetAction menu) so the controls stay children of the panel:
+  // automation finds them by objectName even while the popup is closed.
+  auto* frame = new QFrame(this, Qt::Popup);
+  frame->setObjectName("cutoutOnionSettings");
+  frame->setFrameShape(QFrame::StyledPanel);
+  auto* form = new QFormLayout(frame);
+  auto spin = [&](const char* name, int lo, int hi, const QString& suffix) {
+    auto* s = new QSpinBox;
+    s->setObjectName(name);
+    s->setRange(lo, hi);
+    s->setSuffix(suffix);
+    connect(s, &QSpinBox::valueChanged, this, [this] { onionFromUi(); });
+    return s;
+  };
+  auto colors = [&](const char* name) {
+    auto* c = new QComboBox;
+    c->setObjectName(name);
+    const QPair<QString, QString> presets[] = {{"빨강", "#ef4444"}, {"주황", "#f97316"}, {"초록", "#22c55e"}, {"파랑", "#3b82f6"}, {"보라", "#a855f7"}, {"원래 색", ""}};
+    for (const auto& [label, color] : presets) {
+      QPixmap swatch(12, 12);
+      swatch.fill(color.isEmpty() ? QColor(0, 0, 0, 0) : QColor(color));
+      c->addItem(QIcon(swatch), label, color);
+    }
+    connect(c, &QComboBox::currentIndexChanged, this, [this] { onionFromUi(); });
+    return c;
+  };
+  onionBefore_ = spin("cutoutOnionBefore", 0, OnionSettings::MAX_GHOSTS, "");
+  onionAfter_ = spin("cutoutOnionAfter", 0, OnionSettings::MAX_GHOSTS, "");
+  onionMode_ = new QComboBox;
+  onionMode_->setObjectName("cutoutOnionMode");
+  onionMode_->addItem("일정 간격", false);
+  onionMode_->addItem("키 위치만", true);
+  onionMode_->setToolTip("키 위치만: 선택한 대상(없으면 보이는 모든 트랙)의 앞뒤 키 시간에 유령을 그립니다.");
+  connect(onionMode_, &QComboBox::currentIndexChanged, this, [this] { onionFromUi(); });
+  onionStep_ = spin("cutoutOnionStep", 1, 5000, " ms");
+  onionOpacity_ = spin("cutoutOnionOpacity", 5, 100, " %");
+  onionFalloff_ = spin("cutoutOnionFalloff", 0, 100, " %");
+  onionFalloff_->setToolTip("멀리 있는 유령일수록 흐려지는 정도(0 = 모두 같은 투명도)");
+  onionBeforeColor_ = colors("cutoutOnionBeforeColor");
+  onionAfterColor_ = colors("cutoutOnionAfterColor");
+  onionCurrent_ = new QCheckBox("현재 시간도 표시 (저장된 자세, 회색)");
+  onionCurrent_->setObjectName("cutoutOnionIncludeCurrent");
+  onionCurrent_->setToolTip("키로 저장하지 않은 변경이나 끄는 중일 때 원래 자세를 함께 보여 줍니다.");
+  onionSubtree_ = new QCheckBox("선택한 본과 자식만");
+  onionSubtree_->setObjectName("cutoutOnionSubtree");
+  for (auto* c : {onionCurrent_, onionSubtree_}) connect(c, &QCheckBox::toggled, this, [this] { onionFromUi(); });
+  form->addRow("앞 (이전)", onionBefore_);
+  form->addRow("뒤 (이후)", onionAfter_);
+  form->addRow("방식", onionMode_);
+  form->addRow("간격", onionStep_);
+  form->addRow("가장 가까운 유령 불투명도", onionOpacity_);
+  form->addRow("멀수록 흐리게", onionFalloff_);
+  form->addRow("이전 색", onionBeforeColor_);
+  form->addRow("이후 색", onionAfterColor_);
+  form->addRow(onionCurrent_);
+  form->addRow(onionSubtree_);
+  return frame;
+}
+void CutoutPanel::syncOnionUi() {
+  if (!onionPopup_) return;
+  onionFilling_ = true;
+  auto pick = [](QComboBox* c, const QColor& color) {
+    const QString name = color.isValid() ? color.name() : QString();
+    int i = c->findData(name);
+    if (i < 0) {  // a custom color from QSettings stays selectable
+      QPixmap swatch(12, 12);
+      swatch.fill(color);
+      c->insertItem(c->count() - 1, QIcon(swatch), name, name);
+      i = c->findData(name);
+    }
+    c->setCurrentIndex(i);
+  };
+  onionButton_->setChecked(onion_.enabled);
+  trailButton_->setChecked(onion_.trail);
+  onionBefore_->setValue(onion_.before);
+  onionAfter_->setValue(onion_.after);
+  onionMode_->setCurrentIndex(onion_.keysOnly ? 1 : 0);
+  onionStep_->setValue(onion_.stepMs);
+  onionStep_->setEnabled(!onion_.keysOnly);
+  onionOpacity_->setValue(int(std::lround(onion_.opacity * 100)));
+  onionFalloff_->setValue(int(std::lround(onion_.falloff * 100)));
+  pick(onionBeforeColor_, onion_.beforeColor);
+  pick(onionAfterColor_, onion_.afterColor);
+  onionCurrent_->setChecked(onion_.includeCurrent);
+  onionSubtree_->setChecked(onion_.subtreeOnly);
+  onionFilling_ = false;
+}
+void CutoutPanel::onionFromUi() {
+  if (onionFilling_) return;
+  OnionSettings s = onion_;
+  s.before = onionBefore_->value();
+  s.after = onionAfter_->value();
+  s.keysOnly = onionMode_->currentData().toBool();
+  s.stepMs = onionStep_->value();
+  s.opacity = onionOpacity_->value() / 100.0;
+  s.falloff = onionFalloff_->value() / 100.0;
+  s.beforeColor = QColor(onionBeforeColor_->currentData().toString());
+  s.afterColor = QColor(onionAfterColor_->currentData().toString());
+  s.includeCurrent = onionCurrent_->isChecked();
+  s.subtreeOnly = onionSubtree_->isChecked();
+  setOnionSettings(s);
+}
+void CutoutPanel::setOnionSettings(const OnionSettings& settings) {
+  OnionSettings s = settings;
+  s.before = std::clamp(s.before, 0, OnionSettings::MAX_GHOSTS);
+  s.after = std::clamp(s.after, 0, OnionSettings::MAX_GHOSTS);
+  s.stepMs = std::clamp(s.stepMs, 1, 10000);
+  s.opacity = std::clamp(s.opacity, 0.05, 1.0);
+  s.falloff = std::clamp(s.falloff, 0.0, 1.0);
+  const bool changed = s != onion_;
+  onion_ = s;
+  syncOnionUi();
+  if (!changed) return;
+  onion_.save();  // per-user editor preference, never part of the rig/controller documents
+  updateOnion();
+}
+void CutoutPanel::setOnionSkin(bool on) {
+  OnionSettings s = onion_;
+  s.enabled = on;
+  setOnionSettings(s);
+}
+
+QSet<int> CutoutPanel::boneSubtree(int bone) const {
+  QSet<int> out;
+  if (!rig_ || bone < 0) return out;
+  for (int i = 0; i < int(rig_->bones.size()); i++)
+    for (int b = i, guard = 0; b >= 0 && guard <= int(rig_->bones.size()); b = rig_->bones[size_t(b)].parentIndex, guard++)
+      if (b == bone) { out.insert(i); break; }
+  return out;
+}
+QSet<QString> CutoutPanel::ghostHiddenSlots() const {
+  QSet<QString> out = hidden_;
+  const int bone = boneIndex(selectedBone());
+  if (!onion_.subtreeOnly || !rig_ || bone < 0) return out;
+  const QSet<int> keep = boneSubtree(bone);
+  for (const auto& slot : rig_->slots) if (!keep.contains(slot.boneIndex)) out.insert(qs(slot.id));
+  return out;
+}
+QVector<int> CutoutPanel::onionKeyTimes(int clip) const {
+  // Keys of the selected target (with "subtree only": its bones and their parts); none selected
+  // or nothing keyed there -> every visible track, so keys-only mode never goes silently empty.
+  QSet<QString> targets;
+  if (!selection_.isEmpty()) targets.insert(selection_);
+  if (onion_.subtreeOnly && rig_) {
+    const QSet<int> tree = boneSubtree(boneIndex(selectedBone()));
+    for (int b : tree) targets.insert("bone:" + qs(rig_->bones[size_t(b)].id));
+    for (const auto& slot : rig_->slots) if (tree.contains(slot.boneIndex)) targets.insert("slot:" + qs(slot.id));
+  }
+  QVector<int> selected, visible;
+  for (const auto& t : rig_->clips[size_t(clip)].tracks) {
+    if (!t.bone && hidden_.contains(qs(t.target))) continue;
+    const bool mine = targets.contains((t.bone ? "bone:" : "slot:") + qs(t.target));
+    for (const auto& k : t.keys) {
+      visible << int(k.timeMs);
+      if (mine) selected << int(k.timeMs);
+    }
+  }
+  return selected.isEmpty() ? visible : selected;
+}
+std::shared_ptr<const cutout::Rig> CutoutPanel::committedParsed() {
+  if (&displayData() == &committedRig()) return rig_;
+  const QString key = QString("%1/%2").arg(lastRevision_).arg(rigId_);
+  if (key != committedParsedKey_) {
+    committedParsedKey_ = key;
+    committedParsed_.reset();
+    try {
+      cutout::Rig r = cutout::parseRig(ss(rigId_), committedRig());
+      for (auto& c : r.clips) c.loop = false;  // same scrubbing rule as rig_
+      committedParsed_ = std::make_shared<const cutout::Rig>(std::move(r));
+    } catch (const std::exception&) {}
+  }
+  return committedParsed_;
+}
+
+void CutoutPanel::updateOnion() {
+  ghostInfo_.clear();
+  const int clip = rig_ && mode_ == Mode::Animate && !showingPreview() ? rig_->clipIndex(ss(clipId_)) : -1;
+  updateTrail(clip);
+  canvas_->setTrail(trailPoints_, trailKeys_);
+  if (!onion_.enabled || clip < 0) { canvas_->setGhosts({}, {}); return; }
+  // Ghosts are pure clip samples (cutout::samplePose): the controller preview's mixes and layers
+  // are runtime state with no fixed time, so ghosting is only offered on the clip being edited.
+  const Json* data = findIn(displayData(), "clips", ss(clipId_));
+  const bool loop = data && data->value("loop", true);
+  const double duration = double(rig_->clips[size_t(clip)].durationMs);
+  const QVector<GhostTime> times = onionTimes(onion_, playheadExact_, duration, loop, onion_.keysOnly ? onionKeyTimes(clip) : QVector<int>());
+  int counts[2] = {0, 0};
+  for (const auto& t : times) counts[t.offset > 0]++;
+  QVector<RigCanvas::Ghost> ghosts;
+  for (const auto& t : times) {
+    const QColor tint = t.offset < 0 ? onion_.beforeColor : onion_.afterColor;
+    const double alpha = ghostAlpha(onion_, t.offset, counts[t.offset > 0]);
+    ghosts.push_back({rig_, ghostCache_.pose(*rig_, displayGeneration_, clip, t.sampleMs), tint, alpha, t.offset,
+                      quint64(qHashMulti(0, displayGeneration_, clip, qint64(std::llround(t.sampleMs * 1000))))});
+    ghostInfo_.push_back({t.sampleMs, t.offset, alpha, tint, false});
+  }
+  if (onion_.includeCurrent) {
+    // The saved pose at the playhead: shows where a pending change or an ongoing drag started.
+    const auto saved = committedParsed();
+    const int savedClip = saved ? saved->clipIndex(ss(clipId_)) : -1;
+    if (saved && savedClip >= 0 && saved->bones.size() == rig_->bones.size()) {
+      const double t = std::clamp(playheadExact_, 0.0, double(saved->clips[size_t(savedClip)].durationMs));
+      const quint64 generation = quint64(qHashMulti(0, committedParsedKey_, saved.get() == rig_.get() ? displayGeneration_ : 0));
+      const QColor gray("#d1d5db");
+      ghosts.push_back({saved, committedCache_.pose(*saved, generation, savedClip, t), gray, ghostAlpha(onion_, 0, 1), 0,
+                        quint64(qHashMulti(1, generation, savedClip, qint64(std::llround(t * 1000))))});
+      ghostInfo_.push_back({t, 0, ghostAlpha(onion_, 0, 1), gray, true});
+    }
+  }
+  canvas_->setGhosts(ghosts, ghostHiddenSlots());
+}
+void CutoutPanel::updateTrail(int clip) {
+  const int bone = clip >= 0 && onion_.trail ? boneIndex(selectedBone()) : -1;
+  if (bone < 0) {
+    trailKey_.clear();
+    trailTimes_.clear();
+    trailPoints_.clear();
+    trailKeys_.clear();
+    trailKeyTimes_.clear();
+    return;
+  }
+  const QString key = QString("%1/%2/%3").arg(displayGeneration_).arg(clip).arg(bone);
+  if (key == trailKey_) return;
+  trailKey_ = key;
+  const auto& c = rig_->clips[size_t(clip)];
+  trailTimes_ = cutout_studio::trailTimes(double(c.durationMs));
+  trailPoints_.clear();
+  auto origin = [&](double t) {
+    const cutout::Pose pose = cutout::samplePose(*rig_, clip, t);
+    return QPointF(pose.world[size_t(bone)].e, pose.world[size_t(bone)].f);
+  };
+  for (double t : trailTimes_) trailPoints_ << origin(t);
+  // Dots at keys of the bone and of its ancestors: those are the keys that move its origin.
+  QSet<QString> chain;
+  for (int b = bone, guard = 0; b >= 0 && guard <= int(rig_->bones.size()); b = rig_->bones[size_t(b)].parentIndex, guard++) chain.insert(qs(rig_->bones[size_t(b)].id));
+  std::set<int> times;
+  for (const auto& t : c.tracks)
+    if (t.bone && chain.contains(qs(t.target))) for (const auto& k : t.keys) times.insert(int(k.timeMs));
+  trailKeyTimes_ = QVector<int>(times.begin(), times.end());
+  trailKeys_.clear();
+  for (int t : trailKeyTimes_) trailKeys_ << origin(t);
 }
 
 // ---------------------------------------------------------------- navigation

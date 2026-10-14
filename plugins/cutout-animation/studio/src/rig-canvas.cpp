@@ -4,12 +4,13 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QWheelEvent>
+#include <algorithm>
 #include <cmath>
 
 namespace cutout_studio {
 namespace {
 constexpr double PI = 3.14159265358979323846;
-const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d");
+const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d"), TRAIL_COLOR("#38bdf8");
 double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 * PI; return a; }
 }  // namespace
 
@@ -27,6 +28,86 @@ void RigCanvas::setScene(std::shared_ptr<const cutout::Rig> rig, const cutout::P
   pose_ = pose;
   if (changedRig && autoFit_) fitToCanvas();
   update();
+}
+
+void RigCanvas::setGhosts(const QVector<Ghost>& ghosts, const QSet<QString>& hiddenSlots) {
+  if (hiddenSlots != ghostHidden_) layers_.clear();
+  ghostHidden_ = hiddenSlots;
+  ghosts_ = ghosts;
+  update();
+}
+void RigCanvas::setTrail(const QPolygonF& points, const QPolygonF& keyPoints) {
+  trail_ = points;
+  trailKeys_ = keyPoints;
+  update();
+}
+
+RigCanvas::GhostLayer RigCanvas::renderGhost(const Ghost& g) const {
+  const QTransform view = viewTransform();
+  QRectF bounds;
+  for (size_t i = 0; i < g.rig->slots.size(); i++) {
+    if (ghostHidden_.contains(qs(g.rig->slots[i].id))) continue;
+    const cutout::Attachment* att = nullptr;
+    const auto m = attachmentMatrix(*g.rig, *g.pose, int(i), &att);
+    if (att) bounds |= (qtTransform(m) * view).mapRect(QRectF(0, 0, att->width, att->height));
+  }
+  // Only the ghost's own footprint is allocated (not the whole widget): ten ghosts a side stay small.
+  const QRect r = bounds.toAlignedRect().adjusted(-2, -2, 2, 2) & rect();
+  if (r.isEmpty()) return {};
+  const qreal dpr = devicePixelRatioF();
+  QImage img(r.size() * dpr, QImage::Format_ARGB32_Premultiplied);
+  img.setDevicePixelRatio(dpr);
+  img.fill(Qt::transparent);
+  QPainter lp(&img);
+  lp.setTransform(view * QTransform::fromTranslate(-r.x(), -r.y()));
+  drawRig(lp, *g.rig, *g.pose, *images_, ghostHidden_);
+  if (g.tint.isValid()) {
+    // SourceAtop recolors only what the ghost covers: silhouette kept, a little shading shows through.
+    lp.resetTransform();
+    lp.setCompositionMode(QPainter::CompositionMode_SourceAtop);
+    QColor c = g.tint;
+    c.setAlpha(190);
+    lp.fillRect(QRectF(0, 0, r.width(), r.height()), c);
+  }
+  lp.end();
+  return {r.topLeft(), img};
+}
+
+void RigCanvas::paintGhosts(QPainter& p) {
+  if (ghosts_.isEmpty() || !images_ || !rig_) return;
+  const QTransform view = viewTransform();
+  if (view != layerView_ || size() != layerSize_ || devicePixelRatioF() != layerDpr_) {
+    layers_.clear();
+    layerView_ = view;
+    layerSize_ = size();
+    layerDpr_ = devicePixelRatioF();
+  }
+  // Farthest first so nearer ghosts sit on top; the current-time ghost last. All stay behind the live pose.
+  QVector<int> order(ghosts_.size());
+  for (int i = 0; i < order.size(); i++) order[i] = i;
+  auto rank = [&](int i) { return ghosts_[i].offset == 0 ? -1 : std::abs(ghosts_[i].offset); };
+  std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return rank(a) > rank(b); });
+  QSet<quint64> used;
+  p.save();
+  p.resetTransform();
+  for (int i : order) {
+    const Ghost& g = ghosts_[i];
+    if (!g.rig || !g.pose || g.pose->world.size() != g.rig->bones.size()) continue;
+    const quint64 key = qHashMulti(0, g.key, g.tint.isValid() ? g.tint.rgba() : 0u);
+    auto it = layers_.find(key);
+    if (it == layers_.end()) {
+      it = layers_.insert(key, renderGhost(g));
+      ghostRenders_++;
+    }
+    used.insert(key);
+    if (it->image.isNull()) continue;
+    p.setOpacity(std::clamp(g.alpha, 0.0, 1.0));
+    p.drawImage(it->origin, it->image);
+  }
+  p.restore();
+  // Playback keeps producing new times: drop layers that are no longer shown once the cache grows.
+  if (layers_.size() > 64)
+    for (auto it = layers_.begin(); it != layers_.end();) it = used.contains(it.key()) ? std::next(it) : layers_.erase(it);
 }
 
 void RigCanvas::fitToCanvas() {
@@ -86,9 +167,21 @@ void RigCanvas::paintEvent(QPaintEvent*) {
     p.fillRect(area, QColor("#2b3139"));
     p.setPen(QPen(QColor("#56606c"), 0));
     p.drawRect(area);
+    paintGhosts(p);
     if (images_ && pose_.world.size() == rig_->bones.size()) drawRig(p, *rig_, pose_, *images_, hidden_);
     p.resetTransform();
     p.setRenderHint(QPainter::Antialiasing, true);
+    if (trail_.size() > 1) {
+      // Motion trail of the selected bone origin over the clip; dots mark key times.
+      QPolygonF line;
+      for (const QPointF& pt : trail_) line << rigToWidget(pt);
+      p.setPen(QPen(TRAIL_COLOR, 1.5));
+      p.drawPolyline(line);
+      p.setPen(QPen(QColor("#0b1220"), 1));
+      p.setBrush(TRAIL_COLOR);
+      for (const QPointF& k : trailKeys_) p.drawEllipse(rigToWidget(k), 3.5, 3.5);
+      p.setBrush(Qt::NoBrush);
+    }
     // Instance anchor (rig origin): where the character stands on screen.
     const QPointF o = rigToWidget(QPointF(rig_->originX, rig_->originY));
     p.setPen(QPen(QColor("#8fd18f"), 1, Qt::DashLine));
@@ -222,6 +315,7 @@ void RigCanvas::keyPressEvent(QKeyEvent* e) {
   const int tools[] = {Qt::Key_V, Qt::Key_R, Qt::Key_S, Qt::Key_P};
   for (int i = 0; i < 4; i++) if (e->key() == tools[i] && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) { if (onTool) onTool(i); return; }
   if (e->key() == Qt::Key_K && onKey) { onKey(); return; }
+  if (e->key() == Qt::Key_O && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier)) && onOnion) { onOnion(); return; }
   if (e->key() == Qt::Key_F) { fitToCanvas(); return; }
   QWidget::keyPressEvent(e);
 }

@@ -254,6 +254,10 @@ class StudioTests : public QObject {
  private Q_SLOTS:
   void initTestCase() {
     QVERIFY(dir.isValid());
+    // Onion-skin preferences live in QSettings: keep them in the temp dir, never the user's registry.
+    QCoreApplication::setOrganizationName("RaisingEngineCutoutTests");
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
     host.root = dir.path();
     host.plugin = &plugin;
     QCOMPARE(plugin.pluginId(), QString("cutout-animation"));
@@ -815,6 +819,204 @@ class StudioTests : public QObject {
       rowsScroll->setValue(0);
     }
     panel->setPlayhead(0);
+  }
+
+  void onionSkinAndMotionTrail() {
+    panel->setMode(CutoutPanel::Mode::Animate);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    answers = {"onion"};
+    QVERIFY(gesture("onion clip", 1, [&] { click("cutoutNewClip"); }));
+    QCOMPARE(panel->clipId(), QString("onion"));
+    double x0 = 0, y0 = 0;
+    for (const auto& b : rig()["bones"]) if (b["id"] == "root") { x0 = b.value("x", 0.0); y0 = b.value("y", 0.0); }
+    // root x: x0-150 at 0 -> x0+150 at 1000 (looping, 1000 ms); root y key at 300; head rotation key at 700.
+    panel->setAutoKey(true);
+    panel->selectItem("bone:root");
+    panel->setPlayhead(0);
+    QVERIFY(gesture("root x at 0", 1, [&] { setSpin("cutoutPropX", x0 - 150); }));
+    panel->setPlayhead(1000);
+    QVERIFY(gesture("root x at 1000", 1, [&] { setSpin("cutoutPropX", x0 + 150); }));
+    panel->setPlayhead(300);
+    QVERIFY(gesture("root y at 300", 1, [&] { setSpin("cutoutPropY", y0 + 10); }));
+    panel->selectItem("bone:head");
+    panel->setPlayhead(700);
+    QVERIFY(gesture("head rotation at 700", 1, [&] { setSpin("cutoutPropRotation", 4); }));
+    panel->setAutoKey(false);
+    panel->selectItem("bone:root");
+
+    // Toggle: button and O, never an edit.
+    QVERIFY(!panel->onionSettings().enabled && panel->ghosts().isEmpty());
+    QVERIFY(gesture("onion button", 0, [&] { click("cutoutOnionSkin"); }));
+    QVERIFY(panel->onionSettings().enabled && find<QToolButton>("cutoutOnionSkin")->isChecked());
+    QVERIFY(!panel->ghosts().isEmpty());
+    QVERIFY(gesture("O toggles off", 0, [&] { QTest::keyClick(panel->canvas(), Qt::Key_O); }));
+    QVERIFY(!panel->onionSettings().enabled && !find<QToolButton>("cutoutOnionSkin")->isChecked() && panel->ghosts().isEmpty());
+    QVERIFY(panel->canvas()->ghosts().isEmpty());
+    QVERIFY(gesture("O toggles on", 0, [&] { QTest::keyClick(panel->canvas(), Qt::Key_O); }));
+    QVERIFY(panel->onionSettings().enabled);
+    QVERIFY(find<QFrame>("cutoutOnionSettings"));
+
+    using G = QVector<QPair<double, int>>;
+    auto times = [&] { G out; for (const auto& g : panel->ghosts()) out << qMakePair(g.timeMs, g.offset); return out; };
+    // Step mode through the settings popup controls.
+    QVERIFY(gesture("onion settings", 0, [&] {
+      find<QSpinBox>("cutoutOnionBefore")->setValue(2);
+      find<QSpinBox>("cutoutOnionAfter")->setValue(1);
+      find<QSpinBox>("cutoutOnionStep")->setValue(250);
+      find<QSpinBox>("cutoutOnionOpacity")->setValue(60);
+      find<QSpinBox>("cutoutOnionFalloff")->setValue(100);
+    }));
+    QCOMPARE(QSettings().value("plugins/cutout-animation/onionSkin/stepMs").toInt(), 250);  // per-user preference
+    panel->setPlayhead(500);
+    QCOMPARE(times(), (G{{0, -2}, {250, -1}, {750, 1}}));
+    QCOMPARE(panel->ghosts()[0].alpha, 0.3);  // falloff 100%: the farther of two fades to half
+    QCOMPARE(panel->ghosts()[1].alpha, 0.6);
+    QCOMPARE(panel->ghosts()[0].tint, QColor("#ef4444"));
+    QCOMPARE(panel->ghosts()[2].tint, QColor("#22c55e"));
+    panel->setPlayhead(100);  // looping clip: before-ghosts wrap around the end
+    QCOMPARE(times(), (G{{600, -2}, {850, -1}, {350, 1}}));
+
+    // Keys-only: neighbouring keys of the selected target, wrapping around the loop.
+    QVERIFY(gesture("keys-only mode", 0, [&] {
+      auto* mode = find<QComboBox>("cutoutOnionMode");
+      mode->setCurrentIndex(mode->findData(true));
+      find<QSpinBox>("cutoutOnionAfter")->setValue(2);
+    }));
+    QVERIFY(panel->onionSettings().keysOnly && !find<QSpinBox>("cutoutOnionStep")->isEnabled());
+    panel->setPlayhead(500);
+    QCOMPARE(times(), (G{{0, -2}, {300, -1}, {1000, 1}}));  // 0 is as near either way: stays before
+    panel->setPlayhead(100);
+    QCOMPARE(times(), (G{{1000, -2}, {0, -1}, {300, 1}}));  // 1000 is 100 ms back around the loop
+    panel->selectItem("bone:head");
+    panel->setPlayhead(500);
+    QCOMPARE(times(), (G{{700, 1}}));  // only the head's key
+    panel->selectItem("slot:body");
+    QCOMPARE(times(), (G{{0, -2}, {300, -1}, {700, 1}, {1000, 2}}));  // nothing keyed there: all visible tracks
+    QVERIFY(gesture("subtree filter", 0, [&] { find<QCheckBox>("cutoutOnionSubtree")->setChecked(true); }));
+    panel->selectItem("bone:head");
+    QVERIFY(panel->ghostHiddenSlots().contains("body") && !panel->ghostHiddenSlots().contains("eyes"));
+    QCOMPARE(times(), (G{{700, 1}}));
+    panel->selectItem("bone:root");  // root subtree = every bone
+    QVERIFY(panel->ghostHiddenSlots().isEmpty());
+    QCOMPARE(times(), (G{{0, -2}, {300, -1}, {700, 1}, {1000, 2}}));
+    // One-shot: no wrap, step ghosts clamp to the clip (one ghost at the boundary).
+    QVERIFY(gesture("clip loop off", 1, [&] { click("cutoutClipLoop"); }));
+    panel->setPlayhead(100);
+    QCOMPARE(times(), (G{{0, -1}, {300, 1}, {700, 2}}));
+    QVERIFY(gesture("step mode", 0, [&] { auto* mode = find<QComboBox>("cutoutOnionMode"); mode->setCurrentIndex(mode->findData(false)); }));
+    QCOMPARE(times(), (G{{0, -1}, {350, 1}, {600, 2}}));
+    QVERIFY(gesture("clip loop on", 1, [&] { click("cutoutClipLoop"); }));
+
+    // Tint: pixel checks on an offscreen render of the canvas.
+    OnionSettings s = panel->onionSettings();
+    s.before = 1; s.after = 1; s.stepMs = 250; s.opacity = 0.9; s.falloff = 0; s.subtreeOnly = false; s.includeCurrent = false;
+    s.beforeColor = QColor("#3b82f6");
+    s.afterColor = QColor("#22c55e");
+    QVERIFY(gesture("tint settings", 0, [&] { panel->setOnionSettings(s); }));
+    panel->setPlayhead(500);
+    auto parsed = std::make_shared<const cutout::Rig>(cutout::parseRig("hero", rig()));
+    const int clip = parsed->clipIndex("onion"), body = parsed->slotIndex("body"), root = parsed->boneIndex("root");
+    auto bodyPoint = [&](double t) {
+      const cutout::Pose pose = cutout::samplePose(*parsed, clip, t);
+      const cutout::Attachment* att = nullptr;
+      const auto m = attachmentMatrix(*parsed, pose, body, &att);
+      return panel->canvas()->rigToWidget(qtTransform(m).map(QPointF(att->width / 2, att->height * 0.85))).toPoint();
+    };
+    auto pixel = [&](double t) { pump(); return QColor(panel->canvas()->grab().toImage().pixel(bodyPoint(t))); };
+    const QColor before = pixel(250), after = pixel(750), live = pixel(500);
+    qInfo("ghost pixels: before %s after %s live %s", qPrintable(before.name()), qPrintable(after.name()), qPrintable(live.name()));
+    QVERIFY(before.blue() > before.red() + 40);
+    QVERIFY(after.green() > after.red() + 40 && after.green() > after.blue() + 20);
+    QVERIFY(live.red() > live.blue() + 40);  // the live pose is never tinted
+    s.beforeColor = QColor();  // 원래 색
+    panel->setOnionSettings(s);
+    QCOMPARE(find<QComboBox>("cutoutOnionBeforeColor")->currentData().toString(), QString());
+    const QColor plain = pixel(250);
+    QVERIFY(plain.red() > plain.blue() + 40);
+    s.beforeColor = QColor("#3b82f6");
+    s.subtreeOnly = true;
+    panel->setOnionSettings(s);
+    panel->selectItem("bone:head");  // the body part hangs on root: not in the head's subtree
+    const QColor filtered = pixel(250);
+    QVERIFY(filtered.blue() < filtered.red() + 20);
+    panel->selectItem("bone:root");
+    QVERIFY(pixel(250).blue() > pixel(250).red() + 40);
+    panel->setOnionSkin(false);
+    const QColor off = pixel(250);
+    qInfo("onion off pixel %s, filtered %s", qPrintable(off.name()), qPrintable(filtered.name()));
+    QVERIFY(off == filtered);  // nothing there but the backdrop
+    panel->setOnionSkin(true);
+
+    // Cache: redraws and revisiting a time never resample; an edit (and its undo) does.
+    panel->setPlayhead(500);
+    pump();
+    panel->canvas()->grab();
+    const int samples = panel->ghostSamples(), renders = panel->canvas()->ghostRenders();
+    panel->setPlayhead(500);
+    panel->canvas()->grab();
+    QCOMPARE(panel->ghostSamples(), samples);
+    QCOMPARE(panel->canvas()->ghostRenders(), renders);
+    panel->setPlayhead(510);
+    panel->setPlayhead(500);
+    QCOMPARE(panel->ghostSamples(), samples + 2);  // only 260 and 760 were new
+    auto ghostX = [&](int offset) {
+      for (const auto& g : panel->canvas()->ghosts()) if (g.offset == offset) return g.pose->world[size_t(root)].e;
+      return qQNaN();
+    };
+    const double oldAfter = ghostX(1);
+    QVERIFY(std::abs(oldAfter - cutout::samplePose(*parsed, clip, 750).world[size_t(root)].e) < 1e-9);
+    panel->setAutoKey(true);
+    panel->setPlayhead(1000);
+    QVERIFY(gesture("re-key root x at 1000", 1, [&] { setSpin("cutoutPropX", x0 + 350); }));
+    panel->setAutoKey(false);
+    panel->setPlayhead(500);
+    const cutout::Rig edited = cutout::parseRig("hero", rig());
+    QVERIFY(std::abs(ghostX(1) - cutout::samplePose(edited, clip, 750).world[size_t(root)].e) < 1e-9);
+    QVERIFY(std::abs(ghostX(1) - oldAfter) > 1);
+    undo();
+    panel->setPlayhead(500);
+    QVERIFY(std::abs(ghostX(1) - oldAfter) < 1e-9);
+
+    // Include current: the saved pose at the playhead next to an uncommitted change.
+    s = panel->onionSettings();
+    s.includeCurrent = true;
+    s.subtreeOnly = false;
+    panel->setOnionSettings(s);
+    QVERIFY(gesture("pending x (no edit)", 0, [&] { setSpin("cutoutPropX", x0 + 40); }));
+    QVERIFY(panel->hasPending());
+    const auto& infos = panel->ghosts();
+    QVERIFY(std::any_of(infos.begin(), infos.end(), [](const CutoutPanel::GhostInfo& g) { return g.committed && g.offset == 0 && g.timeMs == 500; }));
+    QVERIFY(std::abs(ghostX(0) - cutout::samplePose(*parsed, clip, 500).world[size_t(root)].e) < 1e-9);
+    QVERIFY(std::abs(ghostX(0) - (x0 + 40)) > 1);
+    QVERIFY(gesture("discard pending", 0, [&] { panel->discardPending(); }));
+
+    // Motion trail: the selected bone's world origin over the clip, dots at its (and its parents') keys.
+    QVERIFY(gesture("trail toggle", 0, [&] { click("cutoutMotionTrail"); }));
+    panel->selectItem("bone:head");
+    cutout::Rig scrub = cutout::parseRig("hero", rig());
+    for (auto& c : scrub.clips) c.loop = false;  // editor scrubbing samples the clip end itself
+    const int head = scrub.boneIndex("head");
+    const auto& tt = panel->trailTimes();
+    QVERIFY(tt.size() > 100 && tt.front() == 0 && tt.back() == 1000);
+    QCOMPARE(panel->trailPoints().size(), tt.size());
+    for (int i = 0; i < tt.size(); i++) {
+      const auto w = cutout::samplePose(scrub, clip, tt[i]).world[size_t(head)];
+      QVERIFY(std::hypot(panel->trailPoints()[i].x() - w.e, panel->trailPoints()[i].y() - w.f) < 1e-9);
+    }
+    QCOMPARE(panel->trailKeyTimes(), (QVector<int>{0, 300, 700, 1000}));
+    for (int i = 0; i < panel->trailKeyTimes().size(); i++) {
+      const auto w = cutout::samplePose(scrub, clip, panel->trailKeyTimes()[i]).world[size_t(head)];
+      QVERIFY(std::hypot(panel->trailKeyPoints()[i].x() - w.e, panel->trailKeyPoints()[i].y() - w.f) < 1e-9);
+    }
+    panel->selectItem("bone:root");
+    QCOMPARE(panel->trailKeyTimes(), (QVector<int>{0, 300, 1000}));
+
+    // Editor-only: nothing reached the documents; defaults restore, the test clip goes away.
+    QVERIFY(rig().dump().find("trail") == std::string::npos && rig().dump().find("ghost") == std::string::npos);
+    QVERIFY(gesture("onion defaults", 0, [&] { panel->setOnionSettings(OnionSettings{}); }));
+    QVERIFY(panel->ghosts().isEmpty() && panel->trailPoints().isEmpty() && panel->canvas()->ghosts().isEmpty());
+    QVERIFY(gesture("delete onion clip", 1, [&] { QVERIFY(panel->deleteClip()); }));
+    panel->selectClip("joy");
   }
 
   void mixTable() {
