@@ -64,6 +64,24 @@ class RigCanvas : public QWidget {
   QString hitTest(const QPointF& widgetPos, bool bones = true) const;
   bool dragging() const { return drag_.has_value(); }
 
+  // ---- Mesh editing (plugin 1.4.0). While a mode is on, left-button gestures edit the mesh shown
+  // on `slot` instead of selecting/moving bones and parts (right/middle button still pans).
+  enum MeshMode { MeshOff = 0, MeshVertices = 1, MeshWeights = 2 };
+  /** Vertices: wireframe + handles (`selected` highlighted); Weights: heat map of `bone` (-1 none) and a brush of `brushRadius` widget px. */
+  void setMeshEdit(int mode, const QString& slot, const QSet<int>& selected, int bone, double brushRadius);
+  int meshMode() const { return meshMode_; }
+  QString meshSlot() const { return meshSlot_; }
+  /** Rig-space vertices of the edited mesh as drawn now (empty = none / not a mesh). */
+  QVector<QPointF> meshVertices() const;
+  /** Vertex handle under a widget point (-1 = none). */
+  int vertexAt(const QPointF& widgetPos) const;
+  /** Click/band selection (add = Shift). An empty click clears. */
+  std::function<void(const QVector<int>& vertices, bool add)> onMeshSelect;
+  /** Drag of the selected vertices by `rigDelta` (live while !finished; one edit on finish). */
+  std::function<void(const QPointF& rigDelta, bool finished)> onMeshDrag;
+  /** Weight brush stroke: every vertex the brush touched so far (one edit on finish). */
+  std::function<void(const QVector<int>& vertices, bool finished)> onMeshPaint;
+
   std::function<void(const QString&)> onSelect;
   std::function<QPointF(const QString&)> originOf;
   std::function<void(const Drag&, bool finished)> onDrag;
@@ -111,6 +129,19 @@ class RigCanvas : public QWidget {
   int ghostRenders_ = 0;
   QPolygonF trail_, trailKeys_;
   QString selectedIk_;
+  // mesh editing state (editor-only)
+  int meshMode_ = MeshOff, meshBone_ = -1;
+  QString meshSlot_;
+  QSet<int> meshSelected_, meshStroke_;
+  double brushRadius_ = 24;
+  enum class MeshGesture { None, Vertices, Band, Paint };
+  MeshGesture meshGesture_ = MeshGesture::None;
+  QPointF meshStart_, meshCurrent_, hover_;
+  bool meshMoved_ = false, meshAdd_ = false;
+  bool meshPress(QMouseEvent* e);
+  void meshMove(const QPointF& widgetPos);
+  void meshRelease(const QPointF& widgetPos);
+  void paintMesh(QPainter& p);
   void paintGhosts(QPainter& p);
   void paintIk(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;

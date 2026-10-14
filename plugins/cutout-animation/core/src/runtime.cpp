@@ -46,6 +46,21 @@ double sampleTrack(const Track& track, double t, double fallback) {
   if (a.interp == Interp::Bezier) return a.value + (b.value - a.value) * evalCurve(a.curve, u);
   return lerp(a.value, b.value, u);
 }
+std::vector<double> sampleDeform(const Track& track, double t) {
+  const auto& keys = track.keys;
+  if (keys.empty()) return {};
+  if (t <= double(keys.front().timeMs)) return keys.front().offsets;
+  if (t >= double(keys.back().timeMs)) return keys.back().offsets;
+  auto next = std::upper_bound(keys.begin(), keys.end(), t, [](double v, const Key& k) { return v < double(k.timeMs); });
+  const Key& b = *next; const Key& a = *(next - 1);
+  if (a.interp == Interp::Step) return a.offsets;
+  const double u = (t - double(a.timeMs)) / double(b.timeMs - a.timeMs);
+  // One eased fraction for every vertex: the whole shape follows the key's curve together.
+  const double f = a.interp == Interp::Bezier ? evalCurve(a.curve, u) : u;
+  std::vector<double> out(std::min(a.offsets.size(), b.offsets.size()));
+  for (size_t i = 0; i < out.size(); i++) out[i] = a.offsets[i] + (b.offsets[i] - a.offsets[i]) * f;
+  return out;
+}
 static std::optional<std::string> sampleAttachment(const Track& track, double t) {
   const auto& keys = track.keys;
   const Key* chosen = &keys.front();
@@ -111,6 +126,7 @@ static void applyClip(const Rig& rig, const Clip& clip, double t, Pose& pose) {
       continue;
     }
     if (tr.bone) { auto& value = field(pose.bones[tr.targetIndex], tr.property); value = sampleTrack(tr, t, value); }
+    else if (tr.property == Property::Deform) { if (!tr.keys.empty()) pose.deform[{tr.targetIndex, tr.attachment}] = sampleDeform(tr, t); }
     else if (tr.property == Property::Alpha) pose.alpha[tr.targetIndex] = sampleTrack(tr, t, pose.alpha[tr.targetIndex]);
     else if (!tr.keys.empty()) pose.attachments[tr.targetIndex] = sampleAttachment(tr, t);
   }
@@ -125,6 +141,14 @@ static Pose blend(const Pose& a, const Pose& b, double alpha) {
   }
   for (size_t i = 0; i < out.alpha.size(); i++) out.alpha[i] = lerp(a.alpha[i], out.alpha[i], alpha);
   for (size_t i = 0; i < out.ikMix.size() && i < a.ikMix.size(); i++) out.ikMix[i] = lerp(a.ikMix[i], out.ikMix[i], alpha);
+  // Deform offsets cross-fade per vertex; a side that does not key a mesh contributes no offset.
+  for (const auto& [key, from] : a.deform) {
+    auto& to = out.deform[key];
+    if (to.empty()) to.assign(from.size(), 0.0);
+    for (size_t i = 0; i < to.size(); i++) to[i] = lerp(i < from.size() ? from[i] : 0.0, to[i], alpha);
+  }
+  for (auto& [key, to] : out.deform)
+    if (!a.deform.count(key)) for (double& v : to) v *= alpha;
   // Attachments (and the IK bend direction) cannot interpolate: switch halfway through the mix.
   if (alpha < 0.5) { out.attachments = a.attachments; out.ikBend = a.ikBend; }
   return out;
@@ -516,6 +540,50 @@ Pose Instance::pose() const {
   return pose;
 }
 
+// ---- Mesh attachments (plugin 1.4.0) ----
+Affine attachmentPlacement(const Attachment& a) {
+  const auto& o = a.offset;
+  return Affine::compose(o.x, o.y, o.rotation, o.scaleX, o.scaleY) * Affine::compose(-a.pivotX * a.width, -a.pivotY * a.height, 0, 1, 1);
+}
+const std::vector<double>* deformOf(const Pose& pose, int slot, const Attachment& a) {
+  auto it = pose.deform.find({slot, a.name});
+  return it != pose.deform.end() && it->second.size() == a.vertices.size() ? &it->second : nullptr;
+}
+std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, const Attachment& a) {
+  std::vector<double> out;
+  if (!a.mesh || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
+  const std::vector<double>* d = deformOf(pose, slot, a);
+  const Affine rigid = pose.world[size_t(rig.slots[size_t(slot)].boneIndex)] * attachmentPlacement(a);
+  // world(bone) · bind per influencing bone, once per call rather than once per vertex.
+  std::vector<Affine> skin(a.binds.size());
+  for (size_t j = 0; j < a.binds.size(); j++) skin[j] = pose.world[size_t(a.binds[j].first)] * a.binds[j].second;
+  out.resize(a.vertices.size());
+  for (size_t v = 0; v < a.vertexCount(); v++) {
+    const double x = a.vertices[2 * v] + (d ? (*d)[2 * v] : 0), y = a.vertices[2 * v + 1] + (d ? (*d)[2 * v + 1] : 0);
+    if (a.weights.empty() || v >= a.weights.size() || a.weights[v].empty()) { rigid.apply(x, y, out[2 * v], out[2 * v + 1]); continue; }
+    double sx = 0, sy = 0;
+    for (const auto& w : a.weights[v]) {
+      double px, py;
+      skin[size_t(w.bind)].apply(x, y, px, py);
+      sx += w.weight * px; sy += w.weight * py;
+    }
+    out[2 * v] = sx; out[2 * v + 1] = sy;
+  }
+  return out;
+}
+Affine meshVertexMatrix(const Rig& rig, const Pose& pose, int slot, const Attachment& a, size_t v) {
+  if (slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return {};
+  const Affine rigid = pose.world[size_t(rig.slots[size_t(slot)].boneIndex)] * attachmentPlacement(a);
+  if (a.weights.empty() || v >= a.weights.size() || a.weights[v].empty()) return rigid;
+  // A weighted sum of affine maps (weights sum to 1) is itself the vertex's affine map.
+  Affine m{0, 0, 0, 0, 0, 0};
+  for (const auto& w : a.weights[v]) {
+    const Affine s = pose.world[size_t(a.binds[size_t(w.bind)].first)] * a.binds[size_t(w.bind)].second;
+    m.a += w.weight * s.a; m.b += w.weight * s.b; m.c += w.weight * s.c; m.d += w.weight * s.d; m.e += w.weight * s.e; m.f += w.weight * s.f;
+  }
+  return m;
+}
+
 std::vector<DrawItem> Instance::drawList() const {
   const Pose pose = this->pose();
   std::vector<DrawItem> out;
@@ -525,10 +593,14 @@ std::vector<DrawItem> Instance::drawList() const {
     if (!pose.attachments[i] || pose.alpha[i] <= 0 || slot.boneIndex < 0) continue;
     const Attachment* att = rig_->attachment(slot.id, *pose.attachments[i], pose.skin);
     if (!att) continue;
-    const auto& o = att->offset;
-    const Affine m = origin * pose.world[slot.boneIndex] * Affine::compose(o.x, o.y, o.rotation, o.scaleX, o.scaleY)
-                     * Affine::compose(-att->pivotX * att->width, -att->pivotY * att->height, 0, 1, 1);
+    const Affine m = origin * pose.world[slot.boneIndex] * attachmentPlacement(*att);
     out.push_back({slot.id, att->imageAssetId, m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)});
+    if (!att->mesh) continue;
+    DrawItem& item = out.back();
+    item.positions = meshPositions(*rig_, pose, int(i), *att);
+    for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig_->originX; item.positions[v + 1] -= rig_->originY; }  // = origin
+    item.uvs = att->uvs;
+    item.indices = att->triangles;
   }
   return out;
 }

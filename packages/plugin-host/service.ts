@@ -21,6 +21,9 @@ export interface ServiceDiagnostic { file: string; pointer: string; code: string
 export interface PluginService {
   validate?(input: ServiceValidateInput): ServiceDiagnostic[] | Promise<ServiceDiagnostic[]>;
   call?(op: string, payload: unknown): unknown;
+  /** Player capabilities (`visualFeatures`) an exported game with these documents needs beyond
+   *  `plugin-elements-v1` (CONTRACT.md §7); exportBundle collects them, exportGame enforces them. */
+  requiredHostFeatures?(documents: { type: string; id: string; data: unknown }[]): string[] | Promise<string[]>;
 }
 export interface LoadablePlugin { directory: string; manifest: PluginManifest }
 const services = new Map<string, Promise<PluginService | null>>();

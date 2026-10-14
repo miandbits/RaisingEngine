@@ -45,7 +45,15 @@ struct EditResult {
  * renameIk {ik, id?, name?} (renames ik:<id> tracks) deleteIk {ik, deleteTarget?} bakeIk {clip,
  * timeMs, ik?, disable?}; keys: setKey {target:"ik:<id>", property: mix (0..1) | bendPositive (bool,
  * step)}. reparentBone refuses to break a constraint; deleteBone of a chain/target bone needs
- * cascade and removes the constraint.
+ * cascade and removes the constraint. addIk/setIk take `tip` (plugin 1.4.0, explicit two-bone
+ * effector, a child of the lower bone; setIk tip: null = implicit first child); addIk sets it
+ * whenever the chain end has a child.
+ * Meshes (plugin 1.4.0; attachment = {slot, name? (setup attachment), skin?}): convertToMesh
+ * {rows?, cols?, cells?} convertToRegion setMeshVertices {vertices?, positions? | dx, dy,
+ * keepUvs?} autoWeights {bones?, vertices?, influences?, falloff?} bindMesh {bones, ...as
+ * autoWeights} setWeights {vertices, bone, weight, strength? | weights} unbindMesh; deform keys:
+ * setKey/deleteKey {target: "slot:<id>", property: "deform", attachment, offsets?} (refs of the
+ * multi-key ops carry `attachment` too). deleteBone moves mesh weights off the deleted bone.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

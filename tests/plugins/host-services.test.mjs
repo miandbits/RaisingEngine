@@ -58,6 +58,17 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   assert.deepEqual(reply.pluginResult.rig.ik, [{ id: 'body-ik', name: 'body-ik', bones: ['body'], target: 'body-target', bendPositive: true }]);
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addIk', bones: ['root', 'root'], target: 'body' } } } });
   assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /부모 → 자식/);
+  // Mesh ops (plugin 1.4.0): convert, bind with auto weights and a deform key on the same path.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'batch', operations: [
+    { op: 'convertToMesh', slot: 'torso', rows: 2, cols: 1 }, { op: 'bindMesh', slot: 'torso', bones: ['root', 'body'] },
+    { op: 'setKey', clip: 'idle', target: 'slot:torso', property: 'deform', attachment: 'torso', timeMs: 500, offsets: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }] } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  const torso = reply.pluginResult.rig.attachments[0];
+  assert.deepEqual([torso.type, torso.vertices.length, torso.triangles.length, torso.weights.length, torso.hull], ['mesh', 12, 12, 6, 6]);
+  assert.deepEqual(reply.pluginResult.diagnostics.filter(d => d.severity === 'error'), []);
+  assert.equal(reply.pluginResult.rig.clips[0].tracks.at(-1).attachment, 'torso');
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'bindMesh', slot: 'torso', bones: ['body'] } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /메시가 아닌/);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });

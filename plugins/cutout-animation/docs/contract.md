@@ -78,14 +78,17 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 ## IK constraints (plugin 1.3.0)
 
-* `ik: [{id, name?, bones, target, mix?, bendPositive?, stretch?, order?}]` (optional; absent =
+* `ik: [{id, name?, bones, target, tip?, mix?, bendPositive?, stretch?, order?}]` (optional; absent =
   no constraints). `bones` is the chain, parent first:
   * **1 bone = aim**: the bone is rotated so its local **+x axis** points at the target (a
     negative `scaleX` flips that axis, like the drawing does).
   * **2 bones = two-bone limb** `[upper, lower]`, `lower` a **direct child** of `upper`. Bones
-    have no length in this format, so the **effector** is the origin of `lower`'s **first child
-    bone** in `bones` array order (hand, foot). Without a child the limb degenerates to aiming
-    `lower`'s origin at the target. `upper` and `lower` are rotated (law of cosines).
+    have no length in this format, so the **effector** is the origin of the `tip` bone (plugin
+    1.4.0, optional: must be a **direct child of `lower`**, `ANIM_IK_TIP` otherwise, also on an
+    aim chain), else of `lower`'s **first child bone** in `bones` array order (hand, foot). The
+    explicit tip keeps a forearm with several children (hand, sleeve, weapon) pointing at the
+    right one. Without a child the limb degenerates to aiming `lower`'s origin at the target.
+    `upper` and `lower` are rotated (law of cosines).
   * `target`: the bone whose **world origin** the effector reaches. It must not be a chain bone
     or a descendant of one (solving would move it).
   * `mix` 0..1 (default 1): `rotation = animated + shortestDelta(animated → solved) · mix`, so
@@ -121,7 +124,7 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   `ANIM_TARGET_MISSING`. Cross-fades lerp `mix` and switch `bendPositive` halfway.
 * Validation: `ANIM_IK_DUP_ID`, `ANIM_IK_BONE_MISSING` (chain or target), `ANIM_IK_CHAIN` (not
   1–2 bones, or not a direct parent → child pair), `ANIM_IK_TARGET` (target in or below the
-  chain), `ANIM_IK_MIX` (setup or key out of 0..1), `ANIM_IK_CYCLE` (constraints that move each
+  chain), `ANIM_IK_TIP` (tip unknown, not a direct child of the lower bone, or on an aim chain), `ANIM_IK_MIX` (setup or key out of 0..1), `ANIM_IK_CYCLE` (constraints that move each
   other's target or chain base: no order can satisfy them; a constraint moves every strict
   descendant of its chain bones), warning `ANIM_IK_ORDER` (a dependent constraint is solved
   first; the order is honoured anyway), `ANIM_STRUCTURE` for wrong field types.
@@ -130,8 +133,11 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
     bendPositive?, order?}`: `createTarget` adds a bone where the chain end is shown now (two
     bones: the effector; aim: on the bone's x axis at the first child's distance or 60 px),
     under the chain's top-level ancestor; without `bendPositive` the current bend side is kept,
-    so creating a constraint never moves the limb. `extra.ik`, `extra.target`.
-  * `setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, bones?}`,
+    so creating a constraint never moves the limb. `tip?` (1.4.0) names the effector; a two-bone
+    chain whose end has a child always gets an explicit `tip` (the bone the target was placed
+    at), so adding another child bone later never changes the limb. `extra.ik`, `extra.target`.
+  * `setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, tip? (null = the
+    implicit first child), bones?}`,
     `renameIk {ik, id?, name?}` (renames `ik:<id>` tracks; `extra.tracks`),
     `deleteIk {ik, deleteTarget?}` (removes its tracks; `deleteTarget` also deletes the target
     bone when no other constraint or part uses it), `bakeIk {clip, timeMs, ik?, disable?}` (keys
@@ -139,10 +145,95 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   * Hierarchy edits keep references consistent: `reparentBone` is refused when it would break a
     constraint (chain no longer adjacent, target moved into a chain); `deleteBone` of a chain or
     target bone needs `cascade` and then removes those constraints and their tracks (warning
-    `ANIM_IK_REMOVED`); `setPivot` keeps ids (the chain simply solves around the new origin).
+    `ANIM_IK_REMOVED`); `setPivot` keeps ids (the chain simply solves around the new origin);
+    deleting the `tip` bone drops the field (warning `ANIM_IK_TIP_REMOVED`, the implicit rule
+    applies again) and reparenting it away from the lower bone is refused.
   * Deleting the last constraint removes the `ik` list (documents keep the 1.2 shape).
 * Editor-only: the constraint shown in the IK page, the target crosshair and the highlighted
   chain on the canvas never reach documents.
+
+## Mesh attachments and weights (plugin 1.4.0)
+
+* An attachment (default list or a skin) may be `type: "mesh"` (absent / `"region"` = the image
+  rectangle as before). Mesh fields:
+  * `vertices: [x, y, …]` — **image-pixel positions of the setup shape** (the same space as a
+    region's pixels: (0,0) top-left, (width,height) bottom-right; vertices may lie outside it).
+  * `uvs: [u, v, …]` — texture coordinates 0..1, one pair per vertex.
+  * `triangles: [i, j, k, …]` — vertex index triples (drawn in array order).
+  * `hull?` (the first `hull` vertices are the outline) and `edges?` (index pairs) are editor
+    metadata; runtimes ignore them.
+  * `weights?: [[{bone, weight}, …] per vertex]` — 1..4 bone shares per vertex. Absent =
+    **unweighted**: the mesh is placed exactly like a region (`slotBone world · offset ·
+    pivot`) and follows the slot's bone; with `vertices = uv × size` it draws pixel-identically
+    to the region.
+* **Weighted meshes: bind pose = the setup pose.** Vertices stay stored in image pixels (so
+  uvs, hull and editing ops are the same for both kinds). At load every influencing bone gets a
+  bind matrix `B = setupWorld(bone)⁻¹ · setupWorld(slotBone) · placement` (setup world = forward
+  kinematics of the bones' setup transforms: no IK, no expression); a vertex is drawn at
+  `Σ weight · world(bone) · B · (vertex + deform)` with the pose's world matrices **after IK**.
+  Consequences: the setup pose always shows the authored shape; changing a bone's setup
+  transform re-binds instead of deforming the mesh (animation acts relative to the new setup);
+  weighting a mesh never moves it. Shares are normalized at load (a sum off by more than 1e-3 is
+  warning `ANIM_MESH_WEIGHT_SUM`). Spine stores bone-local offsets per influence instead; the
+  derived binds give the same skinning for a fixed setup pose.
+* **Deform keys**: track `{"target": "slot:<id>", "property": "deform", "attachment":
+  "<mesh name>", "keys": [{timeMs, offsets: [dx, dy, …], interp?, curve?}]}` — offsets in image
+  pixels added to the setup vertices **before** skinning (so a weighted mesh's deformation moves
+  with its bones). Every interp works (`step`, `linear`, `bezier` with `curve`; one eased
+  fraction for all vertices of a segment); before the first key the first offsets hold, after
+  the last the last. One deform track per (slot, attachment): a slot that swaps meshes (mouth
+  shapes) keys each by name, and the offsets apply whenever that name is shown (any skin) and
+  have exactly 2 × its vertex count; a skin whose same-named mesh has another count ignores
+  them (warning `ANIM_MESH_DEFORM_SKIN`). Higher tracks override lower ones; cross-fades lerp
+  offsets per vertex (a side without the track contributes 0). Deform keys carry no `value`.
+* Order of operations: tracks → expression → world → IK → **skinning/deform** → draw list.
+* Validation (`ANIM_MESH_*`): `TYPE`, `VERTICES` (x/y pairs, 3..2048 vertices), `UVS` (one pair
+  per vertex, 0..1), `TRIANGLES` (index triples, 1..4096 triangles, indices in range), `HULL`,
+  `EDGES`, `WEIGHTS` (one list per vertex, 0..1, no bone twice, sum > 0), `INFLUENCES` (max 4),
+  `BONE_MISSING`, `DEFORM` (attachment missing / not a mesh / offset count); warnings
+  `WEIGHT_SUM`, `DEFORM_SKIN`, `UNUSED` (mesh fields on a region, `attachment` on another
+  track); `ANIM_NONFINITE` for numbers. A broken mesh draws nothing, so its deform keys are
+  reported too.
+* Draw items (ABI extension, `packages/plugin-host/CONTRACT.md` §7, capability
+  `plugin-mesh-v1`): a mesh item adds `mesh: {positions, uvs, indices}` (positions in the same
+  element-local pixels as `matrix`'s output, after placement and flipX). `matrix`/`width`/`height`
+  stay the undeformed image rectangle (a fallback only; mesh-aware hosts never draw it for a mesh
+  item). The host `sample` reply adds `deform: {"<slot>/<attachment>": offsets}` when keyed.
+  The service's `requiredHostFeatures` reports `plugin-mesh-v1` for documents with any mesh
+  (default list or skin), and export refuses a player that lacks it.
+* Editing ops (`edit`; attachment = `{slot, name?, skin?}`, name defaults to the slot's setup
+  attachment, `skin` edits that skin's own entry):
+  * `convertToMesh {…, rows? = 4, cols? = 4, cells?}`: region (or mesh) → grid of rows × cols
+    cells over the image; vertices on the region's pixels with matching uvs (the part looks the
+    same), the full grid lists its outline first (`hull`), `edges` = outline. `cells` ("1"/"0"
+    per cell, row-major) keeps only marked cells — the editor marks cells holding opaque pixels
+    (alpha-trimmed grid). Clears weights; deform keys that no longer fit are removed (warning
+    `ANIM_MESH_DEFORM_REMOVED`, `extra.keys`). `extra.vertices`, `extra.triangles`.
+  * `convertToRegion {…}` (mesh fields and its deform keys removed).
+  * `setMeshVertices {…, vertices?, positions? | dx?, dy?, keepUvs?}`: setup vertices in image
+    pixels (`positions` per listed vertex, all vertices without `vertices`; or a common dx/dy).
+    uvs follow by default (`uv = position / size`, clamped: the image stays under the outline);
+    `keepUvs` stretches the image instead.
+  * `autoWeights {…, bones?, vertices?, influences? = 4, falloff? = 2}` ("자동 웨이트"): each
+    vertex gets the nearest `influences` bones by distance (setup pose) to each bone's segment
+    (origin → its child's origin, preferring a child among the candidates; a childless bone is a
+    point); share ∝ 1 / (distance + 1 px)^falloff, normalized and rounded so every vertex sums to
+    exactly 1. Default bones: those already weighting the mesh, else the slot bone, its parent
+    and children. `bindMesh {…, bones, …}` is the same with required bones. `extra.bones`.
+  * `setWeights {…, vertices, bone, weight, strength? = 1}` (weight brush): the bone's share
+    moves towards `weight` by `strength`, the other shares are rescaled to the rest (a vertex
+    with no other bone hands the rest to the slot bone); or `{…, vertices, weights: [[{bone,
+    weight}]…]}` sets shares outright. An unweighted mesh starts from 100 % slot bone.
+  * `unbindMesh {…}` removes `weights` (the setup shape stays).
+  * Deform keys: `setKey {clip, target: "slot:<id>", property: "deform", attachment, timeMs,
+    offsets?, interp?…}` (no offsets = the rest shape, zeros) and `deleteKey {…, attachment}`;
+    `moveKeys`/`scaleKeys`/`deleteKeys`/`copyKeys`/`pasteKeys` refs carry `attachment` too
+    (clipboard entries hold `offsets`).
+  * `deleteBone` moves mesh weights off the deleted bone (renormalized; a vertex left without
+    bones follows its slot bone; warning `ANIM_MESH_WEIGHTS_MOVED`); `removeSkinAttachment` of an
+    outfit-only mesh drops its deform keys.
+* Editor-only: the mesh edit mode (정점 편집 / 웨이트 칠하기), the vertex selection, the brush
+  (bone, weight, strength, radius) and the heat map never reach documents.
 
 ## Clips and keys
 
@@ -223,7 +314,9 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   `defaultSkin`/`defaultExpression`/binding `skin`/`expression` need plugin 1.2.0; documents
   without them are unchanged (editing ops never add empty `skins`/`expressions` lists, and
   deleting the last skin or expression removes the list). Documents with `ik` or `ik:<id>` tracks
-  need plugin 1.3.0; without them they are unchanged.
+  need plugin 1.3.0; without them they are unchanged. Documents with an IK `tip`, mesh
+  attachments or `deform` tracks need plugin 1.4.0 (and, exported, a player with
+  `plugin-mesh-v1` for meshes); without them they are unchanged.
 * Skin/expression editing ops (`edit`, plugin 1.2.0; each is one undo step in the editor):
   * `addSkin {id, name?, from?}` (`from` copies another skin's attachments),
     `duplicateSkin {skin, id, name?}`, `renameSkin {skin, id?, name?}` and
@@ -264,7 +357,7 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   its clip keys. Track 0 is the base action; controller `layers` (e.g. blink) run on 1..15.
   The active expression (plugin 1.2.0) applies between track 0 and track 1; the instance skin
   resolves every attachment name at draw time; IK constraints (plugin 1.3.0) are solved on the
-  world transforms after all tracks.
+  world transforms after all tracks, and meshes (plugin 1.4.0) are skinned on the solved world.
 * `play` replaces the track entry. If the mix duration (`mix.pairs` → `mix.defaultMs`, or
   explicit) is > 0, the old entry keeps animating and is cross-faded linearly; attachments
   switch at the halfway point. Events and completions of the outgoing entry are suppressed.
@@ -326,7 +419,8 @@ so it cannot duplicate a game effect.
 
 `playerPresentation.extensions["cutout-animation"]` stores per mounted instance:
 controller ref, active clip per track, binding, `then`, `stopOn`, speed, and (plugin 1.2.0)
-`skin` and `expression`. IK adds no state: constraint values come from the rig and the clips.
+`skin` and `expression`. IK and meshes add no state: constraint values, weights and deform
+offsets come from the rig and the clips.
 
 * Policy: skin and expression are both restored. An id removed since the save falls back to
   the controller default; saves without these fields (1.x) keep the current look.

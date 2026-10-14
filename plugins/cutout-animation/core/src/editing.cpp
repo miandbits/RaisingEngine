@@ -95,8 +95,10 @@ Affine inverseOr(const Affine& m, const char* what) {
   return *inv;
 }
 
-Json* findTrack(Json& c, const Str& target, const Str& property) {
-  for (auto& t : arr(c, "tracks")) if (t.value("target", Str()) == target && t.value("property", Str()) == property) return &t;
+/** Deform tracks (plugin 1.4.0) are told apart by the mesh attachment they key. */
+Json* findTrack(Json& c, const Str& target, const Str& property, const Str& attachment = "") {
+  for (auto& t : arr(c, "tracks"))
+    if (t.value("target", Str()) == target && t.value("property", Str()) == property && (property != "deform" || t.value("attachment", Str()) == attachment)) return &t;
   return nullptr;
 }
 Curve curveOf(const Json& key) {
@@ -202,11 +204,17 @@ Target target(Json& d, const Json& op) {
   if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id>, slot:<id>, ik:<id> 또는 rig 형식입니다.");
   const Str id = target.substr(5);
   if (isBone) bone(d, id); else slot(d, id);
-  const bool slotProp = *p == Property::Alpha || *p == Property::Attachment;
+  const bool slotProp = *p == Property::Alpha || *p == Property::Attachment || *p == Property::Deform;
   if (isBone == slotProp) throw EditError("대상 종류에 맞지 않는 속성입니다: " + prop);
+  if (*p == Property::Deform && optStr(op, "attachment").empty()) throw EditError("변형(deform) 키에는 메시 첨부 이름(attachment)이 필요합니다.");
   return {isBone, id, *p};
 }
-Str keyRef(const Str& clipId, const Json& op, int64_t t) { return "key:" + clipId + "/" + op.value("target", Str()) + "/" + op.value("property", Str()) + "@" + std::to_string(t); }
+/** Property of a key ref; deform keys add their attachment ("deform:<name>") so refs stay unique. */
+Str refProperty(const Json& op) {
+  const Str p = op.value("property", Str());
+  return p == "deform" ? p + ":" + optStr(op, "attachment") : p;
+}
+Str keyRef(const Str& clipId, const Json& op, int64_t t) { return "key:" + clipId + "/" + op.value("target", Str()) + "/" + refProperty(op) + "@" + std::to_string(t); }
 Json& keyAt(Json& track, int64_t t) {
   for (auto& k : arr(track, "keys")) if (k.value("timeMs", int64_t(-1)) == t) return k;
   throw EditError("그 시간에 키가 없습니다: " + std::to_string(t) + "ms");
@@ -287,6 +295,67 @@ size_t removeIk(Json& d, const Str& id) {
     for (const auto& t : arr(c, "tracks")) if (t.value("target", Str()) == "ik:" + id) keys += t.contains("keys") ? t.at("keys").size() : 0;
   removeTracks(d, {"ik:" + id});
   return keys;
+}
+
+// ---- Mesh helpers (plugin 1.4.0; ops near the end) ----
+bool isMesh(const Json& a) { return a.is_object() && optStr(a, "type") == "mesh"; }
+/** Vertex counts of the meshes named (slot, name) in the default list and in every skin. */
+std::set<size_t> meshCounts(const Json& d, const Str& slotId, const Str& name) {
+  std::set<size_t> out;
+  auto scan = [&](const Json& list) {
+    for (const auto& a : list)
+      if (isMesh(a) && optStr(a, "slot") == slotId && optStr(a, "name") == name && a.contains("vertices") && a.at("vertices").is_array())
+        out.insert(a.at("vertices").size() / 2);
+  };
+  scan(listOr(d, "attachments"));
+  for (const auto& s : listOr(d, "skins")) scan(listOr(s, "attachments"));
+  return out;
+}
+/** Deform tracks whose mesh is gone or whose offsets no longer fit its vertex count are removed. */
+size_t purgeDeform(EditResult& r) {
+  Json& d = r.data;
+  size_t removed = 0;
+  for (auto& c : arr(d, "clips")) {
+    auto& tracks = arr(c, "tracks");
+    tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [&](const Json& t) {
+      const Str target = t.value("target", Str());
+      if (t.value("property", Str()) != "deform" || target.rfind("slot:", 0) != 0) return false;
+      const auto counts = meshCounts(d, target.substr(5), optStr(t, "attachment"));
+      bool fits = !counts.empty();
+      for (const auto& k : listOr(t, "keys"))
+        fits = fits && k.contains("offsets") && k.at("offsets").is_array() && k.at("offsets").size() % 2 == 0 && counts.count(k.at("offsets").size() / 2);
+      if (!fits) removed += listOr(t, "keys").size();
+      return !fits;
+    }), tracks.end());
+  }
+  if (removed) warn(r, "ANIM_MESH_DEFORM_REMOVED", "", "메시 정점이 바뀌어 맞지 않게 된 변형 키 " + std::to_string(removed) + "개를 지웠습니다.");
+  return removed;
+}
+/** Weights of every mesh drop `boneId` (renormalized); a vertex left without bones follows its slot bone. */
+void dropBoneWeights(EditResult& r, const Str& boneId) {
+  Json& d = r.data;
+  bool moved = false;
+  auto fix = [&](Json& a) {
+    if (!isMesh(a) || !a.contains("weights") || !a["weights"].is_array()) return;
+    const Json* s = nullptr;
+    for (const auto& x : listOr(d, "slots")) if (optStr(x, "id") == optStr(a, "slot")) s = &x;
+    const Str fallback = s ? optStr(*s, "bone") : Str();
+    for (auto& list : a["weights"]) {
+      if (!list.is_array()) continue;
+      const auto before = list.size();
+      list.erase(std::remove_if(list.begin(), list.end(), [&](const Json& w) { return optStr(w, "bone") == boneId; }), list.end());
+      if (list.size() == before) continue;
+      moved = true;
+      double sum = 0;
+      for (const auto& w : list) sum += w.value("weight", 0.0);
+      if (list.empty() || !(sum > 1e-9)) list = Json::array({{{"bone", fallback}, {"weight", 1}}});
+      else for (auto& w : list) w["weight"] = clean(w.value("weight", 0.0) / sum);
+    }
+  };
+  for (auto& a : arr(d, "attachments")) fix(a);
+  if (d.contains("skins") && d["skins"].is_array())
+    for (auto& s : d["skins"]) if (s.is_object() && s.contains("attachments") && s["attachments"].is_array()) for (auto& a : s["attachments"]) fix(a);
+  if (moved) warn(r, "ANIM_MESH_WEIGHTS_MOVED", "", "지운 본의 메시 웨이트를 남은 본(없으면 조각의 본)으로 옮겼습니다.");
 }
 
 // ---- Bones ----
@@ -409,6 +478,14 @@ void deleteBone(EditResult& r, const Json& op) {
     r.affected.push_back("ik:" + ik);
     warn(r, "ANIM_IK_REMOVED", "", "본을 지우면서 IK 제약 「" + ik + "」도 지웠습니다.");
   }
+  // An explicit effector that goes away falls back to the implicit rule (the lower bone's first child).
+  if (d.contains("ik") && d["ik"].is_array())
+    for (auto& k : d["ik"])
+      if (k.is_object() && optStr(k, "tip") == id) {
+        k.erase("tip");
+        r.affected.push_back("ik:" + optStr(k, "id"));
+        warn(r, "ANIM_IK_TIP_REMOVED", "", "IK 「" + optStr(k, "id") + "」의 끝점 본을 지워, 아래 본의 첫 자식 본을 끝점으로 씁니다.");
+      }
   const Str parent = parentOf(b);
   auto world = setupWorld(d);
   const Affine inv = parent.empty() ? Affine{} : inverseOr(world[parent], "부모 본");
@@ -426,6 +503,7 @@ void deleteBone(EditResult& r, const Json& op) {
   atts.erase(std::remove_if(atts.begin(), atts.end(), [&](const Json& a) { return slotsOn.count(a.value("slot", Str())) > 0; }), atts.end());
   removeTracks(d, targets);
   purgeLookRefs(d, slotsOn, {id});
+  dropBoneWeights(r, id);
   auto& bones = arr(d, "bones");
   bones.erase(bones.begin() + findIndex(bones, "id", id));
   r.affected.push_back("bone:" + id);
@@ -549,9 +627,24 @@ void setKey(EditResult& r, const Json& op) {
   Json& c = clip(d, clipId);
   const int64_t t = ms(op, "timeMs"), duration = c.value("durationMs", int64_t(0));
   if (t < 0 || t > duration) throw EditError("키 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
-  if (!op.contains("value")) throw EditError("키 값이 필요합니다.");
-  Json value = op.at("value");
-  if (tg.property == Property::BendPositive) {
+  const bool deform = tg.property == Property::Deform;
+  if (!op.contains("value") && !deform) throw EditError("키 값이 필요합니다.");
+  Json value = op.contains("value") ? op.at("value") : Json();
+  if (deform) {
+    // offsets = dx, dy per vertex in image pixels; absent = the rest shape (all zero).
+    const std::set<size_t> counts = meshCounts(d, tg.id, optStr(op, "attachment"));
+    if (counts.empty()) throw EditError("메시가 아닌(또는 없는) 첨부입니다: " + tg.id + "/" + optStr(op, "attachment") + " (먼저 메시로 변환하세요)");
+    value = Json::array();
+    if (has(op, "offsets")) {
+      if (!op.at("offsets").is_array()) throw EditError("offsets는 정점마다 dx, dy 숫자 배열입니다.");
+      for (const auto& v : op.at("offsets")) {
+        if (!v.is_number() || !std::isfinite(v.get<double>()) || std::fabs(v.get<double>()) > 1e6) throw EditError("offsets 값은 유한한 숫자여야 합니다.");
+        value.push_back(clean(v.get<double>()));
+      }
+    } else value = Json(std::vector<double>(*counts.begin() * 2, 0.0));
+    if (value.size() % 2 || !counts.count(value.size() / 2))
+      throw EditError("offsets 개수(" + std::to_string(value.size()) + ")가 메시 정점 수 × 2(" + std::to_string(*counts.begin() * 2) + ")와 다릅니다.");
+  } else if (tg.property == Property::BendPositive) {
     if (value.is_number() && (value == 0 || value == 1)) value = value == 1;  // 0/1 from numeric tools
     if (!value.is_boolean()) throw EditError("IK 굽힘 키 값은 true 또는 false입니다.");
   } else if (tg.property == Property::Expression) {
@@ -567,13 +660,18 @@ void setKey(EditResult& r, const Json& op) {
     if (tg.property == Property::Mix && (v < 0 || v > 1)) throw EditError("IK 혼합(mix)은 0..1이어야 합니다.");
     value = clean(v);
   }
-  const Str targetText = op.at("target").get<Str>(), prop = op.at("property").get<Str>();
-  Json* tr = findTrack(c, targetText, prop);
-  if (!tr) { arr(c, "tracks").push_back({{"target", targetText}, {"property", prop}, {"keys", Json::array()}}); tr = &arr(c, "tracks").back(); }
+  const Str targetText = op.at("target").get<Str>(), prop = op.at("property").get<Str>(), attachment = deform ? optStr(op, "attachment") : Str();
+  Json* tr = findTrack(c, targetText, prop, attachment);
+  if (!tr) {
+    Json track{{"target", targetText}, {"property", prop}, {"keys", Json::array()}};
+    if (deform) track["attachment"] = attachment;
+    arr(c, "tracks").push_back(track);
+    tr = &arr(c, "tracks").back();
+  }
   Json* key = nullptr;
   for (auto& k : arr(*tr, "keys")) if (k.value("timeMs", int64_t(-1)) == t) key = &k;
   if (!key) { arr(*tr, "keys").push_back({{"timeMs", t}}); key = &arr(*tr, "keys").back(); }
-  (*key)["value"] = value;
+  (*key)[deform ? "offsets" : "value"] = value;
   const bool step = stepOnly(prop);
   if (step) { key->erase("interp"); key->erase("curve"); }
   sortKeys(*tr);
@@ -585,7 +683,7 @@ Json& existingTrack(Json& d, const Json& op, Json*& clipOut) {
   const Str clipId = reqStr(op, "clip");
   target(d, op);
   clipOut = &clip(d, clipId);
-  Json* tr = findTrack(*clipOut, op.at("target").get<Str>(), op.at("property").get<Str>());
+  Json* tr = findTrack(*clipOut, op.at("target").get<Str>(), op.at("property").get<Str>(), optStr(op, "attachment"));
   if (!tr) throw EditError("이 대상·속성에는 키가 없습니다.");
   return *tr;
 }
@@ -638,8 +736,15 @@ void setCurve(EditResult& r, const Json& op) {
 // A selection is `keys: [{target, property, timeMs}]` inside one clip. Ops validate every
 // key first and change nothing when any of them is refused (collision, range, unknown key).
 constexpr size_t MAX_KEYS = 5000;
-struct Picked { Json* track; std::set<int64_t> times; Str target, property; };
-Json refJson(const Str& target, const Str& property, int64_t t) { return {{"target", target}, {"property", property}, {"timeMs", t}}; }
+struct Picked {
+  Json* track; std::set<int64_t> times; Str target, property, attachment;
+  Str refProperty() const { return property == "deform" ? property + ":" + attachment : property; }
+};
+Json refJson(const Str& target, const Str& property, int64_t t, const Str& attachment = "") {
+  Json j{{"target", target}, {"property", property}, {"timeMs", t}};
+  if (property == "deform") j["attachment"] = attachment;
+  return j;
+}
 std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op) {
   if (!has(op, "keys") || !op.at("keys").is_array() || op.at("keys").empty() || op.at("keys").size() > MAX_KEYS)
     throw EditError("keys는 1.." + std::to_string(MAX_KEYS) + "개의 [{target, property, timeMs}] 배열입니다.");
@@ -647,13 +752,13 @@ std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op) {
   for (const auto& k : op.at("keys")) {
     if (!k.is_object()) throw EditError("keys 항목은 {target, property, timeMs} 객체입니다.");
     target(d, k);
-    const Str tg = k.at("target").get<Str>(), prop = k.at("property").get<Str>();
+    const Str tg = k.at("target").get<Str>(), prop = k.at("property").get<Str>(), attachment = prop == "deform" ? optStr(k, "attachment") : Str();
     const int64_t t = ms(k, "timeMs");
-    Json* tr = findTrack(c, tg, prop);
+    Json* tr = findTrack(c, tg, prop, attachment);
     if (!tr) throw EditError("이 대상·속성에는 키가 없습니다: " + tg + " " + prop);
     keyAt(*tr, t);
     auto it = std::find_if(out.begin(), out.end(), [&](const Picked& p) { return p.track == tr; });
-    if (it == out.end()) { out.push_back({tr, {}, tg, prop}); it = out.end() - 1; }
+    if (it == out.end()) { out.push_back({tr, {}, tg, prop, attachment}); it = out.end() - 1; }
     it->times.insert(t);  // duplicates in the list are harmless
   }
   return out;
@@ -682,8 +787,8 @@ void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& 
       if (!p.times.count(t)) continue;
       const int64_t to = map(t);
       k["timeMs"] = to;
-      moved.push_back(refJson(p.target, p.property, to));
-      r.affected.push_back("key:" + clipId + "/" + p.target + "/" + p.property + "@" + std::to_string(to));
+      moved.push_back(refJson(p.target, p.property, to, p.attachment));
+      r.affected.push_back("key:" + clipId + "/" + p.target + "/" + p.refProperty() + "@" + std::to_string(to));
     }
     // Normalized curves ride along with their key: segment shapes stay, only their timing changes.
     sortKeys(*p.track);
@@ -725,7 +830,7 @@ void deleteKeys(EditResult& r, const Json& op) {
   for (auto& p : picked) {
     auto& keys = arr(*p.track, "keys");
     keys.erase(std::remove_if(keys.begin(), keys.end(), [&](const Json& k) { return p.times.count(k.value("timeMs", int64_t(-1))) > 0; }), keys.end());
-    for (int64_t t : p.times) r.affected.push_back("key:" + clipId + "/" + p.target + "/" + p.property + "@" + std::to_string(t));
+    for (int64_t t : p.times) r.affected.push_back("key:" + clipId + "/" + p.target + "/" + p.refProperty() + "@" + std::to_string(t));
   }
   auto& tracks = arr(c, "tracks");
   tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [](const Json& t) { return !t.contains("keys") || !t.at("keys").is_array() || t.at("keys").empty(); }), tracks.end());
@@ -747,6 +852,7 @@ void copyKeys(EditResult& r, const Json& op) {
       const int64_t t = k.value("timeMs", int64_t(-1));
       if (!p.times.count(t)) continue;
       Json e{{"target", p.target}, {"property", p.property}, {"offsetMs", t - lo}, {"value", k.contains("value") ? k.at("value") : Json(nullptr)}};
+      if (p.property == "deform") { e.erase("value"); e["attachment"] = p.attachment; e["offsets"] = k.contains("offsets") ? k.at("offsets") : Json::array(); }
       if (!stepOnly(p.property)) {
         e["interp"] = k.contains("interp") && k.at("interp").is_string() ? k.at("interp") : Json("linear");
         if (e["interp"] == "bezier") e["curve"] = curveJson(curveOf(k));
@@ -786,9 +892,9 @@ void pasteKeys(EditResult& r, const Json& op) {
     const int64_t t = at + ms(e, "offsetMs");
     Json set{{"clip", clipId}, {"target", tg}, {"property", prop}, {"timeMs", t}};
     if (e.contains("value")) set["value"] = e.at("value");
-    for (const char* k : {"interp", "curve"}) if (has(e, k)) set[k] = e.at(k);
+    for (const char* k : {"interp", "curve", "attachment", "offsets"}) if (has(e, k)) set[k] = e.at(k);
     setKey(r, set);
-    pasted.push_back(refJson(tg, prop, t));
+    pasted.push_back(refJson(tg, prop, t, optStr(e, "attachment")));
   }
   r.extra["keys"] = pasted;
 }
@@ -1136,6 +1242,7 @@ void removeSkinAttachment(EditResult& r, const Json& op) {
   const auto before = list.size();
   list.erase(std::remove_if(list.begin(), list.end(), [&](const Json& a) { return optStr(a, "slot") == slotId && optStr(a, "name") == name; }), list.end());
   if (list.size() == before) throw EditError("이 스킨에 없는 첨부입니다: " + slotId + "/" + name);
+  purgeDeform(r);  // an outfit-only mesh takes its deform keys along
   r.affected.push_back("skin:" + skinId);
   r.affected.push_back("slot:" + slotId);
 }
@@ -1340,8 +1447,16 @@ void addIk(EditResult& r, const Json& op) {
   const Pose pose = ikSetupPose(d, rig);
   const int end = rig.boneIndex(chain.back());
   int tip = -1;
+  if (has(op, "tip")) {
+    if (chain.size() != 2) throw EditError("끝점(tip)은 두 본 IK에만 지정합니다.");
+    bone(d, reqStr(op, "tip"));
+    tip = rig.boneIndex(reqStr(op, "tip"));
+    if (rig.bones[size_t(tip)].parentIndex != end) throw EditError("끝점(tip)은 아래 본 「" + chain.back() + "」의 직접 자식이어야 합니다: " + reqStr(op, "tip"));
+  }
   for (size_t i = 0; i < rig.bones.size() && tip < 0; i++) if (rig.bones[i].parentIndex == end) tip = int(i);
   Json k{{"id", id}, {"name", displayName(op, id)}, {"bones", chain}};
+  // A known end becomes the explicit effector: adding a sibling bone later never changes the limb.
+  if (chain.size() == 2 && tip >= 0) k["tip"] = rig.bones[size_t(tip)].id;
   Str target = optStr(op, "target");
   if (target.empty()) {
     if (!(has(op, "createTarget") && op.at("createTarget") == true)) throw EditError("target(대상 본) 또는 createTarget: true가 필요합니다.");
@@ -1411,6 +1526,10 @@ void setIk(EditResult& r, const Json& op) {
     else k["order"] = int64_t(num(op, "order", 0));
   }
   if (has(op, "target")) { bone(d, reqStr(op, "target")); k["target"] = reqStr(op, "target"); }
+  if (op.contains("tip")) {  // null = back to the implicit first-child rule
+    if (op.at("tip").is_null()) k.erase("tip");
+    else { bone(d, reqStr(op, "tip")); k["tip"] = reqStr(op, "tip"); }
+  }
   if (has(op, "bones")) {
     if (!op.at("bones").is_array()) throw EditError("bones는 본 ID 배열입니다.");
     k["bones"] = op.at("bones");
@@ -1484,6 +1603,360 @@ void bakeIk(EditResult& r, const Json& op) {
   r.extra["keys"] = keyed;
 }
 
+// ---- Mesh attachments (plugin 1.4.0) ----
+/**
+ * The attachment entry an op names: {slot, name? (default: the slot's setup attachment),
+ * skin?}. With `skin` the skin's own entry (an outfit mesh is edited there), else the default list.
+ */
+Json& attachmentEntry(Json& d, const Json& op, Str& slotId, Str& name) {
+  slotId = reqStr(op, "slot");
+  const Json& s = slot(d, slotId);
+  name = has(op, "name") ? reqStr(op, "name") : optStr(s, "attachment");
+  if (name.empty()) throw EditError("이 조각에는 기본 첨부가 없습니다. name(첨부 이름)을 지정하세요.");
+  const Str skin = has(op, "skin") ? reqStr(op, "skin") : Str();
+  Json& list = skin.empty() ? arr(d, "attachments") : arr(skinAt(d, skin), "attachments");
+  for (auto& a : list) if (optStr(a, "slot") == slotId && optStr(a, "name") == name) return a;
+  throw EditError("없는 첨부입니다: " + slotId + "/" + name + (skin.empty() ? Str() : " (스킨 「" + skin + "」)"));
+}
+Json& meshEntry(Json& d, const Json& op, Str& slotId, Str& name) {
+  Json& a = attachmentEntry(d, op, slotId, name);
+  if (!isMesh(a)) throw EditError("메시가 아닌 첨부입니다: " + slotId + "/" + name + " (먼저 「메시로 변환」하세요)");
+  return a;
+}
+std::vector<double> numbersOf(const Json& a, const char* k) {
+  std::vector<double> out;
+  for (const auto& v : listOr(a, k)) out.push_back(v.is_number() ? v.get<double>() : 0.0);
+  return out;
+}
+Json numbersJson(const std::vector<double>& v) { Json out = Json::array(); for (double x : v) out.push_back(clean(x)); return out; }
+/** Vertex indices of op `vertices` (all vertices when absent): unique, in range. */
+std::vector<size_t> vertexList(const Json& op, size_t n, bool required) {
+  std::vector<size_t> out;
+  if (!has(op, "vertices")) {
+    if (required) throw EditError("vertices(정점 번호 배열)가 필요합니다.");
+    for (size_t i = 0; i < n; i++) out.push_back(i);
+    return out;
+  }
+  if (!op.at("vertices").is_array() || op.at("vertices").empty()) throw EditError("vertices는 정점 번호 배열입니다.");
+  std::set<size_t> seen;
+  for (const auto& v : op.at("vertices")) {
+    if (!v.is_number_integer() || v.get<int64_t>() < 0 || v.get<int64_t>() >= int64_t(n)) throw EditError("정점 번호가 범위(0.." + std::to_string(n - 1) + ") 밖입니다: " + v.dump());
+    if (seen.insert(size_t(v.get<int64_t>())).second) out.push_back(size_t(v.get<int64_t>()));
+  }
+  return out;
+}
+using Weights = std::vector<std::vector<std::pair<Str, double>>>;
+/** Current weights of a mesh entry; an unweighted mesh reads as 100 % on its slot bone. */
+Weights weightsOf(const Json& d, const Json& a, size_t n) {
+  Weights out(n);
+  const Json& list = listOr(a, "weights");
+  Str slotBone;
+  for (const auto& s : listOr(d, "slots")) if (optStr(s, "id") == optStr(a, "slot")) slotBone = optStr(s, "bone");
+  for (size_t v = 0; v < n; v++) {
+    if (v < list.size() && list[v].is_array())
+      for (const auto& w : list[v]) out[v].push_back({optStr(w, "bone"), w.value("weight", 0.0)});
+    if (out[v].empty()) out[v].push_back({slotBone, 1.0});
+  }
+  return out;
+}
+/** Normalize one vertex: drop ~0 shares, keep the 4 largest, sum 1, largest first. */
+void normalizeWeights(std::vector<std::pair<Str, double>>& w) {
+  w.erase(std::remove_if(w.begin(), w.end(), [](const auto& x) { return !(x.second > 1e-4); }), w.end());
+  std::stable_sort(w.begin(), w.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+  if (w.size() > MAX_INFLUENCES) w.resize(MAX_INFLUENCES);
+  double sum = 0;
+  for (const auto& x : w) sum += x.second;
+  for (auto& x : w) x.second /= sum;
+}
+void writeWeights(Json& a, const Weights& weights) {
+  Json out = Json::array();
+  for (const auto& list : weights) {
+    Json v = Json::array();
+    double rest = 1;
+    for (size_t i = 0; i < list.size(); i++) {
+      // Rounded shares, the last one takes the remainder: every vertex sums to exactly 1.
+      const double w = i + 1 == list.size() ? clean(rest) : clean(list[i].second);
+      rest -= w;
+      v.push_back({{"bone", list[i].first}, {"weight", w}});
+    }
+    out.push_back(v);
+  }
+  a["weights"] = out;
+}
+/** Edges used by exactly one triangle (the outline, holes included), as sorted index pairs. */
+std::vector<int> boundaryEdges(const std::vector<int>& tris) {
+  std::map<std::pair<int, int>, int> uses;
+  for (size_t t = 0; t + 2 < tris.size(); t += 3)
+    for (int k = 0; k < 3; k++) {
+      const int a = tris[t + size_t(k)], b = tris[t + size_t((k + 1) % 3)];
+      uses[{std::min(a, b), std::max(a, b)}]++;
+    }
+  std::vector<int> out;
+  for (const auto& [e, n] : uses) if (n == 1) { out.push_back(e.first); out.push_back(e.second); }
+  return out;
+}
+
+/**
+ * convertToMesh {slot, name?, skin?, rows? = 4, cols? = 4, cells?}: region (or mesh) -> grid
+ * mesh over the image, rows × cols cells. `cells` ("1"/"0" per cell, row-major) keeps only the
+ * marked cells (alpha-trimmed grids: the editor marks cells that hold opaque pixels); unused
+ * vertices are dropped. Vertices sit exactly on the region's pixels with matching uvs, so the
+ * part looks unchanged; the full grid lists its outline first (`hull`). Weights are cleared.
+ */
+void convertToMesh(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = attachmentEntry(d, op, slotId, name);
+  const int64_t rows = has(op, "rows") ? int64_t(num(op, "rows", 4)) : 4, cols = has(op, "cols") ? int64_t(num(op, "cols", 4)) : 4;
+  if (rows < 1 || cols < 1 || rows > 64 || cols > 64) throw EditError("격자 칸 수(rows, cols)는 1..64입니다.");
+  if (size_t((rows + 1) * (cols + 1)) > MAX_MESH_VERTICES) throw EditError("정점이 너무 많습니다(최대 " + std::to_string(MAX_MESH_VERTICES) + "개). 칸 수를 줄이세요.");
+  const Str cells = optStr(op, "cells");
+  if (!cells.empty() && (int64_t(cells.size()) != rows * cols || cells.find_first_not_of("01") != Str::npos))
+    throw EditError("cells는 칸마다 1(남김) 또는 0(뺌)인 " + std::to_string(rows * cols) + "글자 문자열입니다.");
+  if (!cells.empty() && cells.find('1') == Str::npos) throw EditError("남길 칸이 없습니다(이미지가 모두 투명합니다).");
+  const bool full = cells.find('0') == Str::npos;
+  const double w = num(a, "width", 0), h = num(a, "height", 0);
+  auto kept = [&](int64_t rr, int64_t cc) { return full || cells[size_t(rr * cols + cc)] == '1'; };
+  // Grid vertex (row, col) is used when any kept cell touches it.
+  std::vector<int> index(size_t((rows + 1) * (cols + 1)), -1);
+  auto at = [&](int64_t rr, int64_t cc) -> int& { return index[size_t(rr * (cols + 1) + cc)]; };
+  std::vector<std::pair<int64_t, int64_t>> order;
+  auto use = [&](int64_t rr, int64_t cc) { if (at(rr, cc) < 0) { at(rr, cc) = int(order.size()); order.push_back({rr, cc}); } };
+  if (full) {
+    // Outline first, clockwise from the top-left corner (Spine's hull convention), then the inside.
+    for (int64_t cc = 0; cc <= cols; cc++) use(0, cc);
+    for (int64_t rr = 1; rr <= rows; rr++) use(rr, cols);
+    for (int64_t cc = cols - 1; cc >= 0; cc--) use(rows, cc);
+    for (int64_t rr = rows - 1; rr >= 1; rr--) use(rr, 0);
+  }
+  const size_t hull = order.size();
+  for (int64_t rr = 0; rr <= rows; rr++)
+    for (int64_t cc = 0; cc <= cols; cc++) {
+      bool touched = false;
+      for (int64_t dr = -1; dr <= 0; dr++)
+        for (int64_t dc = -1; dc <= 0; dc++)
+          touched = touched || (rr + dr >= 0 && rr + dr < rows && cc + dc >= 0 && cc + dc < cols && kept(rr + dr, cc + dc));
+      if (touched) use(rr, cc);
+    }
+  std::vector<double> vertices, uvs;
+  for (const auto& [rr, cc] : order) {
+    vertices.push_back(double(cc) / double(cols) * w); vertices.push_back(double(rr) / double(rows) * h);
+    uvs.push_back(double(cc) / double(cols)); uvs.push_back(double(rr) / double(rows));
+  }
+  std::vector<int> tris;
+  for (int64_t rr = 0; rr < rows; rr++)
+    for (int64_t cc = 0; cc < cols; cc++) {
+      if (!kept(rr, cc)) continue;
+      const int v00 = at(rr, cc), v01 = at(rr, cc + 1), v10 = at(rr + 1, cc), v11 = at(rr + 1, cc + 1);
+      // Alternating diagonals bend symmetrically (no direction is favoured by the triangulation).
+      if ((rr + cc) % 2 == 0) tris.insert(tris.end(), {v00, v01, v11, v00, v11, v10});
+      else tris.insert(tris.end(), {v00, v01, v10, v01, v11, v10});
+    }
+  if (tris.size() / 3 > MAX_MESH_TRIANGLES) throw EditError("삼각형이 너무 많습니다(최대 " + std::to_string(MAX_MESH_TRIANGLES) + "개).");
+  a["type"] = "mesh";
+  a["vertices"] = numbersJson(vertices);
+  a["uvs"] = numbersJson(uvs);
+  a["triangles"] = tris;
+  if (full) a["hull"] = hull; else a.erase("hull");
+  a["edges"] = boundaryEdges(tris);
+  a.erase("weights");
+  r.extra["vertices"] = vertices.size() / 2;
+  r.extra["triangles"] = tris.size() / 3;
+  r.extra["keys"] = purgeDeform(r);
+  r.affected.push_back("slot:" + slotId);
+}
+/** convertToRegion {slot, name?, skin?}: back to a plain image rectangle (its deform keys go too). */
+void convertToRegion(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  for (const char* k : {"type", "vertices", "uvs", "triangles", "hull", "edges", "weights"}) a.erase(k);
+  r.extra["keys"] = purgeDeform(r);
+  r.affected.push_back("slot:" + slotId);
+}
+/**
+ * setMeshVertices {slot, name?, skin?, vertices?, positions? | dx?, dy?, keepUvs?}: move setup
+ * vertices (image pixels). `positions` = x, y per listed vertex (all vertices without
+ * `vertices`); dx/dy move them all by the same amount. By default uvs follow (uv = position /
+ * image size, clamped), so the image stays put under the outline; keepUvs stretches it instead.
+ */
+void setMeshVertices(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  std::vector<double> vertices = numbersOf(a, "vertices"), uvs = numbersOf(a, "uvs");
+  const size_t n = vertices.size() / 2;
+  const std::vector<size_t> list = vertexList(op, n, false);
+  if (has(op, "positions")) {
+    if (!op.at("positions").is_array() || op.at("positions").size() != list.size() * 2) throw EditError("positions는 정점마다 x, y(" + std::to_string(list.size() * 2) + "개)입니다.");
+    for (size_t i = 0; i < list.size(); i++)
+      for (size_t k = 0; k < 2; k++) {
+        const Json& v = op.at("positions")[2 * i + k];
+        if (!v.is_number() || !std::isfinite(v.get<double>()) || std::fabs(v.get<double>()) > 1e5) throw EditError("positions 값은 유한한 숫자여야 합니다.");
+        vertices[2 * list[i] + k] = v.get<double>();
+      }
+  } else {
+    if (!has(op, "dx") && !has(op, "dy")) throw EditError("positions 또는 dx, dy가 필요합니다.");
+    const double dx = num(op, "dx", 0), dy = num(op, "dy", 0);
+    for (size_t v : list) { vertices[2 * v] += dx; vertices[2 * v + 1] += dy; }
+  }
+  if (!(has(op, "keepUvs") && op.at("keepUvs") == true)) {
+    const double w = num(a, "width", 1), h = num(a, "height", 1);
+    for (size_t v : list) { uvs[2 * v] = std::clamp(vertices[2 * v] / w, 0.0, 1.0); uvs[2 * v + 1] = std::clamp(vertices[2 * v + 1] / h, 0.0, 1.0); }
+  }
+  a["vertices"] = numbersJson(vertices);
+  a["uvs"] = numbersJson(uvs);
+  r.extra["vertices"] = list.size();
+  r.affected.push_back("slot:" + slotId);
+}
+double segmentDistance(double px, double py, double ax, double ay, double bx, double by) {
+  const double vx = bx - ax, vy = by - ay, len2 = vx * vx + vy * vy;
+  const double u = len2 > 1e-12 ? std::clamp(((px - ax) * vx + (py - ay) * vy) / len2, 0.0, 1.0) : 0;
+  return std::hypot(px - (ax + u * vx), py - (ay + u * vy));
+}
+/**
+ * 자동 웨이트: every listed vertex (all by default) gets the nearest 1..`influences` (default 4)
+ * of `bones` by distance to each bone's segment (origin -> its child bone's origin, preferring a
+ * child that is itself a candidate; a bone without children is a point), measured in the setup
+ * pose. Share ∝ 1 / (distance + 1 px)^falloff (default 2: smooth, a vertex on a bone is ~100 %
+ * that bone), normalized. Without `bones`: the bones already weighting the mesh, else the slot's
+ * bone with its parent and children.
+ */
+void autoWeights(EditResult& r, const Json& op, bool requireBones) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const std::vector<double> vertices = numbersOf(a, "vertices");
+  const size_t n = vertices.size() / 2;
+  const Str slotBone = optStr(slot(d, slotId), "bone");
+  std::vector<Str> bones;
+  auto add = [&](const Str& id) { if (!id.empty() && std::find(bones.begin(), bones.end(), id) == bones.end()) bones.push_back(id); };
+  if (has(op, "bones")) {
+    if (!op.at("bones").is_array()) throw EditError("bones는 본 ID 배열입니다.");
+    for (const auto& b : op.at("bones")) { const Str id = b.is_string() ? b.get<Str>() : Str(); bone(d, id); add(id); }
+  } else if (requireBones) throw EditError("메시를 묶을 본(bones)을 하나 이상 고르세요.");
+  else if (a.contains("weights")) { for (const auto& list : weightsOf(d, a, n)) for (const auto& [b, w] : list) add(b); }
+  else {
+    add(slotBone);
+    add(parentOf(bone(d, slotBone)));
+    for (const auto& b : listOr(d, "bones")) if (parentOf(b) == slotBone) add(optStr(b, "id"));
+  }
+  if (bones.empty()) throw EditError("웨이트를 줄 본이 없습니다.");
+  const int64_t influences = has(op, "influences") ? int64_t(num(op, "influences", 4)) : 4;
+  if (influences < 1 || influences > int64_t(MAX_INFLUENCES)) throw EditError("정점당 본 수(influences)는 1..4입니다.");
+  const double falloff = num(op, "falloff", 2);
+  if (falloff < 0.5 || falloff > 8) throw EditError("falloff(거리 감쇠)는 0.5..8입니다.");
+  auto world = setupWorld(d);
+  // Bone segments in the setup pose (the bind pose).
+  struct Segment { double ax, ay, bx, by; };
+  std::vector<Segment> segments;
+  for (const auto& id : bones) {
+    const Affine& w = world[id];
+    Segment s{w.e, w.f, w.e, w.f};
+    const Json* child = nullptr;
+    for (const auto& b : listOr(d, "bones"))
+      if (parentOf(b) == id && (!child || (std::find(bones.begin(), bones.end(), optStr(b, "id")) != bones.end() &&
+                                           std::find(bones.begin(), bones.end(), optStr(*child, "id")) == bones.end()))) child = &b;
+    if (child) { s.bx = world[optStr(*child, "id")].e; s.by = world[optStr(*child, "id")].f; }
+    segments.push_back(s);
+  }
+  const Affine placed = world[slotBone] * Affine::compose(num(a, "x", 0), num(a, "y", 0), num(a, "rotation", 0), num(a, "scaleX", 1), num(a, "scaleY", 1)) *
+                        Affine::compose(-num(a, "pivotX", 0.5) * num(a, "width", 0), -num(a, "pivotY", 0.5) * num(a, "height", 0), 0, 1, 1);
+  Weights weights = weightsOf(d, a, n);
+  const std::vector<size_t> list = vertexList(op, n, false);
+  for (size_t v : list) {
+    double px, py;
+    placed.apply(vertices[2 * v], vertices[2 * v + 1], px, py);
+    std::vector<std::pair<Str, double>> w;
+    for (size_t b = 0; b < bones.size(); b++)
+      w.push_back({bones[b], 1 / std::pow(segmentDistance(px, py, segments[b].ax, segments[b].ay, segments[b].bx, segments[b].by) + 1, falloff)});
+    std::stable_sort(w.begin(), w.end(), [](const auto& x, const auto& y) { return x.second > y.second; });
+    if (int64_t(w.size()) > influences) w.resize(size_t(influences));
+    double sum = 0;
+    for (const auto& x : w) sum += x.second;
+    for (auto& x : w) x.second /= sum;
+    normalizeWeights(w);
+    weights[v] = w;
+  }
+  writeWeights(a, weights);
+  r.extra["vertices"] = list.size();
+  r.extra["bones"] = bones;
+  r.affected.push_back("slot:" + slotId);
+}
+/**
+ * setWeights {slot, name?, skin?, vertices, bone, weight, strength?} (weight brush): each listed
+ * vertex moves its share of `bone` towards `weight` by `strength` (0..1, default 1) and the other
+ * bones are rescaled to fill the rest (a vertex with no other bone gives the rest to the slot
+ * bone). Or {vertices, weights: [[{bone, weight}]...] per listed vertex} sets them outright.
+ * Shares are normalized, at most 4 per vertex.
+ */
+void setWeights(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const size_t n = a.contains("vertices") && a.at("vertices").is_array() ? a.at("vertices").size() / 2 : 0;
+  const Str slotBone = optStr(slot(d, slotId), "bone");
+  Weights weights = weightsOf(d, a, n);
+  const std::vector<size_t> list = vertexList(op, n, true);
+  if (has(op, "weights")) {
+    if (!op.at("weights").is_array() || op.at("weights").size() != list.size()) throw EditError("weights는 고른 정점마다 [{bone, weight}] 목록 하나씩입니다.");
+    for (size_t i = 0; i < list.size(); i++) {
+      std::vector<std::pair<Str, double>> w;
+      for (const auto& x : op.at("weights")[i]) {
+        const Str b = reqStr(x, "bone");
+        bone(d, b);
+        const double value = num(x, "weight", 0);
+        if (value < 0 || value > 1) throw EditError("웨이트는 0..1입니다.");
+        for (const auto& y : w) if (y.first == b) throw EditError("한 정점에 같은 본이 두 번 있습니다: " + b);
+        w.push_back({b, value});
+      }
+      double sum = 0;
+      for (const auto& x : w) sum += x.second;
+      if (!(sum > 1e-9)) throw EditError("정점의 웨이트 합이 0입니다.");
+      if (w.size() > MAX_INFLUENCES) throw EditError("정점 하나에 영향을 주는 본은 최대 4개입니다.");
+      normalizeWeights(w);
+      weights[list[i]] = w;
+    }
+  } else {
+    const Str b = reqStr(op, "bone");
+    bone(d, b);
+    const double target = num(op, "weight", 1), strength = num(op, "strength", 1);
+    if (target < 0 || target > 1 || strength < 0 || strength > 1) throw EditError("weight와 strength는 0..1입니다.");
+    for (size_t v : list) {
+      auto& w = weights[v];
+      double cur = 0, others = 0;
+      for (const auto& x : w) (x.first == b ? cur : others) += x.second;
+      const double next = cur + strength * (target - cur);
+      if (others <= 1e-9 && next < 1) {
+        if (b == slotBone) continue;  // the only bone of this vertex: nothing to hand the rest to
+        w.push_back({slotBone, 1 - next});
+        others = 1 - next;
+      } else for (auto& x : w) if (x.first != b) x.second *= (1 - next) / others;
+      bool found = false;
+      for (auto& x : w) if (x.first == b) { x.second = next; found = true; }
+      if (!found) w.push_back({b, next});
+      // Merge a slot-bone share added above with an existing one.
+      std::vector<std::pair<Str, double>> merged;
+      for (const auto& x : w) {
+        auto it = std::find_if(merged.begin(), merged.end(), [&](const auto& y) { return y.first == x.first; });
+        if (it == merged.end()) merged.push_back(x); else it->second += x.second;
+      }
+      normalizeWeights(merged);
+      w = merged;
+    }
+  }
+  writeWeights(a, weights);
+  r.extra["vertices"] = list.size();
+  r.affected.push_back("slot:" + slotId);
+}
+/** unbindMesh {slot, name?, skin?}: weights removed; the mesh follows its slot bone like a region again. */
+void unbindMesh(EditResult& r, const Json& op) {
+  Str slotId, name;
+  Json& a = meshEntry(r.data, op, slotId, name);
+  a.erase("weights");
+  r.affected.push_back("slot:" + slotId);
+}
+
 void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth) {
   if (!op.is_object()) throw EditError("편집 명령은 객체여야 합니다.");
   const Str name = reqStr(op, "op");
@@ -1511,6 +1984,9 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"addSkin", addSkin}, {"duplicateSkin", duplicateSkin}, {"setSkinAttachment", setSkinAttachment}, {"removeSkinAttachment", removeSkinAttachment},
     {"addExpression", addExpression}, {"setExpressionSlot", setExpressionSlot}, {"setExpressionBone", setExpressionBone}, {"captureExpression", captureExpression},
     {"addIk", addIk}, {"setIk", setIk}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
+    {"convertToMesh", convertToMesh}, {"convertToRegion", convertToRegion}, {"setMeshVertices", setMeshVertices}, {"setWeights", setWeights},
+    {"unbindMesh", unbindMesh}, {"autoWeights", [](EditResult& r, const Json& op) { autoWeights(r, op, false); }},
+    {"bindMesh", [](EditResult& r, const Json& op) { autoWeights(r, op, true); }},
   };
   if (auto it = simple.find(name); it != simple.end()) return it->second(r, op);
   if (name == "renameClip") return renameClip(r, op, controllers);

@@ -4,6 +4,7 @@
 #include <QtTest>
 #include <QtWidgets>
 #include <functional>
+#include <set>
 #include "cutout-plugin.hpp"
 #include "cutout/editing.hpp"
 #include "dopesheet.hpp"
@@ -1448,6 +1449,151 @@ class StudioTests : public QObject {
     QVERIFY(gesture("reparent breaking the chain", 0, [&] { QVERIFY(!panel->requestReparent("elbow", "root")); }));
     QVERIFY(panel->status().contains("IK"));
     QVERIFY(gesture("target into its own chain", 0, [&] { panel->selectIk("left-arm"); QVERIFY(!panel->setIkTarget("wrist")); }));
+  }
+
+  void meshEditing() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setTool(RigCanvas::Move);
+    pump();
+    // Two bones (upper -> lower, 60 px apart) and a 40x140 bar whose bottom-right corner is transparent.
+    panel->selectItem("bone:root");
+    answers = {"mesh-upper"};
+    QVERIFY(gesture("add mesh-upper", 1, [&] { click("cutoutAddBone"); }));
+    answers = {"mesh-lower"};
+    QVERIFY(gesture("add mesh-lower", 1, [&] { click("cutoutAddBone"); }));
+    QImage bar(40, 140, QImage::Format_ARGB32);
+    bar.fill(QColor("#2a9d8f"));
+    for (int y = 105; y < 140; y++) for (int x = 20; x < 40; x++) bar.setPixelColor(x, y, Qt::transparent);
+    const QString file = dir.filePath("bar.png");
+    QVERIFY(bar.save(file));
+    QVERIFY(gesture("add bar part", 1, [&] { panel->importAndAddPart(file, "bar", "bar", "mesh-upper"); }));
+    panel->selectItem("slot:bar");
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(3);
+    pump();
+    QVERIFY(find<QWidget>("cutoutConvertMesh")->isEnabled() && !find<QWidget>("cutoutMeshVertices")->isEnabled());
+    // 메시로 변환 (alpha-trimmed 4x2 grid): the transparent cell is left out, the part looks the same.
+    find<QSpinBox>("cutoutMeshRows")->setValue(4);
+    find<QSpinBox>("cutoutMeshCols")->setValue(2);
+    find<QCheckBox>("cutoutMeshTrim")->setChecked(true);
+    QVERIFY(gesture("convert to mesh", 1, [&] { click("cutoutConvertMesh"); }));
+    auto barOf = [](const Json& data) { for (const auto& a : data["attachments"]) if (a["slot"] == "bar") return a; return Json(); };
+    QCOMPARE(qs(barOf(rig())["type"].get<std::string>()), QString("mesh"));
+    QCOMPARE(barOf(rig())["vertices"].size(), size_t(28));   // 15 grid vertices minus the corner only the empty cell used
+    QCOMPARE(barOf(rig())["triangles"].size(), size_t(42));  // 7 cells x 2
+    QCOMPARE(panel->meshSlot(), QString("bar"));
+    // The canvas draws the mesh with the image (a cell centre shows the bar colour).
+    const cutout::Rig parsed = cutout::parseRig("hero", rig());
+    const cutout::Pose setup = cutout::samplePose(parsed, -1, 0);
+    const cutout::Attachment* att = nullptr;
+    const cutout::Affine place = attachmentMatrix(parsed, setup, parsed.slotIndex("bar"), &att);
+    QVERIFY(att && att->mesh);
+    double cx, cy;
+    place.apply(10, 52, cx, cy);
+    {
+      const QImage shot = panel->canvas()->grab().toImage();
+      const QPointF at = panel->canvas()->rigToWidget(QPointF(cx, cy)) * shot.devicePixelRatio();
+      const QColor c = shot.pixelColor(at.toPoint());
+      QVERIFY2(std::abs(c.red() - 0x2a) < 30 && std::abs(c.green() - 0x9d) < 30 && std::abs(c.blue() - 0x8f) < 30, qPrintable(c.name()));
+    }
+    // 정점 편집: click selects a vertex, a band selects several, dragging moves them (setup: uvs follow).
+    QVERIFY(gesture("vertex mode", 0, [&] { click("cutoutMeshVertices"); }));
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Vertices);
+    QCOMPARE(panel->canvas()->meshMode(), int(RigCanvas::MeshVertices));
+    RigCanvas* canvas = panel->canvas();
+    QVector<QPointF> pts = canvas->meshVertices();
+    QCOMPARE(pts.size(), 14);
+    QVERIFY(gesture("select vertex", 0, [&] { tap(canvas, canvas->rigToWidget(pts[0])); }));
+    QCOMPARE(panel->selectedVertices(), QVector<int>({0}));
+    QRectF box;
+    for (const QPointF& p : pts) box |= QRectF(canvas->rigToWidget(p), QSizeF(0.01, 0.01));
+    QVERIFY(gesture("band select", 0, [&] { drag(canvas, box.topLeft() - QPointF(15, 15), QPointF(box.right() + 15, box.center().y() + 2)); }));
+    QVERIFY(panel->selectedVertices().size() >= 4 && panel->selectedVertices().size() < 14);
+    QVERIFY(gesture("select vertex again", 0, [&] { tap(canvas, canvas->rigToWidget(pts[0])); }));
+    const Json before = barOf(rig());
+    const double zoom = canvas->rigToWidget(QPointF(1, 0)).x() - canvas->rigToWidget(QPointF(0, 0)).x();
+    QVERIFY(gesture("drag vertex (setup)", 1, [&] { drag(canvas, canvas->rigToWidget(pts[0]), canvas->rigToWidget(pts[0]) + QPointF(-8, 0) * zoom); }));
+    QVERIFY(std::fabs(barOf(rig())["vertices"][0].get<double>() - (before["vertices"][0].get<double>() - 8)) < 0.5);
+    QVERIFY(barOf(rig())["uvs"][0] == before["uvs"][0]);  // dragged left of the image: the uv stays clamped at 0
+    QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
+    // 자동 웨이트 over the two checked bones.
+    auto* bones = find<QListWidget>("cutoutMeshBones");
+    for (int i = 0; i < bones->count(); i++) {
+      const QString id = bones->item(i)->data(Qt::UserRole).toString();
+      bones->item(i)->setCheckState(id == "mesh-upper" || id == "mesh-lower" ? Qt::Checked : Qt::Unchecked);
+    }
+    QVERIFY(gesture("auto weights", 1, [&] { click("cutoutMeshAutoWeights"); }));
+    std::set<std::string> used;
+    const Json weights = barOf(rig())["weights"];  // a named copy: ranging over a temporary's member dangles
+    for (const auto& list : weights) for (const auto& w : list) used.insert(w["bone"].get<std::string>());
+    QVERIFY2(used == std::set<std::string>({"mesh-upper", "mesh-lower"}), weights.dump().c_str());
+    QCOMPARE(barOf(rig())["weights"].size(), size_t(14));
+    // 웨이트 칠하기: one stroke over a vertex paints it fully onto mesh-lower (one edit), heat map red.
+    QVERIFY(gesture("weights mode", 0, [&] { click("cutoutMeshWeights"); }));
+    QCOMPARE(canvas->meshMode(), int(RigCanvas::MeshWeights));
+    panel->setBrush("mesh-lower", 1, 1, 6);
+    pts = canvas->meshVertices();
+    const int paintAt = 13;
+    QVERIFY(gesture("paint stroke", 1, [&] { drag(canvas, canvas->rigToWidget(pts[paintAt]), canvas->rigToWidget(pts[paintAt]) + QPointF(1, 1)); }));
+    QVERIFY(barOf(rig())["weights"][paintAt] == Json::array({{{"bone", "mesh-lower"}, {"weight", 1}}}));
+    {
+      pump();
+      const QImage shot = canvas->grab().toImage();
+      const QColor c = shot.pixelColor((canvas->rigToWidget(canvas->meshVertices()[paintAt]) * shot.devicePixelRatio()).toPoint());
+      QVERIFY2(c.red() > 200 && c.green() < 100, qPrintable(c.name()));  // weight 1 = red dot
+      if (const QString evidence = qEnvironmentVariable("CUTOUT_STUDIO_EVIDENCE"); !evidence.isEmpty())
+        QVERIFY(QDir().mkpath(evidence) && panel->window()->grab().save(evidence + "/studio-mesh-weights.png"));
+    }
+    // Animate: dragging a vertex is a pending deform (no edit); K keys it; dopesheet shows the row.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("joy");
+    panel->setAutoKey(false);
+    panel->setPlayhead(100);
+    panel->selectItem("slot:bar");
+    pump();
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);  // weights are setup data: the mode ended
+    QVERIFY(find<QWidget>("cutoutMeshDeformKey")->isEnabled() && !find<QWidget>("cutoutMeshWeights")->isEnabled());
+    QVERIFY(gesture("vertex mode (animate)", 0, [&] { click("cutoutMeshVertices"); }));
+    pts = canvas->meshVertices();
+    QVERIFY(gesture("deform drag (pending)", 0, [&] { drag(canvas, canvas->rigToWidget(pts[2]), canvas->rigToWidget(pts[2]) + QPointF(10, 0) * zoom); }));
+    QVERIFY(panel->hasPending());
+    QVERIFY(gesture("K keys the deform", 1, [&] { QVERIFY(panel->keySelected()); }));
+    const Json key = keyOf("joy", "slot:bar", "deform", 100);
+    QVERIFY(!key.is_null() && key["offsets"].size() == 28);
+    QVERIFY(std::hypot(key["offsets"][4].get<double>(), key["offsets"][5].get<double>()) > 5);  // vertex 2 moved ~10 px
+    QCOMPARE(track("joy", "slot:bar", "deform")->value("attachment", std::string()), std::string("bar"));
+    pump();
+    const int row = rowOf("slot:bar", "deform:bar");
+    QVERIFY(row >= 0 && panel->dopesheet()->rows()[row].label.contains("변형") && !panel->dopesheet()->rows()[row].attachment);
+    // The deformed vertex is drawn where it was dragged (the canvas pose samples the key).
+    QVERIFY(std::hypot(canvas->meshVertices()[2].x() - pts[2].x(), canvas->meshVertices()[2].y() - pts[2].y()) > 5);
+    if (const QString evidence = qEnvironmentVariable("CUTOUT_STUDIO_EVIDENCE"); !evidence.isEmpty())
+      QVERIFY(panel->window()->grab().save(evidence + "/studio-mesh-deform.png"));
+    // Dopesheet key gestures carry the attachment: move the deform key, then undo/redo.
+    QVERIFY(gesture("move deform key", 1, [&] { QVERIFY(panel->moveKeys({KeyRef{"slot:bar", "deform:bar", 100}}, 50)); }));
+    QVERIFY(keyOf("joy", "slot:bar", "deform", 100).is_null() && !keyOf("joy", "slot:bar", "deform", 150).is_null());
+    undo();
+    QVERIFY(!keyOf("joy", "slot:bar", "deform", 100).is_null());
+    undo();
+    QVERIFY(track("joy", "slot:bar", "deform") == nullptr);
+    redo();
+    QVERIFY(!keyOf("joy", "slot:bar", "deform", 100).is_null());
+    panel->setPlayhead(100);
+    QVERIFY(gesture("delete deform key", 1, [&] { click("cutoutMeshDeleteDeform"); }));
+    QVERIFY(track("joy", "slot:bar", "deform") == nullptr);
+    // Setup: unbind, then back to a plain image.
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->selectItem("slot:bar");
+    QVERIFY(gesture("unbind", 1, [&] { click("cutoutMeshUnbind"); }));
+    QVERIFY(!barOf(rig()).contains("weights"));
+    QVERIFY(gesture("back to region", 1, [&] { click("cutoutConvertRegion"); }));
+    QVERIFY(!barOf(rig()).contains("type") && !barOf(rig()).contains("vertices"));
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    undo();
+    QCOMPARE(qs(barOf(rig())["type"].get<std::string>()), QString("mesh"));
   }
 
   void paintElementDrawsPixels() {

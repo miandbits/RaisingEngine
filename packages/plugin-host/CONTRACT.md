@@ -168,12 +168,29 @@ Requests (replies are `{ "ok": true, … }` or `{ "ok": false, "error": "…" }`
 | `unmount` | `{instance}` | |
 | `observe` | `{before, after, command, error}` where before/after = `{state, narrative}` | `{signals, matched}` |
 | `update` | `{dtMs}` | `{notifications}` (presentation only) |
-| `frame` | `{instance}` | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha}]}` |
+| `frame` | `{instance}` | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha, mesh?}]}` |
 | `saveAll` / `restoreAll` | — / `{state}` | opaque `state` |
 | `describeAll` | — | debug/report data |
 
 `matrix` maps image pixels to element-local pixels: `x' = a·x + c·y + e`, `y' = b·x + d·y + f`.
 Hosts draw textured quads in item order (back→front), clipped to nothing (overflow allowed).
+
+**Mesh items** (ABI extension, still `raising-extension-1`): an item may carry
+`mesh: {positions: [x, y, …], uvs: [u, v, …], indices: [i, j, k, …]}` — element-local vertex
+positions (already placed, like `matrix`'s output), texture coordinates 0..1 of the item's image
+(one pair per vertex) and triangle index triples, drawn in order with the item's `alpha`. Such an
+item still carries `matrix`/`width`/`height` (the undeformed rectangle) only so older hosts
+degrade instead of failing; a host that supports meshes draws the triangles and never the
+rectangle, skips a malformed mesh (counts differ, index out of range, more than 2048 vertices or
+4096 triangles) and advertises player capability **`plugin-mesh-v1`** in `capabilities.json`
+`visualFeatures` (the native player emits RmlUi triangle geometry, the web player draws each
+triangle as an affine-mapped image on a per-item `<canvas>`).
+
+A plugin's node service may export `requiredHostFeatures(documents)` → capability ids the game's
+documents need beyond `plugin-elements-v1` (cutout returns `["plugin-mesh-v1"]` when a rig uses
+a mesh). `exportBundle` collects them as `PreparedExtensions.features` (a failing service is
+`PLUGIN_SERVICE_ERROR`) and `exportGame` refuses a target player whose capabilities lack one,
+before anything is written.
 
 Hosts must call `observe` exactly once per submitted command (after the reply), in
 command order, and never from frame callbacks. `update` uses wall-clock presentation
@@ -220,7 +237,8 @@ export async function createService({ pluginDir, manifest }) {
     // documents/elements are only those of this plugin that passed envelope + plugin schema
     validate({ documents: [{ file, type, id, data }], assets: [{ id, kind, path, absolutePath }],
                elements: [{ file, pointer, element }] }) { return [{ file, pointer, code, severity, message, relatedIds }]; },
-    call(op, payload) { return json; }   // pure: never writes project files
+    call(op, payload) { return json; },  // pure: never writes project files
+    requiredHostFeatures(documents) { return ['plugin-mesh-v1']; }   // optional (§7): export-time player needs
   };
 }
 ```

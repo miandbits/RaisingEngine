@@ -42,10 +42,19 @@ struct Notification {
   Json toJson() const;
 };
 
+/**
+ * One textured item. Regions: `matrix` maps image pixels. Meshes (plugin 1.4.0) also carry
+ * `positions` (x, y per vertex, same space as `matrix`'s output), `uvs` (0..1) and `indices`
+ * (triangles); `matrix`/`width`/`height` stay the undeformed image rectangle as a fallback for
+ * hosts without mesh support (ABI: CONTRACT.md §7, capability `plugin-mesh-v1`).
+ */
 struct DrawItem {
   std::string slot, imageAssetId;
   Affine matrix;  // image pixel space -> instance space (origin = rig origin)
   double width = 0, height = 0, alpha = 1;
+  std::vector<double> positions, uvs;
+  std::vector<int> indices;
+  bool mesh() const { return !indices.empty(); }
 };
 
 /**
@@ -55,12 +64,15 @@ struct DrawItem {
  * IK (plugin 1.3.0): `bones` stay the animated (keyable) local values; `world` includes the
  * solved constraints and `applied` holds the local values it was built from (empty when the rig
  * has no IK: then it equals `bones`). ikMix/ikBend are the sampled constraint settings.
+ * Deform (plugin 1.4.0): keyed vertex offsets per (slot index, mesh attachment name); a mesh
+ * uses them only when their size is 2 × its vertex count.
  */
 struct Pose {
   std::vector<Transform> bones; std::vector<Affine> world; std::vector<std::optional<std::string>> attachments; std::vector<double> alpha;
   int skin = -1, expression = -1;
   std::vector<double> ikMix; std::vector<char> ikBend;
   std::vector<Transform> applied;
+  std::map<std::pair<int, std::string>, std::vector<double>> deform;
   const Transform& local(size_t bone) const { return applied.size() > bone ? applied[bone] : bones[bone]; }
 };
 /** Skin/expression for samplePose. expressions=false skips every expression (raw clip values);
@@ -139,4 +151,24 @@ void applyExpression(const Rig& rig, int index, Pose& pose);
  */
 void applyIk(const Rig& rig, Pose& pose);
 double sampleTrack(const Track& track, double timeMs, double fallback);
+/** Deform offsets of a deform track at `timeMs` (step/linear/bezier between keys, ends held). */
+std::vector<double> sampleDeform(const Track& track, double timeMs);
+
+// ---- Mesh attachments (plugin 1.4.0). Shared by every runtime, the editor canvas and tests.
+/** Image pixels -> slot bone space: T(x,y)·R·S of the attachment offset, then -pivot·size. */
+Affine attachmentPlacement(const Attachment& attachment);
+/** The pose's deform offsets for (slot, attachment) when they fit its vertex count, else nullptr. */
+const std::vector<double>* deformOf(const Pose& pose, int slot, const Attachment& attachment);
+/**
+ * Rig-space positions [x, y, ...] of the mesh `attachment` shown on slot `slot`: deform offsets
+ * added to the setup vertices, then the slot bone's world · placement (unweighted) or the
+ * weighted sum over its bones' world · bind (skinning, world matrices after IK). Empty for regions.
+ */
+std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, const Attachment& attachment);
+/**
+ * The affine map image px -> rig space that moves vertex `vertex` (deformed position in, rig
+ * position out): weighted meshes blend their bones' matrices. The editor inverts it to turn a
+ * canvas drag into image-space vertex moves and deform offsets.
+ */
+Affine meshVertexMatrix(const Rig& rig, const Pose& pose, int slot, const Attachment& attachment, size_t vertex);
 }  // namespace cutout

@@ -73,6 +73,8 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   }
   const pluginElementCount=visual?visual.screens.reduce((n,screen)=>n+screen.elements.filter(element=>element.kind==='plugin').length,0):0;
   if(pluginElementCount)requiredFeatures.push('plugin-elements-v1');
+  // Plugin documents may need more of the player (plugin-mesh-v1 for cutout meshes): reported by the plugin's service at prepare time.
+  for(const feature of options.extensions?.features??[])if(!requiredFeatures.includes(feature))requiredFeatures.push(feature);
   const supportedFeatures=Array.isArray(capabilities.visualFeatures)?capabilities.visualFeatures:[];
   const missingFeatures=requiredFeatures.filter(feature=>!supportedFeatures.includes(feature));
   if(missingFeatures.length)throw new Error(`${target} 플레이어가 지원하지 않는 UI 기능입니다: ${missingFeatures.join(', ')}. 내보내기용 플레이어를 다시 빌드해 주세요.`);

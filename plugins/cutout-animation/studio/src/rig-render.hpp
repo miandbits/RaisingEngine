@@ -40,8 +40,18 @@ class ImageCache {
   QStringList order_;
 };
 
-/** Image pixel space -> rig space for slot `slotIndex` in `pose`; nullptr attachment when hidden/empty. */
+/** Image pixel space -> rig space for slot `slotIndex` in `pose`; nullptr attachment when hidden/empty.
+ *  For a mesh this is its undeformed rectangle: draw/hit-test meshes with meshPoints. */
 cutout::Affine attachmentMatrix(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex, const cutout::Attachment** attachment);
+/** Rig-space vertices of the mesh shown on `slotIndex` (cutout::meshPositions: skinned after IK,
+ *  deform applied); empty when the slot shows a region or nothing. */
+QVector<QPointF> meshPoints(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex, const cutout::Attachment** attachment = nullptr);
+/** Rig-space bounds of what the slot draws (mesh vertices or the region rectangle); empty when hidden. */
+QRectF attachmentBounds(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex);
+/** Outline of a mesh: edges used by exactly one triangle (pairs of vertex indices). */
+QVector<QPair<int, int>> meshOutline(const std::vector<int>& triangles);
+/** Weight of `bone` on vertex `vertex` (unweighted meshes: 1 on the slot bone). */
+double vertexWeight(const cutout::Rig& rig, int slotIndex, const cutout::Attachment& attachment, size_t vertex, int bone);
 /** Draw back->front on the painter's current transform (rig space). Missing images draw a hatched box. */
 void drawRig(QPainter& painter, const cutout::Rig& rig, const cutout::Pose& pose, ImageCache& images, const QSet<QString>& hiddenSlots = {});
 /** Runtime element placement: contain-fit the authoring canvas into `box`, centered, props scale/flipX. Rig space -> box. */

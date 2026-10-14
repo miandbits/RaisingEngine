@@ -182,6 +182,25 @@ class CutoutPanel : public QWidget {
   bool deleteIk();        // also its target bone when nothing else uses it
   bool keyIk();           // IK 키: mix + bend of the selected constraint at the playhead
   bool bakeIk();          // IK 결과를 키로 굽기: solved rotations as keys, mix 0 there
+  // ---- Meshes (plugin 1.4.0) on the selected part's shown attachment (the preview skin's own when
+  // it provides it). Setup mode edits the mesh (vertices, weights); Animate mode makes deform keys.
+  enum class MeshEdit { Off = 0, Vertices = 1, Weights = 2 };
+  /** 메시로 변환: rows × cols grid; trim drops cells without opaque pixels (alpha-trimmed grid). */
+  bool convertToMesh(int rows, int cols, bool trim);
+  bool convertToRegion();
+  void setMeshEdit(MeshEdit mode);  // canvas gestures edit vertices / paint weights while on
+  MeshEdit meshEdit() const { return meshEdit_; }
+  QString meshSlot() const;         // selected part when it shows a mesh ("" otherwise)
+  void selectVertices(const QVector<int>& vertices, bool add = false);
+  QVector<int> selectedVertices() const;
+  /** Selected vertices moved by `rigDelta`: Setup = setMeshVertices, Animate = deform key (pending unless auto-key). */
+  bool moveVertices(const QPointF& rigDelta);
+  bool autoWeights(const QStringList& bones = {});  // 자동 웨이트 (bones: checked in the list when empty)
+  bool paintWeights(const QVector<int>& vertices);  // brush: bone/weight/strength of the weight tools
+  bool unbindMesh();
+  void setBrush(const QString& bone, double weight, double strength, double radius);
+  bool keyDeform();          // deform key of the shown offsets at the playhead
+  bool deleteDeformKey();    // the deform key at the playhead
   // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
   struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
   const OnionSettings& onionSettings() const { return onion_; }
@@ -334,6 +353,18 @@ class CutoutPanel : public QWidget {
   QSpinBox* ikOrder_ = nullptr;
   QLabel* ikInfo_ = nullptr;
   QVector<QWidget*> ikEditors_, ikAnimateTools_;
+  // meshes (editor state: mode, vertex selection and brush never reach documents)
+  MeshEdit meshEdit_ = MeshEdit::Off;
+  QSet<int> meshSelection_;
+  QString meshSelectionKey_;  // slot/attachment the selection belongs to
+  QSpinBox *meshRows_ = nullptr, *meshCols_ = nullptr;
+  QCheckBox* meshTrim_ = nullptr;
+  QToolButton *meshVerticesButton_ = nullptr, *meshWeightsButton_ = nullptr;
+  QListWidget* meshBones_ = nullptr;
+  QComboBox* brushBone_ = nullptr;
+  QDoubleSpinBox *brushWeight_ = nullptr, *brushStrength_ = nullptr, *brushRadius_ = nullptr;
+  QLabel* meshInfo_ = nullptr;
+  QVector<QWidget*> meshTools_, meshSetupTools_, meshAnimateTools_;
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;
@@ -348,6 +379,12 @@ class CutoutPanel : public QWidget {
   void refreshLooks();
   QWidget* buildIk();
   void refreshIk();
+  QWidget* buildMesh();
+  void refreshMesh();
+  /** The edited mesh: slot index, attachment, and op fields {slot, name, skin?} (false = none). */
+  bool meshTarget(int& slot, const cutout::Attachment*& attachment, cutout::Json& fields) const;
+  void onMeshDrag(const QPointF& rigDelta, bool finished);
+  std::vector<cutout::Json> meshMoveOps(const QPointF& rigDelta) const;
   const cutout::Json* currentIk() const;  // ikId_ in displayData(), with a status when none
   cutout::Look lookFor(const cutout::Rig& rig) const;  // preview skin/expression ids -> indices of `rig`
   /** Preview skin when it provides (slot, name): setup edits of that attachment go to the skin. */

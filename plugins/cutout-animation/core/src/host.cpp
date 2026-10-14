@@ -28,8 +28,11 @@ Then thenOf(const Json& r) {
 }  // namespace
 
 Json drawItemJson(const DrawItem& i) {
-  return {{"slot", i.slot}, {"imageAssetId", i.imageAssetId}, {"matrix", {i.matrix.a, i.matrix.b, i.matrix.c, i.matrix.d, i.matrix.e, i.matrix.f}},
-          {"width", i.width}, {"height", i.height}, {"alpha", i.alpha}};
+  Json j{{"slot", i.slot}, {"imageAssetId", i.imageAssetId}, {"matrix", {i.matrix.a, i.matrix.b, i.matrix.c, i.matrix.d, i.matrix.e, i.matrix.f}},
+         {"width", i.width}, {"height", i.height}, {"alpha", i.alpha}};
+  // ABI extension (CONTRACT.md §7, plugin-mesh-v1): mesh items add triangles; matrix stays the fallback rectangle.
+  if (i.mesh()) j["mesh"] = {{"positions", i.positions}, {"uvs", i.uvs}, {"indices", i.indices}};
+  return j;
 }
 Json poseJson(const Rig& rig, const Pose& pose) {
   Json bones = Json::object(), slots = Json::object();
@@ -51,6 +54,13 @@ Json poseJson(const Rig& rig, const Pose& pose) {
       ik[rig.ik[i].id] = {{"mix", i < pose.ikMix.size() ? pose.ikMix[i] : rig.ik[i].mix}, {"bendPositive", i < pose.ikBend.size() ? pose.ikBend[i] != 0 : rig.ik[i].bendPositive}};
     out["ik"] = ik;
     for (size_t i = 0; i < rig.bones.size(); i++) out["bones"][rig.bones[i].id]["appliedRotation"] = pose.local(i).rotation;
+  }
+  // Deform (plugin 1.4.0): sampled mesh offsets as "<slot>/<attachment>" -> [dx, dy, ...]; absent without deform keys.
+  if (!pose.deform.empty()) {
+    Json deform = Json::object();
+    for (const auto& [key, offsets] : pose.deform)
+      if (key.first >= 0 && size_t(key.first) < rig.slots.size()) deform[rig.slots[size_t(key.first)].id + "/" + key.second] = offsets;
+    out["deform"] = deform;
   }
   return out;
 }
@@ -249,7 +259,14 @@ Json Host::handle(const Json& r) {
     // Mounted instances get element-local pixels; raw instances stay in rig-origin space.
     const Affine place = placement(str(r, "instance"), inst.rig());
     Json items = Json::array();
-    for (auto item : inst.drawList()) { item.matrix = place * item.matrix; items.push_back(drawItemJson(item)); }
+    for (auto item : inst.drawList()) {
+      item.matrix = place * item.matrix;
+      for (size_t v = 0; v + 1 < item.positions.size(); v += 2) {
+        const double x = item.positions[v], y = item.positions[v + 1];
+        place.apply(x, y, item.positions[v], item.positions[v + 1]);
+      }
+      items.push_back(drawItemJson(item));
+    }
     return {{"ok", true}, {"items", items}};
   }
   if (op == "save") return {{"ok", true}, {"state", need("instance").saveState()}};

@@ -97,8 +97,9 @@
         "properties": {
           "id": { "$ref": "#/$defs/id" },
           "name": { "type": "string", "maxLength": 80 },
-          "bones": { "description": "1 bone = aim (local +x axis at the target); 2 = two-bone limb, parent then its direct child (effector = the child's first child bone).", "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/$defs/id" } },
+          "bones": { "description": "1 bone = aim (local +x axis at the target); 2 = two-bone limb, parent then its direct child (effector = `tip`, else the child's first child bone).", "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/$defs/id" } },
           "target": { "description": "Bone whose world origin the chain reaches; never in the chain or below it.", "$ref": "#/$defs/id" },
+          "tip": { "description": "Explicit two-bone effector (plugin 1.4.0): a direct child of the lower bone. Absent = the lower bone's first child.", "$ref": "#/$defs/id" },
           "mix": { "type": "number", "minimum": 0, "maximum": 1 },
           "bendPositive": { "type": "boolean" },
           "stretch": { "description": "Accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH).", "type": "boolean" },
@@ -121,14 +122,17 @@
               "type": "object", "additionalProperties": false, "required": ["target", "property", "keys"],
               "properties": {
                 "target": { "description": "bone:<id>, slot:<id>, rig (property expression, step keys of expression ids / null) or ik:<id> (mix 0..1, bendPositive step bool).", "type": "string", "pattern": "^(?:(bone|slot|ik):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
-                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive"] },
+                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive", "deform"] },
+                "attachment": { "description": "Deform tracks (plugin 1.4.0): the slot's mesh attachment whose vertices the keys offset.", "$ref": "#/$defs/name" },
                 "keys": {
                   "type": "array", "maxItems": 4096,
                   "items": {
-                    "type": "object", "additionalProperties": false, "required": ["timeMs", "value"],
+                    "type": "object", "additionalProperties": false, "required": ["timeMs"],
+                    "anyOf": [{ "required": ["value"] }, { "required": ["offsets"] }],
                     "properties": {
                       "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
                       "value": { "anyOf": [{ "type": "number" }, { "$ref": "#/$defs/name" }, { "type": "null" }, { "type": "boolean" }] },
+                      "offsets": { "description": "Deform keys (plugin 1.4.0): dx, dy per mesh vertex in image pixels, added to the setup vertices.", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
                       "interp": { "description": "Segment from this key to the next. Default linear; attachment keys are always step.", "enum": ["step", "linear", "bezier"] },
                       "curve": {
                         "description": "Bezier handles [x1, y1, x2, y2] for interp bezier, normalized to the segment: x = fraction of segment time, y = fraction of the value change (may overshoot).",
@@ -184,7 +188,20 @@
         "pivotX": { "type": "number", "minimum": -4, "maximum": 4 },
         "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
         "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
-        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 }
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
+        "type": { "description": "region (default: the image rectangle) or mesh (plugin 1.4.0). Semantics in docs/contract.md.", "enum": ["region", "mesh"] },
+        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices).", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "uvs": { "description": "Mesh: texture coordinates 0..1, u, v per vertex.", "type": "array", "maxItems": 4096, "items": { "type": "number", "minimum": 0, "maximum": 1 } },
+        "triangles": { "description": "Mesh: vertex index triples (1..4096 triangles).", "type": "array", "maxItems": 12288, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
+        "hull": { "description": "Mesh, editor only: the first `hull` vertices are the outline.", "type": "integer", "minimum": 0, "maximum": 2048 },
+        "edges": { "description": "Mesh, editor only: outline/edge index pairs.", "type": "array", "maxItems": 16384, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
+        "weights": {
+          "description": "Weighted mesh: per vertex 1..4 bone shares (normalized to sum 1); the bind pose is the setup pose. Absent = the mesh follows the slot bone.",
+          "type": "array", "maxItems": 2048,
+          "items": { "type": "array", "minItems": 1, "maxItems": 4, "items": {
+            "type": "object", "additionalProperties": false, "required": ["bone", "weight"],
+            "properties": { "bone": { "$ref": "#/$defs/id" }, "weight": { "type": "number", "minimum": 0, "maximum": 1 } } } }
+        }
       }
     },
     "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 64 },

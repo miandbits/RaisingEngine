@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {chromium} from 'playwright';
-import {makeGame,EVIDENCE} from './player-extension-fixture.mjs';
+import {makeGame,EVIDENCE,referenceRuntime,meshRig,meshController,pluginElement,pngPixel,close,RED,BLUE} from './player-extension-fixture.mjs';
 
 const INSTANCE='home/hero-anim';
 const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.wasm':'application/wasm','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.ttf':'font/ttf','.otf':'font/otf','.svg':'image/svg+xml'};
@@ -89,4 +89,32 @@ test('web player shows a placeholder when the plugin module is missing and stays
   await mkdir(EVIDENCE,{recursive:true});await page.screenshot({path:resolve(EVIDENCE,'web-placeholder.png')});
   assert.deepEqual(errors,[]);
   await writeFile(resolve(f.root,'ok'),'');
+});
+
+test('web player draws weighted mesh items on canvases, bent by their bones (plugin-mesh-v1)',{timeout:120000},async t=>{
+  const f=await makeGame({target:'web',name:'web-mesh',mesh:true});t.diagnostic(`fixture: ${f.root}`);
+  const {page,errors}=await open(t,f);
+  await tick(page,100);
+  await page.locator('canvas.visual-plugin-mesh[data-drawn="true"]').waitFor();
+  const d=await describe(page);
+  const [arm]=d.instance.items;
+  assert.equal(arm.mesh.positions.length,36);
+  const request=await referenceRuntime();
+  request({op:'init',documents:[{type:'rig',id:'hero',data:meshRig()},{type:'controller',id:'hero-main',data:meshController}]});
+  request({op:'mount',instance:INSTANCE,element:{type:'character',ref:'hero-main',width:pluginElement.width,height:pluginElement.height,props:pluginElement.extension.props}});
+  request({op:'update',dtMs:100});
+  const want=request({op:'frame',instance:INSTANCE}).items[0].mesh.positions;
+  assert.ok(arm.mesh.positions.every((v,i)=>Math.abs(v-want[i])<1e-6),'mesh positions parity with the core');
+  assert.equal(await page.locator('.visual-plugin-mesh').count(),1);
+  assert.equal(await page.locator('img.visual-plugin-item').count(),0,'mesh items never fall back to the undeformed <img>');
+  // Element px -> page px (the stage is scaled to the viewport), then sample the screenshot.
+  const map=await page.evaluate(()=>{const el=document.querySelector('[data-element-id="hero-anim"]').getBoundingClientRect(),stage=document.querySelector('.visual-stage');return {x:el.x,y:el.y,scale:stage.getBoundingClientRect().width/stage.offsetWidth};});
+  const shot=await page.screenshot();
+  const at=(x,y)=>pngPixel(shot,Math.round(map.x+x*map.scale),Math.round(map.y+y*map.scale));
+  assert.ok(close(at(90,200),RED),`shoulder half: ${at(90,200)}`);
+  assert.ok(close(at(180,290),BLUE),`bent forearm: ${at(180,290)}`);
+  assert.ok(close(at(172,240),BLUE)&&close(at(188,300),BLUE),`forearm body: ${at(172,240)} ${at(188,300)}`);
+  assert.ok(!close(at(270,200),BLUE)&&!close(at(270,200),RED),`no straight forearm: ${at(270,200)}`);
+  await mkdir(resolve(EVIDENCE,'v2'),{recursive:true});await writeFile(resolve(EVIDENCE,'v2','web-mesh-bent.png'),shot);
+  assert.deepEqual(errors,[]);
 });

@@ -205,6 +205,31 @@ test('IK constraints (plugin 1.3.0): schema-valid rig ik + ik:<id> tracks, core 
   assert.ok(all.some(c => c.startsWith(`error:ANIM_IK_MIX:${RIG}/data/clips/0/tracks/1/keys/1/value`)), all.join('\n'));
 });
 
+test('mesh attachments (plugin 1.4.0): schema-valid weighted mesh + deform track, core mesh diagnostics through the service', async () => {
+  const root = await newProject();
+  const rig = rigData({
+    bones: [{ id: 'root', parent: null }, { id: 'body', parent: 'root', y: -100 }, { id: 'neck', parent: 'body', y: -60 }],
+    attachments: [{ slot: 'torso', name: 'torso', imageAssetId: 'hero-torso', width: 40, height: 60, type: 'mesh',
+      vertices: [0, 0, 40, 0, 40, 60, 0, 60], uvs: [0, 0, 1, 0, 1, 1, 0, 1], triangles: [0, 1, 2, 0, 2, 3], hull: 4, edges: [0, 1, 1, 2, 2, 3, 0, 3],
+      weights: [[{ bone: 'neck', weight: 1 }], [{ bone: 'neck', weight: 0.5 }, { bone: 'body', weight: 0.5 }], [{ bone: 'body', weight: 1 }], [{ bone: 'body', weight: 1 }]] }],
+  });
+  rig.clips[0].tracks.push({ target: 'slot:torso', property: 'deform', attachment: 'torso', keys: [{ timeMs: 0, offsets: [0, 0, 0, 0, 0, 0, 0, 0], interp: 'bezier', curve: [0.42, 0, 0.58, 1] }, { timeMs: 500, offsets: [2, 0, -2, 0, 0, 3, 0, 0] }] });
+  await addCutout(root, { rig });
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID') || c.includes('ANIM_')), false, all.join('\n'));
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.attachments[0].triangles[5] = 9;
+  bad.data.attachments[0].weights[2][0].bone = 'tail';
+  bad.data.clips[0].tracks.at(-1).keys[1].offsets.pop();
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.includes(`error:ANIM_MESH_TRIANGLES:${RIG}/data/attachments/0/triangles/5`), all.join('\n'));
+  assert.ok(all.includes(`error:ANIM_MESH_BONE_MISSING:${RIG}/data/attachments/0/weights/2/0/bone`), all.join('\n'));
+  // The broken mesh no longer counts as a mesh, so its deform track is reported too.
+  assert.ok(all.some(c => c.startsWith(`error:ANIM_MESH_DEFORM:${RIG}/data/clips/0/tracks/1/attachment`)), all.join('\n'));
+});
+
 test('host-reserved posterAssetId must name an image asset, also without the plugin, and the cutout service ignores it', async () => {
   const root = await newProject();
   await addCutout(root); await addElement(root, { plugin: 'cutout-animation', type: 'character', ref: 'hero-main', props: { scale: 1, posterAssetId: 'hero-torso' } });

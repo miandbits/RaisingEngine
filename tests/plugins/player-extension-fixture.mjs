@@ -3,7 +3,7 @@
 import {cp,mkdir,mkdtemp,readFile,writeFile,readdir} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {resolve,extname} from 'node:path';
-import {deflateSync} from 'node:zlib';
+import {deflateSync,inflateSync} from 'node:zlib';
 import {loadProject} from '../../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 
@@ -20,6 +20,48 @@ export function png(width,height,[r,g,b,a=255]){
   const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(width,0);ihdr.writeUInt32BE(height,4);ihdr.set([8,6,0,0,0],8);
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);
 }
+/** Two-colour RGBA PNG: the left half `left`, the right half `right` (shows where uvs land). */
+export function pngBands(width,height,left,right){
+  const raw=Buffer.alloc((width*4+1)*height);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)raw.set([...(x<width/2?left:right),255],y*(width*4+1)+1+x*4);
+  const chunk=(type,data)=>{const head=Buffer.alloc(8);head.writeUInt32BE(data.length,0);head.write(type,4,'ascii');const crc=Buffer.alloc(4);crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4),data])),0);return Buffer.concat([head,data,crc]);};
+  const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(width,0);ihdr.writeUInt32BE(height,4);ihdr.set([8,6,0,0,0],8);
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);
+}
+/** RGB of pixel (x, y) of an 8-bit RGB/RGBA PNG (screenshots), all filter types. */
+export function pngPixel(bytes,x,y){
+  const width=bytes.readUInt32BE(16),height=bytes.readUInt32BE(20),channels=bytes[25]===6?4:3,chunks=[];
+  for(let at=8;at<bytes.length;){const length=bytes.readUInt32BE(at),type=bytes.toString('ascii',at+4,at+8);if(type==='IDAT')chunks.push(bytes.subarray(at+8,at+8+length));at+=length+12;}
+  const raw=inflateSync(Buffer.concat(chunks)),stride=width*channels,decoded=Buffer.alloc(stride*height);
+  for(let row=0;row<height;row++)for(let column=0;column<stride;column++){
+    const filter=raw[row*(stride+1)],at=row*stride+column,a=column>=channels?decoded[at-channels]:0,b=row?decoded[at-stride]:0,c=row&&column>=channels?decoded[at-stride-channels]:0;
+    const p=a+b-c,pa=Math.abs(p-a),pb=Math.abs(p-b),pc=Math.abs(p-c);
+    decoded[at]=(raw[row*(stride+1)+1+column]+(filter===0?0:filter===1?a:filter===2?b:filter===3?Math.floor((a+b)/2):pa<=pb&&pa<=pc?a:pb<=pc?b:c))&255;
+  }
+  return [...decoded.subarray((y*width+x)*channels,(y*width+x)*channels+3)];
+}
+export const close=(rgb,want,tolerance=40)=>rgb.every((v,i)=>Math.abs(v-want[i])<=tolerance);
+export const RED=[220,40,40],BLUE=[40,80,220];
+/**
+ * Bending arm (plugin 1.4.0 mesh fixture): a 240x40 bar, red shoulder half and blue forearm
+ * half, as a 1x8 grid mesh weighted by x: upper | 50/50 at the elbow | lower. The default clip
+ * turns the forearm 90° down. The 300x450 canvas fills the 300x450 element, so element px = rig px:
+ * shoulder at (60,200), elbow at (180,200); the bent blue forearm covers x 160..200, y 200..320.
+ */
+export function meshRig(){
+  const vertices=[],uvs=[],triangles=[],weights=[];
+  for(let r=0;r<=1;r++)for(let c=0;c<=8;c++){
+    const x=c*30;vertices.push(x,r*40);uvs.push(c/8,r);
+    weights.push(x<120?[{bone:'upper',weight:1}]:x>120?[{bone:'lower',weight:1}]:[{bone:'upper',weight:0.5},{bone:'lower',weight:0.5}]);
+  }
+  for(let c=0;c<8;c++){const a=c,b=c+1,d=9+c,e=10+c;triangles.push(a,b,e,a,e,d);}
+  return {schemaVersion:1,canvas:{width:300,height:450,originX:150,originY:440},
+    bones:[{id:'root',parent:null,x:60,y:200},{id:'upper',parent:'root'},{id:'lower',parent:'upper',x:120},{id:'hand',parent:'lower',x:120}],
+    slots:[{id:'arm',bone:'upper',attachment:'arm'}],
+    attachments:[{slot:'arm',name:'arm',imageAssetId:'anim-arm',width:240,height:40,pivotX:0,pivotY:0.5,type:'mesh',vertices,uvs,triangles,weights}],
+    clips:[{id:'bend',durationMs:1000,loop:true,tracks:[{target:'bone:lower',property:'rotation',keys:[{timeMs:0,value:90}]}]}]};
+}
+export const meshController={schemaVersion:1,rig:'hero',defaultClip:'bend',layers:[],bindings:[]};
 export const IMAGES={'anim-torso':[80,120,[220,120,80]],'anim-face':[60,60,[250,214,170]],'anim-eyes-open':[40,10,[40,40,90]],'anim-eyes-closed':[40,10,[200,40,40]],
   'anim-torso-summer':[80,120,[235,200,60]],'anim-torso-winter':[80,120,[70,110,220]]};
 export const rig={schemaVersion:1,canvas:{width:200,height:300,originX:100,originY:280},
@@ -48,7 +90,8 @@ export const pluginElement={id:'hero-anim',kind:'plugin',x:440,y:130,width:300,h
  * Content is a real project snapshot; the plugin element is injected after the snapshot because
  * project schema support is owned by another change.
  */
-export async function makeGame({target,name,runtime=true}){
+/** mesh: true uses meshRig/meshController (images: the two-tone arm) instead of the hero fixture. */
+export async function makeGame({target,name,runtime=true,mesh=false}){
   await mkdir(resolve('.cache/anim-tests'),{recursive:true});
   const root=await mkdtemp(resolve(`.cache/anim-tests/${name}-`)),projectRoot=resolve(root,'project'),game=resolve(root,'game');
   await cp(resolve('examples/academy-journey'),projectRoot,{recursive:true});
@@ -65,9 +108,10 @@ export async function makeGame({target,name,runtime=true}){
   const assets={};
   for(const asset of content.assets){const relative=`assets/${asset.id}${extname(asset.path).toLowerCase()}`;await cp(resolve(projectRoot,asset.path),resolve(game,relative));assets[asset.id]=relative;}
   for(const [id,[w,h,colour]] of Object.entries(IMAGES)){const relative=`assets/${id}.png`;await writeFile(resolve(game,relative),png(w,h,colour));assets[id]=relative;}
+  if(mesh){await writeFile(resolve(game,'assets/anim-arm.png'),pngBands(240,40,RED,BLUE));assets['anim-arm']='assets/anim-arm.png';}
   const module=target==='windows'?'cutout-runtime.dll':'cutout-runtime.mjs';
   const extensions={version:1,plugins:[{id:'cutout-animation',version:'1.0.0',abi:'raising-extension-1',entry:`plugins/cutout-animation/${module}`,
-    documents:[{type:'rig',id:'hero',data:rig},{type:'controller',id:'hero-main',data:controller}]}]};
+    documents:[{type:'rig',id:'hero',data:mesh?meshRig():rig},{type:'controller',id:'hero-main',data:mesh?meshController:controller}]}]};
   if(runtime){
     await mkdir(resolve(game,'plugins/cutout-animation'),{recursive:true});
     const files=target==='windows'?['build-win/cutout-runtime.dll']:['build-wasm/cutout-runtime.mjs','build-wasm/cutout-runtime.wasm'];

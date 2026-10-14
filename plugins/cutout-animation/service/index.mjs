@@ -103,5 +103,16 @@ export async function createService({ pluginDir, manifest }) {
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('플러그인 명령 인자는 객체여야 합니다.');
     return request({ ...payload, op });
   }
-  return { validate, call };
+  /**
+   * Player capabilities an exported game needs for these documents beyond `plugin-elements-v1`
+   * (packages/plugin-host bundle -> exportGame checks them against the target player). Mesh
+   * attachments (plugin 1.4.0) are drawn only by hosts advertising `plugin-mesh-v1`; a rig
+   * without meshes keeps exporting to older players.
+   */
+  function requiredHostFeatures(documents) {
+    const lists = d => [d?.data?.attachments, ...(Array.isArray(d?.data?.skins) ? d.data.skins.map(s => s?.attachments) : [])];
+    const mesh = (Array.isArray(documents) ? documents : []).some(d => d?.type === 'rig' && lists(d).some(list => Array.isArray(list) && list.some(a => a?.type === 'mesh')));
+    return mesh ? ['plugin-mesh-v1'] : [];
+  }
+  return { validate, call, requiredHostFeatures };
 }

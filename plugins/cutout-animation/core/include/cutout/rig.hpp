@@ -32,23 +32,43 @@ struct Transform { double x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1; };
 
 struct Bone { std::string id; std::string parent; Transform setup; int parentIndex = -1; };
 struct Slot { std::string id; std::string bone; std::optional<std::string> attachment; double alpha = 1; int boneIndex = -1; };
+/** One bone's share of a weighted mesh vertex; `bind` indexes Attachment::binds. */
+struct Influence { int bind = -1; double weight = 0; };
+constexpr size_t MAX_MESH_VERTICES = 2048, MAX_MESH_TRIANGLES = 4096, MAX_INFLUENCES = 4;
 struct Attachment {
   std::string slot, name, imageAssetId;
   Transform offset;       // placement of the image pivot in bone space
   double pivotX = 0.5, pivotY = 0.5;  // normalized point of the image placed at offset
   double width = 0, height = 0;       // source image pixels (checked against PNG by the service)
+  /**
+   * Mesh (plugin 1.4.0, `type: "mesh"`). `vertices` are image-pixel positions of the setup shape
+   * (x, y pairs, the same space as a region's pixels), `uvs` texture coordinates 0..1 and
+   * `triangles` index triples. Unweighted, the mesh is placed exactly like a region (slot bone ·
+   * offset · pivot). Weighted, every vertex follows up to 4 bones: the bind pose is the rig's
+   * setup pose (forward kinematics of the bones' setup transforms), and `binds` holds per
+   * influencing bone the map image px -> that bone's setup space (inverse bind · slot setup
+   * world · placement), derived at parse time, so p = Σ weight · world(bone) · bind · (v + deform).
+   */
+  bool mesh = false;
+  std::vector<double> vertices, uvs;
+  std::vector<int> triangles;
+  std::vector<std::vector<Influence>> weights;  // empty = unweighted; else one list per vertex (sum 1)
+  std::vector<std::pair<int, Affine>> binds;
+  size_t vertexCount() const { return vertices.size() / 2; }
 };
 
 /** Expression is the rig-level track `{"target":"rig","property":"expression"}` (step only).
- *  Mix / BendPositive key IK constraints: `{"target":"ik:<id>"}` (bend is step only, value bool). */
-enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive };
+ *  Mix / BendPositive key IK constraints: `{"target":"ik:<id>"}` (bend is step only, value bool).
+ *  Deform keys mesh vertex offsets: `{"target":"slot:<id>","property":"deform","attachment":"<name>"}`. */
+enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive, Deform };
 enum class Interp { Step, Linear, Bezier };
-/** `curve` is used only when interp is Bezier (segment from this key to the next). */
-struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; };
+/** `curve` is used only when interp is Bezier (segment from this key to the next).
+ *  Deform keys carry `offsets` (dx, dy per vertex, image pixels) instead of `value`. */
+struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; std::vector<double> offsets; };
 /** bone=false + rig=true: the rig expression track (target "", targetIndex -1, key.name = expression id).
  *  bone=false + ik=true: an IK constraint track (target = constraint id, targetIndex = Rig::ik index;
- *  bendPositive keys carry value 1/0). */
-struct Track { bool bone = true; bool rig = false; bool ik = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; };
+ *  bendPositive keys carry value 1/0). Deform tracks are slot tracks naming `attachment`. */
+struct Track { bool bone = true; bool rig = false; bool ik = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; std::string attachment; };
 struct ClipEvent { int64_t timeMs = 0; std::string name; };
 struct Clip { std::string id, name; int64_t durationMs = 1000; bool loop = true; std::vector<Track> tracks; std::vector<ClipEvent> events; };
 struct MixPair { std::string from, to; int64_t durationMs = 0; };
@@ -65,14 +85,16 @@ struct Expression {
 
 /**
  * IK constraint (plugin 1.3.0). `bones` = 1 (aim: the bone's local +x axis points at the target)
- * or 2 (parent, direct child: two-bone limb whose effector is the origin of `tip`, the child's
- * first child bone). Solved after expressions on world transforms, in `Rig::ikOrder`.
+ * or 2 (parent, direct child: two-bone limb whose effector is the origin of `tip`: the explicit
+ * `tip` bone (plugin 1.4.0, a direct child of the lower bone), else the lower bone's first child
+ * bone in array order). Solved after expressions on world transforms, in `Rig::ikOrder`.
  */
 struct IkConstraint {
   std::string id, name;
   std::vector<int> bones;     // chain, parent first
   int target = -1;
   int tip = -1;               // two-bone effector bone (-1 = none: the child origin aims at the target)
+  bool explicitTip = false;   // `tip` named in the data (else the implicit first-child rule)
   double mix = 1;
   bool bendPositive = true;   // two-bone: the child turns in the positive (clockwise on screen) direction
   bool stretch = false;       // accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH)

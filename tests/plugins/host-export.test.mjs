@@ -8,7 +8,7 @@ import { exportGame } from '../../dist/packages/export-service/export.js';
 import { createSession } from '../../dist/packages/runtime-service/session.js';
 import { encodeSave, decodeSave } from '../../dist/packages/runtime-service/save.js';
 import { QtStudioService } from '../../apps/qt-studio/service.mjs';
-import { addCutout, addElement, cutoutPackage, fakeRuntimes, lock, makePackage, newProject, serialize, sha256, temp, CUTOUT_VERSION } from './host-helpers.mjs';
+import { addCutout, addElement, cutoutPackage, fakeRuntimes, lock, makePackage, newProject, rigData, serialize, sha256, temp, CUTOUT_VERSION } from './host-helpers.mjs';
 
 let installedStore;
 const store = () => installedStore ??= (async () => { const dir = await temp('store'); await installPackage(dir, await cutoutPackage()); return dir; })();
@@ -95,6 +95,34 @@ test('missing feature, disabled plugin, absent runtime module and unprepared ext
   const result = await exportGame({ content, projectRoot: other, destination: path.join(out, 'web-only'), target: 'web', runtimes: await fakeRuntimes(), extensions: prepared });
   assert.deepEqual((await files(result.directory)).filter(f => f.startsWith('plugins/')), ['plugins/web-only/x.mjs']);
   await code(editor.exportExtensions(editor.revision, content, 'windows'), 'PLUGIN_RUNTIME_MISSING');
+});
+
+test('mesh attachments need a player with plugin-mesh-v1 (service requiredHostFeatures); region rigs do not', async () => {
+  const pluginStore = await store(), out = await temp('export');
+  const mesh = { type: 'mesh', vertices: [0, 0, 40, 0, 40, 60, 0, 60], uvs: [0, 0, 1, 0, 1, 1, 0, 1], triangles: [0, 1, 2, 0, 2, 3] };
+  const plain = await newProject();
+  await addCutout(plain); await addElement(plain);
+  let { editor, content } = await prepare(plain, pluginStore);
+  assert.deepEqual((await editor.exportExtensions(editor.revision, content, 'web')).features, [], 'regions need nothing new');
+  // A mesh only an outfit (skin) provides counts as well.
+  const root = await newProject();
+  await addCutout(root, { rig: rigData({ skins: [{ id: 'gold', attachments: [{ slot: 'torso', name: 'torso', imageAssetId: 'hero-torso', width: 40, height: 60, ...mesh }] }] }) });
+  await addElement(root);
+  ({ editor, content } = await prepare(root, pluginStore));
+  for (const target of ['web', 'windows']) {
+    const extensions = await editor.exportExtensions(editor.revision, content, target);
+    assert.deepEqual(extensions.features, ['plugin-mesh-v1']);
+    await assert.rejects(exportGame({ content, projectRoot: root, destination: path.join(out, `old-${target}`), target, runtimes: await fakeRuntimes(), extensions }), /plugin-mesh-v1/);
+    assert.equal((await readdir(out)).includes(`old-${target}`), false, 'nothing is written');
+    const result = await exportGame({ content, projectRoot: root, destination: path.join(out, `new-${target}`), target, runtimes: await fakeRuntimes(['plugin-elements-v1', 'plugin-mesh-v1']), extensions });
+    const game = JSON.parse(await readFile(path.join(result.directory, 'game.json'), 'utf8'));
+    assert.equal(game.extensions.plugins[0].documents.find(d => d.type === 'rig').data.skins[0].attachments[0].type, 'mesh');
+  }
+  // The Qt export path prepares the same features and refuses the same way.
+  const qt = new QtStudioService({ pluginStore, runtimes: await fakeRuntimes() });
+  const opened = await qt.handle({ method: 'open', params: { root } });
+  await assert.rejects(qt.handle({ method: 'export', params: { revision: opened.view.revision, target: 'web', destination: path.join(out, 'qt') } }), /plugin-mesh-v1/);
+  assert.equal((await readdir(out)).includes('qt'), false);
 });
 
 test('save envelope carries opaque playerPresentation.extensions (unknown plugins too) and caps its size', async () => {

@@ -5,7 +5,9 @@
  */
 export interface ExtensionPluginBundle { id: string; version?: string; abi: string; entry: string; documents?: unknown[] }
 export interface ExtensionsBundle { version: 1; plugins: ExtensionPluginBundle[] }
-export interface ExtensionItem { imageAssetId: string; matrix: [number, number, number, number, number, number]; width: number; height: number; alpha: number }
+/** Mesh items (capability plugin-mesh-v1, CONTRACT.md §7): element-local triangles; `matrix` stays the undeformed fallback rectangle. */
+export interface ExtensionMesh { positions: number[]; uvs: number[]; indices: number[] }
+export interface ExtensionItem { imageAssetId: string; matrix: [number, number, number, number, number, number]; width: number; height: number; alpha: number; mesh?: ExtensionMesh }
 export interface ExtensionElement { plugin: string; type: string; ref: string; props?: Record<string, unknown> }
 export interface ExtensionMountSpec { type: string; ref: string; width: number; height: number; props: Record<string, unknown> }
 interface WasmExtensionModule { cwrap(name: string, returns: string | null, args: string[]): (...args: unknown[]) => unknown }
@@ -128,7 +130,7 @@ export class ExtensionHost {
     return { active: this.active, observations: this.observations, clockMs: this.clockMs, lastObserve: this.lastObserve,
       plugins: [...this.plugins.values()].map(p => ({ id: p.id, version: p.version, available: p.available, error: p.error, diagnostics: p.diagnostics })),
       instances: [...this.mounts.values()].map(m => ({ instance: m.instance, plugin: m.plugin, available: m.mounted && this.available(m.plugin), error: m.error, element: m.spec,
-        items: m.items.map(i => ({ imageAssetId: i.imageAssetId, matrix: i.matrix, width: i.width, height: i.height, alpha: i.alpha })), state: described[m.plugin]?.[m.instance] ?? null })) };
+        items: m.items.map(i => ({ imageAssetId: i.imageAssetId, matrix: i.matrix, width: i.width, height: i.height, alpha: i.alpha, ...(i.mesh ? { mesh: i.mesh } : {}) })), state: described[m.plugin]?.[m.instance] ?? null })) };
   }
   private init(plugin: Plugin): boolean {
     const reply = this.call(plugin, { op: 'init', documents: plugin.documents });
