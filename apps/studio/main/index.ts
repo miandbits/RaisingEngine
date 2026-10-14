@@ -87,7 +87,8 @@ void app.whenReady().then(async () => {
     const runtimeRoot = app.isPackaged ? path.join(process.resourcesPath, 'export-runtimes')
       : fileURLToPath(new URL('../../', import.meta.url));
     const result = await exportGame({ content: built.snapshot, projectRoot: editor.root, destination: selected.filePath,
-      target, runtimes: { web: path.join(runtimeRoot, 'web'), windows: path.join(runtimeRoot, 'native-player-app') } });
+      target, runtimes: { web: path.join(runtimeRoot, 'web'), windows: path.join(runtimeRoot, 'native-player-app') },
+      extensions: await editor.exportExtensions(revision, built.snapshot, target) });
     return editor.reply(null, `게임을 내보냈습니다: ${result.directory}`);
   });
   handle('analysis:request', async (input: AnalysisRequest) => {

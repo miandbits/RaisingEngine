@@ -1,7 +1,7 @@
 import type { DraftDocument } from '../studio-service/editor.js';
 import type { Diagnostic, Json } from '../validation/model.js';
 
-export const kindNames: Record<string, string> = { project: '프로젝트', attributes: '능력·자원', flags: '플래그', character: '인물', activity: '활동', event: '사건', ending: '엔딩', assets: '에셋', scenario: '시나리오', location:'장소', item:'아이템', shop:'상점', interaction:'교류·선물', screen:'게임 화면' };
+export const kindNames: Record<string, string> = { project: '프로젝트', attributes: '능력·자원', flags: '플래그', character: '인물', activity: '활동', event: '사건', ending: '엔딩', assets: '에셋', scenario: '시나리오', location:'장소', item:'아이템', shop:'상점', interaction:'교류·선물', screen:'게임 화면', extension:'플러그인 문서', pluginLock:'플러그인 잠금' };
 export const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 export interface CatalogItem { key: string; file: string; pointer: string; kind: string; id: string; label: string; description: string; tags: string[]; from: number | null; through: number | null; priority: number | null; summary: string; issues: number; data: Json }
 export interface CatalogQuery { kind?: string; text?: string; tag?: string; person?: string; period?: number; issuesOnly?: boolean; sort?: 'label' | 'id' | 'period' | 'priority'; descending?: boolean }
