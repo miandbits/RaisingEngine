@@ -53,16 +53,21 @@ public:
     if(data.contains("_clipRect"))p->setClipRect(canvasClipRect(data.value("_clipRect").toObject()).translated(-pos()));
     p->setOpacity(data["opacity"].toDouble(1));
     const auto kind = data["kind"].toString();
-    if (kind == "image" && !image.isNull()) {
-      const bool contain = data["fit"].toString() == "contain";
+    if ((kind == "image"||kind=="plugin") && !image.isNull()) {
+      const bool contain = kind=="plugin"||data["fit"].toString() == "contain";
       QSizeF scaled = image.size();
       scaled.scale(box.size(), contain ? Qt::KeepAspectRatio
                                        : Qt::KeepAspectRatioByExpanding);
+      const auto pluginProps=data["extension"].toObject()["props"].toObject();
+      if(kind=="plugin")scaled*=pluginProps["scale"].toDouble(1);
       QRectF target(QPointF((box.width() - scaled.width()) / 2,
                             (box.height() - scaled.height()) / 2),
                     scaled);
       p->setClipRect(box,Qt::IntersectClip);
+      p->save();
+      if(kind=="plugin"&&pluginProps["flipX"].toBool()){p->translate(box.width(),0);p->scale(-1,1);}
       p->drawPixmap(target, image, QRectF(image.rect()));
+      p->restore();
     } else if (kind == "meter") {
       p->fillRect(box,rgba(data.value("fill").toString(),QColor("#16242e")));
       const double maximum=qMax(0.0001,data.value("maxValue").toDouble(100));
@@ -299,6 +304,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     QString asset = e["imageSource"] == "background"
                         ? background
                         : e["imageAssetId"].toString();
+    if(e["kind"]=="plugin")asset=e["extension"].toObject()["props"].toObject()["posterAssetId"].toString();
     if (e["imageSource"].toString().startsWith("portrait-"))
       asset = project["_previewPortraits"]
                   .toObject()[e["imageSource"].toString().mid(9)]

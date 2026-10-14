@@ -39,6 +39,8 @@ export type Element = {
 } & {
   [k: string]: unknown;
 } & {
+  [k: string]: unknown;
+} & {
   id: string;
   kind:
     | "panel"
@@ -69,7 +71,8 @@ export type Element = {
     | "collection"
     | "meter"
     | "group"
-    | "input";
+    | "input"
+    | "plugin";
   label?: string;
   x: number;
   y: number;
@@ -1113,6 +1116,14 @@ export type Element = {
   parentId?: string;
   clipChildren?: boolean;
   userFieldId?: string;
+  extension?: {
+    plugin: string;
+    type: string;
+    ref: string;
+    props?: {
+      [k: string]: string | number | boolean | null;
+    };
+  };
 };
 export type Condition =
   | {
@@ -1185,7 +1196,7 @@ export type ComponentChild = {
   [k: string]: unknown;
 } & {
   id: string;
-  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input";
+  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input" | "plugin";
   label?: string;
   x: number;
   y: number;
@@ -2117,6 +2128,14 @@ export type ComponentChild = {
   parentId?: string;
   clipChildren?: boolean;
   userFieldId?: string;
+  extension?: {
+    plugin: string;
+    type: string;
+    ref: string;
+    props?: {
+      [k: string]: string | number | boolean | null;
+    };
+  };
 };
 
 export interface VisualDesign {

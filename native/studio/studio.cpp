@@ -195,6 +195,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
            {"input", tr("사용자 입력란 · 새 게임")},
            {"panel", tr("패널")},
            {"image", tr("이미지 · 에셋 선택 후 추가")},
+           {"plugin", tr("애니메이션 · 플러그인 요소")},
            {"stats", tr("능력·자원 목록")},
            {"schedule", tr("일정 선택")},
            {"dialogue", tr("대사")},

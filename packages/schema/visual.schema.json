@@ -390,7 +390,8 @@
             "collection",
             "meter",
             "group",
-            "input"
+            "input",
+            "plugin"
           ]
         },
         "label": {
@@ -1087,6 +1088,46 @@
         },
         "userFieldId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "extension": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plugin",
+            "type",
+            "ref"
+          ],
+          "properties": {
+            "plugin": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "type": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "ref": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "props": {
+              "type": "object",
+              "maxProperties": 32,
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
         }
       },
       "required": [
@@ -1492,6 +1533,26 @@
               "userFieldId"
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "plugin"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "extension"
+            ],
+            "properties": {
+              "extension": {}
+            }
+          }
         }
       ]
     },
@@ -1642,7 +1703,8 @@
             "button",
             "meter",
             "group",
-            "input"
+            "input",
+            "plugin"
           ]
         },
         "label": {
@@ -2045,6 +2107,46 @@
         },
         "userFieldId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "extension": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plugin",
+            "type",
+            "ref"
+          ],
+          "properties": {
+            "plugin": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "type": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "ref": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "props": {
+              "type": "object",
+              "maxProperties": 32,
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
         }
       },
       "required": [
@@ -2407,6 +2509,26 @@
             "required": [
               "userFieldId"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "plugin"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "extension"
+            ],
+            "properties": {
+              "extension": {}
+            }
           }
         }
       ]

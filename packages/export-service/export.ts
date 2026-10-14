@@ -3,6 +3,7 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } 
 import path from 'node:path';
 import type { ContentSnapshot } from '../core/model.js';
 import type { ExportTarget, GameBundle } from './model.js';
+import { prepareExtensions } from './extensions.js';
 
 export interface ExportOptions {
   content: ContentSnapshot; projectRoot: string; destination: string; target: ExportTarget;
@@ -43,6 +44,8 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  const extensions=await prepareExtensions(projectRoot,content,target);
+  if(extensions)requiredFeatures.push('plugin-elements-v1');
   if(content.project.periodsPerMonth!==3||content.project.schedulePlayback==='continuous')requiredFeatures.push('monthly-schedule-v1');
   if(content.project.gameplay?.actions?.some(action=>action.flow?.some(step=>step.chance)))requiredFeatures.push('probabilistic-actions-v1');
   const hasImmediateConfirmation=(value:unknown):boolean=>{if(!value||typeof value!=='object')return false;const obj=value as Record<string,unknown>;return (obj.confirmation as {enabled?:boolean}|undefined)?.enabled===false||Object.values(obj).some(hasImmediateConfirmation);};
@@ -100,6 +103,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
       await writeFile(path.join(staging, relative), bytes, { flag: 'wx' }); assets[asset.id] = relative;
     }
     const bundle: GameBundle = { formatVersion: '1', content, assets };
+    if(extensions){bundle.extensions=extensions.bundle;await extensions.write(staging);}
     await writeFile(path.join(staging, 'game.json'), JSON.stringify(bundle), { flag: 'wx' });
     await writeFile(path.join(staging, 'README.txt'), target === 'web'
       ? `${content.project.title}\n\n이 폴더 전체를 정적 웹 호스팅에 올리세요. index.html은 HTTP 또는 HTTPS에서 열어야 합니다.\n저장하기는 JSON 파일을 내려받고 불러오기는 그 파일을 선택합니다.\nC++ 코어의 WebAssembly 빌드로 실행합니다.\n`

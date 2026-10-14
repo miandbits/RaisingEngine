@@ -86,6 +86,11 @@
               "type": "null"
             }
           ]
+        },
+        "extensions": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": true
         }
       },
       "required": [

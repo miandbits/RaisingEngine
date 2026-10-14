@@ -1,6 +1,7 @@
 #include <RmlUi/Core.h>
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_SDL.h"
+#include "affine-renderer.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
@@ -11,6 +12,7 @@
 #include "bundle.hpp"
 #include "preview.hpp"
 #include "scene-preview.hpp"
+#include "extensions.hpp"
 #include <RmlUi/Core/Elements/ElementFormControlSelect.h>
 #include <RmlUi/Core/Elements/ElementFormControlInput.h>
 #include <iostream>
@@ -23,6 +25,7 @@ public:
   GameSession game;
   ScreenMarkup markup;
   GameAudio audio;
+  RuntimeExtensions extensions;
   SDL_Window* window;
   SDL_Renderer* renderer;
   Rml::Context* context=nullptr;
@@ -71,6 +74,35 @@ public:
       }
     }
   }
+  void mount_extensions() {
+    const auto visual=game.content.at("project").at("visual");
+    for(const auto& screen:visual.at("screens"))for(const auto& e:expanded_elements(visual,screen,visual.value("width",1280),visual.value("height",720),game.state.is_null()?"title":game.state.value("phase","planning")))
+      if(e.value("kind","")=="plugin")extensions.mount(screen.at("id").get<std::string>()+"/"+e.at("id").get<std::string>(),e);
+  }
+  void update_extensions(double dt) {
+    if(!document)return;
+    try {
+      for(const auto& e:markup.render_elements)if(e.value("kind","")=="plugin"&&markup.visible(e)) {
+        auto* node=document->GetElementById("node-"+e.value("id",""));if(!node)continue;
+        const auto id=e.at("extension").at("plugin").get<std::string>();
+        if(!extensions.contains(id)){node->SetInnerRML("Missing animation plugin: "+escape(id));continue;}
+        extensions.mount(markup.screen_id+"/"+e.value("id",""),e);
+      }
+      extensions.update(dt);
+      for(const auto& e:markup.render_elements)if(e.value("kind","")=="plugin"&&markup.visible(e)) {
+        auto* node=document->GetElementById("node-"+e.value("id",""));if(!node)continue;
+        const auto id=e.at("extension").at("plugin").get<std::string>();if(!extensions.contains(id))continue;
+        const auto items=extensions.frame(id,markup.screen_id+"/"+e.value("id",""));
+        if(node->GetNumChildren()!=int(items.size())){std::string html;for(size_t i=0;i<items.size();i++)html+="<img style=\"position:absolute;left:0;top:0;pointer-events:none;transform-origin:0px 0px;\"/>";node->SetInnerRML(html);}
+        for(size_t i=0;i<items.size();i++) {
+          const auto& item=items.at(i);auto* image=node->GetChild(int(i));const auto& m=item.at("matrix");
+          image->SetAttribute("src",markup.asset(item.at("imageAssetId")));
+          image->SetProperty("width",number(item.at("width"))+"px");image->SetProperty("height",number(item.at("height"))+"px");image->SetProperty("opacity",number(item.value("alpha",1.0)));
+          image->SetProperty("transform","matrix3d("+number(m.at(0))+","+number(m.at(1))+",0,0,"+number(m.at(2))+","+number(m.at(3))+",0,0,0,0,1,0,"+number(m.at(4))+","+number(m.at(5))+",0,1)");
+        }
+      }
+    }catch(const std::exception& e){if(extensions.errors.empty()||extensions.errors.back()!=e.what())extensions.errors.push_back(e.what());game.message=e.what();}
+  }
   void apply_preview() {
     if(!preview()||preview_element.empty())return;
     auto* element=document->GetElementById("node-"+preview_element);
@@ -92,6 +124,12 @@ public:
   PlayerApplication(Json bundle, fs::path root, SDL_Window* window, SDL_Renderer* renderer, fs::path save_file)
     :markup(game,bundle.at("assets"),std::move(root)),window(window),renderer(renderer),save_file(std::move(save_file)) {
     game.content=bundle.at("content"); game.refresh();
+    extensions.initialize(bundle,markup.bundle);
+    mount_extensions();
+    game.on_transition=[this](const Json& before,const Json& after,const Json& command,const std::string& error){try{extensions.observe(before,after,command,error);}catch(const std::exception& e){extensions.errors.push_back(e.what());}};
+    game.before_save=[this](){game.extension_state=extensions.save(game.extension_state);};
+    game.after_start=[this](){extensions.reset();mount_extensions();};
+    game.after_load=[this](){extensions.reset();mount_extensions();extensions.restore(game.extension_state);};
 #ifdef SDL_PLATFORM_ANDROID
     SDL_AddEventWatch(watch_lifecycle,this);
 #endif
@@ -214,6 +252,7 @@ public:
     editor_command=action;
     try {
       game.message.clear();const std::string type=action.value("type","");
+      if(type=="extensionTick"){update_extensions(action.value("deltaMs",0.0));dirty=true;return;}
       if(type=="timelineTick"){advance_timeline_clock(action.value("deltaMs",0.0));return;}
       if(type=="scheduleStep"){const auto command=game.schedule_step();if(!command.empty()){game.send({{"type",command}});game.settle();}dirty=true;return;}
       if(type=="timelinePause"||type=="timelineSpeed"||type=="timelineSkip") {
@@ -405,7 +444,7 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"extensions",extensions.describe()},{"extensionSignals",extensions.observations},{"extensionErrors",extensions.errors},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource","initial"},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
@@ -498,7 +537,7 @@ int main(int argc,char** argv) {
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);
     {
-      SystemInterface_SDL system;system.SetWindow(window);RenderInterface_SDL render(renderer);
+      SystemInterface_SDL system;system.SetWindow(window);AffineSDLRenderer render(renderer);
       Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
 #ifdef SDL_PLATFORM_ANDROID
       const auto font=bundle_root/"fonts/NotoSansKR.ttf";
@@ -529,7 +568,7 @@ int main(int argc,char** argv) {
         app.drain_actions();
         if(!app.timeline_manual_clock){app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);}
         if(app.dirty)app.rebuild();
-        app.apply_preview();app.update_timeline_visual();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();
+        app.apply_preview();app.update_timeline_visual();app.update_extensions(app.timeline_manual_clock?0:timeline_delta);app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();
         if(wait_frames>0)--wait_frames;
         else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];
@@ -557,6 +596,7 @@ int main(int argc,char** argv) {
           if(command.contains("waitFrames"))wait_frames=command.at("waitFrames").get<int>();
           if(command.contains("timelineRealtime"))app.timeline_manual_clock=!command.at("timelineRealtime").get<bool>();
           if(command.contains("timelineAdvanceMs"))app.advance_timeline_clock(command.at("timelineAdvanceMs").get<double>());
+          if(command.contains("extensionAdvanceMs"))app.update_extensions(command.at("extensionAdvanceMs").get<double>());
           if(command.contains("resize")){const auto size=command.at("resize");SDL_SetWindowSize(window,size.at("width"),size.at("height"));}
           if(command.contains("select")) {
             auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(app.document->GetElementById(command.at("select")));

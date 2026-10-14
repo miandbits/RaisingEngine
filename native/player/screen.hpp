@@ -463,7 +463,7 @@ public:
     if(kind=="collection")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
     // Schedule popups need an elevated stacking layer, but their transparent
     // container must not swallow authored navigation buttons beneath it.
-    style+=(kind=="group"||kind=="schedule")?"pointer-events:none;":"pointer-events:auto;";
+    style+=(kind=="plugin"||kind=="group"||kind=="schedule")?"pointer-events:none;":"pointer-events:auto;";
     if(kind=="schedule"&&e.value("scheduleLayout","columns")=="menu")for(const auto& a:display_content.at("activities"))if(!a.value("previewAttributes",Json::array()).empty()){style+="overflow-x:hidden;overflow-y:auto;pointer-events:auto;";break;}
     auto body=element_body(e);
     if(!e.value("_boundEnabled",true)||(e.contains("enabledCondition")&&!visual_condition(e.at("enabledCondition")))) {
@@ -471,11 +471,11 @@ public:
         const auto end=body.find('>',at);if(body.substr(at,end-at).find(" disabled")==std::string::npos)body.insert(at+tag.size(),"disabled=\"disabled\" ");at=body.find('>',at)+1;
       }
     }
-    return "<div id=\"node-"+escape(e.value("id",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
+    return "<div id=\"node-"+escape(e.value("id",""))+"\" class=\"node "+kind+(kind=="plugin"||kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
   }
   std::string element_body(const Json& e) {
     const std::string kind=e.value("kind","panel");
-    if(kind=="panel"||kind=="group")return "";
+    if(kind=="plugin"||kind=="panel"||kind=="group")return "";
     if(kind=="input"){const auto id=e.value("userFieldId","");return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;color:inherit;font-size:inherit;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
     if(kind=="meter"){const double maximum=e.value("maxValue",100.0),value=e.value("value",0.0),ratio=maximum>0?std::clamp(value/maximum,0.0,1.0):0.0;return "<div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div>";}
     if(kind=="image")return image(e);
