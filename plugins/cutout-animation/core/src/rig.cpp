@@ -1,5 +1,7 @@
 #include "cutout/rig.hpp"
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <set>
 #include <stdexcept>
 
@@ -48,9 +50,206 @@ Transform readTransform(const Json& obj) {
   t.x = get("x", 0); t.y = get("y", 0); t.rotation = get("rotation", 0); t.scaleX = get("scaleX", 1); t.scaleY = get("scaleY", 1);
   return t;
 }
+// Bezier handles: x must stay in [0,1] so segment time never runs backwards.
+void checkCurve(Checker& c, const Json& key, const std::string& kp) {
+  const std::string p = at(kp, "curve");
+  if (!key.contains("curve") || !key.at("curve").is_array() || key.at("curve").size() != 4) {
+    c.error(p, "ANIM_CURVE", "bezier 키에는 curve [x1, y1, x2, y2] 숫자 4개가 필요합니다.");
+    return;
+  }
+  for (size_t i = 0; i < 4; i++) {
+    const Json& v = key.at("curve")[i];
+    if (!v.is_number() || !std::isfinite(v.get<double>())) { c.error(at(p, i), "ANIM_CURVE", "curve 값은 유한한 숫자여야 합니다."); continue; }
+    const double x = v.get<double>();
+    if (i % 2 == 0 && (x < 0 || x > 1)) c.error(at(p, i), "ANIM_CURVE", "curve의 시간 손잡이(x)는 0..1이어야 합니다.");
+    if (i % 2 == 1 && (x < CURVE_Y_MIN || x > CURVE_Y_MAX)) c.error(at(p, i), "ANIM_CURVE", "curve의 값 손잡이(y)는 -4..5이어야 합니다.");
+  }
+}
 const Json& arrayOr(const Json& obj, const char* key) {
   static const Json empty = Json::array();
   return obj.is_object() && obj.contains(key) && obj.at(key).is_array() ? obj.at(key) : empty;
+}
+
+/**
+ * Mesh fields of one attachment (plugin 1.4.0): counts, index ranges, uv range and weights.
+ * Returns the vertex count of a mesh that runtimes can use (0 for regions and broken meshes),
+ * which deform keys are checked against. Weights whose sum is off are normalized at load
+ * (warning); everything else that a runtime cannot draw safely is an error.
+ */
+size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map<std::string, std::string>& parentOf) {
+  const std::string type = text(a, "type");
+  if (a.contains("type") && type != "region" && type != "mesh") { c.error(at(p, "type"), "ANIM_MESH_TYPE", "첨부 종류(type)는 region 또는 mesh입니다."); return 0; }
+  if (type != "mesh") {
+    for (const char* k : {"vertices", "uvs", "triangles", "hull", "edges", "weights"})
+      if (a.contains(k)) { c.warn(at(p, k), "ANIM_MESH_UNUSED", std::string("region 첨부의 메시 값은 쓰이지 않습니다: ") + k); break; }
+    return 0;
+  }
+  bool ok = true;
+  auto numbers = [&](const char* key, size_t& count) -> const Json* {
+    if (!a.contains(key) || !a.at(key).is_array()) { c.error(at(p, key), "ANIM_MESH_" + std::string(key == std::string("uvs") ? "UVS" : "VERTICES"), std::string(key) + "는 숫자 배열입니다."); ok = false; return nullptr; }
+    const Json& list = a.at(key);
+    for (size_t i = 0; i < list.size(); i++)
+      if (!finiteNumber(list[i])) { c.error(at(at(p, key), i), "ANIM_NONFINITE", std::string(key) + " 값은 유한한 숫자여야 합니다."); ok = false; return nullptr; }
+    count = list.size();
+    return &list;
+  };
+  size_t coords = 0, uvCount = 0;
+  numbers("vertices", coords);
+  const size_t n = coords / 2;
+  if (ok && (coords % 2 || n < 3 || n > MAX_MESH_VERTICES)) {
+    c.error(at(p, "vertices"), "ANIM_MESH_VERTICES", "메시 정점은 x, y 쌍으로 3.." + std::to_string(MAX_MESH_VERTICES) + "개입니다.");
+    ok = false;
+  }
+  if (const Json* uvs = numbers("uvs", uvCount); uvs && ok) {
+    if (uvCount != coords) { c.error(at(p, "uvs"), "ANIM_MESH_UVS", "uvs 개수가 정점 수와 다릅니다(정점마다 u, v)."); ok = false; }
+    else
+      for (size_t i = 0; i < uvCount; i++)
+        if ((*uvs)[i].get<double>() < 0 || (*uvs)[i].get<double>() > 1) { c.error(at(at(p, "uvs"), i), "ANIM_MESH_UVS", "uv 값은 0..1입니다."); ok = false; break; }
+  }
+  auto indexList = [&](const char* key, size_t group, size_t maxGroups, const char* code) {
+    const Json& list = a.at(key);
+    if (!list.is_array() || list.size() % group || (maxGroups && (list.empty() || list.size() / group > maxGroups))) {
+      c.error(at(p, key), code, std::string(key) + (group == 3 ? "는 정점 번호 3개씩(삼각형) 1.." + std::to_string(MAX_MESH_TRIANGLES) + "개입니다." : "는 정점 번호 2개씩의 배열입니다."));
+      return false;
+    }
+    for (size_t i = 0; i < list.size(); i++)
+      if (!list[i].is_number_integer() || list[i].get<int64_t>() < 0 || (ok && list[i].get<int64_t>() >= int64_t(n))) {
+        c.error(at(at(p, key), i), code, std::string(key) + "의 정점 번호가 범위(0.." + std::to_string(n ? n - 1 : 0) + ")를 벗어났습니다.");
+        return false;
+      }
+    return true;
+  };
+  if (!a.contains("triangles")) { c.error(at(p, "triangles"), "ANIM_MESH_TRIANGLES", "메시에는 triangles(삼각형 정점 번호)가 필요합니다."); ok = false; }
+  else if (!indexList("triangles", 3, MAX_MESH_TRIANGLES, "ANIM_MESH_TRIANGLES")) ok = false;
+  if (a.contains("edges")) indexList("edges", 2, 0, "ANIM_MESH_EDGES");  // editor-only outline: never blocks drawing
+  if (a.contains("hull") && (!a.at("hull").is_number_integer() || a.at("hull").get<int64_t>() < 0 || a.at("hull").get<int64_t>() > int64_t(n)))
+    c.error(at(p, "hull"), "ANIM_MESH_HULL", "hull(외곽 정점 수)은 0..정점 수 정수입니다.");
+  if (a.contains("weights")) {
+    const Json& weights = a.at("weights");
+    if (!weights.is_array() || (ok && weights.size() != n)) { c.error(at(p, "weights"), "ANIM_MESH_WEIGHTS", "weights는 정점마다 [{bone, weight}] 목록 하나씩입니다(정점 수와 같아야 함)."); return 0; }
+    bool warned = false;
+    for (size_t v = 0; v < weights.size(); v++) {
+      const std::string wp = at(at(p, "weights"), v);
+      const Json& list = weights[v];
+      if (!list.is_array() || list.empty()) { c.error(wp, "ANIM_MESH_WEIGHTS", "정점마다 본 영향이 1개 이상 필요합니다."); ok = false; continue; }
+      if (list.size() > MAX_INFLUENCES) { c.error(wp, "ANIM_MESH_INFLUENCES", "정점 하나에 영향을 주는 본은 최대 4개입니다."); ok = false; continue; }
+      double sum = 0;
+      std::set<std::string> bones;
+      for (size_t k = 0; k < list.size(); k++) {
+        const std::string bone = text(list[k], "bone");
+        if (!parentOf.count(bone)) { c.error(at(at(wp, k), "bone"), "ANIM_MESH_BONE_MISSING", "메시 웨이트가 없는 본을 가리킵니다: " + bone); ok = false; }
+        else if (!bones.insert(bone).second) { c.error(at(at(wp, k), "bone"), "ANIM_MESH_WEIGHTS", "한 정점에 같은 본이 두 번 있습니다: " + bone); ok = false; }
+        const Json w = list[k].is_object() && list[k].contains("weight") ? list[k].at("weight") : Json();
+        if (!finiteNumber(w) || w.get<double>() < 0 || w.get<double>() > 1) { c.error(at(at(wp, k), "weight"), "ANIM_MESH_WEIGHTS", "웨이트는 0..1 숫자입니다."); ok = false; }
+        else sum += w.get<double>();
+      }
+      if (ok && !(sum > 1e-9)) { c.error(wp, "ANIM_MESH_WEIGHTS", "정점의 웨이트 합이 0입니다."); ok = false; }
+      else if (ok && std::fabs(sum - 1) > 1e-3 && !warned) {
+        c.warn(wp, "ANIM_MESH_WEIGHT_SUM", "웨이트 합이 1이 아니라 불러올 때 1로 맞춥니다(합 " + std::to_string(sum) + ").");
+        warned = true;  // one warning per mesh is enough to point at the problem
+      }
+    }
+  }
+  return ok ? n : 0;
+}
+
+/**
+ * IK constraints (plugin 1.3.0): ids, chain shape, target placement, mix and dependencies.
+ * A constraint moves every strict descendant of its chain bones; B depends on A when A moves
+ * B's target or B's chain base. A dependency cycle can never be satisfied by any order
+ * (ANIM_IK_CYCLE); an `order` that solves B before A is only a warning (ANIM_IK_ORDER).
+ * Returns the ids `ik:<id>` tracks may use.
+ */
+std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string, std::string>& parentOf) {
+  std::set<std::string> ids;
+  if (data.contains("ik") && !data.at("ik").is_array()) c.error("/ik", "ANIM_STRUCTURE", "ik는 배열입니다.");
+  const auto& list = arrayOr(data, "ik");
+  // Strict ancestor test with a guard: a cyclic hierarchy is reported by the bone checks.
+  auto under = [&](std::string b, const std::string& ancestor) {
+    size_t guard = 0;
+    for (b = parentOf.count(b) ? parentOf[b] : ""; !b.empty() && guard++ <= parentOf.size(); b = parentOf.count(b) ? parentOf[b] : "")
+      if (b == ancestor) return true;
+    return false;
+  };
+  struct Info { std::vector<std::string> chain; std::string target; int64_t order = 0; bool ok = false; };
+  std::vector<Info> info(list.size());
+  for (size_t i = 0; i < list.size(); i++) {
+    const Json& k = list[i];
+    const std::string p = at("/ik", i), id = text(k, "id");
+    if (!k.is_object()) { c.error(p, "ANIM_STRUCTURE", "IK 제약은 객체입니다."); continue; }
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "IK 제약 ID가 필요합니다.");
+    else if (!ids.insert(id).second) c.error(at(p, "id"), "ANIM_IK_DUP_ID", "중복된 IK 제약 ID: " + id);
+    bool ok = true;
+    const Json bones = k.contains("bones") ? k.at("bones") : Json();
+    if (!bones.is_array() || bones.empty() || bones.size() > 2) { c.error(at(p, "bones"), "ANIM_IK_CHAIN", "IK 사슬은 본 1개(조준) 또는 2개(부모 → 자식 팔·다리)입니다."); ok = false; }
+    else
+      for (size_t b = 0; b < bones.size(); b++) {
+        const std::string bone = bones[b].is_string() ? bones[b].get<std::string>() : "";
+        if (!parentOf.count(bone)) { c.error(at(at(p, "bones"), b), "ANIM_IK_BONE_MISSING", "IK 사슬이 없는 본을 가리킵니다: " + bone); ok = false; }
+        info[i].chain.push_back(bone);
+      }
+    if (ok && info[i].chain.size() == 2 && parentOf[info[i].chain[1]] != info[i].chain[0]) {
+      c.error(at(p, "bones"), "ANIM_IK_CHAIN", "두 본 IK 사슬은 직접 부모 → 자식이어야 합니다: " + info[i].chain[0] + " → " + info[i].chain[1]);
+      ok = false;
+    }
+    // Explicit effector (plugin 1.4.0): picks the hand among several children of the forearm.
+    if (k.contains("tip")) {
+      const std::string tip = text(k, "tip");
+      if (!k.at("tip").is_string() || !parentOf.count(tip)) { c.error(at(p, "tip"), "ANIM_IK_TIP", "IK 끝점(tip) 본이 없습니다: " + tip); ok = false; }
+      else if (ok && info[i].chain.size() != 2) { c.error(at(p, "tip"), "ANIM_IK_TIP", "끝점(tip)은 두 본 IK에만 씁니다(조준 IK는 x축이 대상을 향합니다)."); ok = false; }
+      else if (ok && parentOf[tip] != info[i].chain[1]) { c.error(at(p, "tip"), "ANIM_IK_TIP", "끝점(tip)은 아래 본 「" + info[i].chain[1] + "」의 직접 자식이어야 합니다: " + tip); ok = false; }
+    }
+    info[i].target = text(k, "target");
+    if (!parentOf.count(info[i].target)) { c.error(at(p, "target"), "ANIM_IK_BONE_MISSING", "IK 대상 본이 없습니다: " + info[i].target); ok = false; }
+    else if (ok)
+      for (const auto& bone : info[i].chain)
+        if (info[i].target == bone || under(info[i].target, bone)) {
+          // Solving rotates the chain: a target inside it (or hanging from it) would chase itself.
+          c.error(at(p, "target"), "ANIM_IK_TARGET", "IK 대상은 사슬의 본이나 그 자손일 수 없습니다: " + info[i].target);
+          ok = false;
+          break;
+        }
+    const double mix = number(c, k, p, "mix", 1);
+    if (mix < 0 || mix > 1) c.error(at(p, "mix"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
+    for (const char* flag : {"bendPositive", "stretch"})
+      if (k.contains(flag) && !k.at(flag).is_boolean()) c.error(at(p, flag), "ANIM_STRUCTURE", std::string(flag) + "는 true 또는 false입니다.");
+    if (k.contains("stretch") && k.at("stretch") == true) c.warn(at(p, "stretch"), "ANIM_IK_STRETCH", "늘이기(stretch)는 아직 지원하지 않아 무시됩니다.");
+    if (k.contains("order") && (!k.at("order").is_number_integer() || std::llabs(k.at("order").get<int64_t>()) > 1000))
+      c.error(at(p, "order"), "ANIM_STRUCTURE", "IK 순서(order)는 -1000..1000 정수입니다.");
+    else info[i].order = k.value("order", int64_t(0));
+    info[i].ok = ok;
+  }
+  // dep[b] = constraints that move b's target or chain base (b must be solved after them).
+  const size_t n = list.size();
+  std::vector<std::vector<size_t>> dep(n);
+  for (size_t b = 0; b < n; b++)
+    for (size_t a = 0; a < n; a++) {
+      if (a == b || !info[a].ok || !info[b].ok) continue;
+      bool moves = false;
+      for (const auto& bone : info[a].chain) moves = moves || under(info[b].target, bone) || under(info[b].chain[0], bone);
+      if (moves) dep[b].push_back(a);
+    }
+  std::vector<int> state(n, 0);  // 0 new, 1 on the stack, 2 done
+  std::set<size_t> cyclic;
+  std::vector<size_t> stack;
+  std::function<void(size_t)> visit = [&](size_t v) {
+    state[v] = 1;
+    stack.push_back(v);
+    for (size_t w : dep[v]) {
+      if (state[w] == 1) cyclic.insert(std::find(stack.begin(), stack.end(), w), stack.end());
+      else if (state[w] == 0) visit(w);
+    }
+    stack.pop_back();
+    state[v] = 2;
+  };
+  for (size_t v = 0; v < n; v++) if (state[v] == 0) visit(v);
+  for (size_t v : cyclic) c.error(at("/ik", v), "ANIM_IK_CYCLE", "IK 제약끼리 서로의 대상·사슬을 움직여 순환합니다: " + text(list[v], "id"));
+  auto solvedBefore = [&](size_t a, size_t b) { return info[a].order < info[b].order || (info[a].order == info[b].order && a < b); };
+  for (size_t b = 0; b < n; b++)
+    for (size_t a : dep[b])
+      if (!cyclic.count(b) && solvedBefore(b, a))
+        c.warn(at(at("/ik", b), "order"), "ANIM_IK_ORDER", "IK 「" + text(list[a], "id") + "」가 이 제약의 대상·사슬을 움직입니다. 「" + text(list[b], "id") + "」의 order를 더 크게 하세요.");
+  return ids;
 }
 }  // namespace
 
@@ -69,12 +268,14 @@ const char* propertyName(Property p) {
   switch (p) {
     case Property::X: return "x"; case Property::Y: return "y"; case Property::Rotation: return "rotation";
     case Property::ScaleX: return "scaleX"; case Property::ScaleY: return "scaleY";
-    case Property::Alpha: return "alpha"; case Property::Attachment: return "attachment";
+    case Property::Alpha: return "alpha"; case Property::Attachment: return "attachment"; case Property::Expression: return "expression";
+    case Property::Mix: return "mix"; case Property::BendPositive: return "bendPositive"; case Property::Deform: return "deform";
   }
   return "";
 }
 std::optional<Property> parseProperty(const std::string& n) {
-  for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment})
+  for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment, Property::Expression,
+                 Property::Mix, Property::BendPositive, Property::Deform})
     if (n == propertyName(p)) return p;
   return std::nullopt;
 }
@@ -82,7 +283,12 @@ std::optional<Property> parseProperty(const std::string& n) {
 int Rig::boneIndex(const std::string& id) const { for (size_t i = 0; i < bones.size(); i++) if (bones[i].id == id) return int(i); return -1; }
 int Rig::slotIndex(const std::string& id) const { for (size_t i = 0; i < slots.size(); i++) if (slots[i].id == id) return int(i); return -1; }
 int Rig::clipIndex(const std::string& id) const { for (size_t i = 0; i < clips.size(); i++) if (clips[i].id == id) return int(i); return -1; }
-const Attachment* Rig::attachment(const std::string& slot, const std::string& name) const {
+int Rig::skinIndex(const std::string& id) const { for (size_t i = 0; i < skins.size(); i++) if (skins[i].id == id) return int(i); return -1; }
+int Rig::expressionIndex(const std::string& id) const { for (size_t i = 0; i < expressions.size(); i++) if (expressions[i].id == id) return int(i); return -1; }
+int Rig::ikIndex(const std::string& id) const { for (size_t i = 0; i < ik.size(); i++) if (ik[i].id == id) return int(i); return -1; }
+const Attachment* Rig::attachment(const std::string& slot, const std::string& name, int skin) const {
+  if (skin >= 0 && skin < int(skins.size()))
+    for (const auto& a : skins[size_t(skin)].attachments) if (a.slot == slot && a.name == name) return &a;
   for (const auto& a : attachments) if (a.slot == slot && a.name == name) return &a;
   return nullptr;
 }
@@ -125,6 +331,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     }
   }
 
+  const std::set<std::string> ikIds = checkIk(c, data, parentOf);
+
   // Slots and attachments.
   const auto& slots = arrayOr(data, "slots");
   std::set<std::string> slotIds;
@@ -136,22 +344,78 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     const double alpha = number(c, slots[i], p, "alpha", 1);
     if (alpha < 0 || alpha > 1) c.error(at(p, "alpha"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
   }
-  const auto& attachments = arrayOr(data, "attachments");
-  std::set<std::pair<std::string, std::string>> attachmentIds;
-  for (size_t i = 0; i < attachments.size(); i++) {
-    const std::string p = at("/attachments", i), slot = text(attachments[i], "slot"), name = text(attachments[i], "name");
+  using SlotName = std::pair<std::string, std::string>;
+  std::map<SlotName, std::set<size_t>> meshCounts;  // vertex counts of the usable meshes named (slot, name), any list
+  // One attachment entry (default list or a skin's list); `seen` holds the list's (slot, name) pairs.
+  auto checkAttachment = [&](const Json& a, const std::string& p, std::set<SlotName>& seen) {
+    if (const size_t n = checkMesh(c, a, p, parentOf)) meshCounts[{text(a, "slot"), text(a, "name")}].insert(n);
+    const std::string slot = text(a, "slot"), name = text(a, "name");
     if (!slotIds.count(slot)) c.error(at(p, "slot"), "ANIM_SLOT_MISSING", "첨부가 없는 슬롯을 참조합니다: " + slot);
     if (name.empty()) c.error(at(p, "name"), "ANIM_ID_MISSING", "첨부 이름이 필요합니다.");
-    else if (!attachmentIds.insert({slot, name}).second) c.error(at(p, "name"), "ANIM_DUP_ID", "같은 슬롯에 중복된 첨부 이름: " + name);
-    if (text(attachments[i], "imageAssetId").empty()) c.error(at(p, "imageAssetId"), "ANIM_IMAGE_MISSING", "첨부에 이미지가 지정되지 않았습니다.");
-    checkTransform(c, attachments[i], p);
-    for (const char* k : {"pivotX", "pivotY"}) number(c, attachments[i], p, k, 0.5);
-    for (const char* k : {"width", "height"}) if (number(c, attachments[i], p, k, 0) <= 0) c.error(at(p, k), "ANIM_IMAGE_SIZE", "이미지 크기는 0보다 커야 합니다.");
+    else if (!seen.insert({slot, name}).second) c.error(at(p, "name"), "ANIM_DUP_ID", "같은 슬롯에 중복된 첨부 이름: " + name);
+    if (text(a, "imageAssetId").empty()) c.error(at(p, "imageAssetId"), "ANIM_IMAGE_MISSING", "첨부에 이미지가 지정되지 않았습니다.");
+    checkTransform(c, a, p);
+    for (const char* k : {"pivotX", "pivotY"}) number(c, a, p, k, 0.5);
+    for (const char* k : {"width", "height"}) if (number(c, a, p, k, 0) <= 0) c.error(at(p, k), "ANIM_IMAGE_SIZE", "이미지 크기는 0보다 커야 합니다.");
+  };
+  const auto& attachments = arrayOr(data, "attachments");
+  std::set<SlotName> attachmentIds;
+  for (size_t i = 0; i < attachments.size(); i++) checkAttachment(attachments[i], at("/attachments", i), attachmentIds);
+
+  // Skins (plugin 1.2.0): per-skin attachment lists keyed like the default list.
+  const auto& skins = arrayOr(data, "skins");
+  std::set<std::string> skinIds;
+  std::vector<std::set<SlotName>> skinNames(skins.size());
+  std::set<SlotName> anySkin;  // (slot, name) provided by at least one skin
+  for (size_t i = 0; i < skins.size(); i++) {
+    const std::string p = at("/skins", i), id = text(skins[i], "id");
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "스킨 ID가 필요합니다.");
+    else if (!skinIds.insert(id).second) c.error(at(p, "id"), "ANIM_DUP_ID", "중복된 스킨 ID: " + id);
+    const auto& list = arrayOr(skins[i], "attachments");
+    for (size_t k = 0; k < list.size(); k++) checkAttachment(list[k], at(at(p, "attachments"), k), skinNames[i]);
+    anySkin.insert(skinNames[i].begin(), skinNames[i].end());
   }
+  // A name is usable when the default list or any skin provides it (an outfit-only part).
+  auto knownName = [&](const std::string& slot, const std::string& name) { return attachmentIds.count({slot, name}) || anySkin.count({slot, name}); };
+  std::set<SlotName> referenced;  // names that setup/keys/expressions show: every skin should resolve them
   for (size_t i = 0; i < slots.size(); i++) {
     if (!slots[i].contains("attachment") || !slots[i].at("attachment").is_string()) continue;
     const auto name = slots[i].at("attachment").get<std::string>();
-    if (!attachmentIds.count({text(slots[i], "id"), name})) c.error(at(at("/slots", i), "attachment"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯 기본 첨부가 없습니다: " + name);
+    if (!knownName(text(slots[i], "id"), name)) c.error(at(at("/slots", i), "attachment"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯 기본 첨부가 없습니다: " + name);
+    else referenced.insert({text(slots[i], "id"), name});
+  }
+
+  // Expressions (plugin 1.2.0): {id, name, slots: {slot: name|null}, bones: {bone: {channel: value}}}.
+  const auto& expressions = arrayOr(data, "expressions");
+  std::set<std::string> expressionIds;
+  for (size_t i = 0; i < expressions.size(); i++) {
+    const auto& e = expressions[i];
+    const std::string p = at("/expressions", i), id = text(e, "id");
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "표정 ID가 필요합니다.");
+    else if (!expressionIds.insert(id).second) c.error(at(p, "id"), "ANIM_DUP_ID", "중복된 표정 ID: " + id);
+    if (e.is_object() && e.contains("slots") && e.at("slots").is_object())
+      for (auto it = e.at("slots").begin(); it != e.at("slots").end(); ++it) {
+        const std::string sp = at(at(p, "slots"), it.key());
+        if (!slotIds.count(it.key())) { c.error(sp, "ANIM_SLOT_MISSING", "표정이 없는 슬롯을 참조합니다: " + it.key()); continue; }
+        if (it.value().is_null()) continue;
+        if (!it.value().is_string()) c.error(sp, "ANIM_KEY_VALUE", "표정의 슬롯 값은 첨부 이름 또는 null입니다.");
+        else if (!knownName(it.key(), it.value().get<std::string>())) c.error(sp, "ANIM_ATTACHMENT_UNKNOWN", "슬롯에 없는 첨부를 가리킵니다: " + it.value().get<std::string>());
+        else referenced.insert({it.key(), it.value().get<std::string>()});
+      }
+    else if (e.is_object() && e.contains("slots")) c.error(at(p, "slots"), "ANIM_STRUCTURE", "표정 slots는 객체입니다.");
+    if (e.is_object() && e.contains("bones") && e.at("bones").is_object())
+      for (auto it = e.at("bones").begin(); it != e.at("bones").end(); ++it) {
+        const std::string bp = at(at(p, "bones"), it.key());
+        if (!parentOf.count(it.key())) { c.error(bp, "ANIM_BONE_MISSING", "표정이 없는 본을 참조합니다: " + it.key()); continue; }
+        if (!it.value().is_object()) { c.error(bp, "ANIM_STRUCTURE", "표정의 본 값은 {rotation, x, y, scaleX, scaleY} 객체입니다."); continue; }
+        for (auto ch = it.value().begin(); ch != it.value().end(); ++ch) {
+          const auto prop = parseProperty(ch.key());
+          if (!prop || (*prop != Property::X && *prop != Property::Y && *prop != Property::Rotation && *prop != Property::ScaleX && *prop != Property::ScaleY))
+            c.error(at(bp, ch.key()), "ANIM_PROPERTY", "표정의 본 속성은 x, y, rotation, scaleX, scaleY입니다: " + ch.key());
+          else if (!finiteNumber(ch.value())) c.error(at(bp, ch.key()), "ANIM_NONFINITE", ch.key() + " 값은 유한한 숫자여야 합니다.");
+        }
+      }
+    else if (e.is_object() && e.contains("bones")) c.error(at(p, "bones"), "ANIM_STRUCTURE", "표정 bones는 객체입니다.");
   }
 
   // Clips.
@@ -172,14 +436,35 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       const auto& track = tracks[ti];
       const std::string tp = at(at(p, "tracks"), ti), target = text(track, "target"), propertyText = text(track, "property");
       const auto property = parseProperty(propertyText);
-      const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0;
-      const std::string targetId = target.size() > 5 ? target.substr(5) : "";
+      const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0, isRig = target == "rig", isIk = target.rfind("ik:", 0) == 0;
+      const std::string targetId = isIk ? target.substr(3) : target.size() > 5 ? target.substr(5) : "";
       if (!property) { c.error(at(tp, "property"), "ANIM_PROPERTY", "알 수 없는 트랙 속성: " + propertyText); continue; }
-      const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment;
-      if ((!isBone && !isSlot) || (isBone && !parentOf.count(targetId)) || (isSlot && !slotIds.count(targetId)))
+      const bool deform = *property == Property::Deform;
+      const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment || deform;
+      const bool ikProperty = *property == Property::Mix || *property == Property::BendPositive;
+      if (isRig != (*property == Property::Expression))
+        c.error(at(tp, "property"), "ANIM_PROPERTY", isRig ? "rig 트랙의 속성은 expression뿐입니다." : "expression 속성은 rig 트랙에만 씁니다.");
+      else if (isRig) {}
+      else if (isIk != ikProperty)
+        c.error(at(tp, "property"), "ANIM_PROPERTY", isIk ? "IK 트랙의 속성은 mix, bendPositive입니다." : "mix·bendPositive 속성은 IK 트랙(ik:<id>)에만 씁니다.");
+      else if (isIk) { if (!ikIds.count(targetId)) c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙이 없는 IK 제약을 가리킵니다: " + target); }
+      else if ((!isBone && !isSlot) || (isBone && !parentOf.count(targetId)) || (isSlot && !slotIds.count(targetId)))
         c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙 대상이 없습니다: " + target);
       else if (isBone == slotProperty) c.error(at(tp, "property"), "ANIM_PROPERTY", "대상 종류에 맞지 않는 속성입니다: " + propertyText);
-      if (!targets.insert(target + "#" + propertyText).second) c.error(tp, "ANIM_DUP_TRACK", "같은 대상·속성 트랙이 중복됩니다.");
+      // Deform tracks (plugin 1.4.0) key one mesh attachment of the slot by name: offsets must fit
+      // the vertex count of the meshes with that name (any list; others with another count ignore them).
+      const std::string deformName = deform ? text(track, "attachment") : "";
+      const std::set<size_t>* deformCounts = nullptr;
+      if (deform && isSlot) {
+        auto found = meshCounts.find({targetId, deformName});
+        if (deformName.empty()) c.error(at(tp, "attachment"), "ANIM_MESH_DEFORM", "변형(deform) 트랙에는 메시 첨부 이름(attachment)이 필요합니다.");
+        else if (found == meshCounts.end()) c.error(at(tp, "attachment"), "ANIM_MESH_DEFORM", "변형 트랙이 메시가 아닌(또는 없는) 첨부를 가리킵니다: " + targetId + "/" + deformName);
+        else {
+          deformCounts = &found->second;
+          if (deformCounts->size() > 1) c.warn(at(tp, "attachment"), "ANIM_MESH_DEFORM_SKIN", "같은 이름의 메시들의 정점 수가 달라, 키와 정점 수가 맞는 메시에만 변형이 적용됩니다: " + deformName);
+        }
+      } else if (track.contains("attachment")) c.warn(at(tp, "attachment"), "ANIM_MESH_UNUSED", "attachment는 변형(deform) 트랙에만 씁니다.");
+      if (!targets.insert(target + "#" + propertyText + (deform ? "#" + deformName : "")).second) c.error(tp, "ANIM_DUP_TRACK", "같은 대상·속성 트랙이 중복됩니다.");
       const auto& keys = arrayOr(track, "keys");
       if (keys.empty()) c.warn(at(tp, "keys"), "ANIM_EMPTY_TRACK", "키가 없는 트랙입니다.");
       int64_t previous = -1;
@@ -192,13 +477,32 @@ std::vector<Diagnostic> validateRig(const Json& data) {
         if (t <= previous) c.error(at(kp, "timeMs"), "ANIM_KEY_UNSORTED", "키는 시간순으로 중복 없이 정렬되어야 합니다.");
         previous = t;
         const std::string interp = text(key, "interp");
-        if (!interp.empty() && interp != "step" && interp != "linear") c.error(at(kp, "interp"), "ANIM_INTERP", "보간은 step 또는 linear입니다.");
-        if (*property == Property::Attachment) {
+        if (!interp.empty() && interp != "step" && interp != "linear" && interp != "bezier") c.error(at(kp, "interp"), "ANIM_INTERP", "보간은 step, linear, bezier 중 하나입니다.");
+        else if (interp == "bezier" && (*property == Property::Attachment || *property == Property::Expression || *property == Property::BendPositive))
+          c.error(at(kp, "interp"), "ANIM_INTERP", "첨부·표정·IK 굽힘 키는 항상 계단(step) 전환입니다.");
+        if (interp == "bezier") checkCurve(c, key, kp);
+        else if (key.contains("curve")) c.warn(at(kp, "curve"), "ANIM_CURVE_UNUSED", "bezier가 아닌 키의 curve는 쓰이지 않습니다.");
+        if (deform) {
+          const Json offsets = key.contains("offsets") ? key.at("offsets") : Json();
+          bool finite = offsets.is_array();
+          for (size_t i = 0; finite && i < offsets.size(); i++) finite = finiteNumber(offsets[i]);
+          if (!finite) c.error(at(kp, "offsets"), "ANIM_MESH_DEFORM", "변형 키에는 offsets(정점마다 dx, dy 숫자)가 필요합니다.");
+          else if (deformCounts && (offsets.size() % 2 || !deformCounts->count(offsets.size() / 2)))
+            c.error(at(kp, "offsets"), "ANIM_MESH_DEFORM", "변형 키의 offsets 개수가 메시 정점 수 × 2와 다릅니다: " + std::to_string(offsets.size()));
+        } else if (*property == Property::BendPositive) {
+          if (!key.contains("value") || !key.at("value").is_boolean()) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "IK 굽힘 키 값은 true 또는 false입니다.");
+        } else if (*property == Property::Expression) {
+          if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "표정 키 값은 표정 ID 또는 null입니다.");
+          else if (key.at("value").is_string() && !expressionIds.count(key.at("value").get<std::string>()))
+            c.error(at(kp, "value"), "ANIM_EXPRESSION_UNKNOWN", "없는 표정을 가리킵니다: " + key.at("value").get<std::string>());
+        } else if (*property == Property::Attachment) {
           if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "첨부 키 값은 이름 또는 null입니다.");
-          else if (key.at("value").is_string() && !attachmentIds.count({targetId, key.at("value").get<std::string>()}))
+          else if (key.at("value").is_string() && !knownName(targetId, key.at("value").get<std::string>()))
             c.error(at(kp, "value"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯에 없는 첨부를 가리킵니다: " + key.at("value").get<std::string>());
+          else if (key.at("value").is_string()) referenced.insert({targetId, key.at("value").get<std::string>()});
         } else if (!key.contains("value") || !finiteNumber(key.at("value"))) c.error(at(kp, "value"), "ANIM_NONFINITE", "키 값은 유한한 숫자여야 합니다.");
         else if (*property == Property::Alpha && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp, "value"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
+        else if (*property == Property::Mix && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp, "value"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
       }
     }
     const auto& events = arrayOr(clip, "events");
@@ -209,6 +513,12 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       if (text(events[ei], "name").empty()) c.error(at(ep, "name"), "ANIM_ID_MISSING", "이벤트 이름이 필요합니다.");
     }
   }
+  // A skin that cannot resolve a shown name (neither it nor the default list has it) draws
+  // nothing there while active: allowed (a deliberately bare part), but worth a warning.
+  for (size_t i = 0; i < skins.size(); i++)
+    for (const auto& [slot, name] : referenced)
+      if (!attachmentIds.count({slot, name}) && !skinNames[i].count({slot, name}))
+        c.warn(at("/skins", i), "ANIM_SKIN_MISSING_ATTACHMENT", "스킨 「" + text(skins[i], "id") + "」에 쓰이는 첨부가 없습니다(그 자리는 비어 보입니다): " + slot + "/" + name);
   if (data.contains("mix") && data.at("mix").is_object()) {
     const auto& mix = data.at("mix");
     if (mix.contains("defaultMs") && (!mix.at("defaultMs").is_number_integer() || mix.at("defaultMs").get<int64_t>() < 0 || mix.at("defaultMs").get<int64_t>() > 10000))
@@ -251,23 +561,112 @@ Rig parseRig(const std::string& id, const Json& data) {
     slot.boneIndex = rig.boneIndex(slot.bone);
     rig.slots.push_back(slot);
   }
-  for (const auto& a : arrayOr(data, "attachments")) {
+  // Bind pose of weighted meshes: forward kinematics of the setup transforms (no IK, no expression).
+  std::vector<Affine> setupWorld(rig.bones.size());
+  for (int i : rig.evalOrder) {
+    const auto& t = rig.bones[size_t(i)].setup;
+    const Affine local = Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+    const int p = rig.bones[size_t(i)].parentIndex;
+    setupWorld[size_t(i)] = p < 0 ? local : setupWorld[size_t(p)] * local;
+  }
+  auto readAttachment = [&](const Json& a) {
     Attachment att; att.slot = a.at("slot"); att.name = a.at("name"); att.imageAssetId = a.at("imageAssetId");
     att.offset = readTransform(a); att.pivotX = a.value("pivotX", 0.5); att.pivotY = a.value("pivotY", 0.5);
     att.width = a.at("width"); att.height = a.at("height");
-    rig.attachments.push_back(att);
+    if (a.value("type", std::string()) != "mesh") return att;
+    att.mesh = true;
+    for (const auto& v : a.at("vertices")) att.vertices.push_back(v.get<double>());
+    for (const auto& v : a.at("uvs")) att.uvs.push_back(v.get<double>());
+    for (const auto& v : a.at("triangles")) att.triangles.push_back(v.get<int>());
+    if (!a.contains("weights")) return att;
+    const int slot = rig.slotIndex(att.slot);
+    const int slotBone = slot >= 0 ? rig.slots[size_t(slot)].boneIndex : -1;
+    const Affine placed = (slotBone >= 0 ? setupWorld[size_t(slotBone)] : Affine{}) * Affine::compose(att.offset.x, att.offset.y, att.offset.rotation, att.offset.scaleX, att.offset.scaleY) *
+                          Affine::compose(-att.pivotX * att.width, -att.pivotY * att.height, 0, 1, 1);
+    std::map<int, int> bindOf;  // bone index -> index in att.binds
+    for (const auto& list : a.at("weights")) {
+      std::vector<Influence> influences;
+      double sum = 0;
+      for (const auto& w : list) {
+        const int bone = rig.boneIndex(w.at("bone").get<std::string>());
+        const auto inverse = setupWorld[size_t(bone)].inverse();
+        // A zero-scale setup bone cannot be bound (ANIM_SCALE_ZERO warns); it simply gets no share.
+        if (!inverse || !(w.at("weight").get<double>() > 0)) continue;
+        if (!bindOf.count(bone)) { bindOf[bone] = int(att.binds.size()); att.binds.push_back({bone, *inverse * placed}); }
+        influences.push_back({bindOf[bone], w.at("weight").get<double>()});
+        sum += influences.back().weight;
+      }
+      for (auto& x : influences) x.weight /= sum;  // ANIM_MESH_WEIGHT_SUM: normalized here
+      att.weights.push_back(influences);
+    }
+    return att;
+  };
+  for (const auto& a : arrayOr(data, "attachments")) rig.attachments.push_back(readAttachment(a));
+  for (const auto& s : arrayOr(data, "skins")) {
+    Skin skin; skin.id = s.at("id"); skin.name = s.value("name", skin.id);
+    for (const auto& a : arrayOr(s, "attachments")) skin.attachments.push_back(readAttachment(a));
+    rig.skins.push_back(skin);
   }
+  for (const auto& e : arrayOr(data, "expressions")) {
+    Expression x; x.id = e.at("id"); x.name = e.value("name", x.id);
+    if (e.contains("slots") && e.at("slots").is_object())
+      for (auto it = e.at("slots").begin(); it != e.at("slots").end(); ++it)
+        x.slots.push_back({rig.slotIndex(it.key()), it.value().is_string() ? std::optional<std::string>(it.value().get<std::string>()) : std::nullopt});
+    if (e.contains("bones") && e.at("bones").is_object())
+      for (auto it = e.at("bones").begin(); it != e.at("bones").end(); ++it) {
+        BoneOverride o; o.bone = rig.boneIndex(it.key());
+        auto get = [&](const char* k) { return it.value().contains(k) ? std::optional<double>(it.value().at(k).get<double>()) : std::nullopt; };
+        o.x = get("x"); o.y = get("y"); o.rotation = get("rotation"); o.scaleX = get("scaleX"); o.scaleY = get("scaleY");
+        x.bones.push_back(o);
+      }
+    rig.expressions.push_back(x);
+  }
+  for (const auto& k : arrayOr(data, "ik")) {
+    IkConstraint x; x.id = k.at("id"); x.name = k.value("name", x.id);
+    for (const auto& b : k.at("bones")) x.bones.push_back(rig.boneIndex(b.get<std::string>()));
+    x.target = rig.boneIndex(k.at("target").get<std::string>());
+    x.mix = k.value("mix", 1.0); x.bendPositive = k.value("bendPositive", true); x.stretch = k.value("stretch", false); x.order = k.value("order", 0);
+    // The effector of a two-bone chain: the explicit `tip` (plugin 1.4.0), else the first child
+    // (array order) of its end bone.
+    x.explicitTip = k.contains("tip");
+    if (x.explicitTip) x.tip = rig.boneIndex(k.at("tip").get<std::string>());
+    else if (x.bones.size() == 2)
+      for (size_t i = 0; i < rig.bones.size() && x.tip < 0; i++) if (rig.bones[i].parentIndex == x.bones[1]) x.tip = int(i);
+    std::vector<char> inside(rig.bones.size(), 0);
+    for (int i : rig.evalOrder) {
+      const int p = rig.bones[size_t(i)].parentIndex;
+      inside[size_t(i)] = i == x.bones[0] || (p >= 0 && inside[size_t(p)]);
+      if (inside[size_t(i)]) x.affected.push_back(i);
+    }
+    rig.ik.push_back(x);
+  }
+  for (size_t i = 0; i < rig.ik.size(); i++) rig.ikOrder.push_back(int(i));
+  std::stable_sort(rig.ikOrder.begin(), rig.ikOrder.end(), [&](int a, int b) { return rig.ik[size_t(a)].order < rig.ik[size_t(b)].order; });
   for (const auto& c : arrayOr(data, "clips")) {
     Clip clip; clip.id = c.at("id"); clip.name = c.value("name", clip.id); clip.durationMs = c.at("durationMs"); clip.loop = c.value("loop", true);
     for (const auto& t : arrayOr(c, "tracks")) {
       Track track; const std::string target = t.at("target");
-      track.bone = target.rfind("bone:", 0) == 0; track.target = target.substr(5);
-      track.targetIndex = track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
+      track.rig = target == "rig";
+      track.ik = target.rfind("ik:", 0) == 0;
+      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(track.ik ? 3 : 5);
+      track.targetIndex = track.rig ? -1 : track.ik ? rig.ikIndex(track.target) : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
       track.property = *parseProperty(t.at("property"));
+      if (track.property == Property::Deform) track.attachment = t.at("attachment").get<std::string>();
       for (const auto& k : arrayOr(t, "keys")) {
         Key key; key.timeMs = k.at("timeMs");
-        if (track.property == Property::Attachment) { key.interp = Interp::Step; if (k.at("value").is_string()) key.name = k.at("value").get<std::string>(); }
-        else { key.value = k.at("value"); key.interp = k.value("interp", std::string("linear")) == "step" ? Interp::Step : Interp::Linear; }
+        if (track.property == Property::Deform) {
+          for (const auto& v : k.at("offsets")) key.offsets.push_back(v.get<double>());
+          const std::string interp = text(k, "interp");
+          key.interp = interp == "step" ? Interp::Step : interp == "bezier" ? Interp::Bezier : Interp::Linear;
+          if (key.interp == Interp::Bezier) for (size_t i = 0; i < 4; i++) key.curve[i] = k.at("curve")[i].get<double>();
+        } else if (track.property == Property::Attachment || track.property == Property::Expression) { key.interp = Interp::Step; if (k.at("value").is_string()) key.name = k.at("value").get<std::string>(); }
+        else if (track.property == Property::BendPositive) { key.interp = Interp::Step; key.value = k.at("value").get<bool>() ? 1 : 0; }
+        else {
+          key.value = k.at("value");
+          const std::string interp = text(k, "interp");
+          key.interp = interp == "step" ? Interp::Step : interp == "bezier" ? Interp::Bezier : Interp::Linear;
+          if (key.interp == Interp::Bezier) for (size_t i = 0; i < 4; i++) key.curve[i] = k.at("curve")[i].get<double>();
+        }
         track.keys.push_back(key);
       }
       clip.tracks.push_back(track);

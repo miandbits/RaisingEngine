@@ -1,6 +1,7 @@
 // Shared fixtures for tests/plugins/host-*.test.mjs (temp dirs under .cache/anim-tests).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,8 @@ export const temp = async prefix => { await mkdir(cache, { recursive: true }); r
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export const readJson = async file => JSON.parse(await readFile(file, 'utf8'));
 export const serialize = data => JSON.stringify(data, null, 2) + '\n';
+/** Version of the real cutout plugin (plugin.json): projects pin exact versions, so tests pin this one. */
+export const CUTOUT_VERSION = JSON.parse(readFileSync(path.join(engineRoot, 'plugins/cutout-animation/plugin.json'), 'utf8')).version;
 
 let cutout;
 /** The real cutout package, built once per process from dist/cutout artifacts. */
@@ -63,7 +66,7 @@ export const rigData = (overrides = {}) => ({
 });
 export const controllerData = (overrides = {}) => ({ schemaVersion: 1, rig: 'hero', defaultClip: 'idle', layers: [], bindings: [], ...overrides });
 export const envelope = (type, id, data) => ({ formatVersion: '0.1.0', plugin: 'cutout-animation', type, id, data });
-export const lock = (plugins = [{ id: 'cutout-animation', version: '1.0.0', enabled: true }]) => ({ formatVersion: '0.1.0', plugins });
+export const lock = (plugins = [{ id: 'cutout-animation', version: CUTOUT_VERSION, enabled: true }]) => ({ formatVersion: '0.1.0', plugins });
 
 /** Write lock + hero rig/controller + PNG asset into a project on disk. */
 export async function addCutout(root, { lockData = lock(), rig = rigData(), controller = controllerData(), image = png(40, 60) } = {}) {

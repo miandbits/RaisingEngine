@@ -73,6 +73,188 @@ Json controllerData() {
   })");
 }
 std::shared_ptr<const Rig> rig() { return std::make_shared<const Rig>(parseRig("hero", rigData())); }
+/** rigData() + a one-shot clip whose tracks use every bezier flavour (also the Wasm parity fixture). */
+Json bezierRig() {
+  Json d = rigData();
+  d["clips"].push_back(Json::parse(R"({"id": "ease", "durationMs": 1000, "loop": false, "tracks": [
+    {"target": "bone:body", "property": "y", "keys": [
+      {"timeMs": 0, "value": -100, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 600, "value": -112, "interp": "bezier", "curve": [0, 0, 0.58, 1]}, {"timeMs": 1000, "value": -100}]},
+    {"target": "bone:head", "property": "rotation", "keys": [
+      {"timeMs": 0, "value": 0, "interp": "bezier", "curve": [0.34, 1.56, 0.64, 1]}, {"timeMs": 400, "value": 20, "interp": "step"}, {"timeMs": 700, "value": 5}, {"timeMs": 1000, "value": -10}]},
+    {"target": "bone:body", "property": "scaleY", "keys": [
+      {"timeMs": 0, "value": 1, "interp": "bezier", "curve": [0.3333333333333333, 0, 0.6666666666666666, 1]}, {"timeMs": 1000, "value": 1.2}]},
+    {"target": "slot:face", "property": "alpha", "keys": [
+      {"timeMs": 100, "value": 1, "interp": "bezier", "curve": [0.9, -0.4, 0.1, 1.4]}, {"timeMs": 900, "value": 0.5}]}
+  ]})"));
+  return d;
+}
+/** rigData() + skins (outfits) + expressions + a clip keying the rig expression track (plugin 1.2.0). */
+Json lookRig() {
+  Json d = rigData();
+  d["skins"] = Json::parse(R"([
+    {"id": "winter", "name": "겨울", "attachments": [
+      {"slot": "torso", "name": "torso", "imageAssetId": "img-torso-winter", "width": 90, "height": 130, "pivotX": 0.5, "pivotY": 1},
+      {"slot": "eyes", "name": "closed", "imageAssetId": "img-eyes-closed-winter", "width": 40, "height": 10}]},
+    {"id": "summer", "attachments": [
+      {"slot": "torso", "name": "torso", "imageAssetId": "img-torso-summer", "width": 70, "height": 110, "pivotX": 0.5, "pivotY": 1, "x": 2}]}
+  ])");
+  d["expressions"] = Json::parse(R"([
+    {"id": "happy", "name": "기쁨", "slots": {"eyes": "closed"}, "bones": {"head": {"rotation": 10}}},
+    {"id": "surprised", "slots": {"eyes": "open", "face": null}, "bones": {"head": {"y": -90, "scaleY": 1.1}}}
+  ])");
+  d["clips"].push_back(Json::parse(R"({"id": "talk-face", "durationMs": 1000, "loop": false, "tracks": [
+    {"target": "rig", "property": "expression", "keys": [{"timeMs": 0, "value": "happy"}, {"timeMs": 500, "value": null}]},
+    {"target": "bone:body", "property": "x", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 1000, "value": 10}]}
+  ]})"));
+  return d;
+}
+Json lookController() {
+  Json c = controllerData();
+  c["defaultSkin"] = "winter";
+  c["bindings"].push_back(Json::parse(R"({"id": "face-happy", "signal": "portraitChanged", "match": {"portraitId": "happy"}, "expression": "happy"})"));
+  c["bindings"].push_back(Json::parse(R"({"id": "face-clear", "signal": "portraitChanged", "match": {"portraitId": "none"}, "expression": null})"));
+  c["bindings"].push_back(Json::parse(R"({"id": "dress-summer", "signal": "phaseChanged", "match": {"phase": "summer"}, "skin": "summer"})"));
+  return c;
+}
+/** Host op script for the native/Wasm look parity check (tests/plugins/cutout-look-parity.test.mjs). */
+Json lookScript() {
+  Json c = lookController();
+  c.erase("defaultSkin");
+  c["defaultExpression"] = "surprised";
+  const Json element = {{"type", "character"}, {"ref", "hero-main"}, {"width", 300}, {"height", 450}, {"props", {{"skin", "winter"}, {"scale", 1}}}};
+  const auto frame = Json{{"op", "frame"}, {"instance", "a"}};
+  return Json::array({
+    {{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "hero"}, {"data", lookRig()}}, {{"type", "controller"}, {"id", "hero-main"}, {"data", c}}})}},
+    {{"op", "mount"}, {"instance", "a"}, {"element", element}}, frame,
+    {{"op", "update"}, {"dtMs", 1850}}, frame,  // blink layer closes the eyes over the expression
+    {{"op", "signal"}, {"instance", "a"}, {"name", "portraitChanged"}, {"params", {{"portraitId", "happy"}}}}, {{"op", "update"}, {"dtMs", 10}}, frame,
+    {{"op", "setSkin"}, {"instance", "a"}, {"skin", "summer"}}, frame,
+    {{"op", "setExpression"}, {"instance", "a"}, {"expression", nullptr}}, frame,
+    {{"op", "play"}, {"instance", "a"}, {"clip", "talk-face"}, {"mixMs", 0}, {"then", "hold"}}, {{"op", "update"}, {"dtMs", 250}}, frame,
+    {{"op", "update"}, {"dtMs", 300}}, frame,
+    {{"op", "setSkin"}, {"instance", "a"}, {"skin", ""}}, frame,
+  });
+}
+/**
+ * Two-bone arm for IK (plugin 1.3.0): root -> upper (shoulder) -> lower (elbow, 50 px) -> hand
+ * (wrist, 50 px); target `t` hangs from the root. `ik` holds one constraint `arm` on [upper, lower].
+ */
+Json armRig(double tx, double ty) {
+  Json d = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 400, "height": 400, "originX": 200, "originY": 200},
+    "bones": [
+      {"id": "root", "parent": null, "x": 0, "y": 0},
+      {"id": "upper", "parent": "root", "x": 0, "y": 0},
+      {"id": "lower", "parent": "upper", "x": 50, "y": 0},
+      {"id": "hand", "parent": "lower", "x": 50, "y": 0},
+      {"id": "t", "parent": "root", "x": 0, "y": 0}],
+    "slots": [{"id": "forearm", "bone": "lower", "attachment": "forearm"}, {"id": "palm", "bone": "hand", "attachment": "palm"}],
+    "attachments": [
+      {"slot": "forearm", "name": "forearm", "imageAssetId": "img-forearm", "width": 50, "height": 10, "pivotX": 0, "pivotY": 0.5},
+      {"slot": "palm", "name": "palm", "imageAssetId": "img-palm", "width": 12, "height": 12}],
+    "clips": [],
+    "ik": [{"id": "arm", "bones": ["upper", "lower"], "target": "t", "mix": 1, "bendPositive": true}]})");
+  d["bones"][4]["x"] = tx; d["bones"][4]["y"] = ty;
+  return d;
+}
+/** armRig under a rotated, scaled root plus a head aiming at the hand target and a clip that moves
+ *  the target and keys mix/bend: the IK parity fixture (tests/plugins/cutout-ik-parity.test.mjs). */
+Json ikParityRig() {
+  Json d = armRig(70, 40);
+  d["bones"][0] = {{"id", "root"}, {"parent", nullptr}, {"x", 200}, {"y", 200}, {"rotation", 15}, {"scaleX", 1.3}, {"scaleY", 1.3}};
+  d["bones"][2]["rotation"] = 25;
+  d["bones"].push_back({{"id", "head"}, {"parent", "root"}, {"x", -20}, {"y", -60}, {"scaleX", -1}});
+  d["ik"].push_back({{"id", "look"}, {"bones", {"head"}}, {"target", "t"}, {"mix", 0.8}, {"order", 1}});
+  d["slots"].push_back({{"id", "face"}, {"bone", "head"}, {"attachment", "face"}});
+  d["attachments"].push_back({{"slot", "face"}, {"name", "face"}, {"imageAssetId", "img-face"}, {"width", 30}, {"height", 20}, {"x", 10}});
+  d["clips"].push_back(Json::parse(R"({"id": "reach", "durationMs": 1000, "loop": true, "tracks": [
+    {"target": "bone:t", "property": "x", "keys": [{"timeMs": 0, "value": 70}, {"timeMs": 500, "value": 160, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 1000, "value": 70}]},
+    {"target": "bone:t", "property": "y", "keys": [{"timeMs": 0, "value": 40}, {"timeMs": 500, "value": -30}, {"timeMs": 1000, "value": 40}]},
+    {"target": "ik:arm", "property": "mix", "keys": [{"timeMs": 0, "value": 1}, {"timeMs": 700, "value": 0.25}, {"timeMs": 1000, "value": 1}]},
+    {"target": "ik:arm", "property": "bendPositive", "keys": [{"timeMs": 0, "value": true}, {"timeMs": 600, "value": false}]}
+  ]})"));
+  return d;
+}
+Json ikParityScript() {
+  const Json controller = {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}};
+  const Json element = {{"type", "character"}, {"ref", "arm-main"}, {"width", 400}, {"height", 400}, {"props", {{"scale", 1}}}};
+  const Json frame = {{"op", "frame"}, {"instance", "a"}};
+  Json script = Json::array({
+    {{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "arm"}, {"data", ikParityRig()}}, {{"type", "controller"}, {"id", "arm-main"}, {"data", controller}}})}},
+    {{"op", "mount"}, {"instance", "a"}, {"element", element}}, frame});
+  for (double dt : {16.0, 125.5, 233.25, 180.0, 60.0, 90.0, 210.0, 333.0}) { script.push_back({{"op", "update"}, {"dtMs", dt}}); script.push_back(frame); }
+  for (double ms : {0.0, 250.0, 650.0, 1000.0}) script.push_back({{"op", "sample"}, {"rig", ikParityRig()}, {"clip", "reach"}, {"timeMs", ms}});
+  return script;
+}
+/**
+ * Arm for meshes (plugin 1.4.0): root (100,150) -> upper -> lower (+100 px) -> hand (+100 px),
+ * target `t` under the root. Slot `arm` (on upper) shows a 200x40 image from the shoulder along
+ * +x (pivot 0, 0.5); slot `flag` (on hand) a 40x30 image standing on the wrist.
+ */
+Json meshArm() {
+  return Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 400, "height": 300, "originX": 200, "originY": 250},
+    "bones": [
+      {"id": "root", "parent": null, "x": 100, "y": 150},
+      {"id": "upper", "parent": "root", "x": 0, "y": 0},
+      {"id": "lower", "parent": "upper", "x": 100, "y": 0},
+      {"id": "hand", "parent": "lower", "x": 100, "y": 0},
+      {"id": "t", "parent": "root", "x": 200, "y": 0}],
+    "slots": [{"id": "arm", "bone": "upper", "attachment": "arm"}, {"id": "flag", "bone": "hand", "attachment": "flag"}],
+    "attachments": [
+      {"slot": "arm", "name": "arm", "imageAssetId": "img-arm", "width": 200, "height": 40, "pivotX": 0, "pivotY": 0.5},
+      {"slot": "flag", "name": "flag", "imageAssetId": "img-flag", "width": 40, "height": 30, "pivotX": 0, "pivotY": 1}],
+    "clips": []})");
+}
+/** meshArm with `arm` a 1x4 grid mesh weighted by image x: upper | 50/50 at the elbow | lower. */
+Json weightedArm() {
+  Json d = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 1}, {"cols", 4}}).data;
+  Json weights = Json::array(), vertices = Json::array();
+  const Json& v = d["attachments"][0]["vertices"];
+  for (size_t i = 0; i < v.size() / 2; i++) {
+    const double x = v[2 * i].get<double>();
+    vertices.push_back(i);
+    weights.push_back(x < 100 ? Json::array({{{"bone", "upper"}, {"weight", 1}}}) : x > 100 ? Json::array({{{"bone", "lower"}, {"weight", 1}}})
+                                                                                          : Json::array({{{"bone", "upper"}, {"weight", 0.5}}, {{"bone", "lower"}, {"weight", 0.5}}}));
+  }
+  return applyEdit(d, {{"op", "setWeights"}, {"slot", "arm"}, {"vertices", vertices}, {"weights", weights}}).data;
+}
+/** The mesh parity fixture (tests/plugins/cutout-mesh-parity.test.mjs): the weighted arm under a
+ *  rotated root with IK on [upper, lower] (tip hand), the flag a deformed grid mesh in a skin too,
+ *  and a looping clip moving the target and keying deform with every interp. */
+Json meshParityRig() {
+  Json d = weightedArm();
+  d = applyEdit(d, {{"op", "convertToMesh"}, {"slot", "flag"}, {"rows", 2}, {"cols", 2}}).data;
+  d["bones"][0]["rotation"] = 12;
+  d["skins"] = Json::array({{{"id", "red"}, {"attachments", Json::array({d["attachments"][1]})}}});
+  d["skins"][0]["attachments"][0]["imageAssetId"] = "img-flag-red";
+  d["ik"] = Json::array({{{"id", "arm"}, {"bones", {"upper", "lower"}}, {"target", "t"}, {"tip", "hand"}, {"bendPositive", false}}});
+  std::vector<double> wave(18, 0.0), tilt(18, 0.0);
+  for (size_t i = 0; i < 9; i++) { wave[2 * i] = double(i % 3) * 4.0; wave[2 * i + 1] = -6.0 * double(i / 3); tilt[2 * i + 1] = 3.0 * double(i % 3); }
+  const Json zero = std::vector<double>(18, 0.0);
+  d["clips"] = Json::array({{{"id", "wave"}, {"durationMs", 1000}, {"loop", true}, {"tracks", Json::array({
+    {{"target", "bone:t"}, {"property", "x"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 200}}, {{"timeMs", 500}, {"value", 120}, {"interp", "bezier"}, {"curve", {0.42, 0, 0.58, 1}}}, {{"timeMs", 1000}, {"value", 200}}})}},
+    {{"target", "bone:t"}, {"property", "y"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 0}}, {{"timeMs", 500}, {"value", -90}}, {{"timeMs", 1000}, {"value", 0}}})}},
+    {{"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"keys", Json::array({
+      {{"timeMs", 0}, {"offsets", zero}, {"interp", "bezier"}, {"curve", {0.42, 0, 0.58, 1}}},
+      {{"timeMs", 400}, {"offsets", wave}, {"interp", "step"}}, {{"timeMs", 700}, {"offsets", tilt}}, {{"timeMs", 1000}, {"offsets", zero}}})}}})}}});
+  return d;
+}
+Json meshParityScript() {
+  const Json controller = {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "wave"}};
+  const Json element = {{"type", "character"}, {"ref", "arm-main"}, {"width", 300}, {"height", 240}, {"props", {{"scale", 1}, {"flipX", true}}}};
+  const Json frame = {{"op", "frame"}, {"instance", "a"}};
+  Json script = Json::array({
+    {{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "arm"}, {"data", meshParityRig()}}, {{"type", "controller"}, {"id", "arm-main"}, {"data", controller}}})}},
+    {{"op", "mount"}, {"instance", "a"}, {"element", element}}, frame});
+  for (double dt : {16.0, 125.5, 233.25, 180.0, 60.0, 90.0, 210.0}) { script.push_back({{"op", "update"}, {"dtMs", dt}}); script.push_back(frame); }
+  script.push_back({{"op", "setSkin"}, {"instance", "a"}, {"skin", "red"}});
+  script.push_back(frame);
+  for (double ms : {0.0, 250.0, 550.0, 850.0}) script.push_back({{"op", "sample"}, {"rig", meshParityRig()}, {"clip", "wave"}, {"timeMs", ms}});
+  return script;
+}
+const std::vector<double>& parityTimes() {
+  static const std::vector<double> t = {0, 1, 33.25, 100, 125, 250, 333.3333, 399.9, 400, 512.5, 600, 650.75, 777.7, 899, 999.99, 1000};
+  return t;
+}
 std::vector<std::string> kinds(const std::vector<Notification>& ns) {
   std::vector<std::string> out;
   for (const auto& n : ns) out.push_back(n.kind + ":" + n.clip + (n.kind == "event" ? ":" + n.name : ""));
@@ -80,7 +262,40 @@ std::vector<std::string> kinds(const std::vector<Notification>& ns) {
 }
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--bezier-parity") {
+    // Native reference samples for tests/plugins/cutout-bezier-parity.test.mjs (Wasm `sample`).
+    Host host;
+    Json samples = Json::array();
+    for (double t : parityTimes())
+      samples.push_back({{"timeMs", t}, {"pose", host.handle({{"op", "sample"}, {"rig", bezierRig()}, {"clip", "ease"}, {"timeMs", t}})["pose"]}});
+    std::cout << Json({{"rig", bezierRig()}, {"clip", "ease"}, {"samples", samples}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--ik-parity") {
+    // Native reference for IK draw lists and sampled poses (replayed through the Wasm runtime).
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : ikParityScript()) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", ikParityScript()}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--mesh-parity") {
+    // Native reference for mesh draw items (skinning after IK, deform keys, skins) and samples.
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : meshParityScript()) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", meshParityScript()}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--look-parity") {
+    // Native reference for skin/expression draw lists (replayed through the Wasm runtime).
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : lookScript()) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", lookScript()}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
   test("valid fixture has no diagnostics", [] {
     const auto ds = validateRig(rigData());
     check(ds.empty(), "fixture rig validates");
@@ -454,8 +669,21 @@ int main() {
   test("templates breathing and blink produce valid clips", [&] {
     Json d = rigData();
     const Json breath = breathingClip(d, "breathing", {{"bone", "body"}, {"property", "scaleY"}, {"amplitude", 0.04}, {"periodMs", 3200}});
-    check(breath["durationMs"] == 3200 && breath["tracks"][0]["keys"].size() == 9, "nine keys over one period");
-    check(near(breath["tracks"][0]["keys"][4]["value"].get<double>(), 1.04) && breath["tracks"][0]["keys"][8]["value"] == 1, "peak at half period, back to base");
+    const Json& bk = breath["tracks"][0]["keys"];
+    check(breath["durationMs"] == 3200 && bk.size() == 3, "three keys over one period (rest, peak, rest)");
+    check(bk[1]["timeMs"] == 1600 && near(bk[1]["value"].get<double>(), 1.04) && bk[2]["value"] == 1, "peak at half period, back to base");
+    check(bk[0]["interp"] == "bezier" && bk[0]["curve"] == Json::array({0.42, 0, 0.58, 1}) && bk[1]["curve"] == bk[0]["curve"], "easeInOut segments");
+    {
+      // Eased keys stay close to the sine the old 9 linear keys approximated.
+      Json withBreath = d; withBreath["clips"].push_back(breath);
+      const Rig br = parseRig("br", withBreath);
+      double worst = 0;
+      for (int t = 0; t <= 3200; t += 100) {
+        const double sine = 1 + 0.04 * (1 - std::cos(2 * 3.14159265358979323846 * t / 3200)) / 2;
+        worst = std::max(worst, std::fabs(samplePose(br, br.clipIndex("breathing"), t).bones[1].scaleY - sine));
+      }
+      check(worst < 0.04 * 0.03, "within 3% of amplitude from a sine");
+    }
     auto r = applyEdit(d, {{"op", "addClip"}, {"clip", breath}});
     const Json blink = blinkClip(r.data, "blink-auto", {{"slot", "eyes"}, {"open", "open"}, {"closed", "closed"}, {"intervalMs", 4000}});
     r = applyEdit(r.data, {{"op", "addClip"}, {"clip", blink}});
@@ -486,6 +714,1117 @@ int main() {
                                  {"controllers", Json::array({{{"id", "c"}, {"data", controllerData()}}})}});
     check(rn["controllers"][0]["data"]["defaultClip"] == "rest", "edit op returns rewritten controllers");
     check(!host.request(Json({{"op", "template"}, {"kind", "wave"}, {"rig", rigData()}, {"clipId", "w"}}).dump()).value("ok", true), "unknown template rejected");
+  });
+
+  // ---- Bezier curves (curve.cpp + key interp "bezier") ----
+  test("bezier evaluation matches analytic curves", [] {
+    // x handles at 1/3 and 2/3 make x(s) = s, so y is the plain cubic: flat = smoothstep.
+    const Curve flat = *presetCurve("flat");
+    bool ok = true;
+    for (int i = 0; i <= 20; i++) { const double u = i / 20.0; ok &= near(evalCurve(flat, u), 3 * u * u - 2 * u * u * u, 1e-12); }
+    check(ok, "flat = 3u^2 - 2u^3");
+    ok = true;
+    for (int i = 0; i <= 20; i++) { const double u = i / 20.0; ok &= near(evalCurve(LINEAR_CURVE, u), u, 1e-12); }
+    check(ok, "linear handles are the identity");
+    // General handles: choose the Bezier parameter s, evaluate at u = x(s), expect y(s).
+    for (const char* name : {"easeIn", "easeOut", "easeInOut", "back"}) {
+      const Curve c = *presetCurve(name);
+      double worst = 0;
+      for (int i = 1; i < 50; i++) { double x, y; curvePoint(c, i / 50.0, x, y); worst = std::max(worst, std::fabs(evalCurve(c, x) - y)); }
+      check(worst < 1e-6, std::string(name) + " solves x(s)=u");
+    }
+    const Curve io = *presetCurve("easeInOut");
+    check(near(evalCurve(io, 0.5), 0.5, 1e-9) && near(evalCurve(io, 0.2) + evalCurve(io, 0.8), 1, 1e-6), "easeInOut is symmetric");
+    check(evalCurve(*presetCurve("easeIn"), 0.25) < 0.2 && evalCurve(*presetCurve("easeOut"), 0.25) > 0.3, "ease in starts slow, ease out starts fast");
+    check(evalCurve(io, 0) == 0 && evalCurve(io, 1) == 1 && evalCurve(io, -3) == 0 && evalCurve(io, 7) == 1, "endpoints exact, outside clamps");
+    double peak = 0;
+    for (int i = 0; i <= 100; i++) peak = std::max(peak, evalCurve(*presetCurve("back"), i / 100.0));
+    check(peak > 1.05 && peak < 1.2, "back overshoots then settles");
+    // Out-of-range x handles (invalid data) are clamped: segment time can never run backwards.
+    const Curve wild{1.8, 0.2, -0.6, 0.9};
+    bool monotone = true;
+    double last = -1;
+    for (int i = 0; i <= 200; i++) { const double v = evalCurve(wild, i / 200.0); monotone &= v >= last - 1e-9; last = v; }
+    check(monotone && clampCurve(wild) == Curve{1, 0.2, 0, 0.9}, "clamped x keeps evaluation monotone");
+    check(clampCurve({0.5, 9, 0.5, -9}) == Curve{0.5, 5, 0.5, -4}, "y clamped to -4..5");
+    check(presetCurve("easeIn") == Curve{0.42, 0, 1, 1} && presetCurve("easeOut") == Curve{0, 0, 0.58, 1} && !presetCurve("wobble"), "preset table");
+  });
+
+  test("bezier keys sample through the runtime, step/linear unchanged", [] {
+    const Json d = bezierRig();
+    check(validateRig(d).empty(), "bezier fixture validates");
+    const Rig r = parseRig("b", d);
+    const int ease = r.clipIndex("ease");
+    check(r.clips[size_t(ease)].tracks[0].keys[0].interp == Interp::Bezier && r.clips[size_t(ease)].tracks[1].keys[1].interp == Interp::Step, "parsed interp kinds");
+    auto at = [&](double t) { return samplePose(r, ease, t); };
+    check(near(at(300).bones[1].y, -100 - 12 * evalCurve({0.42, 0, 0.58, 1}, 0.5), 1e-12) && near(at(300).bones[1].y, -106, 1e-9), "easeInOut midpoint");
+    check(near(at(800).bones[1].y, -112 + 12 * evalCurve({0, 0, 0.58, 1}, 0.5), 1e-12), "second segment uses its own key's curve");
+    double peak = 0;
+    for (int t = 0; t <= 400; t += 5) peak = std::max(peak, at(t).bones[2].rotation);
+    check(peak > 21 && near(at(400).bones[2].rotation, 20), "back overshoots past 20 and lands on the key");
+    check(near(at(550).bones[2].rotation, 20) && near(at(850).bones[2].rotation, -2.5), "step then linear segments unchanged");
+    check(near(at(250).bones[1].scaleY, 1 + 0.2 * 0.15625, 1e-12), "flat handles = smoothstep (u=0.25 -> 0.15625)");
+    const double alpha = at(500).alpha[1];
+    check(near(alpha, 1 - 0.5 * evalCurve({0.9, -0.4, 0.1, 1.4}, 0.5), 1e-12) && near(at(50).alpha[1], 1) && near(at(950).alpha[1], 0.5), "slot alpha bezier; holds outside keys");
+    // Existing linear/step fixture keeps its numbers (no bezier anywhere).
+    const auto plain = rig();
+    check(near(samplePose(*plain, plain->clipIndex("idle"), 250).bones[1].y, -102) && near(samplePose(*plain, plain->clipIndex("joy"), 100).bones[1].scaleY, 1), "linear and step unchanged");
+  });
+
+  test("bezier playback is frame-rate independent", [] {
+    const auto r = std::make_shared<const Rig>(parseRig("b", bezierRig()));
+    auto run = [&](std::vector<double> pattern) {
+      Instance inst(r);
+      inst.play(0, "ease", false, 1, Then::Hold, 0);
+      std::vector<double> samples;
+      double t = 0;
+      size_t i = 0;
+      while (t < 1000) {
+        const double step = pattern[i++ % pattern.size()];
+        inst.update(step);
+        t += step;
+        if (std::fmod(t, 125) == 0) { const auto p = inst.pose(); samples.insert(samples.end(), {p.bones[1].y, p.bones[2].rotation, p.bones[1].scaleY, p.alpha[1]}); }
+      }
+      return samples;
+    };
+    const auto a = run({31.25}), b = run({7.8125}), c = run({7.8125, 23.4375, 15.625, 15.625});
+    check(a.size() == 32 && a == b && b == c, "bit-identical bezier poses at 32/128 fps and uneven frames");
+  });
+
+  test("bezier validation codes", [] {
+    auto with = [](const Json& key) { Json d = rigData(); d["clips"][2]["tracks"][0]["keys"][0] = key; return validateRig(d); };
+    const Json k = {{"timeMs", 0}, {"value", 0}, {"interp", "bezier"}};
+    auto curve = [&](const Json& c) { Json x = k; x["curve"] = c; return x; };
+    check(hasCode(with(k), "ANIM_CURVE"), "bezier without curve");
+    check(hasCode(with(curve({0.1, 0, 0.9})), "ANIM_CURVE"), "three numbers");
+    check(hasCode(with(curve({1.2, 0, 0.9, 1})), "ANIM_CURVE") && hasCode(with(curve({0.2, 0, -0.1, 1})), "ANIM_CURVE"), "x outside 0..1");
+    check(hasCode(with(curve({0.2, 6, 0.9, 1})), "ANIM_CURVE") && hasCode(with(curve({0.2, 0, 0.9, -4.5})), "ANIM_CURVE"), "y outside -4..5");
+    check(hasCode(with(curve({0.2, "a", 0.9, 1})), "ANIM_CURVE"), "non-number handle");
+    check(with(curve({0, -2, 1, 3})).empty(), "overshooting y within range is valid");
+    Json cubic = k; cubic["interp"] = "cubic";
+    check(hasCode(with(cubic), "ANIM_INTERP"), "unknown interp");
+    Json d = rigData();
+    d["clips"][1]["tracks"][0]["keys"][0]["interp"] = "bezier";
+    d["clips"][1]["tracks"][0]["keys"][0]["curve"] = {0.4, 0, 0.6, 1};
+    check(hasCode(validateRig(d), "ANIM_INTERP"), "bezier attachment key refused");
+    Json stale = {{"timeMs", 0}, {"value", 0}, {"curve", {0.4, 0, 0.6, 1}}};
+    const auto ds = with(stale);
+    check(ds.size() == 1 && ds[0].code == "ANIM_CURVE_UNUSED" && ds[0].severity == "warning", "curve on a linear key is only a warning");
+  });
+
+  test("edit curves: presets, setCurve, auto, batch", [&] {
+    const Json base = rigData();
+    const Json head = {{"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}};
+    auto op = [&](const char* name, const Json& extra) { Json o = head; o["op"] = name; for (auto it = extra.begin(); it != extra.end(); ++it) o[it.key()] = it.value(); return o; };
+    auto key0 = [](const Json& d) { return d["clips"][2]["tracks"][0]["keys"][0]; };
+    auto r = applyEdit(base, op("setInterp", {{"interp", "easeIn"}}));
+    check(key0(r.data)["interp"] == "bezier" && key0(r.data)["curve"] == Json::array({0.42, 0, 1, 1}), "preset name as interp");
+    check(r.affected.size() == 1 && r.affected[0] == "key:joy/bone:head/rotation@0", "affected key");
+    r = applyEdit(base, op("setInterp", {{"preset", "back"}}));
+    check(key0(r.data)["curve"] == Json::array({0.34, 1.56, 0.64, 1}), "preset field");
+    r = applyEdit(base, op("setInterp", {{"interp", "bezier"}, {"curve", {0.25, 0.1, 0.25, 1}}}));
+    check(key0(r.data)["curve"] == Json::array({0.25, 0.1, 0.25, 1}), "explicit bezier curve");
+    const Json eased = r.data;
+    r = applyEdit(eased, op("setInterp", {{"interp", "linear"}}));
+    check(!key0(r.data).contains("interp") && !key0(r.data).contains("curve"), "linear drops interp and curve");
+    r = applyEdit(eased, op("setInterp", {{"interp", "step"}}));
+    check(key0(r.data)["interp"] == "step" && !key0(r.data).contains("curve"), "step drops curve");
+    r = applyEdit(base, op("setCurve", {{"curve", {1.4, -7, -0.2, 2}}}));
+    check(key0(r.data)["interp"] == "bezier" && key0(r.data)["curve"] == Json::array({1, -4, 0, 2}) && validateRig(r.data).empty(), "setCurve clamps x to 0..1 and y to -4..5");
+    check(refused(base, op("setInterp", {{"interp", "bezier"}})), "bezier needs a curve");
+    check(refused(base, op("setInterp", {{"interp", "wobble"}})), "unknown preset refused");
+    check(refused(base, op("setCurve", {{"curve", {0.1, 0, 0.9}}})), "short curve refused");
+    check(refused(base, {{"op", "setCurve"}, {"clip", "blink"}, {"target", "slot:eyes"}, {"property", "attachment"}, {"timeMs", 0}, {"curve", {0.4, 0, 0.6, 1}}}), "attachment curve refused");
+    // Value edits and moves keep the key's handles (they are normalized to the segment).
+    r = applyEdit(eased, {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}, {"value", 4}});
+    check(key0(r.data)["value"] == 4 && key0(r.data)["curve"] == Json::array({0.25, 0.1, 0.25, 1}), "setKey keeps curve");
+    r = applyEdit(eased, {{"op", "moveKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"fromMs", 0}, {"toMs", 50}});
+    check(key0(r.data)["timeMs"] == 50 && key0(r.data)["interp"] == "bezier", "moveKey keeps curve");
+    r = applyEdit(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 200}, {"value", 30}, {"interp", "easeOut"}});
+    check(r.data["clips"][2]["tracks"][0]["keys"][1]["curve"] == Json::array({0, 0, 0.58, 1}), "setKey with a preset");
+    // auto: idle y 0:-100, 500:-104, 1000:-100 -> 500 is an extremum -> flat tangents.
+    r = applyEdit(base, {{"op", "setInterp"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 0}, {"interp", "auto"}});
+    check(r.data["clips"][0]["tracks"][0]["keys"][0]["curve"] == Json::array({0.333333, 0, 0.666667, 1}), "auto at extremum is flat");
+    // Rising keys 0, 10, 30: Catmull-Rom slope at 500 = 0.03/ms vs segment 0.02/ms -> y2 = 1 - 1.5/3.
+    r = applyEdit(base, {{"op", "batch"}, {"operations", Json::array({
+      {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 0}, {"value", 0}},
+      {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 500}, {"value", 10}},
+      {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 1000}, {"value", 30}},
+      {{"op", "setInterp"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 0}, {"interp", "auto"}},
+      {{"op", "setInterp"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 500}, {"interp", "auto"}}})}});
+    const Json& yk = r.data["clips"][0]["tracks"][0]["keys"];
+    check(yk[0]["curve"] == Json::array({0.333333, 0, 0.666667, 0.5}) && yk[1]["curve"] == Json::array({0.333333, 0.25, 0.666667, 1}), "auto Catmull-Rom handles, flat at ends");
+    const Rig smooth = parseRig("s", r.data);
+    bool rising = true;
+    double prev = -1;
+    for (int t = 0; t < 1000; t += 10) { const double v = samplePose(smooth, 0, t).bones[1].y; rising &= v >= prev; prev = v; }  // idle loops: 1000 wraps to 0
+    check(rising, "auto never overshoots between rising keys");
+    // Many keys in one batch = one edit.
+    r = applyEdit(base, {{"op", "batch"}, {"operations", Json::array({op("setInterp", {{"interp", "easeOut"}}), {{"op", "setInterp"}, {"clip", "joy"}, {"target", "bone:body"}, {"property", "scaleY"}, {"timeMs", 0}, {"interp", "easeOut"}}})}});
+    check(key0(r.data)["interp"] == "bezier" && r.data["clips"][2]["tracks"][1]["keys"][0]["curve"] == Json::array({0, 0, 0.58, 1}) && r.affected.size() == 2, "batch applies a preset to many keys");
+    // setPivot compensation samples bezier rotation keys like the runtime does.
+    Json pivoted = bezierRig();
+    // Both position axes keyed at 200 ms so setPivot compensates the head origin exactly there.
+    pivoted["clips"][3]["tracks"].push_back({{"target", "bone:head"}, {"property", "x"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 0}}, {{"timeMs", 200}, {"value", 0}}})}});
+    pivoted["clips"][3]["tracks"].push_back({{"target", "bone:head"}, {"property", "y"}, {"keys", Json::array({{{"timeMs", 0}, {"value", -80}}, {{"timeMs", 200}, {"value", -80}}})}});
+    const Rig before = parseRig("a", pivoted);
+    r = applyEdit(pivoted, {{"op", "setPivot"}, {"bone", "head"}, {"localX", 10}, {"localY", 0}});
+    const Rig after = parseRig("b", r.data);
+    const auto pa = samplePose(before, before.clipIndex("ease"), 200), pb = samplePose(after, after.clipIndex("ease"), 200);
+    check(near(pb.world[2].e, pa.world[2].e + pa.world[2].a * 10, 1e-4) && near(pb.world[2].f, pa.world[2].f + pa.world[2].b * 10, 1e-4), "pivot key compensation at a bezier key time");
+  });
+
+  // ---- Key selections (dopesheet multi-key gestures) ----
+  auto ref = [](const char* target, const char* property, int t) { return Json{{"target", target}, {"property", property}, {"timeMs", t}}; };
+  auto easeKeys = [](const Json& d, size_t track) { return d["clips"][3]["tracks"][track]["keys"]; };
+  auto trackOf = [](const Json& d, const char* clip, const char* target, const char* property) {
+    for (const auto& c : d["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property) return t["keys"];
+    return Json();
+  };
+  test("edit moveKeys keeps spacing and curves, refuses collisions and range", [&] {
+    const Json base = bezierRig();  // clip 3 "ease": body y 0/600/1000, head rotation 0/400/700/1000, face alpha 100/900
+    const Json sel = Json::array({ref("bone:body", "y", 600), ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)});
+    auto r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", sel}, {"deltaMs", 50}});
+    check(easeKeys(r.data, 0)[1]["timeMs"] == 650 && easeKeys(r.data, 0)[1]["curve"] == Json::array({0, 0, 0.58, 1}), "bezier key moves with its curve");
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 450 && easeKeys(r.data, 1)[1]["interp"] == "step" && easeKeys(r.data, 1)[2]["timeMs"] == 750, "relative spacing kept");
+    check(easeKeys(r.data, 1)[0]["timeMs"] == 0 && easeKeys(r.data, 1)[3]["timeMs"] == 1000, "unselected keys stay");
+    check(r.extra["keys"].size() == 3 && r.extra["keys"][0] == ref("bone:body", "y", 650) && validateRig(r.data).empty(), "extra.keys = moved keys, still valid");
+    check(refused(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400)})}, {"deltaMs", 300}}), "collision with an unselected key refused");
+    check(refused(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", sel}, {"deltaMs", 400}}), "out of range refused (no partial move)");
+    check(refused(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 401)})}, {"deltaMs", 10}}), "unknown key refused");
+    // Selected keys landing on each other's old times is fine (all move together).
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)})}, {"deltaMs", -300}});
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 100 && easeKeys(r.data, 1)[2]["timeMs"] == 400 && easeKeys(r.data, 1)[2]["value"] == 5, "group lands on its own old time");
+    // clamp stops the group at the clip edge.
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("slot:face", "alpha", 100), ref("slot:face", "alpha", 900)})}, {"deltaMs", 500}, {"clamp", true}});
+    check(r.extra["deltaMs"] == 100 && easeKeys(r.data, 3)[0]["timeMs"] == 200 && easeKeys(r.data, 3)[1]["timeMs"] == 1000, "clamp keeps spacing at the end");
+    check(easeKeys(r.data, 3)[0]["curve"] == Json::array({0.9, -0.4, 0.1, 1.4}), "overshoot curve kept");
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:body", "y", 0)})}, {"deltaMs", -40}, {"clamp", true}});
+    check(r.data == base && r.extra["deltaMs"] == 0, "clamped to zero = no change");
+  });
+
+  test("edit scaleKeys and deleteKeys", [&] {
+    const Json base = bezierRig();
+    const Json rot = Json::array({ref("bone:head", "rotation", 0), ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)});
+    auto r = applyEdit(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", rot}, {"factor", 0.5}});
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 200 && easeKeys(r.data, 1)[2]["timeMs"] == 350 && easeKeys(r.data, 1)[3]["timeMs"] == 1000, "scaled around the first key");
+    bool xValid = true;
+    for (const auto& k : easeKeys(r.data, 1)) if (k.contains("curve")) for (size_t i : {0, 2}) xValid &= k["curve"][i].get<double>() >= 0 && k["curve"][i].get<double>() <= 1;
+    check(easeKeys(r.data, 1)[0]["curve"] == Json::array({0.34, 1.56, 0.64, 1}) && xValid && validateRig(r.data).empty(), "curves preserved, x stays in 0..1");
+    // Normalized handles: the shape follows the new timing (half the time = same fraction).
+    const Rig before = parseRig("a", base), after = parseRig("b", r.data);
+    check(near(samplePose(after, 3, 100).bones[2].rotation, samplePose(before, 3, 200).bones[2].rotation, 1e-9), "scaled segment samples the same fraction");
+    r = applyEdit(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700)})}, {"factor", 0.5}, {"pivotMs", 1000}});
+    check(easeKeys(r.data, 1)[1]["timeMs"] == 700 && easeKeys(r.data, 1)[1]["value"] == 20 && easeKeys(r.data, 1)[2]["timeMs"] == 850, "pivot at the playhead, lands on a selected key's old time");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 700), ref("bone:head", "rotation", 1000)})}, {"factor", 0.001}}), "keys merging refused");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 700)})}, {"factor", 0.0001}, {"pivotMs", 1000}}), "landing on an unselected key refused");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", rot}, {"factor", 2}}), "scaling past the end refused");
+    check(refused(base, {{"op", "scaleKeys"}, {"clip", "ease"}, {"keys", rot}, {"factor", -1}}), "negative factor refused");
+    r = applyEdit(base, {{"op", "deleteKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("slot:face", "alpha", 100), ref("slot:face", "alpha", 900), ref("bone:body", "y", 600)})}});
+    check(r.data["clips"][3]["tracks"].size() == 3 && easeKeys(r.data, 0).size() == 2 && r.affected.size() == 3, "deleteKeys removes keys and empty tracks");
+  });
+
+  test("edit copyKeys / pasteKeys across clips", [&] {
+    const Json base = bezierRig();
+    auto r = applyEdit(base, {{"op", "copyKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 400), ref("bone:head", "rotation", 700), ref("bone:body", "y", 600)})}});
+    const Json board = r.extra["clipboard"];
+    check(r.data == base && board["fromMs"] == 400 && board["keys"].size() == 3, "copy changes nothing, offsets from the earliest key");
+    check(board["keys"][2] == Json({{"target", "bone:body"}, {"property", "y"}, {"offsetMs", 200}, {"value", -112}, {"interp", "bezier"}, {"curve", {0, 0, 0.58, 1}}}), "entry carries value, interp and curve");
+    // Paste into another clip at 0: overwrites joy's rotation key at 0 and keeps the curve.
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 0}, {"keys", board["keys"]}});
+    const Json rotKeys = trackOf(r.data, "joy", "bone:head", "rotation");
+    check(rotKeys.size() == 3 && rotKeys[0]["value"] == 20 && rotKeys[0]["interp"] == "step" && rotKeys[1]["timeMs"] == 300 && rotKeys[1]["value"] == 5, "overwrite same time + insert");
+    check(trackOf(r.data, "joy", "bone:body", "y")[0]["timeMs"] == 200 && trackOf(r.data, "joy", "bone:body", "y")[0]["curve"] == Json::array({0, 0, 0.58, 1}), "new track with the bezier curve");
+    check(r.extra["keys"].size() == 3 && validateRig(r.data).empty(), "pasted keys reported");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 200}, {"keys", board["keys"]}}), "paste past the clip end refused");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 0}, {"keys", board["keys"]}, {"target", "bone:root"}}), "multi-target clipboard cannot retarget");
+    // Single-row copy pasted onto another bone.
+    const Json row = applyEdit(base, {{"op", "copyKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 0), ref("bone:head", "rotation", 400)})}}).extra["clipboard"]["keys"];
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "ease"}, {"timeMs", 500}, {"keys", row}, {"target", "bone:body"}});
+    const Json bodyRot = trackOf(r.data, "ease", "bone:body", "rotation");
+    check(bodyRot.size() == 2 && bodyRot[0]["timeMs"] == 500 && bodyRot[0]["curve"] == Json::array({0.34, 1.56, 0.64, 1}) && bodyRot[1]["timeMs"] == 900, "row retargeted");
+    // Attachment keys: value names are checked on the target slot.
+    const Json blink = applyEdit(base, {{"op", "copyKeys"}, {"clip", "blink"}, {"keys", Json::array({ref("slot:eyes", "attachment", 1800), ref("slot:eyes", "attachment", 1900)})}}).extra["clipboard"]["keys"];
+    check(!blink[0].contains("interp"), "attachment entries have no interp");
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 100}, {"keys", blink}});
+    check(trackOf(r.data, "joy", "slot:eyes", "attachment")[1] == Json({{"timeMs", 200}, {"value", "open"}}), "attachment keys pasted");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 100}, {"keys", blink}, {"target", "slot:face"}}), "unknown attachment on the new slot refused");
+    check(refused(base, {{"op", "pasteKeys"}, {"clip", "joy"}, {"timeMs", 100}, {"keys", row}, {"target", "slot:face"}}), "bone property onto a slot refused");
+    // The LLM path (host op `edit`, plugin_call) returns the same clipboard and the same paste.
+    Host host;
+    const Json copyOp = {{"op", "copyKeys"}, {"clip", "ease"}, {"keys", Json::array({ref("bone:head", "rotation", 0), ref("bone:head", "rotation", 400)})}};
+    const Json copied = host.handle({{"op", "edit"}, {"rig", base}, {"operation", copyOp}});
+    check(copied.value("ok", false) && copied["clipboard"]["keys"] == row && copied["rig"] == base, "host edit returns the clipboard");
+    const Json pasteOp = {{"op", "pasteKeys"}, {"clip", "ease"}, {"timeMs", 500}, {"keys", row}, {"target", "bone:body"}};
+    const Json pastedReply = host.handle({{"op", "edit"}, {"rig", base}, {"operation", pasteOp}});
+    check(pastedReply["rig"] == applyEdit(base, pasteOp).data && pastedReply["keys"].size() == 2, "host paste = editor paste");
+  });
+
+  test("edit copyPose / pastePose", [&] {
+    Json base = bezierRig();
+    // joy's rotation key at 0 is eased: pasting a pose there must keep its interpolation.
+    base = applyEdit(base, {{"op", "setInterp"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}, {"interp", "easeIn"}}).data;
+    auto r = applyEdit(base, {{"op", "copyPose"}, {"clip", "ease"}, {"timeMs", 300}, {"bones", {"body", "head"}}});
+    const Json pose = r.extra["pose"];
+    const Rig parsed = parseRig("p", base);
+    const auto sampled = samplePose(parsed, 3, 300);
+    check(r.data == base && pose.size() == 2 && pose[0]["bone"] == "body", "copyPose changes nothing");
+    check(near(pose[0]["y"].get<double>(), sampled.bones[1].y, 1e-6) && near(pose[1]["rotation"].get<double>(), sampled.bones[2].rotation, 1e-6), "sampled like the runtime");
+    check(pose[0]["x"] == 0 && pose[0]["scaleX"] == 1, "unanimated channels = setup");
+    check(applyEdit(base, {{"op", "copyPose"}}).extra["pose"].size() == 3, "no clip = setup pose of every bone");
+    r = applyEdit(base, {{"op", "pastePose"}, {"clip", "joy"}, {"timeMs", 0}, {"pose", pose}});
+    auto joyKey = [&](const Json& d, const char* target, const char* property, int t) {
+      for (const auto& k : trackOf(d, "joy", target, property)) if (k["timeMs"] == t) return k;
+      return Json();
+    };
+    check(near(joyKey(r.data, "bone:head", "rotation", 0)["value"].get<double>(), pose[1]["rotation"].get<double>()) && joyKey(r.data, "bone:head", "rotation", 0)["interp"] == "bezier", "overwrites value, keeps interp");
+    check(!joyKey(r.data, "bone:body", "y", 0).is_null() && joyKey(r.data, "bone:body", "x", 0).is_null(), "setup-valued unanimated channels skipped");
+    check(!joyKey(r.data, "bone:body", "scaleY", 0).is_null(), "animated channel keyed");
+    check(validateRig(r.data).empty() && r.extra["keys"].size() == 3, "pose paste reports its keys (body y, body scaleY, head rotation)");
+    check(refused(base, {{"op", "pastePose"}, {"clip", "joy"}, {"timeMs", 500}, {"pose", pose}}), "pose past the end refused");
+  });
+
+  // ---- Skins and expressions (plugin 1.2.0) ----
+  auto imageOf = [](const std::vector<DrawItem>& items, const std::string& slot) {
+    for (const auto& i : items) if (i.slot == slot) return i.imageAssetId;
+    return std::string("-");
+  };
+  test("skins: lookup order and draw lists", [&] {
+    check(validateRig(lookRig()).empty(), "look fixture validates");
+    check(validateController(lookController(), std::make_shared<const Rig>(parseRig("hero", lookRig())).get()).empty(), "look controller validates");
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    check(r->skins.size() == 2 && r->expressions.size() == 2 && r->skinIndex("summer") == 1 && r->expressionIndex("surprised") == 1, "parsed");
+    check(r->attachment("torso", "torso", 0)->imageAssetId == "img-torso-winter" && r->attachment("torso", "torso")->imageAssetId == "img-torso", "skin first, then default");
+    check(r->attachment("face", "face", 0)->imageAssetId == "img-face" && r->attachment("eyes", "closed", 1)->imageAssetId == "img-eyes-closed", "missing in skin falls back to default");
+    Instance inst(r);
+    check(imageOf(inst.drawList(), "torso") == "img-torso" && inst.skin().empty(), "no skin = default attachments");
+    check(inst.setSkin("winter") && inst.skin() == "winter", "setSkin");
+    auto items = inst.drawList();
+    check(imageOf(items, "torso") == "img-torso-winter" && items[0].width == 90 && imageOf(items, "face") == "img-face", "outfit overrides only what it provides");
+    check(!inst.setSkin("nope") && inst.skin() == "winter", "unknown skin refused, nothing changes");
+    inst.play(0, "blink", true, 1, Then::Default, 0);
+    inst.update(1850);
+    check(imageOf(inst.drawList(), "eyes") == "img-eyes-closed-winter", "clips key names; the skin resolves them (no new animation)");
+    check(inst.setSkin("") && imageOf(inst.drawList(), "eyes") == "img-eyes-closed", "back to default attachments");
+    check(samplePose(*r, -1, 0, {1}).skin == 1 && samplePose(*r, -1, 0).skin == -1, "samplePose carries the skin");
+  });
+
+  test("skins and expressions: validation codes", [&] {
+    auto bad = [](const std::function<void(Json&)>& change, const std::string& code) {
+      Json d = lookRig();
+      change(d);
+      return hasCode(validateRig(d), code);
+    };
+    check(bad([](Json& d) { d["skins"][0]["attachments"][0]["slot"] = "tail"; }, "ANIM_SLOT_MISSING"), "skin attachment on unknown slot");
+    check(bad([](Json& d) { d["skins"][0]["attachments"].push_back(d["skins"][0]["attachments"][0]); }, "ANIM_DUP_ID"), "duplicate (slot,name) inside a skin");
+    check(!bad([](Json& d) { d["skins"][1]["attachments"].push_back(d["skins"][0]["attachments"][1]); }, "ANIM_DUP_ID"), "same (slot,name) in two skins is fine");
+    check(bad([](Json& d) { d["skins"][0]["attachments"][0]["imageAssetId"] = ""; }, "ANIM_IMAGE_MISSING"), "skin attachment without image");
+    check(bad([](Json& d) { d["skins"][0]["attachments"][0]["width"] = 0; }, "ANIM_IMAGE_SIZE"), "skin attachment size");
+    check(bad([](Json& d) { d["skins"][1]["id"] = "winter"; }, "ANIM_DUP_ID"), "duplicate skin id");
+    check(bad([](Json& d) { d["expressions"][0]["slots"]["tail"] = "x"; }, "ANIM_SLOT_MISSING"), "expression on unknown slot");
+    check(bad([](Json& d) { d["expressions"][0]["slots"]["eyes"] = "wink"; }, "ANIM_ATTACHMENT_UNKNOWN"), "expression names an unknown attachment");
+    check(bad([](Json& d) { d["expressions"][0]["bones"]["tail"] = {{"rotation", 1}}; }, "ANIM_BONE_MISSING"), "expression on unknown bone");
+    check(bad([](Json& d) { d["expressions"][0]["bones"]["head"]["alpha"] = 1; }, "ANIM_PROPERTY"), "expression bone channel");
+    check(bad([](Json& d) { d["expressions"][1]["id"] = "happy"; }, "ANIM_DUP_ID"), "duplicate expression id");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][0]["keys"][1]["value"] = "angry"; }, "ANIM_EXPRESSION_UNKNOWN"), "expression key names an unknown expression");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][0]["keys"][0]["interp"] = "bezier"; d["clips"][3]["tracks"][0]["keys"][0]["curve"] = {0, 0, 1, 1}; }, "ANIM_INTERP"), "expression keys are step only");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][0]["property"] = "x"; }, "ANIM_PROPERTY"), "rig track only keys expression");
+    check(bad([](Json& d) { d["clips"][3]["tracks"][1]["property"] = "expression"; }, "ANIM_PROPERTY"), "expression only on the rig track");
+    // An outfit-only part: valid (some skin provides it); a skin lacking it gets a warning.
+    Json d = lookRig();
+    d["slots"].push_back({{"id", "hat"}, {"bone", "head"}, {"attachment", "cap"}});
+    d["skins"][0]["attachments"].push_back({{"slot", "hat"}, {"name", "cap"}, {"imageAssetId", "img-cap"}, {"width", 30}, {"height", 20}});
+    auto ds = validateRig(d);
+    bool error = false, warnSummer = false, warnWinter = false;
+    for (const auto& x : ds) {
+      error |= x.severity == "error";
+      if (x.code == "ANIM_SKIN_MISSING_ATTACHMENT") { warnSummer |= x.pointer == "/skins/1"; warnWinter |= x.pointer == "/skins/0"; }
+    }
+    check(!error && warnSummer && !warnWinter, "ANIM_SKIN_MISSING_ATTACHMENT only for the skin lacking a shown name");
+    d["slots"].back()["attachment"] = "crown";
+    check(hasCode(validateRig(d), "ANIM_ATTACHMENT_UNKNOWN"), "a name no list provides is an error");
+    Instance bare(std::make_shared<const Rig>(parseRig("h", [&] { Json x = lookRig(); x["slots"].push_back({{"id", "hat"}, {"bone", "head"}, {"attachment", "cap"}}); x["skins"][0]["attachments"].push_back({{"slot", "hat"}, {"name", "cap"}, {"imageAssetId", "img-cap"}, {"width", 30}, {"height", 20}}); return x; }())));
+    check(imageOf(bare.drawList(), "hat") == "-" && bare.setSkin("winter") && imageOf(bare.drawList(), "hat") == "img-cap", "outfit-only part appears with its skin");
+  });
+
+  test("expression layer order: after track 0, before layer tracks (blink still blinks)", [&] {
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    Json c = lookController();
+    c["defaultExpression"] = "happy";
+    Instance inst(r, parseController("hero-main", c));
+    auto eyes = [&] { return *inst.pose().attachments[2]; };
+    auto headRotation = [&] { return inst.pose().bones[2].rotation; };
+    check(inst.expression() == std::optional<std::string>("happy"), "controller defaultExpression");
+    check(eyes() == "open" && near(headRotation(), 10), "blink layer (track 1) keys the eyes over the expression; head follows the expression");
+    inst.update(1850);
+    check(eyes() == "closed", "blink closes");
+    Json noBlink = c;
+    noBlink["layers"] = Json::array();
+    Instance calm(r, parseController("hero-main", noBlink));
+    check(*calm.pose().attachments[2] == "closed" && calm.pose().expression == 0, "without a layer the expression shows");
+    // Track 0 action keys head rotation: the expression still wins (it applies after track 0)...
+    calm.signal("actionResult", {{"outcome", "success"}});
+    calm.update(300);  // joy alone would turn the head to 15
+    check(calm.describe()["tracks"][0]["clip"] == "joy" && near(calm.pose().bones[2].rotation, 10), "expression overrides track 0");
+    check(near(calm.pose().bones[1].scaleY, 1.2), "unlisted channels keep animating");
+    // ...but a layer track keying the same channel wins over the expression.
+    calm.play(2, "joy", false, 1, Then::Hold, 0);
+    calm.update(300);
+    check(near(calm.pose().bones[2].rotation, 15), "track 2 joy overrides the expression's head rotation");
+  });
+
+  test("expression keys: step, override the instance expression", [&] {
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    Instance inst(r);
+    check(inst.setExpression(std::string("surprised")) && inst.pose().expression == 1 && !inst.pose().attachments[1], "setExpression (surprised hides the face)");
+    check(near(inst.pose().bones[2].y, -90) && near(inst.pose().bones[2].scaleY, 1.1), "bone overrides");
+    check(!inst.setExpression(std::string("angry")) && inst.expression() == std::optional<std::string>("surprised"), "unknown expression refused");
+    inst.play(0, "talk-face", false, 1, Then::Hold, 0);
+    inst.update(250);
+    check(inst.describe()["activeExpression"] == "happy" && *inst.pose().attachments[2] == "closed" && near(inst.pose().bones[2].rotation, 10), "clip key overrides the instance expression");
+    inst.update(249);
+    check(inst.describe()["activeExpression"] == "happy", "step: still happy at 499 ms");
+    inst.update(2);
+    check(inst.describe()["activeExpression"].is_null() && *inst.pose().attachments[2] == "open" && near(inst.pose().bones[2].y, -80), "null key = no expression from 500 ms");
+    check(inst.describe()["expression"] == "surprised", "instance expression itself unchanged");
+    inst.stop(0, 0);
+    check(inst.pose().expression == 1, "clip gone: instance expression again");
+    // samplePose: look expression, overridden by the clip's keys; expressions=false = raw clip.
+    check(samplePose(*r, -1, 0, {-1, 1}).expression == 1 && samplePose(*r, 3, 100, {-1, 1}).expression == 0 && samplePose(*r, 3, 700, {-1, 1}).expression == -1, "samplePose look + clip keys");
+    Look raw; raw.expressions = false;
+    check(*samplePose(*r, 3, 100, raw).attachments[2] == "open", "expressions=false samples raw values");
+  });
+
+  test("controller skin/expression bindings and save/restore", [&] {
+    const auto r = std::make_shared<const Rig>(parseRig("hero", lookRig()));
+    Instance inst(r, parseController("hero-main", lookController()));
+    check(inst.skin() == "winter" && !inst.expression(), "defaultSkin applied");
+    auto matched = inst.signal("portraitChanged", {{"portraitId", "happy"}, {"characterId", "alice"}});
+    check(matched == std::vector<std::string>{"face-happy"} && inst.expression() == std::optional<std::string>("happy"), "expression-only binding");
+    check(inst.describe()["tracks"].size() == 2 && inst.describe()["tracks"][0]["clip"] == "idle", "it takes no track");
+    check(inst.signal("phaseChanged", {{"phase", "summer"}}) == std::vector<std::string>{"dress-summer"} && inst.skin() == "summer", "skin binding");
+    inst.signal("actionResult", {{"outcome", "success"}});
+    inst.update(100);
+    const Json saved = inst.saveState();
+    check(saved["skin"] == "summer" && saved["expression"] == "happy", "saveState includes the look");
+    Instance other(r, parseController("hero-main", lookController()));
+    other.restoreState(saved);
+    check(other.skin() == "summer" && other.expression() == std::optional<std::string>("happy") && other.describe()["tracks"][0]["clip"] == "joy", "restore both (and the clip)");
+    check(other.signal("portraitChanged", {{"portraitId", "none"}}) == std::vector<std::string>{"face-clear"} && !other.expression(), "expression: null clears it");
+    Json stale = saved;
+    stale["skin"] = "gone";
+    stale["expression"] = "gone";
+    other.restoreState(stale);
+    check(other.skin() == "winter" && !other.expression(), "ids removed since the save fall back to the controller defaults");
+    Json old = saved;
+    old.erase("skin"); old.erase("expression");
+    other.setSkin("summer");
+    other.restoreState(old);
+    check(other.skin() == "summer", "1.x saves without a look keep the current one");
+    // Validation.
+    auto codes = [&](const std::function<void(Json&)>& change) { Json c = lookController(); change(c); return validateController(c, r.get()); };
+    check(hasCode(codes([](Json& c) { c["defaultSkin"] = "autumn"; }), "ANIM_SKIN_UNKNOWN"), "unknown defaultSkin");
+    check(hasCode(codes([](Json& c) { c["defaultExpression"] = "angry"; }), "ANIM_EXPRESSION_UNKNOWN"), "unknown defaultExpression");
+    check(hasCode(codes([](Json& c) { c["bindings"][2]["expression"] = "angry"; }), "ANIM_EXPRESSION_UNKNOWN"), "unknown binding expression");
+    check(hasCode(codes([](Json& c) { c["bindings"][4]["skin"] = "autumn"; }), "ANIM_SKIN_UNKNOWN"), "unknown binding skin");
+    check(hasCode(codes([](Json& c) { c["bindings"][2].erase("expression"); }), "ANIM_CLIP_UNKNOWN"), "binding needs a clip, skin or expression");
+    check(codes([](Json& c) { c["bindings"][0]["expression"] = "surprised"; }).empty(), "clip + expression binding");
+    check(validateController(lookController(), nullptr).empty(), "structure-only check without the rig");
+  });
+
+  test("host protocol: mount props.skin, setSkin/setExpression, sample look", [&] {
+    Host host;
+    const Json docs = Json::array({{{"type", "rig"}, {"id", "hero"}, {"data", lookRig()}}, {{"type", "controller"}, {"id", "hero-main"}, {"data", controllerData()}}});
+    check(host.handle({{"op", "init"}, {"documents", docs}})["diagnostics"].empty(), "init");
+    Json element = {{"type", "character"}, {"ref", "hero-main"}, {"width", 100}, {"height", 150}, {"props", {{"skin", "winter"}}}};
+    auto torso = [&] { return host.handle({{"op", "frame"}, {"instance", "s/hero"}})["items"][0]["imageAssetId"]; };
+    check(host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}}).value("ok", false) && torso() == "img-torso-winter", "props.skin picks the outfit");
+    check(host.handle({{"op", "setSkin"}, {"instance", "s/hero"}, {"skin", "summer"}}).value("ok", false) && torso() == "img-torso-summer", "setSkin op");
+    host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}});
+    check(torso() == "img-torso-summer", "re-mount with the same props keeps the instance look");
+    element["props"]["skin"] = "winter-2";
+    check(host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}}).value("ok", false) && torso() == "img-torso-summer", "unknown props.skin ignored (service reports it)");
+    element["props"]["skin"] = "winter";
+    host.handle({{"op", "mount"}, {"instance", "s/hero"}, {"element", element}});
+    check(torso() == "img-torso-winter", "a changed props.skin is applied");
+    check(!host.request(Json({{"op", "setSkin"}, {"instance", "s/hero"}, {"skin", "nope"}}).dump()).value("ok", true), "unknown skin rejected");
+    check(host.handle({{"op", "setExpression"}, {"instance", "s/hero"}, {"expression", "happy"}}).value("ok", false), "setExpression");
+    check(host.handle({{"op", "describe"}, {"instance", "s/hero"}})["state"]["expression"] == "happy", "describe shows it");
+    const Json saved = host.handle({{"op", "saveAll"}})["state"];
+    check(saved["instances"]["s/hero"]["state"]["skin"] == "winter" && saved["instances"]["s/hero"]["state"]["expression"] == "happy", "saveAll carries the look");
+    check(host.handle({{"op", "setExpression"}, {"instance", "s/hero"}, {"expression", nullptr}}).value("ok", false) &&
+              host.handle({{"op", "describe"}, {"instance", "s/hero"}})["state"]["expression"].is_null(), "null clears");
+    host.handle({{"op", "restoreAll"}, {"state", saved}});
+    check(host.handle({{"op", "describe"}, {"instance", "s/hero"}})["state"]["expression"] == "happy", "restoreAll restores it");
+    const Json pose = host.handle({{"op", "sample"}, {"rig", lookRig()}, {"skin", "winter"}, {"expression", "happy"}})["pose"];
+    check(pose["skin"] == "winter" && pose["expression"] == "happy" && pose["slots"]["eyes"]["attachment"] == "closed" && near(pose["bones"]["head"]["rotation"].get<double>(), 10), "sample with a look");
+    check(!host.request(Json({{"op", "sample"}, {"rig", lookRig()}, {"skin", "nope"}}).dump()).value("ok", true), "sample refuses unknown skin");
+    const Json script = lookScript();
+    Host replay;
+    std::vector<Json> frames;
+    for (const auto& op : script) { const Json reply = replay.handle(op); check(reply.value("ok", false), "script op " + op.value("op", std::string())); if (op["op"] == "frame") frames.push_back(reply["items"]); }
+    auto item = [&](size_t f, const char* slot) { for (const auto& i : frames[f]) if (i["slot"] == slot) return i; return Json(); };
+    auto image = [&](size_t f, const char* slot) { const Json i = item(f, slot); return i.is_null() ? std::string("-") : i["imageAssetId"].get<std::string>(); };
+    check(frames.size() == 8 && image(0, "torso") == "img-torso-winter" && image(0, "face") == "-" && image(0, "eyes") == "img-eyes-open", "parity script: props.skin + defaultExpression (face hidden)");
+    check(image(1, "eyes") == "img-eyes-closed-winter" && image(2, "eyes") == "img-eyes-closed-winter" && image(2, "face") == "img-face", "blink over the expression; portrait binding");
+    check(image(3, "torso") == "img-torso-summer" && image(3, "eyes") == "img-eyes-closed", "setSkin: summer has no closed eyes, default used");
+    check(item(4, "face")["matrix"][1] == 0 && item(5, "face")["matrix"][1] != 0 && item(6, "face")["matrix"][1] == 0, "clip expression key (head turn) then null");
+    check(image(7, "torso") == "img-torso", "back to default attachments");
+  });
+
+  test("edit ops: skins", [&] {
+    const Json base = lookRig();
+    const Json ctrls = Json::array({{{"id", "hero-main"}, {"data", lookController()}}});
+    auto r = applyEdit(base, {{"op", "addSkin"}, {"id", "autumn"}, {"name", "가을"}});
+    check(r.data["skins"][2] == Json({{"id", "autumn"}, {"name", "가을"}, {"attachments", Json::array()}}) && validateRig(r.data).empty(), "addSkin");
+    check(refused(base, {{"op", "addSkin"}, {"id", "winter"}}) && refused(base, {{"op", "addSkin"}, {"id", "Bad Id"}}), "duplicate / invalid id refused");
+    r = applyEdit(r.data, {{"op", "setSkinAttachment"}, {"skin", "autumn"}, {"slot", "torso"}, {"imageAssetId", "img-torso-autumn"}, {"width", 84}, {"height", 126}});
+    const Json made = r.data["skins"][2]["attachments"][0];
+    check(made["name"] == "torso" && made["pivotY"] == 1 && made["x"] == 0 && r.extra["created"] == true, "name = slot's setup attachment, placement copied from the default");
+    r = applyEdit(r.data, {{"op", "setSkinAttachment"}, {"skin", "autumn"}, {"slot", "torso"}, {"imageAssetId", "img-torso-autumn-2"}, {"x", 3}});
+    check(r.data["skins"][2]["attachments"].size() == 1 && r.data["skins"][2]["attachments"][0]["imageAssetId"] == "img-torso-autumn-2" && r.data["skins"][2]["attachments"][0]["x"] == 3, "update in place");
+    check(refused(r.data, {{"op", "setSkinAttachment"}, {"skin", "autumn"}, {"slot", "eyes"}, {"name", "wink"}}), "new entry needs an image and size");
+    r = applyEdit(r.data, {{"op", "removeSkinAttachment"}, {"skin", "autumn"}, {"slot", "torso"}, {"name", "torso"}});
+    check(r.data["skins"][2]["attachments"].empty(), "removeSkinAttachment");
+    r = applyEdit(base, {{"op", "duplicateSkin"}, {"skin", "winter"}, {"id", "winter-b"}});
+    check(r.data["skins"][2]["attachments"] == base["skins"][0]["attachments"] && r.data["skins"][2]["name"] == "겨울 복사", "duplicateSkin");
+    r = applyEdit(base, {{"op", "renameSkin"}, {"skin", "summer"}, {"id", "beach"}}, ctrls);
+    check(r.data["skins"][1]["id"] == "beach" && r.extra["controllerRefs"] == Json::array({"hero-main"}), "renameSkin reports controllers");
+    check(r.extra["controllers"][0]["data"]["bindings"][4]["skin"] == "beach", "binding skin rewritten");
+    r = applyEdit(base, {{"op", "renameSkin"}, {"skin", "winter"}, {"id", "snow"}}, ctrls);
+    check(r.extra["controllers"][0]["data"]["defaultSkin"] == "snow", "defaultSkin rewritten");
+    check(refused(base, {{"op", "deleteSkin"}, {"skin", "winter"}}, ctrls), "delete of a used skin refused");
+    r = applyEdit(base, {{"op", "deleteSkin"}, {"skin", "summer"}, {"force", true}}, ctrls);
+    const Json forced = r.extra["controllers"][0]["data"];
+    check(r.data["skins"].size() == 1 && forced["bindings"].size() == 4 && validateController(forced, std::make_shared<const Rig>(parseRig("x", r.data)).get()).empty(), "force removes the skin-only binding");
+    r = applyEdit(applyEdit(base, {{"op", "deleteSkin"}, {"skin", "summer"}}).data, {{"op", "deleteSkin"}, {"skin", "winter"}});
+    check(!r.data.contains("skins"), "last skin gone: no empty skins list");
+    // Deleting a slot/bone leaves no dangling skin attachments or expression entries.
+    r = applyEdit(base, {{"op", "deleteSlot"}, {"slot", "eyes"}});
+    check(r.data["skins"][0]["attachments"].size() == 1 && !r.data["expressions"][0].contains("slots") && validateRig(r.data).empty(), "deleteSlot purges skins/expressions");
+    r = applyEdit(base, {{"op", "deleteBone"}, {"bone", "head"}, {"cascade", true}});
+    check(!r.data["expressions"][0].contains("bones") && validateRig(r.data).empty(), "deleteBone purges expression bones");
+    // Attachment names from skins are keyable; 1.x documents never grow skins/expressions keys.
+    Json d = base;
+    d["slots"].push_back({{"id", "hat"}, {"bone", "head"}, {"attachment", nullptr}});
+    d["skins"][0]["attachments"].push_back({{"slot", "hat"}, {"name", "cap"}, {"imageAssetId", "img-cap"}, {"width", 30}, {"height", 20}});
+    check(applyEdit(d, {{"op", "setKey"}, {"clip", "joy"}, {"target", "slot:hat"}, {"property", "attachment"}, {"timeMs", 0}, {"value", "cap"}}).data != d, "skin-only name keyable");
+    r = applyEdit(rigData(), {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "x"}, {"timeMs", 100}, {"value", 2}});
+    check(!r.data.contains("skins") && !r.data.contains("expressions"), "unrelated edits keep 1.x documents unchanged in shape");
+  });
+
+  test("edit ops: expressions, keys, capture", [&] {
+    const Json base = lookRig();
+    const Json ctrls = Json::array({{{"id", "hero-main"}, {"data", lookController()}}});
+    auto r = applyEdit(base, {{"op", "addExpression"}, {"id", "sleepy"}, {"slots", {{"eyes", "closed"}}}});
+    check(r.data["expressions"][2] == Json({{"id", "sleepy"}, {"name", "sleepy"}, {"slots", {{"eyes", "closed"}}}}), "addExpression");
+    check(refused(base, {{"op", "addExpression"}, {"id", "x"}, {"slots", {{"eyes", "wink"}}}}), "invalid expression content refused");
+    r = applyEdit(r.data, {{"op", "setExpressionSlot"}, {"expression", "sleepy"}, {"slot", "face"}, {"attachment", nullptr}});
+    check(r.data["expressions"][2]["slots"]["face"].is_null(), "slot hidden by the expression");
+    r = applyEdit(r.data, {{"op", "setExpressionSlot"}, {"expression", "sleepy"}, {"slot", "face"}, {"remove", true}});
+    check(!r.data["expressions"][2]["slots"].contains("face"), "slot removed from the expression");
+    check(refused(r.data, {{"op", "setExpressionSlot"}, {"expression", "sleepy"}, {"slot", "eyes"}, {"attachment", "wink"}}), "unknown attachment refused");
+    r = applyEdit(r.data, {{"op", "setExpressionBone"}, {"expression", "sleepy"}, {"bone", "head"}, {"rotation", -8}, {"y", -78}});
+    check(r.data["expressions"][2]["bones"]["head"] == Json({{"rotation", -8}, {"y", -78}}), "setExpressionBone");
+    r = applyEdit(r.data, {{"op", "setExpressionBone"}, {"expression", "sleepy"}, {"bone", "head"}, {"rotation", nullptr}});
+    check(r.data["expressions"][2]["bones"]["head"] == Json({{"y", -78}}), "null drops a channel");
+    r = applyEdit(r.data, {{"op", "setExpressionBone"}, {"expression", "sleepy"}, {"bone", "head"}, {"remove", true}});
+    check(!r.data["expressions"][2].contains("bones"), "bone override removed");
+    // Rig expression keys.
+    r = applyEdit(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "rig"}, {"property", "expression"}, {"timeMs", 200}, {"value", "surprised"}, {"interp", "linear"}});
+    check(trackOf(r.data, "joy", "rig", "expression") == Json::array({{{"timeMs", 200}, {"value", "surprised"}}}) && validateRig(r.data).empty(), "expression key (no interp stored)");
+    check(refused(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "rig"}, {"property", "expression"}, {"timeMs", 0}, {"value", "angry"}}), "unknown expression key refused");
+    check(refused(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "rig"}, {"property", "x"}, {"timeMs", 0}, {"value", 1}}), "rig only keys expression");
+    check(refused(base, {{"op", "setInterp"}, {"clip", "talk-face"}, {"target", "rig"}, {"property", "expression"}, {"timeMs", 0}, {"interp", "linear"}}), "expression interp refused");
+    const Json board = applyEdit(base, {{"op", "copyKeys"}, {"clip", "talk-face"}, {"keys", Json::array({ref("rig", "expression", 0), ref("rig", "expression", 500)})}}).extra["clipboard"];
+    check(!board["keys"][0].contains("interp") && board["keys"][1]["value"].is_null(), "copied expression keys carry no interp");
+    r = applyEdit(base, {{"op", "pasteKeys"}, {"clip", "idle"}, {"timeMs", 0}, {"keys", board["keys"]}});
+    check(trackOf(r.data, "idle", "rig", "expression").size() == 2, "paste expression keys");
+    r = applyEdit(base, {{"op", "moveKeys"}, {"clip", "talk-face"}, {"keys", Json::array({ref("rig", "expression", 500)})}, {"deltaMs", 100}});
+    check(trackOf(r.data, "talk-face", "rig", "expression")[1]["timeMs"] == 600, "move expression keys");
+    // Rename/delete keep clips and controllers consistent.
+    Json c = lookController();
+    c["defaultExpression"] = "happy";
+    const Json withDefault = Json::array({{{"id", "hero-main"}, {"data", c}}});
+    r = applyEdit(base, {{"op", "renameExpression"}, {"expression", "happy"}, {"id", "joyful"}, {"name", "즐거움"}}, withDefault);
+    check(trackOf(r.data, "talk-face", "rig", "expression")[0]["value"] == "joyful" && r.extra["keys"] == 1 && r.data["expressions"][0]["name"] == "즐거움", "renameExpression rewrites clip keys");
+    check(r.extra["controllers"][0]["data"]["defaultExpression"] == "joyful" && r.extra["controllers"][0]["data"]["bindings"][2]["expression"] == "joyful", "and controllers");
+    check(refused(base, {{"op", "deleteExpression"}, {"expression", "happy"}}, ctrls), "used (keys + binding) expression refused");
+    r = applyEdit(base, {{"op", "deleteExpression"}, {"expression", "happy"}, {"force", true}}, ctrls);
+    check(trackOf(r.data, "talk-face", "rig", "expression").size() == 1 && r.extra["controllers"][0]["data"]["bindings"].size() == 4 && validateRig(r.data).empty(), "force removes keys and the expression-only binding");
+    check(applyEdit(base, {{"op", "deleteExpression"}, {"expression", "surprised"}}).data["expressions"].size() == 1, "unused expression deletes");
+    // Capture: the pending editor change (from) at a clip time becomes the expression.
+    Json pending = applyEdit(base, {{"op", "setKey"}, {"clip", "idle"}, {"target", "slot:eyes"}, {"property", "attachment"}, {"timeMs", 500}, {"value", "closed"}}).data;
+    pending = applyEdit(pending, {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 500}, {"value", -6}}).data;
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "wink"}, {"name", "윙크"}, {"clip", "idle"}, {"timeMs", 500}, {"from", pending}});
+    check(r.data["expressions"][2] == Json({{"id", "wink"}, {"name", "윙크"}, {"slots", {{"eyes", "closed"}}}, {"bones", {{"head", {{"rotation", -6}}}}}}), "only the pending differences (idle's body bob is not captured)");
+    check(trackOf(r.data, "idle", "slot:eyes", "attachment").is_null(), "pending keys themselves are not committed");
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "joy-pose"}, {"clip", "joy"}, {"timeMs", 400}});
+    check(r.data["expressions"][2]["bones"]["head"] == Json({{"rotation", 20}}) && r.data["expressions"][2]["bones"]["body"] == Json({{"scaleY", 1.2}}) && !r.data["expressions"][2].contains("slots"), "without from: differences from the setup pose");
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "eyes-only"}, {"slots", {"eyes"}}, {"bones", Json::array()}});
+    check(r.data["expressions"][2] == Json({{"id", "eyes-only"}, {"name", "eyes-only"}, {"slots", {{"eyes", "open"}}}}), "listed slots captured whole");
+    check(refused(base, {{"op", "captureExpression"}, {"id", "same"}}), "nothing differs: refused");
+    check(refused(base, {{"op", "captureExpression"}, {"id", "happy"}, {"clip", "joy"}, {"timeMs", 400}}), "existing id refused without replace");
+    r = applyEdit(base, {{"op", "captureExpression"}, {"id", "happy"}, {"clip", "joy"}, {"timeMs", 400}, {"replace", true}});
+    check(r.data["expressions"][0]["name"] == "기쁨" && !r.data["expressions"][0].contains("slots"), "replace keeps the name");
+    // LLM path = editor path.
+    Host host;
+    const Json op = {{"op", "captureExpression"}, {"id", "wink"}, {"clip", "idle"}, {"timeMs", 500}, {"from", pending}};
+    check(host.handle({{"op", "edit"}, {"rig", base}, {"operation", op}})["rig"] == applyEdit(base, op).data, "host edit = core edit");
+  });
+
+  test("1.x documents: no skins/expressions, same behaviour", [&] {
+    check(validateRig(rigData()).empty() && validateRig(bezierRig()).empty(), "1.0/1.1 rigs validate unchanged");
+    const auto r = rig();
+    check(r->skins.empty() && r->expressions.empty(), "nothing parsed");
+    Instance inst(r, parseController("hero-main", controllerData()));
+    const Json s = inst.saveState();
+    check(s["skin"] == "" && s["expression"].is_null() && inst.pose().skin == -1 && inst.pose().expression == -1, "default look");
+    Json old = s;
+    old.erase("skin"); old.erase("expression");
+    Instance back(r, parseController("hero-main", controllerData()));
+    back.restoreState(old);
+    check(back.describe()["tracks"].size() == s["tracks"].size(), "1.x save restores");
+  });
+
+  // ---- IK constraints (plugin 1.3.0) ----
+  auto ikPose = [](const Json& d, int clip = -1, double timeMs = 0) {
+    const Rig r = parseRig("arm", d);
+    return samplePose(r, clip, timeMs);
+  };
+  auto at = [](const Pose& p, size_t bone) { return std::pair<double, double>{p.world[bone].e, p.world[bone].f}; };
+  auto reaches = [&](const Pose& p, double x, double y, double eps = 1e-9) { return near(at(p, 3).first, x, eps) && near(at(p, 3).second, y, eps); };
+  // Bend side on screen: cross(elbow - shoulder, wrist - elbow) (> 0 = clockwise on a y-down screen).
+  auto bendCross = [&](const Pose& p) {
+    const auto s = at(p, 1), e = at(p, 2), w = at(p, 3);
+    return (e.first - s.first) * (w.second - e.second) - (e.second - s.second) * (w.first - e.first);
+  };
+  test("ik validation", [&] {
+    check(validateRig(armRig(60, 40)).empty(), "arm fixture validates");
+    check(validateRig(ikParityRig()).empty(), "parity fixture validates");
+    auto bad = [&](const std::function<void(Json&)>& edit, const std::string& code) {
+      Json d = armRig(60, 40);
+      edit(d);
+      return hasCode(validateRig(d), code);
+    };
+    check(bad([](Json& d) { d["ik"].push_back(d["ik"][0]); }, "ANIM_IK_DUP_ID"), "duplicate id");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"upper", "elbow"}; }, "ANIM_IK_BONE_MISSING"), "unknown chain bone");
+    check(bad([](Json& d) { d["ik"][0]["target"] = "nobody"; }, "ANIM_IK_BONE_MISSING"), "unknown target");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"upper", "hand"}; }, "ANIM_IK_CHAIN"), "non-adjacent chain");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"lower", "upper"}; }, "ANIM_IK_CHAIN"), "child first");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = Json::array(); }, "ANIM_IK_CHAIN"), "empty chain");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"root", "upper", "lower"}; }, "ANIM_IK_CHAIN"), "three bones");
+    check(bad([](Json& d) { d["ik"][0]["target"] = "lower"; }, "ANIM_IK_TARGET"), "target in the chain");
+    check(bad([](Json& d) { d["ik"][0]["target"] = "hand"; }, "ANIM_IK_TARGET"), "target below the chain end");
+    check(bad([](Json& d) { d["ik"][0]["mix"] = 1.5; }, "ANIM_IK_MIX"), "mix range");
+    check(bad([](Json& d) { d["ik"][0]["bendPositive"] = 1; }, "ANIM_STRUCTURE"), "bend must be bool");
+    {
+      Json s = armRig(60, 40);
+      s["ik"][0]["stretch"] = true;
+      const auto ds = validateRig(s);
+      check(ds.size() == 1 && ds[0].code == "ANIM_IK_STRETCH" && ds[0].severity == "warning", "stretch: accepted, warned, ignored");
+    }
+    // Cycle: `a` aims upper at a bone under head, `b` aims head at a bone under upper.
+    check(bad([](Json& d) {
+      d["bones"].push_back({{"id", "head"}, {"parent", "root"}, {"x", 0}, {"y", -40}});
+      d["bones"].push_back({{"id", "eye"}, {"parent", "head"}, {"x", 5}, {"y", 0}});
+      d["ik"] = Json::array({{{"id", "a"}, {"bones", {"upper"}}, {"target", "eye"}}, {{"id", "b"}, {"bones", {"head"}}, {"target", "lower"}}});
+    }, "ANIM_IK_CYCLE"), "dependency cycle");
+    // Order: `look` aims at the hand that `arm` moves, so it must be solved after it.
+    Json d = armRig(60, 40);
+    d["bones"].push_back({{"id", "head"}, {"parent", "root"}, {"x", 0}, {"y", -40}});
+    d["ik"].push_back({{"id", "look"}, {"bones", {"head"}}, {"target", "hand"}});
+    check(validateRig(d).empty(), "dependent constraint after its source: fine");
+    d["ik"][1]["order"] = -1;
+    const auto ds = validateRig(d);
+    check(hasCode(ds, "ANIM_IK_ORDER") && !hasCode(ds, "ANIM_IK_CYCLE") && parseRig("x", d).ikOrder == std::vector<int>({1, 0}), "order before its source: warning, order honoured");
+    // Tracks.
+    auto track = [&](const Json& tr, const std::string& code) {
+      Json x = armRig(60, 40);
+      x["clips"] = Json::array({{{"id", "c"}, {"durationMs", 1000}, {"loop", false}, {"tracks", Json::array({tr})}}});
+      return hasCode(validateRig(x), code);
+    };
+    check(!track({{"target", "ik:arm"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 0.5}}}}}, "ANIM_PROPERTY") &&
+          track({{"target", "ik:arm"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 1.5}}}}}, "ANIM_IK_MIX"), "mix keys 0..1");
+    check(track({{"target", "ik:nope"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_TARGET_MISSING"), "unknown constraint track");
+    check(track({{"target", "ik:arm"}, {"property", "x"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_PROPERTY"), "ik tracks only key mix/bend");
+    check(track({{"target", "bone:upper"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_PROPERTY"), "mix only on ik tracks");
+    check(track({{"target", "ik:arm"}, {"property", "bendPositive"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_KEY_VALUE"), "bend keys are bool");
+    check(track({{"target", "ik:arm"}, {"property", "bendPositive"}, {"keys", {{{"timeMs", 0}, {"value", true}, {"interp", "bezier"}, {"curve", {0, 0, 1, 1}}}}}}, "ANIM_INTERP"), "bend keys are step");
+  });
+
+  test("ik two-bone: reach, unreachable, fold, bend flip, mix", [&] {
+    Pose p = ikPose(armRig(60, 40));
+    check(reaches(p, 60, 40), "reachable target: the wrist lands on it");
+    check(near(std::hypot(at(p, 2).first, at(p, 2).second), 50, 1e-9), "upper link keeps its length");
+    check(p.bones[1].rotation == 0 && p.bones[2].rotation == 0, "animated (keyable) values untouched");
+    check(!p.applied.empty() && !near(p.applied[1].rotation, 0), "solved rotations in applied");
+    check(bendCross(p) > 0, "bendPositive: clockwise bend on screen");
+    Json flip = armRig(60, 40);
+    flip["ik"][0]["bendPositive"] = false;
+    const Pose q = ikPose(flip);
+    check(reaches(q, 60, 40) && bendCross(q) < 0, "bend flip: same wrist, elbow on the other side");
+    // The two elbows are mirror images across the shoulder -> target line.
+    const double ux = 60 / std::hypot(60, 40), uy = 40 / std::hypot(60, 40);
+    const auto e1 = at(p, 2), e2 = at(q, 2);
+    check(near(e1.first * ux + e1.second * uy, e2.first * ux + e2.second * uy, 1e-9) && near(e1.first * uy - e1.second * ux, -(e2.first * uy - e2.second * ux), 1e-9), "mirrored elbows");
+    p = ikPose(armRig(0, 300));
+    check(near(at(p, 2).first, 0, 1e-9) && near(at(p, 2).second, 50, 1e-9) && reaches(p, 0, 100), "unreachable: straight at the target");
+    Json shortArm = armRig(10, 0);
+    shortArm["bones"][3]["x"] = 30;
+    p = ikPose(shortArm);
+    check(near(at(p, 2).first, 50, 1e-6) && reaches(p, 20, 0, 1e-6), "too close: folded towards the target");
+    Json zero = armRig(0, 0);
+    p = ikPose(zero);
+    check(reaches(p, 100, 0) && p.applied[1].rotation == 0, "target on the shoulder: no direction, FK pose");
+    // mix
+    Json m = armRig(60, 40);
+    m["ik"][0]["mix"] = 0;
+    check(reaches(ikPose(m), 100, 0), "mix 0 = forward kinematics");
+    const Pose full = ikPose(armRig(60, 40));
+    m["ik"][0]["mix"] = 0.5;
+    p = ikPose(m);
+    check(near(p.applied[1].rotation, full.applied[1].rotation / 2, 1e-9) && near(p.applied[2].rotation, full.applied[2].rotation / 2, 1e-9), "mix 0.5 = halfway rotations");
+    // No effector (end bone without children): the child origin aims at the target.
+    Json noTip = armRig(0, 80);
+    noTip["bones"].erase(3);
+    noTip["slots"].erase(1); noTip["attachments"].erase(1);
+    p = ikPose(noTip);
+    check(near(at(p, 2).first, 0, 1e-9) && near(at(p, 2).second, 50, 1e-9), "no tip: elbow points at the target");
+  });
+
+  test("ik respects rotated, scaled and mirrored parents", [&] {
+    for (const Json& rootT : {Json{{"rotation", 30}, {"scaleX", 2}, {"scaleY", 0.5}}, Json{{"rotation", -70}, {"scaleX", -1.5}, {"scaleY", 1}}}) {
+      Json d = armRig(60, 40);
+      for (auto it = rootT.begin(); it != rootT.end(); ++it) d["bones"][0][it.key()] = it.value();
+      d["bones"][0]["x"] = 10; d["bones"][0]["y"] = 20;
+      const Pose p = ikPose(d);
+      const auto tw = at(p, 4);
+      check(reaches(p, tw.first, tw.second, 1e-9), "any ancestor transform is exact: " + rootT.dump());
+    }
+    for (const Json& upperT : {Json{{"scaleX", 1.5}, {"scaleY", 1.5}}, Json{{"scaleX", -1.2}, {"scaleY", -1.2}}, Json{{"scaleX", -1}, {"scaleY", 1}, {"rotation", 40}}}) {
+      Json d = armRig(60, 50);
+      for (auto it = upperT.begin(); it != upperT.end(); ++it) d["bones"][1][it.key()] = it.value();
+      d["bones"][2]["scaleX"] = 0.8;  // the child's own scale shortens the forearm link exactly
+      const Pose p = ikPose(d);
+      check(reaches(p, 60, 50, 1e-9), "uniform / mirrored upper bone is exact: " + upperT.dump());
+    }
+    Json d = armRig(60, 40);
+    d["bones"][0]["scaleX"] = -1;  // a mirrored parent space keeps bendPositive's side on screen
+    d["bones"][4]["x"] = -60;
+    check(bendCross(ikPose(d)) > 0 && reaches(ikPose(d), 60, 40), "mirrored root: same screen side");
+  });
+
+  test("ik one-bone aim", [&] {
+    Json d = armRig(0, 80);
+    d["ik"][0]["bones"] = {"upper"};
+    Pose p = ikPose(d);
+    check(near(std::atan2(p.world[1].b, p.world[1].a) * 180 / 3.14159265358979323846, 90, 1e-9), "x axis points at the target");
+    d["bones"][0]["rotation"] = 30; d["bones"][0]["scaleX"] = 2; d["bones"][0]["scaleY"] = 0.5;
+    d["bones"][1]["scaleX"] = -1;  // a flipped bone aims its (flipped) +x axis
+    p = ikPose(d);
+    const double ax = p.world[1].a, ay = p.world[1].b, tx = p.world[4].e - p.world[1].e, ty = p.world[4].f - p.world[1].f;
+    check(near(ax * ty - ay * tx, 0, 1e-9) && ax * tx + ay * ty > 0, "aim exact under a skewing parent and a flipped bone");
+    d["ik"][0]["mix"] = 0.25;
+    check(near(ikPose(d).applied[1].rotation, p.applied[1].rotation * 0.25, 1e-9), "aim mix");
+  });
+
+  test("ik in clips, instances, frame-rate determinism, save/restore", [&] {
+    const Json d = ikParityRig();
+    const auto r = std::make_shared<const Rig>(parseRig("arm", d));
+    const int clip = r->clipIndex("reach");
+    Pose p = samplePose(*r, clip, 350);
+    check(near(p.ikMix[0], 1 - 0.75 * 350.0 / 700) && p.ikBend[0] == 1, "mix keys sampled, bend before its key");
+    check(samplePose(*r, clip, 650).ikBend[0] == 0, "bend step key");
+    p = samplePose(*r, clip, 0);
+    check(reaches(p, p.world[4].e, p.world[4].f, 1e-9), "full mix in the clip: the wrist follows the animated target");
+    Look noIk;
+    noIk.ik = false;
+    const Pose fk = samplePose(*r, clip, 0, noIk);
+    check(fk.applied.empty() && !near(fk.world[3].e, p.world[3].e), "look.ik = false: plain FK");
+    Instance a(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    Instance b(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    for (int i = 0; i < 60; i++) a.update(10);
+    for (int i = 0; i < 24; i++) b.update(25);
+    const auto da = a.drawList(), db = b.drawList();
+    bool same = da.size() == db.size();
+    for (size_t i = 0; same && i < da.size(); i++) same = da[i].matrix.a == db[i].matrix.a && da[i].matrix.e == db[i].matrix.e && da[i].matrix.f == db[i].matrix.f;
+    check(same, "60 x 10 ms == 24 x 25 ms: identical draw lists");
+    const Pose ip = a.pose(), sp = samplePose(*r, clip, 600);
+    check(near(ip.world[3].e, sp.world[3].e, 1e-9) && near(ip.world[2].f, sp.world[2].f, 1e-9), "Instance::pose == samplePose (IK after the expression layer)");
+    const Json saved = a.saveState();
+    check(!saved.contains("ik") && saved["tracks"].size() == 1, "IK adds no save state");
+    Instance c(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    c.restoreState(saved);
+    Instance fresh(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    check(c.drawList().size() == fresh.drawList().size() && near(c.drawList()[0].matrix.e, fresh.drawList()[0].matrix.e, 1e-9), "restore: looping clip restarts at 0, IK applied the same");
+    const Pose x = samplePose(*r, -1, 0);
+    check(x.ikMix.size() == 2 && x.ikMix[1] == 0.8 && x.ikBend[0] == 1, "setup values");
+  });
+
+  test("ik edit ops", [&] {
+    Json base = armRig(60, 40);
+    base.erase("ik");
+    base["bones"][2]["rotation"] = 30;  // a bent elbow (clockwise on screen)
+    const Pose before = ikPose(base);
+    auto r = applyEdit(base, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"createTarget", true}});
+    const Json& k = r.data["ik"][0];
+    check(k["id"] == "lower-ik" && k["target"] == "lower-target" && k["bendPositive"] == true && r.extra["target"] == "lower-target", "defaults: ids, inferred bend side");
+    check(r.data["bones"].back()["id"] == "lower-target" && r.affected.size() == 2, "target bone created");
+    const Pose after = ikPose(r.data);
+    check(near(after.world[3].e, before.world[3].e, 1e-6) && near(after.world[3].f, before.world[3].f, 1e-6) && near(after.applied[2].rotation, 30, 1e-6), "new constraint holds the current pose");
+    check(r.data["bones"].back()["parent"] == "root", "target under the chain's top ancestor");
+    r = applyEdit(base, {{"op", "addIk"}, {"id", "aim"}, {"bones", {"upper"}}, {"createTarget", true}, {"targetId", "aim-at"}, {"mix", 0.5}});
+    check(near(ikPose(r.data).applied[1].rotation, 0, 1e-6) && r.data["ik"][0]["mix"] == 0.5, "aim target on the x axis: no jump");
+    check(refused(base, {{"op", "addIk"}, {"bones", {"upper", "hand"}}, {"createTarget", true}}), "non-adjacent chain refused");
+    check(refused(base, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"target", "hand"}}), "target below the chain refused");
+    check(refused(base, {{"op", "addIk"}, {"bones", {"upper", "lower"}}}), "needs a target");
+    Json d = armRig(60, 40);
+    check(refused(d, {{"op", "addIk"}, {"id", "arm"}, {"bones", {"upper"}}, {"target", "t"}}), "duplicate id refused");
+    r = applyEdit(d, {{"op", "setIk"}, {"ik", "arm"}, {"mix", 0.5}, {"bendPositive", false}, {"order", 3}});
+    check(r.data["ik"][0]["mix"] == 0.5 && r.data["ik"][0]["bendPositive"] == false && r.data["ik"][0]["order"] == 3, "setIk");
+    check(refused(d, {{"op", "setIk"}, {"ik", "arm"}, {"mix", 2}}) && refused(d, {{"op", "setIk"}, {"ik", "arm"}, {"target", "hand"}}) && refused(d, {{"op", "setIk"}, {"ik", "nope"}, {"mix", 1}}), "setIk refusals");
+    // Keys.
+    d["clips"] = Json::array({{{"id", "c"}, {"durationMs", 1000}, {"loop", false}, {"tracks", Json::array()}}});
+    r = applyEdit(d, {{"op", "batch"}, {"operations", {
+      {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "mix"}, {"timeMs", 0}, {"value", 0}, {"interp", "easeIn"}},
+      {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "mix"}, {"timeMs", 500}, {"value", 1}},
+      {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "bendPositive"}, {"timeMs", 200}, {"value", false}, {"interp", "linear"}}}}});
+    check(trackOf(r.data, "c", "ik:arm", "mix")[0]["interp"] == "bezier" && trackOf(r.data, "c", "ik:arm", "bendPositive") == Json::array({{{"timeMs", 200}, {"value", false}}}) && validateRig(r.data).empty(), "mix keys with curves, bend keys step");
+    const Json keyed = r.data;
+    check(refused(d, {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "mix"}, {"timeMs", 0}, {"value", 1.2}}), "mix key range");
+    check(refused(d, {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "rotation"}, {"timeMs", 0}, {"value", 1}}), "ik keys mix/bend only");
+    check(refused(keyed, {{"op", "setInterp"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "bendPositive"}, {"timeMs", 200}, {"interp", "linear"}}), "bend interp refused");
+    const Json board = applyEdit(keyed, {{"op", "copyKeys"}, {"clip", "c"}, {"keys", Json::array({ref("ik:arm", "bendPositive", 200), ref("ik:arm", "mix", 500)})}}).extra["clipboard"];
+    check(!board["keys"][0].contains("interp") && board["keys"][1]["interp"] == "linear", "copied bend keys carry no interp");
+    // Rename / delete.
+    r = applyEdit(keyed, {{"op", "renameIk"}, {"ik", "arm"}, {"id", "left-arm"}, {"name", "왼팔"}});
+    check(r.data["ik"][0]["id"] == "left-arm" && r.data["ik"][0]["name"] == "왼팔" && trackOf(r.data, "c", "ik:left-arm", "mix").size() == 2 && r.extra["tracks"] == 2 && validateRig(r.data).empty(), "renameIk renames tracks");
+    r = applyEdit(keyed, {{"op", "deleteIk"}, {"ik", "arm"}, {"deleteTarget", true}});
+    check(!r.data.contains("ik") && r.data["clips"][0]["tracks"].empty() && r.extra["keys"] == 3 && r.extra["deletedTarget"] == "t" && validateRig(r.data).empty(), "deleteIk removes keys, list and the unused target");
+    // Hierarchy edits keep constraints consistent.
+    check(refused(keyed, {{"op", "reparentBone"}, {"bone", "lower"}, {"parent", "root"}}), "reparent breaking the chain refused");
+    check(refused(keyed, {{"op", "reparentBone"}, {"bone", "t"}, {"parent", "lower"}}), "reparent of the target into the chain refused");
+    check(validateRig(applyEdit(keyed, {{"op", "reparentBone"}, {"bone", "t"}, {"parent", nullptr}}).data).empty(), "harmless reparent of the target allowed");
+    check(refused(keyed, {{"op", "deleteBone"}, {"bone", "t"}}), "deleting a target needs cascade");
+    r = applyEdit(keyed, {{"op", "deleteBone"}, {"bone", "lower"}, {"cascade", true}});
+    check(!r.data.contains("ik") && r.data["clips"][0]["tracks"].empty() && hasCode(r.diagnostics, "ANIM_IK_REMOVED") && validateRig(r.data).empty(), "cascade removes the constraint and its keys");
+    r = applyEdit(d, {{"op", "setPivot"}, {"bone", "lower"}, {"localX", 10}, {"localY", 0}});
+    check(validateRig(r.data).empty() && reaches(ikPose(r.data), 60, 40, 1e-9), "setPivot keeps refs; still reaches");
+    // Bake: the solved rotations become keys (FK pose kept with mix 0).
+    r = applyEdit(keyed, {{"op", "bakeIk"}, {"clip", "c"}, {"timeMs", 700}, {"disable", true}});
+    const Pose solved = ikPose(keyed, 0, 700), baked = ikPose(r.data, 0, 700);
+    check(near(baked.bones[1].rotation, solved.applied[1].rotation, 1e-5) && near(baked.world[3].e, solved.world[3].e, 1e-3) && near(baked.world[3].f, solved.world[3].f, 1e-3) && baked.ikMix[0] == 0, "bakeIk keys the solved pose");
+    check(r.extra["keys"].size() == 3, "two rotations + mix 0");
+    Host host;
+    const Json op = {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"createTarget", true}};
+    check(host.handle({{"op", "edit"}, {"rig", base}, {"operation", op}})["rig"] == applyEdit(base, op).data, "host edit = core edit");
+  });
+
+  test("ik host sample reply", [&] {
+    Host host;
+    const auto reply = host.handle({{"op", "sample"}, {"rig", ikParityRig()}, {"clip", "reach"}, {"timeMs", 650}});
+    check(reply["pose"]["ik"]["arm"]["bendPositive"] == false && near(reply["pose"]["ik"]["look"]["mix"].get<double>(), 0.8), "constraint values in the pose");
+    const Rig r = parseRig("arm", ikParityRig());
+    const Pose p = samplePose(r, r.clipIndex("reach"), 650);
+    check(reply["pose"]["bones"]["upper"]["appliedRotation"].get<double>() == p.applied[1].rotation && reply["pose"]["bones"]["upper"]["world"][4].get<double>() == p.world[1].e, "solved rotation and world");
+    check(!host.handle({{"op", "sample"}, {"rig", rigData()}, {"timeMs", 0}})["pose"].contains("ik"), "rigs without IK keep the 1.2 shape");
+  });
+
+  test("host sample op evaluates bezier like samplePose", [] {
+    Host host;
+    const auto reply = host.handle({{"op", "sample"}, {"rig", bezierRig()}, {"clip", "ease"}, {"timeMs", 300}});
+    const Rig r = parseRig("b", bezierRig());
+    check(reply.value("ok", false) && reply["pose"]["bones"]["body"]["y"].get<double>() == samplePose(r, r.clipIndex("ease"), 300).bones[1].y, "same number through the JSON host");
+  });
+
+  // ---- Explicit IK tip (plugin 1.4.0) ----
+  test("ik explicit tip picks the effector among several children", [&] {
+    // A thumb bone listed before the hand: the implicit first-child rule would aim the thumb.
+    Json d = armRig(60, 40);
+    d["bones"].insert(d["bones"].begin() + 3, Json{{"id", "thumb"}, {"parent", "lower"}, {"x", 20}, {"y", 15}});
+    auto origin = [&](const Json& data, const char* id) {
+      const Rig r = parseRig("arm", data);
+      const Pose p = samplePose(r, -1, 0);
+      return std::pair<double, double>{p.world[size_t(r.boneIndex(id))].e, p.world[size_t(r.boneIndex(id))].f};
+    };
+    check(validateRig(d).empty() && parseRig("arm", d).ik[0].tip == 3 && !parseRig("arm", d).ik[0].explicitTip, "implicit: first child (thumb)");
+    check(near(origin(d, "thumb").first, 60, 1e-9) && near(origin(d, "thumb").second, 40, 1e-9), "implicit tip reaches with the thumb");
+    d["ik"][0]["tip"] = "hand";
+    check(validateRig(d).empty() && parseRig("arm", d).ik[0].tip == 4 && parseRig("arm", d).ik[0].explicitTip, "explicit tip parsed");
+    check(near(origin(d, "hand").first, 60, 1e-9) && near(origin(d, "hand").second, 40, 1e-9), "explicit tip: the hand reaches");
+    auto bad = [&](const Json& tip, bool aim = false) {
+      Json x = d;
+      x["ik"][0]["tip"] = tip;
+      if (aim) x["ik"][0]["bones"] = {"lower"};
+      return hasCode(validateRig(x), "ANIM_IK_TIP");
+    };
+    check(bad("nobody") && bad("upper") && bad("t") && bad(7) && bad("hand", true), "unknown, not a child of the lower bone, aim chain");
+    // Editing: addIk names the known end, setIk can change or clear it, deleting it falls back.
+    Json plain = d;
+    plain.erase("ik");
+    auto r = applyEdit(plain, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"createTarget", true}});
+    check(r.data["ik"][0]["tip"] == "thumb", "addIk stores the end it placed the target at");
+    r = applyEdit(plain, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"tip", "hand"}, {"createTarget", true}});
+    check(r.data["ik"][0]["tip"] == "hand" && validateRig(r.data).empty(), "addIk with an explicit tip");
+    const Pose made = samplePose(parseRig("x", r.data), -1, 0);
+    const Rig mr = parseRig("x", r.data);
+    check(near(made.world[size_t(mr.boneIndex("hand"))].e, made.world[size_t(mr.boneIndex(r.extra["target"].get<std::string>()))].e, 1e-6), "target created at the explicit tip");
+    check(refused(plain, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"tip", "upper"}, {"createTarget", true}}) &&
+          refused(plain, {{"op", "addIk"}, {"bones", {"lower"}}, {"tip", "hand"}, {"createTarget", true}}), "addIk tip refusals");
+    check(!applyEdit(d, {{"op", "setIk"}, {"ik", "arm"}, {"tip", nullptr}}).data["ik"][0].contains("tip"), "setIk tip null = implicit rule");
+    check(applyEdit(d, {{"op", "setIk"}, {"ik", "arm"}, {"tip", "thumb"}}).data["ik"][0]["tip"] == "thumb" && refused(d, {{"op", "setIk"}, {"ik", "arm"}, {"tip", "root"}}), "setIk tip");
+    r = applyEdit(d, {{"op", "deleteBone"}, {"bone", "hand"}, {"cascade", true}});
+    check(!r.data["ik"][0].contains("tip") && hasCode(r.diagnostics, "ANIM_IK_TIP_REMOVED") && validateRig(r.data).empty(), "deleting the tip falls back to the implicit rule");
+    check(refused(d, {{"op", "reparentBone"}, {"bone", "hand"}, {"parent", "root"}}), "reparenting the tip away is refused");
+  });
+
+  // ---- Mesh attachments and weights (plugin 1.4.0) ----
+  auto meshItem = [](const std::vector<DrawItem>& items, const char* slot) {
+    for (const auto& i : items) if (i.slot == slot) return i;
+    return DrawItem{};
+  };
+  auto vertexAt = [](const Json& d, const char* slot, size_t v) {
+    const Rig r = parseRig("m", d);
+    const Pose p = samplePose(r, -1, 0);
+    const int s = r.slotIndex(slot);
+    const auto pos = meshPositions(r, p, s, *r.attachment(slot, *p.attachments[size_t(s)]));
+    return std::pair<double, double>{pos[2 * v], pos[2 * v + 1]};
+  };
+  test("mesh validation", [&] {
+    check(validateRig(weightedArm()).empty(), "weighted arm validates");
+    check(validateRig(meshParityRig()).empty(), "parity fixture validates");
+    auto bad = [&](const std::function<void(Json&)>& edit, const std::string& code, const char* severity = "error") {
+      Json d = weightedArm();
+      edit(d["attachments"][0]);
+      for (const auto& x : validateRig(d)) if (x.code == code && x.severity == severity) return true;
+      return false;
+    };
+    check(bad([](Json& a) { a["type"] = "bone"; }, "ANIM_MESH_TYPE"), "unknown type");
+    check(bad([](Json& a) { a["vertices"].push_back(1); }, "ANIM_MESH_VERTICES"), "odd coordinate count");
+    check(bad([](Json& a) { a["vertices"] = {0, 0, 1, 1}; }, "ANIM_MESH_VERTICES"), "fewer than 3 vertices");
+    check(bad([](Json& a) { a["vertices"] = Json(std::vector<double>(2 * (MAX_MESH_VERTICES + 1), 0.0)); }, "ANIM_MESH_VERTICES"), "vertex limit");
+    check(bad([](Json& a) { a["uvs"].erase(a["uvs"].begin()); }, "ANIM_MESH_UVS"), "uv count");
+    check(bad([](Json& a) { a["uvs"][3] = 1.5; }, "ANIM_MESH_UVS"), "uv range");
+    check(bad([](Json& a) { a["triangles"].push_back(0); }, "ANIM_MESH_TRIANGLES"), "triangle triples");
+    check(bad([](Json& a) { a["triangles"][4] = 10; }, "ANIM_MESH_TRIANGLES"), "index out of range");
+    check(bad([](Json& a) { a["triangles"] = Json(std::vector<int>(3 * (MAX_MESH_TRIANGLES + 1), 0)); }, "ANIM_MESH_TRIANGLES"), "triangle limit");
+    check(bad([](Json& a) { a.erase("triangles"); }, "ANIM_MESH_TRIANGLES"), "triangles required");
+    check(bad([](Json& a) { a["hull"] = 99; }, "ANIM_MESH_HULL") && bad([](Json& a) { a["edges"] = {0, 42}; }, "ANIM_MESH_EDGES"), "hull and edges");
+    check(bad([](Json& a) { a["weights"].erase(a["weights"].begin()); }, "ANIM_MESH_WEIGHTS"), "weights per vertex");
+    check(bad([](Json& a) { a["weights"][0][0]["bone"] = "tail"; }, "ANIM_MESH_BONE_MISSING"), "unknown weight bone");
+    check(bad([](Json& a) { a["weights"][0] = Json::array({{{"bone", "root"}, {"weight", 0.2}}, {{"bone", "upper"}, {"weight", 0.2}}, {{"bone", "lower"}, {"weight", 0.2}},
+                                                            {{"bone", "hand"}, {"weight", 0.2}}, {{"bone", "t"}, {"weight", 0.2}}}); }, "ANIM_MESH_INFLUENCES"), "max 4 influences");
+    check(bad([](Json& a) { a["weights"][0] = Json::array({{{"bone", "upper"}, {"weight", 0.5}}, {{"bone", "upper"}, {"weight", 0.5}}}); }, "ANIM_MESH_WEIGHTS"), "duplicate bone");
+    check(bad([](Json& a) { a["weights"][0][0]["weight"] = 0; }, "ANIM_MESH_WEIGHTS"), "zero sum");
+    check(bad([](Json& a) { a["weights"][0][0]["weight"] = 0.5; }, "ANIM_MESH_WEIGHT_SUM", "warning"), "sum off: warning");
+    {
+      Json d = weightedArm();
+      d["attachments"][0]["weights"][0][0]["weight"] = 0.5;  // normalized at load: still 100 % upper
+      const Rig r = parseRig("m", d);
+      check(near(r.attachments[0].weights[0][0].weight, 1, 1e-12), "normalized at load");
+    }
+    Json region = meshArm();
+    region["attachments"][1]["vertices"] = {0, 0, 1, 1, 2, 2};
+    check(hasCode(validateRig(region), "ANIM_MESH_UNUSED") && !hasCode(validateRig(meshArm()), "ANIM_MESH_UNUSED"), "mesh fields on a region warn");
+    // Deform tracks.
+    auto deform = [&](const Json& track, const std::string& code) {
+      Json d = weightedArm();
+      d["clips"] = Json::array({{{"id", "c"}, {"durationMs", 1000}, {"loop", false}, {"tracks", Json::array({track})}}});
+      return hasCode(validateRig(d), code);
+    };
+    const Json ten = std::vector<double>(20, 1.0);
+    check(!deform({{"target", "slot:arm"}, {"property", "deform"}, {"attachment", "arm"}, {"keys", Json::array({{{"timeMs", 0}, {"offsets", ten}}})}}, "ANIM_MESH_DEFORM"), "valid deform track");
+    check(deform({{"target", "slot:arm"}, {"property", "deform"}, {"keys", Json::array({{{"timeMs", 0}, {"offsets", ten}}})}}, "ANIM_MESH_DEFORM"), "attachment required");
+    check(deform({{"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"keys", Json::array({{{"timeMs", 0}, {"offsets", ten}}})}}, "ANIM_MESH_DEFORM"), "region cannot deform");
+    check(deform({{"target", "slot:arm"}, {"property", "deform"}, {"attachment", "arm"}, {"keys", Json::array({{{"timeMs", 0}, {"offsets", {1, 2}}}})}}, "ANIM_MESH_DEFORM"), "offset count");
+    check(deform({{"target", "slot:arm"}, {"property", "deform"}, {"attachment", "arm"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 1}}})}}, "ANIM_MESH_DEFORM"), "offsets required");
+    check(deform({{"target", "bone:upper"}, {"property", "deform"}, {"attachment", "arm"}, {"keys", Json::array({{{"timeMs", 0}, {"offsets", ten}}})}}, "ANIM_PROPERTY"), "deform only on slots");
+  });
+
+  test("mesh: a grid on one bone draws exactly like the region", [&] {
+    Json d = applyEdit(rigData(), {{"op", "convertToMesh"}, {"slot", "torso"}, {"rows", 3}, {"cols", 2}}).data;
+    check(validateRig(d).empty(), "converted rig validates");
+    const Json& a = d["attachments"][0];
+    check(a["type"] == "mesh" && a["vertices"].size() == 24 && a["triangles"].size() == 36 && a["hull"] == 10 && a["edges"].size() == 20, "3x2 grid: 12 vertices, 12 triangles, outline first");
+    // Documents round to 1e-6 (thirds): the texture lands within 1e-4 px of the region's pixels.
+    for (size_t i = 0; i < 12; i++) check(near(a["uvs"][2 * i].get<double>() * 80, a["vertices"][2 * i].get<double>(), 1e-4) && near(a["uvs"][2 * i + 1].get<double>() * 120, a["vertices"][2 * i + 1].get<double>(), 1e-4), "uv * size = vertex");
+    const Json bound = applyEdit(d, {{"op", "bindMesh"}, {"slot", "torso"}, {"bones", {"body"}}}).data;
+    check(validateRig(bound).empty() && bound["attachments"][0]["weights"][5] == Json::array({{{"bone", "body"}, {"weight", 1}}}), "bound 100 % to the slot bone");
+    for (const Json* data : {static_cast<const Json*>(&d), &bound}) {
+      const auto r = std::make_shared<const Rig>(parseRig("hero", *data));
+      Instance inst(r, parseController("hero-main", controllerData()));
+      inst.update(250);  // idle moves the body; joy below rotates the head and scales the body
+      inst.play(0, "joy", std::nullopt, 1, Then::Hold, 0);
+      inst.update(300);
+      const DrawItem item = meshItem(inst.drawList(), "torso");
+      check(item.mesh() && item.positions.size() == 24 && item.uvs == r->attachments[0].uvs && item.indices == r->attachments[0].triangles, "mesh item fields");
+      bool same = true;
+      for (size_t v = 0; v < 12; v++) {
+        double x, y;
+        item.matrix.apply(r->attachments[0].vertices[2 * v], r->attachments[0].vertices[2 * v + 1], x, y);
+        same = same && near(item.positions[2 * v], x, 1e-9) && near(item.positions[2 * v + 1], y, 1e-9);
+      }
+      check(same, data == &d ? "unweighted mesh = region matrix" : "weighted (one bone) mesh = region matrix");
+    }
+  });
+
+  test("mesh: two-bone 50/50 bend and IK skinning are analytic", [&] {
+    Json d = weightedArm();
+    check(near(vertexAt(d, "arm", 2).first, 200) && near(vertexAt(d, "arm", 2).second, 130) && near(vertexAt(d, "arm", 4).first, 300), "setup pose = bind pose");
+    d["clips"] = Json::array({{{"id", "bend"}, {"durationMs", 100}, {"loop", false}, {"tracks", Json::array({
+      {{"target", "bone:lower"}, {"property", "rotation"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 90}}})}}})}}});
+    const Rig r = parseRig("m", d);
+    const Pose p = samplePose(r, 0, 0);
+    const auto pos = meshPositions(r, p, 0, r.attachments[0]);
+    // Elbow vertex (image 100,0) = setup world (200,130): 50 % upper (unmoved) + 50 % lower
+    // (rotated 90° clockwise about the elbow at (200,150): (220,150)) = (210,140).
+    check(near(pos[4], 210, 1e-9) && near(pos[5], 140, 1e-9), "50/50 vertex halfway between the two bones' motion");
+    check(near(pos[8], 220, 1e-9) && near(pos[9], 250, 1e-9), "lower vertex (image 200,0) turned with the forearm");
+    check(near(pos[0], 100, 1e-9) && near(pos[1], 130, 1e-9), "upper vertex unmoved");
+    const Affine m = meshVertexMatrix(r, p, 0, r.attachments[0], 2);
+    double mx, my;
+    m.apply(100, 0, mx, my);
+    check(near(mx, 210, 1e-9) && near(my, 140, 1e-9), "vertex matrix maps the vertex like skinning");
+    // IK: the forearm-weighted vertex at the wrist edge follows the solved world (after IK).
+    Json ik = weightedArm();
+    ik["bones"][4]["x"] = 120; ik["bones"][4]["y"] = 90;
+    ik["ik"] = Json::array({{{"id", "arm"}, {"bones", {"upper", "lower"}}, {"target", "t"}, {"tip", "hand"}}});
+    const Rig ri = parseRig("m", ik);
+    const Pose pi = samplePose(ri, -1, 0);
+    check(near(pi.world[3].e, 220, 1e-9) && near(pi.world[3].f, 240, 1e-9), "IK puts the wrist on the target");
+    const auto ipos = meshPositions(ri, pi, 0, ri.attachments[0]);
+    double ex, ey;
+    pi.world[2].apply(100, -20, ex, ey);  // vertex 4 in the forearm's setup space
+    check(near(ipos[8], ex, 1e-9) && near(ipos[9], ey, 1e-9), "weighted vertex skinned with the solved forearm");
+    Look noIk; noIk.ik = false;
+    const auto fk = meshPositions(ri, samplePose(ri, -1, 0, noIk), 0, ri.attachments[0]);
+    check(!near(fk[8], ipos[8], 1) && near(fk[8], 300, 1e-9), "without IK the mesh stays in the bind pose");
+  });
+
+  test("mesh deform keys interpolate (step, linear, bezier) and cross-fade", [&] {
+    Json d = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "flag"}, {"rows", 1}, {"cols", 1}}).data;
+    d["clips"] = Json::array({{{"id", "flap"}, {"durationMs", 1000}, {"loop", false}, {"tracks", Json::array()}}, {{"id", "rest"}, {"durationMs", 1000}, {"loop", true}, {"tracks", Json::array()}}});
+    std::vector<double> up(8, 0.0);
+    up[0] = 10; up[1] = -8;
+    auto r = applyEdit(d, {{"op", "batch"}, {"operations", {
+      {{"op", "setKey"}, {"clip", "flap"}, {"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"timeMs", 0}, {"interp", "easeInOut"}},
+      {{"op", "setKey"}, {"clip", "flap"}, {"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"timeMs", 600}, {"offsets", up}, {"interp", "step"}},
+      {{"op", "setKey"}, {"clip", "flap"}, {"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"timeMs", 800}}}}});
+    check(validateRig(r.data).empty(), "deform keys validate");
+    const Json keys = r.data["clips"][0]["tracks"][0]["keys"];
+    check(r.data["clips"][0]["tracks"][0]["attachment"] == "flag" && keys[0]["offsets"] == Json(std::vector<double>(8, 0.0)) && keys[0]["interp"] == "bezier" && !keys[0].contains("value"), "rest key (no offsets) stored as zeros with a curve");
+    const Rig rig = parseRig("m", r.data);
+    const Attachment& flag = *rig.attachment("flag", "flag");
+    auto at = [&](double t) { return samplePose(rig, 0, t).deform.at({1, "flag"}); };
+    check(near(at(300)[0], 10 * evalCurve(presetCurve("easeInOut").value(), 0.5)) && near(at(300)[1], -8 * evalCurve(presetCurve("easeInOut").value(), 0.5)), "bezier segment eases every vertex by one curve");
+    check(at(700)[0] == 10 && at(799)[1] == -8 && at(800)[0] == 0 && at(1000)[0] == 0 && at(0)[0] == 0, "step holds, last key holds");
+    const Pose p = samplePose(rig, 0, 300);
+    const auto pos = meshPositions(rig, p, 1, flag), rest = meshPositions(rig, samplePose(rig, -1, 0), 1, flag);
+    check(near(pos[0] - rest[0], at(300)[0], 1e-9) && near(pos[1] - rest[1], at(300)[1], 1e-9) && near(pos[2], rest[2], 1e-12), "offsets move the vertex in image space (hand unrotated)");
+    check(deformOf(p, 1, flag) && !deformOf(p, 0, flag), "deform lookup by (slot, attachment)");
+    // Cross-fade: rest (no deform) mixed in over 200 ms halves the offsets at 100 ms.
+    const auto shared = std::make_shared<const Rig>(rig);
+    Instance inst(shared);
+    inst.play(0, "flap", std::nullopt, 1, Then::Hold, 0);
+    inst.update(650);
+    check(near(inst.pose().deform.at({1, "flag"})[0], 10), "playing flap");
+    inst.play(0, "rest", std::nullopt, 1, Then::Default, 200);
+    inst.update(100);
+    check(near(inst.pose().deform.at({1, "flag"})[0], 5, 1e-9), "cross-fade lerps offsets towards none");
+    // Editing refusals and multi-key ops keep the attachment.
+    check(refused(r.data, {{"op", "setKey"}, {"clip", "flap"}, {"target", "slot:flag"}, {"property", "deform"}, {"timeMs", 0}}), "attachment required");
+    check(refused(r.data, {{"op", "setKey"}, {"clip", "flap"}, {"target", "slot:arm"}, {"property", "deform"}, {"attachment", "arm"}, {"timeMs", 0}}), "regions refuse deform keys");
+    check(refused(r.data, {{"op", "setKey"}, {"clip", "flap"}, {"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"timeMs", 0}, {"offsets", {1, 2}}}), "offset count refused");
+    Json sel = Json::array({{{"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"timeMs", 600}}});
+    auto moved = applyEdit(r.data, {{"op", "moveKeys"}, {"clip", "flap"}, {"keys", sel}, {"deltaMs", 50}});
+    check(moved.data["clips"][0]["tracks"][0]["keys"][1]["timeMs"] == 650 && moved.extra["keys"][0]["attachment"] == "flag", "moveKeys with deform refs");
+    const Json board = applyEdit(r.data, {{"op", "copyKeys"}, {"clip", "flap"}, {"keys", sel}}).extra["clipboard"];
+    check(board["keys"][0]["offsets"] == Json(up) && board["keys"][0]["attachment"] == "flag" && !board["keys"][0].contains("value"), "copied deform keys carry offsets");
+    auto pasted = applyEdit(r.data, {{"op", "pasteKeys"}, {"clip", "rest"}, {"timeMs", 100}, {"keys", board["keys"]}});
+    check(pasted.data["clips"][1]["tracks"][0]["keys"][0]["offsets"] == Json(up) && validateRig(pasted.data).empty(), "pasted into another clip");
+    auto deleted = applyEdit(r.data, {{"op", "deleteKey"}, {"clip", "flap"}, {"target", "slot:flag"}, {"property", "deform"}, {"attachment", "flag"}, {"timeMs", 800}});
+    check(deleted.data["clips"][0]["tracks"][0]["keys"].size() == 2, "deleteKey by attachment");
+    // Re-meshing changes the vertex count: the old deform keys go (warning), the rig stays valid.
+    auto remeshed = applyEdit(r.data, {{"op", "convertToMesh"}, {"slot", "flag"}, {"rows", 2}, {"cols", 2}});
+    check(remeshed.data["clips"][0]["tracks"].empty() && remeshed.extra["keys"] == 3 && hasCode(remeshed.diagnostics, "ANIM_MESH_DEFORM_REMOVED"), "re-mesh drops stale deform keys");
+    auto region = applyEdit(r.data, {{"op", "convertToRegion"}, {"slot", "flag"}});
+    check(!region.data["attachments"][1].contains("type") && !region.data["attachments"][1].contains("vertices") && region.data["clips"][0]["tracks"].empty(), "convertToRegion");
+  });
+
+  test("mesh edit ops: grid trim, vertices, auto weights, brush, bind", [&] {
+    // Alpha-trimmed grid: only the marked cells (an L shape) are meshed.
+    auto r = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 2}, {"cols", 2}, {"cells", "1011"}});
+    const Json& a = r.data["attachments"][0];
+    check(a["vertices"].size() == 16 && a["triangles"].size() == 18 && !a.contains("hull") && validateRig(r.data).empty(), "3 cells: 8 vertices, 6 triangles");
+    check(refused(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 2}, {"cols", 2}, {"cells", "10"}}) &&
+          refused(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 2}, {"cols", 2}, {"cells", "0000"}}) &&
+          refused(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 0}}) && refused(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 64}, {"cols", 64}}), "grid refusals");
+    // setMeshVertices: uvs follow by default, keepUvs stretches.
+    Json d = weightedArm();
+    r = applyEdit(d, {{"op", "setMeshVertices"}, {"slot", "arm"}, {"vertices", {1}}, {"positions", {60, -4}}});
+    check(r.data["attachments"][0]["vertices"][2] == 60 && r.data["attachments"][0]["vertices"][3] == -4 && r.data["attachments"][0]["uvs"][2] == 0.3 && r.data["attachments"][0]["uvs"][3] == 0, "uvs follow (clamped)");
+    r = applyEdit(d, {{"op", "setMeshVertices"}, {"slot", "arm"}, {"vertices", {1, 2}}, {"dx", 5}, {"dy", 1}, {"keepUvs", true}});
+    check(r.data["attachments"][0]["vertices"][2] == 55 && r.data["attachments"][0]["vertices"][5] == 1 && r.data["attachments"][0]["uvs"] == d["attachments"][0]["uvs"], "dx/dy with fixed uvs");
+    check(refused(d, {{"op", "setMeshVertices"}, {"slot", "arm"}, {"vertices", {99}}, {"dx", 1}}) && refused(d, {{"op", "setMeshVertices"}, {"slot", "flag"}, {"dx", 1}}), "out of range / region refused");
+    // Auto weights: shoulder vertices on upper, the forearm end on lower, the elbow shared.
+    Json plain = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 1}, {"cols", 4}}).data;
+    r = applyEdit(plain, {{"op", "bindMesh"}, {"slot", "arm"}, {"bones", {"upper", "lower"}}});
+    const Json& w = r.data["attachments"][0]["weights"];
+    auto share = [&](size_t v, const char* b) { for (const auto& x : w[v]) if (x["bone"] == b) return x["weight"].get<double>(); return 0.0; };
+    check(validateRig(r.data).empty() && w.size() == 10, "bindMesh writes one list per vertex");
+    // Vertex order of the full 1x4 grid: top row x = 0,50,100,150,200 then bottom 200..0.
+    check(share(0, "upper") > 0.9 && share(4, "lower") > 0.9 && share(1, "upper") > share(1, "lower") && share(3, "lower") > share(3, "upper"), "nearest bone dominates");
+    check(near(share(2, "upper") + share(2, "lower"), 1, 1e-6) && share(2, "lower") > 0.3, "elbow vertex shared");
+    for (const auto& list : w) { double s = 0; for (const auto& x : list) s += x["weight"].get<double>(); check(near(s, 1, 1e-9) && list.size() <= 2, "each vertex sums to exactly 1"); }
+    check(refused(plain, {{"op", "bindMesh"}, {"slot", "arm"}}) && refused(plain, {{"op", "autoWeights"}, {"slot", "arm"}, {"bones", {"upper"}}, {"influences", 5}}), "bindMesh needs bones; influences 1..4");
+    auto one = applyEdit(plain, {{"op", "autoWeights"}, {"slot", "arm"}, {"bones", {"upper", "lower", "hand"}}, {"influences", 1}});
+    bool single = true;
+    for (const auto& list : one.data["attachments"][0]["weights"]) single = single && list.size() == 1 && list[0]["weight"] == 1;
+    check(single, "influences 1 = hard binding");
+    auto dflt = applyEdit(plain, {{"op", "autoWeights"}, {"slot", "arm"}});
+    check(dflt.extra["bones"] == Json::array({"upper", "root", "lower"}) && validateRig(dflt.data).empty(), "default bones: slot bone, parent, children");
+    // Weight brush: paint the elbow fully onto lower, then half way back with strength.
+    r = applyEdit(d, {{"op", "setWeights"}, {"slot", "arm"}, {"vertices", {2}}, {"bone", "lower"}, {"weight", 1}});
+    check(r.data["attachments"][0]["weights"][2] == Json::array({{{"bone", "lower"}, {"weight", 1}}}), "brush weight 1 replaces the others");
+    r = applyEdit(r.data, {{"op", "setWeights"}, {"slot", "arm"}, {"vertices", {2}}, {"bone", "lower"}, {"weight", 0}, {"strength", 0.5}});
+    check(r.data["attachments"][0]["weights"][2] == Json::array({{{"bone", "lower"}, {"weight", 0.5}}, {{"bone", "upper"}, {"weight", 0.5}}}), "strength 0.5 towards 0: the rest goes to the slot bone");
+    r = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "flag"}, {"rows", 1}, {"cols", 1}});
+    r = applyEdit(r.data, {{"op", "setWeights"}, {"slot", "flag"}, {"vertices", {0, 1}}, {"bone", "lower"}, {"weight", 0.25}});
+    check(r.data["attachments"][1]["weights"][0] == Json::array({{{"bone", "hand"}, {"weight", 0.75}}, {{"bone", "lower"}, {"weight", 0.25}}}) && r.data["attachments"][1]["weights"][3] == Json::array({{{"bone", "hand"}, {"weight", 1}}}),
+          "painting an unweighted mesh starts from 100 % slot bone");
+    check(validateRig(r.data).empty(), "painted rig validates");
+    check(near(vertexAt(r.data, "flag", 0).first, vertexAt(applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "flag"}, {"rows", 1}, {"cols", 1}}).data, "flag", 0).first, 1e-9), "binding never moves the setup shape");
+    check(refused(d, {{"op", "setWeights"}, {"slot", "arm"}, {"vertices", {0}}, {"bone", "tail"}, {"weight", 1}}) && refused(d, {{"op", "setWeights"}, {"slot", "arm"}, {"bone", "upper"}, {"weight", 1}}) &&
+          refused(d, {{"op", "setWeights"}, {"slot", "arm"}, {"vertices", {0}}, {"weights", Json::array({Json::array({{{"bone", "upper"}, {"weight", 0}}})})}}), "brush refusals");
+    // Unbind / skins / bone deletion.
+    check(!applyEdit(d, {{"op", "unbindMesh"}, {"slot", "arm"}}).data["attachments"][0].contains("weights"), "unbindMesh");
+    Json skinned = meshArm();
+    skinned["skins"] = Json::array({{{"id", "gold"}, {"attachments", Json::array({skinned["attachments"][0]})}}});
+    r = applyEdit(skinned, {{"op", "convertToMesh"}, {"slot", "arm"}, {"skin", "gold"}, {"rows", 1}, {"cols", 2}});
+    check(r.data["skins"][0]["attachments"][0]["type"] == "mesh" && !r.data["attachments"][0].contains("type") && validateRig(r.data).empty(), "a skin's attachment becomes a mesh on its own");
+    r = applyEdit(d, {{"op", "deleteBone"}, {"bone", "lower"}, {"cascade", true}});
+    bool off = true;
+    for (const auto& list : r.data["attachments"][0]["weights"]) for (const auto& x : list) off = off && x["bone"] != "lower";
+    check(off && hasCode(r.diagnostics, "ANIM_MESH_WEIGHTS_MOVED") && validateRig(r.data).empty() && r.data["attachments"][0]["weights"][4] == Json::array({{{"bone", "upper"}, {"weight", 1}}}), "deleteBone moves weights to the remaining / slot bone");
+    Host host;
+    const Json op = {{"op", "bindMesh"}, {"slot", "arm"}, {"bones", {"upper", "lower"}}};
+    check(host.handle({{"op", "edit"}, {"rig", plain}, {"operation", op}})["rig"] == applyEdit(plain, op).data, "host edit = core edit");
+  });
+
+  test("host frame emits mesh items in element pixels", [&] {
+    Host host;
+    const Json controller = {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "wave"}};
+    check(host.handle({{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "arm"}, {"data", meshParityRig()}}, {{"type", "controller"}, {"id", "c"}, {"data", controller}}})}})["ok"] == true, "init");
+    check(host.handle({{"op", "mount"}, {"instance", "a"}, {"element", {{"type", "character"}, {"ref", "c"}, {"width", 800}, {"height", 600}, {"props", Json::object()}}}})["ok"] == true, "mount");
+    const Json items = host.handle({{"op", "frame"}, {"instance", "a"}})["items"];
+    check(items.size() == 2 && items[0].contains("mesh") && items[0]["mesh"]["positions"].size() == 20 && items[0]["mesh"]["indices"].size() == 24 && items[0].contains("matrix"), "mesh + fallback matrix");
+    // 400x300 rig contain-fit into 800x600 = scale 2, rig origin at (400, 500): x' = 2 * (x - 200) + 400.
+    const Rig r = parseRig("arm", meshParityRig());
+    const auto pos = meshPositions(r, samplePose(r, 0, 0), 0, r.attachments[0]);
+    check(near(items[0]["mesh"]["positions"][0].get<double>(), 2 * pos[0], 1e-9) && near(items[0]["mesh"]["positions"][1].get<double>(), 2 * pos[1], 1e-9), "placement applied to positions");
+    const Json sample = host.handle({{"op", "sample"}, {"rig", meshParityRig()}, {"clip", "wave"}, {"timeMs", 550}});
+    check(sample["pose"]["deform"]["flag/flag"].size() == 18 && !host.handle({{"op", "sample"}, {"rig", rigData()}, {"timeMs", 0}})["pose"].contains("deform"), "sample reports deform only when keyed");
   });
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";

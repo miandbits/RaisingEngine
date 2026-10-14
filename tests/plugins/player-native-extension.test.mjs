@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {copyFile,mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {makeGame,referenceRuntime,rig,controller,pluginElement,EVIDENCE} from './player-extension-fixture.mjs';
+import {makeGame,referenceRuntime,rig,controller,pluginElement,EVIDENCE,meshRig,meshController,pngPixel,close,RED,BLUE} from './player-extension-fixture.mjs';
 
 const INSTANCE='home/hero-anim';
 async function run(f,name,steps,args=[]){
@@ -37,18 +37,23 @@ test('native player draws extension items, binds committed actions to clips and 
   const r=await run(f,'main',steps);
   const home=r.instance('home');
   assert.equal(home.available,true,home.error);
-  assert.deepEqual(home.items.map(i=>i.imageAssetId),['anim-torso','anim-face','anim-eyes-open']);
+  // props.skin 'summer' reaches the runtime through the host's element spec untouched.
+  assert.deepEqual(home.items.map(i=>i.imageAssetId),['anim-torso-summer','anim-face','anim-eyes-open']);
   // Rig 200x300 fits the 300x450 element at scale 1.5; torso pivot (0.5,1) sits on the body bone 100px above the origin.
   near(home.items[0].matrix,[1.5,0,0,1.5,90,90],'torso setup matrix');
-  near(home.items[0].matrix,(await reference([])).find(i=>i.imageAssetId==='anim-torso').matrix,'parity with core');
+  near(home.items[0].matrix,(await reference([])).find(i=>i.imageAssetId==='anim-torso-summer').matrix,'parity with core');
   assert.equal(r.ui('home').texts['hero-anim'].includes('raising-extension'),true);
   // Idle loop advanced on the presentation clock only.
   const idle=r.instance('idle');assert.equal(track(idle,0).clip,'idle');assert.equal(track(idle,0).timeMs,500);
   near(idle.items[0].matrix,[1.5,0,0,1.5,90,84],'idle body y=-104 at 500ms');
-  near(idle.items[0].matrix,(await reference([100,100,100,100,100])).find(i=>i.imageAssetId==='anim-torso').matrix,'idle parity');
+  near(idle.items[0].matrix,(await reference([100,100,100,100,100])).find(i=>i.imageAssetId==='anim-torso-summer').matrix,'idle parity');
   assert.deepEqual(r.ui('idle').state,r.ui('home').state,'animation never changes game state');
   // executeAction success -> controller binding -> joy one-shot on track 0.
   const joy=r.instance('joy');assert.equal(track(joy,0).clip,'joy');
+  // The same binding swaps the outfit (skin): identical geometry, the winter image, same items as the core.
+  assert.deepEqual(joy.items.map(i=>i.imageAssetId),['anim-torso-winter','anim-face','anim-eyes-open']);
+  assert.equal(joy.state.skin,'winter');
+  assert.deepEqual(joy.items.map(i=>i.imageAssetId),(await reference([100,100,100,100,100,0],5)).map(i=>i.imageAssetId),'skin swap parity');
   const observed=r.ui('joy').extensions.lastObserve;
   assert.equal(observed.command.type,'executeAction');
   assert.deepEqual(observed.plugins['cutout-animation'].matched,[`${INSTANCE}:cheer-joy`]);
@@ -63,6 +68,8 @@ test('native player draws extension items, binds committed actions to clips and 
   assert.equal(state.instances[INSTANCE].ref,'hero-main');
   assert.equal(saved.playerPresentation.timeline,null);
   const loaded=r.instance('loaded');assert.equal(track(loaded,0).clip,'joy');assert.equal(track(loaded,0).timeMs,300);
+  assert.equal(state.instances[INSTANCE].state.skin,'winter');
+  assert.equal(loaded.items[0].imageAssetId,'anim-torso-winter','skin restored with the clip');
   assert.equal(track(r.instance('loaded-done'),0).clip,'idle');
   assert.deepEqual(r.ui('loaded').state,r.ui('joy-300').state);
   for(const name of ['joy-300','loaded'])await copyFile(resolve(f.root,`${name}.png`),resolve(EVIDENCE,`windows-${name}.png`));
@@ -101,4 +108,29 @@ test('missing runtime module shows a placeholder and the game stays playable',{t
   assert.deepEqual(r.ui('loaded').state,r.ui('joy').state);
   const saved=JSON.parse(await readFile(r.save,'utf8'));assert.equal(saved.playerPresentation,undefined,'no extension state without a runtime');
   await mkdir(EVIDENCE,{recursive:true});await copyFile(resolve(f.root,'placeholder.png'),resolve(EVIDENCE,'windows-placeholder.png'));
+});
+
+test('native player draws weighted mesh items bent by their bones (plugin-mesh-v1)',{timeout:120000},async t=>{
+  const f=await makeGame({target:'windows',name:'native-mesh',mesh:true});t.diagnostic(`fixture: ${f.root}`);
+  const shot=resolve(f.root,'mesh-bent.png');
+  const r=await run(f,'mesh',[{click:'start'},{extensionAdvanceMs:100},{checkpoint:'bent',screenshot:shot}]);
+  const bent=r.instance('bent');
+  assert.equal(bent.available,true,bent.error);
+  const [arm]=bent.items;
+  assert.equal(arm.imageAssetId,'anim-arm');
+  assert.equal(arm.mesh.positions.length,36);assert.equal(arm.mesh.indices.length,48);
+  // Same triangles as the core compiled to Wasm (element-local px after placement).
+  const request=await referenceRuntime();
+  request({op:'init',documents:[{type:'rig',id:'hero',data:meshRig()},{type:'controller',id:'hero-main',data:meshController}]});
+  request({op:'mount',instance:INSTANCE,element:{type:'character',ref:'hero-main',width:pluginElement.width,height:pluginElement.height,props:pluginElement.extension.props}});
+  request({op:'update',dtMs:100});
+  near(arm.mesh.positions,request({op:'frame',instance:INSTANCE}).items[0].mesh.positions,'mesh positions parity');
+  // Pixels: element at (440,130), element px = rig px. Red shoulder half stays put, the blue
+  // forearm half hangs below the elbow (180,200), and nothing is left where the straight arm was.
+  const png=await readFile(shot),at=(x,y)=>pngPixel(png,pluginElement.x+x,pluginElement.y+y);
+  assert.ok(close(at(90,200),RED),`shoulder half: ${at(90,200)}`);
+  assert.ok(close(at(180,290),BLUE),`bent forearm: ${at(180,290)}`);
+  assert.ok(close(at(172,240),BLUE)&&close(at(188,300),BLUE),`forearm body: ${at(172,240)} ${at(188,300)}`);
+  assert.ok(!close(at(270,200),BLUE)&&!close(at(270,200),RED),`no straight forearm: ${at(270,200)}`);
+  await mkdir(resolve(EVIDENCE,'v2'),{recursive:true});await copyFile(shot,resolve(EVIDENCE,'v2','windows-mesh-bent.png'));
 });

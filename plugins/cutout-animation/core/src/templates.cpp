@@ -4,7 +4,6 @@
 
 namespace cutout {
 namespace {
-constexpr double PI = 3.14159265358979323846;
 const Json* find(const Json& rig, const char* list, const std::string& id) {
   if (!rig.is_object() || !rig.contains(list) || !rig.at(list).is_array()) return nullptr;
   for (const auto& x : rig.at(list)) if (x.is_object() && x.value("id", std::string()) == id) return &x;
@@ -29,16 +28,14 @@ Json breathingClip(const Json& rig, const std::string& clipId, const Json& p) {
   const int64_t period = int64_t(std::llround(param(p, "periodMs", 3200)));
   if (period < 200 || period > 600000) throw EditError("숨쉬기 주기는 200..600000ms입니다.");
   const double base = bone->value(property, property == "scaleY" ? 1.0 : 0.0);
-  // Eight linear segments of (1-cos)/2 read as a smooth sine but stay plain, editable keys.
-  Json keys = Json::array();
-  int64_t last = -1;
-  for (int i = 0; i <= 8; i++) {
-    const int64_t t = i == 8 ? period : int64_t(std::llround(double(period) * i / 8));
-    if (t <= last) continue;
-    last = t;
-    const double s = (1 - std::cos(2 * PI * i / 8)) / 2;
-    keys.push_back({{"timeMs", t}, {"value", std::round((base + amplitude * s) * 1e6) / 1e6}});
-  }
+  // Rest -> peak -> rest with easeInOut segments: a sine-like breath in three ordinary keys
+  // (fewer keys to edit than a sampled sine; the curve handles stay editable data too).
+  const Curve ease = *presetCurve("easeInOut");
+  const Json curve = Json::array({ease[0], ease[1], ease[2], ease[3]});
+  const double peak = std::round((base + amplitude) * 1e6) / 1e6;
+  Json keys = Json::array({{{"timeMs", 0}, {"value", base}, {"interp", "bezier"}, {"curve", curve}},
+                           {{"timeMs", period / 2}, {"value", peak}, {"interp", "bezier"}, {"curve", curve}},
+                           {{"timeMs", period}, {"value", base}}});
   return {{"id", clipId}, {"name", "숨쉬기"}, {"durationMs", period}, {"loop", true},
           {"tracks", Json::array({{{"target", "bone:" + boneId}, {"property", property}, {"keys", keys}}})}};
 }

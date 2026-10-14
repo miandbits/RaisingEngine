@@ -168,12 +168,29 @@ Requests (replies are `{ "ok": true, … }` or `{ "ok": false, "error": "…" }`
 | `unmount` | `{instance}` | |
 | `observe` | `{before, after, command, error}` where before/after = `{state, narrative}` | `{signals, matched}` |
 | `update` | `{dtMs}` | `{notifications}` (presentation only) |
-| `frame` | `{instance}` | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha}]}` |
+| `frame` | `{instance}` | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha, mesh?}]}` |
 | `saveAll` / `restoreAll` | — / `{state}` | opaque `state` |
 | `describeAll` | — | debug/report data |
 
 `matrix` maps image pixels to element-local pixels: `x' = a·x + c·y + e`, `y' = b·x + d·y + f`.
 Hosts draw textured quads in item order (back→front), clipped to nothing (overflow allowed).
+
+**Mesh items** (ABI extension, still `raising-extension-1`): an item may carry
+`mesh: {positions: [x, y, …], uvs: [u, v, …], indices: [i, j, k, …]}` — element-local vertex
+positions (already placed, like `matrix`'s output), texture coordinates 0..1 of the item's image
+(one pair per vertex) and triangle index triples, drawn in order with the item's `alpha`. Such an
+item still carries `matrix`/`width`/`height` (the undeformed rectangle) only so older hosts
+degrade instead of failing; a host that supports meshes draws the triangles and never the
+rectangle, skips a malformed mesh (counts differ, index out of range, more than 2048 vertices or
+4096 triangles) and advertises player capability **`plugin-mesh-v1`** in `capabilities.json`
+`visualFeatures` (the native player emits RmlUi triangle geometry, the web player draws each
+triangle as an affine-mapped image on a per-item `<canvas>`).
+
+A plugin's node service may export `requiredHostFeatures(documents)` → capability ids the game's
+documents need beyond `plugin-elements-v1` (cutout returns `["plugin-mesh-v1"]` when a rig uses
+a mesh). `exportBundle` collects them as `PreparedExtensions.features` (a failing service is
+`PLUGIN_SERVICE_ERROR`) and `exportGame` refuses a target player whose capabilities lack one,
+before anything is written.
 
 Hosts must call `observe` exactly once per submitted command (after the reply), in
 command order, and never from frame callbacks. `update` uses wall-clock presentation
@@ -194,6 +211,23 @@ carries it through unchanged; other hosts restoring an envelope must do the same
 The DLL receives a `StudioHost*` and must perform every document change through
 `StudioHost::request("edit", …)`; widget state is only a cache of the service view.
 
+Optional workspaces (same ABI name and `apiVersion` 1). `StudioHost`/`StudioPlugin` vtables
+are frozen, so the extension is a second Qt interface instead of appended virtuals:
+`StudioWorkspacePlugin` (IID `com.raising.StudioWorkspacePlugin/1`, listed in the plugin's
+`Q_INTERFACES`; the metadata IID stays `com.raising.StudioPlugin/1`). After `activate()` the
+host `qobject_cast`s the loader instance; when the cast succeeds it calls
+`createWorkspaces(StudioWorkspaceHost*)` once and gets `{id, title, widget, shortcut}` entries.
+The host owns the widgets (deleted with the plugin docks before unload), shows a switcher
+(menu bar corner `studioWorkspaceSwitcher`, 보기 → 작업 공간 actions
+`studioWorkspace-screen` / `studioWorkspace-<plugin>-<id>`, the entry's shortcut toggles) and,
+while a workspace is the central area, hides every dock and the screen editor; returning
+restores the exact `saveState` taken when the screen editor was left. Menus, undo/redo, save
+and play stay available; switching never sends a request. `workspaceChanged(id, shown)`
+reports switches; `StudioWorkspaceHost::showWorkspace(id)` (empty = 화면 편집) lets the plugin
+switch (e.g. from `openEditor`). The last workspace is remembered per project root and comes
+back when that project loads the plugin again. Old DLLs (no interface) keep their docks; a
+new DLL on an old host is never asked and must keep working in its dock.
+
 ## 10. Node service module and host API (engine TS)
 
 ```js
@@ -203,7 +237,8 @@ export async function createService({ pluginDir, manifest }) {
     // documents/elements are only those of this plugin that passed envelope + plugin schema
     validate({ documents: [{ file, type, id, data }], assets: [{ id, kind, path, absolutePath }],
                elements: [{ file, pointer, element }] }) { return [{ file, pointer, code, severity, message, relatedIds }]; },
-    call(op, payload) { return json; }   // pure: never writes project files
+    call(op, payload) { return json; },  // pure: never writes project files
+    requiredHostFeatures(documents) { return ['plugin-mesh-v1']; }   // optional (§7): export-time player needs
   };
 }
 ```

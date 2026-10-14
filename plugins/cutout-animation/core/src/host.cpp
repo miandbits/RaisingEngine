@@ -16,6 +16,11 @@ const std::string& str(const Json& r, const char* key) {
   if (!r.contains(key) || !r.at(key).is_string()) throw std::runtime_error(std::string("missing string field: ") + key);
   return r.at(key).get_ref<const std::string&>();
 }
+std::optional<std::string> expressionOf(const Json& r) {
+  if (!r.contains("expression") || r.at("expression").is_null()) return std::nullopt;
+  if (!r.at("expression").is_string()) throw std::runtime_error("expression must be an id or null");
+  return r.at("expression").get<std::string>();
+}
 Then thenOf(const Json& r) {
   const std::string t = r.value("then", std::string("default"));
   return t == "hold" ? Then::Hold : t == "stop" ? Then::Stop : Then::Default;
@@ -23,8 +28,11 @@ Then thenOf(const Json& r) {
 }  // namespace
 
 Json drawItemJson(const DrawItem& i) {
-  return {{"slot", i.slot}, {"imageAssetId", i.imageAssetId}, {"matrix", {i.matrix.a, i.matrix.b, i.matrix.c, i.matrix.d, i.matrix.e, i.matrix.f}},
-          {"width", i.width}, {"height", i.height}, {"alpha", i.alpha}};
+  Json j{{"slot", i.slot}, {"imageAssetId", i.imageAssetId}, {"matrix", {i.matrix.a, i.matrix.b, i.matrix.c, i.matrix.d, i.matrix.e, i.matrix.f}},
+         {"width", i.width}, {"height", i.height}, {"alpha", i.alpha}};
+  // ABI extension (CONTRACT.md §7, plugin-mesh-v1): mesh items add triangles; matrix stays the fallback rectangle.
+  if (i.mesh()) j["mesh"] = {{"positions", i.positions}, {"uvs", i.uvs}, {"indices", i.indices}};
+  return j;
 }
 Json poseJson(const Rig& rig, const Pose& pose) {
   Json bones = Json::object(), slots = Json::object();
@@ -35,7 +43,26 @@ Json poseJson(const Rig& rig, const Pose& pose) {
   }
   for (size_t i = 0; i < rig.slots.size(); i++)
     slots[rig.slots[i].id] = {{"attachment", pose.attachments[i] ? Json(*pose.attachments[i]) : Json(nullptr)}, {"alpha", pose.alpha[i]}};
-  return {{"bones", bones}, {"slots", slots}};
+  Json out = {{"bones", bones}, {"slots", slots},
+              {"skin", pose.skin >= 0 && pose.skin < int(rig.skins.size()) ? Json(rig.skins[size_t(pose.skin)].id) : Json(nullptr)},
+              {"expression", pose.expression >= 0 && pose.expression < int(rig.expressions.size()) ? Json(rig.expressions[size_t(pose.expression)].id) : Json(nullptr)}};
+  // IK (plugin 1.3.0): bone x..scaleY stay the animated values, `world` is solved; the solved local
+  // rotation is `appliedRotation`. Rigs without IK keep the 1.2 reply shape.
+  if (!rig.ik.empty()) {
+    Json ik = Json::object();
+    for (size_t i = 0; i < rig.ik.size(); i++)
+      ik[rig.ik[i].id] = {{"mix", i < pose.ikMix.size() ? pose.ikMix[i] : rig.ik[i].mix}, {"bendPositive", i < pose.ikBend.size() ? pose.ikBend[i] != 0 : rig.ik[i].bendPositive}};
+    out["ik"] = ik;
+    for (size_t i = 0; i < rig.bones.size(); i++) out["bones"][rig.bones[i].id]["appliedRotation"] = pose.local(i).rotation;
+  }
+  // Deform (plugin 1.4.0): sampled mesh offsets as "<slot>/<attachment>" -> [dx, dy, ...]; absent without deform keys.
+  if (!pose.deform.empty()) {
+    Json deform = Json::object();
+    for (const auto& [key, offsets] : pose.deform)
+      if (key.first >= 0 && size_t(key.first) < rig.slots.size()) deform[rig.slots[size_t(key.first)].id + "/" + key.second] = offsets;
+    out["deform"] = deform;
+  }
+  return out;
 }
 
 Affine Host::placement(const std::string& id, const Rig& rig) const {
@@ -131,6 +158,8 @@ Json Host::handle(const Json& r) {
     m.width = element.value("width", 0.0); m.height = element.value("height", 0.0);
     const Json props = element.value("props", Json::object());
     m.scale = props.value("scale", 1.0); m.flipX = props.value("flipX", false);
+    // props.skin picks the outfit of this placed instance (host passes props through untouched).
+    m.skin = props.contains("skin") && props.at("skin").is_string() ? props.at("skin").get<std::string>() : "";
     if (element.value("type", std::string()) != "character") throw std::runtime_error("unknown element type");
     auto c = controllers_.find(m.ref);
     if (c == controllers_.end()) throw std::runtime_error("unknown controller: " + m.ref);
@@ -139,8 +168,12 @@ Json Host::handle(const Json& r) {
     if (instances_.size() >= MAX_INSTANCES && !instances_.count(id)) throw std::runtime_error("too many instances");
     const auto issues = validateController(c->second, rig->second.get());
     for (const auto& d : issues) if (d.severity == "error") throw std::runtime_error(d.code + " " + d.pointer + ": " + d.message);
-    // Re-mounting the same element (screen rebuild) keeps its playback state.
-    if (!instances_.count(id) || mounts_[id].ref != m.ref) instances_[id] = std::make_unique<Instance>(rig->second, parseController(m.ref, c->second));
+    // Re-mounting the same element (screen rebuild) keeps its playback state (and a skin a
+    // binding chose); only a changed props.skin is re-applied. Unknown skins are ignored here:
+    // the service reports them, and the controller default stays.
+    const bool fresh = !instances_.count(id) || mounts_[id].ref != m.ref;
+    if (fresh) instances_[id] = std::make_unique<Instance>(rig->second, parseController(m.ref, c->second));
+    if (!m.skin.empty() && (fresh || mounts_[id].skin != m.skin)) instances_[id]->setSkin(m.skin);
     mounts_[id] = m;
     return {{"ok", true}};
   }
@@ -196,6 +229,17 @@ Json Host::handle(const Json& r) {
   }
   if (op == "stop") { need("instance").stop(r.value("track", 0), r.value("mixMs", int64_t(-1))); return {{"ok", true}}; }
   if (op == "seek") { need("instance").seek(r.value("track", 0), r.value("timeMs", 0.0)); return {{"ok", true}}; }
+  // Preview / host-driven look changes ("" or null skin = default attachments only).
+  if (op == "setSkin") {
+    const std::string skin = r.contains("skin") && r.at("skin").is_string() ? r.at("skin").get<std::string>() : "";
+    if (!need("instance").setSkin(skin)) throw std::runtime_error("unknown skin: " + skin);
+    return {{"ok", true}};
+  }
+  if (op == "setExpression") {
+    const auto expression = expressionOf(r);
+    if (!need("instance").setExpression(expression)) throw std::runtime_error("unknown expression: " + expression.value_or(""));
+    return {{"ok", true}};
+  }
   if (op == "setPaused") { need("instance").setPaused(r.value("paused", true)); return {{"ok", true}}; }
   if (op == "setTimeScale") { need("instance").setTimeScale(r.value("timeScale", 1.0)); return {{"ok", true}}; }
   if (op == "update") {
@@ -215,7 +259,14 @@ Json Host::handle(const Json& r) {
     // Mounted instances get element-local pixels; raw instances stay in rig-origin space.
     const Affine place = placement(str(r, "instance"), inst.rig());
     Json items = Json::array();
-    for (auto item : inst.drawList()) { item.matrix = place * item.matrix; items.push_back(drawItemJson(item)); }
+    for (auto item : inst.drawList()) {
+      item.matrix = place * item.matrix;
+      for (size_t v = 0; v + 1 < item.positions.size(); v += 2) {
+        const double x = item.positions[v], y = item.positions[v + 1];
+        place.apply(x, y, item.positions[v], item.positions[v + 1]);
+      }
+      items.push_back(drawItemJson(item));
+    }
     return {{"ok", true}, {"items", items}};
   }
   if (op == "save") return {{"ok", true}, {"state", need("instance").saveState()}};
@@ -229,7 +280,11 @@ Json Host::handle(const Json& r) {
   if (op == "sample") {
     const Rig rig = parseRig("sample", r.at("rig"));
     const int clip = r.contains("clip") && r.at("clip").is_string() ? rig.clipIndex(r.at("clip").get<std::string>()) : -1;
-    return {{"ok", true}, {"pose", poseJson(rig, samplePose(rig, clip, r.value("timeMs", 0.0)))}};
+    Look look;
+    if (r.contains("skin") && r.at("skin").is_string() && !r.at("skin").get<std::string>().empty() && (look.skin = rig.skinIndex(r.at("skin").get<std::string>())) < 0)
+      throw std::runtime_error("unknown skin: " + r.at("skin").get<std::string>());
+    if (const auto e = expressionOf(r); e && (look.expression = rig.expressionIndex(*e)) < 0) throw std::runtime_error("unknown expression: " + *e);
+    return {{"ok", true}, {"pose", poseJson(rig, samplePose(rig, clip, r.value("timeMs", 0.0), look))}};
   }
   // ---- Authoring ops (pure data in/out; shared by the Qt editor and the service/LLM path) ----
   if (op == "template") {

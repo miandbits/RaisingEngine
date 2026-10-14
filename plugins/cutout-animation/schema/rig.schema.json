@@ -45,20 +45,65 @@
       }
     },
     "attachments": {
+      "description": "Default attachments. An active skin is looked up first, then this list.",
       "type": "array", "maxItems": 1024,
+      "items": { "$ref": "#/$defs/attachment" }
+    },
+    "skins": {
+      "description": "Outfit/variant sets (plugin 1.2.0): provide or override attachments by (slot, name). Clips keep keying names.",
+      "type": "array", "maxItems": 64,
       "items": {
-        "type": "object", "additionalProperties": false, "required": ["slot", "name", "imageAssetId", "width", "height"],
+        "type": "object", "additionalProperties": false, "required": ["id", "attachments"],
         "properties": {
-          "slot": { "$ref": "#/$defs/id" },
-          "name": { "$ref": "#/$defs/name" },
-          "imageAssetId": { "type": "string", "minLength": 1, "maxLength": 64 },
-          "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
-          "rotation": { "$ref": "#/$defs/angle" },
-          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
-          "pivotX": { "type": "number", "minimum": -4, "maximum": 4 },
-          "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
-          "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
-          "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 }
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "attachments": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/attachment" } }
+        }
+      }
+    },
+    "expressions": {
+      "description": "Named facial/pose sets (plugin 1.2.0), applied after track 0 and before layer tracks 1..15.",
+      "type": "array", "maxItems": 128,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "slots": {
+            "description": "slot id -> attachment name, or null to hide the slot.",
+            "type": "object", "maxProperties": 256, "propertyNames": { "$ref": "#/$defs/id" },
+            "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/name" }, { "type": "null" }] }
+          },
+          "bones": {
+            "description": "bone id -> absolute channel values (unlisted channels keep animating).",
+            "type": "object", "maxProperties": 256, "propertyNames": { "$ref": "#/$defs/id" },
+            "additionalProperties": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
+                "rotation": { "$ref": "#/$defs/angle" },
+                "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ik": {
+      "description": "IK constraints (plugin 1.3.0), solved after the expression layer on world transforms in `order` (then array order). Semantics in docs/contract.md.",
+      "type": "array", "maxItems": 64,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "bones", "target"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "bones": { "description": "1 bone = aim (local +x axis at the target); 2 = two-bone limb, parent then its direct child (effector = `tip`, else the child's first child bone).", "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/$defs/id" } },
+          "target": { "description": "Bone whose world origin the chain reaches; never in the chain or below it.", "$ref": "#/$defs/id" },
+          "tip": { "description": "Explicit two-bone effector (plugin 1.4.0): a direct child of the lower bone. Absent = the lower bone's first child.", "$ref": "#/$defs/id" },
+          "mix": { "type": "number", "minimum": 0, "maximum": 1 },
+          "bendPositive": { "type": "boolean" },
+          "stretch": { "description": "Accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH).", "type": "boolean" },
+          "order": { "type": "integer", "minimum": -1000, "maximum": 1000 }
         }
       }
     },
@@ -76,17 +121,27 @@
             "items": {
               "type": "object", "additionalProperties": false, "required": ["target", "property", "keys"],
               "properties": {
-                "target": { "type": "string", "pattern": "^(bone|slot):[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
-                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment"] },
+                "target": { "description": "bone:<id>, slot:<id>, rig (property expression, step keys of expression ids / null) or ik:<id> (mix 0..1, bendPositive step bool).", "type": "string", "pattern": "^(?:(bone|slot|ik):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
+                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive", "deform"] },
+                "attachment": { "description": "Deform tracks (plugin 1.4.0): the slot's mesh attachment whose vertices the keys offset.", "$ref": "#/$defs/name" },
                 "keys": {
                   "type": "array", "maxItems": 4096,
                   "items": {
-                    "type": "object", "additionalProperties": false, "required": ["timeMs", "value"],
+                    "type": "object", "additionalProperties": false, "required": ["timeMs"],
+                    "anyOf": [{ "required": ["value"] }, { "required": ["offsets"] }],
                     "properties": {
                       "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
-                      "value": { "anyOf": [{ "type": "number" }, { "$ref": "#/$defs/name" }, { "type": "null" }] },
-                      "interp": { "enum": ["step", "linear"] }
-                    }
+                      "value": { "anyOf": [{ "type": "number" }, { "$ref": "#/$defs/name" }, { "type": "null" }, { "type": "boolean" }] },
+                      "offsets": { "description": "Deform keys (plugin 1.4.0): dx, dy per mesh vertex in image pixels, added to the setup vertices.", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+                      "interp": { "description": "Segment from this key to the next. Default linear; attachment keys are always step.", "enum": ["step", "linear", "bezier"] },
+                      "curve": {
+                        "description": "Bezier handles [x1, y1, x2, y2] for interp bezier, normalized to the segment: x = fraction of segment time, y = fraction of the value change (may overshoot).",
+                        "type": "array", "minItems": 4, "maxItems": 4,
+                        "prefixItems": [{ "$ref": "#/$defs/curveX" }, { "$ref": "#/$defs/curveY" }, { "$ref": "#/$defs/curveX" }, { "$ref": "#/$defs/curveY" }]
+                      }
+                    },
+                    "if": { "required": ["interp"], "properties": { "interp": { "const": "bezier" } } },
+                    "then": { "required": ["curve"] }
                   }
                 }
               }
@@ -121,10 +176,40 @@
     }
   },
   "$defs": {
+    "attachment": {
+      "type": "object", "additionalProperties": false, "required": ["slot", "name", "imageAssetId", "width", "height"],
+      "properties": {
+        "slot": { "$ref": "#/$defs/id" },
+        "name": { "$ref": "#/$defs/name" },
+        "imageAssetId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
+        "rotation": { "$ref": "#/$defs/angle" },
+        "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
+        "pivotX": { "type": "number", "minimum": -4, "maximum": 4 },
+        "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
+        "type": { "description": "region (default: the image rectangle) or mesh (plugin 1.4.0). Semantics in docs/contract.md.", "enum": ["region", "mesh"] },
+        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices).", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "uvs": { "description": "Mesh: texture coordinates 0..1, u, v per vertex.", "type": "array", "maxItems": 4096, "items": { "type": "number", "minimum": 0, "maximum": 1 } },
+        "triangles": { "description": "Mesh: vertex index triples (1..4096 triangles).", "type": "array", "maxItems": 12288, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
+        "hull": { "description": "Mesh, editor only: the first `hull` vertices are the outline.", "type": "integer", "minimum": 0, "maximum": 2048 },
+        "edges": { "description": "Mesh, editor only: outline/edge index pairs.", "type": "array", "maxItems": 16384, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
+        "weights": {
+          "description": "Weighted mesh: per vertex 1..4 bone shares (normalized to sum 1); the bind pose is the setup pose. Absent = the mesh follows the slot bone.",
+          "type": "array", "maxItems": 2048,
+          "items": { "type": "array", "minItems": 1, "maxItems": 4, "items": {
+            "type": "object", "additionalProperties": false, "required": ["bone", "weight"],
+            "properties": { "bone": { "$ref": "#/$defs/id" }, "weight": { "type": "number", "minimum": 0, "maximum": 1 } } } }
+        }
+      }
+    },
     "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 64 },
     "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$", "maxLength": 64 },
     "coord": { "type": "number", "minimum": -100000, "maximum": 100000 },
     "angle": { "type": "number", "minimum": -36000, "maximum": 36000 },
-    "scale": { "type": "number", "minimum": -100, "maximum": 100 }
+    "scale": { "type": "number", "minimum": -100, "maximum": 100 },
+    "curveX": { "type": "number", "minimum": 0, "maximum": 1 },
+    "curveY": { "type": "number", "minimum": -4, "maximum": 5 }
   }
 }

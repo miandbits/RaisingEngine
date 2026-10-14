@@ -1,7 +1,9 @@
 #include "plugin-host.hpp"
 #include "studio.hpp"
+#include <QActionGroup>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -15,7 +17,9 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSet>
+#include <QSettings>
 #include <QSignalBlocker>
+#include <QStackedWidget>
 #include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -23,8 +27,10 @@
 #include <vector>
 
 // One host per loaded plugin so everything the DLL handed us (callbacks, docks,
-// menus) can be destroyed while its code is still mapped, before unload().
-class StudioPluginManager::Host final : public raising::StudioHost {
+// menus, workspace widgets) can be destroyed while its code is still mapped, before unload().
+// It also serves the optional workspace interface; the plugin only ever sees the
+// StudioWorkspaceHost* it was given, so no cast crosses the DLL boundary.
+class StudioPluginManager::Host final : public raising::StudioHost, public raising::StudioWorkspaceHost {
 public:
   using Pending = std::shared_ptr<std::function<void(QJsonObject)>>;
   Host(StudioPluginManager *owner, QString pluginId) : manager(owner), id(std::move(pluginId)) {}
@@ -64,6 +70,13 @@ public:
   void addDock(const QString &title, const QString &objectName, QWidget *widget, Qt::DockWidgetArea area) override {
     docks.append(manager->window->addStudioDock(title, objectName, widget, area));
   }
+  void showWorkspace(const QString &workspace) override {
+    manager->window->showWorkspace(workspace.isEmpty() ? QString() : id + "/" + workspace);
+  }
+  QString currentWorkspace() const override {
+    const auto active = manager->window->currentWorkspace();
+    return active.startsWith(id + "/") ? active.mid(id.size() + 1) : QString();
+  }
   QMenu *pluginMenu(const QString &pluginId) override {
     if (!menu) {
       const auto entry = manager->installedEntry(pluginId, manager->projectEntry(pluginId).value("version").toString());
@@ -75,6 +88,8 @@ public:
   void shutdown() {
     // Destroying std::function / widgets runs code from the plugin DLL: do it now.
     pending.clear();
+    // Back to the screen editor (exact dock layout) before the workspace pages die.
+    manager->window->removeWorkspaces(id);
     for (auto &dock : docks) delete dock.data();
     docks.clear();
     delete menu.data();
@@ -90,6 +105,7 @@ struct StudioPluginManager::Record {
   QString file;
   std::unique_ptr<QPluginLoader> loader;
   raising::StudioPlugin *plugin = nullptr;
+  raising::StudioWorkspacePlugin *workspaces = nullptr;  // optional second interface
   QObject *root = nullptr;
   std::unique_ptr<Host> host;
 };
@@ -260,7 +276,22 @@ bool StudioPluginManager::load(const QString &id, const QString &file, QString *
     unload(id);
     return fail(tr("활성화 중 오류"));
   }
+  // Workspaces are optional: a raising-studio-plugin-1 DLL without the interface keeps its docks.
+  if (auto workspaces = qobject_cast<raising::StudioWorkspacePlugin *>(root)) {
+    QList<raising::StudioWorkspace> offered;
+    if (guarded(id, [&] { offered = workspaces->createWorkspaces(record->host.get()); })) {
+      record->workspaces = workspaces;
+      for (const auto &workspace : offered) window->addWorkspace(id, workspace);
+    }
+  }
   return true;
+}
+void StudioPluginManager::workspaceChanged(const QString &key, bool shown) {
+  const auto id = key.section('/', 0, 0);
+  const auto it = loaded.find(id);
+  if (it == loaded.end() || !plugin(id) || !it.value()->workspaces) return;
+  auto target = it.value()->workspaces;
+  guarded(id, [&] { target->workspaceChanged(key.section('/', 1), shown); });
 }
 void StudioPluginManager::unload(const QString &id) {
   if (!loaded.contains(id)) return;
@@ -314,6 +345,147 @@ void StudioPluginManager::sync(const QString &projectRoot) {
 }
 
 // ---- StudioWindow plugin UI ---------------------------------------------------
+
+void StudioWindow::setupWorkspaceUi() {
+  // Spine-like switch in the menu bar corner; hidden until a plugin offers a workspace so a
+  // studio without such plugins looks exactly as before.
+  workspaceSwitcher = new QTabBar;
+  workspaceSwitcher->setObjectName("studioWorkspaceSwitcher");
+  workspaceSwitcher->setDrawBase(false);
+  workspaceSwitcher->setExpanding(false);
+  workspaceSwitcher->setDocumentMode(true);
+  workspaceSwitcher->setFocusPolicy(Qt::NoFocus);
+  workspaceSwitcher->hide();
+  menuBar()->setCornerWidget(workspaceSwitcher, Qt::TopRightCorner);
+  connect(workspaceSwitcher, &QTabBar::tabBarClicked, this, [this](int index) {
+    if (index >= 0) showWorkspace(workspaceSwitcher->tabData(index).toString());
+  });
+  workspaceMenu = new QMenu(tr("작업 공간"), this);
+  workspaceMenu->setObjectName("studioWorkspaceMenu");
+  viewMenu->insertMenu(viewMenu->actions().value(0), workspaceMenu);
+  viewMenu->insertSeparator(viewMenu->actions().value(1));
+  workspaceGroup = new QActionGroup(this);
+  workspaceGroup->setExclusive(true);
+  // Remembered per project so reopening it comes back to the same work area.
+  if (!qEnvironmentVariableIsSet("RAISING_QT_TEST")) {
+    QSettings settings;
+    wantedWorkspace = settings.value("workspace").toString();
+    wantedWorkspaceRoot = settings.value("workspaceRoot").toString();
+  }
+  rebuildWorkspaceUi();
+}
+QStringList StudioWindow::workspaceKeys() const {
+  QStringList keys;
+  for (const auto &w : workspaces) keys << w.key;
+  return keys;
+}
+void StudioWindow::rebuildWorkspaceUi() {
+  for (auto action : workspaceGroup->actions()) { workspaceGroup->removeAction(action); removeAction(action); action->deleteLater(); }
+  workspaceMenu->clear();
+  {
+    const QSignalBlocker block(workspaceSwitcher);
+    while (workspaceSwitcher->count()) workspaceSwitcher->removeTab(0);
+  }
+  struct Row { QString key, title, name; QKeySequence shortcut; };
+  QList<Row> rows{{QString(), tr("화면 편집"), "studioWorkspace-screen", QKeySequence()}};
+  for (const auto &w : workspaces)
+    rows.append({w.key, w.title, "studioWorkspace-" + QString(w.key).replace('/', '-'), w.shortcut});
+  for (const auto &row : rows) {
+    auto action = workspaceMenu->addAction(row.title);
+    action->setObjectName(row.name);
+    action->setCheckable(true);
+    action->setChecked(row.key == activeWorkspace);
+    action->setData(row.key);
+    workspaceGroup->addAction(action);
+    if (!row.shortcut.isEmpty()) {
+      action->setShortcut(row.shortcut);
+      // Window-level so the key works whichever area has focus (docks are hidden in a workspace).
+      QWidget::addAction(action);  // (the member `addAction` is the ＋ 버튼 action)
+    }
+    // A plugin workspace shortcut toggles back to the screen editor when pressed again.
+    connect(action, &QAction::triggered, this, [this, key = row.key] { showWorkspace(key == activeWorkspace && !key.isEmpty() ? QString() : key); });
+    const int tab = workspaceSwitcher->addTab(row.title);
+    workspaceSwitcher->setTabData(tab, row.key);
+    workspaceSwitcher->setTabToolTip(tab, row.shortcut.isEmpty() ? row.title : row.title + " (" + row.shortcut.toString(QKeySequence::NativeText) + ")");
+    if (row.key == activeWorkspace) {
+      const QSignalBlocker block(workspaceSwitcher);
+      workspaceSwitcher->setCurrentIndex(tab);
+    }
+  }
+  workspaceSwitcher->setVisible(!workspaces.isEmpty());
+  workspaceMenu->menuAction()->setVisible(!workspaces.isEmpty());
+}
+QWidget *StudioWindow::addWorkspace(const QString &plugin, const raising::StudioWorkspace &workspace) {
+  if (!workspace.widget || workspace.id.isEmpty() || workspace.id.contains('/')) return nullptr;
+  const auto key = plugin + "/" + workspace.id;
+  if (workspaceKeys().contains(key)) return nullptr;
+  auto page = new QWidget;
+  page->setObjectName("studioWorkspacePage-" + plugin + "-" + workspace.id);
+  auto layout = new QVBoxLayout(page);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->addWidget(workspace.widget);
+  centralStack->addWidget(page);
+  workspaces.append({key, plugin, workspace.title.isEmpty() ? workspace.id : workspace.title, page, workspace.shortcut});
+  rebuildWorkspaceUi();
+  // Reopening the project that was left inside this workspace comes back to it.
+  const auto root = QDir::cleanPath(view.value("root").toString());
+  if (activeWorkspace.isEmpty() && wantedWorkspace == key && !root.isEmpty() && root.compare(QDir::cleanPath(wantedWorkspaceRoot), Qt::CaseInsensitive) == 0)
+    showWorkspace(key);
+  return page;
+}
+void StudioWindow::removeWorkspaces(const QString &plugin) {
+  if (activeWorkspace.section('/', 0, 0) == plugin) {
+    // The plugin is going away (project closed, disabled): not the user's choice, so the
+    // wanted workspace is kept for the next time this project loads the plugin.
+    const auto keep = wantedWorkspace, keepRoot = wantedWorkspaceRoot;
+    showWorkspace({});
+    wantedWorkspace = keep;
+    wantedWorkspaceRoot = keepRoot;
+  }
+  bool changed = false;
+  for (int i = workspaces.size() - 1; i >= 0; --i) {
+    if (workspaces[i].plugin != plugin) continue;
+    delete workspaces[i].page.data();  // runs plugin widget destructors while the DLL is mapped
+    workspaces.removeAt(i);
+    changed = true;
+  }
+  if (changed) rebuildWorkspaceUi();
+}
+bool StudioWindow::showWorkspace(const QString &key) {
+  QWidget *page = screenEditor;
+  if (!key.isEmpty()) {
+    page = nullptr;
+    for (const auto &w : workspaces)
+      if (w.key == key) page = w.page;
+    if (!page) return false;
+  }
+  if (key != activeWorkspace) {
+    const auto previous = activeWorkspace;
+    if (previous.isEmpty()) {
+      screenLayout = saveState(1);
+      // Docks (plugin ones too) belong to the screen editor; floating ones would cover the workspace.
+      for (auto dock : findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly)) dock->hide();
+    }
+    for (auto action : std::as_const(screenOnlyActions)) action->setVisible(key.isEmpty());
+    centralStack->setCurrentWidget(page);
+    activeWorkspace = key;
+    if (key.isEmpty()) {
+      // The re-shown tool bar entries change the tool bar height: lay it out first so the
+      // saved dock sizes land on the same central area they were taken from.
+      layout()->activate();
+      restoreState(screenLayout, 1);
+    }
+    if (!previous.isEmpty()) plugins->workspaceChanged(previous, false);
+    if (!key.isEmpty()) plugins->workspaceChanged(key, true);
+  }
+  wantedWorkspace = key;
+  wantedWorkspaceRoot = key.isEmpty() ? QString() : view.value("root").toString();
+  for (auto action : workspaceGroup->actions()) action->setChecked(action->data().toString() == activeWorkspace);
+  const QSignalBlocker block(workspaceSwitcher);
+  for (int i = 0; i < workspaceSwitcher->count(); ++i)
+    if (workspaceSwitcher->tabData(i).toString() == activeWorkspace) workspaceSwitcher->setCurrentIndex(i);
+  return true;
+}
 
 QDockWidget *StudioWindow::addStudioDock(const QString &title, const QString &name, QWidget *child, Qt::DockWidgetArea area) {
   auto d = new QDockWidget(title, this);

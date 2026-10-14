@@ -12,7 +12,7 @@ class Host {
   Instance* instance(const std::string& id);
 
  private:
-  struct Mount { double width = 0, height = 0, scale = 1; bool flipX = false; std::string ref; };
+  struct Mount { double width = 0, height = 0, scale = 1; bool flipX = false; std::string ref, skin; };
   std::map<std::string, std::shared_ptr<const Rig>> rigs_;
   std::map<std::string, Json> controllers_;
   std::map<std::string, std::unique_ptr<Instance>> instances_;

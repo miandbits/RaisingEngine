@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { QtStudioService } from '../../apps/qt-studio/service.mjs';
 import { McpWorkspace, toolError } from '../../dist/packages/mcp-service/workspace.js';
-import { addCutout, cutoutPackage, envelope, newProject, rigData, serialize, temp } from './host-helpers.mjs';
+import { addCutout, CUTOUT_VERSION, cutoutPackage, envelope, newProject, rigData, serialize, temp } from './host-helpers.mjs';
 
 const RIG = 'plugins/cutout-animation/rig/hero.json';
 const conflict = async (promise, code = 'VERSION_CONFLICT') => {
@@ -22,7 +22,7 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   await assert.rejects(service.handle({ method: 'pluginEnable', params: { id: 'cutout-animation', revision: reply.view.revision } }), e => e.code === 'PLUGIN_MISSING');
 
   reply = await service.handle({ method: 'pluginInstall', params: { file: await cutoutPackage() } });
-  assert.deepEqual([reply.pluginInstalled.id, reply.pluginInstalled.version, reply.pluginInstalled.alreadyInstalled], ['cutout-animation', '1.0.0', false]);
+  assert.deepEqual([reply.pluginInstalled.id, reply.pluginInstalled.version, reply.pluginInstalled.alreadyInstalled], ['cutout-animation', CUTOUT_VERSION, false]);
   const installed = reply.plugins.installed[0];
   assert.deepEqual(Object.keys(installed).sort(), ['directory', 'documentTypes', 'elementTypes', 'id', 'modules', 'name', 'version']);
   assert.deepEqual(installed.documentTypes.map(t => t.type), ['rig', 'controller']);
@@ -30,7 +30,7 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
 
   reply = await service.handle({ method: 'pluginEnable', params: { id: 'cutout-animation', revision: reply.view.revision } });
   assert.equal(reply.view.dirty, true);
-  assert.deepEqual(reply.view.documents.find(d => d.file === 'plugins/lock.json').data.plugins, [{ id: 'cutout-animation', version: '1.0.0', enabled: true }]);
+  assert.deepEqual(reply.view.documents.find(d => d.file === 'plugins/lock.json').data.plugins, [{ id: 'cutout-animation', version: CUTOUT_VERSION, enabled: true }]);
   const project = reply.plugins.project[0];
   assert.deepEqual(Object.keys(project).sort(), ['authoring', 'diagnostics', 'directory', 'enabled', 'id', 'state', 'version']);
   assert.deepEqual([project.state, project.enabled, project.authoring], ['active', true, null]);
@@ -47,6 +47,28 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'sample', payload: { rig: rigData(), clip: 'idle', timeMs: 250 } } });
   assert.equal(reply.pluginResult.ok, true);
   assert.equal(reply.pluginResult.pose.bones.body.y, -102);
+  // LLM edit path (plugin 1.2.0 ops): a refused edit answers {ok:false} and the module keeps working.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addSkin', id: 'Bad Id' } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /스킨 ID/);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addSkin', id: 'winter', name: '겨울' } } } });
+  assert.equal(reply.pluginResult.ok, true); assert.deepEqual(reply.pluginResult.rig.skins, [{ id: 'winter', name: '겨울', attachments: [] }]);
+  // IK ops (plugin 1.3.0) on the same path: a one-bone aim with a created target, then a refused chain.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addIk', bones: ['body'], createTarget: true } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.rig.ik, [{ id: 'body-ik', name: 'body-ik', bones: ['body'], target: 'body-target', bendPositive: true }]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addIk', bones: ['root', 'root'], target: 'body' } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /부모 → 자식/);
+  // Mesh ops (plugin 1.4.0): convert, bind with auto weights and a deform key on the same path.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'batch', operations: [
+    { op: 'convertToMesh', slot: 'torso', rows: 2, cols: 1 }, { op: 'bindMesh', slot: 'torso', bones: ['root', 'body'] },
+    { op: 'setKey', clip: 'idle', target: 'slot:torso', property: 'deform', attachment: 'torso', timeMs: 500, offsets: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }] } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  const torso = reply.pluginResult.rig.attachments[0];
+  assert.deepEqual([torso.type, torso.vertices.length, torso.triangles.length, torso.weights.length, torso.hull], ['mesh', 12, 12, 6, 6]);
+  assert.deepEqual(reply.pluginResult.diagnostics.filter(d => d.severity === 'error'), []);
+  assert.equal(reply.pluginResult.rig.clips[0].tracks.at(-1).attachment, 'torso');
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'bindMesh', slot: 'torso', bones: ['body'] } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /메시가 아닌/);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });
@@ -83,7 +105,7 @@ test('MCP: create through apply_project_changes, schema/status/call tools, versi
   await conflict(mcp.apply(version, [{ type: 'create', file: RIG, data: envelope('rig', 'hero', rigData()) }], 'dup'), 'CHANGE_REJECTED');
 
   const schema = await mcp.readSchema('extension', 'cutout-animation', 'rig');
-  assert.equal(schema.version, '1.0.0'); assert.match(schema.schema.title, /rig/i);
+  assert.equal(schema.version, CUTOUT_VERSION); assert.match(schema.schema.title, /rig/i);
   assert.equal((await mcp.readSchema('extension')).schema.title, 'Extension document');
   assert.equal((await mcp.readSchema('plugin-lock')).schema.title, 'Plugin lock');
   const status = await mcp.pluginStatus();

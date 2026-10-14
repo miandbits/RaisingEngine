@@ -42,6 +42,8 @@ public:
   /** Loads one DLL as plugin `id` (used by sync; public so tests can probe rejection paths). */
   bool load(const QString &id, const QString &file, QString *error = nullptr);
   void unload(const QString &id);
+  /** Tells the owning plugin (optional StudioWorkspacePlugin) that workspace "<plugin>/<id>" was shown/hidden. */
+  void workspaceChanged(const QString &key, bool shown);
 signals:
   void notice(QString message);
 

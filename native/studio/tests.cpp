@@ -90,6 +90,7 @@ private slots:
   void pluginMissingPlaceholder();
   void pluginManagerStates();
   void pluginLoaderRejectsNonPlugin();
+  void pluginWorkspaceSwitch();
   void cutoutEndToEnd();
   void initTestCase() {
     applyStudioTheme(

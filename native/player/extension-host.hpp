@@ -120,7 +120,10 @@ public:
     }
     for(const auto& [id,m]:mounts) {
       Json items=Json::array();
-      for(const auto& item:m.items)items.push_back({{"imageAssetId",item.value("imageAssetId","")},{"matrix",item.value("matrix",Json::array())},{"width",item.value("width",0.0)},{"height",item.value("height",0.0)},{"alpha",item.value("alpha",1.0)}});
+      for(const auto& item:m.items) {
+        items.push_back({{"imageAssetId",item.value("imageAssetId","")},{"matrix",item.value("matrix",Json::array())},{"width",item.value("width",0.0)},{"height",item.value("height",0.0)},{"alpha",item.value("alpha",1.0)}});
+        if(item.contains("mesh")&&item.at("mesh").is_object())items.back()["mesh"]=item.at("mesh");  // plugin-mesh-v1 triangles
+      }
       auto* p=plugin(m.plugin);
       const auto states=described.count(m.plugin)?described.at(m.plugin):Json::object();
       list.push_back({{"instance",id},{"plugin",m.plugin},{"available",p&&p->available&&m.mounted},{"error",m.error},{"element",m.element},{"items",items},{"state",states.value(id,Json())}});

@@ -4,7 +4,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { installPackage } from '../../dist/packages/plugin-host/index.js';
 import { StudioEditor } from '../../dist/packages/studio-service/editor.js';
-import { addCutout, addElement, controllerData, cutoutPackage, envelope, lock, newProject, png, rigData, serialize, temp } from './host-helpers.mjs';
+import { addCutout, addElement, controllerData, cutoutPackage, envelope, lock, newProject, png, rigData, serialize, temp, CUTOUT_VERSION } from './host-helpers.mjs';
 
 let installedStore;
 const store = () => installedStore ??= (async () => { const dir = await temp('store'); await installPackage(dir, await cutoutPackage()); return dir; })();
@@ -44,7 +44,7 @@ test('not locked and disabled plugins are reported as warnings and never validat
   let editor = await open(root, await store());
   assert.deepEqual(codes(editor).filter(c => c.includes('PLUGIN')).sort(), [`warning:PLUGIN_NOT_LOCKED:${CONTROLLER}/plugin`, `warning:PLUGIN_NOT_LOCKED:${RIG}/plugin`]);
   assert.equal(codes(editor).some(c => c.includes('ANIM_')), false);
-  await writeFile(path.join(root, 'plugins/lock.json'), serialize(lock([{ id: 'cutout-animation', version: '1.0.0', enabled: false }])));
+  await writeFile(path.join(root, 'plugins/lock.json'), serialize(lock([{ id: 'cutout-animation', version: CUTOUT_VERSION, enabled: false }])));
   editor = await open(root, await store());
   assert.deepEqual(codes(editor).filter(c => c.includes('PLUGIN')), ['warning:PLUGIN_DISABLED:plugins/lock.json/plugins/0/enabled']);
   assert.equal(editor.diagnostics.some(d => d.severity === 'error'), false);
@@ -146,6 +146,88 @@ test('animation edits never change contentFingerprint; plugin element edits do',
   const third = await editor.snapshot(editor.revision);
   assert.notEqual(third.snapshot.contentFingerprint, first.snapshot.contentFingerprint);
   await rm(path.join(root, '.studio'), { recursive: true, force: true });
+});
+
+test('skins and expressions (plugin 1.2.0): schema-valid documents, per-skin image checks, element props.skin', async () => {
+  const root = await newProject();
+  const rig = rigData({
+    skins: [{ id: 'winter', name: '겨울', attachments: [
+      { slot: 'torso', name: 'torso', imageAssetId: 'hero-torso', width: 44, height: 60, pivotX: 0.5, pivotY: 1 },
+      { slot: 'torso', name: 'scarf', imageAssetId: 'no-image', width: 10, height: 10 }] }],
+    expressions: [{ id: 'calm', name: '차분', slots: { torso: null }, bones: { body: { rotation: 3 } } }],
+  });
+  rig.clips[0].tracks.push({ target: 'rig', property: 'expression', keys: [{ timeMs: 0, value: 'calm' }, { timeMs: 500, value: null }] });
+  await addCutout(root, { rig, controller: controllerData({ defaultSkin: 'winter', defaultExpression: null, bindings: [{ id: 'face', signal: 'portraitChanged', match: { portraitId: 'calm' }, expression: 'calm' }] }) });
+  await addElement(root, { plugin: 'cutout-animation', type: 'character', ref: 'hero-main', props: { scale: 1, skin: 'winter' } });
+  const element = `project.json/visual/screens/0/elements/${JSON.parse(await readFile(path.join(root, 'project.json'), 'utf8')).visual.screens[0].elements.length - 1}/extension`;
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID')), false, all.join('\n'));
+  assert.ok(all.includes(`error:ANIM_IMAGE_MISSING:${RIG}/data/skins/0/attachments/1/imageAssetId`), all.join('\n'));
+  assert.ok(all.includes(`warning:ANIM_IMAGE_SIZE_MISMATCH:${RIG}/data/skins/0/attachments/0/width`), 'skin images get the PNG size check too');
+  assert.deepEqual(all.filter(c => c.startsWith(`error:`) && c.includes(CONTROLLER)), [], 'clip-less expression binding and defaultSkin are valid');
+  assert.deepEqual(codes(editor, 'project.json').filter(c => c.includes('ANIM_')), [], 'props.skin naming a rig skin is fine');
+  const project = structuredClone(doc(editor, 'project.json').data);
+  project.visual.screens[0].elements.at(-1).extension.props.skin = 'summer';
+  editor.edit({ type: 'replace', file: 'project.json', data: project }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`warning:ANIM_SKIN_UNKNOWN:${element}/props/skin`), codes(editor).join('\n'));
+  project.visual.screens[0].elements.at(-1).extension.props.skin = 7;
+  editor.edit({ type: 'replace', file: 'project.json', data: project }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`error:ANIM_ELEMENT_PROP:${element}/props/skin`));
+  // A rig track may only key expression (the schema allows the shape, the core checks the pairing).
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.clips[0].tracks.at(-1).property = 'x';
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.some(c => c.startsWith(`error:ANIM_PROPERTY:${RIG}/data/clips/0/tracks/1/property`)), all.join('\n'));
+});
+
+test('IK constraints (plugin 1.3.0): schema-valid rig ik + ik:<id> tracks, core IK diagnostics through the service', async () => {
+  const root = await newProject();
+  const rig = rigData({
+    bones: [{ id: 'root', parent: null }, { id: 'body', parent: 'root', y: -100 }, { id: 'upper', parent: 'body', x: 20 }, { id: 'lower', parent: 'upper', x: 40 },
+      { id: 'hand', parent: 'lower', x: 40 }, { id: 'hand-target', parent: 'root', x: 90, y: -90 }],
+    ik: [{ id: 'arm', name: '팔', bones: ['upper', 'lower'], target: 'hand-target', mix: 1, bendPositive: false, order: 1 }],
+  });
+  rig.clips[0].tracks.push({ target: 'ik:arm', property: 'mix', keys: [{ timeMs: 0, value: 1, interp: 'bezier', curve: [0.42, 0, 0.58, 1] }, { timeMs: 500, value: 0.5 }] },
+    { target: 'ik:arm', property: 'bendPositive', keys: [{ timeMs: 0, value: false }, { timeMs: 500, value: true }] });
+  await addCutout(root, { rig });
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID') || c.includes('ANIM_')), false, all.join('\n'));
+  // The core's IK checks reach Studio/MCP diagnostics with their pointers.
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.ik[0].target = 'hand';
+  bad.data.clips[0].tracks.at(-2).keys[1].value = 1.5;
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.includes(`error:ANIM_IK_TARGET:${RIG}/data/ik/0/target`), all.join('\n'));
+  assert.ok(all.some(c => c.startsWith(`error:ANIM_IK_MIX:${RIG}/data/clips/0/tracks/1/keys/1/value`)), all.join('\n'));
+});
+
+test('mesh attachments (plugin 1.4.0): schema-valid weighted mesh + deform track, core mesh diagnostics through the service', async () => {
+  const root = await newProject();
+  const rig = rigData({
+    bones: [{ id: 'root', parent: null }, { id: 'body', parent: 'root', y: -100 }, { id: 'neck', parent: 'body', y: -60 }],
+    attachments: [{ slot: 'torso', name: 'torso', imageAssetId: 'hero-torso', width: 40, height: 60, type: 'mesh',
+      vertices: [0, 0, 40, 0, 40, 60, 0, 60], uvs: [0, 0, 1, 0, 1, 1, 0, 1], triangles: [0, 1, 2, 0, 2, 3], hull: 4, edges: [0, 1, 1, 2, 2, 3, 0, 3],
+      weights: [[{ bone: 'neck', weight: 1 }], [{ bone: 'neck', weight: 0.5 }, { bone: 'body', weight: 0.5 }], [{ bone: 'body', weight: 1 }], [{ bone: 'body', weight: 1 }]] }],
+  });
+  rig.clips[0].tracks.push({ target: 'slot:torso', property: 'deform', attachment: 'torso', keys: [{ timeMs: 0, offsets: [0, 0, 0, 0, 0, 0, 0, 0], interp: 'bezier', curve: [0.42, 0, 0.58, 1] }, { timeMs: 500, offsets: [2, 0, -2, 0, 0, 3, 0, 0] }] });
+  await addCutout(root, { rig });
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID') || c.includes('ANIM_')), false, all.join('\n'));
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.attachments[0].triangles[5] = 9;
+  bad.data.attachments[0].weights[2][0].bone = 'tail';
+  bad.data.clips[0].tracks.at(-1).keys[1].offsets.pop();
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.includes(`error:ANIM_MESH_TRIANGLES:${RIG}/data/attachments/0/triangles/5`), all.join('\n'));
+  assert.ok(all.includes(`error:ANIM_MESH_BONE_MISSING:${RIG}/data/attachments/0/weights/2/0/bone`), all.join('\n'));
+  // The broken mesh no longer counts as a mesh, so its deform track is reported too.
+  assert.ok(all.some(c => c.startsWith(`error:ANIM_MESH_DEFORM:${RIG}/data/clips/0/tracks/1/attachment`)), all.join('\n'));
 });
 
 test('host-reserved posterAssetId must name an image asset, also without the plugin, and the cutout service ignores it', async () => {

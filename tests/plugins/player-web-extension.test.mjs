@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {chromium} from 'playwright';
-import {makeGame,EVIDENCE} from './player-extension-fixture.mjs';
+import {makeGame,EVIDENCE,referenceRuntime,meshRig,meshController,pluginElement,pngPixel,close,RED,BLUE} from './player-extension-fixture.mjs';
 
 const INSTANCE='home/hero-anim';
 const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.wasm':'application/wasm','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.ttf':'font/ttf','.otf':'font/otf','.svg':'image/svg+xml'};
@@ -43,7 +43,7 @@ test('web player renders plugin items with matrix transforms, observes commands 
   await tick(page,500);
   await page.waitForFunction(()=>document.querySelector('.visual-plugin-item')?.style.transform.replace(/\s/g,'')==='matrix(1.5,0,0,1.5,90,84)');
   const items=await page.locator('.visual-plugin-item').evaluateAll(list=>list.map(img=>({id:img.dataset.imageAssetId,transform:img.style.transform.replace(/\s/g,''),origin:getComputedStyle(img).transformOrigin,loaded:img.complete&&img.naturalWidth>0})));
-  assert.deepEqual(items.map(i=>i.id),['anim-torso','anim-face','anim-eyes-open']);
+  assert.deepEqual(items.map(i=>i.id),['anim-torso-summer','anim-face','anim-eyes-open'],'props.skin picks the outfit');
   assert.ok(items.every(i=>i.transform.startsWith('matrix(1.5,0,0,1.5,')&&i.origin==='0px 0px'));
   await page.waitForFunction(()=>[...document.querySelectorAll('.visual-plugin-item')].every(i=>i.complete&&i.naturalWidth>0));
   // Element-local placement: torso (80x120 at scale 1.5) starts 90px right of the element's left edge.
@@ -53,8 +53,10 @@ test('web player renders plugin items with matrix transforms, observes commands 
   const before=Number(await money(page));
   await cheer(page);
   await page.waitForFunction(()=>window.raisingExtensions.observations===1);
-  d=await describe(page);assert.equal(track(d,0).clip,'joy');
+  d=await describe(page);assert.equal(track(d,0).clip,'joy');assert.equal(d.instance.state.skin,'winter');
   assert.deepEqual(d.lastObserve.plugins['cutout-animation'].matched,[`${INSTANCE}:cheer-joy`]);
+  // The binding's skin swap shows the winter torso, decoded like every other part.
+  await page.waitForFunction(()=>{const i=document.querySelector('.visual-plugin-item');return i?.dataset.imageAssetId==='anim-torso-winter'&&i.complete&&i.naturalWidth>0;});
   assert.equal(Number(await money(page)),before+1);
   await tick(page,300);d=await describe(page);assert.equal(track(d,0).timeMs,300);
   await mkdir(EVIDENCE,{recursive:true});await page.screenshot({path:resolve(EVIDENCE,'web-joy-300.png')});
@@ -67,6 +69,9 @@ test('web player renders plugin items with matrix transforms, observes commands 
   const chooser=page.waitForEvent('filechooser');await page.locator('[data-element-id="load"] button').click();await (await chooser).setFiles(savePath);
   await page.waitForFunction(id=>{const i=window.raisingExtensions.describe().instances.find(x=>x.instance===id);return i?.state?.tracks?.[0]?.clip==='joy';},INSTANCE);
   d=await describe(page);assert.equal(track(d,0).timeMs,300,'one-shot resumes at its saved time');
+  assert.equal(saved.playerPresentation.extensions['cutout-animation'].instances[INSTANCE].state.skin,'winter');
+  assert.equal(d.instance.state.skin,'winter','skin restored');
+  assert.equal(await page.locator('.visual-plugin-item').first().getAttribute('data-image-asset-id'),'anim-torso-winter');
   assert.equal(Number(await money(page)),before+1);
   await page.screenshot({path:resolve(EVIDENCE,'web-loaded.png')});
   assert.deepEqual(errors,[]);
@@ -84,4 +89,32 @@ test('web player shows a placeholder when the plugin module is missing and stays
   await mkdir(EVIDENCE,{recursive:true});await page.screenshot({path:resolve(EVIDENCE,'web-placeholder.png')});
   assert.deepEqual(errors,[]);
   await writeFile(resolve(f.root,'ok'),'');
+});
+
+test('web player draws weighted mesh items on canvases, bent by their bones (plugin-mesh-v1)',{timeout:120000},async t=>{
+  const f=await makeGame({target:'web',name:'web-mesh',mesh:true});t.diagnostic(`fixture: ${f.root}`);
+  const {page,errors}=await open(t,f);
+  await tick(page,100);
+  await page.locator('canvas.visual-plugin-mesh[data-drawn="true"]').waitFor();
+  const d=await describe(page);
+  const [arm]=d.instance.items;
+  assert.equal(arm.mesh.positions.length,36);
+  const request=await referenceRuntime();
+  request({op:'init',documents:[{type:'rig',id:'hero',data:meshRig()},{type:'controller',id:'hero-main',data:meshController}]});
+  request({op:'mount',instance:INSTANCE,element:{type:'character',ref:'hero-main',width:pluginElement.width,height:pluginElement.height,props:pluginElement.extension.props}});
+  request({op:'update',dtMs:100});
+  const want=request({op:'frame',instance:INSTANCE}).items[0].mesh.positions;
+  assert.ok(arm.mesh.positions.every((v,i)=>Math.abs(v-want[i])<1e-6),'mesh positions parity with the core');
+  assert.equal(await page.locator('.visual-plugin-mesh').count(),1);
+  assert.equal(await page.locator('img.visual-plugin-item').count(),0,'mesh items never fall back to the undeformed <img>');
+  // Element px -> page px (the stage is scaled to the viewport), then sample the screenshot.
+  const map=await page.evaluate(()=>{const el=document.querySelector('[data-element-id="hero-anim"]').getBoundingClientRect(),stage=document.querySelector('.visual-stage');return {x:el.x,y:el.y,scale:stage.getBoundingClientRect().width/stage.offsetWidth};});
+  const shot=await page.screenshot();
+  const at=(x,y)=>pngPixel(shot,Math.round(map.x+x*map.scale),Math.round(map.y+y*map.scale));
+  assert.ok(close(at(90,200),RED),`shoulder half: ${at(90,200)}`);
+  assert.ok(close(at(180,290),BLUE),`bent forearm: ${at(180,290)}`);
+  assert.ok(close(at(172,240),BLUE)&&close(at(188,300),BLUE),`forearm body: ${at(172,240)} ${at(188,300)}`);
+  assert.ok(!close(at(270,200),BLUE)&&!close(at(270,200),RED),`no straight forearm: ${at(270,200)}`);
+  await mkdir(resolve(EVIDENCE,'v2'),{recursive:true});await writeFile(resolve(EVIDENCE,'v2','web-mesh-bent.png'),shot);
+  assert.deepEqual(errors,[]);
 });

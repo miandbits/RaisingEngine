@@ -1,5 +1,8 @@
 #include "plugin-host.hpp"
 #include <QLibraryInfo>
+#include <QMenuBar>
+#include <QRegularExpression>
+#include <QStackedWidget>
 #include <QPlainTextEdit>
 #include <QTemporaryDir>
 #include <QTreeWidgetItemIterator>
@@ -16,6 +19,38 @@ QJsonObject samplePluginState(const QString &authoring = {}) {
       {"project", QJsonArray{QJsonObject{{"id", "cutout-animation"}, {"version", "1.0.0"}, {"enabled", true}, {"state", "active"}, {"directory", "C:/store/cutout-animation/1.0.0"}, {"authoring", authoring.isEmpty() ? QJsonValue() : QJsonValue(authoring)}, {"diagnostics", QJsonArray{}}},
                              QJsonObject{{"id", "old-plugin"}, {"version", "0.1.0"}, {"enabled", false}, {"state", "disabled"}, {"directory", ""}, {"authoring", QJsonValue()}, {"diagnostics", QJsonArray{QJsonObject{{"code", "PLUGIN_DISABLED"}, {"severity", "warning"}, {"message", "old-plugin disabled"}}}}},
                              QJsonObject{{"id", "gone"}, {"version", "1.0.0"}, {"enabled", true}, {"state", "missing"}, {"directory", ""}, {"authoring", QJsonValue()}, {"diagnostics", QJsonArray{}}}}}};
+}
+/**
+ * Layout sanity of a workspace page at the current window size: the panel fills the page
+ * (nothing pushed off-screen by a large minimum) and every visible splitter child keeps
+ * at least its minimum along the splitter axis. Returns the problems found.
+ */
+QStringList workspaceLayoutProblems(QWidget *page, QWidget *panel) {
+  QStringList problems;
+  auto text = [](const QRect &r) { return QString("%1,%2 %3x%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()); };
+  if (panel->geometry() != page->rect()) problems << "panel " + text(panel->geometry()) + " page " + text(page->rect());
+  const QSize need = panel->minimumSizeHint();
+  if (need.width() > page->width() || need.height() > page->height()) problems << QString("panel minimum %1x%2").arg(need.width()).arg(need.height());
+  for (auto split : panel->findChildren<QSplitter *>()) {
+    if (!split->isVisible()) continue;
+    for (int i = 0; i < split->count(); ++i) {
+      auto child = split->widget(i);
+      if (!child->isVisible()) continue;
+      const bool horizontal = split->orientation() == Qt::Horizontal;
+      const int size = horizontal ? child->width() : child->height();
+      const int explicitMin = horizontal ? child->minimumWidth() : child->minimumHeight();
+      const int min = explicitMin > 0 ? explicitMin : (horizontal ? child->minimumSizeHint().width() : child->minimumSizeHint().height());
+      if (size < min) problems << QString("%1[%2] %3 < %4").arg(split->objectName()).arg(i).arg(size).arg(min);
+    }
+  }
+  for (const char *name : {"cutoutModeBanner", "cutoutStatus", "cutoutClipList", "cutoutMixTable", "cutoutKeyButton"}) {
+    auto widget = panel->findChild<QWidget *>(name);
+    if (!widget || !widget->isVisible()) { problems << QString(name) + " hidden"; continue; }
+    const QRect r(widget->mapTo(panel, QPoint(0, 0)), widget->size());
+    // The key button lives in a scroll area; everything else must be fully inside the panel.
+    if (QString(name) != "cutoutKeyButton" && !panel->rect().contains(r)) problems << QString(name) + " cut off " + text(r);
+  }
+  return problems;
 }
 QList<QAction *> pluginPaletteActions(StudioWindow &w) {
   QList<QAction *> out;
@@ -187,6 +222,142 @@ void StudioTests::pluginManagerStates() {
   QCOMPARE(added.value("width").toInt(), 300);
   w.findChild<QAction *>("undoEdit")->trigger();
   QTRY_VERIFY_WITH_TIMEOUT(!w.busy(), 10000);
+}
+
+void StudioTests::pluginWorkspaceSwitch() {
+  // A real workspace plugin: the cutout authoring module from its own build tree.
+  const auto engine = qEnvironmentVariable("RAISING_ENGINE_ROOT", QDir::currentPath());
+  const auto dll = qEnvironmentVariable("RAISING_CUTOUT_STUDIO_DLL", engine + "/dist/cutout/build-win/studio/cutout-studio.dll");
+  if (!QFileInfo::exists(dll)) QSKIP("Build plugins/cutout-animation (tools/build.mjs win studio) or set RAISING_CUTOUT_STUDIO_DLL");
+  const auto projectA = qEnvironmentVariable("RAISING_QT_PROJECT");
+  StudioWindow w(engine);
+  w.resize(1280, 720);
+  w.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&w));
+  w.activateWindow();  // window shortcuts (Ctrl+Shift+A) need the active window
+  QVERIFY(QTest::qWaitForWindowActive(&w));
+  w.openProject(projectA);
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && !w.projectData().isEmpty(), 20000);
+  const bool pluginService = !w.pluginManager()->state().isEmpty();  // replies carry `plugins`
+  // Without a workspace plugin the studio looks as before: no switcher, no 작업 공간 menu.
+  auto switcher = w.findChild<QTabBar *>("studioWorkspaceSwitcher");
+  QVERIFY(switcher && !switcher->isVisibleTo(&w));
+  QVERIFY(!w.findChild<QMenu *>("studioWorkspaceMenu")->menuAction()->isVisible());
+  QVERIFY(w.workspaceKeys().isEmpty());
+  QVERIFY(!w.showWorkspace("cutout-animation/character"));
+  // A non-default dock layout, so restoring it is not just "the default comes back".
+  w.findChild<QDockWidget *>("projectDock")->hide();
+  w.applyPluginState(samplePluginState(dll));
+  QVERIFY2(w.pluginManager()->loadedIds().contains("cutout-animation"), qPrintable(w.pluginManager()->loadError("cutout-animation")));
+  QCOMPARE(w.workspaceKeys(), QStringList{"cutout-animation/character"});
+  QVERIFY(switcher->isVisibleTo(&w));
+  QCOMPARE(switcher->count(), 2);
+  auto action = w.findChild<QAction *>("studioWorkspace-cutout-animation-character");
+  QVERIFY(action && w.findChild<QAction *>("studioWorkspace-screen"));
+  QCOMPARE(action->shortcut(), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
+  auto dock = w.findChild<QDockWidget *>("cutoutAnimationDock");
+  QVERIFY(dock && dock->findChild<QWidget *>("cutoutWorkspaceLauncher") && !dock->findChild<QWidget *>("cutoutPanel"));
+  QTest::qWait(100);
+  const auto revision = w.currentView().value("revision"), undo = w.currentView().value("undo"), dirty = w.currentView().value("dirty");
+  auto dockGeometry = [&](const char *name) { return w.findChild<QDockWidget *>(name)->geometry(); };
+  const auto hierarchyAt = dockGeometry("hierarchyDock"), launcherAt = dockGeometry("cutoutAnimationDock"), inspectorAt = dockGeometry("inspectorDock");
+  QStringList docks;
+  for (auto d : w.findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly))
+    if (d->isVisible()) docks << d->objectName();
+  QVERIFY(docks.contains("cutoutAnimationDock") && !docks.contains("projectDock"));
+  auto shownDocks = [&] {
+    QStringList out;
+    for (auto d : w.findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly))
+      if (d->isVisible()) out << d->objectName();
+    return out;
+  };
+
+  // Enter through the switcher tab: the panel is the whole central area, every dock hidden.
+  QTest::mouseClick(switcher, Qt::LeftButton, Qt::NoModifier, switcher->tabRect(1).center());
+  QCOMPARE(w.currentWorkspace(), QString("cutout-animation/character"));
+  QVERIFY(action->isChecked());
+  QVERIFY(shownDocks().isEmpty());
+  auto page = w.findChild<QWidget *>("studioWorkspacePage-cutout-animation-character");
+  auto panel = w.findChild<QWidget *>("cutoutPanel");
+  QVERIFY(page && panel && panel->parentWidget() == page);
+  QCOMPARE(w.findChild<QStackedWidget *>("studioCentralStack")->currentWidget(), page);
+  QVERIFY(!w.findChild<QWidget *>("screenCanvas")->isVisible());
+  // Host menus and the undo/save/play tool bar stay; screen-only tools are hidden.
+  QVERIFY(w.menuBar()->isVisible() && w.findChild<QToolBar *>("mainToolbar")->isVisible());
+  for (const char *name : {"undoEdit", "redoEdit", "saveProject", "playProject"}) QVERIFY2(w.findChild<QAction *>(name)->isVisible(), name);
+  QVERIFY(!w.findChild<QAction *>("addButton")->isVisible());
+  QTest::qWait(100);
+  QCOMPARE(w.size(), QSize(1280, 720));  // the workspace minimum fits a 1280x720 window
+  QStringList problems = workspaceLayoutProblems(page, panel);
+  QVERIFY2(problems.isEmpty(), qPrintable(problems.join(" | ")));
+  auto canvas = panel->findChild<QWidget *>("cutoutCanvas");
+  QVERIFY2(canvas->width() >= 240 && canvas->height() >= 150, qPrintable(QString("%1x%2").arg(canvas->width()).arg(canvas->height())));
+  // Ctrl+Shift+A toggles back to 화면 편집 with exactly the previous dock layout.
+  QTest::keyClick(canvas, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
+  QCOMPARE(w.currentWorkspace(), QString());
+  QVERIFY(w.findChild<QWidget *>("screenCanvas")->isVisible());
+  QVERIFY(w.findChild<QAction *>("addButton")->isVisible());
+  QCOMPARE(shownDocks(), docks);
+  QTest::qWait(100);
+  QCOMPARE(dockGeometry("hierarchyDock"), hierarchyAt);
+  QCOMPARE(dockGeometry("cutoutAnimationDock"), launcherAt);
+  // Tab groups re-measure their tab bar once: from then on every round trip is byte-exact.
+  QVERIFY(qAbs(dockGeometry("inspectorDock").height() - inspectorAt.height()) <= 8);
+  const auto settled = w.saveState(1);
+  QTest::keyClick(&w, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
+  QCOMPARE(w.currentWorkspace(), QString("cutout-animation/character"));
+  QTest::keyClick(canvas, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
+  QCOMPARE(w.currentWorkspace(), QString());
+  QTest::qWait(100);
+  QCOMPARE(w.saveState(1), settled);
+  QTest::keyClick(&w, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
+  QCOMPARE(w.currentWorkspace(), QString("cutout-animation/character"));
+  const int leftWidth = panel->findChild<QWidget *>("cutoutLeftSplitter")->width();
+  // Ultrawide and very tall: only the canvas / time area grow, side panels keep their width.
+  for (const QSize size : {QSize(3840, 1080), QSize(5120, 1440), QSize(1440, 2560)}) {
+    w.resize(size);
+    QTest::qWait(120);
+    QCOMPARE(w.size(), size);
+    problems = workspaceLayoutProblems(page, panel);
+    QVERIFY2(problems.isEmpty(), qPrintable(QString("%1x%2: ").arg(size.width()).arg(size.height()) + problems.join(" | ")));
+    QCOMPARE(panel->findChild<QWidget *>("cutoutLeftSplitter")->width(), leftWidth);
+    if (size.width() >= 3840) QVERIFY2(canvas->width() > size.width() - 700, qPrintable(QString::number(canvas->width())));
+    if (size.height() >= 2560) QVERIFY2(panel->findChild<QWidget *>("cutoutBottomTabs")->height() > 700, "tall screens grow the timeline too");
+  }
+  w.resize(1280, 720);
+  QTest::qWait(120);
+
+  // 보기 → 작업 공간 → 화면 편집 also returns; switching never touched the documents.
+  w.findChild<QAction *>("studioWorkspace-screen")->trigger();
+  QCOMPARE(w.currentWorkspace(), QString());
+  QCOMPARE(shownDocks(), docks);
+  QCOMPARE(w.currentView().value("revision"), revision);
+  QCOMPARE(w.currentView().value("undo"), undo);
+  QCOMPARE(w.currentView().value("dirty"), dirty);
+  QVERIFY(!w.busy());
+
+  // Project reopen: leaving the project inside the workspace comes back to it.
+  QVERIFY(w.showWorkspace("cutout-animation/character"));
+  if (!pluginService) return;  // old service: opening another project would not unload the DLL
+  QTemporaryDir temp(engine + "/.cache/qt-workspace-XXXXXX");
+  QVERIFY(copyScreenSettingsFixture(engine + "/examples/academy-visual", temp.path()));
+  w.openProject(temp.path());
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && QDir::cleanPath(w.currentView().value("root").toString()).compare(QDir::cleanPath(temp.path()), Qt::CaseInsensitive) == 0, 20000);
+  QVERIFY(!w.pluginManager()->loadedIds().contains("cutout-animation"));
+  QCOMPARE(w.currentWorkspace(), QString());  // the plugin left with its project
+  QVERIFY(!switcher->isVisibleTo(&w));
+  QCOMPARE(shownDocks(), QStringList(docks).filter(QRegularExpression("^(?!cutoutAnimationDock$)")));
+  w.openProject(projectA);
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && QDir::cleanPath(w.currentView().value("root").toString()).compare(QDir::cleanPath(projectA), Qt::CaseInsensitive) == 0, 20000);
+  w.applyPluginState(samplePluginState(dll));
+  QCOMPARE(w.currentWorkspace(), QString("cutout-animation/character"));
+  QVERIFY(w.findChild<QWidget *>("cutoutPanel")->isVisible());
+  QVERIFY(shownDocks().isEmpty());
+  // Unloading inside the workspace (plugin disabled) restores the screen editor.
+  w.applyPluginState({});
+  QCOMPARE(w.currentWorkspace(), QString());
+  QVERIFY(w.findChild<QWidget *>("screenCanvas")->isVisible());
+  QVERIFY(!w.findChild<QWidget *>("cutoutPanel"));
 }
 
 void StudioTests::pluginLoaderRejectsNonPlugin() {
