@@ -4,6 +4,7 @@
 #include <iostream>
 #include "cutout/host.hpp"
 #include "cutout/signals.hpp"
+#include "cutout/templates.hpp"
 
 using namespace cutout;
 namespace {
@@ -308,6 +309,183 @@ int main() {
     check(restored["skipped"].empty(), "restore into same mount");
     check(other.handle({{"op", "describe"}, {"instance", "title/hero"}})["state"]["tracks"][0]["clip"] == "joy", "restored clip");
     check(!other.request(Json({{"op", "mount"}, {"instance", "x"}, {"element", {{"type", "character"}, {"ref", "missing"}, {"width", 10}, {"height", 10}}}}).dump()).value("ok", true), "unknown controller rejected");
+  });
+
+  // ---- Authoring operations (editing.cpp / templates.cpp) ----
+  auto worldOf = [](const Json& data, const std::string& bone) { return setupWorld(data).at(bone); };
+  auto drawOf = [](const Json& data) {
+    Instance inst(std::make_shared<const Rig>(parseRig("e", data)));
+    return inst.drawList();
+  };
+  auto sameDraw = [](const std::vector<DrawItem>& a, const std::vector<DrawItem>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) {
+      const auto &x = a[i].matrix, &y = b[i].matrix;
+      if (a[i].slot != b[i].slot || !near(x.a, y.a, 1e-5) || !near(x.b, y.b, 1e-5) || !near(x.c, y.c, 1e-5) || !near(x.d, y.d, 1e-5) || !near(x.e, y.e, 1e-4) || !near(x.f, y.f, 1e-4)) return false;
+    }
+    return true;
+  };
+  auto refused = [](const Json& data, const Json& op, const Json& controllers = Json::array()) {
+    try { applyEdit(data, op, controllers); } catch (const EditError&) { return true; }
+    return false;
+  };
+
+  test("edit addBone and reparentBone keep world pose, refuse cycles", [&] {
+    auto r = applyEdit(rigData(), {{"op", "addBone"}, {"id", "arm"}, {"parent", "body"}, {"worldX", 130}, {"worldY", 170}});
+    check(near(worldOf(r.data, "arm").e, 130) && near(worldOf(r.data, "arm").f, 170), "addBone at world point");
+    check(r.affected.size() == 1 && r.affected[0] == "bone:arm", "affected bone");
+    auto d = r.data; d["bones"][1]["rotation"] = 30;  // rotated parent makes the compensation non-trivial
+    const Affine before = worldOf(d, "arm");
+    r = applyEdit(d, {{"op", "reparentBone"}, {"bone", "arm"}, {"parent", "head"}});
+    const Affine after = worldOf(r.data, "arm");
+    check(near(before.e, after.e, 1e-5) && near(before.f, after.f, 1e-5) && near(before.a, after.a, 1e-5) && near(before.b, after.b, 1e-5), "world pose kept");
+    check(r.data["bones"][3]["parent"] == "head" && validateRig(r.data).empty(), "parent changed and valid");
+    check(refused(rigData(), {{"op", "reparentBone"}, {"bone", "body"}, {"parent", "head"}}), "descendant parent refused (cycle)");
+    check(refused(rigData(), {{"op", "reparentBone"}, {"bone", "body"}, {"parent", "body"}}), "self parent refused");
+    check(refused(rigData(), {{"op", "addBone"}, {"id", "body"}}), "duplicate bone id refused");
+    r = applyEdit(rigData(), {{"op", "reparentBone"}, {"bone", "head"}, {"parent", nullptr}});
+    check(r.data["bones"][2]["parent"].is_null() && near(worldOf(r.data, "head").f, 100), "reparent to root keeps world");
+  });
+
+  test("edit setPivot moves origin without visual change", [&] {
+    Json d = rigData(); d["bones"][1]["rotation"] = 20;
+    const auto drawBefore = drawOf(d);
+    const Rig rigBefore = parseRig("a", d);
+    auto r = applyEdit(d, {{"op", "setPivot"}, {"bone", "body"}, {"worldX", 110}, {"worldY", 200}});
+    check(near(worldOf(r.data, "body").e, 110) && near(worldOf(r.data, "body").f, 200), "bone origin at new pivot");
+    check(sameDraw(drawBefore, drawOf(r.data)), "setup draw list unchanged");
+    const Rig rigAfter = parseRig("b", r.data);
+    bool same = true;
+    for (double t : {0.0, 250.0, 500.0, 900.0}) {
+      const auto a = samplePose(rigBefore, rigBefore.clipIndex("idle"), t), b = samplePose(rigAfter, rigAfter.clipIndex("idle"), t);
+      same &= near(a.world[2].e, b.world[2].e, 1e-4) && near(a.world[2].f, b.world[2].f, 1e-4);
+    }
+    check(same, "animated child stays in place (keys compensated)");
+    check(refused(rigData(), {{"op", "setPivot"}, {"bone", "tail"}, {"localX", 1}}), "unknown bone refused");
+  });
+
+  test("edit deleteBone refuses parts unless cascade", [&] {
+    check(refused(rigData(), {{"op", "deleteBone"}, {"bone", "head"}}), "bone with slots refused");
+    auto r = applyEdit(rigData(), {{"op", "deleteBone"}, {"bone", "head"}, {"cascade", true}});
+    check(r.data["slots"].size() == 1 && r.data["attachments"].size() == 1, "slots and attachments cascaded");
+    check(r.data["clips"][1]["tracks"].empty() && r.data["clips"][2]["tracks"].size() == 1, "tracks of removed targets dropped");
+    Json d = rigData(); d["slots"][0]["bone"] = "root";
+    const double headY = worldOf(d, "head").f;
+    r = applyEdit(d, {{"op", "deleteBone"}, {"bone", "body"}, {"cascade", false}});
+    check(r.data["bones"].size() == 2 && r.data["bones"][1]["parent"] == "root" && near(worldOf(r.data, "head").f, headY), "child re-parented with world pose");
+    Json one = Json::parse(R"({"schemaVersion":1,"canvas":{"width":10,"height":10,"originX":0,"originY":0},"bones":[{"id":"root","parent":null}],"slots":[],"attachments":[],"clips":[]})");
+    check(refused(one, {{"op", "deleteBone"}, {"bone", "root"}}), "last bone refused");
+  });
+
+  test("edit addPart, setSlot, moveSlot", [&] {
+    auto r = applyEdit(rigData(), {{"op", "addPart"}, {"slot", "mouth"}, {"bone", "head"}, {"imageAssetId", "img-mouth"}, {"width", 20}, {"height", 8}, {"index", 2}});
+    check(r.data["slots"][2]["id"] == "mouth" && r.data["slots"][2]["attachment"] == "mouth", "new slot inserted at index with default attachment");
+    r = applyEdit(r.data, {{"op", "addPart"}, {"slot", "mouth"}, {"imageAssetId", "img-mouth-smile"}, {"name", "smile"}, {"width", 20}, {"height", 10}});
+    check(r.data["attachments"].size() == 6 && r.extra["attachment"] == "smile", "second attachment on existing slot");
+    check(refused(r.data, {{"op", "addPart"}, {"slot", "mouth"}, {"imageAssetId", "x"}, {"name", "smile"}, {"width", 1}, {"height", 1}}), "duplicate attachment name refused");
+    check(refused(rigData(), {{"op", "addPart"}, {"slot", "hand"}, {"imageAssetId", "x"}, {"width", 0}, {"height", 1}, {"bone", "body"}}), "zero size refused");
+    r = applyEdit(r.data, {{"op", "moveSlot"}, {"slot", "torso"}, {"delta", 10}});
+    check(r.data["slots"].back()["id"] == "torso", "moveSlot clamps to front");
+    r = applyEdit(r.data, {{"op", "setSlot"}, {"slot", "mouth"}, {"attachment", "smile"}, {"alpha", 0.5}});
+    check(r.data["slots"][1]["attachment"] == "smile" && near(r.data["slots"][1]["alpha"].get<double>(), 0.5), "setSlot attachment/alpha");
+    check(refused(r.data, {{"op", "setSlot"}, {"slot", "mouth"}, {"attachment", "frown"}}), "unknown attachment refused");
+    const auto before = drawOf(rigData());
+    r = applyEdit(rigData(), {{"op", "setSlot"}, {"slot", "face"}, {"bone", "root"}});
+    check(sameDraw(before, drawOf(r.data)), "moving a slot to another bone keeps placement");
+  });
+
+  test("edit keys: setKey, deleteKey, moveKey, setInterp", [&] {
+    auto r = applyEdit(rigData(), {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 250}, {"value", -110}});
+    auto keys = r.data["clips"][0]["tracks"][0]["keys"];
+    check(keys.size() == 4 && keys[1]["timeMs"] == 250 && keys[1]["value"] == -110, "inserted sorted");
+    r = applyEdit(r.data, {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 250}, {"value", -120}, {"interp", "step"}});
+    keys = r.data["clips"][0]["tracks"][0]["keys"];
+    check(keys.size() == 4 && keys[1]["value"] == -120 && keys[1]["interp"] == "step", "replaced at same time");
+    r = applyEdit(r.data, {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}, {"value", 5}});
+    check(r.data["clips"][0]["tracks"].size() == 2, "new track created");
+    r = applyEdit(r.data, {{"op", "deleteKey"}, {"clip", "idle"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}});
+    check(r.data["clips"][0]["tracks"].size() == 1, "empty track removed");
+    check(refused(r.data, {{"op", "moveKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"fromMs", 250}, {"toMs", 500}}), "move collision refused");
+    check(refused(r.data, {{"op", "moveKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"fromMs", 250}, {"toMs", 1500}}), "move out of range refused");
+    r = applyEdit(r.data, {{"op", "moveKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"fromMs", 250}, {"toMs", 750}});
+    keys = r.data["clips"][0]["tracks"][0]["keys"];
+    check(keys[2]["timeMs"] == 750 && keys[3]["timeMs"] == 1000 && validateRig(r.data).empty(), "moved and re-sorted");
+    r = applyEdit(r.data, {{"op", "setInterp"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 750}, {"interp", "linear"}});
+    check(!r.data["clips"][0]["tracks"][0]["keys"][2].contains("interp"), "linear is the default (field removed)");
+    check(refused(rigData(), {{"op", "setInterp"}, {"clip", "blink"}, {"target", "slot:eyes"}, {"property", "attachment"}, {"timeMs", 0}, {"interp", "linear"}}), "attachment interp refused");
+    r = applyEdit(rigData(), {{"op", "setKey"}, {"clip", "joy"}, {"target", "slot:eyes"}, {"property", "attachment"}, {"timeMs", 100}, {"value", "closed"}});
+    check(r.data["clips"][2]["tracks"][2]["keys"][0]["value"] == "closed", "attachment swap key");
+    check(refused(rigData(), {{"op", "setKey"}, {"clip", "joy"}, {"target", "slot:eyes"}, {"property", "attachment"}, {"timeMs", 100}, {"value", "wink"}}), "unknown attachment key refused");
+    check(refused(rigData(), {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:body"}, {"property", "alpha"}, {"timeMs", 0}, {"value", 1}}), "slot property on bone refused");
+    check(refused(rigData(), {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:body"}, {"property", "x"}, {"timeMs", 401}, {"value", 1}}), "key past end refused");
+  });
+
+  test("edit clips: add, duplicate, rename, set, delete", [&] {
+    const Json controllers = Json::array({{{"id", "hero-main"}, {"data", controllerData()}}});
+    auto r = applyEdit(rigData(), {{"op", "addClip"}, {"id", "walk"}, {"durationMs", 800}, {"loop", true}});
+    check(r.data["clips"].size() == 4 && r.data["clips"][3]["durationMs"] == 800, "addClip");
+    r = applyEdit(r.data, {{"op", "duplicateClip"}, {"clip", "joy"}, {"id", "joy-big"}});
+    check(r.data["clips"][4]["tracks"].size() == 2 && r.data["clips"][4]["name"] == "joy 복사", "duplicate copies tracks");
+    check(refused(r.data, {{"op", "duplicateClip"}, {"clip", "joy"}, {"id", "idle"}}), "duplicate id refused");
+    r = applyEdit(rigData(), {{"op", "renameClip"}, {"clip", "joy"}, {"id", "happy"}}, controllers);
+    check(r.data["mix"]["pairs"][0]["from"] == "happy", "mix pair renamed");
+    check(r.extra["controllerRefs"].size() == 1 && r.extra["controllers"][0]["data"]["bindings"][0]["clip"] == "happy", "controller refs reported and rewritten");
+    check(refused(rigData(), {{"op", "deleteClip"}, {"clip", "blink"}}, controllers), "delete of referenced clip refused");
+    r = applyEdit(rigData(), {{"op", "deleteClip"}, {"clip", "joy"}});
+    check(r.data["clips"].size() == 2 && r.data["mix"]["pairs"].empty(), "delete removes mix pairs");
+    check(refused(rigData(), {{"op", "setClip"}, {"clip", "idle"}, {"durationMs", 600}}), "shrinking past keys refused");
+    r = applyEdit(rigData(), {{"op", "setClip"}, {"clip", "idle"}, {"durationMs", 600}, {"trim", true}, {"loop", false}});
+    check(r.data["clips"][0]["tracks"][0]["keys"].size() == 2 && r.data["clips"][0]["loop"] == false, "trim drops keys past end");
+    r = applyEdit(rigData(), {{"op", "setMix"}, {"defaultMs", 50}, {"pairs", Json::array({{{"from", "idle"}, {"to", "joy"}, {"durationMs", 80}}})}});
+    check(r.data["mix"]["defaultMs"] == 50 && r.data["mix"]["pairs"][0]["to"] == "joy", "setMix");
+    Json bad = {{"id", "bad"}, {"durationMs", 100}, {"loop", true}, {"tracks", Json::array({{{"target", "bone:body"}, {"property", "x"}, {"keys", Json::array({{{"timeMs", 500}, {"value", 1}}})}}})}};
+    check(refused(rigData(), {{"op", "addClip"}, {"clip", bad}}), "edit producing an invalid rig is refused");
+  });
+
+  test("edit applySetupDeltaToKeys and batch", [&] {
+    auto r = applyEdit(rigData(), {{"op", "applySetupDeltaToKeys"}, {"bone", "body"}, {"delta", {{"y", -5}}}});
+    check(r.extra["keys"] == 3 && r.data["clips"][0]["tracks"][0]["keys"][1]["value"] == -109, "keys rebased by setup delta");
+    r = applyEdit(rigData(), {{"op", "batch"}, {"operations", Json::array({
+      {{"op", "setBone"}, {"bone", "body"}, {"y", -90}},
+      {{"op", "applySetupDeltaToKeys"}, {"bone", "body"}, {"delta", {{"y", 10}}}, {"clips", Json::array({"idle"})}}})}});
+    check(r.data["bones"][1]["y"] == -90 && r.data["clips"][0]["tracks"][0]["keys"][0]["value"] == -90, "batch applies in order");
+  });
+
+  test("templates breathing and blink produce valid clips", [&] {
+    Json d = rigData();
+    const Json breath = breathingClip(d, "breathing", {{"bone", "body"}, {"property", "scaleY"}, {"amplitude", 0.04}, {"periodMs", 3200}});
+    check(breath["durationMs"] == 3200 && breath["tracks"][0]["keys"].size() == 9, "nine keys over one period");
+    check(near(breath["tracks"][0]["keys"][4]["value"].get<double>(), 1.04) && breath["tracks"][0]["keys"][8]["value"] == 1, "peak at half period, back to base");
+    auto r = applyEdit(d, {{"op", "addClip"}, {"clip", breath}});
+    const Json blink = blinkClip(r.data, "blink-auto", {{"slot", "eyes"}, {"open", "open"}, {"closed", "closed"}, {"intervalMs", 4000}});
+    r = applyEdit(r.data, {{"op", "addClip"}, {"clip", blink}});
+    check(validateRig(r.data).empty(), "template clips validate");
+    Instance inst(std::make_shared<const Rig>(parseRig("t", r.data)));
+    inst.play(0, "blink-auto");
+    inst.update(3900);
+    check(inst.drawList()[2].imageAssetId == "img-eyes-closed", "blink closes near the end");
+    inst.update(80);
+    check(inst.drawList()[2].imageAssetId == "img-eyes-open", "blink reopens");
+    bool threw = false;
+    try { blinkClip(d, "b", {{"slot", "eyes"}, {"open", "open"}, {"closed", "shut"}}); } catch (const EditError&) { threw = true; }
+    check(threw, "unknown closed attachment refused");
+    threw = false;
+    try { breathingClip(d, "b", {{"bone", "body"}, {"property", "rotation"}}); } catch (const EditError&) { threw = true; }
+    check(threw, "unsupported breathing property refused");
+  });
+
+  test("host ops template and edit", [&] {
+    Host host;
+    const auto t = host.handle({{"op", "template"}, {"kind", "breathing"}, {"rig", rigData()}, {"params", {{"bone", "body"}}}, {"clipId", "breath"}});
+    check(t.value("ok", false) && t["clip"]["id"] == "breath" && t["clip"]["tracks"][0]["property"] == "scaleY", "template op");
+    const auto e = host.handle({{"op", "edit"}, {"rig", rigData()}, {"operation", {{"op", "addClip"}, {"clip", t["clip"]}}}});
+    check(e.value("ok", false) && e["rig"]["clips"].size() == 4 && e["diagnostics"].empty() && e["affected"][0] == "clip:breath", "edit op");
+    const auto bad = host.request(Json({{"op", "edit"}, {"rig", rigData()}, {"operation", {{"op", "deleteBone"}, {"bone", "head"}}}}).dump());
+    check(!bad.value("ok", true) && !bad.value("error", std::string()).empty(), "refused edit is an error reply");
+    const auto rn = host.handle({{"op", "edit"}, {"rig", rigData()}, {"operation", {{"op", "renameClip"}, {"clip", "idle"}, {"id", "rest"}}},
+                                 {"controllers", Json::array({{{"id", "c"}, {"data", controllerData()}}})}});
+    check(rn["controllers"][0]["data"]["defaultClip"] == "rest", "edit op returns rewritten controllers");
+    check(!host.request(Json({{"op", "template"}, {"kind", "wave"}, {"rig", rigData()}, {"clipId", "w"}}).dump()).value("ok", true), "unknown template rejected");
   });
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";

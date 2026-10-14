@@ -1,5 +1,6 @@
 #include "cutout/host.hpp"
 #include "cutout/signals.hpp"
+#include "cutout/templates.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -229,6 +230,17 @@ Json Host::handle(const Json& r) {
     const Rig rig = parseRig("sample", r.at("rig"));
     const int clip = r.contains("clip") && r.at("clip").is_string() ? rig.clipIndex(r.at("clip").get<std::string>()) : -1;
     return {{"ok", true}, {"pose", poseJson(rig, samplePose(rig, clip, r.value("timeMs", 0.0)))}};
+  }
+  // ---- Authoring ops (pure data in/out; shared by the Qt editor and the service/LLM path) ----
+  if (op == "template") {
+    const Json clip = templateClip(str(r, "kind"), r.at("rig"), r.value("params", Json::object()), str(r, "clipId"));
+    return {{"ok", true}, {"clip", clip}};
+  }
+  if (op == "edit") {
+    const EditResult result = applyEdit(r.at("rig"), r.at("operation"), r.value("controllers", Json::array()));
+    Json reply{{"ok", true}, {"rig", result.data}, {"diagnostics", diagnosticsJson(result.diagnostics, "")}, {"affected", result.affected}};
+    for (auto it = result.extra.begin(); it != result.extra.end(); ++it) reply[it.key()] = it.value();
+    return reply;
   }
   throw std::runtime_error("unknown op: " + op);
 }
