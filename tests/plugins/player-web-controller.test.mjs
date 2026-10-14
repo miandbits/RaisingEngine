@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {pathToFileURL} from 'node:url';
+import {WebPlayerController} from '../../dist/packages/web-player/controller.js';
+import {ExtensionHost} from '../../dist/packages/web-player/extensions.js';
+import {WasmRuntime} from '../../dist/packages/native-bridge/wasm.js';
+import createModule from '../../dist/wasm/raising-wasm.mjs';
+import validateSave from '../../apps/web/generated/save-validator.mjs';
+import {makeGame,pluginElement} from './player-extension-fixture.mjs';
+
+const INSTANCE='home/hero-anim';
+const version=c=>({generation:c.generation,revision:c.session.state.stateRevision});
+const track=(host,n)=>host.describe().instances.find(i=>i.instance===INSTANCE).state.tracks.find(t=>t.track===n);
+
+test('web controller observes every submitted command once and round-trips extension state through the strict save schema',{timeout:60000},async t=>{
+  const f=await makeGame({target:'web',name:'controller'});t.diagnostic(`fixture: ${f.root}`);
+  const host=await ExtensionHost.load(f.extensions,pathToFileURL(`${f.game}/`).href);
+  assert.equal(host.available('cutout-animation'),true,host.pluginError('cutout-animation'));
+  assert.equal(host.acquire(INSTANCE,pluginElement.extension,pluginElement.width,pluginElement.height),true);
+  let saved=null;
+  const web=new WebPlayerController(f.content,new WasmRuntime(await createModule()),{read:async()=>saved,write:async text=>{saved=text;}},validateSave,host);
+  await web.newRun(null);host.tick(0);
+  assert.equal(track(host,0).clip,'idle','new run re-initialized and re-mounted the instance');
+  assert.equal((await web.act({type:'executeAction',actionId:'cheer',quantity:1},version(web))).error,null);
+  assert.equal(host.observations,1);assert.deepEqual(host.lastObserve.plugins['cutout-animation'].matched,[`${INSTANCE}:cheer-joy`]);
+  host.tick(0);assert.equal(track(host,0).clip,'joy');
+  const failed=await web.act({type:'executeAction',actionId:'missing-action',quantity:1},version(web));
+  assert.ok(failed.error,'rejected command');assert.equal(host.observations,2,'failed commands are observed too');
+  assert.equal(host.lastObserve.error,failed.error);
+  assert.deepEqual(host.lastObserve.plugins['cutout-animation'].signals,[{name:'actionResult',params:{actionId:'missing-action',outcome:'failure'}}]);
+  host.tick(250);assert.equal(track(host,0).timeMs,250);
+  const state=structuredClone(web.session.state);
+  assert.equal((await web.save(version(web))).error,null);
+  const envelope=JSON.parse(saved).playerPresentation;
+  assert.deepEqual(Object.keys(envelope).sort(),['extensions','timeline','version']);
+  host.tick(1000);assert.equal(track(host,0).clip,'idle');
+  assert.equal((await web.load(version(web))).error,null);
+  host.tick(0);assert.equal(track(host,0).clip,'joy');assert.equal(track(host,0).timeMs,250,'one-shot resumes at its saved time');
+  assert.deepEqual(web.session.state,state,'presentation restore never changes the run state');
+  assert.equal(host.observations,2,'loading replays commands without observing them');
+});

@@ -2,6 +2,18 @@
 // Plugins are QPluginLoader DLLs built with the same Qt/MinGW as the studio.
 // Every document change must go through StudioHost::request("edit", ...):
 // the shared service (also used by MCP) owns validation, undo/redo and saving.
+//
+// Lifecycle (host side, native/studio/plugin-host.cpp):
+// * Loaded when the service reports the project entry `state:"active"` with an
+//   `authoring` DLL; activate() is called once per load.
+// * deactivate() is called when the project closes/changes, the plugin becomes
+//   disabled/missing, or the editor closes. Right after it returns the host deletes
+//   every dock and the plugin menu created through this host (keep QPointer, do
+//   not delete them yourself afterwards), drops pending request callbacks and then
+//   unloads the DLL. Objects not owned that way must be deleted in deactivate(),
+//   including connections from host objects to plugin lambdas.
+// * Exceptions thrown from any call are caught; the element falls back to the host
+//   placeholder and the editor keeps running.
 #pragma once
 #include <QJsonArray>
 #include <QJsonObject>

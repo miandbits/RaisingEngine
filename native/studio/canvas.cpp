@@ -63,6 +63,8 @@ public:
                     scaled);
       p->setClipRect(box,Qt::IntersectClip);
       p->drawPixmap(target, image, QRectF(image.rect()));
+    } else if (kind == "plugin") {
+      paintPlugin(p);
     } else if (kind == "meter") {
       p->fillRect(box,rgba(data.value("fill").toString(),QColor("#16242e")));
       const double maximum=qMax(0.0001,data.value("maxValue").toDouble(100));
@@ -145,6 +147,36 @@ public:
           p->drawRect(QRectF(pt - QPointF(4, 4), QSizeF(8, 8)));
         }
     }
+  }
+  void paintPlugin(QPainter *p) {
+    QString caption = canvas->pluginPlaceholder ? canvas->pluginPlaceholder(data) : QString::fromUtf8("플러그인 필요");
+    if (caption.isEmpty()) {
+      p->save();
+      p->setClipRect(box, Qt::IntersectClip);
+      const bool painted = canvas->pluginPaint && canvas->pluginPaint(p, data, box);
+      p->restore();
+      if (painted) return;
+      const auto ext = data.value("extension").toObject();
+      caption = ext.value("type").toString() + " · " + (ext.value("ref").toString().isEmpty() ? QString::fromUtf8("연결 문서 없음") : ext.value("ref").toString());
+    }
+    // A hatched box keeps missing/disabled plugin elements visible and movable
+    // without pretending to render them; their data is never touched.
+    p->fillRect(box, QColor(40, 44, 52, 200));
+    p->fillRect(box, QBrush(QColor("#e0a040"), Qt::BDiagPattern));
+    QPen pen(QColor("#e0a040"), 2, Qt::DashLine);
+    pen.setCosmetic(true);
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+    p->drawRect(box.adjusted(1, 1, -1, -1));
+    QFont font("Noto Sans KR");
+    font.setPixelSize(16);
+    font.setBold(true);
+    p->setFont(font);
+    const auto text = data.value("label").toString() + QChar(0x0a) + caption;
+    const auto bounds = p->boundingRect(box.adjusted(12, 12, -12, -12), Qt::AlignCenter | Qt::TextWordWrap, text).adjusted(-8, -6, 8, 6);
+    p->fillRect(bounds.intersected(box), QColor(24, 26, 30, 230));
+    p->setPen(QColor("#ffe2a8"));
+    p->drawText(box.adjusted(12, 12, -12, -12), Qt::AlignCenter | Qt::TextWordWrap, text);
   }
   void mousePressEvent(QGraphicsSceneMouseEvent *e) override {
     if (e->button() != Qt::LeftButton) {

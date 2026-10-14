@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "logic-editor.hpp"
+#include "plugin-host.hpp"
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -244,6 +245,20 @@ void StudioWindow::refreshContent() {
     if (doc["file"] == selected)
       contentList->setCurrentItem(item);
   }
+  // Plugin-owned documents are listed read-only here; their editor is the plugin's.
+  for (auto v : view["documents"].toArray()) {
+    const auto doc = v.toObject();
+    const auto kind = doc["kind"].toString();
+    if (kind != "extension" && kind != "pluginLock") continue;
+    const auto data = doc["data"].toObject();
+    const auto text = kind == "pluginLock" ? tr("플러그인 · 프로젝트 사용 목록")
+                                           : tr("플러그인 문서 · %1/%2 · %3").arg(data["plugin"].toString(), data["type"].toString(), data["id"].toString());
+    auto item = new QListWidgetItem(text, contentList);
+    item->setData(Qt::UserRole, doc["file"].toString());
+    item->setToolTip(doc["file"].toString());
+    item->setHidden(search && !item->text().contains(search->text(), Qt::CaseInsensitive));
+    if (doc["file"] == selected) contentList->setCurrentItem(item);
+  }
 }
 
 void StudioWindow::editContent() {
@@ -251,11 +266,21 @@ void StudioWindow::editContent() {
     return;
   const auto file = contentList->currentItem()->data(Qt::UserRole).toString();
   QJsonObject data;
+  QString kind;
   for (auto v : view["documents"].toArray())
-    if (v.toObject()["file"] == file)
+    if (v.toObject()["file"] == file) {
       data = v.toObject()["data"].toObject();
+      kind = v.toObject()["kind"].toString();
+    }
   if (data.isEmpty())
     return;
+  if (kind == "pluginLock") { showPluginManager(); return; }
+  if (kind == "extension") {
+    const auto plugin = data["plugin"].toString();
+    if (!plugins->plugin(plugin)) errorLabel->setText(plugins->placeholder(QJsonObject{{"extension", QJsonObject{{"plugin", plugin}}}}));
+    else plugins->openEditor(plugin, data["type"].toString(), data["id"].toString());
+    return;
+  }
   const auto sourceRevision = view.value("revision"), sourceRoot = view.value("root");
   const bool isActivity = data.contains("requirements") && data.contains("costs") && data.contains("baseEffects");
   QDialog dialog(this);

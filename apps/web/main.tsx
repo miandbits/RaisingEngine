@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Player } from '../player/renderer/main.js';
 import { WasmRuntime, type WasmCoreModule } from '../../packages/native-bridge/wasm.js';
 import { WebPlayerController } from '../../packages/web-player/controller.js';
+import { ExtensionHost } from '../../packages/web-player/extensions.js';
 import type { GameBundle } from '../../packages/export-service/model.js';
 // Generated from the shared save schema, with no runtime eval or separate web contract.
 import validateSave from './generated/save-validator.mjs';
@@ -16,6 +17,9 @@ async function start() {
   const wasmModuleUrl = new URL('./wasm/raising-wasm.mjs', document.baseURI).href;
   const { default: createModule } = await import(/* @vite-ignore */ wasmModuleUrl) as { default: () => Promise<WasmCoreModule> };
   const runtime = new WasmRuntime(await createModule());
+  // Missing or broken plugin modules degrade to placeholders; the game itself always starts.
+  const extensions = await ExtensionHost.load((bundle as GameBundle & { extensions?: unknown }).extensions, document.baseURI);
+  window.raisingExtensions = extensions.active ? extensions : null;
   window.raisingAssetUrl = id => {
     const relative = Object.hasOwn(bundle.assets, id) ? bundle.assets[id]! : '';
     if (!/^assets\/[a-z0-9-]+\.[a-z0-9]+$/.test(relative)) return '';
@@ -39,7 +43,7 @@ async function start() {
       const link = document.createElement('a'); link.href = url; link.download = 'raising-save.json';
       document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
-  }, validateSave);
+  }, validateSave, extensions.active ? extensions : null);
   document.title = bundle.content.project.title;
   createRoot(container).render(<Player />);
 }

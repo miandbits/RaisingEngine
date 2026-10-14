@@ -1,0 +1,233 @@
+#include "plugin-host.hpp"
+#include <QLibraryInfo>
+#include <QPlainTextEdit>
+#include <QTemporaryDir>
+#include <QTreeWidgetItemIterator>
+
+namespace {
+// A plugin state as the service sends it; no "store" key so the manager does not
+// ask the (possibly old) service for a fresh pluginStatus during the test.
+QJsonObject samplePluginState(const QString &authoring = {}) {
+  const QJsonArray elementTypes{QJsonObject{{"type", "character"}, {"label", QString::fromUtf8("애니메이션 캐릭터")}, {"refType", "controller"}}};
+  return QJsonObject{
+      {"engineApi", 1},
+      {"installed", QJsonArray{QJsonObject{{"id", "cutout-animation"}, {"version", "1.0.0"}, {"name", QString::fromUtf8("컷아웃 캐릭터 애니메이션")}, {"directory", "C:/store/cutout-animation/1.0.0"}, {"elementTypes", elementTypes}},
+                               QJsonObject{{"id", "spare"}, {"version", "2.0.0"}, {"name", "Spare"}, {"directory", "C:/store/spare/2.0.0"}}}},
+      {"project", QJsonArray{QJsonObject{{"id", "cutout-animation"}, {"version", "1.0.0"}, {"enabled", true}, {"state", "active"}, {"directory", "C:/store/cutout-animation/1.0.0"}, {"authoring", authoring.isEmpty() ? QJsonValue() : QJsonValue(authoring)}, {"diagnostics", QJsonArray{}}},
+                             QJsonObject{{"id", "old-plugin"}, {"version", "0.1.0"}, {"enabled", false}, {"state", "disabled"}, {"directory", ""}, {"authoring", QJsonValue()}, {"diagnostics", QJsonArray{QJsonObject{{"code", "PLUGIN_DISABLED"}, {"severity", "warning"}, {"message", "old-plugin disabled"}}}}},
+                             QJsonObject{{"id", "gone"}, {"version", "1.0.0"}, {"enabled", true}, {"state", "missing"}, {"directory", ""}, {"authoring", QJsonValue()}, {"diagnostics", QJsonArray{}}}}}};
+}
+QList<QAction *> pluginPaletteActions(StudioWindow &w) {
+  QList<QAction *> out;
+  for (auto action : w.findChild<QToolButton *>("elementPalette")->menu()->actions())
+    if (action->objectName().startsWith("pluginElement-")) out << action;
+  return out;
+}
+}
+
+void StudioTests::pluginNoPluginsPalette() {
+  StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT", QDir::currentPath()));
+  w.show();
+  w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && !w.projectData().isEmpty(), 20000);
+  QVERIFY(w.findChild<QAction *>("pluginManagerAction"));
+  QVERIFY(w.findChild<QMenu *>("pluginsMenu"));
+  QVERIFY(pluginPaletteActions(w).isEmpty());
+  QVERIFY(w.pluginManager()->loadedIds().isEmpty());
+  QVERIFY(!w.findChild<QWidget *>("pluginElementGroup")->isVisibleTo(w.findChild<QWidget *>("inspector")));
+  // Active element types appear in the palette and disappear with the plugin.
+  w.applyPluginState(samplePluginState());
+  QCOMPARE(pluginPaletteActions(w).size(), 1);
+  QCOMPARE(pluginPaletteActions(w).first()->text(), QString::fromUtf8("애니메이션 캐릭터"));
+  w.applyPluginState({});
+  QVERIFY(pluginPaletteActions(w).isEmpty());
+}
+
+void StudioTests::pluginMissingPlaceholder() {
+  const auto engine = qEnvironmentVariable("RAISING_ENGINE_ROOT", QDir::currentPath());
+  QTemporaryDir temp(engine + "/.cache/qt-plugin-XXXXXX");
+  QVERIFY(temp.isValid());
+  QVERIFY(copyScreenSettingsFixture(engine + "/examples/academy-visual", temp.path()));
+  QFile file(temp.path() + "/project.json");
+  QVERIFY(file.open(QIODevice::ReadOnly));
+  auto project = QJsonDocument::fromJson(file.readAll()).object();
+  file.close();
+  auto visual = project.value("visual").toObject();
+  auto screens = visual.value("screens").toArray();
+  auto first = screens[0].toObject();
+  auto elements = first.value("elements").toArray();
+  const QJsonObject placed{{"id", "hero-on-title"}, {"kind", "plugin"}, {"label", "Hero"}, {"x", 40}, {"y", 120}, {"width", 300}, {"height", 450},
+                           {"extension", QJsonObject{{"plugin", "cutout-animation"}, {"type", "character"}, {"ref", "hero-main"}, {"props", QJsonObject{{"scale", 1}}}}}};
+  elements.append(placed);
+  first["elements"] = elements;
+  screens[0] = first;
+  visual["screens"] = screens;
+  project["visual"] = visual;
+  QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  file.write(QJsonDocument(project).toJson());
+  file.close();
+  StudioWindow w(engine);
+  w.resize(1480, 960);
+  w.show();
+  w.openProject(temp.path());
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && !w.projectData().isEmpty(), 20000);
+  QVERIFY2(w.lastError.isEmpty(), qPrintable(w.lastError));
+  auto canvas = w.findChild<ScreenCanvas *>("screenCanvas");
+  QVERIFY(canvas && canvas->pluginPlaceholder);
+  QVERIFY2(canvas->pluginPlaceholder(placed).contains(QString::fromUtf8("플러그인 필요: cutout-animation")), qPrintable(canvas->pluginPlaceholder(placed)));
+  QGraphicsItem *item = nullptr;
+  for (auto candidate : static_cast<QGraphicsView *>(canvas)->scene()->items())
+    if (candidate->data(0).toString() == "hero-on-title") item = candidate;
+  QVERIFY(item);
+  QVERIFY(item->flags() & QGraphicsItem::ItemIsSelectable);
+  canvas->fitCanvas();
+  const auto region = canvas->mapFromScene(item->sceneBoundingRect()).boundingRect().intersected(canvas->viewport()->rect());
+  QVERIFY(!region.isEmpty());
+  const auto image = canvas->viewport()->grab(region).toImage();
+  int hatch = 0;
+  for (int y = 0; y < image.height(); ++y)
+    for (int x = 0; x < image.width(); ++x) {
+      const QColor c = image.pixelColor(x, y);
+      if (c.red() > 190 && c.green() > 130 && c.green() < 185 && c.blue() < 100) ++hatch;
+    }
+  QVERIFY2(hatch > 50, qPrintable(QString::number(hatch)));
+  // The placeholder element stays selectable and editable like any other element.
+  auto tree = w.findChild<QTreeWidget *>("hierarchy");
+  QTreeWidgetItemIterator it(tree);
+  while (*it && (*it)->data(0, Qt::UserRole).toString() != "hero-on-title") ++it;
+  QVERIFY(*it);
+  tree->setCurrentItem(*it);
+  QTRY_COMPARE(w.selectedId(), QString("hero-on-title"));
+  QVERIFY(w.findChild<QWidget *>("pluginElementGroup")->isVisibleTo(w.findChild<QWidget *>("inspector")));
+  auto ref = w.findChild<QComboBox *>("pluginRef");
+  QVERIFY(ref->currentText().contains("hero-main"));
+  QVERIFY(!w.findChild<QPushButton *>("pluginEdit")->isEnabled());
+  auto x = w.findChild<QSpinBox *>("elementX");
+  x->setValue(64);
+  emit x->editingFinished();
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy(), 10000);
+  QJsonObject moved;
+  for (auto e : w.projectData().value("visual").toObject().value("screens").toArray()[0].toObject().value("elements").toArray())
+    if (e.toObject().value("id") == "hero-on-title") moved = e.toObject();
+  auto expected = placed;
+  expected["x"] = 64;
+  QCOMPARE(moved, expected);
+  // Plugin-aware service only (it always sends `plugins`): lock + extension
+  // documents load, are listed, and keep their bytes although no plugin is installed.
+  if (w.pluginManager()->state().isEmpty()) return;
+  QVERIFY(QDir().mkpath(temp.path() + "/plugins/cutout-animation/controller"));
+  QFile lock(temp.path() + "/plugins/lock.json");
+  QVERIFY(lock.open(QIODevice::WriteOnly));
+  lock.write(R"({"formatVersion":"0.1.0","plugins":[{"id":"cutout-animation","version":"1.0.0","enabled":true}]})");
+  lock.close();
+  const QByteArray documentBytes = R"({"formatVersion":"0.1.0","plugin":"cutout-animation","type":"controller","id":"hero-main","data":{"name":"Hero"}})";
+  QFile document(temp.path() + "/plugins/cutout-animation/controller/hero-main.json");
+  QVERIFY(document.open(QIODevice::WriteOnly));
+  document.write(documentBytes);
+  document.close();
+  w.findChild<QAction *>("saveProject")->trigger();
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy(), 10000);
+  w.openProject(temp.path());
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy(), 20000);
+  QVERIFY2(w.lastError.isEmpty(), qPrintable(w.lastError));
+  QVERIFY(canvas->pluginPlaceholder(placed).contains(QString::fromUtf8("플러그인 필요: cutout-animation")));
+  auto content = w.findChild<QListWidget *>("contentList");
+  bool shown = false;
+  for (int i = 0; i < content->count(); ++i) shown = shown || content->item(i)->text().contains("cutout-animation/controller");
+  QVERIFY(shown);
+  QVERIFY(document.open(QIODevice::ReadOnly));
+  QCOMPARE(document.readAll(), documentBytes);
+}
+
+void StudioTests::pluginManagerStates() {
+  StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT", QDir::currentPath()));
+  w.show();
+  w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && !w.projectData().isEmpty(), 20000);
+  w.applyPluginState(samplePluginState());
+  bool inspected = false;
+  QTimer::singleShot(100, &w, [&] {
+    auto dialog = w.findChild<QDialog *>("pluginManager");
+    QVERIFY(dialog);
+    QTimer::singleShot(15000, dialog, &QDialog::reject);
+    auto table = dialog->findChild<QTableWidget *>("pluginTable");
+    QCOMPARE(table->rowCount(), 4);
+    QMap<QString, QString> states;
+    for (int r = 0; r < table->rowCount(); ++r) states[table->item(r, 0)->text()] = table->item(r, 3)->text();
+    QVERIFY(states["cutout-animation"].startsWith(QString::fromUtf8("사용 중")));
+    QVERIFY(states["cutout-animation"].contains(QString::fromUtf8("편집 도구 없음")));
+    QCOMPARE(states["old-plugin"], QString::fromUtf8("사용 중지됨"));
+    QCOMPARE(states["gone"], QString::fromUtf8("설치 필요"));
+    QCOMPARE(states["spare"], QString::fromUtf8("설치됨 · 프로젝트 미사용"));
+    for (int r = 0; r < table->rowCount(); ++r)
+      if (table->item(r, 0)->text() == "old-plugin") table->setCurrentCell(r, 0);
+    QVERIFY(dialog->findChild<QPlainTextEdit *>("pluginDiagnostics")->toPlainText().contains("PLUGIN_DISABLED"));
+    QVERIFY(dialog->findChild<QPushButton *>("pluginEnable")->isEnabled());
+    QVERIFY(!dialog->findChild<QPushButton *>("pluginDisable")->isEnabled());
+    for (int r = 0; r < table->rowCount(); ++r)
+      if (table->item(r, 0)->text() == "cutout-animation") table->setCurrentCell(r, 0);
+    QVERIFY(!dialog->findChild<QPushButton *>("pluginEnable")->isEnabled());
+    QVERIFY(dialog->findChild<QPushButton *>("pluginDisable")->isEnabled());
+    inspected = true;
+    dialog->reject();
+  });
+  w.findChild<QAction *>("pluginManagerAction")->trigger();
+  QVERIFY(inspected);
+  // Placing an element of an active plugin links the first document of its refType.
+  const auto actions = pluginPaletteActions(w);
+  QCOMPARE(actions.size(), 1);
+  actions.first()->trigger();
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && w.selectedId().startsWith("character-"), 10000);
+  QJsonObject added;
+  for (auto s : w.projectData().value("visual").toObject().value("screens").toArray())
+    for (auto e : s.toObject().value("elements").toArray())
+      if (e.toObject().value("id") == w.selectedId()) added = e.toObject();
+  QCOMPARE(added.value("kind").toString(), QString("plugin"));
+  QCOMPARE(added.value("extension").toObject(), (QJsonObject{{"plugin", "cutout-animation"}, {"type", "character"}, {"ref", ""}, {"props", QJsonObject{}}}));
+  QCOMPARE(added.value("width").toInt(), 300);
+  w.findChild<QAction *>("undoEdit")->trigger();
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy(), 10000);
+}
+
+void StudioTests::pluginLoaderRejectsNonPlugin() {
+  const auto engine = qEnvironmentVariable("RAISING_ENGINE_ROOT", QDir::currentPath());
+  StudioWindow w(engine);
+  w.show();
+  w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && !w.projectData().isEmpty(), 20000);
+  auto manager = w.pluginManager();
+  QString error;
+  auto qtCore = QCoreApplication::applicationDirPath() + "/Qt6Core.dll";
+  if (!QFileInfo::exists(qtCore)) qtCore = QLibraryInfo::path(QLibraryInfo::BinariesPath) + "/Qt6Core.dll";
+  QVERIFY(QFileInfo::exists(qtCore));
+  QVERIFY(!manager->load("cutout-animation", qtCore, &error));
+  QVERIFY(!error.isEmpty());
+  QVERIFY(!manager->load("cutout-animation", engine + "/no-such-plugin.dll", &error));
+  QVERIFY(error.contains("no-such-plugin.dll"));
+  QTemporaryDir temp(engine + "/.cache/qt-plugin-XXXXXX");
+  QFile fake(temp.path() + "/fake.dll");
+  QVERIFY(fake.open(QIODevice::WriteOnly));
+  fake.write("not a library");
+  fake.close();
+  QVERIFY(!manager->load("cutout-animation", fake.fileName(), &error));
+  // A real Qt plugin with another interface is refused from metadata, never instantiated.
+  const auto platforms = QDir(QCoreApplication::applicationDirPath() + "/platforms").entryInfoList({"*.dll"}, QDir::Files);
+  if (!platforms.isEmpty()) {
+    QVERIFY(!manager->load("cutout-animation", platforms.first().absoluteFilePath(), &error));
+    QVERIFY2(error.contains("org.qt-project"), qPrintable(error));
+  }
+  QVERIFY(manager->loadedIds().isEmpty());
+  // Through the service-state path: a notice, a placeholder, and no retry loop.
+  auto log = w.findChild<QPlainTextEdit *>("executionLog");
+  const auto before = log->toPlainText().count(QString::fromUtf8("불러오지 못했습니다"));
+  w.applyPluginState(samplePluginState(qtCore));
+  QVERIFY(manager->loadedIds().isEmpty());
+  QVERIFY(!manager->loadError("cutout-animation").isEmpty());
+  QCOMPARE(log->toPlainText().count(QString::fromUtf8("불러오지 못했습니다")), before + 1);
+  w.applyPluginState(samplePluginState(qtCore));
+  QCOMPARE(log->toPlainText().count(QString::fromUtf8("불러오지 못했습니다")), before + 1);
+  const QJsonObject element{{"kind", "plugin"}, {"extension", QJsonObject{{"plugin", "cutout-animation"}, {"type", "character"}}}};
+  QVERIFY(manager->placeholder(element).contains(QString::fromUtf8("불러오기 실패")));
+  QCOMPARE(pluginPaletteActions(w).size(), 1);  // placing elements does not need the DLL
+  QVERIFY(!w.busy());
+}

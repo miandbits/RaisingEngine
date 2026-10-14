@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <functional>
 using Json = nlohmann::json;
 namespace fs = std::filesystem;
 #include "timeline.hpp"
@@ -23,6 +24,10 @@ public:
   std::vector<std::string> sound_cues;
   Json timeline_plan=nullptr,timeline_cursor=nullptr;
   Json battle_selection=nullptr;
+  // Presentation hooks for runtime extensions. They receive copies and cannot change state.
+  std::function<void(const Json&,const Json&,const Json&,const std::string&)> observer;
+  std::function<Json()> extension_state;
+  Json loaded_extensions=nullptr;
   int periods() const {return content.at("project").value("periodsPerMonth",3);}
   bool continuous() const {return content.at("project").value("schedulePlayback","")=="continuous";}
   std::string schedule_step() const {
@@ -83,10 +88,16 @@ public:
   }
   Json send(const Json& command) {
     if (state.is_null()) throw std::runtime_error("먼저 새 게임을 시작해 주세요.");
-    auto result = call({{"operation", "command"}, {"state", state}, {"command", command}, {"expectedRevision", state.at("stateRevision")}});
+    // Single choke point for submitted commands: extensions observe each reply exactly once.
+    const Json before=observer?Json{{"state",state},{"narrative",projection.value("narrative",Json())}}:Json();
+    Json result;
+    try {result = call({{"operation", "command"}, {"state", state}, {"command", command}, {"expectedRevision", state.at("stateRevision")}});}
+    catch(const std::exception& error){if(observer)observer(before,before,command,error.what());throw;}
     state = result.at("state"); commands.push_back(command);
     for(const auto& cue:result.at("transition").value("soundCues",Json::array()))sound_cues.push_back(cue.get<std::string>());
-    refresh(); sync_timeline();sync_battle_selection(); return result.at("transition");
+    refresh(); sync_timeline();sync_battle_selection();
+    if(observer)observer(before,{{"state",state},{"narrative",projection.value("narrative",Json())}},command,"");
+    return result.at("transition");
   }
   void settle() {
     for (int i=0; i<10000; i++) {
@@ -106,7 +117,8 @@ public:
     Json envelope = {{"saveVersion", "1.0.0"}, {"coreVersion", state.at("coreVersion")}, {"contentFingerprint", content.at("contentFingerprint")},
       {"origin", origin},
       {"commands", commands}, {"state", state}};
-    if(timeline_active()||!battle_selection.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;}
+    const Json extensions=extension_state?extension_state():Json();
+    if(timeline_active()||!battle_selection.is_null()||!extensions.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;if(!extensions.is_null())envelope["playerPresentation"]["extensions"]=extensions;}
     fs::create_directories(file.parent_path());
     auto temp = file; temp += ".tmp";
     { std::ofstream out(temp, std::ios::binary | std::ios::trunc); if (!out) throw std::runtime_error("저장 파일을 열 수 없습니다."); out << envelope.dump(2); out.flush(); if (!out) throw std::runtime_error("저장 파일 쓰기에 실패했습니다."); }
@@ -134,11 +146,13 @@ public:
     for (const auto& command : saved.at("commands")) replay = call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}}).at("state");
     if (replay != saved.at("state")) throw std::runtime_error("저장 데이터와 명령 재현 결과가 다릅니다.");
     const auto restored_plan=plan_activity_timeline(content,replay);Json restored_cursor=restored_plan.is_null()?Json():create_timeline_cursor(restored_plan);
-    Json restored_battle=nullptr;
+    Json restored_battle=nullptr,restored_extensions=nullptr;
     if(saved.contains("playerPresentation")) {
       const auto presentation=saved.at("playerPresentation");
       if(!presentation.is_object()||!presentation.contains("version")||presentation.at("version")!=1||!presentation.contains("timeline"))throw std::runtime_error("Invalid player presentation save");
-      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection")throw std::runtime_error("Invalid player presentation save");
+      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions")throw std::runtime_error("Invalid player presentation save");
+      // Opaque plugin states; a missing plugin later ignores (and preserves) its entry.
+      if(presentation.contains("extensions")){if(!presentation.at("extensions").is_object())throw std::runtime_error("Invalid player presentation save");restored_extensions=presentation.at("extensions");}
       const auto cursor=presentation.at("timeline");
       if(cursor.is_null()){if(!restored_plan.is_null())throw std::runtime_error("Missing timeline cursor");restored_cursor=nullptr;}
       else {if(!validate_timeline_cursor(restored_plan,cursor))throw std::runtime_error("Invalid timeline cursor");restored_cursor=cursor;}
@@ -147,7 +161,7 @@ public:
         call({{"operation","command"},{"state",replay},{"command",battle_command(restored_battle)},{"expectedRevision",replay.at("stateRevision")}});
       }
     }
-    state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;refresh(); settle();
+    state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;refresh(); settle();
     message = "저장한 지점에서 이어갑니다.";
   }
 };

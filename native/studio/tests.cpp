@@ -82,6 +82,10 @@ private slots:
   void facilityAuthoringGuards();
   void pm2FacilitiesSample();
   void pm2FacilitiesPolish();
+  void pluginNoPluginsPalette();
+  void pluginMissingPlaceholder();
+  void pluginManagerStates();
+  void pluginLoaderRejectsNonPlugin();
   void initTestCase() {
     applyStudioTheme(
         *qobject_cast<QApplication *>(QCoreApplication::instance()));
@@ -899,5 +903,6 @@ private slots:
 #include "script-scene-preview-test.inc"
 #include "export-dialog-test.inc"
 #include "script-rounds-test.inc"
+#include "plugin-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"
