@@ -2,6 +2,7 @@ import type { Change, ContentSnapshot, DeepReadonly, RunData } from '../core/mod
 import { applyEffects, evaluateCondition, evaluateNumber } from '../core/evaluation.js';
 import { sampleBelow } from '../core/random.js';
 import { enterNarrative } from '../core/narrative.js';
+import { eventCompleted } from '../core/roster.js';
 import { int32, requireCore } from '../core/util.js';
 import type { GameplayDefinition, GameplayState } from './model.js';
 
@@ -103,7 +104,7 @@ export function executeAction(content: ContentSnapshot, draft: RunData, actionId
     if (action.rejectNoEffect && action.flow?.length) requireCore(changes.slice(changeStart).some(x => !x.source.includes('/costs/') && x.before !== x.after), 'ACTION_NO_EFFECT', '현재 상태에서는 적용할 효과가 없습니다.', '/command/actionId');
   } finally { ctx.stack.pop(); }
   emitRelationshipRules(content, draft, changes);
-  if (action.eventId && !draft.completedEvents.includes(action.eventId)) {
+  if (action.eventId && !eventCompleted(content,draft,action.eventId)) {
     const event = content.events.find(x => x.id === action.eventId)!;
     if (draft.periodIndex >= event.window.fromPeriod && draft.periodIndex <= event.window.throughPeriod && evaluateCondition(content, draft, event.requirements, `/events/${event.id}/requirements`)) {
       const returnPhase = draft.phase, returnPresentation = structuredClone(draft.presentation);

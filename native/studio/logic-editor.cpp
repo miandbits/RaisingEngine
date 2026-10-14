@@ -105,12 +105,25 @@ void LogicEditor::editSelected(){
   if(node(selectedPath).isArray()){form->addRow(new QLabel(tr("하위 항목을 추가하거나 순서를 바꿀 수 있습니다.")));return;}
   QStringList ops=selectedKind=="condition"?QStringList{"always","all","any","not","compare","flag","eventCompleted"}:selectedKind=="effect"?QStringList{"add","set","setFlag"}:selectedKind=="target"?QStringList{"attribute","relationship","inventory"}:QStringList{"literal","read","time","add","subtract","multiply","clamp"};
   auto type=new QComboBox;type->setObjectName("logicType");for(auto value:ops)type->addItem(title(value),value);if(!ops.contains(op))type->addItem(tr("지원하지 않는 원본 · 유지"),op);type->setCurrentIndex(type->findData(op));form->addRow(tr("종류"),type);connect(type,qOverload<int>(&QComboBox::activated),this,[this,type]{changeType(type->currentData().toString());});
-  if(selectedKind=="target"){if(op=="attribute")reference("attributeId",tr("능력 / 자원"),"attribute");if(op=="inventory")reference("itemId",tr("소지품"),"inventory");if(op=="relationship"){reference("characterId",tr("인물"),"character");reference("relationshipId",tr("관계"),"relationship",o.value("characterId").toString());}return;}
+  if(selectedKind=="target"){ownerField();if(op=="attribute")reference("attributeId",tr("능력 / 자원"),"attribute");if(op=="inventory")reference("itemId",tr("소지품"),"inventory");if(op=="relationship"){reference("characterId",tr("관계 상대"),"character");reference("relationshipId",tr("관계"),"relationship",o.value("characterId").toString());}return;}
   if(op=="literal")integer("value",tr("숫자"));if(op=="clamp"){integer("min",tr("최솟값"));integer("max",tr("최댓값"));}
   if(op=="time")field("field",tr("시간"),{"periodIndex","year","month","periodInMonth"},{tr("전체 일정 칸"),tr("연도"),tr("월"),tr("월 내 일정 칸")});
   if(op=="compare")field("comparator",tr("비교"),{"eq","ne","gt","gte","lt","lte"},{"=","≠",">","≥","<","≤"});
   if(op=="flag"||op=="setFlag"){reference("flagId",tr("플래그"),"flag");boolean(op=="flag"?"equals":"value",tr("켜짐"));}
-  if(op=="eventCompleted")reference("eventId",tr("사건"),"event");
+  if(op=="eventCompleted"){ownerField();reference("eventId",tr("사건"),"event");}
+}
+void LogicEditor::ownerField(){
+  auto field=new QComboBox;field->setObjectName("logicOwner");field->addItem(tr("공유 / 기존 대상"),QJsonObject{});field->addItem(tr("행동 실행자"),QJsonObject{{"kind","actor"}});
+  QJsonObject project;for(const auto &v:context.value("documents").toArray())if(v.toObject().value("kind")=="project")project=v.toObject().value("data").toObject();
+  for(const auto &v:project.value("roster").toObject().value("members").toArray()){
+    const auto id=v.toObject().value("characterId").toString();QString label=id;
+    for(const auto &c:references("character"))if(c.toObject().value("id")==id)label=c.toObject().value("name").toString(c.toObject().value("label").toString(id));
+    field->addItem(tr("지정 캐릭터 · ")+label,QJsonObject{{"kind","character"},{"characterId",id}});
+  }
+  const auto path=selectedPath;const auto owner=node(path).toObject().value("owner").toObject();
+  for(int i=0;i<field->count();i++)if(field->itemData(i).toJsonObject()==owner)field->setCurrentIndex(i);
+  field->setToolTip(tr("실행자 대상은 캐릭터 행동·활동·대상별 사건에서 사용할 수 있습니다. 공유 항목은 기존 의미를 유지합니다."));form->addRow(tr("소유자"),field);
+  connect(field,qOverload<int>(&QComboBox::activated),this,[this,field,path]{auto object=node(path).toObject();const auto owner=field->currentData().toJsonObject();if(owner.empty())object.remove("owner");else object["owner"]=owner;update(path,object);});
 }
 void LogicEditor::addChild(){auto path=selectedPath;auto value=node(path);if(value.isObject()&&(value.toObject().value("op")=="all"||value.toObject().value("op")=="any")){path<<"conditions";value=node(path);}if(!value.isArray()){error->setText(tr("효과 목록이나 AND/OR 조건 목록을 선택하세요."));return;}auto a=value.toArray();a.append(defaults(rootKind=="effects"&&path.empty()?"effect":"condition",rootKind=="effects"&&path.empty()?"add":"always"));update(path,a);error->clear();}
 void LogicEditor::removeChild(){if(selectedPath.empty())return;auto parent=selectedPath;int i=parent.takeLast().toInt();auto value=node(parent);if(!value.isArray())return;auto a=value.toArray();if(a.size()==1&&!(rootKind=="effects"&&parent.empty())){error->setText(tr("AND/OR에는 조건이 하나 이상 필요합니다."));return;}a.removeAt(i);update(parent,a);}

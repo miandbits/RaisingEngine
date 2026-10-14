@@ -6,7 +6,7 @@ import { checkLocalization } from './localization.js';
 import { checkGameplay } from './gameplay.js';
 import { checkUserFields } from './user-fields.js';
 import { checkSystems } from './systems.js';
-import { checkRoster } from './roster.js';
+import { checkRoster, checkOwner } from './roster.js';
 
 export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
   const ctx = new SemanticContext();
@@ -63,6 +63,7 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
       return;
     }
     if (!isObject(value)) return;
+    checkOwner(ctx,project,doc,value,pointer);
     if (value.kind === 'inventory' && typeof value.itemId === 'string') {
       const gameplay = project && isObject(project.gameplay) ? project.gameplay : {};
       if (!objectItems(gameplay.items).some(x => x.id === value.itemId)) ctx.report(doc, `${pointer}/itemId`, 'REFERENCE_MISSING', `물품 '${value.itemId}'를 찾을 수 없습니다.`, [value.itemId]);

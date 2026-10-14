@@ -101,7 +101,7 @@ void executeDefinedAction(const J &c, J &s, const J &action, int64_t quantity,
   }
   frame.pop();
   relationshipRules(c, s, s["relationships"], changes);
-  if (!scheduled && action.contains("eventId") && !contains(s["completedEvents"], action["eventId"])) {
+  if (!scheduled && action.contains("eventId") && !eventCompleted(c,s,action["eventId"])) {
     auto event = find(c["events"], action["eventId"]);
     need(event, "UNKNOWN_NARRATIVE", "사건이 없습니다.", path + "/eventId");
     if (s["periodIndex"] >= (*event)["window"]["fromPeriod"] &&

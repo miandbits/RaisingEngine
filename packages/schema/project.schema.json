@@ -240,9 +240,48 @@
                   "minimum": -2147483648,
                   "maximum": 2147483647
                 }
+              },
+              "initialInventory": {
+                "type": "object",
+                "propertyNames": {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                }
+              },
+              "initialRelationships": {
+                "type": "object",
+                "propertyNames": {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "propertyNames": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  }
+                }
+              },
+              "actionIds": {
+                "type": "array",
+                "maxItems": 128,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "common.schema.json#/$defs/id"
+                }
               }
             }
           }
+        },
+        "stateModel": {
+          "const": "character-v1"
         }
       }
     }

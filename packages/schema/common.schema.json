@@ -71,6 +71,9 @@
             },
             "attributeId": {
               "$ref": "#/$defs/id"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
             }
           },
           "required": [
@@ -90,6 +93,9 @@
             },
             "relationshipId": {
               "$ref": "#/$defs/id"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
             }
           },
           "required": [
@@ -107,6 +113,9 @@
             },
             "itemId": {
               "$ref": "#/$defs/id"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
             }
           },
           "required": [
@@ -336,6 +345,9 @@
             },
             "eventId": {
               "$ref": "#/$defs/id"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
             }
           },
           "required": [
@@ -1131,6 +1143,32 @@
               }
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "executeActorAction"
+            },
+            "actorId": {
+              "$ref": "#/$defs/id"
+            },
+            "actionId": {
+              "$ref": "#/$defs/id"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "type",
+            "actorId",
+            "actionId",
+            "quantity"
+          ]
         }
       ]
     },
@@ -1150,6 +1188,39 @@
       "additionalProperties": {
         "$ref": "#/$defs/userText"
       }
+    },
+    "owner": {
+      "title": "CharacterOwner",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "actor"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "character"
+            },
+            "characterId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "characterId"
+          ]
+        }
+      ]
     }
   }
 }

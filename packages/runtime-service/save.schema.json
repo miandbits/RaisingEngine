@@ -224,6 +224,9 @@
         },
         "finishPeriod": {
           "type": "boolean"
+        },
+        "actorId": {
+          "type": "string"
         }
       }
     },
@@ -629,6 +632,37 @@
               "type": "object",
               "additionalProperties": {
                 "type": "string"
+              }
+            },
+            "inventory": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              }
+            },
+            "relationships": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "completedEvents": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
               }
             }
           }

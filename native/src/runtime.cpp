@@ -81,6 +81,7 @@ J calendar(const J &c, const J &s) {
           {"month", month % 12 + 1},
           {"periodInMonth", n % periods(c)}};
 }
+#include "character-state.inc"
 struct Slot {
   const J *definition;
   int64_t value;
@@ -91,14 +92,20 @@ Slot slot(const J &c, const J &s, const J &t, const std::string &p) {
   const J *def = nullptr;
   const J *vals = nullptr;
   std::string key;
+  const auto owner=ownerId(c,s,t.value("owner",J()),p+"/owner");
   if (t.at("kind") == "attribute") {
     key = str(t, "attributeId");
     def = find(c.at("attributes"), key);
     vals = &s.at("attributes");
+    if(!owner.empty()){
+      need(contains(c["project"]["roster"]["localAttributeIds"],key),"SHARED_ATTRIBUTE","공용 능력은 캐릭터 소유 대상으로 지정할 수 없습니다.",p);
+      if(owner!=s.at("roster").value("activityActorId",str(c["project"],"protagonistId")))vals=&s.at("roster").at("attributes").at(owner);
+    }
   } else if (t.at("kind") == "inventory") {
     key = str(t, "itemId");
     if (c.at("project").contains("gameplay")) def = find(c.at("project").at("gameplay").at("items"), key);
     if (s.contains("gameplay")) vals = &s.at("gameplay").at("inventory");
+    if(!owner.empty())vals=&s.at("roster").at("inventory").at(owner);
   } else {
     auto ch = find(c.at("characters"), t.at("characterId"));
     if (ch)
@@ -107,6 +114,7 @@ Slot slot(const J &c, const J &s, const J &t, const std::string &p) {
     auto it = s.at("relationships").find(str(t, "characterId"));
     if (it != s.at("relationships").end())
       vals = &*it;
+    if(!owner.empty())vals=&s.at("roster").at("relationships").at(owner).at(str(t,"characterId"));
   }
   need(def && vals && vals->contains(key), "UNKNOWN_TARGET", "수치 대상이 없습니다.", p);
   return {def, number(vals->at(key)), key};
@@ -167,7 +175,7 @@ bool conditionValue(const J &c, const J &s, const J &e, const std::string &p, in
     return s.at("flags").at(str(e, "flagId")) == e.at("equals");
   }
   if (op == "eventCompleted")
-    return contains(s.at("completedEvents"), e.at("eventId"));
+    return eventCompleted(c,s,e.at("eventId"),e.value("owner",J()));
   if (op == "compare") {
     auto a = evaluate(c, s, e.at("left"), p + "/left", d + 1);
     auto b = evaluate(c, s, e.at("right"), p + "/right", d + 1);
@@ -226,10 +234,14 @@ void effects(const J &c, J &s, const J &list, const std::string &src, J &changes
     auto high = inventory ? number(x.definition->at("maxStack")) : number(x.definition->at("max"));
     if (inventory) {
       need(requested >= 0 && requested <= high, "INVENTORY_RANGE", "물품 수량이 보유 가능 범위를 벗어났습니다.", p);
-      need(requested >= equipmentReserved(c, s, x.key), "EQUIPPED_ITEM", "장착 중인 물품은 소비할 수 없습니다.", p);
+      need(requested >= (e.at("target").contains("owner")?0:equipmentReserved(c, s, x.key)), "EQUIPPED_ITEM", "장착 중인 물품은 소비할 수 없습니다.", p);
     }
     auto after = std::min(high, std::max(low, requested));
-    if (e.at("target").at("kind") == "attribute")
+    const auto owner=ownerId(c,s,e.at("target").value("owner",J()),p+"/target/owner");
+    if(!owner.empty() && inventory)s["roster"]["inventory"][owner][x.key]=after;
+    else if(!owner.empty() && e.at("target").at("kind")=="relationship")s["roster"]["relationships"][owner][str(e.at("target"),"characterId")][x.key]=after;
+    else if(!owner.empty() && owner!=s["roster"].value("activityActorId",str(c["project"],"protagonistId")))s["roster"]["attributes"][owner][x.key]=after;
+    else if (e.at("target").at("kind") == "attribute")
       s["attributes"][x.key] = after;
     else if (inventory)
       s["gameplay"]["inventory"][x.key] = after;
@@ -406,6 +418,7 @@ J create(const J &c, const J &seed, const J &options) {
     }
     for(const auto &key:r["localAttributeIds"])s["attributes"][key.get<std::string>()]=s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()];
   }
+  createCharacterState(c,s);
   return {{"ok", true}, {"state", s}};
 }
 void scene(J &s, const J &v, J &sounds) {
@@ -452,6 +465,7 @@ void enter(const J &c, J &s, const std::string &kind, const J &id) {
   need(def, "UNKNOWN_NARRATIVE", "알 수 없는 대본: " + id.get<std::string>(), "/activeNarrative");
   s["phase"] = "narrative";
   s["activeNarrative"] = {{"kind", kind}, {"id", id}, {"nodeId", (*def)["entryNodeId"]}};
+  if(kind=="event"&&def->value("scope","")=="actor")s["activeNarrative"]["actorId"]=ownerId(c,s,{{"kind","actor"}},"/activeNarrative/actorId");
   available(c, s);
 }
 std::vector<J> ordered(const J &list) {
@@ -495,7 +509,7 @@ J inspect(const J &c, const J &s) {
   bool selected = false;
   for (auto &e : ordered(c["events"])) {
     std::string reason;
-    if (contains(s["completedEvents"], e["id"]))
+    if (eventCompleted(c,s,e["id"]))
       reason = "completed";
     else if (e.value("trigger", "") == "interaction")
       reason = "interaction-only";
@@ -550,7 +564,8 @@ J step(const J &c, J &s, const J &choice, J &sounds) {
       s["activeNarrative"]["nodeId"] = n["next"];
     } else if (type == "end") {
       if (cursor["kind"] == "event") {
-        s["completedEvents"].push_back(cursor["id"]);
+        if(cursor.contains("actorId"))s["roster"]["completedEvents"][str(cursor,"actorId")].push_back(cursor["id"]);
+        else s["completedEvents"].push_back(cursor["id"]);
         if (cursor.contains("returnPhase")) {
           s["activeNarrative"] = nullptr;
           s["phase"] = cursor["returnPhase"];
@@ -676,6 +691,8 @@ void parseCommand(const J &cmd, int count) {
          !cmd["groupId"].get<std::string>().empty() && cmd.contains("optionId") &&
          (cmd["optionId"].is_null() || (cmd["optionId"].is_string() && !cmd["optionId"].get<std::string>().empty())),
          "INVALID_COMMAND", "정책 그룹과 선택지 또는 null이 필요합니다.", "/command");
+  } else if (type == "executeActorAction") {
+    need(cmd.size()==4&&cmd.contains("actorId")&&cmd["actorId"].is_string()&&!cmd["actorId"].get<std::string>().empty()&&cmd.contains("actionId")&&cmd["actionId"].is_string()&&!cmd["actionId"].get<std::string>().empty()&&cmd.contains("quantity")&&integer(cmd["quantity"])&&number(cmd["quantity"])>0&&number(cmd["quantity"])<=2147483647LL,"INVALID_COMMAND","실행자·행동 ID와 양의 정수 수량이 필요합니다.","/command");
   } else if (type == "executeAction") {
     need(cmd.size() == 3 && cmd.contains("actionId") && cmd["actionId"].is_string() &&
          !cmd["actionId"].get<std::string>().empty() && cmd.contains("quantity") && integer(cmd["quantity"]) &&
@@ -754,6 +771,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
       }
     }
   }
+  else if(type=="executeActorAction") {beginActorAction(c,s,cmd);auto action=cmd;action["type"]="executeAction";action.erase("actorId");gameplay(c,s,action,sounds);}
   else if(type=="assignActivities")assignActivities(c,old,s,cmd["assignments"]);
   else if (type == "setSchedule") {
     need(!c["project"].contains("roster"),"ROSTER_ASSIGNMENTS","다인 프로젝트는 대상별 활동 배정을 사용하세요.","/command");
@@ -810,6 +828,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
   if (type == "buy") runRules(c, s, "purchaseComplete", {{"shopId",cmd["shopId"]},{"itemId",cmd["itemId"]}}, ruleChanges);
   syncRelationshipStages(c, s);
   relationshipRules(c, s, old["relationships"], ruleChanges);
+  if(s.contains("roster")){s["roster"].erase("actorId");s["roster"].erase("activityActorId");}
   if(s.contains("roster"))for(const auto &key:c["project"]["roster"]["localAttributeIds"])s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()]=s["attributes"][key.get<std::string>()];
   s["stateRevision"] = number(s["stateRevision"]) + 1;
   J transition = {{"command", cmd},

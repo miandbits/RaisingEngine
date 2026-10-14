@@ -56,12 +56,13 @@ void StudioWindow::editRoster() {
       if(id.size()>64||!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(id).hasMatch()||name.isEmpty()||seen.contains(id)){QMessageBox::warning(&dialog,tr("대상 오류"),tr("ID는 영문 소문자로 시작하는 영문·숫자·하이픈 64자 이내여야 하며 중복될 수 없습니다. 이름도 입력하세요."));return;}seen.insert(id);
       if(qobject_cast<QComboBox*>(table->cellWidget(row,2))->currentIndex()<0){QMessageBox::warning(&dialog,tr("활동 없음"),tr("먼저 활동 콘텐츠를 하나 이상 만드세요."));return;}
       QJsonObject initial;for(int col=0;col<attrs.size();col++){const auto key=attrs[col].toObject()["id"].toString();if(ids.contains(key))initial[key]=qobject_cast<QSpinBox*>(table->cellWidget(row,col+3))->value();}
-      values.append(QJsonObject{{"characterId",id},{"initialAttributes",initial},{"activityId",qobject_cast<QComboBox*>(table->cellWidget(row,2))->currentData().toString()}});
+      QJsonObject member;for(const auto &value:previous.value("members").toArray())if(value.toObject().value("characterId")==id)member=value.toObject();
+      member["characterId"]=id;member["initialAttributes"]=initial;member["activityId"]=qobject_cast<QComboBox*>(table->cellWidget(row,2))->currentData().toString();values.append(member);
       QJsonObject character;for(const auto &v:characters)if(v.toObject()["id"]==id)character=v.toObject();
       if(character.isEmpty())character=QJsonObject{{"formatVersion",project["formatVersion"]},{"id",id},{"name",name},{"portraits",QJsonObject{}},{"relationships",QJsonArray{}}};else character["name"]=name;
       const auto file=files.value(id,"characters/"+id+".json");if(!files.contains(id))edits.append(QJsonObject{{"type","add"},{"kind","character"},{"id",id}});edits.append(QJsonObject{{"type","replace"},{"file",file},{"data",character}});
     }
-    if(enabled->isChecked())project["roster"]=QJsonObject{{"localAttributeIds",ids},{"members",values}};else project.remove("roster");
+    if(enabled->isChecked()){auto roster=previous;roster["localAttributeIds"]=ids;roster["members"]=values;project["roster"]=roster;}else project.remove("roster");
     edits.append(QJsonObject{{"type","replace"},{"file",projectFile},{"data",project}});
     request("edit",{{"edit",QJsonObject{{"type","batch"},{"edits",edits}}}});dialog.accept();
   });dialog.exec();

@@ -23,6 +23,7 @@ J executeRoster(const J &c,J &s) {
   J results=J::array();
   for(const auto &m:r["members"]) {
     const auto id=str(m,"characterId");
+    if(r.value("stateModel","")=="character-v1"){s["roster"]["actorId"]=id;s["roster"]["activityActorId"]=id;}
     for(const auto &key:r["localAttributeIds"])s["attributes"][key.get<std::string>()]=s["roster"]["attributes"][id][key.get<std::string>()];
     s["schedule"]=J::array();for(int i=0;i<periods(c);i++)s["schedule"].push_back(s["roster"]["assignments"][id]);
     s["phase"]="ready";
@@ -35,5 +36,6 @@ J executeRoster(const J &c,J &s) {
   s["schedule"]=J::array();for(int i=0;i<periods(c);i++)s["schedule"].push_back(s["roster"]["assignments"][primary]);
   J result=results[0]["result"];result["actorResults"]=results;
   s["lastActivityResult"]=result;s["phase"]="activity-result";
+  s["roster"].erase("actorId");s["roster"].erase("activityActorId");
   return result;
 }

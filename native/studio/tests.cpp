@@ -26,6 +26,8 @@ class StudioTests : public QObject {
 private slots:
   void rosterAuthoringRoundtrip();
   void rosterPlayIntegration();
+  void characterStateAuthoringRoundtrip();
+  void characterStatePlayIntegration();
   void screenSettingsRoundtrip();
   void screenSettingsGuards();
   void userFieldsAuthoringRoundtrip();
@@ -888,6 +890,7 @@ private slots:
 #include "pm2-facilities-test.inc"
 #include "project-settings-test.inc"
 #include "roster-test.inc"
+#include "character-state-test.inc"
 #include "screen-settings-test.inc"
 #include "user-fields-test.inc"
 #include "text-binding-batch-test.inc"

@@ -154,6 +154,12 @@ export type ScenarioSpecification = Header & {
                 assignments: {
                   [k: string]: string;
                 };
+              }
+            | {
+                type: "executeActorAction";
+                actorId: string;
+                actionId: string;
+                quantity: number;
               };
         }
     ),
@@ -302,6 +308,12 @@ export type ScenarioSpecification = Header & {
                 assignments: {
                   [k: string]: string;
                 };
+              }
+            | {
+                type: "executeActorAction";
+                actorId: string;
+                actionId: string;
+                quantity: number;
               };
         }
     )[]
@@ -350,6 +362,7 @@ export type Condition =
   | {
       op: "eventCompleted";
       eventId: string;
+      owner?: CharacterOwner;
     };
 export type NumericExpression =
   | {
@@ -362,15 +375,18 @@ export type NumericExpression =
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
     }
   | {
@@ -387,6 +403,14 @@ export type NumericExpression =
       value: NumericExpression;
       min: number;
       max: number;
+    };
+export type CharacterOwner =
+  | {
+      kind: "actor";
+    }
+  | {
+      kind: "character";
+      characterId: string;
     };
 
 export interface Header {

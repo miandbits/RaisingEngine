@@ -37,6 +37,7 @@ export type Phase = 'planning' | 'ready' | 'activity-result' | 'period-end' | 'n
 export type RunMode = 'activities-only' | 'full';
 export type NarrativeNode = Narrative['nodes'][number];
 export interface NarrativeCursor {
+  actorId?: string;
   kind: 'event' | 'ending'; id: string; nodeId: string;
   returnPhase?: 'planning' | 'ready' | 'period-end'; returnPresentation?: PresentationState;
   finishPeriod?: boolean;
@@ -89,6 +90,7 @@ export interface RunData extends Values {
 export type RunState = DeepReadonly<RunData>;
 export type Command = GameplayCommand | SystemsCommand
   | { type: 'assignActivities'; assignments: Record<string, string> }
+  | { type: 'executeActorAction'; actorId: string; actionId: string; quantity: number }
   | { type: 'setSchedule'; activityIds: string[] }
   | { type: 'executeActivity' }
   | { type: 'acknowledgeResult' }

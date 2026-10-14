@@ -48,6 +48,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
   if(content.project.roster)requiredFeatures.push('roster-activities-v1');
+  if(content.project.roster?.stateModel==='character-v1')requiredFeatures.push('character-scoped-rules-v1');
   if(content.project.periodsPerMonth!==3||content.project.schedulePlayback==='continuous')requiredFeatures.push('monthly-schedule-v1');
   if(content.project.gameplay?.actions?.some(action=>action.flow?.some(step=>step.chance)))requiredFeatures.push('probabilistic-actions-v1');
   const hasImmediateConfirmation=(value:unknown):boolean=>{if(!value||typeof value!=='object')return false;const obj=value as Record<string,unknown>;return (obj.confirmation as {enabled?:boolean}|undefined)?.enabled===false||Object.values(obj).some(hasImmediateConfirmation);};

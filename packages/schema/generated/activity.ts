@@ -93,6 +93,7 @@ export type Condition =
   | {
       op: "eventCompleted";
       eventId: string;
+      owner?: CharacterOwner;
     };
 export type NumericExpression =
   | {
@@ -105,15 +106,18 @@ export type NumericExpression =
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
     }
   | {
@@ -131,6 +135,14 @@ export type NumericExpression =
       min: number;
       max: number;
     };
+export type CharacterOwner =
+  | {
+      kind: "actor";
+    }
+  | {
+      kind: "character";
+      characterId: string;
+    };
 export type Effects = (
   | {
       op: "add" | "set";
@@ -138,15 +150,18 @@ export type Effects = (
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
       value: NumericExpression;
     }

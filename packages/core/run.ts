@@ -1,5 +1,5 @@
 import { resolveUserValues } from './user-fields.js';
-import { createRoster, assignActivities, executeRoster } from './roster.js';
+import { createRoster, assignActivities, executeRoster, beginActorAction } from './roster.js';
 import type { Overrides } from '../schema/generated/project.js';
 import { CORE_VERSION, type Command, type ContentSnapshot, type CreateResult, type DispatchResult,
   type RunData, type RunState, type Values, type ActivityResult, type RunMode, type NarrativeStep, type EventDecision } from './model.js';
@@ -109,6 +109,8 @@ function parseCommand(input: unknown, periods: number): Command {
       'INVALID_COMMAND', `${input.type}에는 ${field}가 필요합니다.`, `/command/${field}`);
   } else if (input.type === 'selectPolicy') {
     requireCore(Object.keys(input).length === 3 && typeof input.groupId === 'string' && input.groupId.length > 0 && (input.optionId === null || typeof input.optionId === 'string' && input.optionId.length > 0), 'INVALID_COMMAND', '정책 그룹 ID와 선택 ID 또는 null이 필요합니다.', '/command');
+  } else if (input.type === 'executeActorAction') {
+    requireCore(Object.keys(input).length===4 && typeof input.actorId==='string' && input.actorId.length>0 && typeof input.actionId==='string' && input.actionId.length>0 && typeof input.quantity==='number' && Number.isInteger(input.quantity) && input.quantity>0 && input.quantity<=2147483647,'INVALID_COMMAND','실행자·행동 ID와 양의 정수 수량이 필요합니다.','/command');
   } else if (input.type === 'executeAction') {
     requireCore(Object.keys(input).length === 3 && typeof input.actionId === 'string' && input.actionId.length > 0 && typeof input.quantity === 'number' && Number.isInteger(input.quantity) && input.quantity > 0 && input.quantity <= 2147483647, 'INVALID_COMMAND', '행동 ID와 양의 정수 수량이 필요합니다.', '/command');
   } else if (input.type === 'setDiet') {
@@ -209,6 +211,10 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     const soundCues: string[] = [];
     switch (command.type) {
       case 'assignActivities': assignActivities(content, state, draft, command.assignments); break;
+      case 'executeActorAction':
+        beginActorAction(content,draft,command.actorId,command.actionId);
+        applyGameplay(content,draft,{type:'executeAction',actionId:command.actionId,quantity:command.quantity},soundCues);
+        break;
       case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction':
         applySystems(content, draft, command, soundCues); break;
       case 'navigate': case 'visit': case 'buy': case 'interact': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy':
@@ -257,6 +263,7 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     if (command.type === 'buy') emitRules(content, draft, { type: 'purchaseComplete', shopId: command.shopId, itemId: command.itemId });
     syncRelationshipStages(content, draft);
     emitRelationshipRules(content, draft);
+    if(draft.roster){delete draft.roster.actorId;delete draft.roster.activityActorId;}
     if (draft.roster) for (const id of content.project.roster!.localAttributeIds) draft.roster.attributes[content.project.protagonistId]![id] = draft.attributes[id]!;
     draft.stateRevision++;
     return { ok: true, state: freeze(draft), transition: freeze({ command, fromRevision: state.stateRevision,

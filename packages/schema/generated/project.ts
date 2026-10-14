@@ -70,6 +70,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -79,6 +91,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -86,6 +110,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -95,6 +131,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -102,6 +150,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -109,6 +169,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -118,6 +190,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -125,6 +209,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -132,6 +228,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -139,6 +247,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -148,6 +268,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -155,6 +287,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -162,6 +306,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -169,6 +325,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -176,6 +344,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -185,6 +365,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -192,6 +384,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -199,6 +403,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -206,6 +422,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -213,6 +441,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -220,6 +460,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -229,6 +481,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -236,6 +500,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -243,6 +519,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -250,6 +538,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -257,6 +557,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -264,6 +576,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -271,6 +595,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -280,6 +616,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -287,6 +635,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -294,6 +654,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -301,6 +673,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -308,6 +692,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -315,6 +711,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -322,6 +730,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -329,6 +749,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -338,6 +770,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -345,6 +789,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -352,6 +808,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -359,6 +827,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -366,6 +846,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -373,6 +865,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -380,6 +884,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -387,6 +903,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -394,6 +922,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -403,6 +943,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -410,6 +962,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -417,6 +981,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -424,6 +1000,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -431,6 +1019,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -438,6 +1038,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -445,6 +1057,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -452,6 +1076,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -459,6 +1095,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -466,6 +1114,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -475,6 +1135,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -482,6 +1154,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -489,6 +1173,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -496,6 +1192,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -503,6 +1211,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -510,6 +1230,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -517,6 +1249,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -524,6 +1268,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -531,6 +1287,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -538,6 +1306,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -545,6 +1325,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -554,6 +1346,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -561,6 +1365,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -568,6 +1384,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -575,6 +1403,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -582,6 +1422,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -589,6 +1441,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -596,6 +1460,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -603,6 +1479,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -610,6 +1498,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -617,6 +1517,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -624,6 +1536,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -631,6 +1555,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -640,6 +1576,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -647,6 +1595,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -654,6 +1614,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -661,6 +1633,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -668,6 +1652,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -675,6 +1671,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -682,6 +1690,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -689,6 +1709,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -696,6 +1728,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -703,6 +1747,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -710,6 +1766,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -717,6 +1785,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -724,6 +1804,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -733,6 +1825,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -740,6 +1844,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -747,6 +1863,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -754,6 +1882,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -761,6 +1901,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -768,6 +1920,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -775,6 +1939,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -782,6 +1958,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -789,6 +1977,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -796,6 +1996,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -803,6 +2015,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -810,6 +2034,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -817,6 +2053,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -824,6 +2072,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -833,6 +2093,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -840,6 +2112,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -847,6 +2131,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -854,6 +2150,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -861,6 +2169,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -868,6 +2188,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -875,6 +2207,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -882,6 +2226,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -889,6 +2245,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -896,6 +2264,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -903,6 +2283,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -910,6 +2302,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -917,6 +2321,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -924,6 +2340,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -931,6 +2359,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ]
       | [
@@ -940,6 +2380,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -947,6 +2399,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -954,6 +2418,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -961,6 +2437,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -968,6 +2456,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -975,6 +2475,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -982,6 +2494,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -989,6 +2513,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -996,6 +2532,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -1003,6 +2551,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -1010,6 +2570,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -1017,6 +2589,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -1024,6 +2608,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -1031,6 +2627,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -1038,6 +2646,18 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           },
           {
             characterId: string;
@@ -1045,8 +2665,21 @@ export type ProjectDefinition = Header & {
             initialAttributes: {
               [k: string]: number;
             };
+            initialInventory?: {
+              [k: string]: number;
+            };
+            initialRelationships?: {
+              [k: string]: {
+                [k: string]: number;
+              };
+            };
+            /**
+             * @maxItems 128
+             */
+            actionIds?: string[];
           }
         ];
+    stateModel?: "character-v1";
   };
 };
 export type Element = {
@@ -2203,6 +3836,7 @@ export type Condition =
   | {
       op: "eventCompleted";
       eventId: string;
+      owner?: CharacterOwner;
     };
 export type NumericExpression =
   | {
@@ -2215,15 +3849,18 @@ export type NumericExpression =
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
     }
   | {
@@ -2240,6 +3877,14 @@ export type NumericExpression =
       value: NumericExpression;
       min: number;
       max: number;
+    };
+export type CharacterOwner =
+  | {
+      kind: "actor";
+    }
+  | {
+      kind: "character";
+      characterId: string;
     };
 export type ComponentChild = {
   [k: string]: unknown;
@@ -3185,15 +4830,18 @@ export type Effects = (
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
       value: NumericExpression;
     }
@@ -3217,15 +4865,18 @@ export type NumericExpression1 =
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
     }
   | {

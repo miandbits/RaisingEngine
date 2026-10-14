@@ -328,6 +328,14 @@ void StudioWindow::editContent() {
     number("throughPeriod", tr("발생 마지막 일정"), w["throughPeriod"].toInt(),
            0, 3600);
   }
+  QComboBox *eventScope=nullptr,*eventTrigger=nullptr;
+  QJsonValue narrativeRequirements=data.value("requirements");
+  if(data.contains("window")){
+    eventScope=new QComboBox;eventScope->setObjectName("content-eventScope");eventScope->addItem(tr("공유 완료 기록"),"shared");eventScope->addItem(tr("실행자별 완료 기록"),"actor");eventScope->setCurrentIndex(eventScope->findData(data.value("scope").toString("shared")));form->addRow(tr("사건 소유 범위"),eventScope);
+    eventTrigger=new QComboBox;eventTrigger->setObjectName("content-eventTrigger");eventTrigger->addItem(tr("기간 종료"),"period-end");eventTrigger->addItem(tr("행동에서 연결"),"interaction");eventTrigger->setCurrentIndex(eventTrigger->findData(data.value("trigger").toString("period-end")));form->addRow(tr("발생 방식"),eventTrigger);
+    auto applyScope=[=]{const bool actor=eventScope->currentData()=="actor";if(actor)eventTrigger->setCurrentIndex(eventTrigger->findData("interaction"));eventTrigger->setEnabled(!actor);};connect(eventScope,qOverload<int>(&QComboBox::currentIndexChanged),&dialog,[applyScope]{applyScope();});applyScope();
+  }
+  if(!isActivity&&data.contains("requirements")){auto conditions=new QPushButton(tr("발생 조건 · 수식 편집…"));conditions->setObjectName("contentLogic-requirements");form->addRow(conditions);connect(conditions,&QPushButton::clicked,&dialog,[&]{LogicEditor editor(narrativeRequirements,"condition",view,&dialog);if(editor.exec()==QDialog::Accepted)narrativeRequirements=editor.value();});}
   QTableWidget *portraits = nullptr;
   QSet<QString> portraitImageIds;
   if (data.contains("portraits") && data.contains("relationships")) {
@@ -382,7 +390,7 @@ void StudioWindow::editContent() {
         const bool cost = key == "costs",
                    simple =
                        value.isEmpty() || cost ||
-                       (value["target"].toObject()["kind"] == "attribute" &&
+                       (value["target"].toObject()["kind"] == "attribute" && !value["target"].toObject().contains("owner") &&
                         value["value"].toObject()["op"] == "literal");
         int row = effects->rowCount();
         effects->insertRow(row);
@@ -636,6 +644,8 @@ void StudioWindow::editContent() {
   layout->addWidget(error);
   auto collect = [&]() -> QJsonObject {
     auto result = data;
+    if(!isActivity&&data.contains("requirements"))result["requirements"]=narrativeRequirements;
+    if(eventScope){if(eventScope->currentData()=="actor"){result["scope"]="actor";result["trigger"]="interaction";}else{if(data.contains("scope"))result["scope"]="shared";else result.remove("scope");result["trigger"]=eventTrigger->currentData().toString();}}
     if (portraits) {
       QJsonObject values;
       static const QRegularExpression idPattern("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$");

@@ -4,6 +4,7 @@ import type { Scene } from '../schema/generated/event.js';
 import type { ContentSnapshot, DeepReadonly, EventDecision, NarrativeCursor, NarrativeNode, NarrativeStep, RunData, RunState } from './model.js';
 import { applyEffects, evaluateCondition } from './evaluation.js';
 import { freeze, requireCore } from './util.js';
+import { eventCompleted, resolveOwner } from './roster.js';
 
 const priorityOrder = (a: { priority: number; id: string }, b: { priority: number; id: string }) =>
   b.priority - a.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -12,7 +13,7 @@ export function inspectEvents(content: ContentSnapshot, state: RunState): EventD
   let selected = false;
   return [...content.events].sort(priorityOrder).map(event => {
     let reason: EventDecision['reason'];
-    if (state.completedEvents.includes(event.id)) reason = 'completed';
+    if (eventCompleted(content,state,event.id)) reason = 'completed';
     else if (event.trigger === 'interaction') reason = 'interaction-only';
     else if (state.periodIndex < event.window.fromPeriod) reason = 'before-window';
     else if (state.periodIndex > event.window.throughPeriod) reason = 'expired';
@@ -57,6 +58,7 @@ export function enterNarrative(content: ContentSnapshot, draft: RunData, kind: '
   requireCore(definition, 'UNKNOWN_NARRATIVE', `알 수 없는 대본: ${id}`, '/activeNarrative');
   draft.phase = 'narrative';
   draft.activeNarrative = { kind, id, nodeId: definition.entryNodeId };
+  if(kind==='event' && 'scope' in definition && definition.scope==='actor')draft.activeNarrative.actorId=resolveOwner(content,draft,{kind:'actor'},'/activeNarrative/actorId')!;
   ensureAvailableChoice(content, draft);
 }
 
@@ -124,7 +126,8 @@ export function stepNarrative(content: ContentSnapshot, draft: RunData, choiceId
       case 'effect': applyEffects(content, draft, node.effects, `${source}/effects`, step.changes); draft.activeNarrative!.nodeId = node.next; break;
       case 'end':
         if (cursor.kind === 'event') {
-          draft.completedEvents.push(cursor.id);
+          if(cursor.actorId)draft.roster!.completedEvents![cursor.actorId]!.push(cursor.id);
+          else draft.completedEvents.push(cursor.id);
           if (cursor.returnPhase) {
             draft.activeNarrative = null; draft.phase = cursor.returnPhase;
             if (cursor.returnPresentation) draft.presentation = structuredClone(cursor.returnPresentation);

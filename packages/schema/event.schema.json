@@ -1,20 +1,71 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raising-engine.example/schemas/0.1.0/event.schema.json",
-  "title": "Event definition", "type": "object",
-  "allOf": [{ "$ref": "common.schema.json#/$defs/header" }, { "$ref": "common.schema.json#/$defs/narrative" }],
-  "properties": {
-    "id": { "$ref": "common.schema.json#/$defs/id" }, "label": { "$ref": "common.schema.json#/$defs/text" }, "description": { "type": "string" },
-    "window": {
-      "type": "object", "additionalProperties": false,
-      "properties": {
-        "fromPeriod": { "type": "integer", "minimum": 0 }, "throughPeriod": { "type": "integer", "minimum": 0 }
-      },
-      "required": ["fromPeriod", "throughPeriod"]
+  "title": "Event definition",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/header"
     },
-    "requirements": { "$ref": "common.schema.json#/$defs/condition" },
-    "priority": { "type": "integer", "minimum": 0, "maximum": 100 },
-    "trigger": { "enum": ["period-end", "interaction"] }
+    {
+      "$ref": "common.schema.json#/$defs/narrative"
+    }
+  ],
+  "properties": {
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "label": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "description": {
+      "type": "string"
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fromPeriod": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "throughPeriod": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "fromPeriod",
+        "throughPeriod"
+      ]
+    },
+    "requirements": {
+      "$ref": "common.schema.json#/$defs/condition"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "trigger": {
+      "enum": [
+        "period-end",
+        "interaction"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "shared",
+        "actor"
+      ]
+    }
   },
-  "required": ["id", "label", "window", "requirements", "priority"], "unevaluatedProperties": false
+  "required": [
+    "id",
+    "label",
+    "window",
+    "requirements",
+    "priority"
+  ],
+  "unevaluatedProperties": false
 }

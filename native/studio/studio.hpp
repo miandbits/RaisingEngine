@@ -143,6 +143,7 @@ private:
   void editFacilities();
   void editRules();
   void editRoster();
+  void editCharacterState();
   void editLogicDocument();
   void editWorkflows();
   void showRuleDebugger();

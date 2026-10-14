@@ -1,5 +1,13 @@
 /* Generated from JSON Schema. Do not edit; run npm run build. */
 
+export type CharacterOwner =
+  | {
+      kind: "actor";
+    }
+  | {
+      kind: "character";
+      characterId: string;
+    };
 export type NumericExpression =
   | {
       op: "literal";
@@ -11,15 +19,18 @@ export type NumericExpression =
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
     }
   | {
@@ -44,15 +55,18 @@ export type Effects = (
         | {
             kind: "attribute";
             attributeId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "relationship";
             characterId: string;
             relationshipId: string;
+            owner?: CharacterOwner;
           }
         | {
             kind: "inventory";
             itemId: string;
+            owner?: CharacterOwner;
           };
       value: NumericExpression;
     }
@@ -91,6 +105,7 @@ export type Condition =
   | {
       op: "eventCompleted";
       eventId: string;
+      owner?: CharacterOwner;
     };
 
 export interface SystemsDefinition {

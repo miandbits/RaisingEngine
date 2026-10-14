@@ -1,6 +1,7 @@
 import type { Condition, NumericExpression, Effects } from '../schema/generated/activity.js';
 import type { CalendarTime, ContentSnapshot, DeepReadonly, NumericTarget, RunState, RunData, Change } from './model.js';
 import { int32, requireCore } from './util.js';
+import { resolveOwner, eventCompleted } from './roster.js';
 
 export function calendarTime(content: ContentSnapshot, state: Pick<RunState, 'periodIndex'>): CalendarTime {
   const periodIndex = state.periodIndex;
@@ -12,18 +13,20 @@ export function calendarTime(content: ContentSnapshot, state: Pick<RunState, 'pe
 }
 
 export function numericSlot(content: ContentSnapshot, state: RunState, target: DeepReadonly<NumericTarget>, path: string) {
+  const owner=resolveOwner(content,state,target.owner,path+'/owner');
   if (target.kind === 'inventory') {
-    const item = content.project.gameplay?.items.find(x => x.id === target.itemId), values = state.gameplay?.inventory;
+    const item = content.project.gameplay?.items.find(x => x.id === target.itemId), values = owner ? state.roster?.inventory?.[owner] : state.gameplay?.inventory;
     requireCore(item && values && Object.hasOwn(values, target.itemId), 'UNKNOWN_TARGET', '수치 대상이 없습니다.', path);
-    return { definition: { min: 0, max: item.maxStack }, value: values[target.itemId]!, key: target.itemId };
+    return { definition: { min: 0, max: item.maxStack }, value: values[target.itemId]!, key: target.itemId, values };
   }
   const definition = target.kind === 'attribute'
     ? content.attributes.find(a => a.id === target.attributeId)
     : content.characters.find(c => c.id === target.characterId)?.relationships.find(r => r.id === target.relationshipId);
-  const values = target.kind === 'attribute' ? state.attributes : state.relationships[target.characterId];
+  if(owner && target.kind==='attribute')requireCore(content.project.roster!.localAttributeIds.includes(target.attributeId),'SHARED_ATTRIBUTE','공용 능력은 캐릭터 소유 대상으로 지정할 수 없습니다.',path);
+  const values = target.kind === 'attribute' ? (owner && owner !== (state.roster?.activityActorId??content.project.protagonistId) ? state.roster?.attributes[owner] : state.attributes) : owner ? state.roster?.relationships?.[owner]?.[target.characterId] : state.relationships[target.characterId];
   const key = target.kind === 'attribute' ? target.attributeId : target.relationshipId;
   requireCore(definition && values && Object.hasOwn(values, key), 'UNKNOWN_TARGET', '수치 대상이 없습니다.', path);
-  return { definition, value: values[key]!, key };
+  return { definition, value: values[key]!, key, values };
 }
 
 export function evaluateNumber(content: ContentSnapshot, state: RunState, expression: DeepReadonly<NumericExpression>, path = '/expression', depth = 0): number {
@@ -53,7 +56,7 @@ export function evaluateCondition(content: ContentSnapshot, state: RunState, con
     case 'flag':
       requireCore(Object.hasOwn(state.flags, condition.flagId), 'UNKNOWN_FLAG', '플래그가 없습니다.', `${path}/flagId`);
       return state.flags[condition.flagId] === condition.equals;
-    case 'eventCompleted': return state.completedEvents.includes(condition.eventId);
+    case 'eventCompleted': return eventCompleted(content,state,condition.eventId,condition.owner);
     case 'compare': {
       const left = evaluateNumber(content, state, condition.left, `${path}/left`, depth + 1);
       const right = evaluateNumber(content, state, condition.right, `${path}/right`, depth + 1);
@@ -79,17 +82,17 @@ export function applyEffects(content: ContentSnapshot, draft: RunData, effects: 
       draft.flags[effect.flagId] = effect.value;
       return;
     }
-    const { definition, value: before, key } = numericSlot(content, draft, effect.target, `${path}/target`);
+    const { definition, value: before, key, values: slotValues } = numericSlot(content, draft, effect.target, `${path}/target`);
     const operand = evaluateNumber(content, draft, effect.value, `${path}/value`, 1);
     const requested = int32(effect.op === 'add' ? before + operand : operand, path);
     if (effect.target.kind === 'inventory') {
       requireCore(requested >= 0 && requested <= definition.max, 'INVENTORY_RANGE', '물품 수량이 보유 가능 범위를 벗어났습니다.', path);
       const itemId = effect.target.itemId;
-      const reserved = Object.values(draft.systems?.equipment ?? {}).filter(id => content.project.systems?.equipment.find(x => x.id === id)?.itemId === itemId).length;
+      const reserved = effect.target.owner ? 0 : Object.values(draft.systems?.equipment ?? {}).filter(id => content.project.systems?.equipment.find(x => x.id === id)?.itemId === itemId).length;
       requireCore(requested >= reserved, 'EQUIPPED_ITEM', '장착 중인 물품은 소비할 수 없습니다.', path);
     }
     const after = Math.min(definition.max, Math.max(definition.min, requested));
-    const values = effect.target.kind === 'attribute' ? draft.attributes : effect.target.kind === 'inventory' ? draft.gameplay!.inventory : draft.relationships[effect.target.characterId]!;
+    const values = slotValues as Record<string,number>;
     values[key] = after;
     changes.push({ kind: 'numeric', source: path, target: { ...effect.target }, before, operand, requested,
       after, delta: after - before, clamped: requested < definition.min ? 'min' : requested > definition.max ? 'max' : false });

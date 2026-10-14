@@ -162,6 +162,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   viewMenu = menuBar()->addMenu(tr("보기"));
   auto designMenu = menuBar()->addMenu(tr("디자인"));
   designMenu->addAction(tr("다인 육성 · 대상과 활동 배정…"),this,&StudioWindow::editRoster)->setObjectName("editRoster");
+  designMenu->addAction(tr("캐릭터 소유 상태 · 관계 · 행동 연결…"),this,&StudioWindow::editCharacterState)->setObjectName("editCharacterState");
   designMenu->addAction(tr("공통 스타일 · 프로젝트 폰트…"),this,&StudioWindow::editDesignSystem)->setObjectName("editDesignSystem");
   designMenu->addAction(tr("폰트 파일 가져오기…"),this,&StudioWindow::importFont)->setObjectName("importFont");
   designMenu->addAction(tr("다국어 작업실…"),this,&StudioWindow::editLocalization)->setObjectName("editLocalization");
@@ -751,7 +752,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                       break;
                     }
                 });
-    });
+    })->setObjectName("createContent-"+p.first);
   pluginsMenu = menuBar()->addMenu(tr("플러그인"));
   pluginsMenu->setObjectName("pluginsMenu");
   pluginsMenu->addAction(tr("플러그인 관리…"), this, &StudioWindow::showPluginManager)->setObjectName("pluginManagerAction");

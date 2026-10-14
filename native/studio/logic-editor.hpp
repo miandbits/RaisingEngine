@@ -34,6 +34,7 @@ private:
   void reference(QString key,QString label,QString kind,QString character={});
   void integer(QString key,QString label);
   void boolean(QString key,QString label);
+  void ownerField();
   void property(QString key,QJsonValue value);
   void propertyAt(const QStringList &path,QString key,QJsonValue value);
   void changeType(QString op);

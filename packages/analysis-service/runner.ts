@@ -56,6 +56,7 @@ function candidates(content: ContentSnapshot, state: RunState, reasons: Record<s
         attempt([{ type: 'interact', interactionId: interaction.id }]);
     }
     if (content.project.roster && state.roster) {
+      if(content.project.roster.stateModel==='character-v1')for(const member of content.project.roster.members)for(const actionId of member.actionIds??[])attempt([{type:'executeActorAction',actorId:member.characterId,actionId,quantity:1}]);
       const activities = [...content.activities].filter(a => !a.expeditionId).sort((a,b)=>a.id.localeCompare(b.id));
       const members = content.project.roster.members;
       // Bound the branching factor; this is sampled search, not an impossibility proof.

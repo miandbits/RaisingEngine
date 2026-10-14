@@ -201,6 +201,20 @@ public:
         Json clear={{"type","selectPolicy"},{"groupId",group_id},{"optionId",nullptr}};std::string reason;const bool enabled=game.available(clear,&reason);out+=button("policy_clear__"+e.value("id","")+"__"+group_id,group.value("name","")+" 해제",clear,enabled,reason)+"<p>선택 시 비용 없이, 설정한 시점에 비용과 효과가 적용됩니다.</p>";
       }
     } else if(kind=="actions") {
+      if(display_content.at("project").value("roster",Json::object()).value("stateModel","")=="character-v1"){
+        const auto definitions=display_content.at("project").at("gameplay").value("actions",Json::array());
+        for(const auto& member:display_content.at("project").at("roster").at("members")){
+          const auto actor=member.value("characterId","");std::string name=actor;for(const auto& c:display_content.at("characters"))if(c.at("id")==actor)name=c.value("name",actor);
+          out+="<div style=\"display:inline-block;width:46%;margin:1%;vertical-align:top;\"><b>"+escape(name)+"</b>";
+          for(const auto& id:member.value("actionIds",Json::array()))for(const auto& definition:definitions)if(definition.at("id")==id&&included("actionIds",id)){
+            const auto key="actor-action__"+e.value("id","")+"__"+actor+"__"+id.get<std::string>();const auto controls=quantity_controls(key,definition.value("maxQuantity",1));
+            Json command={{"type","executeActorAction"},{"actorId",actor},{"actionId",id},{"quantity",quantities[key]}};std::string reason;const bool enabled=game.available(command,&reason);
+            out+="<div>"+controls+button(key,definition.value("name","실행"),command,enabled,reason)+"</div>";
+          }
+          out+="</div>";
+        }
+        return out;
+      }
       for(const auto& row:gp.value("actions",Json::array())) {
         if(!included("actionIds",row.at("id")))continue;const auto id=row.at("id").get<std::string>();const auto key="action__"+e.value("id","")+"__"+id;const auto controls=quantity_controls(key,row.value("maxQuantity",1));const int quantity=quantities[key];Json action={{"type","executeAction"},{"actionId",id},{"quantity",quantity}};std::string reason;const bool enabled=game.available(action,&reason);
         out+="<div class=\"facility-row\"><b>"+escape(row.value("name",""))+"</b><p>"+escape(cost_summary(row,quantity)+"\n"+effect_summary(row,quantity))+"</p>"+controls+button(key,row.value("name","실행"),action,enabled,reason)+"</div>";
@@ -490,6 +504,10 @@ public:
       for(const auto& key:r.at("localAttributeIds")) {
         std::string label=key.get<std::string>();for(const auto& a:display_content.at("attributes"))if(a.at("id")==key)label=a.value("label",label);
         out+="<div>"+escape(label)+": "+std::to_string(game.state.at("roster").at("attributes").at(id).at(key.get<std::string>()).get<int>())+"</div>";
+      }
+      if(game.state.at("roster").contains("inventory")){
+        for(const auto& item:display_content.at("project").at("gameplay").at("items"))out+="<div>"+escape(item.value("name",""))+": "+std::to_string(game.state.at("roster").at("inventory").at(id).at(item.value("id","")).get<int>())+"</div>";
+        for(const auto& other:display_content.at("characters"))for(const auto& relation:other.at("relationships"))out+="<div>"+escape(other.value("name","")+" · "+relation.value("label",relation.value("id","")))+": "+std::to_string(game.state.at("roster").at("relationships").at(id).at(other.value("id","")).at(relation.value("id","")).get<int>())+"</div>";
       }
     }
     out+="<p><b>공용 자원</b></p>";
