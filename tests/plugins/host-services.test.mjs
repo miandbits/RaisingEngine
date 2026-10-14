@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { QtStudioService } from '../../apps/qt-studio/service.mjs';
 import { McpWorkspace, toolError } from '../../dist/packages/mcp-service/workspace.js';
-import { addCutout, cutoutPackage, envelope, newProject, rigData, serialize, temp } from './host-helpers.mjs';
+import { addCutout, CUTOUT_VERSION, cutoutPackage, envelope, newProject, rigData, serialize, temp } from './host-helpers.mjs';
 
 const RIG = 'plugins/cutout-animation/rig/hero.json';
 const conflict = async (promise, code = 'VERSION_CONFLICT') => {
@@ -22,7 +22,7 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   await assert.rejects(service.handle({ method: 'pluginEnable', params: { id: 'cutout-animation', revision: reply.view.revision } }), e => e.code === 'PLUGIN_MISSING');
 
   reply = await service.handle({ method: 'pluginInstall', params: { file: await cutoutPackage() } });
-  assert.deepEqual([reply.pluginInstalled.id, reply.pluginInstalled.version, reply.pluginInstalled.alreadyInstalled], ['cutout-animation', '1.0.0', false]);
+  assert.deepEqual([reply.pluginInstalled.id, reply.pluginInstalled.version, reply.pluginInstalled.alreadyInstalled], ['cutout-animation', CUTOUT_VERSION, false]);
   const installed = reply.plugins.installed[0];
   assert.deepEqual(Object.keys(installed).sort(), ['directory', 'documentTypes', 'elementTypes', 'id', 'modules', 'name', 'version']);
   assert.deepEqual(installed.documentTypes.map(t => t.type), ['rig', 'controller']);
@@ -30,7 +30,7 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
 
   reply = await service.handle({ method: 'pluginEnable', params: { id: 'cutout-animation', revision: reply.view.revision } });
   assert.equal(reply.view.dirty, true);
-  assert.deepEqual(reply.view.documents.find(d => d.file === 'plugins/lock.json').data.plugins, [{ id: 'cutout-animation', version: '1.0.0', enabled: true }]);
+  assert.deepEqual(reply.view.documents.find(d => d.file === 'plugins/lock.json').data.plugins, [{ id: 'cutout-animation', version: CUTOUT_VERSION, enabled: true }]);
   const project = reply.plugins.project[0];
   assert.deepEqual(Object.keys(project).sort(), ['authoring', 'diagnostics', 'directory', 'enabled', 'id', 'state', 'version']);
   assert.deepEqual([project.state, project.enabled, project.authoring], ['active', true, null]);
@@ -83,7 +83,7 @@ test('MCP: create through apply_project_changes, schema/status/call tools, versi
   await conflict(mcp.apply(version, [{ type: 'create', file: RIG, data: envelope('rig', 'hero', rigData()) }], 'dup'), 'CHANGE_REJECTED');
 
   const schema = await mcp.readSchema('extension', 'cutout-animation', 'rig');
-  assert.equal(schema.version, '1.0.0'); assert.match(schema.schema.title, /rig/i);
+  assert.equal(schema.version, CUTOUT_VERSION); assert.match(schema.schema.title, /rig/i);
   assert.equal((await mcp.readSchema('extension')).schema.title, 'Extension document');
   assert.equal((await mcp.readSchema('plugin-lock')).schema.title, 'Plugin lock');
   const status = await mcp.pluginStatus();

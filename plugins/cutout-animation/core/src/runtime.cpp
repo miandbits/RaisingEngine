@@ -39,7 +39,10 @@ double sampleTrack(const Track& track, double t, double fallback) {
   auto next = std::upper_bound(keys.begin(), keys.end(), t, [](double v, const Key& k) { return v < double(k.timeMs); });
   const Key& b = *next; const Key& a = *(next - 1);
   if (a.interp == Interp::Step) return a.value;
-  return lerp(a.value, b.value, (t - double(a.timeMs)) / double(b.timeMs - a.timeMs));
+  const double u = (t - double(a.timeMs)) / double(b.timeMs - a.timeMs);
+  // Bezier eases only the fraction; endpoints stay exactly the key values.
+  if (a.interp == Interp::Bezier) return a.value + (b.value - a.value) * evalCurve(a.curve, u);
+  return lerp(a.value, b.value, u);
 }
 static std::optional<std::string> sampleAttachment(const Track& track, double t) {
   const auto& keys = track.keys;

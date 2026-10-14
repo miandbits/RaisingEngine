@@ -7,6 +7,7 @@
 #include "cutout-plugin.hpp"
 #include "cutout/editing.hpp"
 #include "dopesheet.hpp"
+#include "graph-editor.hpp"
 
 using namespace cutout_studio;
 using cutout::Json;
@@ -205,6 +206,24 @@ class StudioTests : public QObject {
     keep = rig();
     for (const auto& c : keep["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property) return &t;
     return nullptr;
+  }
+  Json keyOf(const char* clip, const char* target, const char* property, int ms) const {
+    if (const Json* t = track(clip, target, property))
+      for (const auto& k : (*t)["keys"]) if (k["timeMs"] == ms) return k;
+    return Json();
+  }
+  /** Right-click `at` on `w` and pick the context-menu action `name` (menus run their own loop). */
+  void contextPick(QWidget* w, QPoint at, const char* name) {
+    QTimer::singleShot(50, [name] {
+      auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+      QAction* action = menu ? menu->findChild<QAction*>(name) : nullptr;
+      if (!action) { if (menu) menu->close(); return; }
+      menu->setActiveAction(action);
+      QTest::keyClick(menu, Qt::Key_Return);
+    });
+    QTimer::singleShot(3000, [] { if (auto* m = QApplication::activePopupWidget()) m->close(); });  // never hang
+    QContextMenuEvent e(QContextMenuEvent::Mouse, at, w->mapToGlobal(at));
+    QCoreApplication::sendEvent(w, &e);
   }
   int rowOf(const QString& target, const QString& property) const {
     const auto& rows = panel->dopesheet()->rows();
@@ -423,6 +442,120 @@ class StudioTests : public QObject {
     sheet->selectKey(xrow, 0);
     QVERIFY(gesture("Delete key", 1, [&] { QTest::keyClick(sheet, Qt::Key_Delete); }));
     QVERIFY(!track("joy", "bone:head", "x"));
+  }
+
+  void graphEditorCurves() {
+    GraphEditor* graph = panel->graph();
+    QVERIFY(graph && graph->objectName() == "cutoutGraphEditor");
+    panel->selectClip("joy");
+    panel->selectItem("bone:head");
+    pump();
+    QVERIFY(graph->isVisible() && graph->isEnabled() && graph->width() > 300 && graph->height() > 120);
+    // View switch: graph only, then both stacked again (the default).
+    click("cutoutViewGraph");
+    QVERIFY(graph->isVisible() && !panel->dopesheet()->isVisible());
+    click("cutoutViewBoth");
+    pump();
+    QVERIFY(graph->isVisible() && panel->dopesheet()->isVisible() && graph->height() > 120);
+    // Curves of the selected bone's numeric tracks, one color per channel, with a legend label.
+    const int rot = graph->channelIndex("bone:head", "rotation");
+    QVERIFY(rot >= 0);
+    QSet<QString> colors;
+    for (const auto& c : graph->channels()) { QCOMPARE(c.target, QString("bone:head")); QVERIFY(c.property != "attachment"); colors << c.color.name(); }
+    QCOMPARE(colors.size(), int(graph->channels().size()));
+    QCOMPARE(graph->channels()[rot].label, QString("회전"));
+    QCOMPARE(graph->channels()[rot].keys.size(), 3);  // 0, 400, 600 from the dopesheet steps
+    // Legend click hides the other channels (editor-only) so only rotation keys are hit below.
+    for (int c = int(graph->channels().size()) - 1; c >= 0; c--)
+      if (c != rot) QVERIFY(gesture("legend toggle", 0, [&] { mouse(graph, QEvent::MouseButtonPress, QPointF(12, 22 + 4 + c * 16 + 8), Qt::LeftButton, Qt::LeftButton); mouse(graph, QEvent::MouseButtonRelease, QPointF(12, 22 + 4 + c * 16 + 8), Qt::LeftButton, Qt::NoButton); }));
+    // Clicking an empty spot only moves the playhead (sampling, no events, no edit).
+    QVERIFY(gesture("graph click scrubs", 0, [&] {
+      const QPointF at(graph->timeToX(250), graph->height() - 14);
+      mouse(graph, QEvent::MouseButtonPress, at, Qt::LeftButton, Qt::LeftButton);
+      mouse(graph, QEvent::MouseButtonRelease, at, Qt::LeftButton, Qt::NoButton);
+    }));
+    QCOMPARE(panel->playhead(), 250);
+    // A dopesheet key click becomes the graph selection.
+    Dopesheet* sheet = panel->dopesheet();
+    const int row = rowOf("bone:head", "rotation");
+    QVERIFY(gesture("dopesheet key click (no move)", 0, [&] {
+      const QPointF at(sheet->timeToX(600), sheet->rowCenterY(row));
+      mouse(sheet, QEvent::MouseButtonPress, at, Qt::LeftButton, Qt::LeftButton);
+      mouse(sheet, QEvent::MouseButtonRelease, at, Qt::LeftButton, Qt::NoButton);
+    }));
+    QCOMPARE(graph->selectedKeys(), (QVector<GraphEditor::KeyRef>{{"bone:head", "rotation", 600}}));
+
+    // Preset buttons: one key, then two keys in ONE edit.
+    graph->setSelectedKeys({{"bone:head", "rotation", 400}});
+    QVERIFY(gesture("preset 천천히 시작", 1, [&] { click("cutoutPresetEaseIn"); }));
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 400)["interp"] == "bezier" && keyOf("joy", "bone:head", "rotation", 400)["curve"] == Json::array({0.42, 0, 1, 1}));
+    QCOMPARE(graph->selectedKeys().size(), 1);  // selection survives the rebuild
+    QCOMPARE(graph->channels()[rot].keys[1].interp, QString("bezier"));
+    graph->setSelectedKeys({{"bone:head", "rotation", 0}, {"bone:head", "rotation", 400}});
+    QVERIFY(gesture("preset 부드럽게 on two keys", 1, [&] { click("cutoutPresetSmooth"); }));
+    QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
+    // 400 is a peak (0 -> 15 -> -5): auto gives flat tangents there, so no overshoot.
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 0)["curve"] == Json::array({0.333333, 0, 0.666667, 1}));
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 400)["curve"] == Json::array({0.333333, 0, 0.666667, 1}));
+    // Dopesheet: the interp gesture accepts presets, segments reflect the interp, menu has presets.
+    QVERIFY(gesture("dopesheet preset easeOut", 1, [&] { QVERIFY(panel->setKeyInterp(row, 0, "easeOut")); }));
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 0)["curve"] == Json::array({0, 0, 0.58, 1}));
+    QCOMPARE(sheet->rows()[row].interps.value(0), QString("bezier"));
+    QVERIFY(gesture("dopesheet right-click 튕김", 1, [&] { contextPick(sheet, QPoint(sheet->timeToX(400), sheet->rowCenterY(row)), "cutoutInterpBack"); }));
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 400)["curve"] == Json::array({0.34, 1.56, 0.64, 1}));
+
+    // Handle drag on the selected key: exactly one setCurve edit with the dropped numbers.
+    graph->setSelectedKeys({{"bone:head", "rotation", 400}});
+    pump();
+    const auto handle = graph->handlePoint(rot, 1, GraphEditor::Side::Out);
+    QVERIFY(handle);
+    const QPointF drop = *handle + QPointF(24, 16);
+    const cutout::Curve expected = graph->curveForHandle(rot, 1, GraphEditor::Side::Out, drop);
+    QVERIFY(expected != (cutout::Curve{0.34, 1.56, 0.64, 1}) && expected[2] == 0.64 && expected[3] == 1);
+    QVERIFY(gesture("drag out handle", 1, [&] { drag(graph, *handle, drop); }));
+    const Json dragged = keyOf("joy", "bone:head", "rotation", 400)["curve"];
+    for (size_t i = 0; i < 4; i++) QVERIFY2(std::fabs(dragged[i].get<double>() - expected[i]) < 1e-9, dragged.dump().c_str());
+    // Undo/redo round trip; the graph is rebuilt from the view each time.
+    const Json afterDrag = rig();
+    host.request("edit", {{"edit", QJsonObject{{"type", "undo"}}}}, {});
+    pump();
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 400)["curve"] == Json::array({0.34, 1.56, 0.64, 1}));
+    QVERIFY(graph->channels()[rot].keys[1].curve == (cutout::Curve{0.34, 1.56, 0.64, 1}));
+    host.request("edit", {{"edit", QJsonObject{{"type", "redo"}}}}, {});
+    pump();
+    QVERIFY(rig() == afterDrag);
+    QVERIFY(graph->channels()[rot].keys[1].curve == expected);
+
+    // Key drags: vertical = value only; horizontal onto another key is refused; elsewhere moves with its curve.
+    graph->setSelectedKeys({});
+    const QPointF k600 = graph->keyPoint(rot, 2);
+    const double newValue = std::round(graph->yToValue(rot, k600.y() - 30) * 1e4) / 1e4;
+    QVERIFY(gesture("drag key value", 1, [&] { drag(graph, k600, k600 + QPointF(0, -30)); }));
+    QVERIFY(std::fabs(keyOf("joy", "bone:head", "rotation", 600)["value"].get<double>() - newValue) < 1e-9 && newValue > -5 + 1);
+    const QPointF k400 = graph->keyPoint(rot, 1);
+    QVERIFY(gesture("drag key onto 600 (refused)", 0, [&] { drag(graph, k400, QPointF(graph->timeToX(600), k400.y())); }));
+    QVERIFY(panel->status().contains("이미 키"));
+    QCOMPARE(graph->channels()[rot].keys[1].timeMs, 400);  // preview restored
+    QVERIFY(gesture("drag key time 400 -> 450", 1, [&] { drag(graph, k400, QPointF(graph->timeToX(450), k400.y())); }));
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 400).is_null());
+    QVERIFY(keyOf("joy", "bone:head", "rotation", 450)["curve"] == dragged);  // handles are normalized: they move with the key
+    QVERIFY(graph->selectedKeys().contains(GraphEditor::KeyRef{"bone:head", "rotation", 450}));
+    // Ctrl+A + preset buttons: linear/step drop curves, ease presets write them, one edit each.
+    QVERIFY(gesture("select all + 선형", 1, [&] { QTest::keyClick(graph, Qt::Key_A, Qt::ControlModifier); click("cutoutPresetLinear"); }));
+    for (int ms : {0, 450, 600}) QVERIFY(!keyOf("joy", "bone:head", "rotation", ms).contains("interp") && !keyOf("joy", "bone:head", "rotation", ms).contains("curve"));
+    QVERIFY(gesture("select all + 천천히 시작·끝", 1, [&] { QTest::keyClick(graph, Qt::Key_A, Qt::ControlModifier); click("cutoutPresetEaseInOut"); }));
+    for (int ms : {0, 450}) QVERIFY(keyOf("joy", "bone:head", "rotation", ms)["curve"] == Json::array({0.42, 0, 0.58, 1}));
+    // Runtime plays what the graph draws (core evaluation of the committed curve).
+    const auto parsed = cutout::parseRig("hero", rig());
+    const double v0 = keyOf("joy", "bone:head", "rotation", 0)["value"].get<double>(), v1 = keyOf("joy", "bone:head", "rotation", 450)["value"].get<double>();
+    QVERIFY(std::fabs(cutout::samplePose(parsed, parsed.clipIndex("joy"), 225).bones[size_t(parsed.boneIndex("head"))].rotation - (v0 + (v1 - v0) * 0.5)) < 1e-9);
+    // A part with only attachment keys has no curves (message instead), and presets refuse.
+    panel->selectItem("slot:eyes");
+    QVERIFY(graph->channels().isEmpty());
+    graph->setSelectedKeys({});
+    sheet->selectKey(-1, -1);
+    QVERIFY(gesture("preset without keys (refused)", 0, [&] { click("cutoutPresetBack"); }));
+    panel->selectItem("bone:head");
   }
 
   void mixTable() {

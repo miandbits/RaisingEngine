@@ -29,9 +29,31 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 * Keys store **absolute** values (not offsets from the setup pose). Editing the setup pose
   never changes existing clips silently; the editor offers "apply setup change to keys".
-* `interp` on a key governs the segment to the next key: `linear` (default) or `step`.
-  Attachment keys are always step. Before the first key the first value holds; after the
-  last key the last value holds.
+* `interp` on a key governs the segment to the next key: `linear` (default), `step` or
+  `bezier` (plugin 1.1.0). Attachment keys are always step. Before the first key the first
+  value holds; after the last key the last value holds.
+* `bezier` keys carry `curve: [x1, y1, x2, y2]`, the inner handles of a cubic Bezier from
+  (0,0) to (1,1) in segment-normalized space: x = fraction of the segment's time, y =
+  fraction of the value change. x must be in 0..1 so time never runs backwards (editing ops
+  clamp it; evaluation clamps too), y in -4..5 so overshoot ("back") is allowed. Bad or
+  missing handles are `ANIM_CURVE`; `bezier` on an attachment key is `ANIM_INTERP`; a
+  `curve` on a non-bezier key is ignored (warning `ANIM_CURVE_UNUSED`).
+* Evaluation: u = (t - t0) / (t1 - t0); solve x(s) = u for the Bezier parameter s (Newton,
+  bisection fallback, |x(s) - u| < 1e-7, fixed iteration rules); value = v0 + (v1 - v0) · y(s).
+  It depends only on clip time, so it is frame-rate independent, and the native and Wasm
+  runtimes run the same code (`core/src/curve.cpp`). Handles are normalized, so moving a key
+  or changing its value keeps the segment's shape.
+* Presets are editing helpers; stored data is always the four numbers: `easeIn`
+  [0.42,0,1,1], `easeOut` [0,0,0.58,1], `easeInOut` [0.42,0,0.58,1], `flat` [⅓,0,⅔,1],
+  `back` [0.34,1.56,0.64,1] and `auto` (Catmull-Rom slopes from the neighbouring keys, flat at
+  local extrema and track ends, Fritsch-Carlson limited so the segment never overshoots its
+  keys; computed once when applied, not kept in sync with later key edits).
+* Editing ops (`edit`): `setInterp {clip, target, property, timeMs, interp}` where interp is
+  `step` | `linear` | `bezier` (+ `curve`) | a preset name (or `preset: <name>`);
+  `setCurve {…, curve}` sets one key's handles; `setKey` accepts the same interp fields.
+  `linear`/`step` remove `curve`. Many keys at once = one `batch` (one undo step).
+* Compatibility: schemaVersion stays 1 and every 1.0.0 document loads and plays unchanged.
+  Documents that use `bezier` need plugin 1.1.0 or newer (1.0.0 rejects the interp value).
 * Rotation interpolates numerically (no shortest-path wrapping): 0→350 turns 350°.
 * Times are integer milliseconds, strictly increasing per track, within `0..durationMs`.
 * Events: `{timeMs, name}`. An event fires once per occurrence in the half-open interval
@@ -90,6 +112,7 @@ controller ref, active clip per track, binding, `then`, `stopOn`, speed.
 
 ## Templates
 
-`breathing` (sine-like keys on a bone's `scaleY`/`y`, default period 3200 ms) and `blink`
+`breathing` (rest → peak → rest on a bone's `scaleY`/`y` with `easeInOut` segments, a
+sine-like breath in three keys; default period 3200 ms) and `blink`
 (attachment swap open → half → closed → half → open with a 3–5 s idle gap) generate
 ordinary clips; they are editable data, not procedural runtime effects.

@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { crc32 } from 'node:zlib';
 import { installPackage, inspectPackage, listInstalled, readRegistry, uninstallPlugin, resolveProjectPlugins, readZip, writeZip, satisfies, ENGINE_PLUGIN_API } from '../../dist/packages/plugin-host/index.js';
-import { cutoutPackage, makePackage, temp, sha256, readJson } from './host-helpers.mjs';
+import { CUTOUT_VERSION, cutoutPackage, makePackage, temp, sha256, readJson } from './host-helpers.mjs';
 
 const rejects = (promise, code) => assert.rejects(promise, error => { assert.equal(error.code, code, error.message); return true; });
 
@@ -15,10 +15,10 @@ test('cutout package installs into a staged, immutable store; reinstall of the s
   assert.ok(Object.keys(inspected.manifest.files).includes('runtime/web/cutout-runtime.wasm'));
   const first = await installPackage(store, file);
   assert.equal(first.alreadyInstalled, false);
-  assert.equal(first.plugin.directory, path.join(store, 'installed/cutout-animation/1.0.0'));
+  assert.equal(first.plugin.directory, path.join(store, 'installed/cutout-animation', CUTOUT_VERSION));
   for (const [name, hash] of Object.entries(first.plugin.manifest.files)) assert.equal(sha256(await readFile(path.join(first.plugin.directory, name))), hash, name);
   const registry = await readRegistry(store);
-  assert.deepEqual(registry.installed.map(e => [e.id, e.version, e.source, e.sha256]), [['cutout-animation', '1.0.0', 'local', sha256(await readFile(file))]]);
+  assert.deepEqual(registry.installed.map(e => [e.id, e.version, e.source, e.sha256]), [['cutout-animation', CUTOUT_VERSION, 'local', sha256(await readFile(file))]]);
   assert.equal((await readdir(store)).filter(n => n.startsWith('.staging-')).length, 0);
   const again = await installPackage(store, file);
   assert.equal(again.alreadyInstalled, true);

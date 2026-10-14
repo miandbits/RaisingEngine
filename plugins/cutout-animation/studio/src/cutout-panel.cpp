@@ -2,9 +2,11 @@
 #include <QtWidgets>
 #include <cmath>
 #include <set>
+#include <tuple>
 #include "cutout/host.hpp"
 #include "cutout/templates.hpp"
 #include "dopesheet.hpp"
+#include "graph-editor.hpp"
 
 namespace cutout_studio {
 using cutout::Json;
@@ -23,6 +25,18 @@ const Json& listOf(const Json& data, const char* key) {
 }
 Json batch(const std::vector<Json>& ops) { return ops.size() == 1 ? ops[0] : Json{{"op", "batch"}, {"operations", ops}}; }
 QString capital(const QString& s) { return s.left(1).toUpper() + s.mid(1); }
+const char* NUMERIC_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "alpha"};
+QString propertyLabel(const QString& property) {
+  static const QMap<QString, QString> names = {{"x", "X"}, {"y", "Y"}, {"rotation", "회전"}, {"scaleX", "크기 X"}, {"scaleY", "크기 Y"}, {"alpha", "투명도"}, {"attachment", "그림"}};
+  return names.value(property, property);
+}
+std::string interpOf(const Json& key) { return key.contains("interp") && key.at("interp").is_string() ? key.at("interp").get<std::string>() : "linear"; }
+cutout::Curve curveOf(const Json& key) {
+  cutout::Curve c = cutout::LINEAR_CURVE;
+  if (key.contains("curve") && key.at("curve").is_array() && key.at("curve").size() == 4)
+    for (size_t i = 0; i < 4; i++) if (key.at("curve")[i].is_number()) c[i] = key.at("curve")[i].get<double>();
+  return c;
+}
 QMap<QString, QString> parsePairs(const QString& text) {
   QMap<QString, QString> out;
   for (const QString& part : text.split(',', Qt::SkipEmptyParts)) {
@@ -537,15 +551,74 @@ QWidget* CutoutPanel::buildAnimateTab() {
   dopesheet_->onDeleteKey = [this](int row, int ms) { return deleteKey(row, ms); };
   dopesheet_->onInterp = [this](int row, int ms, const QString& interp) { return setKeyInterp(row, ms, interp); };
   dopesheet_->onRowSelected = [this](int row) {
-    if (row >= 0 && row < dopesheet_->rows().size()) selectItem(dopesheet_->rows()[row].target);
+    if (row < 0 || row >= dopesheet_->rows().size()) return;
+    const Dopesheet::Row r = dopesheet_->rows()[row];
+    selectItem(r.target);
+    // A key clicked in the dopesheet is also the graph's selection (presets, handles).
+    if (dopesheet_->selectedRow() == row && dopesheet_->selectedTime() >= 0 && !r.attachment)
+      graph_->setSelectedKeys({{r.target, r.property, dopesheet_->selectedTime()}});
   };
   auto* scroll = new QScrollArea;
   scroll->setObjectName("cutoutDopesheetScroll");
   scroll->setWidgetResizable(true);
   scroll->setWidget(dopesheet_);
+  // Graph editor below the dopesheet: same width and time mapping, so key columns line up.
+  auto* graphPanel = new QWidget;
+  graphPanel->setObjectName("cutoutGraphPanel");
+  auto* graphLayout = new QVBoxLayout(graphPanel);
+  graphLayout->setContentsMargins(0, 0, 0, 0);
+  graphLayout->setSpacing(2);
+  auto* presetRow = new QHBoxLayout;
+  presetRow->addWidget(new QLabel("곡선"));
+  for (const auto& preset : interpPresets()) {
+    auto* b = new QPushButton(preset.label);
+    b->setObjectName(QString("cutoutPreset") + preset.suffix);
+    b->setToolTip(QString(preset.tip) + "\n그래프에서 고른 키(없으면 도프시트에서 고른 키)부터 다음 키까지의 구간에 적용합니다.");
+    const QString id = preset.id;
+    connect(b, &QPushButton::clicked, this, [this, id] { applyPreset(id); });
+    presetRow->addWidget(b);
+    presetButtons_ << b;
+  }
+  presetRow->addStretch();
+  graphNormalize_ = new QCheckBox("채널별 맞춤");
+  graphNormalize_->setObjectName("cutoutGraphNormalize");
+  graphNormalize_->setToolTip("값 범위가 다른 채널(회전 각도와 크기 등)을 각자 높이에 맞춰 모양을 비교합니다.");
+  presetRow->addWidget(graphNormalize_);
+  graph_ = new GraphEditor;
+  graph_->setToolTip("키 드래그: 위아래 = 값, 좌우 = 시간(Alt: 둘 다, Shift: 1ms) · 고른 키의 손잡이를 끌어 곡선 조절\n"
+                     "Ctrl+클릭: 여러 키 · Ctrl+A: 모두 · 빈 곳 클릭: 시간 이동 · 오른쪽 클릭: 프리셋 · 범례 클릭: 채널 숨김");
+  graph_->onScrub = [this](int ms) { setPlayhead(ms); };
+  graph_->onMoveKey = [this](const GraphEditor::KeyRef& k, int to, double value) { return moveGraphKey(k.target, k.property, k.timeMs, to, value); };
+  graph_->onCurve = [this](const GraphEditor::KeyRef& k, const cutout::Curve& curve) { return setKeyCurve(k.target, k.property, k.timeMs, curve); };
+  graph_->onPreset = [this](const QString& preset) { applyPreset(preset); };
+  connect(graphNormalize_, &QCheckBox::toggled, graph_, &GraphEditor::setNormalized);
+  graphLayout->addLayout(presetRow);
+  graphLayout->addWidget(graph_, 1);
+  // Docks are often short: show the dopesheet, the graph, or both stacked (same time axis).
+  auto* viewGroup = new QButtonGroup(this);
+  viewGroup->setExclusive(true);
+  int at = 5;  // after the speed combo
+  for (const auto& [text, name, sheet, curves] : {std::tuple{"도프시트", "cutoutViewDopesheet", true, false},
+                                                  std::tuple{"그래프", "cutoutViewGraph", false, true}, std::tuple{"둘 다", "cutoutViewBoth", true, true}}) {
+    auto* b = new QPushButton(text);
+    b->setObjectName(name);
+    b->setCheckable(true);
+    b->setChecked(sheet && curves);
+    b->setToolTip("아래 영역에 도프시트, 값 곡선 그래프 또는 둘 다를 보여 줍니다.");
+    viewGroup->addButton(b);
+    transport->insertWidget(at++, b);
+    connect(b, &QPushButton::clicked, this, [scroll, graphPanel, sheet = sheet, curves = curves] { scroll->setVisible(sheet); graphPanel->setVisible(curves); });
+  }
+  auto* timelineSplit = new QSplitter(Qt::Vertical);
+  timelineSplit->setObjectName("cutoutTimelineSplitter");
+  timelineSplit->addWidget(scroll);
+  timelineSplit->addWidget(graphPanel);
+  timelineSplit->setChildrenCollapsible(false);
+  timelineSplit->setStretchFactor(0, 1);
+  timelineSplit->setStretchFactor(1, 1);
   timeline->addLayout(transport);
-  timeline->addWidget(scroll, 1);
-  timeline->addWidget(new QLabel("드래그: 키 이동(10ms 단위, Shift 1ms) · Delete: 삭제 · 오른쪽 클릭: 계단/선형 · 눈금자 클릭: 시간 이동"));
+  timeline->addWidget(timelineSplit, 1);
+  timeline->addWidget(new QLabel("드래그: 키 이동(10ms 단위, Shift 1ms) · Delete: 삭제 · 오른쪽 클릭: 보간 프리셋 · 눈금자 클릭: 시간 이동 · 그래프: 값·곡선 손잡이"));
   // Mix table.
   auto* mix = new QVBoxLayout;
   mixDefault_ = new QSpinBox;
@@ -866,6 +939,7 @@ void CutoutPanel::rebuildDisplay(bool full) {
     refreshDrawOrder();
     refreshClips();
     refreshDopesheet();
+    refreshGraph();
     refreshMix();
     refreshController();
     refreshModeUi();
@@ -1085,16 +1159,17 @@ void CutoutPanel::refreshDopesheet() {
   int duration = 1000;
   if (const Json* clip = findIn(displayData(), "clips", ss(clipId_))) {
     duration = int(clip->value("durationMs", int64_t(1000)));
-    static const QMap<QString, QString> names = {{"x", "X"}, {"y", "Y"}, {"rotation", "회전"}, {"scaleX", "크기 X"}, {"scaleY", "크기 Y"}, {"alpha", "투명도"}, {"attachment", "그림"}};
     for (const auto& t : listOf(*clip, "tracks")) {
       Dopesheet::Row row;
       row.target = qs(t.value("target", std::string()));
       row.property = qs(t.value("property", std::string()));
       row.attachment = row.property == "attachment";
-      row.label = QString("%1 %2").arg(refId(row.target), names.value(row.property, row.property));
+      row.label = QString("%1 %2").arg(refId(row.target), propertyLabel(row.property));
       for (const auto& k : listOf(t, "keys")) {
         row.times << int(k.value("timeMs", int64_t(0)));
-        row.step << (k.value("interp", std::string("linear")) == "step");
+        row.step << (interpOf(k) == "step");
+        row.interps << qs(interpOf(k));
+        row.curves << curveOf(k);
       }
       rows << row;
     }
@@ -1103,7 +1178,39 @@ void CutoutPanel::refreshDopesheet() {
   playheadMs_ = std::clamp(playheadMs_, 0, duration);
   playheadExact_ = std::clamp(playheadExact_, 0.0, double(duration));
   dopesheet_->setPlayhead(playheadMs_);
+  graph_->setPlayhead(playheadMs_);
   timeLabel_->setText(QString("%1 / %2 ms").arg(playheadMs_).arg(duration));
+}
+
+QString CutoutPanel::graphTarget() const {
+  if (!selection_.isEmpty()) return selection_;
+  const int row = dopesheet_->selectedRow();
+  return row >= 0 && row < dopesheet_->rows().size() ? dopesheet_->rows()[row].target : QString();
+}
+void CutoutPanel::refreshGraph() {
+  // Numeric tracks of the selected bone/slot in the current clip, one colored channel each.
+  static const QMap<QString, QColor> colors = {{"x", QColor("#f87171")}, {"y", QColor("#4ade80")}, {"rotation", QColor("#60a5fa")},
+                                               {"scaleX", QColor("#fb923c")}, {"scaleY", QColor("#c084fc")}, {"alpha", QColor("#e5e7eb")}};
+  QVector<GraphEditor::Channel> channels;
+  int duration = 1000;
+  const QString target = graphTarget();
+  if (const Json* clip = findIn(displayData(), "clips", ss(clipId_))) {
+    duration = int(clip->value("durationMs", int64_t(1000)));
+    for (const char* property : NUMERIC_PROPS)
+      for (const auto& t : listOf(*clip, "tracks")) {
+        if (qs(t.value("target", std::string())) != target || t.value("property", std::string()) != property) continue;
+        GraphEditor::Channel channel{target, property, propertyLabel(property), colors.value(property), {}};
+        for (const auto& k : listOf(t, "keys")) {
+          if (!k.contains("value") || !k.at("value").is_number()) continue;
+          channel.keys.push_back({int(k.value("timeMs", int64_t(0))), k.at("value").get<double>(), qs(interpOf(k)), curveOf(k)});
+        }
+        channels << channel;
+      }
+  }
+  graph_->setMessage(target.isEmpty() ? "본·조각을 고르거나 도프시트 행을 누르면 그 트랙의 값 곡선이 여기에 보입니다."
+                                      : QString("「%1」에는 이 클립의 숫자 키가 없습니다. 애니메이션 모드에서 값을 바꾸고 K를 누르세요.").arg(refId(target)));
+  graph_->setChannels(channels, duration);
+  graph_->setPlayhead(playheadMs_);
 }
 
 void CutoutPanel::refreshMix() {
@@ -1270,7 +1377,8 @@ void CutoutPanel::refreshModeUi() {
   }
   banner_->setProperty("mode", animate ? "animate" : "setup");
   toolButtons_[RigCanvas::Pivot]->setEnabled(!animate);
-  for (QWidget* w : {static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(playButton_)}) w->setEnabled(animate);
+  for (QWidget* w : {static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(playButton_), static_cast<QWidget*>(graph_)}) w->setEnabled(animate);
+  for (QPushButton* b : presetButtons_) b->setEnabled(animate);
   autoKeyCheck_->setEnabled(animate);
   if (canvas_) canvas_->setAnimateMode(animate);
   bool keyed = false;
@@ -1325,6 +1433,7 @@ void CutoutPanel::selectItem(const QString& ref) {
     filling_ = false;
   }
   refreshProperties();
+  refreshGraph();
   updateCanvas();
 }
 void CutoutPanel::selectClip(const QString& id) {
@@ -1362,6 +1471,7 @@ void CutoutPanel::setPlayhead(int ms) {
   playheadMs_ = ms;
   playheadExact_ = ms;
   dopesheet_->setPlayhead(ms);
+  graph_->setPlayhead(ms);
   timeLabel_->setText(QString("%1 / %2 ms").arg(ms).arg(duration));
   refreshModeUi();
   refreshProperties();
@@ -1869,6 +1979,51 @@ bool CutoutPanel::setKeyInterp(int row, int ms, const QString& interp) {
   return runOps({{{"op", "setInterp"}, {"clip", ss(clipId_)}, {"target", ss(r.target)}, {"property", ss(r.property)}, {"timeMs", ms}, {"interp", ss(interp)}}}, false);
 }
 
+
+// ---------------------------------------------------------------- graph editor gestures
+bool CutoutPanel::moveGraphKey(const QString& target, const QString& property, int from, int to, double value) {
+  if (working_) { setStatus("먼저 K로 변경을 키로 저장하거나 변경을 취소하세요.", true); refreshGraph(); return false; }
+  const Json base = {{"clip", ss(clipId_)}, {"target", ss(target)}, {"property", ss(property)}};
+  std::optional<double> current;
+  if (const Json* clip = findIn(committedRig(), "clips", ss(clipId_)))
+    for (const auto& t : listOf(*clip, "tracks"))
+      if (qs(t.value("target", std::string())) == target && qs(t.value("property", std::string())) == property)
+        for (const auto& k : listOf(t, "keys")) if (k.value("timeMs", int64_t(-1)) == from && k.contains("value") && k.at("value").is_number()) current = k.at("value").get<double>();
+  if (!current) { setStatus("그 시간에 키가 없습니다.", true); refreshGraph(); return false; }
+  // Time first (refused on collision), then the value at the new time: one batch = one edit.
+  std::vector<Json> ops;
+  if (to != from) { Json op = base; op["op"] = "moveKey"; op["fromMs"] = from; op["toMs"] = to; ops.push_back(op); }
+  if (value != *current) { Json op = base; op["op"] = "setKey"; op["timeMs"] = to; op["value"] = value; ops.push_back(op); }
+  if (ops.empty()) return false;
+  const bool ok = runOps(ops, false);
+  if (!ok) refreshGraph();
+  return ok;
+}
+bool CutoutPanel::setKeyCurve(const QString& target, const QString& property, int ms, const cutout::Curve& curve) {
+  if (working_) { setStatus("먼저 K로 변경을 키로 저장하거나 변경을 취소하세요.", true); refreshGraph(); return false; }
+  const bool ok = runOps({{{"op", "setCurve"}, {"clip", ss(clipId_)}, {"target", ss(target)}, {"property", ss(property)}, {"timeMs", ms},
+                           {"curve", Json::array({curve[0], curve[1], curve[2], curve[3]})}}}, false);
+  if (!ok) refreshGraph();
+  return ok;
+}
+bool CutoutPanel::applyPreset(const QString& preset) {
+  if (working_) { setStatus("먼저 K로 변경을 키로 저장하거나 변경을 취소하세요.", true); return false; }
+  QVector<GraphEditor::KeyRef> keys = graph_->selectedKeys();
+  const int row = dopesheet_->selectedRow();
+  if (keys.isEmpty() && row >= 0 && row < dopesheet_->rows().size() && dopesheet_->selectedTime() >= 0)
+    keys.push_back({dopesheet_->rows()[row].target, dopesheet_->rows()[row].property, dopesheet_->selectedTime()});
+  std::vector<Json> ops;
+  for (const auto& k : keys)
+    if (k.property != "attachment")
+      ops.push_back({{"op", "setInterp"}, {"clip", ss(clipId_)}, {"target", ss(k.target)}, {"property", ss(k.property)}, {"timeMs", k.timeMs}, {"interp", ss(preset)}});
+  if (ops.empty()) { setStatus("곡선을 바꿀 키를 먼저 고르세요(그래프·도프시트에서 키 클릭, Ctrl+클릭으로 여러 개). 그림 키는 항상 계단입니다.", true); return false; }
+  QString label = preset;
+  for (const auto& p : interpPresets()) if (preset == p.id) label = p.label;
+  if (!runOps(ops, false)) return false;
+  setStatus(QString("키 %1개에 「%2」 보간을 적용했습니다. 되돌리기: Ctrl+Z").arg(ops.size()).arg(label));
+  return true;
+}
+
 // ---------------------------------------------------------------- mix
 void CutoutPanel::commitMixTable() {
   if (filling_ || !rigDoc()) return;
@@ -2052,6 +2207,7 @@ void CutoutPanel::tick() {
       }
       playheadMs_ = int(playheadExact_);
       dopesheet_->setPlayhead(playheadMs_);
+      graph_->setPlayhead(playheadMs_);
       timeLabel_->setText(QString("%1 / %2 ms").arg(playheadMs_).arg(int(d)));
     }
   }

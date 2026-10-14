@@ -4,7 +4,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { installPackage } from '../../dist/packages/plugin-host/index.js';
 import { StudioEditor } from '../../dist/packages/studio-service/editor.js';
-import { addCutout, addElement, controllerData, cutoutPackage, envelope, lock, newProject, png, rigData, serialize, temp } from './host-helpers.mjs';
+import { addCutout, addElement, controllerData, cutoutPackage, envelope, lock, newProject, png, rigData, serialize, temp, CUTOUT_VERSION } from './host-helpers.mjs';
 
 let installedStore;
 const store = () => installedStore ??= (async () => { const dir = await temp('store'); await installPackage(dir, await cutoutPackage()); return dir; })();
@@ -44,7 +44,7 @@ test('not locked and disabled plugins are reported as warnings and never validat
   let editor = await open(root, await store());
   assert.deepEqual(codes(editor).filter(c => c.includes('PLUGIN')).sort(), [`warning:PLUGIN_NOT_LOCKED:${CONTROLLER}/plugin`, `warning:PLUGIN_NOT_LOCKED:${RIG}/plugin`]);
   assert.equal(codes(editor).some(c => c.includes('ANIM_')), false);
-  await writeFile(path.join(root, 'plugins/lock.json'), serialize(lock([{ id: 'cutout-animation', version: '1.0.0', enabled: false }])));
+  await writeFile(path.join(root, 'plugins/lock.json'), serialize(lock([{ id: 'cutout-animation', version: CUTOUT_VERSION, enabled: false }])));
   editor = await open(root, await store());
   assert.deepEqual(codes(editor).filter(c => c.includes('PLUGIN')), ['warning:PLUGIN_DISABLED:plugins/lock.json/plugins/0/enabled']);
   assert.equal(editor.diagnostics.some(d => d.severity === 'error'), false);

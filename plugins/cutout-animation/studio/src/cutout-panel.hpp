@@ -35,6 +35,7 @@ class QTreeWidgetItem;
 
 namespace cutout_studio {
 class Dopesheet;
+class GraphEditor;
 class BoneTree;
 
 constexpr const char* PLUGIN_ID = "cutout-animation";
@@ -95,6 +96,13 @@ class CutoutPanel : public QWidget {
   bool moveKey(int row, int fromMs, int toMs);
   bool deleteKey(int row, int ms);
   bool setKeyInterp(int row, int ms, const QString& interp);
+  /** Interp/preset ("linear", "step", "easeIn", "auto", "back"...) on the graph-selected keys
+   *  (or the dopesheet key): one batch edit for all of them. */
+  bool applyPreset(const QString& preset);
+  /** Graph key drag: moveKey and/or setKey value in one edit. Collisions are refused. */
+  bool moveGraphKey(const QString& target, const QString& property, int fromMs, int toMs, double value);
+  /** Graph handle drag: setCurve of the segment starting at `ms`. */
+  bool setKeyCurve(const QString& target, const QString& property, int ms, const cutout::Curve& curve);
   bool addMixPair();
   bool removeMixPair();
   bool addLayer();
@@ -116,6 +124,7 @@ class CutoutPanel : public QWidget {
   QString status() const;
   RigCanvas* canvas() const { return canvas_; }
   Dopesheet* dopesheet() const { return dopesheet_; }
+  GraphEditor* graph() const { return graph_; }
   /** Rig data currently shown (pending/drag preview included). */
   const cutout::Json& displayData() const;
   const cutout::Json& committedRig() const;
@@ -174,6 +183,9 @@ class CutoutPanel : public QWidget {
   QComboBox* speedCombo_ = nullptr;
   QLabel* timeLabel_ = nullptr;
   Dopesheet* dopesheet_ = nullptr;
+  GraphEditor* graph_ = nullptr;
+  QCheckBox* graphNormalize_ = nullptr;
+  QVector<QPushButton*> presetButtons_;
   QSpinBox* mixDefault_ = nullptr;
   QTableWidget* mixTable_ = nullptr;
   QComboBox *defaultClipCombo_ = nullptr, *characterCombo_ = nullptr, *controllerCombo_ = nullptr;
@@ -215,6 +227,8 @@ class CutoutPanel : public QWidget {
   void refreshProperties();
   void refreshClips();
   void refreshDopesheet();
+  void refreshGraph();
+  QString graphTarget() const;  // selection, else the dopesheet's selected row
   void refreshMix();
   void refreshController();
   void refreshModeUi();

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <functional>
 #include <set>
+#include "cutout/curve.hpp"
 
 namespace cutout {
 namespace {
@@ -92,6 +93,13 @@ Json* findTrack(Json& c, const Str& target, const Str& property) {
   for (auto& t : arr(c, "tracks")) if (t.value("target", Str()) == target && t.value("property", Str()) == property) return &t;
   return nullptr;
 }
+Curve curveOf(const Json& key) {
+  Curve c = LINEAR_CURVE;
+  if (key.contains("curve") && key.at("curve").is_array() && key.at("curve").size() == 4)
+    for (size_t i = 0; i < 4; i++) if (key.at("curve")[i].is_number()) c[i] = key.at("curve")[i].get<double>();
+  return c;
+}
+Json curveJson(const Curve& c) { return Json::array({clean(c[0]), clean(c[1]), clean(c[2]), clean(c[3])}); }
 // Json-level sampler (mirrors runtime sampleTrack) so edits work on not-yet-parsed data.
 double sampleJson(const Json* track, double t, double fallback) {
   if (!track || !track->contains("keys") || !track->at("keys").is_array() || track->at("keys").empty()) return fallback;
@@ -102,9 +110,10 @@ double sampleJson(const Json* track, double t, double fallback) {
   if (t >= timeOf(keys.size() - 1)) return valueOf(keys.size() - 1);
   for (size_t i = 0; i + 1 < keys.size(); i++) {
     if (t < timeOf(i + 1)) {
-      if (keys[i].value("interp", Str("linear")) == "step") return valueOf(i);
-      const double a = timeOf(i), b = timeOf(i + 1);
-      return valueOf(i) + (valueOf(i + 1) - valueOf(i)) * (t - a) / (b - a);
+      const Str interp = keys[i].contains("interp") && keys[i].at("interp").is_string() ? keys[i].at("interp").get<Str>() : "linear";
+      if (interp == "step") return valueOf(i);
+      const double a = timeOf(i), b = timeOf(i + 1), u = (t - a) / (b - a);
+      return valueOf(i) + (valueOf(i + 1) - valueOf(i)) * (interp == "bezier" ? evalCurve(curveOf(keys[i]), u) : u);
     }
   }
   return valueOf(keys.size() - 1);
@@ -153,6 +162,53 @@ Str keyRef(const Str& clipId, const Json& op, int64_t t) { return "key:" + clipI
 Json& keyAt(Json& track, int64_t t) {
   for (auto& k : arr(track, "keys")) if (k.value("timeMs", int64_t(-1)) == t) return k;
   throw EditError("그 시간에 키가 없습니다: " + std::to_string(t) + "ms");
+}
+Curve readCurve(const Json& op) {
+  if (!has(op, "curve") || !op.at("curve").is_array() || op.at("curve").size() != 4) throw EditError("curve는 숫자 4개 [x1, y1, x2, y2]여야 합니다.");
+  Curve c;
+  for (size_t i = 0; i < 4; i++) {
+    const Json& v = op.at("curve")[i];
+    if (!v.is_number() || !std::isfinite(v.get<double>())) throw EditError("curve 값은 유한한 숫자여야 합니다.");
+    c[i] = v.get<double>();
+  }
+  // Clamping x (not refusing) lets a handle dragged past the next key still mean "as late as possible".
+  return clampCurve(c);
+}
+/** "auto" handles for the segment starting at `t`, from the track's current keys. */
+Curve autoCurveAt(const Json& track, int64_t t) {
+  std::vector<double> times, values;
+  size_t at = 0;
+  for (const auto& k : track.at("keys")) {
+    if (!k.contains("value") || !k.at("value").is_number()) continue;
+    if (k.value("timeMs", int64_t(-1)) == t) at = times.size();
+    times.push_back(k.value("timeMs", 0.0));
+    values.push_back(k.at("value").get<double>());
+  }
+  return autoCurve(times, values, at);
+}
+/**
+ * Interpolation fields of a key from op {interp?, preset?, curve?}; interp may itself be a
+ * preset name. linear (default) and step drop `curve`, so data never carries stale handles.
+ * Returns false when the op says nothing about interpolation (existing interp is kept).
+ */
+bool writeInterp(Json& key, const Json& op, const Json& track) {
+  Str interp = optStr(op, "interp");
+  if (has(op, "preset")) interp = reqStr(op, "preset");
+  if (interp.empty() && has(op, "curve")) interp = "bezier";
+  if (interp.empty()) return false;
+  if (interp == "linear" || interp == "step") {
+    if (interp == "linear") key.erase("interp"); else key["interp"] = "step";
+    key.erase("curve");
+    return true;
+  }
+  Curve c;
+  if (interp == "bezier") c = readCurve(op);
+  else if (interp == "auto") c = autoCurveAt(track, key.value("timeMs", int64_t(-1)));
+  else if (auto preset = presetCurve(interp)) c = *preset;
+  else throw EditError("보간은 step, linear, bezier 또는 프리셋(easeIn, easeOut, easeInOut, auto, flat, back)입니다: " + interp);
+  key["interp"] = "bezier";
+  key["curve"] = curveJson(c);
+  return true;
 }
 
 // ---- Bones ----
@@ -421,11 +477,10 @@ void setKey(EditResult& r, const Json& op) {
   for (auto& k : arr(*tr, "keys")) if (k.value("timeMs", int64_t(-1)) == t) key = &k;
   if (!key) { arr(*tr, "keys").push_back({{"timeMs", t}}); key = &arr(*tr, "keys").back(); }
   (*key)["value"] = value;
-  const Str interp = optStr(op, "interp");
-  if (tg.property == Property::Attachment || interp == "linear") key->erase("interp");
-  else if (interp == "step") (*key)["interp"] = "step";
-  else if (!interp.empty()) throw EditError("보간은 step 또는 linear입니다.");
+  if (tg.property == Property::Attachment) { key->erase("interp"); key->erase("curve"); }
   sortKeys(*tr);
+  // After sorting: "auto" handles read the neighbours including this key's new value.
+  if (tg.property != Property::Attachment) writeInterp(keyAt(*tr, t), op, *tr);
   r.affected.push_back(keyRef(clipId, op, t));
 }
 Json& existingTrack(Json& d, const Json& op, Json*& clipOut) {
@@ -466,10 +521,18 @@ void setInterp(EditResult& r, const Json& op) {
   Json& tr = existingTrack(r.data, op, c);
   if (op.value("property", Str()) == "attachment") throw EditError("첨부 키는 항상 계단(step) 전환입니다.");
   const int64_t t = ms(op, "timeMs");
-  const Str interp = reqStr(op, "interp");
-  if (interp != "step" && interp != "linear") throw EditError("보간은 step 또는 linear입니다.");
+  if (!has(op, "preset")) reqStr(op, "interp");
+  writeInterp(keyAt(tr, t), op, tr);
+  r.affected.push_back(keyRef(op.at("clip").get<Str>(), op, t));
+}
+void setCurve(EditResult& r, const Json& op) {
+  Json* c = nullptr;
+  Json& tr = existingTrack(r.data, op, c);
+  if (op.value("property", Str()) == "attachment") throw EditError("첨부 키는 항상 계단(step) 전환입니다.");
+  const int64_t t = ms(op, "timeMs");
   Json& key = keyAt(tr, t);
-  if (interp == "linear") key.erase("interp"); else key["interp"] = "step";
+  key["interp"] = "bezier";
+  key["curve"] = curveJson(readCurve(op));
   r.affected.push_back(keyRef(op.at("clip").get<Str>(), op, t));
 }
 
@@ -632,7 +695,7 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
   static const std::map<Str, void (*)(EditResult&, const Json&)> simple = {
     {"addBone", addBone}, {"setBone", setBone}, {"reparentBone", reparentBone}, {"setPivot", setPivot}, {"deleteBone", deleteBone},
     {"addPart", addPart}, {"setSlot", setSlot}, {"setAttachment", setAttachment}, {"deleteSlot", deleteSlot}, {"moveSlot", moveSlot},
-    {"setKey", setKey}, {"deleteKey", deleteKey}, {"moveKey", moveKey}, {"setInterp", setInterp},
+    {"setKey", setKey}, {"deleteKey", deleteKey}, {"moveKey", moveKey}, {"setInterp", setInterp}, {"setCurve", setCurve},
     {"addClip", addClip}, {"duplicateClip", duplicateClip}, {"setClip", setClip}, {"setMix", setMix}, {"setCanvas", setCanvas},
     {"applySetupDeltaToKeys", applySetupDeltaToKeys},
   };

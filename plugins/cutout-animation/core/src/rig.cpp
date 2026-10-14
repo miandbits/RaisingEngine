@@ -48,6 +48,21 @@ Transform readTransform(const Json& obj) {
   t.x = get("x", 0); t.y = get("y", 0); t.rotation = get("rotation", 0); t.scaleX = get("scaleX", 1); t.scaleY = get("scaleY", 1);
   return t;
 }
+// Bezier handles: x must stay in [0,1] so segment time never runs backwards.
+void checkCurve(Checker& c, const Json& key, const std::string& kp) {
+  const std::string p = at(kp, "curve");
+  if (!key.contains("curve") || !key.at("curve").is_array() || key.at("curve").size() != 4) {
+    c.error(p, "ANIM_CURVE", "bezier 키에는 curve [x1, y1, x2, y2] 숫자 4개가 필요합니다.");
+    return;
+  }
+  for (size_t i = 0; i < 4; i++) {
+    const Json& v = key.at("curve")[i];
+    if (!v.is_number() || !std::isfinite(v.get<double>())) { c.error(at(p, i), "ANIM_CURVE", "curve 값은 유한한 숫자여야 합니다."); continue; }
+    const double x = v.get<double>();
+    if (i % 2 == 0 && (x < 0 || x > 1)) c.error(at(p, i), "ANIM_CURVE", "curve의 시간 손잡이(x)는 0..1이어야 합니다.");
+    if (i % 2 == 1 && (x < CURVE_Y_MIN || x > CURVE_Y_MAX)) c.error(at(p, i), "ANIM_CURVE", "curve의 값 손잡이(y)는 -4..5이어야 합니다.");
+  }
+}
 const Json& arrayOr(const Json& obj, const char* key) {
   static const Json empty = Json::array();
   return obj.is_object() && obj.contains(key) && obj.at(key).is_array() ? obj.at(key) : empty;
@@ -192,7 +207,10 @@ std::vector<Diagnostic> validateRig(const Json& data) {
         if (t <= previous) c.error(at(kp, "timeMs"), "ANIM_KEY_UNSORTED", "키는 시간순으로 중복 없이 정렬되어야 합니다.");
         previous = t;
         const std::string interp = text(key, "interp");
-        if (!interp.empty() && interp != "step" && interp != "linear") c.error(at(kp, "interp"), "ANIM_INTERP", "보간은 step 또는 linear입니다.");
+        if (!interp.empty() && interp != "step" && interp != "linear" && interp != "bezier") c.error(at(kp, "interp"), "ANIM_INTERP", "보간은 step, linear, bezier 중 하나입니다.");
+        else if (interp == "bezier" && *property == Property::Attachment) c.error(at(kp, "interp"), "ANIM_INTERP", "첨부 키는 항상 계단(step) 전환입니다.");
+        if (interp == "bezier") checkCurve(c, key, kp);
+        else if (key.contains("curve")) c.warn(at(kp, "curve"), "ANIM_CURVE_UNUSED", "bezier가 아닌 키의 curve는 쓰이지 않습니다.");
         if (*property == Property::Attachment) {
           if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "첨부 키 값은 이름 또는 null입니다.");
           else if (key.at("value").is_string() && !attachmentIds.count({targetId, key.at("value").get<std::string>()}))
@@ -267,7 +285,12 @@ Rig parseRig(const std::string& id, const Json& data) {
       for (const auto& k : arrayOr(t, "keys")) {
         Key key; key.timeMs = k.at("timeMs");
         if (track.property == Property::Attachment) { key.interp = Interp::Step; if (k.at("value").is_string()) key.name = k.at("value").get<std::string>(); }
-        else { key.value = k.at("value"); key.interp = k.value("interp", std::string("linear")) == "step" ? Interp::Step : Interp::Linear; }
+        else {
+          key.value = k.at("value");
+          const std::string interp = text(k, "interp");
+          key.interp = interp == "step" ? Interp::Step : interp == "bezier" ? Interp::Bezier : Interp::Linear;
+          if (key.interp == Interp::Bezier) for (size_t i = 0; i < 4; i++) key.curve[i] = k.at("curve")[i].get<double>();
+        }
         track.keys.push_back(key);
       }
       clip.tracks.push_back(track);

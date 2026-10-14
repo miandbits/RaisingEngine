@@ -19,8 +19,11 @@ struct EditResult {
 /**
  * Apply one operation {op, ...}. Ops: addBone setBone reparentBone setPivot deleteBone
  * addPart setSlot setAttachment deleteSlot moveSlot setKey deleteKey moveKey setInterp
- * addClip duplicateClip renameClip setClip deleteClip setMix setCanvas setName
+ * setCurve addClip duplicateClip renameClip setClip deleteClip setMix setCanvas setName
  * applySetupDeltaToKeys batch.
+ * Interpolation (setKey/setInterp): interp step|linear|bezier (+curve [x1,y1,x2,y2]) or a
+ * preset name (easeIn easeOut easeInOut auto flat back) as `interp` or `preset`; setCurve
+ * sets one key's handles (x clamped to 0..1). Many keys = one `batch`.
  * `controllers` = [{id, data}] lets clip rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

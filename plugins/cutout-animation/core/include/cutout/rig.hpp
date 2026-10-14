@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "curve.hpp"
 #include "json.hpp"
 
 namespace cutout {
@@ -39,8 +40,9 @@ struct Attachment {
 };
 
 enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment };
-enum class Interp { Step, Linear };
-struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; };
+enum class Interp { Step, Linear, Bezier };
+/** `curve` is used only when interp is Bezier (segment from this key to the next). */
+struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; };
 struct Track { bool bone = true; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; };
 struct ClipEvent { int64_t timeMs = 0; std::string name; };
 struct Clip { std::string id, name; int64_t durationMs = 1000; bool loop = true; std::vector<Track> tracks; std::vector<ClipEvent> events; };

@@ -73,6 +73,25 @@ Json controllerData() {
   })");
 }
 std::shared_ptr<const Rig> rig() { return std::make_shared<const Rig>(parseRig("hero", rigData())); }
+/** rigData() + a one-shot clip whose tracks use every bezier flavour (also the Wasm parity fixture). */
+Json bezierRig() {
+  Json d = rigData();
+  d["clips"].push_back(Json::parse(R"({"id": "ease", "durationMs": 1000, "loop": false, "tracks": [
+    {"target": "bone:body", "property": "y", "keys": [
+      {"timeMs": 0, "value": -100, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 600, "value": -112, "interp": "bezier", "curve": [0, 0, 0.58, 1]}, {"timeMs": 1000, "value": -100}]},
+    {"target": "bone:head", "property": "rotation", "keys": [
+      {"timeMs": 0, "value": 0, "interp": "bezier", "curve": [0.34, 1.56, 0.64, 1]}, {"timeMs": 400, "value": 20, "interp": "step"}, {"timeMs": 700, "value": 5}, {"timeMs": 1000, "value": -10}]},
+    {"target": "bone:body", "property": "scaleY", "keys": [
+      {"timeMs": 0, "value": 1, "interp": "bezier", "curve": [0.3333333333333333, 0, 0.6666666666666666, 1]}, {"timeMs": 1000, "value": 1.2}]},
+    {"target": "slot:face", "property": "alpha", "keys": [
+      {"timeMs": 100, "value": 1, "interp": "bezier", "curve": [0.9, -0.4, 0.1, 1.4]}, {"timeMs": 900, "value": 0.5}]}
+  ]})"));
+  return d;
+}
+const std::vector<double>& parityTimes() {
+  static const std::vector<double> t = {0, 1, 33.25, 100, 125, 250, 333.3333, 399.9, 400, 512.5, 600, 650.75, 777.7, 899, 999.99, 1000};
+  return t;
+}
 std::vector<std::string> kinds(const std::vector<Notification>& ns) {
   std::vector<std::string> out;
   for (const auto& n : ns) out.push_back(n.kind + ":" + n.clip + (n.kind == "event" ? ":" + n.name : ""));
@@ -80,7 +99,16 @@ std::vector<std::string> kinds(const std::vector<Notification>& ns) {
 }
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--bezier-parity") {
+    // Native reference samples for tests/plugins/cutout-bezier-parity.test.mjs (Wasm `sample`).
+    Host host;
+    Json samples = Json::array();
+    for (double t : parityTimes())
+      samples.push_back({{"timeMs", t}, {"pose", host.handle({{"op", "sample"}, {"rig", bezierRig()}, {"clip", "ease"}, {"timeMs", t}})["pose"]}});
+    std::cout << Json({{"rig", bezierRig()}, {"clip", "ease"}, {"samples", samples}}).dump() << "\n";
+    return 0;
+  }
   test("valid fixture has no diagnostics", [] {
     const auto ds = validateRig(rigData());
     check(ds.empty(), "fixture rig validates");
@@ -454,8 +482,21 @@ int main() {
   test("templates breathing and blink produce valid clips", [&] {
     Json d = rigData();
     const Json breath = breathingClip(d, "breathing", {{"bone", "body"}, {"property", "scaleY"}, {"amplitude", 0.04}, {"periodMs", 3200}});
-    check(breath["durationMs"] == 3200 && breath["tracks"][0]["keys"].size() == 9, "nine keys over one period");
-    check(near(breath["tracks"][0]["keys"][4]["value"].get<double>(), 1.04) && breath["tracks"][0]["keys"][8]["value"] == 1, "peak at half period, back to base");
+    const Json& bk = breath["tracks"][0]["keys"];
+    check(breath["durationMs"] == 3200 && bk.size() == 3, "three keys over one period (rest, peak, rest)");
+    check(bk[1]["timeMs"] == 1600 && near(bk[1]["value"].get<double>(), 1.04) && bk[2]["value"] == 1, "peak at half period, back to base");
+    check(bk[0]["interp"] == "bezier" && bk[0]["curve"] == Json::array({0.42, 0, 0.58, 1}) && bk[1]["curve"] == bk[0]["curve"], "easeInOut segments");
+    {
+      // Eased keys stay close to the sine the old 9 linear keys approximated.
+      Json withBreath = d; withBreath["clips"].push_back(breath);
+      const Rig br = parseRig("br", withBreath);
+      double worst = 0;
+      for (int t = 0; t <= 3200; t += 100) {
+        const double sine = 1 + 0.04 * (1 - std::cos(2 * 3.14159265358979323846 * t / 3200)) / 2;
+        worst = std::max(worst, std::fabs(samplePose(br, br.clipIndex("breathing"), t).bones[1].scaleY - sine));
+      }
+      check(worst < 0.04 * 0.03, "within 3% of amplitude from a sine");
+    }
     auto r = applyEdit(d, {{"op", "addClip"}, {"clip", breath}});
     const Json blink = blinkClip(r.data, "blink-auto", {{"slot", "eyes"}, {"open", "open"}, {"closed", "closed"}, {"intervalMs", 4000}});
     r = applyEdit(r.data, {{"op", "addClip"}, {"clip", blink}});
@@ -486,6 +527,171 @@ int main() {
                                  {"controllers", Json::array({{{"id", "c"}, {"data", controllerData()}}})}});
     check(rn["controllers"][0]["data"]["defaultClip"] == "rest", "edit op returns rewritten controllers");
     check(!host.request(Json({{"op", "template"}, {"kind", "wave"}, {"rig", rigData()}, {"clipId", "w"}}).dump()).value("ok", true), "unknown template rejected");
+  });
+
+  // ---- Bezier curves (curve.cpp + key interp "bezier") ----
+  test("bezier evaluation matches analytic curves", [] {
+    // x handles at 1/3 and 2/3 make x(s) = s, so y is the plain cubic: flat = smoothstep.
+    const Curve flat = *presetCurve("flat");
+    bool ok = true;
+    for (int i = 0; i <= 20; i++) { const double u = i / 20.0; ok &= near(evalCurve(flat, u), 3 * u * u - 2 * u * u * u, 1e-12); }
+    check(ok, "flat = 3u^2 - 2u^3");
+    ok = true;
+    for (int i = 0; i <= 20; i++) { const double u = i / 20.0; ok &= near(evalCurve(LINEAR_CURVE, u), u, 1e-12); }
+    check(ok, "linear handles are the identity");
+    // General handles: choose the Bezier parameter s, evaluate at u = x(s), expect y(s).
+    for (const char* name : {"easeIn", "easeOut", "easeInOut", "back"}) {
+      const Curve c = *presetCurve(name);
+      double worst = 0;
+      for (int i = 1; i < 50; i++) { double x, y; curvePoint(c, i / 50.0, x, y); worst = std::max(worst, std::fabs(evalCurve(c, x) - y)); }
+      check(worst < 1e-6, std::string(name) + " solves x(s)=u");
+    }
+    const Curve io = *presetCurve("easeInOut");
+    check(near(evalCurve(io, 0.5), 0.5, 1e-9) && near(evalCurve(io, 0.2) + evalCurve(io, 0.8), 1, 1e-6), "easeInOut is symmetric");
+    check(evalCurve(*presetCurve("easeIn"), 0.25) < 0.2 && evalCurve(*presetCurve("easeOut"), 0.25) > 0.3, "ease in starts slow, ease out starts fast");
+    check(evalCurve(io, 0) == 0 && evalCurve(io, 1) == 1 && evalCurve(io, -3) == 0 && evalCurve(io, 7) == 1, "endpoints exact, outside clamps");
+    double peak = 0;
+    for (int i = 0; i <= 100; i++) peak = std::max(peak, evalCurve(*presetCurve("back"), i / 100.0));
+    check(peak > 1.05 && peak < 1.2, "back overshoots then settles");
+    // Out-of-range x handles (invalid data) are clamped: segment time can never run backwards.
+    const Curve wild{1.8, 0.2, -0.6, 0.9};
+    bool monotone = true;
+    double last = -1;
+    for (int i = 0; i <= 200; i++) { const double v = evalCurve(wild, i / 200.0); monotone &= v >= last - 1e-9; last = v; }
+    check(monotone && clampCurve(wild) == Curve{1, 0.2, 0, 0.9}, "clamped x keeps evaluation monotone");
+    check(clampCurve({0.5, 9, 0.5, -9}) == Curve{0.5, 5, 0.5, -4}, "y clamped to -4..5");
+    check(presetCurve("easeIn") == Curve{0.42, 0, 1, 1} && presetCurve("easeOut") == Curve{0, 0, 0.58, 1} && !presetCurve("wobble"), "preset table");
+  });
+
+  test("bezier keys sample through the runtime, step/linear unchanged", [] {
+    const Json d = bezierRig();
+    check(validateRig(d).empty(), "bezier fixture validates");
+    const Rig r = parseRig("b", d);
+    const int ease = r.clipIndex("ease");
+    check(r.clips[size_t(ease)].tracks[0].keys[0].interp == Interp::Bezier && r.clips[size_t(ease)].tracks[1].keys[1].interp == Interp::Step, "parsed interp kinds");
+    auto at = [&](double t) { return samplePose(r, ease, t); };
+    check(near(at(300).bones[1].y, -100 - 12 * evalCurve({0.42, 0, 0.58, 1}, 0.5), 1e-12) && near(at(300).bones[1].y, -106, 1e-9), "easeInOut midpoint");
+    check(near(at(800).bones[1].y, -112 + 12 * evalCurve({0, 0, 0.58, 1}, 0.5), 1e-12), "second segment uses its own key's curve");
+    double peak = 0;
+    for (int t = 0; t <= 400; t += 5) peak = std::max(peak, at(t).bones[2].rotation);
+    check(peak > 21 && near(at(400).bones[2].rotation, 20), "back overshoots past 20 and lands on the key");
+    check(near(at(550).bones[2].rotation, 20) && near(at(850).bones[2].rotation, -2.5), "step then linear segments unchanged");
+    check(near(at(250).bones[1].scaleY, 1 + 0.2 * 0.15625, 1e-12), "flat handles = smoothstep (u=0.25 -> 0.15625)");
+    const double alpha = at(500).alpha[1];
+    check(near(alpha, 1 - 0.5 * evalCurve({0.9, -0.4, 0.1, 1.4}, 0.5), 1e-12) && near(at(50).alpha[1], 1) && near(at(950).alpha[1], 0.5), "slot alpha bezier; holds outside keys");
+    // Existing linear/step fixture keeps its numbers (no bezier anywhere).
+    const auto plain = rig();
+    check(near(samplePose(*plain, plain->clipIndex("idle"), 250).bones[1].y, -102) && near(samplePose(*plain, plain->clipIndex("joy"), 100).bones[1].scaleY, 1), "linear and step unchanged");
+  });
+
+  test("bezier playback is frame-rate independent", [] {
+    const auto r = std::make_shared<const Rig>(parseRig("b", bezierRig()));
+    auto run = [&](std::vector<double> pattern) {
+      Instance inst(r);
+      inst.play(0, "ease", false, 1, Then::Hold, 0);
+      std::vector<double> samples;
+      double t = 0;
+      size_t i = 0;
+      while (t < 1000) {
+        const double step = pattern[i++ % pattern.size()];
+        inst.update(step);
+        t += step;
+        if (std::fmod(t, 125) == 0) { const auto p = inst.pose(); samples.insert(samples.end(), {p.bones[1].y, p.bones[2].rotation, p.bones[1].scaleY, p.alpha[1]}); }
+      }
+      return samples;
+    };
+    const auto a = run({31.25}), b = run({7.8125}), c = run({7.8125, 23.4375, 15.625, 15.625});
+    check(a.size() == 32 && a == b && b == c, "bit-identical bezier poses at 32/128 fps and uneven frames");
+  });
+
+  test("bezier validation codes", [] {
+    auto with = [](const Json& key) { Json d = rigData(); d["clips"][2]["tracks"][0]["keys"][0] = key; return validateRig(d); };
+    const Json k = {{"timeMs", 0}, {"value", 0}, {"interp", "bezier"}};
+    auto curve = [&](const Json& c) { Json x = k; x["curve"] = c; return x; };
+    check(hasCode(with(k), "ANIM_CURVE"), "bezier without curve");
+    check(hasCode(with(curve({0.1, 0, 0.9})), "ANIM_CURVE"), "three numbers");
+    check(hasCode(with(curve({1.2, 0, 0.9, 1})), "ANIM_CURVE") && hasCode(with(curve({0.2, 0, -0.1, 1})), "ANIM_CURVE"), "x outside 0..1");
+    check(hasCode(with(curve({0.2, 6, 0.9, 1})), "ANIM_CURVE") && hasCode(with(curve({0.2, 0, 0.9, -4.5})), "ANIM_CURVE"), "y outside -4..5");
+    check(hasCode(with(curve({0.2, "a", 0.9, 1})), "ANIM_CURVE"), "non-number handle");
+    check(with(curve({0, -2, 1, 3})).empty(), "overshooting y within range is valid");
+    Json cubic = k; cubic["interp"] = "cubic";
+    check(hasCode(with(cubic), "ANIM_INTERP"), "unknown interp");
+    Json d = rigData();
+    d["clips"][1]["tracks"][0]["keys"][0]["interp"] = "bezier";
+    d["clips"][1]["tracks"][0]["keys"][0]["curve"] = {0.4, 0, 0.6, 1};
+    check(hasCode(validateRig(d), "ANIM_INTERP"), "bezier attachment key refused");
+    Json stale = {{"timeMs", 0}, {"value", 0}, {"curve", {0.4, 0, 0.6, 1}}};
+    const auto ds = with(stale);
+    check(ds.size() == 1 && ds[0].code == "ANIM_CURVE_UNUSED" && ds[0].severity == "warning", "curve on a linear key is only a warning");
+  });
+
+  test("edit curves: presets, setCurve, auto, batch", [&] {
+    const Json base = rigData();
+    const Json head = {{"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}};
+    auto op = [&](const char* name, const Json& extra) { Json o = head; o["op"] = name; for (auto it = extra.begin(); it != extra.end(); ++it) o[it.key()] = it.value(); return o; };
+    auto key0 = [](const Json& d) { return d["clips"][2]["tracks"][0]["keys"][0]; };
+    auto r = applyEdit(base, op("setInterp", {{"interp", "easeIn"}}));
+    check(key0(r.data)["interp"] == "bezier" && key0(r.data)["curve"] == Json::array({0.42, 0, 1, 1}), "preset name as interp");
+    check(r.affected.size() == 1 && r.affected[0] == "key:joy/bone:head/rotation@0", "affected key");
+    r = applyEdit(base, op("setInterp", {{"preset", "back"}}));
+    check(key0(r.data)["curve"] == Json::array({0.34, 1.56, 0.64, 1}), "preset field");
+    r = applyEdit(base, op("setInterp", {{"interp", "bezier"}, {"curve", {0.25, 0.1, 0.25, 1}}}));
+    check(key0(r.data)["curve"] == Json::array({0.25, 0.1, 0.25, 1}), "explicit bezier curve");
+    const Json eased = r.data;
+    r = applyEdit(eased, op("setInterp", {{"interp", "linear"}}));
+    check(!key0(r.data).contains("interp") && !key0(r.data).contains("curve"), "linear drops interp and curve");
+    r = applyEdit(eased, op("setInterp", {{"interp", "step"}}));
+    check(key0(r.data)["interp"] == "step" && !key0(r.data).contains("curve"), "step drops curve");
+    r = applyEdit(base, op("setCurve", {{"curve", {1.4, -7, -0.2, 2}}}));
+    check(key0(r.data)["interp"] == "bezier" && key0(r.data)["curve"] == Json::array({1, -4, 0, 2}) && validateRig(r.data).empty(), "setCurve clamps x to 0..1 and y to -4..5");
+    check(refused(base, op("setInterp", {{"interp", "bezier"}})), "bezier needs a curve");
+    check(refused(base, op("setInterp", {{"interp", "wobble"}})), "unknown preset refused");
+    check(refused(base, op("setCurve", {{"curve", {0.1, 0, 0.9}}})), "short curve refused");
+    check(refused(base, {{"op", "setCurve"}, {"clip", "blink"}, {"target", "slot:eyes"}, {"property", "attachment"}, {"timeMs", 0}, {"curve", {0.4, 0, 0.6, 1}}}), "attachment curve refused");
+    // Value edits and moves keep the key's handles (they are normalized to the segment).
+    r = applyEdit(eased, {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 0}, {"value", 4}});
+    check(key0(r.data)["value"] == 4 && key0(r.data)["curve"] == Json::array({0.25, 0.1, 0.25, 1}), "setKey keeps curve");
+    r = applyEdit(eased, {{"op", "moveKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"fromMs", 0}, {"toMs", 50}});
+    check(key0(r.data)["timeMs"] == 50 && key0(r.data)["interp"] == "bezier", "moveKey keeps curve");
+    r = applyEdit(base, {{"op", "setKey"}, {"clip", "joy"}, {"target", "bone:head"}, {"property", "rotation"}, {"timeMs", 200}, {"value", 30}, {"interp", "easeOut"}});
+    check(r.data["clips"][2]["tracks"][0]["keys"][1]["curve"] == Json::array({0, 0, 0.58, 1}), "setKey with a preset");
+    // auto: idle y 0:-100, 500:-104, 1000:-100 -> 500 is an extremum -> flat tangents.
+    r = applyEdit(base, {{"op", "setInterp"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 0}, {"interp", "auto"}});
+    check(r.data["clips"][0]["tracks"][0]["keys"][0]["curve"] == Json::array({0.333333, 0, 0.666667, 1}), "auto at extremum is flat");
+    // Rising keys 0, 10, 30: Catmull-Rom slope at 500 = 0.03/ms vs segment 0.02/ms -> y2 = 1 - 1.5/3.
+    r = applyEdit(base, {{"op", "batch"}, {"operations", Json::array({
+      {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 0}, {"value", 0}},
+      {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 500}, {"value", 10}},
+      {{"op", "setKey"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 1000}, {"value", 30}},
+      {{"op", "setInterp"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 0}, {"interp", "auto"}},
+      {{"op", "setInterp"}, {"clip", "idle"}, {"target", "bone:body"}, {"property", "y"}, {"timeMs", 500}, {"interp", "auto"}}})}});
+    const Json& yk = r.data["clips"][0]["tracks"][0]["keys"];
+    check(yk[0]["curve"] == Json::array({0.333333, 0, 0.666667, 0.5}) && yk[1]["curve"] == Json::array({0.333333, 0.25, 0.666667, 1}), "auto Catmull-Rom handles, flat at ends");
+    const Rig smooth = parseRig("s", r.data);
+    bool rising = true;
+    double prev = -1;
+    for (int t = 0; t < 1000; t += 10) { const double v = samplePose(smooth, 0, t).bones[1].y; rising &= v >= prev; prev = v; }  // idle loops: 1000 wraps to 0
+    check(rising, "auto never overshoots between rising keys");
+    // Many keys in one batch = one edit.
+    r = applyEdit(base, {{"op", "batch"}, {"operations", Json::array({op("setInterp", {{"interp", "easeOut"}}), {{"op", "setInterp"}, {"clip", "joy"}, {"target", "bone:body"}, {"property", "scaleY"}, {"timeMs", 0}, {"interp", "easeOut"}}})}});
+    check(key0(r.data)["interp"] == "bezier" && r.data["clips"][2]["tracks"][1]["keys"][0]["curve"] == Json::array({0, 0, 0.58, 1}) && r.affected.size() == 2, "batch applies a preset to many keys");
+    // setPivot compensation samples bezier rotation keys like the runtime does.
+    Json pivoted = bezierRig();
+    // Both position axes keyed at 200 ms so setPivot compensates the head origin exactly there.
+    pivoted["clips"][3]["tracks"].push_back({{"target", "bone:head"}, {"property", "x"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 0}}, {{"timeMs", 200}, {"value", 0}}})}});
+    pivoted["clips"][3]["tracks"].push_back({{"target", "bone:head"}, {"property", "y"}, {"keys", Json::array({{{"timeMs", 0}, {"value", -80}}, {{"timeMs", 200}, {"value", -80}}})}});
+    const Rig before = parseRig("a", pivoted);
+    r = applyEdit(pivoted, {{"op", "setPivot"}, {"bone", "head"}, {"localX", 10}, {"localY", 0}});
+    const Rig after = parseRig("b", r.data);
+    const auto pa = samplePose(before, before.clipIndex("ease"), 200), pb = samplePose(after, after.clipIndex("ease"), 200);
+    check(near(pb.world[2].e, pa.world[2].e + pa.world[2].a * 10, 1e-4) && near(pb.world[2].f, pa.world[2].f + pa.world[2].b * 10, 1e-4), "pivot key compensation at a bezier key time");
+  });
+
+  test("host sample op evaluates bezier like samplePose", [] {
+    Host host;
+    const auto reply = host.handle({{"op", "sample"}, {"rig", bezierRig()}, {"clip", "ease"}, {"timeMs", 300}});
+    const Rig r = parseRig("b", bezierRig());
+    check(reply.value("ok", false) && reply["pose"]["bones"]["body"]["y"].get<double>() == samplePose(r, r.clipIndex("ease"), 300).bones[1].y, "same number through the JSON host");
   });
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";

@@ -85,8 +85,15 @@
                     "properties": {
                       "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
                       "value": { "anyOf": [{ "type": "number" }, { "$ref": "#/$defs/name" }, { "type": "null" }] },
-                      "interp": { "enum": ["step", "linear"] }
-                    }
+                      "interp": { "description": "Segment from this key to the next. Default linear; attachment keys are always step.", "enum": ["step", "linear", "bezier"] },
+                      "curve": {
+                        "description": "Bezier handles [x1, y1, x2, y2] for interp bezier, normalized to the segment: x = fraction of segment time, y = fraction of the value change (may overshoot).",
+                        "type": "array", "minItems": 4, "maxItems": 4,
+                        "prefixItems": [{ "$ref": "#/$defs/curveX" }, { "$ref": "#/$defs/curveY" }, { "$ref": "#/$defs/curveX" }, { "$ref": "#/$defs/curveY" }]
+                      }
+                    },
+                    "if": { "required": ["interp"], "properties": { "interp": { "const": "bezier" } } },
+                    "then": { "required": ["curve"] }
                   }
                 }
               }
@@ -125,6 +132,8 @@
     "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$", "maxLength": 64 },
     "coord": { "type": "number", "minimum": -100000, "maximum": 100000 },
     "angle": { "type": "number", "minimum": -36000, "maximum": 36000 },
-    "scale": { "type": "number", "minimum": -100, "maximum": 100 }
+    "scale": { "type": "number", "minimum": -100, "maximum": 100 },
+    "curveX": { "type": "number", "minimum": 0, "maximum": 1 },
+    "curveY": { "type": "number", "minimum": -4, "maximum": 5 }
   }
 }

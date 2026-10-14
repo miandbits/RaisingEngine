@@ -267,7 +267,12 @@ void StudioTests::cutoutEndToEnd() {
   const auto engine = qEnvironmentVariable("RAISING_ENGINE_ROOT", QDir::currentPath());
   const auto store = QDir::fromNativeSeparators(qEnvironmentVariable("RAISING_PLUGIN_STORE"));
   if (store.isEmpty()) QSKIP("Set RAISING_PLUGIN_STORE to an isolated plugin store for the cutout end-to-end scenario");
-  const auto package = engine + "/dist/plugins/cutout-animation-1.0.0.raiseplugin";
+  // Package name follows plugin.json so a version bump never leaves the scenario on a stale build.
+  const auto manifestVersion = [&] {
+    QFile manifest(engine + "/plugins/cutout-animation/plugin.json");
+    return manifest.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(manifest.readAll()).object().value("version").toString() : QString();
+  }();
+  const auto package = engine + "/dist/plugins/cutout-animation-" + manifestVersion + ".raiseplugin";
   QVERIFY2(QFileInfo::exists(package), qPrintable(package));
   const auto parts = engine + "/plugins/cutout-animation/demo/parts";
   const auto stamp = QDateTime::currentDateTime().toString("yyyyMMdd-hhmmss");
