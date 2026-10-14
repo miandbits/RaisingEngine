@@ -16,7 +16,7 @@ double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 
 
 RigCanvas::RigCanvas(QWidget* parent) : QWidget(parent) {
   setObjectName("cutoutCanvas");
-  setMinimumSize(320, 260);
+  setMinimumSize(200, 150);  // small: the workspace splitters must fit 1280x720 windows
   setMouseTracking(false);
   setFocusPolicy(Qt::StrongFocus);
   setAttribute(Qt::WA_OpaquePaintEvent);

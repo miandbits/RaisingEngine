@@ -8,7 +8,9 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMainWindow>
+#include <QKeySequence>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QSpinBox>
 #include <QTabBar>
 #include <QTabWidget>
@@ -17,7 +19,10 @@ class RendererPreviewDock;
 class QPushButton;
 class QDockWidget;
 class QMenu;
+class QStackedWidget;
+class QActionGroup;
 class StudioPluginManager;
+namespace raising { struct StudioWorkspace; }
 
 class StudioWindow : public QMainWindow {
   Q_OBJECT
@@ -37,6 +42,14 @@ public:
   /** Mirrors a service `plugins` object; with load=true also (un)loads authoring DLLs. */
   void applyPluginState(const QJsonObject &state, bool load = true);
   QDockWidget *addStudioDock(const QString &title, const QString &name, QWidget *child, Qt::DockWidgetArea area);
+  /**
+   * Full-window work areas (화면 편집 = empty key, plugin ones = "<plugin>/<id>"). Switching
+   * only changes presentation: docks + screen editor are hidden and their exact layout
+   * (saveState) comes back on return; menus, undo/redo, save and play stay. Never an edit.
+   */
+  bool showWorkspace(const QString &key);
+  QString currentWorkspace() const { return activeWorkspace; }
+  QStringList workspaceKeys() const;
 signals:
   void updated();
   void playerFinished(int code);
@@ -60,6 +73,21 @@ private:
   void updatePluginInspector(const QJsonObject &element);
   void editPluginElement();
   void editPluginProps();
+  struct WorkspaceEntry { QString key, plugin, title; QPointer<QWidget> page; QKeySequence shortcut; };
+  QList<WorkspaceEntry> workspaces;
+  QStackedWidget *centralStack;
+  QWidget *screenEditor;
+  QTabBar *workspaceSwitcher;
+  QMenu *workspaceMenu;
+  QActionGroup *workspaceGroup;
+  QList<QAction *> screenOnlyActions;  // toolbar entries that only act on the hidden screen editor
+  QString activeWorkspace, wantedWorkspace, wantedWorkspaceRoot;
+  QByteArray screenLayout;             // dock/toolbar state captured when the screen editor was left
+  void setupWorkspaceUi();
+  void rebuildWorkspaceUi();
+  QWidget *addWorkspace(const QString &plugin, const raising::StudioWorkspace &workspace);
+  void removeWorkspaces(const QString &plugin);
+  QByteArray screenDockState() { return activeWorkspace.isEmpty() ? saveState(1) : screenLayout; }
   QString engineRoot, screenId = "home", selection, projectFile;
   QStringList openScreens;
   StudioBridge bridge;

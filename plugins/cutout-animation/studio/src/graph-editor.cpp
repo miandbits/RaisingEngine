@@ -28,7 +28,7 @@ double niceStep(double span) {
 GraphEditor::GraphEditor(QWidget* parent) : QWidget(parent) {
   setObjectName("cutoutGraphEditor");
   setFocusPolicy(Qt::StrongFocus);
-  setMinimumHeight(70);
+  setMinimumHeight(48);
   setTimeView(new TimeView(this));
 }
 void GraphEditor::setTimeView(TimeView* view) {

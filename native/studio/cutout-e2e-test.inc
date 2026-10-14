@@ -22,6 +22,7 @@
 namespace cutoutE2e {
 const QString RIG_FILE = "plugins/cutout-animation/rig/hero.json";
 const QString CONTROLLER_FILE = "plugins/cutout-animation/controller/hero.json";
+const QString WORKSPACE = "cutout-animation/character";
 
 bool waitFor(const std::function<bool()> &condition, int ms = 20000) {
   QElapsedTimer clock;
@@ -173,15 +174,20 @@ void toolClick(QAction *action, QStringList *hooks, const QString &label) {
   menuClick(action, hooks, label);
 }
 
-/** Closes a dock with its own title-bar close button (falls back to hide()). */
-void closeDock(QDockWidget *dock, QStringList *hooks) {
-  if (!dock || !dock->isVisible()) return;
-  if (auto close = dock->findChild<QAbstractButton *>("qt_dockwidget_closebutton"); close && close->isVisible()) {
-    QTest::mouseClick(close, Qt::LeftButton);
-    if (waitFor([dock] { return !dock->isVisible(); }, 2000)) return;
-  }
-  hooks->append("dock " + dock->objectName() + " hidden with hide() (close button not clickable)");
-  dock->hide();
+/** Clicks a tab of the host workspace switcher (menu bar corner) and waits for the switch. */
+bool switchWorkspace(StudioWindow *w, const QString &key) {
+  auto bar = w->findChild<QTabBar *>("studioWorkspaceSwitcher");
+  if (!bar || !bar->isVisible()) return false;
+  for (int i = 0; i < bar->count(); ++i)
+    if (bar->tabData(i).toString() == key) QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, bar->tabRect(i).center());
+  return waitFor([&] { return w->currentWorkspace() == key; }, 3000);
+}
+QStringList visibleDocks(StudioWindow *w) {
+  QStringList out;
+  for (auto d : w->findChildren<QDockWidget *>(Qt::FindDirectChildrenOnly))
+    if (d->isVisible()) out << d->objectName();
+  out.sort();
+  return out;
 }
 QJsonObject pluginData(const QJsonObject &view, const QString &file) {
   for (auto d : view.value("documents").toArray())
@@ -398,17 +404,20 @@ void StudioTests::cutoutEndToEnd() {
   QVERIFY2(QDir::fromNativeSeparators(w->pluginManager()->projectEntry("cutout-animation").value("directory").toString()).startsWith(store, Qt::CaseInsensitive),
            qPrintable(w->pluginManager()->projectEntry("cutout-animation").value("directory").toString()));
   QVERIFY(w->pluginManager()->loadedIds().contains("cutout-animation"));
+  // The dock is only a launcher now; the panel is the full-window animation workspace.
   auto dock = w->findChild<QDockWidget *>("cutoutAnimationDock");
-  QVERIFY(dock);
-  auto panel = dock->findChild<QWidget *>("cutoutPanel");
-  QVERIFY(panel);
-
-  // Give the panel the whole bottom area: close the 프로젝트 / 진단 dock beside it (title-bar
-  // close button) and make the panel tall enough for canvas, properties and dopesheet.
-  closeDock(w->findChild<QDockWidget *>("projectDock"), &hooks);
-  dock->show();
-  dock->raise();
-  w->resizeDocks({dock}, {700}, Qt::Vertical);
+  QVERIFY(dock && dock->findChild<QWidget *>("cutoutWorkspaceLauncher") && !dock->findChild<QWidget *>("cutoutPanel"));
+  const auto screenDocks = visibleDocks(w);
+  {
+    auto open = dock->findChild<QPushButton *>("cutoutOpenWorkspace");
+    QVERIFY(open);
+    if (open->isVisible()) QTest::mouseClick(open, Qt::LeftButton);
+    else QVERIFY(switchWorkspace(w, WORKSPACE));
+  }
+  QVERIFY(waitFor([&] { return w->currentWorkspace() == WORKSPACE; }, 3000));
+  auto panel = w->findChild<QWidget *>("cutoutPanel");
+  QVERIFY(panel && panel->isVisible());
+  QVERIFY2(visibleDocks(w).isEmpty(), qPrintable(visibleDocks(w).join(",")));
   QTest::qWait(200);
   auto button = [&](const char *name) { return panel->findChild<QAbstractButton *>(name); };
   auto click = [&](const char *name) {
@@ -868,9 +877,10 @@ void StudioTests::cutoutEndToEnd() {
 
   // ---- 6. screen: place the character next to the action button -------------------------
   step("6 screen element");
-  // The panel has a large minimum height; close its dock so the screen canvas gets the room.
-  // 편집… on the placed element re-opens it below.
-  closeDock(dock, &hooks);
+  // Back to 화면 편집 through the switcher: the docks of before come back as they were.
+  // 편집… on the placed element re-opens the animation workspace.
+  QVERIFY(switchWorkspace(w, QString()));
+  QCOMPARE(visibleDocks(w), screenDocks);
   QTest::qWait(150);
   {
     auto palette = w->findChild<QToolButton *>("elementPalette");
@@ -939,9 +949,9 @@ void StudioTests::cutoutEndToEnd() {
     image.save(evidence + "/04b-screen-element-crop.png");
   }
   QVERIFY(shot("04-screen-canvas.png"));
-  // 편집… on the element opens the (closed) panel dock on its controller.
+  // 편집… on the element opens the animation workspace on its controller.
   QTest::mouseClick(w->findChild<QPushButton *>("pluginEdit"), Qt::LeftButton);
-  QVERIFY(waitFor([&] { return dock->isVisible() && bottomTabs->currentIndex() == 1; }, 3000));
+  QVERIFY(waitFor([&] { return w->currentWorkspace() == WORKSPACE && panel->isVisible() && bottomTabs->currentIndex() == 1; }, 3000));
   QVERIFY(shot("04c-element-edit-opens-panel.png"));
 
   // ---- 7. save, then Play (service play -> exported game -> RaisingPlayer.exe) -----------
@@ -1050,12 +1060,18 @@ void StudioTests::cutoutEndToEnd() {
   QVERIFY(settle());
   QCOMPARE(rig(), rigSaved);
   QCOMPARE(controller(), controllerSaved);
-  dock = w->findChild<QDockWidget *>("cutoutAnimationDock");
-  QVERIFY(dock);
-  panel = dock->findChild<QWidget *>("cutoutPanel");
-  QVERIFY(panel);
-  dock->show();
-  w->resizeDocks({dock}, {700}, Qt::Vertical);
+  // Keyboard this time: Ctrl+Shift+A toggles the animation workspace (window shortcut: the
+  // freshly created window must be the active one).
+  w->activateWindow();
+  QTest::qWaitForWindowActive(w);
+  QTest::keyClick(w, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
+  if (!waitFor([&] { return w->currentWorkspace() == WORKSPACE; }, 2000)) {
+    hooks << "workspace shortcut: QAction::trigger() because Ctrl+Shift+A did not reach the window";
+    w->findChild<QAction *>("studioWorkspace-cutout-animation-character")->trigger();
+  }
+  QVERIFY(waitFor([&] { return w->currentWorkspace() == WORKSPACE; }, 3000));
+  panel = w->findChild<QWidget *>("cutoutPanel");
+  QVERIFY(panel && panel->isVisible());
   tree = panel->findChild<QTreeWidget *>("cutoutBoneTree");
   canvas = panel->findChild<QWidget *>("cutoutCanvas");
   status = panel->findChild<QLabel *>("cutoutStatus");
@@ -1071,7 +1087,6 @@ void StudioTests::cutoutEndToEnd() {
     QVERIFY(characters->topLevelItem(0)->text(0).contains("hero"));
     QCOMPARE(characters->topLevelItem(0)->childCount(), 1);
     QVERIFY(treeItem("slot:hair-front") && treeItem("bone:arm-right"));
-    closeDock(w->findChild<QDockWidget *>("projectDock"), &hooks);
     QVERIFY(shot("07-reopened-panel.png"));
   }
   {

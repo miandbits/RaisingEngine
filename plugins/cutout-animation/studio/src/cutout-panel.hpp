@@ -1,5 +1,7 @@
-// "캐릭터 애니메이션" dock: character list, setup/animate modes, bone tree, canvas,
-// properties, clips/dopesheet/mix and the game-connection (controller) editor.
+// "캐릭터 애니메이션" authoring panel: character list, setup/animate modes, bone tree, canvas,
+// properties, clips/dopesheet/mix and the game-connection (controller) editor. One Spine-like
+// splitter layout; it is the host's full-window workspace (StudioWorkspacePlugin) or, on a
+// host without workspaces, the content of the dock.
 //
 // Single source of truth = StudioHost::view() documents. Everything here is a cache that
 // refreshFromView() rebuilds. Every user gesture builds new envelope JSON (through the core
@@ -30,6 +32,7 @@ class QListWidget;
 class QPushButton;
 class QScrollBar;
 class QSpinBox;
+class QSplitter;
 class QTabWidget;
 class QTableWidget;
 class QTimer;
@@ -149,6 +152,16 @@ class CutoutPanel : public QWidget {
   const QVector<int>& trailKeyTimes() const { return trailKeyTimes_; }
   /** Fire a signal into the local preview instance (never the game). Returns matched binding ids. */
   QStringList previewSignal(const QString& name, const QMap<QString, QString>& params);
+  // ---- Layout (editor-only presentation: QSettings plugins/cutout-animation/layout, never an edit)
+  /** Tab / 캔버스 크게: hide the left and right panels so the canvas takes the width. */
+  void setFullView(bool on);
+  bool fullView() const;
+  /** Splitter states (objectName -> saveState) + collapsed sections. Saved on every splitter move. */
+  void saveLayout() const;
+  void restoreLayout();
+  QList<QSplitter*> splitters() const;
+  /** Current pose drawn contain-fit into `size` (dock launcher mini preview). */
+  QImage thumbnail(const QSize& size);
 
   // ---- State (automation / tests) ----
   QString rigId() const { return rigId_; }
@@ -161,6 +174,8 @@ class CutoutPanel : public QWidget {
   QString keyState() const;
   QString status() const;
   RigCanvas* canvas() const { return canvas_; }
+  QWidget* leftPane() const { return leftPane_; }
+  QWidget* rightPane() const { return rightPane_; }
   Dopesheet* dopesheet() const { return dopesheet_; }
   GraphEditor* graph() const { return graph_; }
   TimeView* timeView() const { return timeView_; }
@@ -173,6 +188,9 @@ class CutoutPanel : public QWidget {
   std::function<QString(const QString& title, const QString& label, const QString& value)> askText;
   std::function<bool(const QString& title, const QString& text)> askConfirm;
   std::function<bool(PartChoice&)> askPart;
+
+ protected:
+  bool eventFilter(QObject* watched, QEvent* event) override;
 
  private:
   struct Doc { QString file; QJsonObject envelope; cutout::Json data; };
@@ -216,6 +234,11 @@ class CutoutPanel : public QWidget {
   std::optional<SetupDelta> lastSetupDelta_;
 
   // widgets
+  QSplitter *mainSplit_ = nullptr, *workspaceSplit_ = nullptr, *leftSplit_ = nullptr, *rightSplit_ = nullptr, *timelineAreaSplit_ = nullptr;
+  QWidget *leftPane_ = nullptr, *rightPane_ = nullptr;
+  QToolButton* fullViewButton_ = nullptr;
+  QList<QToolButton*> sections_;  // collapsible section headers (objectName "<section>Toggle")
+  bool restoringLayout_ = false;
   QTreeWidget* characterList_ = nullptr;
   QListWidget* diagnostics_ = nullptr;
   QPushButton *setupButton_ = nullptr, *animateButton_ = nullptr;
@@ -261,8 +284,9 @@ class CutoutPanel : public QWidget {
   bool playing_ = false;
 
   void buildUi();
-  QWidget* buildHeader();
+  QWidget* buildCharacters();
   QWidget* buildWorkspace();
+  QWidget* section(const QString& title, const char* name, QWidget* body);
   QWidget* buildAnimateTab();
   QWidget* buildControllerTab();
   QFrame* buildOnionSettings();

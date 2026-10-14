@@ -135,9 +135,19 @@ class MockHost : public raising::StudioHost {
   }
 };
 
+/** Optional workspace interface of a newer host (the plain MockHost above is an older host). */
+class MockWorkspaceHost : public raising::StudioWorkspaceHost {
+ public:
+  QString current;
+  QStringList requests;
+  void showWorkspace(const QString& id) override { requests << id; current = id; }
+  QString currentWorkspace() const override { return current; }
+};
+
 class StudioTests : public QObject {
   Q_OBJECT
   MockHost host;
+  MockWorkspaceHost workspaceHost;
   CutoutStudioPlugin plugin;
   CutoutPanel* panel = nullptr;
   QStringList answers;
@@ -1113,6 +1123,143 @@ class StudioTests : public QObject {
     QVERIFY2(instance, qPrintable(loader.errorString()));
     auto* loaded = qobject_cast<raising::StudioPlugin*>(instance);
     QVERIFY(loaded && loaded->pluginId() == "cutout-animation" && loaded->apiVersion() == raising::STUDIO_PLUGIN_API);
+    // The optional workspace interface is found the way the host looks for it.
+    QVERIFY(qobject_cast<raising::StudioWorkspacePlugin*>(instance));
+  }
+
+  void workspaceLayout() {
+    // Until now the mock host was an old host: the panel lived in the dock.
+    auto* dock = host.mainWindow.findChild<QDockWidget*>("cutoutAnimationDock");
+    QVERIFY(dock && dock->isAncestorOf(panel));
+    QVERIFY(qobject_cast<raising::StudioWorkspacePlugin*>(static_cast<QObject*>(&plugin)));
+    const int edits = host.edits, revision = host.revision;
+    const auto workspaces = plugin.createWorkspaces(&workspaceHost);
+    QCOMPARE(workspaces.size(), 1);
+    QCOMPARE(workspaces[0].id, QString("character"));
+    QCOMPARE(workspaces[0].widget, static_cast<QWidget*>(panel));
+    QCOMPARE(workspaces[0].shortcut, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
+    QVERIFY(plugin.createWorkspaces(&workspaceHost).isEmpty());  // offered once
+    // The dock keeps a launcher (mini preview + 작업 공간 열기); the panel waits for the host.
+    QVERIFY(!dock->isAncestorOf(panel));
+    auto* launcher = dock->findChild<QWidget*>("cutoutWorkspaceLauncher");
+    QVERIFY(launcher);
+    // Host side: the workspace page becomes the central widget, docks are hidden.
+    auto* page = new QWidget;
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(panel);
+    host.mainWindow.setCentralWidget(page);
+    dock->hide();
+    workspaceHost.current = "character";
+    plugin.workspaceChanged("character", true);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);  // the timeline tab (clips | time | mix)
+    pump();
+    QCOMPARE(host.mainWindow.focusWidget(), static_cast<QWidget*>(panel->canvas()));
+    // Every splitter child keeps its minimum and nothing leaves the window, from a small
+    // 1280x720 laptop to a 5120x1440 ultrawide and a very tall portrait screen.
+    int sideWidth = -1;
+    for (const QSize size : {QSize(1280, 720), QSize(3840, 1080), QSize(5120, 1440), QSize(1080, 1920)}) {
+      host.mainWindow.resize(size);
+      pump();
+      QTest::qWait(30);
+      const QString at = QString("%1x%2: ").arg(size.width()).arg(size.height());
+      QVERIFY2(host.mainWindow.size() == size, qPrintable(at + "window refused its size (minimum too large)"));
+      QVERIFY2(panel->geometry() == page->rect(), qPrintable(at + "panel does not fill the workspace"));
+      for (QSplitter* split : panel->splitters()) {
+        if (!split->isVisible()) continue;
+        for (int i = 0; i < split->count(); i++) {
+          QWidget* child = split->widget(i);
+          if (!child->isVisible()) continue;
+          const bool horizontal = split->orientation() == Qt::Horizontal;
+          const int have = horizontal ? child->width() : child->height();
+          const int explicitMin = horizontal ? child->minimumWidth() : child->minimumHeight();
+          const int need = explicitMin > 0 ? explicitMin : (horizontal ? child->minimumSizeHint().width() : child->minimumSizeHint().height());
+          QVERIFY2(have >= need, qPrintable(at + QString("%1[%2] %3 < %4").arg(split->objectName()).arg(i).arg(have).arg(need)));
+        }
+      }
+      for (const char* name : {"cutoutModeBanner", "cutoutStatus", "cutoutClipList", "cutoutMixTable", "cutoutDopesheetScroll", "cutoutGraphEditor"}) {
+        auto* w = find<QWidget>(name);
+        QVERIFY2(w && w->isVisible(), name);
+        QVERIFY2(panel->rect().contains(QRect(w->mapTo(panel, QPoint(0, 0)), w->size())), qPrintable(at + name + " cut off"));
+      }
+      QVERIFY(panel->canvas()->width() >= 200 && panel->canvas()->height() >= 150);
+      // Side panels keep their width on wide screens: the canvas gets the extra space.
+      if (size.width() >= 3840) {
+        if (sideWidth < 0) sideWidth = panel->leftPane()->width();
+        QCOMPARE(panel->leftPane()->width(), sideWidth);
+        QVERIFY2(panel->canvas()->width() > size.width() - 700, qPrintable(QString::number(panel->canvas()->width())));
+      }
+    }
+    host.mainWindow.resize(1700, 1200);
+    pump();
+    // Tab on the canvas / dopesheet = full view (side panels hidden); Tab in a form field still
+    // moves the focus. Presentation only.
+    const int canvasWidth = panel->canvas()->width();
+    QTest::keyClick(panel->canvas(), Qt::Key_Tab);
+    pump();
+    QVERIFY(panel->fullView() && !panel->leftPane()->isVisible() && !panel->rightPane()->isVisible());
+    QVERIFY(find<QToolButton>("cutoutFullView")->isChecked());
+    QVERIFY(panel->canvas()->width() > canvasWidth + 300);
+    QTest::keyClick(panel->dopesheet(), Qt::Key_Tab);
+    pump();
+    QVERIFY(!panel->fullView() && panel->leftPane()->isVisible());
+    find<QToolButton>("cutoutFullView")->click();
+    QVERIFY(panel->fullView());
+    find<QToolButton>("cutoutFullView")->click();
+    QVERIFY(!panel->fullView());
+    auto* spin = find<QDoubleSpinBox>("cutoutPropX");
+    spin->setFocus();
+    QTest::keyClick(spin, Qt::Key_Tab);
+    QVERIFY(!panel->fullView());
+    // Splitter sizes and collapsed sections persist (QSettings), restored on the next build.
+    auto* split = find<QSplitter>("cutoutWorkspaceSplitter");
+    QSplitterHandle* handle = split->handle(1);
+    const int leftBefore = split->sizes()[0];
+    QTest::mousePress(handle, Qt::LeftButton, Qt::NoModifier, QPoint(2, handle->height() / 2));
+    QTest::mouseMove(handle, QPoint(82, handle->height() / 2));
+    QTest::mouseRelease(handle, Qt::LeftButton, Qt::NoModifier, QPoint(82, handle->height() / 2));
+    pump();
+    const QList<int> moved = split->sizes();
+    QVERIFY2(moved[0] > leftBefore + 40, qPrintable(QString("%1 -> %2").arg(leftBefore).arg(moved[0])));
+    QSettings settings;
+    QVERIFY(settings.contains("plugins/cutout-animation/layout/cutoutWorkspaceSplitter"));
+    find<QToolButton>("cutoutSectionDrawOrderToggle")->click();
+    pump();
+    QVERIFY(!find<QWidget>("cutoutDrawOrder")->isVisible());
+    QVERIFY(find<QWidget>("cutoutSectionDrawOrder")->height() <= find<QToolButton>("cutoutSectionDrawOrderToggle")->height() + 4);
+    QVERIFY(QSettings().value("plugins/cutout-animation/layout/collapsed").toStringList().contains("cutoutSectionDrawOrderToggle"));
+    split->setSizes({300, 900, 300});
+    {
+      QSignalBlocker quiet(find<QToolButton>("cutoutSectionDrawOrderToggle"));  // no save: restored below
+      find<QToolButton>("cutoutSectionDrawOrderToggle")->setChecked(true);
+    }
+    panel->restoreLayout();
+    pump();
+    QCOMPARE(split->sizes(), moved);
+    QVERIFY(!find<QWidget>("cutoutDrawOrder")->isVisible());
+    find<QToolButton>("cutoutSectionDrawOrderToggle")->click();
+    pump();
+    QVERIFY(find<QWidget>("cutoutDrawOrder")->isVisible());
+    // Back on the dock side: the launcher shows the current pose and opens the workspace.
+    workspaceHost.current.clear();
+    plugin.workspaceChanged("character", false);
+    auto* preview = launcher->findChild<QLabel*>("cutoutLauncherPreview");
+    QVERIFY(preview);
+    const QImage thumb = preview->pixmap().toImage();
+    int painted = 0;
+    for (int y = 0; y < thumb.height(); y++) for (int x = 0; x < thumb.width(); x++) painted += qAlpha(thumb.pixel(x, y)) > 0;
+    QVERIFY2(painted > 20, qPrintable(QString::number(painted)));  // small parts in a 72 px contain-fit
+    QVERIFY(launcher->findChild<QLabel*>("cutoutLauncherSummary")->text().contains("hero"));
+    launcher->findChild<QPushButton*>("cutoutOpenWorkspace")->click();
+    QCOMPARE(workspaceHost.requests.last(), QString("character"));
+    plugin.openEditor("controller", "hero");
+    QCOMPARE(workspaceHost.requests.size(), 2);
+    QCOMPARE(workspaceHost.current, QString("character"));
+    QCOMPARE(find<QTabWidget>("cutoutBottomTabs")->currentIndex(), 1);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    // Switching, full view, splitters and the launcher never issued an edit.
+    QCOMPARE(host.edits, edits);
+    QCOMPARE(host.revision, revision);
   }
 
   void screenshot() {

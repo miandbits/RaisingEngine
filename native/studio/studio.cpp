@@ -29,6 +29,7 @@
 #include <QScopedValueRollback>
 #include <QScrollArea>
 #include <QSettings>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
@@ -182,11 +183,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   toolbar->setObjectName("mainToolbar");
   toolbar->setMovable(false);
   toolbar->setIconSize({18, 18});
-  previewLocaleField=new QComboBox;previewLocaleField->setObjectName("previewLocale");previewLocaleField->setToolTip(tr("캔버스와 다음 실행의 언어"));toolbar->addWidget(previewLocaleField);
+  previewLocaleField=new QComboBox;previewLocaleField->setObjectName("previewLocale");previewLocaleField->setToolTip(tr("캔버스와 다음 실행의 언어"));screenOnlyActions << toolbar->addWidget(previewLocaleField);
   connect(previewLocaleField,qOverload<int>(&QComboBox::activated),this,[this]{refresh();});
   toolbar->addAction(newScreenAction);
   addAction = toolbar->addAction(tr("＋ 버튼"), this, &StudioWindow::addButton);
   addAction->setObjectName("addButton");
+  screenOnlyActions << addAction;
   auto palette = new QToolButton;
   palette->setText(tr("＋ 요소"));
   palette->setObjectName("elementPalette");
@@ -217,7 +219,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     paletteMenu->addAction(pair.second, this,
                            [this, pair] { addElement(pair.first); });
   palette->setMenu(paletteMenu);
-  toolbar->addWidget(palette);
+  screenOnlyActions << toolbar->addWidget(palette);
   toolbar->addAction(undoAction);
   toolbar->addAction(redoAction);
   toolbar->addSeparator();
@@ -290,7 +292,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   emptyDocument->setAlignment(Qt::AlignCenter);
   emptyDocument->setStyleSheet("color:#a9bbc9;font-size:16px;");
   centerLayout->addWidget(emptyDocument, 1);
-  setCentralWidget(center);
+  // The screen editor is page 0; plugin workspaces become further pages (showWorkspace).
+  screenEditor = center;
+  centralStack = new QStackedWidget;
+  centralStack->setObjectName("studioCentralStack");
+  centralStack->addWidget(center);
+  setCentralWidget(centralStack);
   auto dock = [this](QString title, QString name, QWidget *child,
                      Qt::DockWidgetArea area) {
     return addStudioDock(title, name, child, area);
@@ -781,6 +788,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   viewMenu->addAction(rendererPreview->toggleViewAction());
   auto inspectRender=toolbar->addAction(tr("실제 렌더러 검사"),this,[this]{rendererPreview->show();rendererPreview->raise();rendererPreview->begin();});
   inspectRender->setObjectName("inspectRenderer");
+  screenOnlyActions << inspectRender;
   connect(rendererPreview,&RendererPreviewDock::snapshotRequested,this,[this]{
     if(bridge.busy()){rendererPreview->fail(tr("현재 편집 처리가 끝난 뒤 다시 렌더링하세요."));return;}
     request("preview",{},[this](QJsonObject reply){if(!reply["error"].toString().isEmpty()||!reply.contains("play")){rendererPreview->fail(reply["error"].toString(tr("미리보기를 준비할 수 없습니다.")));return;}rendererPreview->launch(reply["play"].toObject());});
@@ -796,7 +804,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   }
   viewMenu->addSeparator();
   viewMenu->addAction(tr("작업 공간 초기화"), this,
-                      [this] { restoreState(defaultLayout, 1); });
+                      [this] { showWorkspace({}); restoreState(defaultLayout, 1); });
+  setupWorkspaceUi();
   connect(documents, &QTabBar::currentChanged, this, [this](int i) {
     if (filling || i < 0)
       return;
@@ -1665,7 +1674,10 @@ void StudioWindow::closeEvent(QCloseEvent *e) {
   if (!qEnvironmentVariableIsSet("RAISING_QT_TEST")) {
     QSettings settings;
     settings.setValue("windowGeometry", saveGeometry());
-    settings.setValue("dockLayout", saveState(1));
+    // Inside a plugin workspace every dock is hidden: keep the screen editor's own layout.
+    settings.setValue("dockLayout", screenDockState());
+    settings.setValue("workspace", wantedWorkspace);
+    settings.setValue("workspaceRoot", wantedWorkspaceRoot);
   }
   e->accept();
 }

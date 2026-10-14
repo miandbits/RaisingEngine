@@ -82,6 +82,9 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * Editor-only state is never stored in documents: time zoom/scroll, the key selection, the
   clipboards and the preview loop range (in/out markers; editor playback loops inside it,
   remembered per clip for the session). Runtimes always play whole clips.
+* The authoring layout is editor-only too: the 애니메이션 작업 공간 (host workspace) switch,
+  splitter sizes and collapsed sections (QSettings `plugins/cutout-animation/layout/*`) and
+  the Tab full view never send an edit and never reach documents or the game.
 * Onion skin and motion trail are editor-only views; their settings are a per-user
   preference (QSettings `plugins/cutout-animation/onionSkin/*`), never rig/controller data
   (not even an `editor` block). Ghosts are pure `samplePose` results of the clip being edited

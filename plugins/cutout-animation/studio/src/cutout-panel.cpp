@@ -204,15 +204,46 @@ void CutoutPanel::detachHost() {
 }
 
 // ---------------------------------------------------------------- UI build
+namespace {
+constexpr const char* LAYOUT_GROUP = "plugins/cutout-animation/layout";
+/** Tool row that never forces the panel wider: what does not fit goes behind its » button. */
+QToolBar* toolRow(const char* name) {
+  auto* bar = new QToolBar;
+  bar->setObjectName(name);
+  bar->setMovable(false);
+  bar->setFloatable(false);
+  bar->setIconSize(QSize(16, 16));
+  bar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+  bar->layout()->setContentsMargins(0, 0, 0, 0);
+  return bar;
+}
+QWidget* spacer() {
+  auto* w = new QWidget;
+  w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  return w;
+}
+}  // namespace
+
+// Spine-like single layout, the same in the host workspace and in an old host's dock:
+//   mode bar (always visible)
+//   [ left: 계층 / 그리기 순서 / 캐릭터 | center: tools + canvas | right: 속성 · 키 / 진단 ]
+//   [ bottom tabs: 애니메이션 (clips | transport + dopesheet/graph | mix) · 게임 연결 ]
+// Every pane is a splitter child with a small minimum: lists scroll and tool rows overflow
+// instead of imposing a large minimum height/width on the window.
 void CutoutPanel::buildUi() {
+  // Compact rows (cascades over the host theme): a 1280x720 window must hold canvas, side
+  // panels and the timeline at their minimum sizes.
+  setStyleSheet("QToolBar{padding:0;spacing:3px;border:0}"
+                "QToolBar QPushButton,QToolBar QToolButton,#cutoutClipsPane QPushButton,#cutoutMixPane QPushButton{padding:3px 8px}"
+                "QToolBar QSpinBox,QToolBar QComboBox{padding:2px;min-height:18px}"
+                "QToolButton[cutoutSection=\"true\"]{padding:2px 4px;font-weight:bold}"
+                "QTabBar::tab{padding:4px 12px}");
   auto* root = new QVBoxLayout(this);
   root->setContentsMargins(4, 4, 4, 4);
   root->setSpacing(4);
-  auto* vertical = new QSplitter(Qt::Vertical);
-  vertical->setObjectName("cutoutMainSplitter");
-  vertical->addWidget(buildHeader());
   // Mode bar with a strong color banner so the user always knows whether edits make keys.
   auto* modeBar = new QWidget;
+  modeBar->setObjectName("cutoutModeBar");
   auto* modeLayout = new QHBoxLayout(modeBar);
   modeLayout->setContentsMargins(0, 0, 0, 0);
   setupButton_ = new QPushButton("조립 (Setup)");
@@ -230,15 +261,24 @@ void CutoutPanel::buildUi() {
   banner_->setObjectName("cutoutModeBanner");
   banner_->setMinimumHeight(28);
   banner_->setWordWrap(true);
+  // Ignored width: a long banner wraps instead of widening the whole workspace.
+  banner_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  fullViewButton_ = new QToolButton;
+  fullViewButton_->setObjectName("cutoutFullView");
+  fullViewButton_->setText("캔버스 크게 (Tab)");
+  fullViewButton_->setCheckable(true);
+  fullViewButton_->setToolTip("왼쪽·오른쪽 패널을 숨겨 캔버스를 넓힙니다. 캔버스·도프시트·그래프에서 Tab 키로도 전환합니다.");
+  connect(fullViewButton_, &QToolButton::toggled, this, [this](bool on) { setFullView(on); });
   modeLayout->addWidget(setupButton_);
   modeLayout->addWidget(animateButton_);
   modeLayout->addWidget(banner_, 1);
-  auto* center = new QWidget;
-  auto* centerLayout = new QVBoxLayout(center);
-  centerLayout->setContentsMargins(0, 0, 0, 0);
-  centerLayout->addWidget(modeBar);
-  centerLayout->addWidget(buildWorkspace(), 1);
-  vertical->addWidget(center);
+  modeLayout->addWidget(fullViewButton_);
+  root->addWidget(modeBar);
+
+  mainSplit_ = new QSplitter(Qt::Vertical);
+  mainSplit_->setObjectName("cutoutMainSplitter");
+  mainSplit_->setChildrenCollapsible(false);
+  mainSplit_->addWidget(buildWorkspace());
   bottomTabs_ = new QTabWidget;
   bottomTabs_->setObjectName("cutoutBottomTabs");
   bottomTabs_->addTab(buildAnimateTab(), "애니메이션");
@@ -249,14 +289,17 @@ void CutoutPanel::buildUi() {
     else timer_->stop();
     updateCanvas();
   });
-  vertical->addWidget(bottomTabs_);
-  vertical->setStretchFactor(0, 0);
-  vertical->setStretchFactor(1, 3);
-  vertical->setStretchFactor(2, 3);  // timeline rows + dopesheet + graph need about as much as the canvas
-  root->addWidget(vertical, 1);
+  mainSplit_->addWidget(bottomTabs_);
+  // Both stretch: extra height is shared in the current ratio (timeline rows + dopesheet +
+  // graph need about as much as the canvas), so tall screens grow both.
+  mainSplit_->setStretchFactor(0, 3);
+  mainSplit_->setStretchFactor(1, 2);
+  mainSplit_->setSizes({600, 400});
+  root->addWidget(mainSplit_, 1);
   statusLabel_ = new QLabel;
   statusLabel_->setObjectName("cutoutStatus");
   statusLabel_->setWordWrap(true);
+  statusLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   root->addWidget(statusLabel_);
   auto shortcut = [this](const QKeySequence& key, const char* name, std::function<void()> fn) {
     auto* s = new QShortcut(key, this);
@@ -273,25 +316,111 @@ void CutoutPanel::buildUi() {
   shortcut(Qt::Key_Space, "cutoutShortcutPlay", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
   shortcut(Qt::Key_Comma, "cutoutShortcutStepBack", [this] { if (mode_ == Mode::Animate) stepPlayhead(-1); });
   shortcut(Qt::Key_Period, "cutoutShortcutStepForward", [this] { if (mode_ == Mode::Animate) stepPlayhead(1); });
+  // Tab = full view, but only where Tab has no text-entry meaning (form fields keep focus
+  // navigation): an event filter sees the key before QWidget's focus-chain handling.
+  for (QWidget* w : {static_cast<QWidget*>(canvas_), static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(graph_)}) w->installEventFilter(this);
+  restoreLayout();
+  for (QSplitter* s : splitters()) connect(s, &QSplitter::splitterMoved, this, [this] { saveLayout(); });
   refreshModeUi();
   syncOnionUi();
 }
 
-QWidget* CutoutPanel::buildHeader() {
-  auto* header = new QWidget;
-  auto* layout = new QHBoxLayout(header);
+QList<QSplitter*> CutoutPanel::splitters() const {
+  return findChildren<QSplitter*>(QRegularExpression("^cutout.*Splitter$"));
+}
+QWidget* CutoutPanel::section(const QString& title, const char* name, QWidget* body) {
+  auto* box = new QWidget;
+  box->setObjectName(name);
+  auto* layout = new QVBoxLayout(box);
   layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(2);
+  auto* head = new QToolButton;
+  head->setObjectName(QString(name) + "Toggle");
+  head->setText(title);
+  head->setCheckable(true);
+  head->setChecked(true);
+  head->setAutoRaise(true);
+  head->setArrowType(Qt::DownArrow);
+  head->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+  head->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  head->setToolTip("눌러서 접거나 펼칩니다. 접힌 구역의 공간은 다른 구역이 씁니다.");
+  head->setProperty("cutoutSection", true);
+  layout->addWidget(head);
+  layout->addWidget(body, 1);
+  connect(head, &QToolButton::toggled, this, [this, box, head, body](bool open) {
+    body->setVisible(open);
+    head->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+    // A splitter honours maximum sizes: a collapsed section shrinks to its header.
+    box->setMaximumHeight(open ? QWIDGETSIZE_MAX : head->sizeHint().height());
+    if (!restoringLayout_) saveLayout();
+  });
+  sections_ << head;
+  return box;
+}
+void CutoutPanel::saveLayout() const {
+  QSettings q;
+  q.beginGroup(LAYOUT_GROUP);
+  for (QSplitter* s : splitters()) q.setValue(s->objectName(), s->saveState());
+  QStringList collapsed;
+  for (QToolButton* head : sections_) if (!head->isChecked()) collapsed << head->objectName();
+  q.setValue("collapsed", collapsed);
+}
+void CutoutPanel::restoreLayout() {
+  restoringLayout_ = true;
+  QSettings q;
+  q.beginGroup(LAYOUT_GROUP);
+  for (QSplitter* s : splitters())
+    if (q.contains(s->objectName())) s->restoreState(q.value(s->objectName()).toByteArray());
+  const QStringList collapsed = q.value("collapsed").toStringList();
+  for (QToolButton* head : sections_) head->setChecked(!collapsed.contains(head->objectName()));
+  restoringLayout_ = false;
+}
+void CutoutPanel::setFullView(bool on) {
+  // Editor-only presentation (never saved): the canvas takes the side panels' width.
+  leftPane_->setVisible(!on);
+  rightPane_->setVisible(!on);
+  if (fullViewButton_->isChecked() != on) { QSignalBlocker block(fullViewButton_); fullViewButton_->setChecked(on); }
+}
+bool CutoutPanel::fullView() const { return leftPane_ && leftPane_->isHidden(); }
+bool CutoutPanel::eventFilter(QObject* watched, QEvent* event) {
+  if (event->type() == QEvent::KeyPress) {
+    auto* key = static_cast<QKeyEvent*>(event);
+    if (key->key() == Qt::Key_Tab && !(key->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier))) {
+      setFullView(!fullView());
+      return true;
+    }
+  }
+  return QWidget::eventFilter(watched, event);
+}
+QImage CutoutPanel::thumbnail(const QSize& size) {
+  QImage img(size, QImage::Format_ARGB32_Premultiplied);
+  img.fill(Qt::transparent);
+  if (!rig_ || size.isEmpty()) return img;
+  QPainter p(&img);
+  p.setRenderHint(QPainter::Antialiasing);
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+  p.setTransform(elementPlacement(*rig_, QRectF(QPointF(0, 0), QSizeF(size)), 1, false));
+  drawRig(p, *rig_, currentPose(), images_, hidden_);
+  return img;
+}
+
+QWidget* CutoutPanel::buildCharacters() {
+  auto* body = new QWidget;
+  auto* layout = new QVBoxLayout(body);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(2);
   characterList_ = new QTreeWidget;
   characterList_->setObjectName("cutoutCharacterList");
   characterList_->setHeaderLabels({"캐릭터 · 게임 연결"});
-  characterList_->setMaximumHeight(130);
+  characterList_->setHeaderHidden(true);  // the section title says it
+  characterList_->setMinimumHeight(24);
   connect(characterList_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* item) {
     if (filling_ || !item) return;
     const QString ref = item->data(0, Qt::UserRole).toString();
     if (refKind(ref) == "rig") selectRig(refId(ref));
     else { selectController(refId(ref)); showControllerTab(); }
   });
-  auto* buttons = new QVBoxLayout;
+  auto* buttons = toolRow("cutoutCharacterTools");
   auto button = [&](const QString& text, const char* name, std::function<bool()> fn) {
     auto* b = new QPushButton(text);
     b->setObjectName(name);
@@ -302,31 +431,25 @@ QWidget* CutoutPanel::buildHeader() {
   button("새 캐릭터", "cutoutNewCharacter", [this] { return newCharacter(); });
   button("이름 변경", "cutoutRenameCharacter", [this] { return renameCharacter(); });
   button("삭제", "cutoutDeleteCharacter", [this] { return deleteCharacter(); });
-  buttons->addStretch();
-  diagnostics_ = new QListWidget;
-  diagnostics_->setObjectName("cutoutDiagnostics");
-  diagnostics_->setMaximumHeight(130);
-  diagnostics_->setToolTip("검증 결과 · 클릭하면 해당 항목을 선택합니다.");
-  connect(diagnostics_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
-    onDiagnosticClicked(item->data(Qt::UserRole).toString(), item->data(Qt::UserRole + 1).toString());
-  });
-  layout->addWidget(characterList_, 2);
-  layout->addLayout(buttons);
-  layout->addWidget(diagnostics_, 3);
-  return header;
+  layout->addWidget(characterList_, 1);
+  layout->addWidget(buttons);
+  return section("캐릭터 · 게임 연결", "cutoutSectionCharacters", body);
 }
 
 QWidget* CutoutPanel::buildWorkspace() {
-  auto* split = new QSplitter(Qt::Horizontal);
-  split->setObjectName("cutoutWorkspaceSplitter");
-  // Left: hierarchy + draw order.
-  auto* left = new QWidget;
-  auto* leftLayout = new QVBoxLayout(left);
-  leftLayout->setContentsMargins(0, 0, 0, 0);
+  workspaceSplit_ = new QSplitter(Qt::Horizontal);
+  workspaceSplit_->setObjectName("cutoutWorkspaceSplitter");
+  workspaceSplit_->setChildrenCollapsible(false);
+  // Left: hierarchy, draw order and characters stacked in collapsible sections.
+  auto* treeBody = new QWidget;
+  auto* treeLayout = new QVBoxLayout(treeBody);
+  treeLayout->setContentsMargins(0, 0, 0, 0);
+  treeLayout->setSpacing(2);
   tree_ = new BoneTree;
   tree_->setObjectName("cutoutBoneTree");
   tree_->setHeaderLabels({"본 · 조각", "보기"});
   tree_->setColumnWidth(0, 170);
+  tree_->setMinimumHeight(36);
   tree_->setDragDropMode(QAbstractItemView::InternalMove);
   tree_->setToolTip("끌어서 놓으면 부모 본이 바뀝니다(화면 위치 유지). 보기 체크는 편집기에서만 숨깁니다.");
   tree_->onDrop = [this](const QString& dragged, const QString& bone) {
@@ -351,7 +474,7 @@ QWidget* CutoutPanel::buildWorkspace() {
     // deletes that item while Qt is still using it (crash on an eye click). Rebuild next turn.
     QTimer::singleShot(0, this, [this] { refreshTree(); });
   });
-  auto* treeButtons = new QHBoxLayout;
+  auto* treeButtons = toolRow("cutoutTreeTools");
   auto* addBoneButton = new QPushButton("본 추가");
   addBoneButton->setObjectName("cutoutAddBone");
   auto* addPartButton = new QPushButton("이미지 조각 추가…");
@@ -364,13 +487,20 @@ QWidget* CutoutPanel::buildWorkspace() {
   treeButtons->addWidget(addBoneButton);
   treeButtons->addWidget(addPartButton);
   treeButtons->addWidget(deleteButton);
+  treeLayout->addWidget(tree_, 1);
+  treeLayout->addWidget(treeButtons);
+  auto* orderBody = new QWidget;
+  auto* orderLayout = new QVBoxLayout(orderBody);
+  orderLayout->setContentsMargins(0, 0, 0, 0);
+  orderLayout->setSpacing(2);
   drawOrder_ = new QListWidget;
   drawOrder_->setObjectName("cutoutDrawOrder");
   drawOrder_->setToolTip("그리는 순서: 위가 뒤, 아래가 앞입니다.");
+  drawOrder_->setMinimumHeight(24);
   connect(drawOrder_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
     if (!filling_ && item) selectItem("slot:" + item->data(Qt::UserRole).toString());
   });
-  auto* orderButtons = new QHBoxLayout;
+  auto* orderButtons = toolRow("cutoutDrawOrderTools");
   auto* up = new QPushButton("뒤로 ↑");
   up->setObjectName("cutoutDrawUp");
   auto* down = new QPushButton("앞으로 ↓");
@@ -379,17 +509,25 @@ QWidget* CutoutPanel::buildWorkspace() {
   connect(down, &QPushButton::clicked, this, [this] { moveSelectedSlot(1); });
   orderButtons->addWidget(up);
   orderButtons->addWidget(down);
-  leftLayout->addWidget(tree_, 3);
-  leftLayout->addLayout(treeButtons);
-  leftLayout->addWidget(new QLabel("그리는 순서 (뒤 → 앞)"));
-  leftLayout->addWidget(drawOrder_, 2);
-  leftLayout->addLayout(orderButtons);
+  orderLayout->addWidget(drawOrder_, 1);
+  orderLayout->addWidget(orderButtons);
+  leftSplit_ = new QSplitter(Qt::Vertical);
+  leftSplit_->setObjectName("cutoutLeftSplitter");
+  leftSplit_->setChildrenCollapsible(false);
+  leftSplit_->addWidget(section("계층 (본 · 조각)", "cutoutSectionHierarchy", treeBody));
+  leftSplit_->addWidget(section("그리는 순서 (뒤 → 앞)", "cutoutSectionDrawOrder", orderBody));
+  leftSplit_->addWidget(buildCharacters());
+  leftSplit_->setSizes({500, 300, 200});
+  leftPane_ = leftSplit_;
+  leftPane_->setMinimumWidth(170);
 
   // Center: tools + canvas.
   auto* middle = new QWidget;
+  middle->setObjectName("cutoutCanvasPane");
   auto* middleLayout = new QVBoxLayout(middle);
   middleLayout->setContentsMargins(0, 0, 0, 0);
-  auto* tools = new QHBoxLayout;
+  middleLayout->setSpacing(2);
+  auto* tools = toolRow("cutoutCanvasTools");
   const char* toolNames[] = {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot"};
   const char* toolLabels[] = {"선택/이동 (V)", "회전 (R)", "크기 (S)", "회전 중심 (P)"};
   auto* toolGroup = new QButtonGroup(this);
@@ -407,7 +545,7 @@ QWidget* CutoutPanel::buildWorkspace() {
   auto* fit = new QToolButton;
   fit->setObjectName("cutoutFitView");
   fit->setText("화면 맞춤 (F)");
-  tools->addSpacing(12);
+  tools->addSeparator();
   onionButton_ = new QToolButton;
   onionButton_->setObjectName("cutoutOnionSkin");
   onionButton_->setText("어니언 스킨 (O)");
@@ -438,7 +576,7 @@ QWidget* CutoutPanel::buildWorkspace() {
   tools->addWidget(onionButton_);
   tools->addWidget(onionSettingsButton_);
   tools->addWidget(trailButton_);
-  tools->addStretch();
+  tools->addWidget(spacer());
   tools->addWidget(fit);
   canvas_ = new RigCanvas;
   canvas_->setImages(&images_);
@@ -449,18 +587,20 @@ QWidget* CutoutPanel::buildWorkspace() {
   canvas_->onKey = [this] { keySelected(); };
   canvas_->onOnion = [this] { setOnionSkin(!onion_.enabled); };
   connect(fit, &QToolButton::clicked, canvas_, &RigCanvas::fitToCanvas);
-  middleLayout->addLayout(tools);
+  middleLayout->addWidget(tools);
   middleLayout->addWidget(canvas_, 1);
+  middle->setMinimumWidth(240);
 
-  // Right: numeric properties + keying.
+  // Right: numeric properties + keying (scrolls on short screens), diagnostics below.
   auto* right = new QWidget;
   right->setObjectName("cutoutProperties");
   auto* rightLayout = new QVBoxLayout(right);
-  rightLayout->setContentsMargins(0, 0, 0, 0);
+  rightLayout->setContentsMargins(0, 0, 4, 0);
   selectionLabel_ = new QLabel("선택 없음");
   selectionLabel_->setObjectName("cutoutSelectionLabel");
   selectionLabel_->setWordWrap(true);
   auto* form = new QFormLayout;
+  form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
   const char* labels[] = {"X", "Y", "회전°", "크기 X", "크기 Y", "이미지 기준점 X", "이미지 기준점 Y", "투명도"};
   for (int i = 0; i < 8; i++) {
     const QString key = PROPS[i];
@@ -479,6 +619,8 @@ QWidget* CutoutPanel::buildWorkspace() {
   attachmentCombo_ = new QComboBox;
   attachmentCombo_->setObjectName("cutoutPropAttachment");
   attachmentCombo_->setToolTip("애니메이션 모드에서 바꾸면 그림 교체 키(눈 깜빡임·입 모양)가 됩니다.");
+  attachmentCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  attachmentCombo_->setMinimumContentsLength(8);
   connect(attachmentCombo_, &QComboBox::activated, this, [this] { commitAttachmentChoice(); });
   form->addRow("첨부 그림", attachmentCombo_);
   keyButton_ = new QPushButton("◇ 키 추가 (K)");
@@ -506,13 +648,38 @@ QWidget* CutoutPanel::buildWorkspace() {
   rightLayout->addLayout(keyRow);
   rightLayout->addWidget(deltaButton_);
   rightLayout->addStretch();
-  split->addWidget(left);
-  split->addWidget(middle);
-  split->addWidget(right);
-  split->setStretchFactor(0, 1);
-  split->setStretchFactor(1, 3);
-  split->setStretchFactor(2, 1);
-  return split;
+  auto* propertiesScroll = new QScrollArea;
+  propertiesScroll->setObjectName("cutoutPropertiesScroll");
+  propertiesScroll->setWidgetResizable(true);
+  propertiesScroll->setFrameShape(QFrame::NoFrame);
+  propertiesScroll->setWidget(right);
+  propertiesScroll->setMinimumHeight(60);
+  diagnostics_ = new QListWidget;
+  diagnostics_->setObjectName("cutoutDiagnostics");
+  diagnostics_->setToolTip("검증 결과 · 클릭하면 해당 항목을 선택합니다.");
+  diagnostics_->setMinimumHeight(40);
+  diagnostics_->setTextElideMode(Qt::ElideMiddle);
+  connect(diagnostics_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
+    onDiagnosticClicked(item->data(Qt::UserRole).toString(), item->data(Qt::UserRole + 1).toString());
+  });
+  rightSplit_ = new QSplitter(Qt::Vertical);
+  rightSplit_->setObjectName("cutoutRightSplitter");
+  rightSplit_->setChildrenCollapsible(false);
+  rightSplit_->addWidget(section("속성 · 키", "cutoutSectionProperties", propertiesScroll));
+  rightSplit_->addWidget(section("진단", "cutoutSectionDiagnostics", diagnostics_));
+  rightSplit_->setSizes({700, 200});
+  rightPane_ = rightSplit_;
+  rightPane_->setMinimumWidth(210);
+
+  workspaceSplit_->addWidget(leftPane_);
+  workspaceSplit_->addWidget(middle);
+  workspaceSplit_->addWidget(rightPane_);
+  // Only the canvas stretches: on a very wide screen the side panels keep their width.
+  workspaceSplit_->setStretchFactor(0, 0);
+  workspaceSplit_->setStretchFactor(1, 1);
+  workspaceSplit_->setStretchFactor(2, 0);
+  workspaceSplit_->setSizes({260, 1000, 290});
+  return workspaceSplit_;
 }
 
 QWidget* CutoutPanel::buildAnimateTab() {
@@ -521,9 +688,14 @@ QWidget* CutoutPanel::buildAnimateTab() {
   auto* layout = new QHBoxLayout(tab);
   layout->setContentsMargins(2, 2, 2, 2);
   // Clips.
-  auto* clips = new QVBoxLayout;
+  auto* clipsPane = new QWidget;
+  clipsPane->setObjectName("cutoutClipsPane");
+  clipsPane->setMinimumWidth(140);
+  auto* clips = new QVBoxLayout(clipsPane);
+  clips->setContentsMargins(0, 0, 0, 0);
   clipList_ = new QListWidget;
   clipList_->setObjectName("cutoutClipList");
+  clipList_->setMinimumHeight(32);
   connect(clipList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
     if (!filling_ && item) selectClip(item->data(Qt::UserRole).toString());
   });
@@ -558,8 +730,13 @@ QWidget* CutoutPanel::buildAnimateTab() {
   clips->addLayout(clipButtons);
   clips->addLayout(clipForm);
   // Transport + dopesheet.
-  auto* timeline = new QVBoxLayout;
-  auto* transport = new QHBoxLayout;
+  auto* timelinePane = new QWidget;
+  timelinePane->setObjectName("cutoutTimelinePane");
+  timelinePane->setMinimumWidth(320);
+  auto* timeline = new QVBoxLayout(timelinePane);
+  timeline->setContentsMargins(0, 0, 0, 0);
+  timeline->setSpacing(2);
+  auto* transport = toolRow("cutoutTransportTools");
   auto* rewind = new QPushButton("⏮ 처음으로");
   rewind->setObjectName("cutoutRewind");
   playButton_ = new QPushButton("▶ 재생");
@@ -581,7 +758,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   transport->addWidget(loopPreview_);
   transport->addWidget(new QLabel("속도"));
   transport->addWidget(speedCombo_);
-  transport->addStretch();
+  QAction* transportStretch = transport->addWidget(spacer());  // the view buttons go before it
   transport->addWidget(timeLabel_);
   // One time view for both views: zoom, scroll, playhead, loop range and key selection.
   timeView_ = new TimeView(this);
@@ -607,7 +784,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
     return s;
   };
   // Precise time: numeric playhead, frame steps (, . or arrow keys), zoom, loop range.
-  auto* timeRow = new QHBoxLayout;
+  auto* timeRow = toolRow("cutoutTimeTools");
   timeField_ = msField("cutoutTimeField", 0, 600000, 0, "재생 헤드 시간(ms)을 정확히 입력합니다.");
   connect(timeField_, &QSpinBox::editingFinished, this, [this] { setPlayhead(timeField_->value()); });
   stepField_ = msField("cutoutStepSize", 1, 10000, 10, "◀ ▶ 버튼·쉼표/마침표·화살표 키가 옮기는 간격입니다.");
@@ -617,22 +794,22 @@ QWidget* CutoutPanel::buildAnimateTab() {
   timeRow->addWidget(toolButton("▶", "cutoutStepForward", "다음 간격으로 (마침표 . 또는 →)", [this] { stepPlayhead(1); }));
   timeRow->addWidget(new QLabel("간격"));
   timeRow->addWidget(stepField_);
-  timeRow->addSpacing(12);
+  timeRow->addSeparator();
   timeRow->addWidget(toolButton("[ 구간 시작", "cutoutLoopIn", "재생 헤드를 미리 보기 반복 구간의 시작으로 (편집기 전용, 저장 안 됨)",
                                 [this] { setLoopRange(playheadMs_, playheadMs_ < timeView_->loopOut() ? timeView_->loopOut() : -1); }));
   timeRow->addWidget(toolButton("구간 끝 ]", "cutoutLoopOut", "재생 헤드를 미리 보기 반복 구간의 끝으로 (눈금자의 초록 표시를 끌어도 됩니다)",
                                 [this] { setLoopRange(playheadMs_ > timeView_->loopIn() ? timeView_->loopIn() : 0, playheadMs_); }));
   timeRow->addWidget(toolButton("구간 해제", "cutoutLoopClear", "미리 보기 반복 구간을 클립 전체로 되돌립니다.", [this] { clearLoopRange(); }));
-  timeRow->addStretch();
+  timeRow->addWidget(spacer());
   timeRow->addWidget(toolButton("−", "cutoutZoomOut", "시간 축소 (Ctrl+휠)", [this] { timeView_->zoomAround(timeView_->scrollMs() + timeView_->visibleMs() / 2, 0.8); }));
   timeRow->addWidget(toolButton("+", "cutoutZoomIn", "시간 확대 (Ctrl+휠)", [this] { timeView_->zoomAround(timeView_->scrollMs() + timeView_->visibleMs() / 2, 1.25); }));
   timeRow->addWidget(toolButton("맞춤", "cutoutTimeFit", "클립 전체가 보이도록 시간 축을 맞춥니다.", [this] { timeView_->fit(); }));
   // Key tools: clipboard, offset, timing scale, pose copy.
-  auto* keyRow = new QHBoxLayout;
+  auto* keyRow = toolRow("cutoutKeyTools");
   keyRow->addWidget(toolButton("복사", "cutoutCopyKeys", "고른 키를 복사합니다 (Ctrl+C).", [this] { copyKeys(); }));
   keyRow->addWidget(toolButton("붙여넣기", "cutoutPasteKeys", "복사한 키를 재생 헤드 시간에 붙여넣습니다 (Ctrl+V). 다른 클립에도 됩니다.\n한 대상만 복사했다면 지금 고른 본·조각에 붙습니다.", [this] { pasteKeys(); }));
   keyRow->addWidget(toolButton("복제", "cutoutDuplicateKeys", "고른 키를 재생 헤드 시간에 복제합니다 (Ctrl+D).", [this] { duplicateKeys(); }));
-  keyRow->addSpacing(12);
+  keyRow->addSeparator();
   offsetField_ = msField("cutoutKeyOffset", -600000, 600000, 100, "고른 키 전부를 이만큼 옮깁니다(음수 = 앞으로).");
   keyRow->addWidget(offsetField_);
   keyRow->addWidget(toolButton("만큼 이동", "cutoutKeyOffsetApply", "고른 키를 간격을 유지한 채 옮깁니다. 다른 키와 겹치거나 클립 밖이면 거부됩니다.", [this] { offsetSelectedKeys(offsetField_->value()); }));
@@ -644,14 +821,13 @@ QWidget* CutoutPanel::buildAnimateTab() {
   tool(scaleField_, "cutoutKeyScale", "고른 키들의 시간 간격 배율(첫 키 기준). 선택 띠 양 끝 손잡이를 끌어도 됩니다(Alt: 재생 헤드 기준).");
   keyRow->addWidget(scaleField_);
   keyRow->addWidget(toolButton("간격 배율", "cutoutKeyScaleApply", "고른 키들의 시간 간격을 배율만큼 늘이거나 줄입니다.", [this] { scaleSelectedKeys(scaleField_->value() / 100.0); }));
-  keyRow->addSpacing(12);
+  keyRow->addSeparator();
   auto* copyPoseButton = new QPushButton("포즈 복사");
   copyPoseButton->setObjectName("cutoutCopyPose");
   copyPoseButton->setToolTip("고른 본과 그 자식 본(없으면 모든 본)의 현재 자세를 복사합니다.");
   connect(copyPoseButton, &QPushButton::clicked, this, [this] { copyPose(); });
   keyRow->addWidget(copyPoseButton);
   keyRow->addWidget(toolButton("포즈 붙여넣기", "cutoutPastePose", "복사한 자세를 재생 헤드 시간에 키로 넣습니다(다른 클립에도 됩니다).", [this] { pastePose(); }));
-  keyRow->addStretch();
 
   dopesheet_ = new Dopesheet;
   dopesheet_->setTimeView(timeView_);
@@ -669,13 +845,14 @@ QWidget* CutoutPanel::buildAnimateTab() {
   scroll->setObjectName("cutoutDopesheetScroll");
   scroll->setWidgetResizable(true);
   scroll->setWidget(dopesheet_);
+  scroll->setMinimumHeight(32);
   // Graph editor below the dopesheet: same time view, so key columns line up at any zoom.
   auto* graphPanel = new QWidget;
   graphPanel->setObjectName("cutoutGraphPanel");
   auto* graphLayout = new QVBoxLayout(graphPanel);
   graphLayout->setContentsMargins(0, 0, 0, 0);
   graphLayout->setSpacing(2);
-  auto* presetRow = new QHBoxLayout;
+  auto* presetRow = toolRow("cutoutCurveTools");
   presetRow->addWidget(new QLabel("곡선"));
   for (const auto& preset : interpPresets()) {
     auto* b = new QPushButton(preset.label);
@@ -686,7 +863,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
     presetRow->addWidget(b);
     presetButtons_ << b;
   }
-  presetRow->addStretch();
+  presetRow->addWidget(spacer());
   graphNormalize_ = new QCheckBox("채널별 맞춤");
   graphNormalize_->setObjectName("cutoutGraphNormalize");
   graphNormalize_->setToolTip("값 범위가 다른 채널(회전 각도와 크기 등)을 각자 높이에 맞춰 모양을 비교합니다.");
@@ -705,12 +882,11 @@ QWidget* CutoutPanel::buildAnimateTab() {
   graph_->onCommand = [this](const QString& command) { keyCommand(command); };
   graph_->onStep = [this](int steps) { stepPlayhead(steps); };
   connect(graphNormalize_, &QCheckBox::toggled, graph_, &GraphEditor::setNormalized);
-  graphLayout->addLayout(presetRow);
+  graphLayout->addWidget(presetRow);
   graphLayout->addWidget(graph_, 1);
-  // Docks are often short: show the dopesheet, the graph, or both stacked (same time axis).
+  // Short timeline areas: show the dopesheet, the graph, or both stacked (same time axis).
   auto* viewGroup = new QButtonGroup(this);
   viewGroup->setExclusive(true);
-  int at = 5;  // after the speed combo
   for (const auto& [text, name, sheet, curves] : {std::tuple{"도프시트", "cutoutViewDopesheet", true, false},
                                                   std::tuple{"그래프", "cutoutViewGraph", false, true}, std::tuple{"둘 다", "cutoutViewBoth", true, true}}) {
     auto* b = new QPushButton(text);
@@ -719,7 +895,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
     b->setChecked(sheet && curves);
     b->setToolTip("아래 영역에 도프시트, 값 곡선 그래프 또는 둘 다를 보여 줍니다.");
     viewGroup->addButton(b);
-    transport->insertWidget(at++, b);
+    transport->insertWidget(transportStretch, b);
     connect(b, &QPushButton::clicked, this, [scroll, graphPanel, sheet = sheet, curves = curves] {
       // Hiding the focused dopesheet makes QScrollArea "ensure visible" it (rows jump): keep the row scroll.
       const int rowsAt = scroll->verticalScrollBar()->value();
@@ -735,24 +911,29 @@ QWidget* CutoutPanel::buildAnimateTab() {
   timelineSplit->setChildrenCollapsible(false);
   timelineSplit->setStretchFactor(0, 2);
   timelineSplit->setStretchFactor(1, 3);
+  timelineSplit->setSizes({200, 300});  // both stretch: extra height keeps this ratio
   // Horizontal time scrollbar (units of 0.1 ms so deep zoom still scrolls smoothly).
   timeScroll_ = new QScrollBar(Qt::Horizontal);
   timeScroll_->setObjectName("cutoutTimeScroll");
   connect(timeScroll_, &QScrollBar::valueChanged, this, [this](int v) { timeView_->setScroll(v / 10.0); });
   connect(timeView_, &TimeView::changed, this, [this] { syncTimeScroll(); });
-  timeline->addLayout(transport);
-  timeline->addLayout(timeRow);
-  timeline->addLayout(keyRow);
+  timeline->addWidget(transport);
+  timeline->addWidget(timeRow);
+  timeline->addWidget(keyRow);
   timeline->addWidget(timelineSplit, 1);
   timeline->addWidget(timeScroll_);
-  // The gesture list is the dopesheet tooltip: docks are often short, rows of help text cost key rows.
+  // The gesture list is the dopesheet tooltip: rows of help text would cost key rows.
   dopesheet_->setToolTip("클릭: 키 선택 · 겹친 키 묶음(숫자 표시)은 누를 때마다 다음 키, 더블클릭: 확대\n"
                          "Ctrl+클릭: 토글 · Shift+클릭: 추가 · 빈 곳 드래그: 상자 선택 · 행 이름 클릭: 행 전체 · Alt+클릭: 같은 시간 전체 · Ctrl+A: 모두\n"
                          "드래그: 고른 키 함께 이동(10ms, Shift 1ms) · 선택 띠 양 끝: 시간 간격 배율(Alt: 재생 헤드 기준)\n"
                          "Delete: 삭제 · Ctrl+C/V/D: 복사/붙여넣기/복제(재생 헤드) · ←/→ 또는 , .: 한 간격 이동\n"
                          "Ctrl+휠: 시간 확대 · Shift+휠/가운데 버튼 드래그: 시간 이동 · 눈금자: 재생 헤드(10ms, Shift 1ms), 초록 표시: 반복 구간");
   // Mix table.
-  auto* mix = new QVBoxLayout;
+  auto* mixPane = new QWidget;
+  mixPane->setObjectName("cutoutMixPane");
+  mixPane->setMinimumWidth(170);
+  auto* mix = new QVBoxLayout(mixPane);
+  mix->setContentsMargins(0, 0, 0, 0);
   mixDefault_ = new QSpinBox;
   mixDefault_->setObjectName("cutoutMixDefault");
   mixDefault_->setRange(0, 10000);
@@ -764,6 +945,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   mixTable_->setHorizontalHeaderLabels({"이전 클립", "다음 클립", "전환"});
   mixTable_->horizontalHeader()->setStretchLastSection(true);
   mixTable_->verticalHeader()->hide();
+  mixTable_->setMinimumHeight(40);
   auto* mixButtons = new QHBoxLayout;
   auto* mixAdd = new QPushButton("전환 추가");
   mixAdd->setObjectName("cutoutMixAdd");
@@ -779,9 +961,18 @@ QWidget* CutoutPanel::buildAnimateTab() {
   mix->addLayout(mixForm);
   mix->addWidget(mixTable_, 1);
   mix->addLayout(mixButtons);
-  layout->addLayout(clips, 1);
-  layout->addLayout(timeline, 4);
-  layout->addLayout(mix, 2);
+  // clip list | dopesheet + graph | mix: only the time area stretches on wide screens.
+  timelineAreaSplit_ = new QSplitter(Qt::Horizontal);
+  timelineAreaSplit_->setObjectName("cutoutTimelineAreaSplitter");
+  timelineAreaSplit_->setChildrenCollapsible(false);
+  timelineAreaSplit_->addWidget(clipsPane);
+  timelineAreaSplit_->addWidget(timelinePane);
+  timelineAreaSplit_->addWidget(mixPane);
+  timelineAreaSplit_->setStretchFactor(0, 0);
+  timelineAreaSplit_->setStretchFactor(1, 1);
+  timelineAreaSplit_->setStretchFactor(2, 0);
+  timelineAreaSplit_->setSizes({190, 1000, 260});
+  layout->addWidget(timelineAreaSplit_);
   return tab;
 }
 
@@ -790,7 +981,7 @@ QWidget* CutoutPanel::buildControllerTab() {
   tab->setObjectName("cutoutControllerTab");
   auto* layout = new QVBoxLayout(tab);
   layout->setContentsMargins(2, 2, 2, 2);
-  auto* top = new QHBoxLayout;
+  auto* top = toolRow("cutoutControllerTools");
   controllerCombo_ = new QComboBox;
   controllerCombo_->setObjectName("cutoutControllerSelect");
   connect(controllerCombo_, &QComboBox::activated, this, [this] { selectController(controllerCombo_->currentData().toString()); });
@@ -807,7 +998,6 @@ QWidget* CutoutPanel::buildControllerTab() {
   top->addWidget(defaultClipCombo_);
   top->addWidget(new QLabel("게임 인물"));
   top->addWidget(characterCombo_);
-  top->addStretch();
   auto* tables = new QHBoxLayout;
   auto* layers = new QVBoxLayout;
   layerTable_ = new QTableWidget(0, 2);
@@ -848,31 +1038,35 @@ QWidget* CutoutPanel::buildControllerTab() {
   bindings->addLayout(bindingButtons);
   tables->addLayout(layers, 1);
   tables->addLayout(bindings, 4);
-  auto* preview = new QHBoxLayout;
+  auto* preview = toolRow("cutoutPreviewTools");
   previewSignalCombo_ = new QComboBox;
   previewSignalCombo_->setObjectName("cutoutPreviewSignalName");
   for (const auto& s : signalVocabulary()) previewSignalCombo_->addItem(QString("%1 · %2").arg(s.name, s.label), s.name);
   previewParams_ = new QLineEdit;
   previewParams_->setObjectName("cutoutPreviewSignalParams");
   previewParams_->setPlaceholderText("신호 값 예: outcome=success, actionId=work");
+  previewParams_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  previewParams_->setMinimumWidth(120);
   auto* fire = new QPushButton("미리 보기 신호");
   fire->setObjectName("cutoutPreviewSignal");
   auto* reset = new QPushButton("미리 보기 초기화");
   reset->setObjectName("cutoutPreviewReset");
   previewResult_ = new QLabel("이 탭에서는 캔버스가 게임 연결 미리 보기를 보여 줍니다(게임에는 영향 없음).");
   previewResult_->setObjectName("cutoutPreviewResult");
+  previewResult_->setWordWrap(true);
+  previewResult_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   connect(fire, &QPushButton::clicked, this, [this] {
     previewSignal(previewSignalCombo_->currentData().toString(), parsePairs(previewParams_->text()));
   });
   connect(reset, &QPushButton::clicked, this, [this] { previewKey_.clear(); ensurePreview(); updateCanvas(); });
   preview->addWidget(new QLabel("신호"));
   preview->addWidget(previewSignalCombo_);
-  preview->addWidget(previewParams_, 1);
+  preview->addWidget(previewParams_);
   preview->addWidget(fire);
   preview->addWidget(reset);
-  layout->addLayout(top);
+  layout->addWidget(top);
   layout->addLayout(tables, 1);
-  layout->addLayout(preview);
+  layout->addWidget(preview);
   layout->addWidget(previewResult_);
   return tab;
 }
@@ -1114,6 +1308,7 @@ void CutoutPanel::refreshDiagnostics() {
     item->setData(Qt::UserRole, file);
     item->setData(Qt::UserRole + 1, d.value("pointer").toString());
     item->setForeground(severity == "error" ? QColor("#f87171") : QColor("#fbbf24"));
+    item->setToolTip(item->text());  // the narrow side column elides long paths
   }
   if (diagnostics_->count() == 0) new QListWidgetItem("검증 문제 없음", diagnostics_);
 }

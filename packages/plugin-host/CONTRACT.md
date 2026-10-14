@@ -194,6 +194,23 @@ carries it through unchanged; other hosts restoring an envelope must do the same
 The DLL receives a `StudioHost*` and must perform every document change through
 `StudioHost::request("edit", …)`; widget state is only a cache of the service view.
 
+Optional workspaces (same ABI name and `apiVersion` 1). `StudioHost`/`StudioPlugin` vtables
+are frozen, so the extension is a second Qt interface instead of appended virtuals:
+`StudioWorkspacePlugin` (IID `com.raising.StudioWorkspacePlugin/1`, listed in the plugin's
+`Q_INTERFACES`; the metadata IID stays `com.raising.StudioPlugin/1`). After `activate()` the
+host `qobject_cast`s the loader instance; when the cast succeeds it calls
+`createWorkspaces(StudioWorkspaceHost*)` once and gets `{id, title, widget, shortcut}` entries.
+The host owns the widgets (deleted with the plugin docks before unload), shows a switcher
+(menu bar corner `studioWorkspaceSwitcher`, 보기 → 작업 공간 actions
+`studioWorkspace-screen` / `studioWorkspace-<plugin>-<id>`, the entry's shortcut toggles) and,
+while a workspace is the central area, hides every dock and the screen editor; returning
+restores the exact `saveState` taken when the screen editor was left. Menus, undo/redo, save
+and play stay available; switching never sends a request. `workspaceChanged(id, shown)`
+reports switches; `StudioWorkspaceHost::showWorkspace(id)` (empty = 화면 편집) lets the plugin
+switch (e.g. from `openEditor`). The last workspace is remembered per project root and comes
+back when that project loads the plugin again. Old DLLs (no interface) keep their docks; a
+new DLL on an old host is never asked and must keep working in its dock.
+
 ## 10. Node service module and host API (engine TS)
 
 ```js
