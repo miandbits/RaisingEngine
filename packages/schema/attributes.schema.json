@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/attributes.schema.json",
+  "title": "Attribute definitions", "type": "object",
+  "allOf": [{ "$ref": "common.schema.json#/$defs/header" }],
+  "properties": {
+    "attributes": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "title": "Attribute definition", "type": "object", "allOf": [{ "$ref": "common.schema.json#/$defs/range" }, {
+        "type": "object", "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" }, "label": { "$ref": "common.schema.json#/$defs/text" },
+          "kind": { "enum": ["stat", "resource", "condition"] }, "description": { "type": "string" }
+        },
+        "required": ["id", "label", "kind"] }], "unevaluatedProperties": false
+      }
+    }
+  },
+  "required": ["attributes"], "unevaluatedProperties": false
+}

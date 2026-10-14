@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/systems.schema.json",
+  "title": "Systems definition",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "battleHistoryLimit": { "type": "integer", "minimum": 1, "maximum": 256 },
+    "hero": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxHpAttributeId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "attackAttributeId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "defenseAttributeId": {
+          "$ref": "common.schema.json#/$defs/id"
+        }
+      },
+      "required": [
+        "maxHpAttributeId",
+        "attackAttributeId",
+        "defenseAttributeId"
+      ]
+    },
+    "equipment": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "itemId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "slot": {
+            "enum": [
+              "weapon",
+              "armor",
+              "accessory"
+            ]
+          },
+          "modifiers": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "maxHp": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "attack": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "defense": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              }
+            },
+            "required": [
+              "maxHp",
+              "attack",
+              "defense"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "itemId",
+          "slot",
+          "modifiers"
+        ]
+      }
+    },
+    "consumables": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "heal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          }
+        },
+        "required": [
+          "itemId",
+          "heal"
+        ]
+      }
+    },
+    "enemies": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "maxHp": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "attack": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "defense": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "rewards": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "$ref": "common.schema.json#/$defs/id"
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "quantity"
+                  ]
+                }
+              },
+              "effects": {
+                "$ref": "common.schema.json#/$defs/effects"
+              }
+            },
+            "required": [
+              "items",
+              "effects"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "maxHp",
+          "attack",
+          "defense",
+          "rewards"
+        ]
+      }
+    },
+    "expeditions": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "locationId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "entryNodeId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "nodes": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                "name": {
+                  "$ref": "common.schema.json#/$defs/text"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "connections": {
+                  "type": "array",
+                  "maxItems": 1000,
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "uniqueItems": true
+                },
+                "enemyId": {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                "exit": {
+                  "type": "boolean"
+                },
+                "presentation": {
+                  "$ref": "common.schema.json#/$defs/scene"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "connections"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "locationId",
+          "entryNodeId",
+          "nodes"
+        ]
+      }
+    },
+    "quests": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "locationId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "requirements": {
+            "$ref": "common.schema.json#/$defs/condition"
+          },
+          "enemyId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "targetCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "rewards": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "itemId": {
+                      "$ref": "common.schema.json#/$defs/id"
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    }
+                  },
+                  "required": [
+                    "itemId",
+                    "quantity"
+                  ]
+                }
+              },
+              "effects": {
+                "$ref": "common.schema.json#/$defs/effects"
+              }
+            },
+            "required": [
+              "items",
+              "effects"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "locationId",
+          "requirements",
+          "enemyId",
+          "targetCount",
+          "rewards"
+        ]
+      }
+    },
+    "relationshipStages": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "characterId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "relationshipId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "threshold": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "eventId": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "characterId",
+          "relationshipId",
+          "threshold"
+        ]
+      }
+    }
+  },
+  "required": [
+    "hero",
+    "equipment",
+    "consumables",
+    "enemies",
+    "expeditions",
+    "quests",
+    "relationshipStages"
+  ]
+}

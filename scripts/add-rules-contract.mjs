@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+const read=p=>JSON.parse(fs.readFileSync(p,'utf8')),write=(p,s)=>fs.writeFileSync(p,JSON.stringify(s,null,2)+'\n');
+const id={$ref:'common.schema.json#/$defs/id'},text={$ref:'common.schema.json#/$defs/text'},int={type:'integer',minimum:0,maximum:2147483647};
+const obj=(properties,required)=>({type:'object',additionalProperties:false,properties,required});
+const array=(items,maxItems=1000)=>({type:'array',maxItems,items});
+const g=read('packages/schema/gameplay.schema.json');
+g.$defs.action=structuredClone(g.$defs.service);delete g.$defs.action.properties.locationId;g.$defs.action.required=g.$defs.action.required.filter(x=>x!=='locationId');
+g.$defs.action.properties.locationIds={...array(id),uniqueItems:true};g.$defs.action.properties.rejectNoEffect={type:'boolean'};g.$defs.action.properties.eventId=id;
+g.$defs.policyBudget=obj({id,name:text,capacity:int,unit:{type:'string',maxLength:100}},['id','name','capacity']);
+g.$defs.policyGroup=obj({id,name:text,locationIds:{...array(id),uniqueItems:true},trigger:obj({type:{enum:['beforeActivity','afterActivity']},intervalPeriods:{type:'integer',minimum:1,maximum:3600}},['type']),options:{...array(obj({id,name:text,actionId:id,budgetUses:array(obj({budgetId:id,amount:int},['budgetId','amount']),100)},['id','name','actionId'])),minItems:1}},['id','name','trigger','options']);
+for(const [key,def] of [['actions','action'],['policyGroups','policyGroup'],['policyBudgets','policyBudget']])g.properties[key]=array({$ref:`#/$defs/${def}`});write('packages/schema/gameplay.schema.json',g);
+const c=read('packages/schema/common.schema.json');
+c.$defs.command.oneOf=c.$defs.command.oneOf.filter(x=>!['executeAction','selectPolicy'].includes(x.properties?.type?.const));
+c.$defs.command.oneOf.push(obj({type:{const:'executeAction'},actionId:{$ref:'#/$defs/id'},quantity:{type:'integer',minimum:1,maximum:2147483647}},['type','actionId','quantity']),obj({type:{const:'selectPolicy'},groupId:{$ref:'#/$defs/id'},optionId:{anyOf:[{$ref:'#/$defs/id'},{type:'null'}]}},['type','groupId','optionId']));write('packages/schema/common.schema.json',c);
+const s=read('packages/runtime-service/save.schema.json'),sp=s.$defs.state.properties.gameplay.properties;
+sp.policySelections={type:'object',propertyNames:{$ref:'#/$defs/id'},additionalProperties:{anyOf:[{$ref:'#/$defs/id'},{type:'null'}]}};
+for(const key of ['policyNextPeriods','policyAppliedPeriods'])sp[key]={type:'object',propertyNames:{$ref:'#/$defs/id'},additionalProperties:int};write('packages/runtime-service/save.schema.json',s);
+const v=read('packages/schema/visual.schema.json');
+for(const def of [v.$defs.element,v.$defs.componentChild]){const p=def.properties;if(!p)continue;for(const kind of ['actions','policies'])if(def===v.$defs.element&&!p.kind.enum.includes(kind))p.kind.enum.push(kind);for(const action of ['executeAction','selectPolicy'])if(!p.action.enum.includes(action))p.action.enum.push(action);for(const key of ['actionId','groupId'])p[key]=id;p.optionId={anyOf:[id,{type:'null'}]};p.actionIds={...array(id),uniqueItems:true};p.groupIds={...array(id),uniqueItems:true};for(const [action,fields] of [['executeAction',['actionId']],['selectPolicy',['groupId']]])if(!def.allOf.some(x=>x.if?.properties?.action?.const===action))def.allOf.push({if:{properties:{action:{const:action}},required:['action']},then:{properties:Object.fromEntries(fields.map(x=>[x,{}])),required:fields}});const overrides=p.overrides?.items?.properties?.values?.properties;if(overrides){overrides.action=p.action;for(const key of ['actionId','groupId','optionId'])overrides[key]=p[key];}}
+write('packages/schema/visual.schema.json',v);

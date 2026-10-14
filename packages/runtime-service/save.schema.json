@@ -1,0 +1,683 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/saves/1.0.0/save.schema.json",
+  "title": "Run save envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "saveVersion",
+    "coreVersion",
+    "contentFingerprint",
+    "origin",
+    "commands",
+    "state"
+  ],
+  "properties": {
+    "saveVersion": {
+      "const": "1.0.0"
+    },
+    "coreVersion": {
+      "type": "string"
+    },
+    "contentFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seed",
+        "mode",
+        "initialOverrides"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "mode": {
+          "enum": [
+            "full",
+            "activities-only"
+          ]
+        },
+        "initialOverrides": {
+          "$ref": "https://raising-engine.example/schemas/0.1.0/common.schema.json#/$defs/overrides"
+        },
+        "userValues": {
+          "$ref": "https://raising-engine.example/schemas/0.1.0/common.schema.json#/$defs/userValues"
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "state": {
+      "$ref": "#/$defs/state"
+    },
+    "playerPresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "timeline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timelineCursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "battleSelection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/battleSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "timeline"
+      ]
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "id": {
+      "$ref": "https://raising-engine.example/schemas/0.1.0/common.schema.json#/$defs/id"
+    },
+    "command": {
+      "$ref": "https://raising-engine.example/schemas/0.1.0/common.schema.json#/$defs/command"
+    },
+    "cursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "nodeId"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "event",
+            "ending"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "nodeId": {
+          "$ref": "#/$defs/id"
+        },
+        "returnPhase": {
+          "enum": [
+            "planning",
+            "ready",
+            "period-end"
+          ]
+        },
+        "returnPresentation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "backgroundAssetId",
+            "musicAssetId",
+            "portraits"
+          ],
+          "properties": {
+            "backgroundAssetId": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/id"
+                }
+              ]
+            },
+            "musicAssetId": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/id"
+                }
+              ]
+            },
+            "portraits": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "characterId",
+                  "portraitId",
+                  "position"
+                ],
+                "properties": {
+                  "characterId": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "portraitId": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "scale": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 4
+                  },
+                  "offsetX": {
+                    "type": "number",
+                    "minimum": -2,
+                    "maximum": 2
+                  },
+                  "offsetY": {
+                    "type": "number",
+                    "minimum": -2,
+                    "maximum": 2
+                  },
+                  "position": {
+                    "enum": [
+                      "left",
+                      "center",
+                      "right"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "finishPeriod": {
+          "type": "boolean"
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coreVersion",
+        "contentFingerprint",
+        "mode",
+        "stateRevision",
+        "periodIndex",
+        "phase",
+        "schedule",
+        "rng",
+        "attributes",
+        "flags",
+        "relationships",
+        "completedEvents",
+        "lastActivityResult",
+        "activeNarrative",
+        "endingId",
+        "presentation"
+      ],
+      "properties": {
+        "coreVersion": {
+          "type": "string"
+        },
+        "contentFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "mode": {
+          "enum": [
+            "full",
+            "activities-only"
+          ]
+        },
+        "stateRevision": {
+          "$ref": "#/$defs/revision"
+        },
+        "periodIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3599
+        },
+        "phase": {
+          "enum": [
+            "planning",
+            "ready",
+            "activity-result",
+            "period-end",
+            "narrative",
+            "finished",
+            "expedition",
+            "battle"
+          ]
+        },
+        "schedule": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          ]
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          }
+        },
+        "flags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "relationships": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "completedEvents": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "activeNarrative": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/cursor"
+            }
+          ]
+        },
+        "endingId": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/id"
+            }
+          ]
+        },
+        "rng": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "algorithm",
+            "seed",
+            "state",
+            "draws"
+          ],
+          "properties": {
+            "algorithm": {
+              "const": "pcg32-xsh-rr-v1"
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "state": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "draws": {
+              "$ref": "#/$defs/revision"
+            }
+          }
+        },
+        "presentation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "backgroundAssetId",
+            "musicAssetId",
+            "portraits"
+          ],
+          "properties": {
+            "backgroundAssetId": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/id"
+                }
+              ]
+            },
+            "musicAssetId": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/id"
+                }
+              ]
+            },
+            "portraits": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "characterId",
+                  "portraitId",
+                  "position"
+                ],
+                "properties": {
+                  "characterId": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "portraitId": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "scale": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 4
+                  },
+                  "offsetX": {
+                    "type": "number",
+                    "minimum": -2,
+                    "maximum": 2
+                  },
+                  "offsetY": {
+                    "type": "number",
+                    "minimum": -2,
+                    "maximum": 2
+                  },
+                  "position": {
+                    "enum": [
+                      "left",
+                      "center",
+                      "right"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "lastActivityResult": {
+          "description": "Full nested result, value ranges and cursor consistency are checked by deterministic journal replay.",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "gameplay": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "locationId",
+            "screenId",
+            "inventory",
+            "purchased",
+            "interactionPeriods",
+            "visited"
+          ],
+          "properties": {
+            "locationId": {
+              "$ref": "#/$defs/id"
+            },
+            "screenId": {
+              "$ref": "#/$defs/id"
+            },
+            "inventory": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              }
+            },
+            "purchased": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "propertyNames": {
+                  "$ref": "#/$defs/id"
+                },
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                }
+              }
+            },
+            "interactionPeriods": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              }
+            },
+            "visited": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "dietId": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dietAppliedPeriod": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "dietNextPeriod": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "policySelections": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "policyNextPeriods": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              }
+            },
+            "policyAppliedPeriods": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              }
+            },
+            "rulePeriods": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "periodStart": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                },
+                "periodEnd": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                }
+              },
+              "required": []
+            }
+          }
+        },
+        "systems": {
+          "type": "object",
+          "description": "Checked against deterministic command journal replay."
+        },
+        "userValues": {
+          "$ref": "https://raising-engine.example/schemas/0.1.0/common.schema.json#/$defs/userValues"
+        }
+      }
+    },
+    "timelineCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resultRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "activityId": {
+          "$ref": "#/$defs/id"
+        },
+        "timelineId": {
+          "$ref": "#/$defs/id"
+        },
+        "clipIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12200
+        },
+        "elapsedMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "speed": {
+          "enum": [
+            1,
+            4
+          ]
+        },
+        "completed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "resultRevision",
+        "activityId",
+        "timelineId",
+        "clipIndex",
+        "elapsedMs",
+        "paused",
+        "speed",
+        "completed"
+      ]
+    },
+    "battleSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stateRevision": {
+          "$ref": "#/$defs/revision"
+        },
+        "battleAction": {
+          "enum": [
+            "attack",
+            "guard",
+            "flee",
+            "useItem"
+          ]
+        },
+        "itemId": {
+          "$ref": "#/$defs/id"
+        },
+        "target": {
+          "enum": [
+            "self",
+            "enemy"
+          ]
+        }
+      },
+      "required": [
+        "stateRevision",
+        "battleAction"
+      ]
+    }
+  }
+}

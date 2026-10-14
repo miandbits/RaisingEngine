@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.20)
+project(raising_native VERSION 0.1.0 LANGUAGES CXX)
+add_library(raising_core STATIC src/runtime.cpp)
+target_compile_features(raising_core PUBLIC cxx_std_17)
+target_include_directories(raising_core PUBLIC include PRIVATE vendor)
+if(MSVC)
+  target_compile_options(raising_core PRIVATE /W4 /utf-8)
+else()
+  target_compile_options(raising_core PRIVATE -Wall -Wextra -Wpedantic -finput-charset=UTF-8)
+endif()
+add_executable(raising-native src/main.cpp)
+if(RAISING_BINARY_NAME)
+  set_target_properties(raising-native PROPERTIES OUTPUT_NAME "${RAISING_BINARY_NAME}")
+endif()
+target_link_libraries(raising-native PRIVATE raising_core)
+if(MINGW)
+  target_link_options(raising-native PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
+if(EMSCRIPTEN)
+  target_compile_options(raising_core PRIVATE -fexceptions)
+  add_executable(raising-wasm src/wasm.cpp)
+  target_link_libraries(raising-wasm PRIVATE raising_core)
+  set_target_properties(raising-wasm PROPERTIES SUFFIX ".mjs")
+  target_link_options(raising-wasm PRIVATE
+    --no-entry -fexceptions -sMODULARIZE=1 -sEXPORT_ES6=1 -sALLOW_MEMORY_GROWTH=1
+    -sENVIRONMENT=web,node -sFILESYSTEM=0 -sDYNAMIC_EXECUTION=0
+    -sSTACK_SIZE=1048576
+    "-sEXPORTED_FUNCTIONS=['_raising_process','_malloc','_free']"
+    "-sEXPORTED_RUNTIME_METHODS=['UTF8ToString','HEAPU8']")
+endif()

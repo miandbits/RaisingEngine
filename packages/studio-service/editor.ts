@@ -1,0 +1,219 @@
+import { readFile, realpath } from 'node:fs/promises';
+import type { StudioTemplate } from './templates.js';
+import path from 'node:path';
+import { loadProject } from '../project-service/loader.js';
+import { parseDocument } from '../project-service/json-document.js';
+import { buildSnapshot } from '../project-service/snapshot.js';
+import { bytesOrNull, commitProject, fileHash, recoverProject, safeFile } from '../project-service/transaction.js';
+import { ProjectConflict, projectVersion } from '../project-service/version.js';
+import { validateProject } from '../validation/index.js';
+import type { Diagnostic, DocumentKind, Json, LoadedProject } from '../validation/model.js';
+import type { ExportTarget } from '../export-service/model.js';
+
+export interface DraftDocument { file: string; kind: DocumentKind; data: Json }
+export interface StudioView {
+  revision: number; root: string | null; documents: DraftDocument[]; dirty: boolean;
+  draftVersion: string; diskVersion: string | null;
+  undo: boolean; redo: boolean; diagnostics: Diagnostic[]; readOnly: boolean;
+}
+export interface StudioReply { view: StudioView; error: string | null; notice: string | null }
+export type PrimitiveEdit = { type: 'replace'; file: string; data: Json } | { type: 'add'; kind: 'activity' | 'event' | 'ending' | 'character'; id: string }
+  | { type: 'delete'; file: string }
+  | { type: 'importScenario'; id: string; data: Json };
+export const MAX_EDIT_BATCH = 100;
+export type Edit = PrimitiveEdit | { type: 'undo' } | { type: 'redo' }
+  | { type: 'batch'; edits: PrimitiveEdit[] };
+export interface StudioBridge {
+  view(): Promise<StudioReply>; edit(edit: Edit, revision: number): Promise<StudioReply>;
+  open(): Promise<StudioReply>; create(template?: StudioTemplate): Promise<StudioReply>; reload(revision: number): Promise<StudioReply>;
+  validate(revision: number): Promise<StudioReply>; save(revision: number): Promise<StudioReply>;
+  preview(revision: number): Promise<StudioReply>;
+  importImage(revision: number): Promise<StudioReply>;
+  exportGame(target: ExportTarget, revision: number): Promise<StudioReply>;
+}
+const serialize = (data: Json) => JSON.stringify(data, null, 2) + '\n';
+const sourceKey = (documents: DraftDocument[]) => JSON.stringify(documents);
+export class StudioEditor {
+  root: string | null = null;
+  documents: DraftDocument[] = [];
+  revision = 0;
+  readOnly = false;
+  diagnostics: Diagnostic[] = [];
+  private original = '';
+  private baseline = new Map<string, string>();
+  private originalDocuments = new Map<string, string>();
+  private loaderDiagnostics: Diagnostic[] = [];
+  private history: DraftDocument[][] = [];
+  private future: DraftDocument[][] = [];
+
+  diskVersion(): string {
+    if (!this.root) throw new Error('프로젝트를 열어 주세요.');
+    return projectVersion(this.root, this.baseline);
+  }
+  fileVersions(): Record<string, string> { return Object.fromEntries(this.baseline); }
+
+  async assertDiskUnchanged(ownsLock = false): Promise<void> {
+    if (!this.root) throw new Error('프로젝트를 열어 주세요.');
+    const checkLock = async () => {
+      if (!ownsLock && await bytesOrNull(path.join(this.root!, '.studio/pending-save.json')) !== null)
+        throw Object.assign(new Error('다른 저장 작업 또는 복구 기록이 있습니다. 완료 후 다시 시도하세요.'), { code: 'PROJECT_BUSY' });
+    };
+    await checkLock();
+    const disk = await loadProject(this.root);
+    if (disk.diagnostics.some(d => d.severity === 'error')) throw Object.assign(new Error('외부 파일을 읽을 수 없습니다. 다시 불러온 뒤 확인해 주세요.'), { code: 'PROJECT_READ_ERROR' });
+    const actual = new Map<string, string>();
+    for (const doc of disk.documents) {
+      const bytes = await readFile(await safeFile(this.root, doc.file));
+      if (fileHash(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) !== doc.version)
+        throw Object.assign(new Error(`읽는 동안 변경되었습니다: ${doc.file}`), { code: 'PROJECT_BUSY' });
+      actual.set(doc.file, fileHash(bytes));
+    }
+    await checkLock();
+    const files = [...new Set([...this.baseline.keys(), ...actual.keys()])].filter(file => this.baseline.get(file) !== actual.get(file));
+    if (files.length) throw new ProjectConflict(this.diskVersion(), projectVersion(this.root, actual), files);
+  }
+
+  draftVersion(): string { return `draft-v1:${fileHash(sourceKey(this.documents))}`; }
+  view(): StudioView { return { revision: this.revision, root: this.root, documents: structuredClone(this.documents), draftVersion: this.draftVersion(), diskVersion: this.root ? this.diskVersion() : null,
+    dirty: sourceKey(this.documents) !== this.original, undo: !!this.history.length, redo: !!this.future.length,
+    diagnostics: this.diagnostics, readOnly: this.readOnly }; }
+  reply(error: string | null = null, notice: string | null = null): StudioReply { return { view: this.view(), error, notice }; }
+  current(revision: unknown): void { if (revision !== this.revision) throw new Error('편집 내용이 갱신되었습니다. 다시 시도해 주세요.'); }
+
+  async open(root: string, readOnly = false): Promise<StudioReply> {
+    const resolved = await realpath(root);
+    const recovered = readOnly ? false : await recoverProject(resolved);
+    const loaded = await loadProject(resolved);
+    if (!loaded.documents.some(d => d.kind === 'project')) throw new Error('project.json을 읽을 수 없습니다. 기존 프로젝트를 유지합니다.');
+    const baseline = new Map<string, string>();
+    for (const doc of loaded.documents) {
+      const bytes = await readFile(path.join(resolved, doc.file));
+      if (fileHash(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) !== doc.version) throw new Error(`읽는 동안 변경되었습니다: ${doc.file}`);
+      baseline.set(doc.file, fileHash(bytes));
+    }
+    this.root = resolved; this.readOnly = readOnly;
+    this.documents = loaded.documents.map(({ file, kind, data }) => ({ file, kind, data }));
+    this.original = sourceKey(this.documents); this.baseline = baseline;
+    this.originalDocuments = new Map(this.documents.map(d => [d.file, serialize(d.data)]));
+    this.history = []; this.future = []; this.loaderDiagnostics = loaded.diagnostics;
+    this.revision++;
+    await this.validate(this.revision);
+    return this.reply(null, recovered ? '중단된 저장을 이전 상태로 복구했습니다.' : null);
+  }
+
+  edit(edit: Edit, revision: number): StudioReply {
+    this.current(revision);
+    const next = structuredClone(this.documents);
+    if (edit.type === 'undo' || edit.type === 'redo') {
+      const from = edit.type === 'undo' ? this.history : this.future;
+      const to = edit.type === 'undo' ? this.future : this.history;
+      const previous = from.pop();
+      if (previous) { to.push(this.documents); this.documents = previous; this.revision++; this.diagnostics = []; }
+      return this.reply();
+    }
+    const edits = edit.type === 'batch' ? edit.edits : [edit];
+    if (!Array.isArray(edits) || edits.length < 1 || edits.length > MAX_EDIT_BATCH)
+      throw new Error(`일괄 편집은 1..${MAX_EDIT_BATCH}개 변경이어야 합니다.`);
+    // Apply only to the detached candidate. History, revision and diagnostics
+    // remain untouched until every primitive succeeds.
+    for (const primitive of edits) {
+      if (!primitive || typeof primitive !== 'object' || !['replace', 'add', 'delete', 'importScenario'].includes(primitive.type))
+        throw new Error('일괄 편집에는 추가·수정·삭제·시나리오 가져오기만 사용할 수 있습니다.');
+      const edit = primitive;
+      if (edit.type === 'replace') {
+        const doc = next.find(d => d.file === edit.file);
+        if (!doc) throw new Error('문서를 찾을 수 없습니다.');
+        const text = serialize(edit.data);
+        if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw new Error('문서는 2 MiB 이하여야 합니다.');
+        const parsed = parseDocument(doc.file, doc.kind, text);
+        if (!parsed.document) throw new Error('문서 구조를 읽을 수 없습니다.');
+        doc.data = parsed.document.data;
+      } else if (edit.type === 'add') {
+        if (!['activity', 'event', 'ending', 'character'].includes(edit.kind) || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(edit.id) || edit.id.length > 64) throw new Error('ID는 소문자 영문·숫자·하이픈으로 입력하세요.');
+        const folders = { activity: 'activities', event: 'events', ending: 'endings', character: 'characters' };
+        const file = `${folders[edit.kind]}/${edit.id}.json`;
+        if (next.some(d => d.file === file || d.kind === edit.kind && (d.data as { id?: string })?.id === edit.id)) throw new Error('이미 존재하는 ID입니다.');
+        const data: Record<string, Json> = { formatVersion: '0.1.0', id: edit.id, label: '새 콘텐츠' };
+        if (edit.kind === 'character') { delete data.label; Object.assign(data, { name: '새 인물', portraits: {}, relationships: [] }); }
+        else {
+          data.requirements = { op: 'always' };
+          if (edit.kind === 'activity') Object.assign(data, { costs: [], baseEffects: [] });
+          else {
+            Object.assign(data, { priority: 0, entryNodeId: 'intro', nodes: [
+              { id: 'intro', type: 'dialogue', speakerId: null, text: '새로운 이야기를 입력하세요.', next: 'end' }, { id: 'end', type: 'end' }] });
+            if (edit.kind === 'event') data.window = { fromPeriod: 0, throughPeriod: 0 };
+          }
+        }
+        next.push({ file, kind: edit.kind, data });
+      } else if (edit.type === 'importScenario') {
+        if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(edit.id) || edit.id.length > 64) throw new Error('시나리오 ID 형식이 올바르지 않습니다.');
+        const file = `scenarios/${edit.id}.json`;
+        if (next.some(d => d.file === file || d.kind === 'scenario' && (d.data as { id?: string }).id === edit.id)) throw new Error('이미 존재하는 시나리오입니다.');
+        if ((edit.data as { id?: string })?.id !== edit.id || Buffer.byteLength(serialize(edit.data)) > 2 * 1024 * 1024) throw new Error('시나리오 데이터가 올바르지 않습니다.');
+        next.push({ file, kind: 'scenario', data: structuredClone(edit.data) });
+      } else if (edit.type === 'delete') {
+        const at = next.findIndex(d => d.file === edit.file && ['activity', 'event', 'ending', 'character', 'scenario'].includes(d.kind));
+        if (at < 0) throw new Error('이 문서는 삭제할 수 없습니다.');
+        next.splice(at, 1);
+      } else throw new Error('알 수 없는 편집 명령입니다.');
+    }
+    if (sourceKey(next) === sourceKey(this.documents)) return this.reply();
+    this.history.push(this.documents); if (this.history.length > 100) this.history.shift();
+    this.future = []; this.documents = next; this.revision++; this.diagnostics = [];
+    return this.reply();
+  }
+
+  loaded(): LoadedProject {
+    if (!this.root) throw new Error('프로젝트를 열어 주세요.');
+    const loaded: LoadedProject = { root: this.root, documents: [], diagnostics: [...this.loaderDiagnostics] };
+    for (const doc of this.documents) {
+      const parsed = parseDocument(doc.file, doc.kind, serialize(doc.data));
+      if (parsed.document) loaded.documents.push(parsed.document);
+      loaded.diagnostics.push(...parsed.diagnostics);
+    }
+    return loaded;
+  }
+  async validate(revision: number): Promise<StudioReply> {
+    this.current(revision);
+    const result = await validateProject(this.loaded());
+    this.current(revision);
+    this.diagnostics = result.diagnostics;
+    return this.reply(null, result.valid ? '검증을 통과했습니다.' : '진단 목록에서 수정할 항목을 확인하세요.');
+  }
+  async snapshot(revision: number) {
+    this.current(revision);
+    const result = await buildSnapshot(this.loaded());
+    this.current(revision);
+    this.diagnostics = result.diagnostics;
+    return result;
+  }
+  async save(revision: number): Promise<StudioReply> {
+    this.current(revision);
+    if (!this.root || this.readOnly) throw new Error('기본 샘플은 읽기 전용입니다. 새 프로젝트로 복사한 뒤 저장하세요.');
+    const candidate = this.loaded();
+    const validation = await validateProject(candidate);
+    this.diagnostics = validation.diagnostics;
+    // Structural errors cannot be written. Semantic errors are allowed in an explicit draft save.
+    if (candidate.diagnostics.some(d => d.severity === 'error') || validation.structuredDocuments.length !== this.documents.length) throw new Error('구조 오류를 먼저 수정해 주세요. 의미 오류가 있는 초안은 저장할 수 있습니다.');
+    await this.assertDiskUnchanged();
+    const all = new Set([...this.baseline.keys(), ...this.documents.map(d => d.file)]);
+    const changes = [...all].flatMap(file => {
+      const doc = this.documents.find(d => d.file === file);
+      const text = doc ? serialize(doc.data) : null;
+      const expected = this.baseline.get(file) ?? null;
+      if (text !== null && this.originalDocuments.get(file) === text) return [];
+      return text !== null && fileHash(text) === expected ? [] : [{ file, expected, text }];
+    });
+    await commitProject(this.root, changes, async () => {
+      this.current(revision);
+      await this.assertDiskUnchanged(true);
+    });
+    for (const change of changes) {
+      if (change.text === null) this.baseline.delete(change.file);
+      else this.baseline.set(change.file, fileHash(change.text));
+    }
+    this.originalDocuments = new Map(this.documents.map(d => [d.file, serialize(d.data)]));
+    this.original = sourceKey(this.documents); this.revision++;
+    return this.reply(null, this.diagnostics.some(d => d.severity === 'error') ? '초안을 저장했습니다. 실행 전 의미 오류를 수정하세요.' : '프로젝트를 저장했습니다.');
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/scenario.schema.json",
+  "title": "Scenario specification",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/header"
+    }
+  ],
+  "$defs": {
+    "assertion": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "condition"
+            },
+            "condition": {
+              "$ref": "common.schema.json#/$defs/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "condition"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "ending"
+            },
+            "endingId": {
+              "$ref": "common.schema.json#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "endingId"
+          ]
+        }
+      ]
+    }
+  },
+  "properties": {
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "description": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "initialOverrides": {
+      "$ref": "common.schema.json#/$defs/overrides"
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "planMonth"
+              },
+              "activityIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": {
+                  "$ref": "common.schema.json#/$defs/id"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "activityIds"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "runPeriod"
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "eventId": {
+                      "$ref": "common.schema.json#/$defs/id"
+                    },
+                    "nodeId": {
+                      "$ref": "common.schema.json#/$defs/id"
+                    },
+                    "choiceId": {
+                      "$ref": "common.schema.json#/$defs/id"
+                    }
+                  },
+                  "required": [
+                    "eventId",
+                    "nodeId",
+                    "choiceId"
+                  ]
+                }
+              },
+              "assertions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/assertion"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "choices"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "command"
+            ],
+            "properties": {
+              "type": {
+                "const": "dispatch"
+              },
+              "command": {
+                "$ref": "common.schema.json#/$defs/command"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/assertion"
+      }
+    },
+    "stepLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    }
+  },
+  "required": [
+    "id",
+    "seed",
+    "initialOverrides",
+    "commands",
+    "assertions",
+    "stepLimit"
+  ],
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,628 @@
+{
+  "$schema": "../../packages/schema/project.schema.json",
+  "formatVersion": "0.1.0",
+  "gameId": "academy-year",
+  "title": "견습생의 사계절 · 비주얼",
+  "description": "봄 입학부터 다음 해 봄까지 12개월·36기간. 기사·학자·장인·이웃·여행자의 다섯 길을 선택합니다.",
+  "startYear": 1,
+  "startMonth": 4,
+  "durationMonths": 12,
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "defaultEndingId": "wanderer",
+  "visual": {
+    "width": 1280,
+    "height": 720,
+    "screens": [
+      {
+        "id": "title",
+        "label": "타이틀",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "background",
+            "fit": "cover",
+            "locked": true,
+            "motion": "fade",
+            "durationMs": 600
+          },
+          {
+            "id": "portrait-left",
+            "kind": "image",
+            "x": 300,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-left",
+            "fit": "contain",
+            "motion": "slide-left",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-center",
+            "kind": "image",
+            "x": 525,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-center",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-right",
+            "kind": "image",
+            "x": 750,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-right",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "title-panel",
+            "kind": "panel",
+            "x": 80,
+            "y": 180,
+            "width": 600,
+            "height": 380,
+            "fill": "#fff9e8ed",
+            "radius": 20
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 115,
+            "y": 225,
+            "width": 530,
+            "height": 110,
+            "binding": "title",
+            "fontSize": 48,
+            "color": "#304d46"
+          },
+          {
+            "id": "description",
+            "kind": "text",
+            "x": 115,
+            "y": 350,
+            "width": 530,
+            "height": 100,
+            "binding": "description",
+            "fontSize": 20,
+            "color": "#304d46"
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 115,
+            "y": 476,
+            "width": 230,
+            "height": 48,
+            "text": "새 게임 시작",
+            "action": "start",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 370,
+            "y": 476,
+            "width": 180,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          }
+        ]
+      },
+      {
+        "id": "schedule",
+        "label": "일정·활동 결과",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "background",
+            "fit": "cover",
+            "locked": true,
+            "motion": "fade",
+            "durationMs": 600
+          },
+          {
+            "id": "portrait-left",
+            "kind": "image",
+            "x": 300,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-left",
+            "fit": "contain",
+            "motion": "slide-left",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-center",
+            "kind": "image",
+            "x": 525,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-center",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-right",
+            "kind": "image",
+            "x": 750,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-right",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "stats-panel",
+            "kind": "panel",
+            "x": 24,
+            "y": 24,
+            "width": 266,
+            "height": 672,
+            "fill": "#fff9e8ed",
+            "radius": 20
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 42,
+            "y": 42,
+            "width": 230,
+            "height": 74,
+            "binding": "title",
+            "fontSize": 22,
+            "color": "#304d46"
+          },
+          {
+            "id": "calendar",
+            "kind": "text",
+            "x": 42,
+            "y": 120,
+            "width": 230,
+            "height": 45,
+            "binding": "calendar",
+            "fontSize": 22,
+            "color": "#304d46"
+          },
+          {
+            "id": "stats",
+            "kind": "stats",
+            "x": 42,
+            "y": 185,
+            "width": 230,
+            "height": 485,
+            "fontSize": 18
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 920,
+            "y": 24,
+            "width": 100,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1030,
+            "y": 24,
+            "width": 110,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "sound",
+            "kind": "button",
+            "x": 1150,
+            "y": 24,
+            "width": 100,
+            "height": 48,
+            "text": "소리",
+            "action": "sound",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "schedule-panel",
+            "kind": "panel",
+            "x": 320,
+            "y": 404,
+            "width": 936,
+            "height": 292,
+            "fill": "#fff9e8ed",
+            "radius": 20
+          },
+          {
+            "id": "schedule",
+            "kind": "schedule",
+            "x": 344,
+            "y": 424,
+            "width": 888,
+            "height": 125,
+            "visibleWhen": "planning",
+            "fontSize": 18
+          },
+          {
+            "id": "result",
+            "kind": "result",
+            "x": 344,
+            "y": 424,
+            "width": 888,
+            "height": 190,
+            "visibleWhen": "result",
+            "fontSize": 20
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 910,
+            "y": 625,
+            "width": 320,
+            "height": 48,
+            "text": "일정 확정 / 활동 시작",
+            "action": "advance",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          }
+        ]
+      },
+      {
+        "id": "story",
+        "label": "대화·선택지",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "background",
+            "fit": "cover",
+            "locked": true,
+            "motion": "fade",
+            "durationMs": 600
+          },
+          {
+            "id": "portrait-left",
+            "kind": "image",
+            "x": 300,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-left",
+            "fit": "contain",
+            "motion": "slide-left",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-center",
+            "kind": "image",
+            "x": 525,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-center",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-right",
+            "kind": "image",
+            "x": 750,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-right",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 920,
+            "y": 24,
+            "width": 100,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1030,
+            "y": 24,
+            "width": 110,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "sound",
+            "kind": "button",
+            "x": 1150,
+            "y": 24,
+            "width": 100,
+            "height": 48,
+            "text": "소리",
+            "action": "sound",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "dialogue-panel",
+            "kind": "panel",
+            "x": 44,
+            "y": 465,
+            "width": 1192,
+            "height": 230,
+            "fill": "#fff9e8ed",
+            "radius": 20
+          },
+          {
+            "id": "speaker",
+            "kind": "text",
+            "x": 72,
+            "y": 480,
+            "width": 450,
+            "height": 44,
+            "binding": "speaker",
+            "fontSize": 22,
+            "color": "#304d46"
+          },
+          {
+            "id": "dialogue",
+            "kind": "dialogue",
+            "x": 72,
+            "y": 525,
+            "width": 1100,
+            "height": 90,
+            "fontSize": 26
+          },
+          {
+            "id": "choices",
+            "kind": "choices",
+            "x": 580,
+            "y": 145,
+            "width": 630,
+            "height": 292,
+            "visibleWhen": "choice",
+            "fontSize": 21,
+            "fill": "#fff9e8ee",
+            "color": "#304d46",
+            "radius": 12
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 1030,
+            "y": 630,
+            "width": 175,
+            "height": 48,
+            "text": "계속",
+            "action": "advance",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          }
+        ]
+      },
+      {
+        "id": "ending",
+        "label": "엔딩",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "background",
+            "fit": "cover",
+            "locked": true,
+            "motion": "fade",
+            "durationMs": 600
+          },
+          {
+            "id": "portrait-left",
+            "kind": "image",
+            "x": 300,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-left",
+            "fit": "contain",
+            "motion": "slide-left",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-center",
+            "kind": "image",
+            "x": 525,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-center",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "portrait-right",
+            "kind": "image",
+            "x": 750,
+            "y": 80,
+            "width": 360,
+            "height": 610,
+            "imageSource": "portrait-right",
+            "fit": "contain",
+            "motion": "fade",
+            "durationMs": 450
+          },
+          {
+            "id": "ending-panel",
+            "kind": "panel",
+            "x": 260,
+            "y": 150,
+            "width": 760,
+            "height": 430,
+            "fill": "#fff9e8ed",
+            "radius": 20
+          },
+          {
+            "id": "ending",
+            "kind": "text",
+            "x": 300,
+            "y": 210,
+            "width": 680,
+            "height": 125,
+            "binding": "ending",
+            "fontSize": 48,
+            "color": "#304d46"
+          },
+          {
+            "id": "thanks",
+            "kind": "text",
+            "x": 300,
+            "y": 355,
+            "width": 680,
+            "height": 80,
+            "text": "당신의 선택으로 완성한 한 해",
+            "fontSize": 25,
+            "align": "center"
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 450,
+            "y": 480,
+            "width": 380,
+            "height": 48,
+            "text": "새로운 이야기 시작",
+            "action": "start",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 920,
+            "y": 24,
+            "width": 100,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1030,
+            "y": 24,
+            "width": 110,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          },
+          {
+            "id": "sound",
+            "kind": "button",
+            "x": 1150,
+            "y": 24,
+            "width": 100,
+            "height": 48,
+            "text": "소리",
+            "action": "sound",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "radius": 10,
+            "fontSize": 18
+          }
+        ]
+      }
+    ],
+    "defaultScene": {
+      "backgroundAssetId": "visual-courtyard",
+      "portraits": [
+        {
+          "characterId": "apprentice",
+          "portraitId": "visual-neutral",
+          "position": "center"
+        }
+      ]
+    }
+  }
+}

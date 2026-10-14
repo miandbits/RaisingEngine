@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/activity.schema.json",
+  "title": "Activity definition",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/header"
+    }
+  ],
+  "properties": {
+    "iconAssetId": {"$ref":"common.schema.json#/$defs/id"},
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "label": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "description": {
+      "type": "string"
+    },
+    "previewAttributes": {
+      "description": "Current-state attribute details shown when selecting this activity; not a forecast of a future scheduled period.",
+      "type": "array", "minItems": 1, "maxItems": 8,
+      "items": {
+        "title": "Activity preview attribute", "type": "object", "additionalProperties": false,
+        "properties": {
+          "attributeId": { "$ref": "common.schema.json#/$defs/id" },
+          "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "valueFormat": { "type": "string", "maxLength": 160 }
+        },
+        "required": ["attributeId"]
+      }
+    },
+    "requirements": {
+      "$ref": "common.schema.json#/$defs/condition"
+    },
+    "costs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attributeId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "attributeId",
+          "amount"
+        ]
+      }
+    },
+    "baseEffects": {
+      "$ref": "common.schema.json#/$defs/effects"
+    },
+    "successCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "chance": {
+          "$ref": "common.schema.json#/$defs/expression"
+        }
+      },
+      "required": [
+        "chance"
+      ]
+    },
+    "successEffects": {
+      "$ref": "common.schema.json#/$defs/effects"
+    },
+    "failureEffects": {
+      "$ref": "common.schema.json#/$defs/effects"
+    },
+    "presentation": {
+      "$ref": "common.schema.json#/$defs/scene"
+    },
+    "expeditionId": {
+      "$ref": "common.schema.json#/$defs/id"
+    }
+  },
+  "required": [
+    "id",
+    "label",
+    "requirements",
+    "costs",
+    "baseEffects"
+  ],
+  "dependentRequired": {
+    "successCheck": [
+      "successEffects",
+      "failureEffects"
+    ],
+    "successEffects": [
+      "successCheck",
+      "failureEffects"
+    ],
+    "failureEffects": [
+      "successCheck",
+      "successEffects"
+    ]
+  },
+  "unevaluatedProperties": false
+}

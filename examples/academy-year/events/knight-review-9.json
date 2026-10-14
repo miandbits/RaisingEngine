@@ -1,0 +1,79 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "knight-review-9",
+  "label": "9개월차 전공 발표",
+  "window": {
+    "fromPeriod": 26,
+    "throughPeriod": 26
+  },
+  "priority": 50,
+  "requirements": {
+    "op": "all",
+    "conditions": [
+      {
+        "op": "flag",
+        "flagId": "knight-track",
+        "equals": true
+      },
+      {
+        "op": "compare",
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "skill"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 60
+        }
+      }
+    ]
+  },
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "꾸준히 연습한 결과가 보이는구나. 한 단계 더 나아가 보자.",
+      "next": "reward"
+    },
+    {
+      "id": "reward",
+      "type": "effect",
+      "effects": [
+        {
+          "op": "add",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "skill"
+          },
+          "value": {
+            "op": "literal",
+            "value": 5
+          }
+        },
+        {
+          "op": "add",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "reputation"
+          },
+          "value": {
+            "op": "literal",
+            "value": 3
+          }
+        }
+      ],
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

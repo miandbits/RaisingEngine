@@ -1,0 +1,172 @@
+{
+  "$schema": "../../../packages/schema/scenario.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "ordinary-route",
+  "description": "같은 초대를 거절하고 기본 엔딩으로 끝나는 경로입니다.",
+  "seed": 42,
+  "initialOverrides": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "commands": [
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "study",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": [
+        {
+          "eventId": "exam-invitation",
+          "nodeId": "registration",
+          "choiceId": "decline"
+        }
+      ]
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "work",
+        "rest",
+        "work"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "ending",
+      "endingId": "ordinary"
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "skill"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 10
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "money"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 61
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stamina"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 60
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stress"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 8
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "flag",
+        "flagId": "registered",
+        "equals": false
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "flag",
+        "flagId": "certified",
+        "equals": false
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "eventCompleted",
+        "eventId": "exam-invitation"
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "not",
+        "condition": {
+          "op": "eventCompleted",
+          "eventId": "final-exam"
+        }
+      }
+    }
+  ],
+  "stepLimit": 500
+}

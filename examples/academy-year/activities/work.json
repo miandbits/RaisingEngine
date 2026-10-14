@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "work",
+  "label": "마을 일 돕기",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "stamina",
+      "amount": 10
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "money"
+      },
+      "value": {
+        "op": "literal",
+        "value": 12
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 6
+      }
+    }
+  ]
+}

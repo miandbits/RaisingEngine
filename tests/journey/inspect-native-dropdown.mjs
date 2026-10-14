@@ -1,0 +1,12 @@
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+const root = resolve('.cache/journey-native-dropdown'); await mkdir(root, { recursive: true });
+const runs = await readdir(resolve('.cache/journey-native-ui'), { withFileTypes: true });
+const candidate = runs.filter(entry => entry.isDirectory() && entry.name.startsWith('run-')).at(-1);
+const bundle = resolve('.cache/journey-native-ui', candidate.name, 'windows');
+const steps = [{ click: 'start' }, { click: 'schedule-link' }, { click: 'plan-0' }, { waitFrames: 120 }, { screenshot: resolve(root, 'open.png') }];
+await writeFile(resolve(root, 'steps.json'), JSON.stringify(steps));
+const result = spawnSync(resolve('dist/native-player-app/RaisingPlayer.exe'), ['--bundle', bundle, '--save', resolve(root, 'save.json'), '--hidden', '--automation', resolve(root, 'steps.json'), '--report', resolve(root, 'report.json')], { encoding: 'utf8', timeout: 60000, windowsHide: true });
+if (result.status) throw Error(result.stderr);
+console.log(JSON.stringify({ status: result.status, report: resolve(root, 'report.json') }));

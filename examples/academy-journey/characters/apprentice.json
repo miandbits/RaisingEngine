@@ -1,0 +1,11 @@
+{
+  "$schema": "../../../packages/schema/character.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "apprentice",
+  "name": "하루",
+  "description": "두 달 동안 진로를 준비하는 견습생",
+  "portraits": {
+    "visual-neutral": "visual-haru"
+  },
+  "relationships": []
+}

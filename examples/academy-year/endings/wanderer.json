@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "wanderer",
+  "label": "다음 길을 찾는 여행자",
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "다음 길을 찾는 여행자. 사계절의 끝에서 또 다른 한 해가 시작됩니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+#pragma once
+#include <QGraphicsView>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QMap>
+#include <QPixmap>
+
+class ScreenCanvas : public QGraphicsView {
+  Q_OBJECT
+public:
+  explicit ScreenCanvas(QWidget *parent = nullptr);
+  ~ScreenCanvas() override { scene.blockSignals(true); }
+  void setScreen(const QJsonObject &project, const QJsonObject &screen,
+                 const QJsonArray &assets, const QString &selected,
+                 bool fit = false);
+  void select(const QString &id);
+  void fitCanvas();
+  bool snap = false;
+signals:
+  void selectionChanged(QString id);
+  void geometryEdited(QString id, QRect rectangle);
+  void deleteSelected();
+  void duplicateSelected();
+
+protected:
+  void wheelEvent(QWheelEvent *event) override;
+  void keyPressEvent(QKeyEvent *event) override;
+  void keyReleaseEvent(QKeyEvent *event) override;
+  void resizeEvent(QResizeEvent *event) override;
+
+private:
+  QGraphicsScene scene;
+  QSize canvasSize{1280, 720};
+  QMap<QString, QPixmap> imageCache;
+  bool refreshing = false, autoFit = true, panning = false;
+};

@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.player.json",
+  "include": ["apps/studio/**/*.ts", "apps/studio/**/*.tsx", "apps/player/renderer/**/*.tsx", "electron.studio.config.ts"]
+}

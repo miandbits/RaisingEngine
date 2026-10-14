@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "rest",
+  "label": "휴식",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stamina"
+      },
+      "value": {
+        "op": "literal",
+        "value": 30
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": -20
+      }
+    }
+  ]
+}

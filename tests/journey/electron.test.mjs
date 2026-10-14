@@ -1,0 +1,174 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { cp, readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { openJourneyStudio, click, fill, select, projectData, state, saveAndRestore } from './gui-helpers.mjs';
+
+async function category(page, name) {
+  await page.locator('.journey-steps button').filter({ hasText: name }).click();
+}
+async function addContent(page, categoryName, id, name) {
+  await category(page, categoryName);
+  await click(page, `${categoryName} 추가`);
+  await fill(page, '육성 콘텐츠 ID', id);
+  await fill(page, '육성 콘텐츠 이름', name);
+  await click(page, '육성 콘텐츠 만들기');
+  await page.getByRole('dialog', { name: '육성 콘텐츠 추가', exact: true }).waitFor({ state: 'hidden' });
+}
+async function button(page, screen, text, action, targetLabel, target, x, y) {
+  await select(page, '편집 화면', screen);
+  await select(page, '추가할 UI 종류', 'button');
+  await click(page, '요소 추가');
+  await fill(page, 'UI 문구', text);
+  await select(page, 'UI 버튼 동작', action);
+  await select(page, targetLabel, target);
+  await fill(page, 'UI width', 270);
+  await fill(page, 'UI height', 48);
+  await fill(page, 'UI x', x);
+  await fill(page, 'UI y', y);
+}
+async function finishStory(page) {
+  for (let index = 0; index < 20; index++) {
+    const view = await page.evaluate(async () => (await window.player.view()).view);
+    if (view.state.phase !== 'narrative') return;
+    if (view.narrative.node.type === 'choice') await page.locator('.visual-choices button:enabled').first().click();
+    else await click(page, '계속');
+  }
+  assert.fail('Story did not reach a visible boundary');
+}
+
+test('designer authors free screens, shop, gift and relationship event using GUI then plays native journey', { timeout: 240000 }, async t => {
+  const { app, page, errors, output, root } = await openJourneyStudio(t);
+  t.after(async () => {
+    if (errors.length) console.error(errors);
+    await page.screenshot({ path: `${output}/last-screen.png` }).catch(() => {});
+  });
+  await click(page, '비주얼 샘플 새 프로젝트');
+  await page.waitForFunction(() => document.querySelector('.workspace-status')?.textContent.includes('project-'));
+  await click(page, '육성 작업실');
+  await click(page, '육성 작업실 시작');
+  await addContent(page, '장소', 'city', '도시 광장');
+  await select(page, '장소 화면 템플릿', 'social');
+  await click(page, '장소 화면 만들기');
+  await select(page, '장소 배경', 'visual-courtyard');
+  await addContent(page, '장소', 'market', '작은 상점');
+  await select(page, '장소 화면 템플릿', 'shop');
+  await click(page, '장소 화면 만들기');
+  await select(page, '장소 배경', 'visual-library');
+  await page.getByLabel('도시 광장 연결', { exact: true }).check();
+  await addContent(page, '아이템', 'flower', '감사의 꽃');
+  await fill(page, '아이템 설명', '유나에게 마음을 전하는 작은 꽃다발.');
+  await fill(page, '최대 소지 개수', 5);
+  await addContent(page, '상점', 'florist', '광장 꽃집');
+  await select(page, '상점 장소', 'market');
+  await select(page, '거래 자원', 'money');
+  await click(page, '판매 상품 추가');
+  await select(page, '상품 1 아이템', 'flower');
+  await fill(page, '상품 1 가격', 40);
+  await fill(page, '상품 1 재고', 4);
+  await addContent(page, '교류·선물', 'gift-yuna', '유나에게 꽃 선물');
+  await select(page, '교류 장소', 'city');
+  await select(page, '교류 인물', 'mentor');
+  await select(page, '선물할 아이템', 'flower');
+  await click(page, '효과 추가');
+  await select(page, '효과 1 대상', 'relationship/mentor/trust');
+  await fill(page, '효과 1 수치', 15);
+  await click(page, '관계 사건 만들기');
+  await fill(page, '관계 사건 ID', 'flowers-bring-friendship');
+  await fill(page, '관계 사건 이름', '꽃으로 이어진 인연');
+  await fill(page, '사건 관계 기준', 15);
+  await fill(page, '관계 사건 대사', '이 꽃은 오래 기억할게. 우리, 다음에도 광장에서 만나요.');
+  await click(page, '사건 생성·연결');
+  await page.getByRole('dialog', { name: '관계 사건 만들기', exact: true }).waitFor({ state: 'hidden' });
+  const relationCreated = (await page.evaluate(() => window.studio.view())).view.documents;
+  await click(page, '실행 취소');
+  const relationUndone = (await page.evaluate(() => window.studio.view())).view.documents;
+  assert.equal(relationUndone.some(doc => doc.file === 'events/flowers-bring-friendship.json'), false);
+  assert.equal(relationUndone.find(doc => doc.kind === 'project').data.gameplay.interactions[0].eventId, undefined);
+  await click(page, '다시 실행');
+  assert.deepEqual((await page.evaluate(() => window.studio.view())).view.documents, relationCreated);
+  await page.locator('.gameplay-heading').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${output}/authoring.png` });
+
+  await click(page, '화면·연출');
+  await click(page, '화면 추가');
+  await fill(page, '새 화면 ID', 'journey-notice');
+  await fill(page, '새 화면 이름', '광장 안내판');
+  await select(page, '화면 템플릿', 'blank');
+  await click(page, '화면 만들기');
+  await button(page, 'journey-notice', '광장 화면으로', 'navigate', '이동할 화면', 'city', 60, 180);
+  await button(page, 'city', '광장 안내 보기', 'navigate', '이동할 화면', 'journey-notice', 60, 610);
+  await button(page, 'city', '꽃집으로 이동', 'visit', '방문할 장소', 'market', 360, 610);
+  await button(page, 'market', '광장으로 돌아가기', 'visit', '방문할 장소', 'city', 80, 610);
+  await button(page, 'schedule', '도시로 외출', 'visit', '방문할 장소', 'city', 24, 660);
+  await click(page, '장면·연출');
+  await select(page, '연출 대상', 'events/flowers-bring-friendship.json#entry');
+  await select(page, '장면 배경', 'visual-courtyard');
+  await select(page, '장면 center 인물', 'mentor/visual-neutral');
+  await click(page, '초안 저장');
+  await page.waitForFunction(() => document.querySelector('.workspace-status')?.textContent.includes('저장된 상태'));
+  const authored = await projectData(root);
+  assert.equal(authored.gameplay.interactions[0].eventId, 'flowers-bring-friendship');
+  assert.ok(authored.visual.screens.find(s => s.id === 'journey-notice'));
+  assert.equal(authored.visual.screens.find(s => s.id === 'market').elements.find(e => e.text === '광장으로 돌아가기').locationId, 'city');
+  const event = JSON.parse(await readFile(resolve(root, 'events/flowers-bring-friendship.json'), 'utf8'));
+  assert.equal(event.trigger, 'interaction');
+  assert.ok(event.nodes.some(n => n.text?.includes('광장에서 만나요')));
+  await page.screenshot({ path: `${output}/free-screen.png` });
+
+  await click(page, '실제 플레이로 확인');
+  await click(page, '새 게임 시작');
+  await page.locator('.visual-stage[data-screen=home]').waitFor();
+  assert.equal((await page.evaluate(async () => (await window.player.view()).view)).runtimeBackend, 'native');
+  await page.screenshot({ path: `${output}/home.png` });
+  await click(page, '일정');
+  for (const period of ['상순', '중순', '하순']) await select(page, `${period} 활동`, 'rest');
+  await click(page, '일정 확정 / 활동 시작');
+  await click(page, '일정 확정 / 활동 시작');
+  await click(page, '다음으로');
+  await finishStory(page);
+  assert.equal((await state(page)).periodIndex, 1);
+  await click(page, '도시로 외출');
+  await page.locator('.visual-stage[data-screen=city]').waitFor();
+  assert.equal(await page.getByRole('button', { name: '유나에게 꽃 선물', exact: true }).isDisabled(), true);
+  const cityState = await state(page);
+  await click(page, '광장 안내 보기');
+  await page.locator('.visual-stage[data-screen=journey-notice]').waitFor();
+  assert.equal((await state(page)).gameplay.locationId, cityState.gameplay.locationId);
+  assert.equal((await state(page)).periodIndex, cityState.periodIndex);
+  await click(page, '광장 화면으로');
+  await click(page, '꽃집으로 이동');
+  await page.locator('.visual-stage[data-screen=market]').waitFor();
+  const money = (await state(page)).attributes.money;
+  await click(page, '감사의 꽃 구매');
+  assert.equal((await state(page)).attributes.money, money - 40);
+  assert.equal((await state(page)).gameplay.inventory.flower, 1);
+  if (money - 40 < 40) assert.equal(await page.getByRole('button', { name: '감사의 꽃 구매', exact: true }).isDisabled(), true);
+  await page.waitForTimeout(450);
+  await page.screenshot({ path: `${output}/shop.png` });
+  await click(page, '광장으로 돌아가기');
+  const beforeGift = await saveAndRestore(page, () => click(page, '유나에게 꽃 선물'));
+  assert.equal(beforeGift.gameplay.inventory.flower, 1);
+  await click(page, '유나에게 꽃 선물');
+  await page.locator('.visual-stage[data-screen=story]').waitFor();
+  assert.ok((await page.getByTestId('dialogue').innerText()).includes('광장에서 만나요'));
+  await page.waitForFunction(() => [...document.querySelectorAll('.visual-stage img')].every(image => image.complete && image.naturalWidth > 0));
+  await page.waitForTimeout(450);
+  await page.screenshot({ path: `${output}/relationship-event.png` });
+  await finishStory(page);
+  const finished = await state(page);
+  assert.equal(finished.gameplay.locationId, 'city');
+  assert.equal(finished.periodIndex, beforeGift.periodIndex);
+  assert.equal(finished.relationships.mentor.trust, beforeGift.relationships.mentor.trust + 15);
+  assert.equal(finished.gameplay.inventory.flower, 0);
+  assert.ok(finished.completedEvents.includes('flowers-bring-friendship'));
+  assert.equal(await page.getByRole('button', { name: '유나에게 꽃 선물', exact: true }).isDisabled(), true);
+  assert.deepEqual(errors, []);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 700));
+  await page.waitForTimeout(200);
+  const stage = await page.locator('.visual-stage').boundingBox();
+  const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  assert.ok(stage.x >= -1 && stage.y >= -1 && stage.x + stage.width <= viewport.width + 1 && stage.y + stage.height <= viewport.height + 1);
+  await page.screenshot({ path: `${output}/minimum.png` });
+  await cp(root, resolve(output, 'authored-project'), { recursive: true, force: true, filter: source => !source.includes('journey-save.json') && !source.includes(`${String.fromCharCode(92)}.studio${String.fromCharCode(92)}`) });
+});

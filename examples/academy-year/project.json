@@ -1,0 +1,18 @@
+{
+  "$schema": "../../packages/schema/project.schema.json",
+  "formatVersion": "0.1.0",
+  "gameId": "academy-year",
+  "title": "견습생의 사계절",
+  "description": "봄 입학부터 다음 해 봄까지 12개월·36기간. 기사·학자·장인·이웃·여행자의 다섯 길을 선택합니다.",
+  "startYear": 1,
+  "startMonth": 4,
+  "durationMonths": 12,
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "defaultEndingId": "wanderer"
+}

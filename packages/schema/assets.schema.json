@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/assets.schema.json",
+  "title": "Asset manifest",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/header"
+    }
+  ],
+  "properties": {
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "audio",
+              "font"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^assets/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.[A-Za-z0-9]+$"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "path"
+        ]
+      }
+    }
+  },
+  "required": [
+    "assets"
+  ],
+  "unevaluatedProperties": false
+}

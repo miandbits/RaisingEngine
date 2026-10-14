@@ -1,0 +1,291 @@
+{
+    "entryNodeId": "rounds-1-entry",
+    "formatVersion": "0.1.0",
+    "id": "rounds-test",
+    "label": "Synthetic rounds fixture",
+    "nodes": [
+        {
+            "id": "original",
+            "next": "end",
+            "speakerId": null,
+            "text": "Existing continuation",
+            "type": "dialogue"
+        },
+        {
+            "id": "end",
+            "type": "end"
+        },
+        {
+            "choices": [
+                {
+                    "effects": [
+                        {
+                            "op": "add",
+                            "target": {
+                                "attributeId": "money",
+                                "kind": "attribute"
+                            },
+                            "value": {
+                                "op": "literal",
+                                "value": -10
+                            }
+                        }
+                    ],
+                    "id": "enter",
+                    "next": "rounds-1-r1-choice",
+                    "requirements": {
+                        "comparator": "gte",
+                        "left": {
+                            "op": "read",
+                            "target": {
+                                "attributeId": "money",
+                                "kind": "attribute"
+                            }
+                        },
+                        "op": "compare",
+                        "right": {
+                            "op": "literal",
+                            "value": 10
+                        }
+                    },
+                    "text": "Enter"
+                },
+                {
+                    "effects": [
+                    ],
+                    "id": "leave",
+                    "next": "rounds-1-withdraw",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "text": "Leave"
+                }
+            ],
+            "id": "rounds-1-entry",
+            "prompt": "Synthetic rounds",
+            "type": "choice"
+        },
+        {
+            "choices": [
+                {
+                    "effects": [
+                        {
+                            "op": "add",
+                            "target": {
+                                "attributeId": "money",
+                                "kind": "attribute"
+                            },
+                            "value": {
+                                "op": "literal",
+                                "value": -1
+                            }
+                        }
+                    ],
+                    "id": "attempt",
+                    "next": "rounds-1-r1-check",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "text": "Attempt first"
+                },
+                {
+                    "effects": [
+                    ],
+                    "id": "leave",
+                    "next": "rounds-1-withdraw",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "text": "Leave"
+                }
+            ],
+            "id": "rounds-1-r1-choice",
+            "prompt": "First round",
+            "type": "choice"
+        },
+        {
+            "condition": {
+                "comparator": "gte",
+                "left": {
+                    "op": "read",
+                    "target": {
+                        "attributeId": "skill",
+                        "kind": "attribute"
+                    }
+                },
+                "op": "compare",
+                "right": {
+                    "op": "literal",
+                    "value": 0
+                }
+            },
+            "else": "rounds-1-loss-reward",
+            "id": "rounds-1-r1-check",
+            "then": "rounds-1-r1-reward",
+            "type": "branch"
+        },
+        {
+            "effects": [
+                {
+                    "op": "add",
+                    "target": {
+                        "attributeId": "money",
+                        "kind": "attribute"
+                    },
+                    "value": {
+                        "op": "literal",
+                        "value": 7
+                    }
+                }
+            ],
+            "id": "rounds-1-r1-reward",
+            "next": "rounds-1-r1-result",
+            "type": "effect"
+        },
+        {
+            "id": "rounds-1-r1-result",
+            "next": "rounds-1-r2-choice",
+            "speakerId": null,
+            "text": "First passed",
+            "type": "dialogue"
+        },
+        {
+            "choices": [
+                {
+                    "effects": [
+                    ],
+                    "id": "attempt",
+                    "next": "rounds-1-r2-check",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "text": "Attempt second"
+                },
+                {
+                    "effects": [
+                    ],
+                    "id": "leave",
+                    "next": "rounds-1-withdraw",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "text": "Leave"
+                }
+            ],
+            "id": "rounds-1-r2-choice",
+            "prompt": "Second round",
+            "type": "choice"
+        },
+        {
+            "condition": {
+                "comparator": "gte",
+                "left": {
+                    "op": "read",
+                    "target": {
+                        "attributeId": "skill",
+                        "kind": "attribute"
+                    }
+                },
+                "op": "compare",
+                "right": {
+                    "op": "literal",
+                    "value": 5
+                }
+            },
+            "else": "rounds-1-loss-reward",
+            "id": "rounds-1-r2-check",
+            "then": "rounds-1-r2-reward",
+            "type": "branch"
+        },
+        {
+            "effects": [
+                {
+                    "op": "add",
+                    "target": {
+                        "attributeId": "money",
+                        "kind": "attribute"
+                    },
+                    "value": {
+                        "op": "literal",
+                        "value": 11
+                    }
+                }
+            ],
+            "id": "rounds-1-r2-reward",
+            "next": "rounds-1-r2-result",
+            "type": "effect"
+        },
+        {
+            "id": "rounds-1-r2-result",
+            "next": "rounds-1-win-reward",
+            "speakerId": null,
+            "text": "Second passed",
+            "type": "dialogue"
+        },
+        {
+            "effects": [
+                {
+                    "op": "add",
+                    "target": {
+                        "attributeId": "money",
+                        "kind": "attribute"
+                    },
+                    "value": {
+                        "op": "literal",
+                        "value": 50
+                    }
+                }
+            ],
+            "id": "rounds-1-win-reward",
+            "next": "rounds-1-win",
+            "type": "effect"
+        },
+        {
+            "id": "rounds-1-win",
+            "next": "original",
+            "speakerId": null,
+            "text": "Won",
+            "type": "dialogue"
+        },
+        {
+            "effects": [
+                {
+                    "op": "add",
+                    "target": {
+                        "attributeId": "money",
+                        "kind": "attribute"
+                    },
+                    "value": {
+                        "op": "literal",
+                        "value": 3
+                    }
+                }
+            ],
+            "id": "rounds-1-loss-reward",
+            "next": "rounds-1-loss",
+            "type": "effect"
+        },
+        {
+            "id": "rounds-1-loss",
+            "next": "original",
+            "speakerId": null,
+            "text": "Lost",
+            "type": "dialogue"
+        },
+        {
+            "id": "rounds-1-withdraw",
+            "next": "original",
+            "speakerId": null,
+            "text": "Withdrew",
+            "type": "dialogue"
+        }
+    ],
+    "priority": 100,
+    "requirements": {
+        "op": "always"
+    },
+    "window": {
+        "fromPeriod": 0,
+        "throughPeriod": 5
+    }
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/ending.schema.json",
+  "title": "Ending definition", "type": "object",
+  "allOf": [{ "$ref": "common.schema.json#/$defs/header" }, { "$ref": "common.schema.json#/$defs/narrative" }],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/id" }, "label": { "$ref": "common.schema.json#/$defs/text" }, "description": { "type": "string" },
+    "requirements": { "$ref": "common.schema.json#/$defs/condition" }, "priority": { "type": "integer", "minimum": 0, "maximum": 100 }
+  },
+  "required": ["id", "label", "requirements", "priority"], "unevaluatedProperties": false
+}

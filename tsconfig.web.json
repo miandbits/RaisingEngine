@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "jsx": "react-jsx", "lib": ["ES2022", "DOM", "DOM.Iterable"] },
+  "include": ["apps/web/**/*.tsx", "apps/web/**/*.mts", "apps/player/renderer/**/*.tsx", "apps/player/renderer/**/*.ts", "packages/**/*.ts"]
+}

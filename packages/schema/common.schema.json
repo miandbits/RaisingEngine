@@ -1,0 +1,1131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/common.schema.json",
+  "title": "Shared content vocabulary",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "integer": {
+      "type": "integer",
+      "minimum": -2147483648,
+      "maximum": 2147483647
+    },
+    "header": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "formatVersion": {
+          "const": "0.1.0"
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      },
+      "required": [
+        "formatVersion"
+      ]
+    },
+    "range": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "$ref": "#/$defs/integer"
+        },
+        "max": {
+          "$ref": "#/$defs/integer"
+        },
+        "initial": {
+          "$ref": "#/$defs/integer"
+        }
+      },
+      "required": [
+        "min",
+        "max",
+        "initial"
+      ]
+    },
+    "numericTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "attribute"
+            },
+            "attributeId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "attributeId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "relationship"
+            },
+            "characterId": {
+              "$ref": "#/$defs/id"
+            },
+            "relationshipId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "characterId",
+            "relationshipId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "inventory"
+            },
+            "itemId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "itemId"
+          ]
+        }
+      ]
+    },
+    "expression": {
+      "title": "NumericExpression",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "literal"
+            },
+            "value": {
+              "$ref": "#/$defs/integer"
+            }
+          },
+          "required": [
+            "op",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "read"
+            },
+            "target": {
+              "$ref": "#/$defs/numericTarget"
+            }
+          },
+          "required": [
+            "op",
+            "target"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "time"
+            },
+            "field": {
+              "enum": [
+                "periodIndex",
+                "year",
+                "month",
+                "periodInMonth"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "field"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "add",
+                "subtract",
+                "multiply"
+              ]
+            },
+            "left": {
+              "$ref": "#/$defs/expression"
+            },
+            "right": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "op",
+            "left",
+            "right"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "clamp"
+            },
+            "value": {
+              "$ref": "#/$defs/expression"
+            },
+            "min": {
+              "$ref": "#/$defs/integer"
+            },
+            "max": {
+              "$ref": "#/$defs/integer"
+            }
+          },
+          "required": [
+            "op",
+            "value",
+            "min",
+            "max"
+          ]
+        }
+      ]
+    },
+    "condition": {
+      "title": "Condition",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "always"
+            }
+          },
+          "required": [
+            "op"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "all",
+                "any"
+              ]
+            },
+            "conditions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          },
+          "required": [
+            "op",
+            "conditions"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "not"
+            },
+            "condition": {
+              "$ref": "#/$defs/condition"
+            }
+          },
+          "required": [
+            "op",
+            "condition"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "compare"
+            },
+            "comparator": {
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "left": {
+              "$ref": "#/$defs/expression"
+            },
+            "right": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "op",
+            "comparator",
+            "left",
+            "right"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "flag"
+            },
+            "flagId": {
+              "$ref": "#/$defs/id"
+            },
+            "equals": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "op",
+            "flagId",
+            "equals"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "eventCompleted"
+            },
+            "eventId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "op",
+            "eventId"
+          ]
+        }
+      ]
+    },
+    "effect": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "add",
+                "set"
+              ]
+            },
+            "target": {
+              "$ref": "#/$defs/numericTarget"
+            },
+            "value": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "op",
+            "target",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "setFlag"
+            },
+            "flagId": {
+              "$ref": "#/$defs/id"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "op",
+            "flagId",
+            "value"
+          ]
+        }
+      ]
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/effect"
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attributes": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/integer"
+          }
+        },
+        "flags": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          },
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "relationships": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/$defs/id"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/integer"
+            }
+          }
+        }
+      },
+      "required": [
+        "attributes",
+        "flags",
+        "relationships"
+      ]
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backgroundAssetId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "musicAssetId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "soundAssetId": {
+          "$ref": "#/$defs/id"
+        },
+        "portraits": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "characterId": {
+                "$ref": "#/$defs/id"
+              },
+              "portraitId": {
+                "$ref": "#/$defs/id"
+              },
+              "position": {
+                "enum": [
+                  "left",
+                  "center",
+                  "right"
+                ]
+              },
+              "scale": {
+                "type": "number",
+                "minimum": 0.1,
+                "maximum": 4
+              },
+              "offsetX": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              },
+              "offsetY": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              }
+            },
+            "required": [
+              "characterId",
+              "portraitId",
+              "position"
+            ]
+          }
+        }
+      },
+      "minProperties": 1
+    },
+    "choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "text": {
+          "$ref": "#/$defs/text"
+        },
+        "requirements": {
+          "$ref": "#/$defs/condition"
+        },
+        "effects": {
+          "$ref": "#/$defs/effects"
+        },
+        "next": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "requirements",
+        "effects",
+        "next"
+      ]
+    },
+    "node": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "const": "scene"
+            },
+            "scene": {
+              "$ref": "#/$defs/scene"
+            },
+            "next": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "scene",
+            "next"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "const": "dialogue"
+            },
+            "speakerId": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "$ref": "#/$defs/text"
+            },
+            "next": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "speakerId",
+            "text",
+            "next"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "const": "choice"
+            },
+            "prompt": {
+              "$ref": "#/$defs/text"
+            },
+            "choices": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/choice"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "prompt",
+            "choices"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "const": "branch"
+            },
+            "condition": {
+              "$ref": "#/$defs/condition"
+            },
+            "then": {
+              "$ref": "#/$defs/id"
+            },
+            "else": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "condition",
+            "then",
+            "else"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "const": "effect"
+            },
+            "effects": {
+              "$ref": "#/$defs/effects"
+            },
+            "next": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "effects",
+            "next"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "type": {
+              "const": "end"
+            }
+          },
+          "required": [
+            "id",
+            "type"
+          ]
+        }
+      ]
+    },
+    "narrative": {
+      "type": "object",
+      "properties": {
+        "entryNodeId": {
+          "$ref": "#/$defs/id"
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      },
+      "required": [
+        "entryNodeId",
+        "nodes"
+      ]
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "activityIds"
+          ],
+          "properties": {
+            "type": {
+              "const": "setSchedule"
+            },
+            "activityIds": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "choiceId"
+          ],
+          "properties": {
+            "type": {
+              "const": "choose"
+            },
+            "choiceId": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "executeActivity",
+                "acknowledgeResult",
+                "completePeriodWithoutEvents",
+                "resolvePeriodEnd",
+                "advanceNarrative"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "screenId"
+          ],
+          "properties": {
+            "type": {
+              "const": "navigate"
+            },
+            "screenId": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "locationId"
+          ],
+          "properties": {
+            "type": {
+              "const": "visit"
+            },
+            "locationId": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "shopId",
+            "itemId",
+            "quantity"
+          ],
+          "properties": {
+            "type": {
+              "const": "buy"
+            },
+            "shopId": {
+              "$ref": "#/$defs/id"
+            },
+            "itemId": {
+              "$ref": "#/$defs/id"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "interactionId"
+          ],
+          "properties": {
+            "type": {
+              "const": "interact"
+            },
+            "interactionId": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "acceptQuest"
+            },
+            "questId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "type",
+            "questId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "claimQuest"
+            },
+            "questId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "type",
+            "questId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "equip"
+            },
+            "equipmentId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "type",
+            "equipmentId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "unequip"
+            },
+            "slot": {
+              "enum": [
+                "weapon",
+                "armor",
+                "accessory"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "slot"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "moveExpedition"
+            },
+            "nodeId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "type",
+            "nodeId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "returnFromExpedition"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "battleAction"
+            },
+            "action": {
+              "enum": [
+                "attack",
+                "guard",
+                "flee"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "action"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "battleAction"
+            },
+            "action": {
+              "const": "useItem"
+            },
+            "itemId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "type",
+            "action",
+            "itemId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "shopId",
+            "itemId",
+            "quantity"
+          ],
+          "properties": {
+            "type": {
+              "const": "sell"
+            },
+            "shopId": {
+              "$ref": "#/$defs/id"
+            },
+            "itemId": {
+              "$ref": "#/$defs/id"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "serviceId",
+            "quantity"
+          ],
+          "properties": {
+            "type": {
+              "const": "useService"
+            },
+            "serviceId": {
+              "$ref": "#/$defs/id"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "dietId"
+          ],
+          "properties": {
+            "type": {
+              "const": "setDiet"
+            },
+            "dietId": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "executeAction"
+            },
+            "actionId": {
+              "$ref": "#/$defs/id"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "type",
+            "actionId",
+            "quantity"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "selectPolicy"
+            },
+            "groupId": {
+              "$ref": "#/$defs/id"
+            },
+            "optionId": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "groupId",
+            "optionId"
+          ]
+        }
+      ]
+    },
+    "userText": {
+      "type": "string",
+      "maxLength": 256,
+      "not": {
+        "pattern": "[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\ud800-\\udfff]"
+      }
+    },
+    "userValues": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/userText"
+      }
+    }
+  }
+}

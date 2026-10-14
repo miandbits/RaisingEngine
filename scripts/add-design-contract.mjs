@@ -1,0 +1,18 @@
+import {readFile,writeFile} from 'node:fs/promises';
+const file='packages/schema/visual.schema.json';
+const schema=JSON.parse(await readFile(file,'utf8'));
+const props=schema.$defs.element.properties;
+const style={};for(const key of ['fontSize','color','fill','radius','align'])style[key]=props[key];
+style.fontAssetId={$ref:'common.schema.json#/$defs/id'};
+style.padding={type:'number',minimum:0,maximum:128};
+style.borderWidth={type:'number',minimum:0,maximum:32};
+for(const key of ['borderColor','hoverFill','pressedFill','disabledColor'])style[key]=props.color;
+schema.$defs.styleValues={type:'object',additionalProperties:false,properties:style};
+schema.$defs.namedStyle={type:'object',additionalProperties:false,properties:{id:{$ref:'common.schema.json#/$defs/id'},label:{type:'string',minLength:1,maxLength:200},...style},required:['id','label']};
+schema.properties.defaultStyle={$ref:'#/$defs/styleValues'};
+schema.properties.styles={type:'array',maxItems:256,items:{$ref:'#/$defs/namedStyle'}};
+props.styleId={$ref:'common.schema.json#/$defs/id'};Object.assign(props,style);
+await writeFile(file,JSON.stringify(schema,null,2)+'\n');
+const assetFile='packages/schema/assets.schema.json';const assets=JSON.parse(await readFile(assetFile,'utf8'));
+assets.properties.assets.items.properties.kind.enum=['image','audio','font'];
+await writeFile(assetFile,JSON.stringify(assets,null,2)+'\n');

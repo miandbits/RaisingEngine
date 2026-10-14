@@ -1,0 +1,83 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "expedition",
+  "label": "숲 탐사",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "stamina",
+      "amount": 15
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "skill"
+      },
+      "value": {
+        "op": "literal",
+        "value": 3
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 5
+      }
+    }
+  ],
+  "description": "65% 확률로 추가 검술 4와 소지금 8. 실패하면 스트레스 3이 증가합니다.",
+  "successCheck": {
+    "chance": {
+      "op": "literal",
+      "value": 6500
+    }
+  },
+  "successEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "skill"
+      },
+      "value": {
+        "op": "literal",
+        "value": 4
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "money"
+      },
+      "value": {
+        "op": "literal",
+        "value": 8
+      }
+    }
+  ],
+  "failureEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 3
+      }
+    }
+  ]
+}

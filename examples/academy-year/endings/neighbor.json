@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "neighbor",
+  "label": "마을을 잇는 이웃",
+  "priority": 50,
+  "requirements": {
+    "op": "all",
+    "conditions": [
+      {
+        "op": "flag",
+        "flagId": "graduated",
+        "equals": true
+      },
+      {
+        "op": "compare",
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "reputation"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 30
+        }
+      }
+    ]
+  },
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "마을을 잇는 이웃. 사계절의 끝에서 또 다른 한 해가 시작됩니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

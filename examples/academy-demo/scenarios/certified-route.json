@@ -1,0 +1,264 @@
+{
+  "$schema": "../../../packages/schema/scenario.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "certified-route",
+  "description": "마지막 사건이 certified를 설정한 뒤 엔딩을 판정하는 수료 경로입니다.",
+  "seed": 42,
+  "initialOverrides": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "commands": [
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "study",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": [
+        {
+          "eventId": "exam-invitation",
+          "nodeId": "registration",
+          "choiceId": "register"
+        }
+      ],
+      "assertions": [
+        {
+          "kind": "condition",
+          "condition": {
+            "op": "compare",
+            "comparator": "eq",
+            "left": {
+              "op": "read",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "skill"
+              }
+            },
+            "right": {
+              "op": "literal",
+              "value": 10
+            }
+          }
+        },
+        {
+          "kind": "condition",
+          "condition": {
+            "op": "compare",
+            "comparator": "eq",
+            "left": {
+              "op": "read",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "money"
+              }
+            },
+            "right": {
+              "op": "literal",
+              "value": 32
+            }
+          }
+        },
+        {
+          "kind": "condition",
+          "condition": {
+            "op": "compare",
+            "comparator": "eq",
+            "left": {
+              "op": "read",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "stamina"
+              }
+            },
+            "right": {
+              "op": "literal",
+              "value": 55
+            }
+          }
+        },
+        {
+          "kind": "condition",
+          "condition": {
+            "op": "compare",
+            "comparator": "eq",
+            "left": {
+              "op": "read",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "stress"
+              }
+            },
+            "right": {
+              "op": "literal",
+              "value": 0
+            }
+          }
+        },
+        {
+          "kind": "condition",
+          "condition": {
+            "op": "flag",
+            "flagId": "registered",
+            "equals": true
+          }
+        },
+        {
+          "kind": "condition",
+          "condition": {
+            "op": "eventCompleted",
+            "eventId": "exam-invitation"
+          }
+        }
+      ]
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "study",
+        "rest",
+        "study"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": [],
+      "assertions": [
+        {
+          "kind": "condition",
+          "condition": {
+            "op": "eventCompleted",
+            "eventId": "final-exam"
+          }
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "ending",
+      "endingId": "certified"
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "skill"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 35
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "money"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 22
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stamina"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 60
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stress"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 5
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "flag",
+        "flagId": "certified",
+        "equals": true
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "relationship",
+            "characterId": "mentor",
+            "relationshipId": "trust"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 1
+        }
+      }
+    }
+  ],
+  "stepLimit": 500
+}

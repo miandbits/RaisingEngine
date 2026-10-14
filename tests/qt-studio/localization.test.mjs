@@ -1,0 +1,25 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {cp,mkdir,mkdtemp,readFile} from 'node:fs/promises';
+import path from 'node:path';
+import {QtStudioService} from '../../apps/qt-studio/service.mjs';
+import {contentFromDocuments,extractMessages,mergeCatalog,localizeContent} from '../../dist/packages/localization/catalog.js';
+test('translation contracts preserve IDs, fallback, stale source, font references and revision history',async()=>{
+ await mkdir('.cache/localization-tests',{recursive:true});const root=await mkdtemp(path.resolve('.cache/localization-tests/project-'));await cp('examples/academy-visual',root,{recursive:true});
+ const service=new QtStudioService();const opened=await service.handle({method:'open',params:{root}});assert.ok(opened.localizationSources.length>30);
+ const imported=await service.handle({method:'importFont',params:{file:path.resolve('dist/native-player-app/fonts/NotoSansKR.ttf'),revision:service.editor.revision}});assert.ok(imported.assets.some(a=>a.kind==='font'&&a.id===imported.importedAssetId),'Qt must receive imported font assets');
+ const editor=service.editor,doc=editor.documents.find(d=>d.kind==='project'),project=structuredClone(doc.data),original=contentFromDocuments(editor.documents);
+ const sources=extractMessages(original),key='/project/visual/screens/@title/elements/@start/text',source=sources.find(e=>e.key===key).source;
+ const config={defaultLocale:'en',fallbackLocale:'ko',locales:[{id:'ko',label:'한국어'},{id:'en',label:'English',fontAssetId:imported.importedAssetId},{id:'ja',label:'日本語'}],entries:mergeCatalog(sources,[])};
+ const start=config.entries.find(e=>e.key===key);start.translations={ko:'시작하기',en:'Begin your story'};
+ const originalBytes=JSON.stringify(original);const en=localizeContent(original,config,'en');assert.equal(en.project.visual.screens[0].elements.find(e=>e.id==='start').text,'Begin your story');assert.equal(en.project.visual.screens[0].elements.find(e=>e.id==='start').fontAssetId,imported.importedAssetId);assert.equal(JSON.stringify(original),originalBytes);
+ assert.equal(localizeContent(original,config,'ja').project.visual.screens[0].elements.find(e=>e.id==='start').text,'시작하기');
+ const reordered=structuredClone(original);reordered.project.visual.screens.reverse();assert.equal(localizeContent(reordered,config,'en').project.visual.screens.find(s=>s.id==='title').elements.find(e=>e.id==='start').text,'Begin your story');
+ const changed=structuredClone(original);changed.project.visual.screens[0].elements.find(e=>e.id==='start').text='새로운 원문';assert.equal(localizeContent(changed,config,'en').project.visual.screens[0].elements.find(e=>e.id==='start').text,'새로운 원문');
+ project.localization=config;const put=()=>editor.edit({type:'replace',file:doc.file,data:structuredClone(project)},editor.revision);put();assert.equal((await editor.snapshot(editor.revision)).ok,true);await editor.save(editor.revision);const revision=editor.revision;
+ start.translations.en='Updated';put();assert.throws(()=>editor.edit({type:'replace',file:doc.file,data:project},revision));editor.edit({type:'undo'},editor.revision);assert.equal(editor.documents.find(d=>d.kind==='project').data.localization.entries.find(e=>e.key===key).translations.en,'Begin your story');
+ project.localization.locales.push({id:'en',label:'duplicate'});project.localization.defaultLocale='fr';project.localization.locales[0].fontAssetId='visual-courtyard';start.source=source+' {value}';start.translations.en='missing variable';config.entries.push({...start});put();
+ const codes=(await editor.validate(editor.revision)).view.diagnostics.map(d=>d.code);for(const code of ['LOCALE_DUPLICATE','LOCALE_REFERENCE','LOCALE_FONT_KIND','TRANSLATION_DUPLICATE','TRANSLATION_STALE','TRANSLATION_PLACEHOLDERS'])assert.ok(codes.includes(code),code);assert.equal((await editor.snapshot(editor.revision)).ok,false);
+ await editor.open(root);assert.equal(editor.documents.find(d=>d.kind==='project').data.localization.entries.find(e=>e.key===key).translations.en,'Begin your story');
+ assert.ok(JSON.parse(await readFile(path.join(root,'project.json'),'utf8')).localization);
+});

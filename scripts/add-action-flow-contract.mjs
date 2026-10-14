@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+const read=p=>JSON.parse(fs.readFileSync(p,'utf8')),write=(p,s)=>fs.writeFileSync(p,JSON.stringify(s,null,2)+'\n');
+const id={$ref:'common.schema.json#/$defs/id'},text={$ref:'common.schema.json#/$defs/text'},condition={$ref:'common.schema.json#/$defs/condition'};
+const object=(properties,required)=>({type:'object',additionalProperties:false,properties,required});
+const quantity={type:'integer',minimum:1,maximum:999};
+const c=read('packages/schema/common.schema.json');
+if(!c.$defs.numericTarget.oneOf.some(x=>x.properties?.kind?.const==='inventory'))c.$defs.numericTarget.oneOf.push(object({kind:{const:'inventory'},itemId:{$ref:'#/$defs/id'}},['kind','itemId']));
+write('packages/schema/common.schema.json',c);
+const g=read('packages/schema/gameplay.schema.json');
+g.$defs.action.properties.flow={type:'array',maxItems:128,items:object({id,condition,thenActionId:id,elseActionId:id,quantity},['id','thenActionId'])};
+g.$defs.rule=object({id,name:text,trigger:object({type:{enum:['periodStart','periodEnd','monthStart','monthEnd','dayStart','dayEnd','locationEnter','purchaseComplete','relationshipChanged']},locationId:id,shopId:id,itemId:id,characterId:id,relationshipId:id},['type']),condition,actionId:id,quantity},['id','name','trigger','actionId']);
+g.properties.rules={type:'array',maxItems:1000,items:{$ref:'#/$defs/rule'}};
+g.properties.ruleCalendar=object({daysPerMonth:{type:'integer',minimum:1,maximum:366}},['daysPerMonth']);
+write('packages/schema/gameplay.schema.json',g);
+const s=read('packages/runtime-service/save.schema.json');s.$defs.state.properties.gameplay.properties.rulePeriods=object({periodStart:{type:'integer',minimum:0,maximum:2147483647},periodEnd:{type:'integer',minimum:0,maximum:2147483647}},[]);write('packages/runtime-service/save.schema.json',s);

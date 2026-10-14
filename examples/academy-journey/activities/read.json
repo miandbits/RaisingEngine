@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "read",
+  "label": "도서관 연구",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "money",
+      "amount": 4
+    },
+    {
+      "attributeId": "stamina",
+      "amount": 8
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "knowledge"
+      },
+      "value": {
+        "op": "literal",
+        "value": 8
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 3
+      }
+    }
+  ],
+  "presentation": {
+    "backgroundAssetId": "visual-library",
+    "portraits": [
+      {
+        "characterId": "apprentice",
+        "portraitId": "visual-neutral",
+        "position": "center"
+      }
+    ]
+  }
+}

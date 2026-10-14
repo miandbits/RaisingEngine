@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/character.schema.json",
+  "title": "Character definition", "type": "object",
+  "allOf": [{ "$ref": "common.schema.json#/$defs/header" }],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/id" }, "name": { "$ref": "common.schema.json#/$defs/text" },
+    "description": { "type": "string" },
+    "portraits": { "type": "object", "propertyNames": { "$ref": "common.schema.json#/$defs/id" }, "additionalProperties": { "$ref": "common.schema.json#/$defs/id" } },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "title": "Relationship definition", "type": "object", "allOf": [{ "$ref": "common.schema.json#/$defs/range" }, {
+        "type": "object", "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" }, "label": { "$ref": "common.schema.json#/$defs/text" }, "description": { "type": "string" }
+        },
+        "required": ["id", "label"] }], "unevaluatedProperties": false
+      }
+    }
+  },
+  "required": ["id", "name", "portraits", "relationships"], "unevaluatedProperties": false
+}

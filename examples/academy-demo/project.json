@@ -1,0 +1,18 @@
+{
+  "$schema": "../../packages/schema/project.schema.json",
+  "formatVersion": "0.1.0",
+  "gameId": "academy-demo",
+  "title": "견습생의 두 달",
+  "description": "한 기간은 상순·중순·하순 중 하나이며, 총 6기간을 진행하는 데이터 계약 샘플입니다.",
+  "startYear": 1,
+  "startMonth": 1,
+  "durationMonths": 2,
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "defaultEndingId": "ordinary"
+}

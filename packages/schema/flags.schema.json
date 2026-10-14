@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/flags.schema.json",
+  "title": "Flag definitions", "type": "object",
+  "allOf": [{ "$ref": "common.schema.json#/$defs/header" }],
+  "properties": {
+    "flags": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/id" }, "label": { "$ref": "common.schema.json#/$defs/text" },
+          "initial": { "type": "boolean" }, "description": { "type": "string" }
+        },
+        "required": ["id", "label", "initial"]
+      }
+    }
+  },
+  "required": ["flags"], "unevaluatedProperties": false
+}

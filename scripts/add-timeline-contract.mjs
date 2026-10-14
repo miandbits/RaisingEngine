@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+const object=(properties,required=[])=>({type:'object',additionalProperties:false,properties,required});
+const visualPath='packages/schema/visual.schema.json',visual=JSON.parse(fs.readFileSync(visualPath,'utf8'));
+const id={$ref:'common.schema.json#/$defs/id'};
+visual.properties.timelines={type:'array',maxItems:500,items:object({id,name:{type:'string',minLength:1,maxLength:200},clips:{type:'array',minItems:1,maxItems:100,items:object({id,durationMs:{type:'integer',minimum:1,maximum:60000},imageAssetId:id,text:{type:'string',maxLength:4000},transition:{enum:['none','fade']}},['id','durationMs'])}},['id','name','clips'])};
+visual.properties.activityTimelines={type:'array',maxItems:1000,items:object({activityId:id,timelineId:id,successTimelineId:id,failureTimelineId:id,repeat:{enum:['once','logicalDays']}},['activityId','timelineId'])};
+fs.writeFileSync(visualPath,JSON.stringify(visual,null,2)+'\n');
+const savePath='packages/runtime-service/save.schema.json',save=JSON.parse(fs.readFileSync(savePath,'utf8'));
+const saveId={$ref:'#/$defs/id'},integer={type:'integer',minimum:0,maximum:Number.MAX_SAFE_INTEGER};
+save.$defs.timelineCursor=object({resultRevision:integer,activityId:saveId,timelineId:saveId,clipIndex:{type:'integer',minimum:0,maximum:12200},elapsedMs:{type:'number',minimum:0,maximum:60000},paused:{type:'boolean'},speed:{enum:[1,4]},completed:{type:'boolean'}},['resultRevision','activityId','timelineId','clipIndex','elapsedMs','paused','speed','completed']);
+save.properties.playerPresentation=object({version:{const:1},timeline:{anyOf:[{$ref:'#/$defs/timelineCursor'},{type:'null'}]}},['version','timeline']);
+fs.writeFileSync(savePath,JSON.stringify(save,null,2)+'\n');

@@ -1,0 +1,117 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "month-06",
+  "label": "가을 마을 축제",
+  "window": {
+    "fromPeriod": 17,
+    "throughPeriod": 17
+  },
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "마을 축제를 준비할 사람이 필요하단다.",
+      "next": "festival"
+    },
+    {
+      "id": "festival",
+      "type": "choice",
+      "prompt": "축제 준비를 도울까요?",
+      "choices": [
+        {
+          "id": "support",
+          "text": "소지금 10으로 축제를 돕는다.",
+          "requirements": {
+            "op": "compare",
+            "comparator": "gte",
+            "left": {
+              "op": "read",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "money"
+              }
+            },
+            "right": {
+              "op": "literal",
+              "value": 10
+            }
+          },
+          "effects": [
+            {
+              "op": "add",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "money"
+              },
+              "value": {
+                "op": "literal",
+                "value": -10
+              }
+            },
+            {
+              "op": "add",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "reputation"
+              },
+              "value": {
+                "op": "literal",
+                "value": 5
+              }
+            },
+            {
+              "op": "add",
+              "target": {
+                "kind": "relationship",
+                "characterId": "mentor",
+                "relationshipId": "trust"
+              },
+              "value": {
+                "op": "literal",
+                "value": 3
+              }
+            },
+            {
+              "op": "setFlag",
+              "flagId": "community",
+              "value": true
+            }
+          ],
+          "next": "end"
+        },
+        {
+          "id": "observe",
+          "text": "이번에는 구경하며 쉰다.",
+          "requirements": {
+            "op": "always"
+          },
+          "effects": [
+            {
+              "op": "add",
+              "target": {
+                "kind": "attribute",
+                "attributeId": "stress"
+              },
+              "value": {
+                "op": "literal",
+                "value": -5
+              }
+            }
+          ],
+          "next": "end"
+        }
+      ]
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

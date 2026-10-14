@@ -1,0 +1,14 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+const root=resolve(import.meta.dirname,'..');
+const sdk=process.env.EMSDK??resolve(root,'.toolchains/emsdk');
+const toolchain=resolve(sdk,'upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake');
+if(!existsSync(toolchain))throw new Error('Install official Emscripten SDK or set EMSDK before build:wasm. See native/README.md.');
+const build=resolve(root,'dist/wasm');mkdirSync(build,{recursive:true});
+const env={...process.env,NODE_OPTIONS:'',EMSDK:sdk,EM_CONFIG:resolve(sdk,'.emscripten')};
+const run=(cmd,args)=>{const r=spawnSync(cmd,args,{cwd:root,stdio:'inherit',env});if(r.error)throw r.error;if(r.status!==0)process.exit(r.status??1);};
+const generator=process.platform==='win32'?['-G','MinGW Makefiles']:[];
+run('cmake',['-S','native','-B',build,...generator,'-DCMAKE_BUILD_TYPE=Release',`-DCMAKE_TOOLCHAIN_FILE=${toolchain}`]);
+run('cmake',['--build',build,'--target','raising-wasm','--parallel','2']);
+console.log(`WebAssembly C++ core: ${resolve(build,'raising-wasm.mjs')}`);

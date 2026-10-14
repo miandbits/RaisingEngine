@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/project.schema.json",
+  "title": "Project definition",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/header"
+    }
+  ],
+  "properties": {
+    "gameId": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "title": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "description": {
+      "type": "string"
+    },
+    "startYear": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9999
+    },
+    "startMonth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "durationMonths": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1200
+    },
+    "periodsPerMonth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "protagonistId": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "initialState": {
+      "$ref": "common.schema.json#/$defs/overrides"
+    },
+    "defaultEndingId": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "visual": {
+      "$ref": "visual.schema.json"
+    },
+    "gameplay": {
+      "$ref": "gameplay.schema.json"
+    },
+    "systems": {
+      "$ref": "systems.schema.json"
+    },
+    "localization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaultLocale",
+        "fallbackLocale",
+        "locales",
+        "entries"
+      ],
+      "properties": {
+        "defaultLocale": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+          "maxLength": 40
+        },
+        "fallbackLocale": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+          "maxLength": 40
+        },
+        "locales": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+                "maxLength": 40
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "fontAssetId": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "source",
+              "translations"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000,
+                "pattern": "^/"
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "translations": {
+                "type": "object",
+                "maxProperties": 32,
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+                  "maxLength": 40
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 20000
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "userFields": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "title": "UserFieldDefinition",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "type": {
+            "const": "text"
+          },
+          "label": {
+            "$ref": "common.schema.json#/$defs/text"
+          },
+          "initial": {
+            "$ref": "common.schema.json#/$defs/userText"
+          },
+          "minLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 256
+          },
+          "maxLength": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "label",
+          "initial",
+          "minLength",
+          "maxLength"
+        ]
+      }
+    },
+    "schedulePlayback": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "continuous"
+      ],
+      "default": "manual",
+      "description": "월 일정 실행 방식. continuous는 결과 연출 후 다음 일정으로 이어지며 대화·선택·전투에서는 입력을 기다립니다."
+    }
+  },
+  "required": [
+    "gameId",
+    "title",
+    "startYear",
+    "startMonth",
+    "durationMonths",
+    "periodsPerMonth",
+    "protagonistId",
+    "initialState",
+    "defaultEndingId"
+  ],
+  "unevaluatedProperties": false,
+  "dependentRequired": {
+    "systems": [
+      "gameplay"
+    ]
+  }
+}
