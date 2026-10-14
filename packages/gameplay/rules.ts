@@ -80,6 +80,7 @@ export function executeAction(content: ContentSnapshot, draft: RunData, actionId
   requireCore(scheduled || atLocation(action.locationIds, draft.gameplay!.locationId), 'WRONG_LOCATION', '행동할 수 있는 장소로 이동해 주세요.', '/command/actionId');
   requireCore(quantity <= (action.maxQuantity ?? 1), 'QUANTITY_LIMIT', '설정된 수량 한도를 초과합니다.', '/command/quantity');
   requireCore(!scheduled || !action.eventId, 'ACTION_TRIGGER_EVENT', '사건 행동은 일정 트리거에서 실행할 수 없습니다.', '/command/actionId');
+  requireCore(!action.expeditionId || (!scheduled && !action.eventId && quantity === 1), 'ACTION_EXPEDITION_CONTEXT', '탐험은 사건 연결 없이 직접 한 번 실행해야 합니다.', '/command/actionId');
   const ctx = context(draft), flowPath = `/project/gameplay/actions/${actionId}/flow`;
   requireCore(!ctx.stack.includes(actionId), 'FLOW_CYCLE', '행동 흐름이 순환합니다.', flowPath);
   ctx.actions++; const count = (ctx.counts.get(ctx.occurrence) ?? 0) + 1; ctx.counts.set(ctx.occurrence, count);

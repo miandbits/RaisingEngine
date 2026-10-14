@@ -67,9 +67,18 @@ export function checkGameplay(ctx: SemanticContext, doc: ProjectDocument, gamepl
     }
     if (action.eventId) { const event = ctx.resolve(ctx.events, String(action.eventId), doc, at + '/eventId', '사건'); if (event && event.data.trigger !== 'interaction') ctx.report(doc, at + '/eventId', 'ACTION_EVENT_TRIGGER', '행동 사건은 interaction 트리거여야 합니다.'); }
     const steps: Index = new Map(); ctx.addArray(steps, doc, at + '/flow', action.flow, '행동 흐름 단계');
+    if (action.expeditionId) {
+      const definition = doc.data as JsonObject;
+      const expeditions = isObject(definition.systems) ? objectItems(definition.systems.expeditions) : [];
+      const expedition = expeditions.find(e => e.id === action.expeditionId);
+      if (!expedition) ctx.report(doc, at + '/expeditionId', 'ACTION_EXPEDITION_REFERENCE', '연결한 탐험이 없습니다.', [String(action.expeditionId)]);
+      if (action.eventId || Number(action.maxQuantity ?? 1) !== 1) ctx.report(doc, at + '/expeditionId', 'ACTION_EXPEDITION_CONTEXT', '탐험 행동은 사건을 함께 열 수 없으며 최대 수량은 1이어야 합니다.');
+      if (expedition && Array.isArray(action.locationIds) && action.locationIds.length && !action.locationIds.includes(String(expedition.locationId))) ctx.report(doc, at + '/locationIds', 'ACTION_EXPEDITION_LOCATION', '행동 장소에 탐험 출발 장소가 포함되어야 합니다.');
+    }
     for (const [j, step] of objectItems(action.flow).entries()) for (const field of ['thenActionId', 'elseActionId']) if (step[field]) {
       const target = ctx.resolve(actions, String(step[field]), doc, `${at}/flow/${j}/${field}`, '연결 행동');
       if (target?.data.eventId) ctx.report(doc, `${at}/flow/${j}/${field}`, 'FLOW_EVENT_ACTION', '흐름 내부에서는 사건을 직접 여는 행동을 실행할 수 없습니다. 최상위 행동에 사건을 연결하세요.');
+      if (target?.data.expeditionId) ctx.report(doc, `${at}/flow/${j}/${field}`, 'FLOW_EXPEDITION_ACTION', '탐험은 최상위 행동에서 직접 시작해야 합니다.');
       if (target && Number(step.quantity ?? 1) > Number(target.data.maxQuantity ?? 1)) ctx.report(doc, `${at}/flow/${j}/quantity`, 'FLOW_QUANTITY', '연결 행동의 최대 수량을 초과합니다.');
     }
   }
@@ -96,7 +105,7 @@ export function checkGameplay(ctx: SemanticContext, doc: ProjectDocument, gamepl
   actionList.forEach((action, i) => { if (depth(String(action.id)) > 32) ctx.report(doc, `${p}/actions/${i}/flow`, 'FLOW_DEPTH', '행동 흐름은 32단계를 초과할 수 없습니다.'); });
   const hasEvent = (id: string): boolean => {
     const pending = [id], seen = new Set<string>();
-    while (pending.length) { const current = pending.pop()!; if (seen.has(current)) continue; seen.add(current); const action = actionMap.get(current); if (!action) continue; if (action.eventId) return true; pending.push(...edges(action)); }
+    while (pending.length) { const current = pending.pop()!; if (seen.has(current)) continue; seen.add(current); const action = actionMap.get(current); if (!action) continue; if (action.eventId || action.expeditionId) return true; pending.push(...edges(action)); }
     return false;
   };
   for (const [i, group] of objectItems(gameplay.policyGroups).entries()) {
@@ -105,7 +114,7 @@ export function checkGameplay(ctx: SemanticContext, doc: ProjectDocument, gamepl
     for (const [j, id] of ((group.locationIds ?? []) as string[]).entries()) ctx.resolve(locations, id, doc, `${at}/locationIds/${j}`, '정책 장소');
     for (const [j, option] of objectItems(group.options).entries()) {
       const op = `${at}/options/${j}`, action = ctx.resolve(actions, String(option.actionId), doc, op + '/actionId', '정책 행동'), seen = new Set<string>();
-      if (action && hasEvent(String(option.actionId))) ctx.report(doc, op + '/actionId', 'POLICY_EVENT_ACTION', '일정 트리거 정책에는 사건 연결이 없는 행동을 사용하세요.');
+      if (action && hasEvent(String(option.actionId))) ctx.report(doc, op + '/actionId', 'POLICY_EVENT_ACTION', '일정 트리거 정책에는 사건·탐험 연결이 없는 행동을 사용하세요.');
       for (const [k, use] of objectItems(option.budgetUses).entries()) {
         const id = String(use.budgetId), bp = `${op}/budgetUses/${k}`, budget = ctx.resolve(budgets, id, doc, bp + '/budgetId', '정책 자원');
         if (seen.has(id)) ctx.report(doc, bp + '/budgetId', 'POLICY_BUDGET_DUPLICATE', '선택지의 정책 자원이 중복되었습니다.');
@@ -118,7 +127,7 @@ export function checkGameplay(ctx: SemanticContext, doc: ProjectDocument, gamepl
   if (isObject(gameplay.ruleCalendar) && Number(gameplay.ruleCalendar.daysPerMonth) < Number((doc.data as JsonObject).periodsPerMonth ?? 3)) ctx.report(doc, `${p}/ruleCalendar/daysPerMonth`, 'RULE_CALENDAR_RANGE', '한 달의 논리 일수는 월별 기간 수 이상이어야 합니다.');
   for (const [i, rule] of objectItems(gameplay.rules).entries()) {
     const at = `${p}/rules/${i}`, trigger = rule.trigger as JsonObject, action = ctx.resolve(actions, String(rule.actionId), doc, at + '/actionId', '규칙 행동');
-    if (action && hasEvent(String(rule.actionId))) ctx.report(doc, at + '/actionId', 'RULE_EVENT_ACTION', '자동 트리거에는 사건 연결이 없는 행동을 사용하세요.');
+    if (action && hasEvent(String(rule.actionId))) ctx.report(doc, at + '/actionId', 'RULE_EVENT_ACTION', '자동 트리거에는 사건·탐험 연결이 없는 행동을 사용하세요.');
     if (action && Number(rule.quantity ?? 1) > Number(action.data.maxQuantity ?? 1)) ctx.report(doc, at + '/quantity', 'RULE_QUANTITY', '연결 행동의 최대 수량을 초과합니다.');
     const allowed: Record<string, string[]> = { locationEnter: ['locationId'], purchaseComplete: ['shopId', 'itemId'], relationshipChanged: ['characterId', 'relationshipId'] };
     for (const key of Object.keys(trigger)) if (key !== 'type' && !(allowed[String(trigger.type)] ?? []).includes(key)) ctx.report(doc, `${at}/trigger/${key}`, 'RULE_TRIGGER_FILTER', '이 트리거에서 사용할 수 없는 대상 필터입니다.');

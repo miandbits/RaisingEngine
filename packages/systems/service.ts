@@ -65,7 +65,7 @@ function finishExpedition(draft: RunData, outcome: 'completed' | 'retreated' | '
   const s = draft.systems!, trip = s.expedition!;
   s.lastExpedition = { expeditionId: trip.expeditionId, outcome, clearedNodes: [...trip.clearedNodes] };
   draft.presentation = structuredClone(trip.returnPresentation);
-  s.expedition = null; s.battle = null; draft.phase = 'activity-result';
+  s.expedition = null; s.battle = null; draft.phase = trip.returnPhase ?? 'activity-result';
 }
 export function applySystems(content: ContentSnapshot, draft: RunData, command: SystemsCommand, sounds: string[]): void {
   const d = content.project.systems, s = draft.systems;

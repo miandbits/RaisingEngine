@@ -261,7 +261,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     const auto fontPath=paths.value(e["fontAssetId"].toString(),project["_defaultFontPath"].toString());
     const auto family=projectFontFamily(fontPath);if(!family.isEmpty())e["_fontFamily"]=family;
     if(e["kind"]=="schedule"){e["_year"]=project["startYear"];e["_month"]=project["startMonth"];}
-    if (e["hidden"].toBool())
+    if (e["hidden"].toBool() || project["_previewHiddenIds"].toArray().contains(e["id"]))
       continue;
     if(e["kind"]=="input"||(e["kind"]=="text"&&e["binding"]=="user-field")){
       QString value;for(auto field:project.value("userFields").toArray())if(field.toObject().value("id")==e.value("userFieldId"))value=field.toObject().value("initial").toString();

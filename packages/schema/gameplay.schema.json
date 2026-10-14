@@ -530,6 +530,9 @@
         "eventId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "expeditionId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
         "flow": {
           "type": "array",
           "maxItems": 128,

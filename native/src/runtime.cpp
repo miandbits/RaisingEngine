@@ -721,7 +721,17 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
   else if (type == "navigate" || type == "visit" || type == "buy" || type == "sell" ||
            type == "useService" || type == "setDiet" || type == "interact" ||
            type == "executeAction" || type == "selectPolicy")
+  {
     gameplay(c, s, cmd, sounds);
+    if (type == "executeAction") {
+      const auto actions = c["project"]["gameplay"].value("actions", J::array());
+      const auto action = find(actions, cmd["actionId"]);
+      if (action && action->contains("expeditionId")) {
+        startExpedition(c, s, (*action)["expeditionId"], sounds);
+        s["systems"]["expedition"]["returnPhase"] = old["phase"];
+      }
+    }
+  }
   else if (type == "setSchedule") {
     need(old["phase"] == "planning" || old["phase"] == "ready", "WRONG_PHASE",
          "일정 편집을 기다리는 상태가 아닙니다.", "/phase");

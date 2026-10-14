@@ -69,7 +69,7 @@ void startExpedition(const J &c, J &s, const J &id, J &sounds) {
 void finishExpedition(J &s, const std::string &outcome) {
   auto &sys = s["systems"]; const auto trip = sys["expedition"];
   sys["lastExpedition"] = {{"expeditionId", trip["expeditionId"]}, {"outcome", outcome}, {"clearedNodes", trip["clearedNodes"]}};
-  s["presentation"] = trip["returnPresentation"]; sys["expedition"] = nullptr; sys["battle"] = nullptr; s["phase"] = "activity-result";
+  s["presentation"] = trip["returnPresentation"]; sys["expedition"] = nullptr; sys["battle"] = nullptr; s["phase"] = trip.value("returnPhase", "activity-result");
 }
 void systems(const J &c, J &s, const J &cmd, J &sounds) {
   need(c["project"].contains("systems") && s.contains("systems") && s.contains("gameplay") && s["mode"] == "full", "SYSTEMS_UNAVAILABLE", "확장 시스템이 있는 전체 실행 모드가 필요합니다.", "/project/systems");

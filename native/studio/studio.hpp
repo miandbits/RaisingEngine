@@ -39,6 +39,8 @@ private:
   QStringList openScreens;
   StudioBridge bridge;
   QJsonObject view;
+  QJsonObject conditionPreview;
+  void editConditionPreview();
   QJsonArray assets;
   QProcess player;
   QByteArray playerBuffer;
