@@ -118,7 +118,7 @@ void StudioTests::pluginMissingPlaceholder() {
   QVERIFY(QDir().mkpath(temp.path() + "/plugins/cutout-animation/controller"));
   QFile lock(temp.path() + "/plugins/lock.json");
   QVERIFY(lock.open(QIODevice::WriteOnly));
-  lock.write(R"({"formatVersion":"0.1.0","plugins":[{"id":"cutout-animation","version":"1.0.0","enabled":true}]})");
+  lock.write(R"({"formatVersion":"0.1.0","plugins":[{"id":"cutout-animation","version":"999.0.0","enabled":true}]})");
   lock.close();
   const QByteArray documentBytes = R"({"formatVersion":"0.1.0","plugin":"cutout-animation","type":"controller","id":"hero-main","data":{"name":"Hero"}})";
   QFile document(temp.path() + "/plugins/cutout-animation/controller/hero-main.json");
