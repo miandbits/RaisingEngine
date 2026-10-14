@@ -329,19 +329,34 @@ void StudioTests::cutoutEndToEnd() {
   // Common action "응원하기" (money +5, no confirmation) through 정책 · 행동 작업실.
   QString actionId;
   onModal(&pollers, &errors, "rules dialog", [](QWidget *m) { return m->objectName() == "rulesDialog"; }, [&](QWidget *d) {
+    // A missing widget (renamed / not an editable row) fails the scenario instead of crashing it.
+    auto missing = [&](const char *what) { errors.append(QString("rules dialog: missing ") + what); static_cast<QDialog *>(d)->reject(); };
     auto kind = d->findChild<QComboBox *>("ruleKind");
+    auto add = d->findChild<QPushButton *>("addRule");
+    if (!kind || !add) return missing("ruleKind/addRule");
     kind->setCurrentIndex(kind->findData("actions"));
-    QTest::mouseClick(d->findChild<QPushButton *>("addRule"), Qt::LeftButton);
-    actionId = d->findChild<QLineEdit *>("ruleId")->text();
-    typeInto(d->findChild<QLineEdit *>("ruleName"), QString::fromUtf8("응원하기"), false);
+    QTest::mouseClick(add, Qt::LeftButton);
+    auto id = d->findChild<QLineEdit *>("ruleId");
+    auto name = d->findChild<QLineEdit *>("ruleName");
+    if (!id || !name) return missing("ruleId/ruleName");
+    actionId = id->text();
+    typeInto(name, QString::fromUtf8("응원하기"), false);
     // Widgets on the (possibly hidden) confirmation/effects pages: widget APIs like the logic test.
-    d->findChild<QCheckBox *>("ruleConfirm-enabled")->setChecked(false);
-    d->findChild<QPushButton *>("addRule-effects")->click();
+    auto confirm = d->findChild<QCheckBox *>("ruleConfirm-enabled");
+    auto addEffect = d->findChild<QPushButton *>("addRule-effects");
+    if (!confirm || !addEffect) return missing("ruleConfirm-enabled/addRule-effects");
+    confirm->setChecked(false);
+    addEffect->click();
     auto table = d->findChild<QTableWidget *>("rule-effects");
+    if (!table || table->rowCount() != 1) return missing("rule-effects row");
     auto attribute = qobject_cast<QComboBox *>(table->cellWidget(0, 0));
+    auto amount = qobject_cast<QSpinBox *>(table->cellWidget(0, 2));
+    if (!attribute || !amount) return missing("editable effect row (attribute combo / amount spin)");
     attribute->setCurrentIndex(attribute->findData("money"));
-    qobject_cast<QSpinBox *>(table->cellWidget(0, 2))->setValue(5);
-    QTest::mouseClick(d->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save), Qt::LeftButton);
+    amount->setValue(5);
+    auto buttons = d->findChild<QDialogButtonBox *>();
+    if (!buttons || !buttons->button(QDialogButtonBox::Save)) return missing("Save button");
+    QTest::mouseClick(buttons->button(QDialogButtonBox::Save), Qt::LeftButton);
   });
   menuClick(w->findChild<QAction *>("editRules"), &hooks, "정책 · 행동 작업실");
   QVERIFY(settle());
