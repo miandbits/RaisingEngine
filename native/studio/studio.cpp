@@ -161,6 +161,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       [this] { closeScreen(documents->currentIndex()); }, QKeySequence::Close);
   viewMenu = menuBar()->addMenu(tr("보기"));
   auto designMenu = menuBar()->addMenu(tr("디자인"));
+  designMenu->addAction(tr("다인 육성 · 대상과 활동 배정…"),this,&StudioWindow::editRoster)->setObjectName("editRoster");
   designMenu->addAction(tr("공통 스타일 · 프로젝트 폰트…"),this,&StudioWindow::editDesignSystem)->setObjectName("editDesignSystem");
   designMenu->addAction(tr("폰트 파일 가져오기…"),this,&StudioWindow::importFont)->setObjectName("importFont");
   designMenu->addAction(tr("다국어 작업실…"),this,&StudioWindow::editLocalization)->setObjectName("editLocalization");

@@ -193,6 +193,58 @@
       ],
       "default": "manual",
       "description": "월 일정 실행 방식. continuous는 결과 연출 후 다음 일정으로 이어지며 대화·선택·전투에서는 입력을 기다립니다."
+    },
+    "roster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "localAttributeIds",
+        "members"
+      ],
+      "properties": {
+        "localAttributeIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "characterId",
+              "initialAttributes",
+              "activityId"
+            ],
+            "properties": {
+              "characterId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "activityId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "initialAttributes": {
+                "type": "object",
+                "propertyNames": {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": -2147483648,
+                  "maximum": 2147483647
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "required": [

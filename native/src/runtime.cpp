@@ -395,6 +395,17 @@ J create(const J &c, const J &seed, const J &options) {
   if (options.contains("initialOverrides")) {
     merge(c, s, options["initialOverrides"], "/initialOverrides");
   }
+  if(c["project"].contains("roster")) {
+    const auto &r=c["project"]["roster"];
+    s["roster"]={{"attributes",J::object()},{"assignments",J::object()}};
+    for(const auto &m:r["members"]) {
+      const auto id=str(m,"characterId");
+      s["roster"]["attributes"][id]=J::object();
+      for(const auto &key:r["localAttributeIds"]) {const auto k=key.get<std::string>();s["roster"]["attributes"][id][k]=m["initialAttributes"].value(k,s["attributes"][k]);}
+      s["roster"]["assignments"][id]=m["activityId"];
+    }
+    for(const auto &key:r["localAttributeIds"])s["attributes"][key.get<std::string>()]=s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()];
+  }
   return {{"ok", true}, {"state", s}};
 }
 void scene(J &s, const J &v, J &sounds) {
@@ -559,7 +570,8 @@ J step(const J &c, J &s, const J &choice, J &sounds) {
 }
 void applyDiet(const J &c, J &s, J &changes);
 #include "generic.inc"
-J execute(const J &c, const J &before, J &s) {
+J executeRoster(const J &c,J &s);
+J execute(const J &c, const J &before, J &s, bool individual = false) {
   need(before["phase"] == "ready" && !before["schedule"].is_null(), "WRONG_PHASE",
        "실행할 일정이 준비되지 않았습니다.", "/phase");
   const auto &schedule = before.at("schedule");
@@ -571,14 +583,21 @@ J execute(const J &c, const J &before, J &s) {
   need(a, "UNKNOWN_ACTIVITY", "알 수 없는 활동: " + id.get<std::string>(), "/schedule");
   auto p = "/activities/" + id.get<std::string>();
   J dietChanges = J::array();
-  boundaryRules(c, s, dietChanges, true);
-  applyPolicies(c, s, dietChanges, "beforeActivity");
+  if(!individual) {
+    boundaryRules(c,s,dietChanges,true);applyPolicies(c,s,dietChanges,"beforeActivity");
+    if(c["project"].contains("roster")) {
+      J result=executeRoster(c,s);
+      result["changes"].insert(result["changes"].begin(),dietChanges.begin(),dietChanges.end());
+      applyPolicies(c,s,result["changes"],"afterActivity");dayRules(c,s,result["changes"]);
+      s["lastActivityResult"]=result;return result;
+    }
+  }
   // Generic pre-activity hooks shape the activity input. Preserve the legacy
   // diet timing so old command logs retain their requirement/chance semantics.
   const J activityInput = s;
   need(condition(c, activityInput, (*a)["requirements"], p + "/requirements"), "REQUIREMENTS_NOT_MET",
        "활동 조건을 만족하지 않습니다: " + id.get<std::string>(), p + "/requirements");
-  applyDiet(c, s, dietChanges);
+  if(!individual) applyDiet(c, s, dietChanges);
   size_t i = 0;
   for (auto &cost : (*a)["costs"]) {
     auto def = find(c["attributes"], cost["attributeId"]);
@@ -625,12 +644,12 @@ J execute(const J &c, const J &before, J &s) {
     auto branch = out["success"]["passed"].get<bool>() ? "successEffects" : "failureEffects";
     effects(c, s, (*a)[branch], p + "/" + branch, out["changes"]);
   }
-  applyPolicies(c, s, out["changes"], "afterActivity");
-  dayRules(c, s, out["changes"]);
+  if(!individual){applyPolicies(c,s,out["changes"],"afterActivity");dayRules(c,s,out["changes"]);}
   s["phase"] = "activity-result";
   s["lastActivityResult"] = out;
   return out;
 }
+#include "roster.inc"
 #include "gameplay.inc"
 #include "systems.inc"
 void parseCommand(const J &cmd, int count) {
@@ -679,6 +698,9 @@ void parseCommand(const J &cmd, int count) {
              number(cmd["quantity"]) <= 2147483647LL,
          "INVALID_COMMAND", "buy에는 shopId, itemId와 양의 정수 quantity가 필요합니다.",
          "/command");
+  } else if(type=="assignActivities") {
+    need(cmd.size()==2 && cmd.contains("assignments") && cmd["assignments"].is_object(),"INVALID_COMMAND","대상별 활동 배정이 필요합니다.","/command/assignments");
+    for(const auto &id:cmd["assignments"])need(id.is_string(),"INVALID_COMMAND","활동 ID가 필요합니다.","/command/assignments");
   } else if (type == "setSchedule") {
     bool good = cmd.size() == 2 && cmd.contains("activityIds") && cmd["activityIds"].is_array() &&
                 cmd["activityIds"].size() == size_t(count);
@@ -732,7 +754,9 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
       }
     }
   }
+  else if(type=="assignActivities")assignActivities(c,old,s,cmd["assignments"]);
   else if (type == "setSchedule") {
+    need(!c["project"].contains("roster"),"ROSTER_ASSIGNMENTS","다인 프로젝트는 대상별 활동 배정을 사용하세요.","/command");
     need(old["phase"] == "planning" || old["phase"] == "ready", "WRONG_PHASE",
          "일정 편집을 기다리는 상태가 아닙니다.", "/phase");
     size_t i = 0;
@@ -786,6 +810,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
   if (type == "buy") runRules(c, s, "purchaseComplete", {{"shopId",cmd["shopId"]},{"itemId",cmd["itemId"]}}, ruleChanges);
   syncRelationshipStages(c, s);
   relationshipRules(c, s, old["relationships"], ruleChanges);
+  if(s.contains("roster"))for(const auto &key:c["project"]["roster"]["localAttributeIds"])s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()]=s["attributes"][key.get<std::string>()];
   s["stateRevision"] = number(s["stateRevision"]) + 1;
   J transition = {{"command", cmd},
                   {"fromRevision", old["stateRevision"]},

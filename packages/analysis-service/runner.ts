@@ -55,7 +55,21 @@ function candidates(content: ContentSnapshot, state: RunState, reasons: Record<s
       for (const interaction of gameplay.interactions.filter(x => x.locationId === location.id))
         attempt([{ type: 'interact', interactionId: interaction.id }]);
     }
-    for (const activity of [...content.activities].sort((a, b) => a.id.localeCompare(b.id))) {
+    if (content.project.roster && state.roster) {
+      const activities = [...content.activities].filter(a => !a.expeditionId).sort((a,b)=>a.id.localeCompare(b.id));
+      const members = content.project.roster.members;
+      // Bound the branching factor; this is sampled search, not an impossibility proof.
+      const count = Math.min(256, Math.pow(activities.length, members.length));
+      for(let n=0;n<count;n++) {
+        let code=n;
+        const assignments: Record<string,string> = {};
+        for(const member of members) {
+          const i=random ? Math.floor(random()*activities.length) : code%activities.length;
+          assignments[member.characterId]=activities[i]!.id;code=Math.floor(code/activities.length);
+        }
+        attempt([{type:'assignActivities',assignments},{type:'executeActivity'}]);
+      }
+    } else for (const activity of [...content.activities].sort((a, b) => a.id.localeCompare(b.id))) {
       const ids = [...(state.schedule ?? Array<string>(content.project.periodsPerMonth).fill(activity.id))] as string[];
       ids[state.periodIndex % content.project.periodsPerMonth] = activity.id;
       attempt([{ type: 'setSchedule', activityIds: ids }, { type: 'executeActivity' }]);

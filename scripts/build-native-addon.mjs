@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 const root = resolve(import.meta.dirname, '..'), output = resolve(root, 'dist/native');
 const runtime = JSON.parse(readFileSync(resolve(output, 'runtime.json'), 'utf8'));
-const names = ['CMakeLists.txt', 'include/raising/runtime.hpp', 'src/runtime.cpp','src/user-fields.inc', 'src/gameplay.inc', 'src/generic.inc', 'src/view.inc', 'src/systems.inc', 'src/systems-view.inc', 'src/protocol.inc', 'src/main.cpp', 'src/wasm.cpp', 'vendor/json.hpp',
+const names = ['CMakeLists.txt', 'include/raising/runtime.hpp', 'src/runtime.cpp','src/user-fields.inc', 'src/gameplay.inc', 'src/generic.inc','src/roster.inc', 'src/view.inc', 'src/systems.inc', 'src/systems-view.inc', 'src/protocol.inc', 'src/main.cpp', 'src/wasm.cpp', 'vendor/json.hpp',
   'addon/CMakeLists.txt', 'addon/addon.cpp', ...['node_api.h', 'node_api_types.h', 'js_native_api.h', 'js_native_api_types.h'].map(x => `addon/vendor/${x}`)];
 const files = names.map(name => [name, readFileSync(resolve(root, 'native', name))]);
 const coreHash = createHash('sha256').update('native-release-isolated-v2:' + process.platform);

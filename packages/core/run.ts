@@ -1,4 +1,5 @@
 import { resolveUserValues } from './user-fields.js';
+import { createRoster, assignActivities, executeRoster } from './roster.js';
 import type { Overrides } from '../schema/generated/project.js';
 import { CORE_VERSION, type Command, type ContentSnapshot, type CreateResult, type DispatchResult,
   type RunData, type RunState, type Values, type ActivityResult, type RunMode, type NarrativeStep, type EventDecision } from './model.js';
@@ -76,6 +77,7 @@ export function createRun(content: ContentSnapshot, seed: number,
     }
     if (content.project.systems) state.systems = createSystems();
     if (options.initialOverrides !== undefined) mergeOverrides(content, state, options.initialOverrides, '/initialOverrides');
+    createRoster(content, state);
     return { ok: true, state: freeze(state) };
   } catch (error) {
     if (error instanceof CoreFault) return { ok: false, error: error.diagnostic() };
@@ -95,6 +97,8 @@ function parseCommand(input: unknown, periods: number): Command {
       && (input.action !== 'useItem' || typeof input.itemId === 'string' && input.itemId.length > 0), 'INVALID_COMMAND', '전투 행동과 물품 ID를 확인해 주세요.', '/command');
   } else if (input.type === 'returnFromExpedition') {
     requireCore(Object.keys(input).length === 1, 'INVALID_COMMAND', '귀환 명령에 추가 필드를 사용할 수 없습니다.', '/command');
+  } else if (input.type === 'assignActivities') {
+    requireCore(Object.keys(input).length === 2 && object(input.assignments) && Object.values(input.assignments).every(id => typeof id === 'string'), 'INVALID_COMMAND', '대상별 활동 배정이 필요합니다.', '/command/assignments');
   } else if (input.type === 'setSchedule') {
     requireCore(Object.keys(input).length === 2 && Array.isArray(input.activityIds) && input.activityIds.length === periods
       && Array.from(input.activityIds).every(id => typeof id === 'string'),
@@ -126,21 +130,30 @@ function parseCommand(input: unknown, periods: number): Command {
   return structuredClone(input) as Command;
 }
 
-function executeActivity(content: ContentSnapshot, state: RunState, draft: RunData): ActivityResult {
+function executeActivity(content: ContentSnapshot, state: RunState, draft: RunData, individual = false): ActivityResult {
   requireCore(state.phase === 'ready' && state.schedule, 'WRONG_PHASE', '실행할 일정이 준비되지 않았습니다.', '/phase');
   const activityId = state.schedule[state.periodIndex % content.project.periodsPerMonth]!;
   const activity = content.activities.find(a => a.id === activityId);
   requireCore(activity, 'UNKNOWN_ACTIVITY', `알 수 없는 활동: ${activityId}`, '/schedule');
   const path = `/activities/${activityId}`;
   const result: ActivityResult = { activityId, time: calendarTime(content, state), changes: [], success: null };
-  runBoundaryRules(content, draft, 'periodStart', result.changes);
-  applyPolicies(content, draft, result.changes, 'beforeActivity');
+  if (!individual) {
+    runBoundaryRules(content, draft, 'periodStart', result.changes);
+    applyPolicies(content, draft, result.changes, 'beforeActivity');
+    if (content.project.roster) {
+      const batch = executeRoster(content, draft, executeActivity);
+      batch.changes.unshift(...result.changes);
+      applyPolicies(content, draft, batch.changes, 'afterActivity');
+      runDayRules(content, draft, batch.changes);
+      return batch;
+    }
+  }
   // Generic before triggers are part of this transaction and feed its checks.
   // Snapshot before legacy diet and activity costs preserves older projects' rolls.
   const activityInput = structuredClone(draft);
   requireCore(evaluateCondition(content, activityInput, activity.requirements, `${path}/requirements`),
     'REQUIREMENTS_NOT_MET', `활동 조건을 만족하지 않습니다: ${activityId}`, `${path}/requirements`);
-  applyDiet(content, draft, result.changes);
+  if (!individual) applyDiet(content, draft, result.changes);
   for (const [i, cost] of activity.costs.entries()) {
     const definition = content.attributes.find(a => a.id === cost.attributeId)!;
     requireCore(draft.attributes[cost.attributeId]! - cost.amount >= definition.min,
@@ -166,8 +179,10 @@ function executeActivity(content: ContentSnapshot, state: RunState, draft: RunDa
     const branch = result.success.passed ? 'successEffects' : 'failureEffects';
     applyEffects(content, draft, activity[branch]!, `${path}/${branch}`, result.changes);
   }
-  applyPolicies(content, draft, result.changes, 'afterActivity');
-  runDayRules(content, draft, result.changes);
+  if (!individual) {
+    applyPolicies(content, draft, result.changes, 'afterActivity');
+    runDayRules(content, draft, result.changes);
+  }
   draft.phase = 'activity-result';
   draft.lastActivityResult = result;
   return result;
@@ -193,6 +208,7 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     let eventDecisions: EventDecision[] = [];
     const soundCues: string[] = [];
     switch (command.type) {
+      case 'assignActivities': assignActivities(content, state, draft, command.assignments); break;
       case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction':
         applySystems(content, draft, command, soundCues); break;
       case 'navigate': case 'visit': case 'buy': case 'interact': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy':
@@ -206,6 +222,7 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
         }
         break;
       case 'setSchedule': {
+        requireCore(!content.project.roster, 'ROSTER_ASSIGNMENTS', '다인 프로젝트는 대상별 활동 배정을 사용하세요.', '/command');
         requireCore(state.phase === 'planning' || state.phase === 'ready', 'WRONG_PHASE', '일정 편집을 기다리는 상태가 아닙니다.', '/phase');
         command.activityIds.forEach((id, i) => {
           requireCore(content.activities.some(a => a.id === id), 'UNKNOWN_ACTIVITY', `알 수 없는 활동: ${id}`, `/command/activityIds/${i}`);
@@ -240,6 +257,7 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     if (command.type === 'buy') emitRules(content, draft, { type: 'purchaseComplete', shopId: command.shopId, itemId: command.itemId });
     syncRelationshipStages(content, draft);
     emitRelationshipRules(content, draft);
+    if (draft.roster) for (const id of content.project.roster!.localAttributeIds) draft.roster.attributes[content.project.protagonistId]![id] = draft.attributes[id]!;
     draft.stateRevision++;
     return { ok: true, state: freeze(draft), transition: freeze({ command, fromRevision: state.stateRevision,
       toRevision: draft.stateRevision, fromPhase: state.phase, toPhase: draft.phase, time: calendarTime(content, draft), activity,

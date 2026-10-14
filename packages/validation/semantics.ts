@@ -6,6 +6,7 @@ import { checkLocalization } from './localization.js';
 import { checkGameplay } from './gameplay.js';
 import { checkUserFields } from './user-fields.js';
 import { checkSystems } from './systems.js';
+import { checkRoster } from './roster.js';
 
 export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
   const ctx = new SemanticContext();
@@ -94,6 +95,7 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
     for (const [key, child] of Object.entries(value)) walk(child, doc, childPointer(pointer, key), depth);
   }
   if (root && project) {
+    checkRoster(ctx, root, project);
     checkUserFields(ctx, root, project);
     checkLocalization(ctx, root, documents);
     if (isObject(project.visual)) checkVisual(ctx, root, project.visual);

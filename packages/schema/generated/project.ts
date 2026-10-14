@@ -52,6 +52,1002 @@ export type ProjectDefinition = Header & {
    * 월 일정 실행 방식. continuous는 결과 연출 후 다음 일정으로 이어지며 대화·선택·전투에서는 입력을 기다립니다.
    */
   schedulePlayback?: "manual" | "continuous";
+  roster?: {
+    /**
+     * @minItems 1
+     * @maxItems 64
+     */
+    localAttributeIds: [string, ...string[]];
+    /**
+     * @minItems 1
+     * @maxItems 16
+     */
+    members:
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ]
+      | [
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          },
+          {
+            characterId: string;
+            activityId: string;
+            initialAttributes: {
+              [k: string]: number;
+            };
+          }
+        ];
+  };
 };
 export type Element = {
   [k: string]: unknown;

@@ -62,11 +62,13 @@ export interface NumericChange {
 export interface FlagChange { kind: 'flag'; source: string; flagId: string; before: boolean; after: boolean }
 export type Change = NumericChange | FlagChange;
 export interface ActivityResult {
+  actorResults?: { characterId: string; result: ActivityResult }[];
   activityId: string; time: CalendarTime; changes: Change[];
   success: null | { requestedChance: number; chance: number; roll: number; passed: boolean; rawDraws: number };
 }
 /** Internal transaction draft. Published states and restored sessions are deeply frozen. */
 export interface RunData extends Values {
+  roster?: import('./roster.js').RosterState;
   userValues?: Record<string, string>;
   coreVersion: typeof CORE_VERSION;
   contentFingerprint: string;
@@ -86,6 +88,7 @@ export interface RunData extends Values {
 }
 export type RunState = DeepReadonly<RunData>;
 export type Command = GameplayCommand | SystemsCommand
+  | { type: 'assignActivities'; assignments: Record<string, string> }
   | { type: 'setSchedule'; activityIds: string[] }
   | { type: 'executeActivity' }
   | { type: 'acknowledgeResult' }

@@ -148,6 +148,12 @@ export type ScenarioSpecification = Header & {
                 type: "selectPolicy";
                 groupId: string;
                 optionId: string | null;
+              }
+            | {
+                type: "assignActivities";
+                assignments: {
+                  [k: string]: string;
+                };
               };
         }
     ),
@@ -290,6 +296,12 @@ export type ScenarioSpecification = Header & {
                 type: "selectPolicy";
                 groupId: string;
                 optionId: string | null;
+              }
+            | {
+                type: "assignActivities";
+                assignments: {
+                  [k: string]: string;
+                };
               };
         }
     )[]

@@ -1107,6 +1107,30 @@
             "groupId",
             "optionId"
           ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "assignments"
+          ],
+          "properties": {
+            "type": {
+              "const": "assignActivities"
+            },
+            "assignments": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
         }
       ]
     },

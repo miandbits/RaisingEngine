@@ -18,7 +18,7 @@ while(!acquired){
   }
 }
 process.once('exit',()=>{if(acquired){try{unlinkSync(lock);}catch{}}});
-const names=['CMakeLists.txt','include/raising/runtime.hpp','src/runtime.cpp','src/user-fields.inc','src/gameplay.inc','src/generic.inc','src/view.inc','src/systems.inc','src/systems-view.inc','src/protocol.inc','src/main.cpp','src/wasm.cpp','vendor/json.hpp'];
+const names=['CMakeLists.txt','include/raising/runtime.hpp','src/runtime.cpp','src/user-fields.inc','src/gameplay.inc','src/generic.inc','src/roster.inc','src/view.inc','src/systems.inc','src/systems-view.inc','src/protocol.inc','src/main.cpp','src/wasm.cpp','vendor/json.hpp'];
 const files=names.map(name=>[name,readFileSync(resolve(root,'native',name))]);
 const hash=createHash('sha256').update('native-release-isolated-v2:'+process.platform);
 for(const [name,bytes] of files)hash.update(name).update(bytes);

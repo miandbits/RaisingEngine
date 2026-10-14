@@ -142,6 +142,7 @@ private:
   QCheckBox *clipChildrenField;
   void editFacilities();
   void editRules();
+  void editRoster();
   void editLogicDocument();
   void editWorkflows();
   void showRuleDebugger();

@@ -169,6 +169,7 @@ public:
     }
     if(event.GetType()=="change") {
       auto* element=event.GetTargetElement();std::string id=element->GetId();
+      if(id.rfind("roster-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)){markup.roster_draft[id.substr(7)]=select->GetValue();dirty=true;}
       if(id.rfind("plan-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)) {
         const int index=std::stoi(id.substr(5));if(index>=0&&index<game.periods()&&markup.plan.size()==size_t(game.periods())){
           markup.plan[index]=select->GetValue();
@@ -247,7 +248,7 @@ public:
         std::string reason;if(!game.available(action,&reason))throw std::runtime_error(reason);
         markup.pending_purchase=action;markup.pending_confirmation=transaction.value("confirmation",Json::object());markup.pending_revision=game.state.value("stateRevision",0);dirty=true;return;
       }
-      if(type=="start") {auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
+      if(type=="start") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
       else if(type=="quantity"){auto& value=markup.quantities[action.value("key","")];value=std::clamp(value+action.value("delta",0),1,std::max(1,action.value("maximum",1)));}
       else if(type=="confirmPurchase"){auto purchase=markup.pending_purchase;markup.pending_purchase=nullptr;if(!purchase.is_null()){
         if(game.state.value("stateRevision",-1)!=markup.pending_revision)throw std::runtime_error("상태가 변경되었습니다. 내용을 다시 확인해 주세요.");
@@ -263,6 +264,7 @@ public:
         for(int i=1;i<=game.periods();i++){const int next=(markup.plan_slot+i)%game.periods();if(!(markup.plan_selected&(1<<next))){markup.plan_slot=next;break;}}markup.plan_group.clear();
       }
       else if(type=="planReset") {markup.plan_slot=game.state.value("periodIndex",0)%game.periods();markup.plan_selected=(1<<markup.plan_slot)-1;markup.plan_group.clear();}
+      else if(type=="rosterCommit")game.send({{"type","assignActivities"},{"assignments",markup.roster_draft}});
       else if(type=="commitPlan") {if(markup.plan_selected!=((1<<game.periods())-1))throw std::runtime_error("이번 달 일정을 모두 선택하세요.");game.send({{"type","setSchedule"},{"activityIds",markup.plan}});game.send({{"type","executeActivity"}});game.settle();}
       else if(type=="uiBack") {
         if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;
@@ -274,7 +276,7 @@ public:
         }
       }
       else if(type=="save")game.save(save_file);
-      else if(type=="load") {auto_attempted=-1;auto_revision=-1;game.load(save_file);extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan.clear();markup.plan_month=-1;markup.plan_selected=0;markup.plan_group.clear();markup.pending_purchase=nullptr;if(!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))markup.plan.push_back(id.get<std::string>());}
+      else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan.clear();markup.plan_month=-1;markup.plan_selected=0;markup.plan_group.clear();markup.pending_purchase=nullptr;if(!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))markup.plan.push_back(id.get<std::string>());}
       else if(type=="sound") {muted=!muted;game.message=muted?"소리를 껐습니다.":"소리를 켰습니다.";}
       else if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction") {
         const auto command=game.battle_ui(action);if(!command.is_null()){game.send(command);game.settle();}
@@ -283,6 +285,11 @@ public:
         if(game.state.is_null())throw std::runtime_error("새 게임을 시작해 주세요.");
         const auto phase=game.state.value("phase","");
         if(phase=="planning"||phase=="ready") {
+          if(game.content.at("project").contains("roster")) {
+            if(phase=="planning")game.send({{"type","assignActivities"},{"assignments",markup.roster_draft}});
+            else game.send({{"type","executeActivity"}});
+            game.settle();dirty=true;return;
+          }
           if(markup.plan.size()!=size_t(game.periods()))throw std::runtime_error("이번 달 일정을 선택해 주세요.");
           if(phase=="planning"||game.state.at("schedule")!=Json(markup.plan))game.send({{"type","setSchedule"},{"activityIds",markup.plan}});
           else game.send({{"type","executeActivity"}});

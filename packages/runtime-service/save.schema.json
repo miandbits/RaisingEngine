@@ -607,6 +607,31 @@
         },
         "userValues": {
           "$ref": "https://raising-engine.example/schemas/0.1.0/common.schema.json#/$defs/userValues"
+        },
+        "roster": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attributes",
+            "assignments"
+          ],
+          "properties": {
+            "attributes": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              }
+            },
+            "assignments": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

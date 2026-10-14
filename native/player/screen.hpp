@@ -84,6 +84,8 @@ public:
   void nextLocale(){const auto config=game.content.at("project").value("localization",Json::object());const auto list=config.value("locales",Json::array());for(size_t i=0;i<list.size();i++)if(list[i].at("id")==locale){locale=list[(i+1)%list.size()].at("id");return;}}
   fs::path bundle;
   std::vector<std::string> plan;
+  Json roster_draft=Json::object();
+  int roster_revision=-1;
   int plan_slot=0;
   std::string plan_group;
   int plan_selected=0,plan_month=-1;
@@ -477,6 +479,38 @@ public:
     }
     return "<div id=\"node-"+escape(e.value("id",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
   }
+  std::string roster_stats() {
+    if(game.state.is_null())return "새 게임을 시작하면 대상별 능력을 표시합니다.";
+    std::string out;
+    const auto& r=display_content.at("project").at("roster");
+    for(const auto& m:r.at("members")) {
+      const auto id=m.value("characterId","");std::string name=id;
+      for(const auto& c:display_content.at("characters"))if(c.at("id")==id)name=c.value("name",id);
+      out+="<p><b>"+escape(name)+"</b></p>";
+      for(const auto& key:r.at("localAttributeIds")) {
+        std::string label=key.get<std::string>();for(const auto& a:display_content.at("attributes"))if(a.at("id")==key)label=a.value("label",label);
+        out+="<div>"+escape(label)+": "+std::to_string(game.state.at("roster").at("attributes").at(id).at(key.get<std::string>()).get<int>())+"</div>";
+      }
+    }
+    out+="<p><b>공용 자원</b></p>";
+    for(const auto& a:display_content.at("attributes")){bool local=false;for(const auto& key:r.at("localAttributeIds"))if(key==a.at("id"))local=true;if(!local)out+="<div>"+escape(a.value("label",""))+": "+std::to_string(game.state.at("attributes").at(a.value("id","")).get<int>())+"</div>";}
+    return out;
+  }
+  std::string roster_schedule() {
+    if(game.state.is_null())return "새 게임을 시작하세요.";
+    const auto phase=game.state.value("phase","");const bool editable=phase=="planning"||phase=="ready";
+    if(roster_revision!=game.state.value("stateRevision",0)){roster_draft=game.state.at("roster").at("assignments");roster_revision=game.state.value("stateRevision",0);}
+    std::string out="<div style=\"margin:0;height:24px;\">이번 기간 · 캐릭터별 활동 (함께 정산)</div>";
+    for(const auto& m:display_content.at("project").at("roster").at("members")) {
+      const auto id=m.value("characterId","");std::string name=id;for(const auto& c:display_content.at("characters"))if(c.at("id")==id)name=c.value("name",id);
+      out+="<div style=\"display:inline-block;width:46%;margin:1%;\"><b>"+escape(name)+"</b><select id=\"roster-"+escape(id)+"\" style=\"width:95%;\""+(editable?std::string():" disabled=\"disabled\"")+">";
+      for(const auto& a:display_content.at("activities"))if(!a.contains("expeditionId"))out+="<option value=\""+escape(a.value("id",""))+"\""+(roster_draft.value(id,"")==a.value("id","")?" selected=\"selected\"":"")+">"+escape(a.value("label",""))+"</option>";
+      out+="</select></div>";
+    }
+    out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-assign","활동 배정 적용",{{"type","rosterCommit"}},editable)+"</div>";
+    out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-execute","배정한 활동 함께 실행",{{"type","executeActivity"}},phase=="ready"&&roster_draft==game.state.at("roster").at("assignments"))+"</div>";
+    return out;
+  }
   std::string element_body(const Json& e) {
     const std::string kind=e.value("kind","panel");
     if(kind=="panel"||kind=="group")return "";
@@ -535,6 +569,7 @@ public:
       return out+"</div>";
     }
     const auto gp=gameplay(), story=narrative();
+    if(kind=="stats"&&display_content.at("project").contains("roster"))return roster_stats();
     if(kind=="stats") for(const auto& a:display_content.at("attributes")) {
       if(e.contains("attributeIds")&&std::find(e.at("attributeIds").begin(),e.at("attributeIds").end(),a.at("id"))==e.at("attributeIds").end())continue;
       const int value=game.state.is_null()?a.value("initial",0):game.state.at("attributes").value(a.at("id").get<std::string>(),0);
@@ -546,6 +581,7 @@ public:
       int value=game.state.is_null()?r.value("initial",0):game.state.at("relationships").at(c.at("id").get<std::string>()).value(r.at("id").get<std::string>(),0);
       out+="<div class=\"row\">"+escape(c.value("name","")+" · "+r.value("label",""))+" <b>"+std::to_string(value)+"</b></div>";
     }
+    if(kind=="schedule"&&display_content.at("project").contains("roster"))return roster_schedule();
     if(kind=="schedule") {
       if(e.value("scheduleLayout","columns")!="columns")return calendar_schedule(e);
       if(plan.size()!=size_t(game.periods())) {plan.clear();for(int i=0;i<game.periods();i++)plan.push_back(display_content.at("activities").at(0).value("id",""));}
@@ -584,6 +620,17 @@ public:
     }
     if(kind=="inventory"&&!gp.is_null()) {if(gp.at("inventory").empty())out="<p class=\"muted\">가방이 비어 있습니다.</p>";for(const auto& item:gp.at("inventory"))out+="<div class=\"row\">"+item_icon(item.value("id",""))+escape(item.value("name",""))+" <b>× "+std::to_string(item.value("quantity",0))+"</b></div>";}
     if(kind=="interactions"&&!gp.is_null())for(const auto& interaction:gp.at("interactions"))out+=item_icon(interaction.value("itemId",""))+button("interact-"+interaction.value("id",""),interaction.value("name",""),{{"type","interact"},{"interactionId",interaction.at("id")}},interaction.value("enabled",false),interaction.value("reason",Json()).is_string()?interaction.at("reason").get<std::string>():"");
+    if(kind=="result"&&!game.state.is_null()&&!game.state.at("lastActivityResult").is_null()&&game.state.at("lastActivityResult").contains("actorResults")) {
+      for(const auto& actor:game.state.at("lastActivityResult").at("actorResults")) {
+        std::string name=actor.value("characterId","");for(const auto& c:display_content.at("characters"))if(c.at("id")==actor.at("characterId"))name=c.value("name",name);
+        const auto& result=actor.at("result");std::string label=result.value("activityId","");for(const auto& a:display_content.at("activities"))if(a.at("id")==result.at("activityId"))label=a.value("label",label);
+        out+="<div style=\"display:inline-block;width:46%;margin:1%;vertical-align:top;\"><div><b>"+escape(name+" · "+label)+"</b></div>";
+        if(!result.at("success").is_null())out+="<div>"+std::string(result.at("success").value("passed",false)?"성공":"실패")+"</div>";
+        for(const auto& change:result.at("changes"))if(change.value("kind","")=="numeric"&&change.value("delta",0)!=0)out+="<div>"+escape(target_name(change.at("target")))+" "+(change.value("delta",0)>0?"+":"")+std::to_string(change.value("delta",0))+"</div>";
+        out+="</div>";
+      }
+      return out;
+    }
     if(kind=="result"&&!game.state.is_null()&&!game.state.at("lastActivityResult").is_null()) {
       // Explicit content widths avoid RmlUi's intrinsic paragraph/scrollbar width cycle.
       const auto line_style=" style=\"display:block;width:"+number(std::max(1.0,e.value("width",448.0)-16))+"px;height:26px;line-height:26px;padding:0;margin:0;font-size:22px;\"";
