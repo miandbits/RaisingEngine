@@ -63,11 +63,20 @@ export async function validatePlugins(project: LoadedProject, documents: Project
     accepted.set(resolvedPlugin, [...accepted.get(resolvedPlugin) ?? [], doc]);
   }
 
+  const assetsDoc = documents.find(d => d.kind === 'assets');
+  const assets = (isObject(assetsDoc?.data) && Array.isArray(assetsDoc.data.assets) ? assetsDoc.data.assets : []).filter(isObject).map(asset => {
+    const absolute = path.resolve(project.root, String(asset.path));
+    return { id: String(asset.id), kind: String(asset.kind), path: String(asset.path), absolutePath: isWithin(project.root, absolute) ? absolute : null };
+  });
   const usedElements = new Map<ResolvedPlugin, typeof elements>();
   for (const item of elements) {
     const ext = item.element.extension;
     if (!root || !ext) continue;
     const plugin = find(ext.plugin), at = `${item.pointer}/extension`;
+    // Host-reserved prop (CONTRACT §5), checked even when the plugin itself is unavailable.
+    const poster = isObject(ext.props) ? ext.props.posterAssetId : undefined;
+    if (poster !== undefined && !assets.some(asset => asset.kind === 'image' && asset.id === poster))
+      report(root, `${at}/props/posterAssetId`, 'PLUGIN_POSTER_ASSET', `미리보기 이미지 '${String(poster)}'가 이미지 에셋에 없습니다.`, [String(poster)]);
     if (!plugin) { report(root, `${at}/plugin`, 'PLUGIN_NOT_LOCKED', `화면 요소의 플러그인 '${String(ext.plugin)}'가 잠금 파일에 없습니다. 자리표시로 보입니다.`, [String(ext.plugin)], 'warning'); continue; }
     if (plugin.state === 'disabled' || plugin.state === 'missing') {
       report(root, `${at}/plugin`, plugin.state === 'disabled' ? 'PLUGIN_DISABLED' : 'PLUGIN_MISSING', `플러그인 '${plugin.id}'를 사용할 수 없어 화면 요소 '${String(item.element.id)}'는 자리표시로 보입니다. 내보내기 전에 설치하거나 켜세요.`, [plugin.id], 'warning');
@@ -79,11 +88,6 @@ export async function validatePlugins(project: LoadedProject, documents: Project
     usedElements.set(plugin, [...usedElements.get(plugin) ?? [], item]);
   }
 
-  const assetsDoc = documents.find(d => d.kind === 'assets');
-  const assets = (isObject(assetsDoc?.data) && Array.isArray(assetsDoc.data.assets) ? assetsDoc.data.assets : []).filter(isObject).map(asset => {
-    const absolute = path.resolve(project.root, String(asset.path));
-    return { id: String(asset.id), kind: String(asset.kind), path: String(asset.path), absolutePath: isWithin(project.root, absolute) ? absolute : null };
-  });
   for (const plugin of resolved.filter(p => p.state === 'active' && (accepted.has(p) || usedElements.has(p)))) {
     const docs = accepted.get(plugin) ?? [], items = usedElements.get(plugin) ?? [];
     let service;

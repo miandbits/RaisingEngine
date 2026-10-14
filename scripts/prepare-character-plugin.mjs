@@ -1,13 +1,27 @@
-import {createHash} from 'node:crypto';
-import {mkdir,readFile,writeFile,copyFile} from 'node:fs/promises';
+// Install the real cutout-animation package into the character sample's plugin store.
+//   node scripts/prepare-character-plugin.mjs [path/to/cutout-animation-x.y.z.raiseplugin]
+// Without an argument the package is (re)built from dist/cutout by
+// plugins/cutout-animation/tools/package.mjs, so first run
+//   node plugins/cutout-animation/tools/build.mjs win wasm studio
+// Store: $RAISING_PLUGIN_STORE or .cache/character-plugin-store (Edit-Magical-Character.cmd uses the same).
+import {spawnSync} from 'node:child_process';
 import path from 'node:path';
-const root=path.resolve(import.meta.dirname,'..'),source=path.resolve(process.argv[2]??path.join(root,'../RaisingEngine-anim'));
-const store=path.join(root,'.cache/character-plugin-store/installed/cutout-animation/1.0.0');
-await mkdir(path.join(store,'runtime/windows'),{recursive:true});await mkdir(path.join(store,'schema'),{recursive:true});
-const files={};
-for(const [from,to]of [[path.join(root,'.cache/cutout-runtime-build/cutout-runtime.dll'),'runtime/windows/cutout-runtime.dll'],...['rig','controller'].map(t=>[path.join(source,`plugins/cutout-animation/schema/${t}.schema.json`),`schema/${t}.schema.json`])]){
- const bytes=await readFile(from);await writeFile(path.join(store,to),bytes);files[to]=createHash('sha256').update(bytes).digest('hex');
+import {pathToFileURL} from 'node:url';
+const root=path.resolve(import.meta.dirname,'..');
+const store=path.resolve(process.env.RAISING_PLUGIN_STORE??path.join(root,'.cache/character-plugin-store'));
+let archive=process.argv[2]&&path.resolve(process.argv[2]);
+if(!archive){
+ const built=spawnSync(process.execPath,[path.join(root,'plugins/cutout-animation/tools/package.mjs')],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','inherit']});
+ if(built.status!==0)process.exit(built.status??1);
+ archive=JSON.parse(built.stdout.trim().split('\n').at(-1)).package;
 }
-await writeFile(path.join(store,'plugin.json'),JSON.stringify({manifestVersion:1,id:'cutout-animation',name:'Cutout animation',version:'1.0.0',engineApi:{min:1,max:1},documentTypes:['rig','controller'].map(type=>({type,label:type,schema:`schema/${type}.schema.json`})),elementTypes:[{type:'character',label:'Character',refType:'controller'}],modules:[{role:'runtime',platform:'windows-x64',abi:'raising-extension-1',path:'runtime/windows/cutout-runtime.dll'}],exportTargets:['windows'],capabilities:['cutout-animation-v1'],files},null,2));
-const capabilitiesPath=path.join(root,'dist/native-player-character/capabilities.json');const capabilities=JSON.parse(await readFile(capabilitiesPath,'utf8'));if(!capabilities.visualFeatures.includes('plugin-elements-v1'))capabilities.visualFeatures.push('plugin-elements-v1');await writeFile(capabilitiesPath,JSON.stringify(capabilities,null,2));
-console.log(store);
+const {inspectPackage,installPackage,uninstallPlugin}=await import(pathToFileURL(path.join(root,'dist/packages/plugin-host/index.js')).href);
+const {manifest}=await inspectPackage(archive);
+let result;
+try{result=await installPackage(store,archive);}
+catch(error){
+ // Installed versions are immutable; a rebuilt development package replaces its own pin explicitly.
+ if(error.code!=='PLUGIN_VERSION_CONFLICT')throw error;
+ await uninstallPlugin(store,manifest.id,manifest.version);result=await installPackage(store,archive);
+}
+console.log(JSON.stringify({store,package:archive,id:manifest.id,version:manifest.version,alreadyInstalled:result.alreadyInstalled,directory:result.plugin.directory}));

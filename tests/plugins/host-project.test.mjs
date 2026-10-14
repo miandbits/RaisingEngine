@@ -147,3 +147,18 @@ test('animation edits never change contentFingerprint; plugin element edits do',
   assert.notEqual(third.snapshot.contentFingerprint, first.snapshot.contentFingerprint);
   await rm(path.join(root, '.studio'), { recursive: true, force: true });
 });
+
+test('host-reserved posterAssetId must name an image asset, also without the plugin, and the cutout service ignores it', async () => {
+  const root = await newProject();
+  await addCutout(root); await addElement(root, { plugin: 'cutout-animation', type: 'character', ref: 'hero-main', props: { scale: 1, posterAssetId: 'hero-torso' } });
+  const element = `project.json/visual/screens/0/elements/${JSON.parse(await readFile(path.join(root, 'project.json'), 'utf8')).visual.screens[0].elements.length - 1}/extension`;
+  let editor = await open(root, await store());
+  assert.deepEqual(codes(editor, 'project.json').filter(c => c.includes('POSTER') || c.includes('ANIM_ELEMENT_PROP')), []);
+  const project = structuredClone(doc(editor, 'project.json').data);
+  project.visual.screens[0].elements.at(-1).extension.props.posterAssetId = 'no-such-image';
+  editor.edit({ type: 'replace', file: 'project.json', data: project }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`error:PLUGIN_POSTER_ASSET:${element}/props/posterAssetId`), codes(editor).join('\n'));
+  editor = await open(root, await temp('empty-store'));
+  editor.edit({ type: 'replace', file: 'project.json', data: project }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`error:PLUGIN_POSTER_ASSET:${element}/props/posterAssetId`), codes(editor).join('\n'));
+});

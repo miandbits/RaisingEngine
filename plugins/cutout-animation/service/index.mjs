@@ -82,7 +82,8 @@ export async function createService({ pluginDir, manifest }) {
       for (const [key, value] of Object.entries(props)) {
         if (key === 'scale' && !(typeof value === 'number' && value > 0 && value <= 10)) push(file, `${pointer}/extension/props/scale`, 'ANIM_ELEMENT_PROP', '배율(scale)은 0보다 크고 10 이하인 숫자입니다.');
         else if (key === 'flipX' && typeof value !== 'boolean') push(file, `${pointer}/extension/props/flipX`, 'ANIM_ELEMENT_PROP', '좌우 반전(flipX)은 true/false입니다.');
-        else if (key !== 'scale' && key !== 'flipX' && SCALAR.has(typeof value)) push(file, `${pointer}/extension/props/${key}`, 'ANIM_ELEMENT_PROP', `알 수 없는 속성 '${key}'는 무시됩니다.`, [], 'warning');
+        // posterAssetId is host-reserved (engine CONTRACT §5) and checked by the engine.
+        else if (key !== 'scale' && key !== 'flipX' && key !== 'posterAssetId' && SCALAR.has(typeof value)) push(file, `${pointer}/extension/props/${key}`, 'ANIM_ELEMENT_PROP', `알 수 없는 속성 '${key}'는 무시됩니다.`, [], 'warning');
       }
     }
     return out;

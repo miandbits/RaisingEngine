@@ -125,6 +125,10 @@ draft/disk versions, conflict detection and history are unchanged.
 `extension.props` is plugin-defined (object, ≤ 32 keys, primitive values). Export requires
 player capability `plugin-elements-v1` and the plugin's runtime module for the target.
 
+One prop is host-reserved: `posterAssetId` (an image asset id; `PLUGIN_POSTER_ASSET` error when
+it names no image asset). Editors draw it, contain-fitted, as a still preview when the plugin's
+authoring module cannot paint the element; players ignore it. Plugins must accept and ignore it.
+
 ## 6. Exported game
 
 `game.json` gains optional `extensions` (absent when no plugin is used, so existing exports
