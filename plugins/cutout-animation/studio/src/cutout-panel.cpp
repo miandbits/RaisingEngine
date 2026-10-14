@@ -326,8 +326,10 @@ QWidget* CutoutPanel::buildWorkspace() {
       for (int i = 0; i < it->childCount(); i++) apply(it->child(i));
     };
     apply(item);
-    refreshTree();
     updateCanvas();
+    // itemChanged is emitted from inside item->setData(); rebuilding the tree right here
+    // deletes that item while Qt is still using it (crash on an eye click). Rebuild next turn.
+    QTimer::singleShot(0, this, [this] { refreshTree(); });
   });
   auto* treeButtons = new QHBoxLayout;
   auto* addBoneButton = new QPushButton("본 추가");

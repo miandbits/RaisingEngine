@@ -86,6 +86,7 @@ private slots:
   void pluginMissingPlaceholder();
   void pluginManagerStates();
   void pluginLoaderRejectsNonPlugin();
+  void cutoutEndToEnd();
   void initTestCase() {
     applyStudioTheme(
         *qobject_cast<QApplication *>(QCoreApplication::instance()));
@@ -904,5 +905,6 @@ private slots:
 #include "export-dialog-test.inc"
 #include "script-rounds-test.inc"
 #include "plugin-test.inc"
+#include "cutout-e2e-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"
