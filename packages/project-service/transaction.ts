@@ -3,7 +3,10 @@ import { mkdir, open, readFile, realpath, rename, unlink } from 'node:fs/promise
 import path from 'node:path';
 
 export const fileHash = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');
-const allowed = /^(?:project\.json|attributes\.json|flags\.json|assets\/manifest\.json|(?:characters|activities|events|endings|scenarios)\/[a-zA-Z0-9_-]+\.json)$/;
+// plugins/: the lock and plugins/<plugin>/<type>/<id>.json extension documents (plugin-host CONTRACT §3).
+const allowed = /^(?:project\.json|attributes\.json|flags\.json|assets\/manifest\.json|(?:characters|activities|events|endings|scenarios)\/[a-zA-Z0-9_-]+\.json|plugins\/lock\.json|plugins(?:\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*){3}\.json)$/;
+export const EXTENSION_FILE = /^plugins\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\.json$/;
+export const PLUGIN_LOCK_FILE = 'plugins/lock.json';
 export async function safeFile(root: string, file: string): Promise<string> {
   if (!allowed.test(file)) throw new Error(`허용되지 않은 문서 경로: ${file}`);
   const parent = path.dirname(path.join(root, file));

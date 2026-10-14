@@ -10,6 +10,8 @@ import { logicalViewport, resolveScreenElements } from '../../../packages/visual
 import { resolveCollectionRow, type BoundElement } from '../../../packages/visual/data-ui.js';
 import type { DataUiProjection } from '../../../packages/visual/data-ui-projection.js';
 import {ScheduleWidget,useSchedulePlanner,type ScheduleActivity} from './ScheduleWidget.js';
+import {ExtensionView} from './ExtensionElement.js';
+import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
   userFields?:readonly {id:string;label:string;initial:string;minLength:number;maxLength:number}[];
@@ -87,6 +89,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       let body:React.ReactNode=null;
       if(element.kind==='image')body=source?<TransitionImage src={assetUrl(source)} element={element}/>:editing?<div className="visual-placeholder">{element.imageSource??'이미지'} · 에셋 선택</div>:null;
       if(element.kind==='text')body=<span>{text}</span>;
+      if((element.kind as string)==='plugin'){style.overflow='visible';body=<ExtensionView instance={`${screenId}/${element.id}`} extension={(element as unknown as {extension?:ExtensionSpec}).extension} width={element.width} height={element.height} assetUrl={assetUrl} editing={editing}/>;}
       if(element.kind==='input'){
         const field=context.userFields?.find(f=>f.id===element.userFieldId);
         body=<input className="visual-input" type="text" aria-label={field?.label??element.label??element.id} value={context.userValues?.[element.userFieldId??'']??field?.initial??''} disabled={busy||!enabled||!field||editing||!context.userFieldsEditable} autoComplete="off" spellCheck={false} onChange={event=>field&&onUserValue?.(field.id,event.target.value)}/>;

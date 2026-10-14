@@ -53,21 +53,18 @@ public:
     if(data.contains("_clipRect"))p->setClipRect(canvasClipRect(data.value("_clipRect").toObject()).translated(-pos()));
     p->setOpacity(data["opacity"].toDouble(1));
     const auto kind = data["kind"].toString();
-    if ((kind == "image"||kind=="plugin") && !image.isNull()) {
-      const bool contain = kind=="plugin"||data["fit"].toString() == "contain";
+    if (kind == "image" && !image.isNull()) {
+      const bool contain = data["fit"].toString() == "contain";
       QSizeF scaled = image.size();
       scaled.scale(box.size(), contain ? Qt::KeepAspectRatio
                                        : Qt::KeepAspectRatioByExpanding);
-      const auto pluginProps=data["extension"].toObject()["props"].toObject();
-      if(kind=="plugin")scaled*=pluginProps["scale"].toDouble(1);
       QRectF target(QPointF((box.width() - scaled.width()) / 2,
                             (box.height() - scaled.height()) / 2),
                     scaled);
       p->setClipRect(box,Qt::IntersectClip);
-      p->save();
-      if(kind=="plugin"&&pluginProps["flipX"].toBool()){p->translate(box.width(),0);p->scale(-1,1);}
       p->drawPixmap(target, image, QRectF(image.rect()));
-      p->restore();
+    } else if (kind == "plugin") {
+      paintPlugin(p);
     } else if (kind == "meter") {
       p->fillRect(box,rgba(data.value("fill").toString(),QColor("#16242e")));
       const double maximum=qMax(0.0001,data.value("maxValue").toDouble(100));
@@ -150,6 +147,53 @@ public:
           p->drawRect(QRectF(pt - QPointF(4, 4), QSizeF(8, 8)));
         }
     }
+  }
+  void paintPlugin(QPainter *p) {
+    QString caption = canvas->pluginPlaceholder ? canvas->pluginPlaceholder(data) : QString::fromUtf8("플러그인 필요");
+    if (caption.isEmpty()) {
+      p->save();
+      p->setClipRect(box, Qt::IntersectClip);
+      const bool painted = canvas->pluginPaint && canvas->pluginPaint(p, data, box);
+      p->restore();
+      if (painted) return;
+      const auto ext = data.value("extension").toObject();
+      caption = ext.value("type").toString() + " · " + (ext.value("ref").toString().isEmpty() ? QString::fromUtf8("연결 문서 없음") : ext.value("ref").toString());
+    }
+    // Host-level fallback: `extension.props.posterAssetId` names a project image shown
+    // as a still preview while the plugin's authoring module is unavailable. Other props
+    // are plugin-defined and are deliberately not interpreted here.
+    if (!image.isNull()) {
+      QSizeF scaled = image.size();
+      scaled.scale(box.size(), Qt::KeepAspectRatio);
+      p->save();
+      p->setClipRect(box, Qt::IntersectClip);
+      p->drawPixmap(QRectF(QPointF((box.width() - scaled.width()) / 2, (box.height() - scaled.height()) / 2), scaled), image, QRectF(image.rect()));
+      QPen posterPen(QColor("#e0a040"), 1, Qt::DashLine);
+      posterPen.setCosmetic(true);
+      p->setPen(posterPen);
+      p->setBrush(Qt::NoBrush);
+      p->drawRect(box.adjusted(1, 1, -1, -1));
+      p->restore();
+      return;
+    }
+    // A hatched box keeps missing/disabled plugin elements visible and movable
+    // without pretending to render them; their data is never touched.
+    p->fillRect(box, QColor(40, 44, 52, 200));
+    p->fillRect(box, QBrush(QColor("#e0a040"), Qt::BDiagPattern));
+    QPen pen(QColor("#e0a040"), 2, Qt::DashLine);
+    pen.setCosmetic(true);
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+    p->drawRect(box.adjusted(1, 1, -1, -1));
+    QFont font("Noto Sans KR");
+    font.setPixelSize(16);
+    font.setBold(true);
+    p->setFont(font);
+    const auto text = data.value("label").toString() + QChar(0x0a) + caption;
+    const auto bounds = p->boundingRect(box.adjusted(12, 12, -12, -12), Qt::AlignCenter | Qt::TextWordWrap, text).adjusted(-8, -6, 8, 6);
+    p->fillRect(bounds.intersected(box), QColor(24, 26, 30, 230));
+    p->setPen(QColor("#ffe2a8"));
+    p->drawText(box.adjusted(12, 12, -12, -12), Qt::AlignCenter | Qt::TextWordWrap, text);
   }
   void mousePressEvent(QGraphicsSceneMouseEvent *e) override {
     if (e->button() != Qt::LeftButton) {

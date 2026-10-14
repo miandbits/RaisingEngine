@@ -7,6 +7,7 @@
 #include "renderer-preview.hpp"
 #include "design.hpp"
 #include "localization.hpp"
+#include "plugin-host.hpp"
 #include <QSignalBlocker>
 #include <QApplication>
 #include <QCloseEvent>
@@ -112,6 +113,7 @@ static QString label(const QJsonObject &e) {
 StudioWindow::StudioWindow(QString root, QWidget *parent)
     : QMainWindow(parent), engineRoot(root), bridge(root, this) {
   setObjectName("raisingStudio");
+  plugins = new StudioPluginManager(this);
   setWindowTitle("Raising Studio · Qt");
   resize(1440, 920);
   setMinimumSize(1000, 680);
@@ -157,7 +159,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   screensMenu->addAction(
       tr("현재 탭 닫기"), this,
       [this] { closeScreen(documents->currentIndex()); }, QKeySequence::Close);
-  auto viewMenu = menuBar()->addMenu(tr("보기"));
+  viewMenu = menuBar()->addMenu(tr("보기"));
   auto designMenu = menuBar()->addMenu(tr("디자인"));
   designMenu->addAction(tr("공통 스타일 · 프로젝트 폰트…"),this,&StudioWindow::editDesignSystem)->setObjectName("editDesignSystem");
   designMenu->addAction(tr("폰트 파일 가져오기…"),this,&StudioWindow::importFont)->setObjectName("importFont");
@@ -189,13 +191,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   palette->setText(tr("＋ 요소"));
   palette->setObjectName("elementPalette");
   palette->setPopupMode(QToolButton::InstantPopup);
-  auto paletteMenu = new QMenu(palette);
+  paletteMenu = new QMenu(palette);
   for (const auto &pair : QList<QPair<QString, QString>>{
            {"text", tr("텍스트")},
            {"input", tr("사용자 입력란 · 새 게임")},
            {"panel", tr("패널")},
            {"image", tr("이미지 · 에셋 선택 후 추가")},
-           {"plugin", tr("애니메이션 · 플러그인 요소")},
            {"stats", tr("능력·자원 목록")},
            {"schedule", tr("일정 선택")},
            {"dialogue", tr("대사")},
@@ -276,6 +277,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   canvasTools->addWidget(hint);
   centerLayout->addWidget(canvasTools);
   canvas = new ScreenCanvas;
+  canvas->pluginPlaceholder = [this](const QJsonObject &e) { return plugins->placeholder(e); };
+  canvas->pluginPaint = [this](QPainter *painter, const QJsonObject &e, const QRectF &rect) { return plugins->paint(painter, e, rect); };
   centerLayout->addWidget(canvas, 1);
   emptyDocument = new QLabel(tr("열린 화면이 없습니다\n\n프로젝트에서 화면을 "
                                 "더블클릭하거나 ‘＋ 새 화면’을 선택하세요."));
@@ -283,14 +286,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   emptyDocument->setStyleSheet("color:#a9bbc9;font-size:16px;");
   centerLayout->addWidget(emptyDocument, 1);
   setCentralWidget(center);
-  auto dock = [this, viewMenu](QString title, QString name, QWidget *child,
-                               Qt::DockWidgetArea area) {
-    auto d = new QDockWidget(title, this);
-    d->setObjectName(name);
-    d->setWidget(child);
-    addDockWidget(area, d);
-    viewMenu->addAction(d->toggleViewAction());
-    return d;
+  auto dock = [this](QString title, QString name, QWidget *child,
+                     Qt::DockWidgetArea area) {
+    return addStudioDock(title, name, child, area);
   };
   auto treePanel = new QWidget;
   auto treeLayout = new QVBoxLayout(treePanel);
@@ -580,6 +578,32 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
           id = loc.toObject()["screenId"].toString();
     openScreen(id);
   });
+  auto pluginForm = group(tr("플러그인 요소"));
+  pluginGroup = pluginForm->parentWidget()->parentWidget();
+  pluginGroup->setObjectName("pluginElementGroup");
+  pluginStatusLabel = new QLabel;
+  pluginStatusLabel->setObjectName("pluginElementStatus");
+  pluginStatusLabel->setWordWrap(true);
+  pluginStatusLabel->setStyleSheet("color:#a9bbc9");
+  pluginForm->addRow(pluginStatusLabel);
+  pluginRefField = new QComboBox;
+  pluginRefField->setObjectName("pluginRef");
+  pluginForm->addRow(tr("연결 문서"), pluginRefField);
+  pluginPropsField = new QLineEdit;
+  pluginPropsField->setObjectName("pluginProps");
+  pluginPropsField->setToolTip(tr("플러그인이 정의한 표시 속성 · 예: {\"scale\":1,\"flipX\":false}"));
+  pluginForm->addRow(tr("속성 JSON"), pluginPropsField);
+  pluginEditButton = new QPushButton(tr("편집…"));
+  pluginEditButton->setObjectName("pluginEdit");
+  pluginForm->addRow(pluginEditButton);
+  connect(pluginRefField, qOverload<int>(&QComboBox::activated), this, [this] {
+    if (filling) return;
+    const auto ref = pluginRefField->currentData().toString();
+    updateElement([ref](QJsonObject &e) { auto ext = e.value("extension").toObject(); ext["ref"] = ref; e["extension"] = ext; });
+  });
+  connect(pluginPropsField, &QLineEdit::editingFinished, this, &StudioWindow::editPluginProps);
+  connect(pluginEditButton, &QPushButton::clicked, this, &StudioWindow::editPluginElement);
+  pluginGroup->hide();
   formLayout->addStretch();
   scroll->setWidget(inspector);
   new InspectorWheelGuard(inspector, scroll);
@@ -722,6 +746,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                     }
                 });
     });
+  pluginsMenu = menuBar()->addMenu(tr("플러그인"));
+  pluginsMenu->setObjectName("pluginsMenu");
+  pluginsMenu->addAction(tr("플러그인 관리…"), this, &StudioWindow::showPluginManager)->setObjectName("pluginManagerAction");
+  pluginsMenu->addSeparator();
   auto bottomDock = dock(tr("프로젝트 / 진단"), "projectDock", bottom,
                          Qt::BottomDockWidgetArea);
   bottomDock->setMinimumHeight(130);
@@ -902,6 +930,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   });
   connect(&bridge, &StudioBridge::failed, this,
           [this](QString message) { errorLabel->setText(message); });
+  // Plugin failures are notices, never modal: the editor keeps working without the plugin.
+  connect(plugins, &StudioPluginManager::notice, this, [this](QString message) {
+    errorLabel->setText(message);
+    log->appendPlainText(message);
+  });
   connect(&player, &QProcess::readyReadStandardOutput, this,
           &StudioWindow::receivePlayer);
   connect(&player, &QProcess::errorOccurred, this, [this] {
@@ -922,6 +955,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
             emit playerFinished(code);
           });
   refresh();
+}
+StudioWindow::~StudioWindow() {
+  // Plugin deactivate() may still query the window; run it before members die.
+  plugins->unloadAll();
 }
 
 QJsonObject StudioWindow::projectData() const {
@@ -979,6 +1016,10 @@ void StudioWindow::request(QString method, QJsonObject params,
     if (reply.contains("assets"))
       assets = reply["assets"].toArray();
     lastError = reply["error"].toString();
+    // An old service sends views without `plugins`: treat that as "no plugins".
+    // `plugins:null` (status itself failed) keeps the last known state.
+    const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
+    if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
       validatedRevision=-1;
       validationSummary->setText(tr("검증을 누르면 결과와 오류 위치를 표시합니다."));
@@ -1006,6 +1047,10 @@ void StudioWindow::request(QString method, QJsonObject params,
     }
     if (done)
       done(reply);
+    // Loading runs after the caller's continuation so a plugin's activate()
+    // request cannot pre-empt a chained editor request.
+    if (pluginReply) applyPluginState(plugins->state());
+    else plugins->notifyViewChanged();
     emit updated();
   });
 }
@@ -1058,6 +1103,7 @@ void StudioWindow::refresh(bool fit) {
   }
   documents->setCurrentIndex(tabIndex);
   rebuildHierarchy();
+  rebuildPluginUi();
   auto preview = project;
   QJsonObject previewPortraits, previewAttributes;
   for (auto d : view["documents"].toArray()) {
@@ -1334,6 +1380,7 @@ void StudioWindow::updateInspector() {
                                (binding.endsWith("value")||binding=="user-field"));
   visibilityField->setCurrentIndex(
       visibilityField->findData(e["visibleWhen"].toString("always")));
+  updatePluginInspector(e);
   filling = false;
 }
 void StudioWindow::replaceProject(QJsonObject data) {

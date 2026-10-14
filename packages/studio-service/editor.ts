@@ -4,7 +4,10 @@ import path from 'node:path';
 import { loadProject } from '../project-service/loader.js';
 import { parseDocument } from '../project-service/json-document.js';
 import { buildSnapshot } from '../project-service/snapshot.js';
-import { bytesOrNull, commitProject, fileHash, recoverProject, safeFile } from '../project-service/transaction.js';
+import { bytesOrNull, commitProject, EXTENSION_FILE, fileHash, PLUGIN_LOCK_FILE, recoverProject, safeFile } from '../project-service/transaction.js';
+import { exportBundle, type PreparedExtensions } from '../plugin-host/bundle.js';
+import { pluginStatus, type PluginStatus } from '../plugin-host/resolve.js';
+import type { ContentSnapshot } from '../core/model.js';
 import { ProjectConflict, projectVersion } from '../project-service/version.js';
 import { validateProject } from '../validation/index.js';
 import type { Diagnostic, DocumentKind, Json, LoadedProject } from '../validation/model.js';
@@ -19,6 +22,8 @@ export interface StudioView {
 export interface StudioReply { view: StudioView; error: string | null; notice: string | null }
 export type PrimitiveEdit = { type: 'replace'; file: string; data: Json } | { type: 'add'; kind: 'activity' | 'event' | 'ending' | 'character'; id: string }
   | { type: 'delete'; file: string }
+  /** Plugin documents only (plugins/lock.json, plugins/<plugin>/<type>/<id>.json); fails if the draft already has the file. */
+  | { type: 'create'; file: string; data: Json }
   | { type: 'importScenario'; id: string; data: Json };
 export const MAX_EDIT_BATCH = 100;
 export type Edit = PrimitiveEdit | { type: 'undo' } | { type: 'redo' }
@@ -33,8 +38,10 @@ export interface StudioBridge {
 }
 const serialize = (data: Json) => JSON.stringify(data, null, 2) + '\n';
 const sourceKey = (documents: DraftDocument[]) => JSON.stringify(documents);
+export interface StudioEditorOptions { /** Plugin store directory; default $RAISING_PLUGIN_STORE or <engine>/plugin-store. */ pluginStore?: string | null | undefined }
 export class StudioEditor {
   root: string | null = null;
+  readonly pluginStore: string | null;
   documents: DraftDocument[] = [];
   revision = 0;
   readOnly = false;
@@ -45,6 +52,7 @@ export class StudioEditor {
   private loaderDiagnostics: Diagnostic[] = [];
   private history: DraftDocument[][] = [];
   private future: DraftDocument[][] = [];
+  constructor(options: StudioEditorOptions = {}) { this.pluginStore = options.pluginStore ?? null; }
 
   diskVersion(): string {
     if (!this.root) throw new Error('프로젝트를 열어 주세요.');
@@ -117,8 +125,8 @@ export class StudioEditor {
     // Apply only to the detached candidate. History, revision and diagnostics
     // remain untouched until every primitive succeeds.
     for (const primitive of edits) {
-      if (!primitive || typeof primitive !== 'object' || !['replace', 'add', 'delete', 'importScenario'].includes(primitive.type))
-        throw new Error('일괄 편집에는 추가·수정·삭제·시나리오 가져오기만 사용할 수 있습니다.');
+      if (!primitive || typeof primitive !== 'object' || !['replace', 'add', 'delete', 'importScenario', 'create'].includes(primitive.type))
+        throw new Error('일괄 편집에는 추가·수정·삭제·생성·시나리오 가져오기만 사용할 수 있습니다.');
       const edit = primitive;
       if (edit.type === 'replace') {
         const doc = next.find(d => d.file === edit.file);
@@ -151,8 +159,18 @@ export class StudioEditor {
         if (next.some(d => d.file === file || d.kind === 'scenario' && (d.data as { id?: string }).id === edit.id)) throw new Error('이미 존재하는 시나리오입니다.');
         if ((edit.data as { id?: string })?.id !== edit.id || Buffer.byteLength(serialize(edit.data)) > 2 * 1024 * 1024) throw new Error('시나리오 데이터가 올바르지 않습니다.');
         next.push({ file, kind: 'scenario', data: structuredClone(edit.data) });
+      } else if (edit.type === 'create') {
+        // Plugin documents have no engine template: the caller supplies the whole envelope.
+        const kind = edit.file === PLUGIN_LOCK_FILE ? 'pluginLock' : typeof edit.file === 'string' && EXTENSION_FILE.test(edit.file) ? 'extension' : null;
+        if (!kind) throw new Error('create는 plugins/lock.json 또는 plugins/<플러그인>/<종류>/<ID>.json 문서에만 사용할 수 있습니다.');
+        if (next.some(d => d.file.toLowerCase() === edit.file.toLowerCase())) throw new Error(`이미 있는 문서입니다: ${edit.file}`);
+        const text = serialize(edit.data);
+        if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw new Error('문서는 2 MiB 이하여야 합니다.');
+        const parsed = parseDocument(edit.file, kind, text);
+        if (!parsed.document) throw new Error('문서 구조를 읽을 수 없습니다.');
+        next.push({ file: edit.file, kind, data: parsed.document.data });
       } else if (edit.type === 'delete') {
-        const at = next.findIndex(d => d.file === edit.file && ['activity', 'event', 'ending', 'character', 'scenario'].includes(d.kind));
+        const at = next.findIndex(d => d.file === edit.file && ['activity', 'event', 'ending', 'character', 'scenario', 'extension', 'pluginLock'].includes(d.kind));
         if (at < 0) throw new Error('이 문서는 삭제할 수 없습니다.');
         next.splice(at, 1);
       } else throw new Error('알 수 없는 편집 명령입니다.');
@@ -165,7 +183,7 @@ export class StudioEditor {
 
   loaded(): LoadedProject {
     if (!this.root) throw new Error('프로젝트를 열어 주세요.');
-    const loaded: LoadedProject = { root: this.root, documents: [], diagnostics: [...this.loaderDiagnostics] };
+    const loaded: LoadedProject = { root: this.root, documents: [], diagnostics: [...this.loaderDiagnostics], ...(this.pluginStore ? { pluginStore: this.pluginStore } : {}) };
     for (const doc of this.documents) {
       const parsed = parseDocument(doc.file, doc.kind, serialize(doc.data));
       if (parsed.document) loaded.documents.push(parsed.document);
@@ -185,6 +203,20 @@ export class StudioEditor {
     const result = await buildSnapshot(this.loaded());
     this.current(revision);
     this.diagnostics = result.diagnostics;
+    return result;
+  }
+  /** Store contents and this draft's plugin resolution (shared by Qt and MCP). */
+  async plugins(): Promise<PluginStatus> {
+    const lock = this.documents.find(d => d.kind === 'pluginLock')?.data ?? null;
+    const used = this.documents.filter(d => d.kind === 'extension').map(d => String((d.data as { plugin?: unknown })?.plugin ?? ''));
+    return pluginStatus(this.pluginStore, lock, used);
+  }
+  /** Runtime modules + documents for an export/preview of `content` (a snapshot of this draft at `revision`). */
+  async exportExtensions(revision: number, content: ContentSnapshot, target: 'windows' | 'web'): Promise<PreparedExtensions | null> {
+    this.current(revision);
+    const result = await exportBundle({ store: this.pluginStore, lock: this.documents.find(d => d.kind === 'pluginLock')?.data ?? null,
+      documents: structuredClone(this.documents), visual: content.project.visual, target });
+    this.current(revision);
     return result;
   }
   async save(revision: number): Promise<StudioReply> {

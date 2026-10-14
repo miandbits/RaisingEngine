@@ -8,6 +8,8 @@ export const schemaFiles = {
   project: 'project.schema.json', attributes: 'attributes.schema.json', flags: 'flags.schema.json',
   character: 'character.schema.json', activity: 'activity.schema.json', event: 'event.schema.json',
   ending: 'ending.schema.json', assets: 'assets.schema.json', scenario: 'scenario.schema.json',
+  // Plugin documents: envelope only; the plugin validates `data` (packages/plugin-host/CONTRACT.md).
+  extension: 'extension.schema.json', pluginLock: 'plugin-lock.schema.json',
 } as const;
 export type DocumentKind = keyof typeof schemaFiles;
 export interface SourceLocation { offset: number; line: number; column: number }
@@ -30,6 +32,8 @@ export interface LoadedProject {
   root: string;
   documents: ProjectDocument[];
   diagnostics: Diagnostic[];
+  /** Plugin store used to resolve plugins/lock.json; default $RAISING_PLUGIN_STORE or <engine>/plugin-store. */
+  pluginStore?: string | undefined;
 }
 export interface ValidationResult {
   valid: boolean;

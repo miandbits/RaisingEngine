@@ -17,7 +17,9 @@ run(['--build', output, '--target', 'raising-player', '--parallel', process.env.
 await mkdir(path.join(artifact, 'licenses'), { recursive: true });
 const filename = process.platform === 'win32' ? 'RaisingPlayer.exe' : 'RaisingPlayer';
 await copyFile(path.join(output, filename), path.join(artifact, filename));
-await cp(path.join(output, 'fonts'), path.join(artifact, 'fonts'), { recursive: true });
+// Fonts rarely change; skipping identical files keeps a running player/studio from blocking the copy (EBUSY).
+const same = async (a, b) => existsSync(b) && (await readFile(a)).equals(await readFile(b));
+await cp(path.join(output, 'fonts'), path.join(artifact, 'fonts'), { recursive: true, filter: async (source, destination) => !(await same(source, destination).catch(() => false)) });
 for (const [source, destination] of [
   ['SDL/LICENSE.txt','SDL.txt'], ['SDL_image/LICENSE.txt','SDL_image.txt'], ['RmlUi/LICENSE.txt','RmlUi.txt'], ['freetype/docs/FTL.TXT','Freetype.txt'], ['miniaudio/LICENSE','miniaudio.txt'], ['SDL_image/external/libwebp/COPYING','libwebp.txt'], ['SDL_image/external/libwebp/PATENTS','libwebp-PATENTS.txt'],
 ]) await copyFile(path.join(root, 'native/player/vendor', source), path.join(artifact, 'licenses', destination));
@@ -26,6 +28,6 @@ await writeFile(path.join(artifact, 'build.json'), JSON.stringify({ runtime: 'cp
   sha256: createHash('sha256').update(await readFile(path.join(artifact, filename))).digest('hex'),
   dependencies: { SDL:'3.2.24', SDL_image:'3.2.4', RmlUi:'6.1', FreeType:'2.13.3', miniaudio:'0.11.23', libwebp:'1.6.0' } }, null, 2));
 await writeFile(path.join(artifact, 'capabilities.json'), JSON.stringify({ formatVersion:'1',runtime:'cpp-sdl-rmlui',
-  visualFeatures:['plugin-elements-v1','components-v1','anchors-v1','responsive-v1','renderer-preview-v1','scene-preview-v1','facilities-v1','generic-rules-v1','action-flows-v1','data-ui-v1','activity-timeline-v1','battle-hud-v1','ui-hierarchy-v1','user-fields-v1','activity-summary-v1','scene-portrait-transform-v1','monthly-schedule-v1','probabilistic-actions-v1','optional-confirmation-v1'],
+  visualFeatures:['components-v1','anchors-v1','responsive-v1','renderer-preview-v1','scene-preview-v1','facilities-v1','generic-rules-v1','action-flows-v1','data-ui-v1','activity-timeline-v1','battle-hud-v1','ui-hierarchy-v1','user-fields-v1','activity-summary-v1','scene-portrait-transform-v1','monthly-schedule-v1','probabilistic-actions-v1','optional-confirmation-v1','plugin-elements-v1'],
   fontExtensions:['.ttf','.otf'],imageExtensions:['.png','.jpg','.jpeg','.webp'],audioExtensions:['.wav','.mp3','.ogg','.flac'] },null,2));
 console.log(`Native graphical player: ${path.join(artifact, filename)}`);

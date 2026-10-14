@@ -88,9 +88,14 @@
           ]
         },
         "extensions": {
+          "description": "Opaque per-plugin presentation state (saveAll), keyed by plugin id. Never consulted by game logic.",
           "type": "object",
-          "maxProperties": 64,
-          "additionalProperties": true
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "maxLength": 64
+          }
         }
       },
       "required": [

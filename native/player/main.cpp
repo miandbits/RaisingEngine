@@ -1,7 +1,6 @@
 #include <RmlUi/Core.h>
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_SDL.h"
-#include "affine-renderer.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
@@ -12,7 +11,7 @@
 #include "bundle.hpp"
 #include "preview.hpp"
 #include "scene-preview.hpp"
-#include "extensions.hpp"
+#include "extension-element.hpp"
 #include <RmlUi/Core/Elements/ElementFormControlSelect.h>
 #include <RmlUi/Core/Elements/ElementFormControlInput.h>
 #include <iostream>
@@ -22,10 +21,10 @@
 
 class PlayerApplication : public Rml::EventListener {
 public:
+  ExtensionHost extensions;
   GameSession game;
   ScreenMarkup markup;
   GameAudio audio;
-  RuntimeExtensions extensions;
   SDL_Window* window;
   SDL_Renderer* renderer;
   Rml::Context* context=nullptr;
@@ -35,6 +34,7 @@ public:
   std::map<std::string,float> collection_scroll;
   bool dirty=true, running=true, muted=false, backgrounded=false,timeline_manual_clock=false;
   bool editor_events=false;
+  double extension_dt=0;
   uint64_t document_generation=0;
   bool syncing_user_inputs=false;
   std::string preview_element,preview_state="normal";
@@ -74,35 +74,13 @@ public:
       }
     }
   }
-  void mount_extensions() {
-    const auto visual=game.content.at("project").at("visual");
-    for(const auto& screen:visual.at("screens"))for(const auto& e:expanded_elements(visual,screen,visual.value("width",1280),visual.value("height",720),game.state.is_null()?"title":game.state.value("phase","planning")))
-      if(e.value("kind","")=="plugin")extensions.mount(screen.at("id").get<std::string>()+"/"+e.at("id").get<std::string>(),e);
+  /** One presentation update per frame, then one frame request per mounted instance. */
+  void update_extensions() {
+    if(!extensions.active())return;
+    const double dt=preview()?0:extension_dt;extension_dt=0;
+    extensions.update(dt);extensions.frame();
   }
-  void update_extensions(double dt) {
-    if(!document)return;
-    try {
-      for(const auto& e:markup.render_elements)if(e.value("kind","")=="plugin"&&markup.visible(e)) {
-        auto* node=document->GetElementById("node-"+e.value("id",""));if(!node)continue;
-        const auto id=e.at("extension").at("plugin").get<std::string>();
-        if(!extensions.contains(id)){node->SetInnerRML("Missing animation plugin: "+escape(id));continue;}
-        extensions.mount(markup.screen_id+"/"+e.value("id",""),e);
-      }
-      extensions.update(dt);
-      for(const auto& e:markup.render_elements)if(e.value("kind","")=="plugin"&&markup.visible(e)) {
-        auto* node=document->GetElementById("node-"+e.value("id",""));if(!node)continue;
-        const auto id=e.at("extension").at("plugin").get<std::string>();if(!extensions.contains(id))continue;
-        const auto items=extensions.frame(id,markup.screen_id+"/"+e.value("id",""));
-        if(node->GetNumChildren()!=int(items.size())){std::string html;for(size_t i=0;i<items.size();i++)html+="<img style=\"position:absolute;left:0;top:0;pointer-events:none;transform-origin:0px 0px;\"/>";node->SetInnerRML(html);}
-        for(size_t i=0;i<items.size();i++) {
-          const auto& item=items.at(i);auto* image=node->GetChild(int(i));const auto& m=item.at("matrix");
-          image->SetAttribute("src",markup.asset(item.at("imageAssetId")));
-          image->SetProperty("width",number(item.at("width"))+"px");image->SetProperty("height",number(item.at("height"))+"px");image->SetProperty("opacity",number(item.value("alpha",1.0)));
-          image->SetProperty("transform","matrix3d("+number(m.at(0))+","+number(m.at(1))+",0,0,"+number(m.at(2))+","+number(m.at(3))+",0,0,0,0,1,0,"+number(m.at(4))+","+number(m.at(5))+",0,1)");
-        }
-      }
-    }catch(const std::exception& e){if(extensions.errors.empty()||extensions.errors.back()!=e.what())extensions.errors.push_back(e.what());game.message=e.what();}
-  }
+  void advance_extensions(double delta){if(!extensions.active())return;extensions.update(delta);extensions.frame();}
   void apply_preview() {
     if(!preview()||preview_element.empty())return;
     auto* element=document->GetElementById("node-"+preview_element);
@@ -123,13 +101,12 @@ public:
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
   PlayerApplication(Json bundle, fs::path root, SDL_Window* window, SDL_Renderer* renderer, fs::path save_file)
     :markup(game,bundle.at("assets"),std::move(root)),window(window),renderer(renderer),save_file(std::move(save_file)) {
+    extensions.load(bundle,markup.bundle);
+    extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
+    markup.extensions=&extensions;
+    game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){extensions.observe(before,after,command,error);};
+    game.extension_state=[this]{return extensions.save();};
     game.content=bundle.at("content"); game.refresh();
-    extensions.initialize(bundle,markup.bundle);
-    mount_extensions();
-    game.on_transition=[this](const Json& before,const Json& after,const Json& command,const std::string& error){try{extensions.observe(before,after,command,error);}catch(const std::exception& e){extensions.errors.push_back(e.what());}};
-    game.before_save=[this](){game.extension_state=extensions.save(game.extension_state);};
-    game.after_start=[this](){extensions.reset();mount_extensions();};
-    game.after_load=[this](){extensions.reset();mount_extensions();extensions.restore(game.extension_state);};
 #ifdef SDL_PLATFORM_ANDROID
     SDL_AddEventWatch(watch_lifecycle,this);
 #endif
@@ -156,6 +133,7 @@ public:
       try {game.load(candidate);restored=true;break;}catch(const std::exception& failure){error=failure.what();}
     }
     if(restored) {
+      extensions.reset();extensions.pending_restore=game.loaded_extensions;
       markup.user_values_draft=Json::object();
       if(!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))markup.plan.push_back(id.get<std::string>());
       try{audio.sync_music(markup.asset(game.state.at("presentation").value("musicAssetId",Json())),muted);}catch(const std::exception& failure){game.message=failure.what();}
@@ -252,7 +230,6 @@ public:
     editor_command=action;
     try {
       game.message.clear();const std::string type=action.value("type","");
-      if(type=="extensionTick"){update_extensions(action.value("deltaMs",0.0));dirty=true;return;}
       if(type=="timelineTick"){advance_timeline_clock(action.value("deltaMs",0.0));return;}
       if(type=="scheduleStep"){const auto command=game.schedule_step();if(!command.empty()){game.send({{"type",command}});game.settle();}dirty=true;return;}
       if(type=="timelinePause"||type=="timelineSpeed"||type=="timelineSkip") {
@@ -270,7 +247,7 @@ public:
         std::string reason;if(!game.available(action,&reason))throw std::runtime_error(reason);
         markup.pending_purchase=action;markup.pending_confirmation=transaction.value("confirmation",Json::object());markup.pending_revision=game.state.value("stateRevision",0);dirty=true;return;
       }
-      if(type=="start") {auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
+      if(type=="start") {auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
       else if(type=="quantity"){auto& value=markup.quantities[action.value("key","")];value=std::clamp(value+action.value("delta",0),1,std::max(1,action.value("maximum",1)));}
       else if(type=="confirmPurchase"){auto purchase=markup.pending_purchase;markup.pending_purchase=nullptr;if(!purchase.is_null()){
         if(game.state.value("stateRevision",-1)!=markup.pending_revision)throw std::runtime_error("상태가 변경되었습니다. 내용을 다시 확인해 주세요.");
@@ -297,7 +274,7 @@ public:
         }
       }
       else if(type=="save")game.save(save_file);
-      else if(type=="load") {auto_attempted=-1;auto_revision=-1;game.load(save_file);markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan.clear();markup.plan_month=-1;markup.plan_selected=0;markup.plan_group.clear();markup.pending_purchase=nullptr;if(!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))markup.plan.push_back(id.get<std::string>());}
+      else if(type=="load") {auto_attempted=-1;auto_revision=-1;game.load(save_file);extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan.clear();markup.plan_month=-1;markup.plan_selected=0;markup.plan_group.clear();markup.pending_purchase=nullptr;if(!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))markup.plan.push_back(id.get<std::string>());}
       else if(type=="sound") {muted=!muted;game.message=muted?"소리를 껐습니다.":"소리를 켰습니다.";}
       else if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction") {
         const auto command=game.battle_ui(action);if(!command.is_null()){game.send(command);game.settle();}
@@ -406,7 +383,7 @@ public:
         options.push_back({{"id",option->GetId()},{"visible",visible},{"x",point.x},{"y",point.y},{"width",extent.x},{"height",extent.y},{"clipY",clip.y},{"clipHeight",bounds.y}});
       }
     }
-    Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages") {
+    Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages"||entry.value("kind","")=="plugin") {
       const auto id=entry.value("id","");if(auto* element=document->GetElementById("node-"+id))texts[id]=element->GetInnerRML();
     }
     if(auto* fallback=document->GetElementById("node-system-widget"))texts["system-widget"]=fallback->GetInnerRML();
@@ -444,11 +421,11 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"extensions",extensions.describe()},{"extensionSignals",extensions.observations},{"extensionErrors",extensions.errors},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource","initial"},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
-      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"loadedSounds",audio.loaded_count()},{"muted",muted}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"runtime","cpp-sdl3-rmlui"}};
+      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"loadedSounds",audio.loaded_count()},{"muted",muted}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
   }
   Rml::Element* find_element(const std::string& id) {
     if(auto* element=document->GetElementById(id))return element;
@@ -537,8 +514,9 @@ int main(int argc,char** argv) {
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);
     {
-      SystemInterface_SDL system;system.SetWindow(window);AffineSDLRenderer render(renderer);
+      SystemInterface_SDL system;system.SetWindow(window);RenderInterface_SDL render(renderer);
       Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
+      static Rml::ElementInstancerGeneric<ExtensionElement> extension_instancer;Rml::Factory::RegisterElementInstancer("raising-extension",&extension_instancer);
 #ifdef SDL_PLATFORM_ANDROID
       const auto font=bundle_root/"fonts/NotoSansKR.ttf";
 #else
@@ -552,6 +530,7 @@ int main(int argc,char** argv) {
         if(bytes.empty()||!Rml::LoadFontFace(Rml::Span<const Rml::byte>(bytes.data(),bytes.size()),"engine-"+id,Rml::Style::FontStyle::Normal))throw std::runtime_error("Cannot load project font: "+id);
       }
       PlayerApplication app(bundle,bundle_root,window,renderer,save_file);
+      ExtensionElement::host=&app.extensions;
       app.game.seed=requested_seed;
       if(!preview_screen.empty()){app.markup.preview_screen=preview_screen;app.markup.preview_scene=preview_scene;app.preview_element=preview_element;app.preview_state=preview_state;if(preview_screen!="title"||!preview_scene.is_null())app.game.start();}
       if(!requested_locale.empty()){app.markup.locale=requested_locale;app.dirty=true;}
@@ -566,9 +545,9 @@ int main(int argc,char** argv) {
         SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
         if(app.backgrounded){SDL_Delay(50);continue;}
         app.drain_actions();
-        if(!app.timeline_manual_clock){app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);}
+        if(!app.timeline_manual_clock){app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.extension_dt+=timeline_delta;}
         if(app.dirty)app.rebuild();
-        app.apply_preview();app.update_timeline_visual();app.update_extensions(app.timeline_manual_clock?0:timeline_delta);app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();
+        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();
         if(wait_frames>0)--wait_frames;
         else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];
@@ -594,9 +573,10 @@ int main(int argc,char** argv) {
             SDL_Event input{};input.type=SDL_EVENT_KEY_DOWN;input.key.key=code;input.key.mod=modifiers;app.event(input);input.type=SDL_EVENT_KEY_UP;app.event(input);SDL_SetModState(previous_modifiers);
           }
           if(command.contains("waitFrames"))wait_frames=command.at("waitFrames").get<int>();
-          if(command.contains("timelineRealtime"))app.timeline_manual_clock=!command.at("timelineRealtime").get<bool>();
-          if(command.contains("timelineAdvanceMs"))app.advance_timeline_clock(command.at("timelineAdvanceMs").get<double>());
-          if(command.contains("extensionAdvanceMs"))app.update_extensions(command.at("extensionAdvanceMs").get<double>());
+          if(command.contains("timelineRealtime")){app.timeline_manual_clock=!command.at("timelineRealtime").get<bool>();app.extension_dt=0;}
+          if(command.contains("timelineAdvanceMs")){app.advance_timeline_clock(command.at("timelineAdvanceMs").get<double>());app.advance_extensions(command.at("timelineAdvanceMs").get<double>());}
+          // Presentation-only clock step for extensions (deterministic under the manual automation clock).
+          if(command.contains("extensionAdvanceMs"))for(int i=0,n=command.value("extensionSteps",1);i<std::max(1,n);i++)app.advance_extensions(command.at("extensionAdvanceMs").get<double>()/std::max(1,n));
           if(command.contains("resize")){const auto size=command.at("resize");SDL_SetWindowSize(window,size.at("width"),size.at("height"));}
           if(command.contains("select")) {
             auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(app.document->GetElementById(command.at("select")));

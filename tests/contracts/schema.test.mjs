@@ -32,8 +32,10 @@ for (const [folder, schema] of [
 }
 const documents = new Map(await Promise.all([...mapping.keys()].map(async (name) => [name, await readJson(path.join(sampleDir, name))])));
 
-test('all thirteen schemas compile strictly using local references', () => {
-  assert.equal(validators.size, 13);
+test('all fifteen schemas compile strictly using local references', () => {
+  assert.equal(validators.size, 15);
+  assert.ok(validators.has('extension.schema.json'));
+  assert.ok(validators.has('plugin-lock.schema.json'));
   assert.ok(validators.has('gameplay.schema.json'));
   assert.ok(validators.has('systems.schema.json'));
   for (const [name, validate] of validators) assert.equal(typeof validate, 'function', name);

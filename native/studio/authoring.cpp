@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "logic-editor.hpp"
+#include "plugin-host.hpp"
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -7,9 +8,6 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QImageReader>
-#include <QLineEdit>
-#include <QInputDialog>
-#include <QDoubleSpinBox>
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QPushButton>
@@ -22,22 +20,6 @@
 
 void StudioWindow::editWidgetSettings() {
   if (bridge.busy() || currentElement().isEmpty()) return;
-  if(currentElement()["kind"]=="plugin") {
-    const auto extension=currentElement()["extension"].toObject(),props=extension["props"].toObject();
-    QDialog dialog(this);dialog.setWindowTitle(tr("애니메이션 플러그인 연결"));dialog.setObjectName("pluginElementSettings");
-    auto form=new QFormLayout(&dialog);
-    auto plugin=new QLineEdit(extension["plugin"].toString()),type=new QLineEdit(extension["type"].toString()),ref=new QLineEdit(extension["ref"].toString());
-    plugin->setObjectName("pluginId");type->setObjectName("pluginType");ref->setObjectName("pluginReference");
-    form->addRow(tr("플러그인 ID"),plugin);form->addRow(tr("요소 유형"),type);form->addRow(tr("컨트롤러 ID"),ref);
-    auto poster=new QComboBox;poster->addItem(tr("미리보기 이미지 없음"),QString());for(auto a:assets)if(a.toObject()["kind"]=="image")poster->addItem(a.toObject()["id"].toString(),a.toObject()["id"].toString());
-    poster->setCurrentIndex(qMax(0,poster->findData(props["posterAssetId"].toString())));form->addRow(tr("캔버스 정지 미리보기"),poster);
-    auto scale=new QDoubleSpinBox;scale->setRange(.05,10);scale->setSingleStep(.05);scale->setValue(props["scale"].toDouble(1));form->addRow(tr("배율"),scale);
-    auto flip=new QCheckBox;flip->setChecked(props["flipX"].toBool());form->addRow(tr("좌우 반전"),flip);
-    auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);form->addRow(buttons);connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
-    if(dialog.exec()!=QDialog::Accepted)return;
-    const QRegularExpression id("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$");for(const auto* field:{plugin,type,ref})if(!id.match(field->text()).hasMatch()){errorLabel->setText(tr("플러그인·유형·컨트롤러 ID를 확인하세요."));return;}
-    updateElement([&](QJsonObject& e){auto next=extension;auto values=props;next["plugin"]=plugin->text();next["type"]=type->text();next["ref"]=ref->text();values["scale"]=scale->value();values["flipX"]=flip->isChecked();if(poster->currentData().toString().isEmpty())values.remove("posterAssetId");else values["posterAssetId"]=poster->currentData().toString();next["props"]=values;e["extension"]=next;});return;
-  }
   if (currentElement()["kind"] == "collection") { editDataUi(); return; }
   if (QStringList{"actions", "policies"}.contains(currentElement()["kind"].toString())) { editRules(); return; }
   if (QStringList{"services", "diets", "sell"}.contains(currentElement()["kind"].toString())) { editFacilities(); return; }
@@ -132,12 +114,6 @@ void StudioWindow::addElement(const QString &kind, const QString &assetId) {
   if (kind == "text") {
     element["text"] = tr("새 텍스트");
     element["binding"] = "none";
-  }
-  if(kind=="plugin") {
-    bool ok=false;const auto identity=QInputDialog::getText(this,tr("애니메이션 연결"),tr("플러그인 ID / 유형 / 컨트롤러 ID"),QLineEdit::Normal,"cutout-animation/character/",&ok);
-    if(!ok)return;const auto parts=identity.split('/');const QRegularExpression id("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$");
-    if(parts.size()!=3||!id.match(parts[0]).hasMatch()||!id.match(parts[1]).hasMatch()||!id.match(parts[2]).hasMatch()){errorLabel->setText(tr("예: cutout-animation/character/alice-home"));return;}
-    element["extension"]=QJsonObject{{"plugin",parts[0]},{"type",parts[1]},{"ref",parts[2]},{"props",QJsonObject{{"scale",1},{"flipX",false}}}};element["label"]=parts[2];element["height"]=500;
   }
   if(kind=="input"){
     const auto field=p.value("userFields").toArray().first().toObject();element["userFieldId"]=field.value("id");element["label"]=field.value("label");element["height"]=56;element["fill"]="#ffffff";element["borderWidth"]=1;element["borderColor"]="#57806c";element["radius"]=6;
@@ -269,6 +245,20 @@ void StudioWindow::refreshContent() {
     if (doc["file"] == selected)
       contentList->setCurrentItem(item);
   }
+  // Plugin-owned documents are listed read-only here; their editor is the plugin's.
+  for (auto v : view["documents"].toArray()) {
+    const auto doc = v.toObject();
+    const auto kind = doc["kind"].toString();
+    if (kind != "extension" && kind != "pluginLock") continue;
+    const auto data = doc["data"].toObject();
+    const auto text = kind == "pluginLock" ? tr("플러그인 · 프로젝트 사용 목록")
+                                           : tr("플러그인 문서 · %1/%2 · %3").arg(data["plugin"].toString(), data["type"].toString(), data["id"].toString());
+    auto item = new QListWidgetItem(text, contentList);
+    item->setData(Qt::UserRole, doc["file"].toString());
+    item->setToolTip(doc["file"].toString());
+    item->setHidden(search && !item->text().contains(search->text(), Qt::CaseInsensitive));
+    if (doc["file"] == selected) contentList->setCurrentItem(item);
+  }
 }
 
 void StudioWindow::editContent() {
@@ -276,11 +266,21 @@ void StudioWindow::editContent() {
     return;
   const auto file = contentList->currentItem()->data(Qt::UserRole).toString();
   QJsonObject data;
+  QString kind;
   for (auto v : view["documents"].toArray())
-    if (v.toObject()["file"] == file)
+    if (v.toObject()["file"] == file) {
       data = v.toObject()["data"].toObject();
+      kind = v.toObject()["kind"].toString();
+    }
   if (data.isEmpty())
     return;
+  if (kind == "pluginLock") { showPluginManager(); return; }
+  if (kind == "extension") {
+    const auto plugin = data["plugin"].toString();
+    if (!plugins->plugin(plugin)) errorLabel->setText(plugins->placeholder(QJsonObject{{"extension", QJsonObject{{"plugin", plugin}}}}));
+    else plugins->openEditor(plugin, data["type"].toString(), data["id"].toString());
+    return;
+  }
   const auto sourceRevision = view.value("revision"), sourceRoot = view.value("root");
   const bool isActivity = data.contains("requirements") && data.contains("costs") && data.contains("baseEffects");
   QDialog dialog(this);

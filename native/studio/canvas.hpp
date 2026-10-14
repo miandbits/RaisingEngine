@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QPixmap>
+#include <functional>
 
 class ScreenCanvas : public QGraphicsView {
   Q_OBJECT
@@ -16,6 +17,10 @@ public:
   void select(const QString &id);
   void fitCanvas();
   bool snap = false;
+  /** Kind "plugin": empty caption means the owning plugin may paint; otherwise draw a placeholder. */
+  std::function<QString(const QJsonObject &)> pluginPlaceholder;
+  /** Kind "plugin": returns false to fall back to the host placeholder. */
+  std::function<bool(QPainter *, const QJsonObject &, const QRectF &)> pluginPaint;
 signals:
   void selectionChanged(QString id);
   void geometryEdited(QString id, QRect rectangle);

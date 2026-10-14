@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/extension.schema.json",
+  "title": "Extension document",
+  "description": "Plugin-owned document at plugins/<plugin>/<type>/<id>.json. The engine validates this envelope; `data` is validated by the plugin (JSON schema, then its service module).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "plugin", "type", "id", "data"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "formatVersion": { "const": "0.1.0" },
+    "plugin": { "$ref": "common.schema.json#/$defs/id" },
+    "type": { "$ref": "common.schema.json#/$defs/id" },
+    "id": { "$ref": "common.schema.json#/$defs/id" },
+    "data": { "type": "object" }
+  }
+}

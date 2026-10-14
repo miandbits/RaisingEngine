@@ -3,6 +3,7 @@
 #include "styles.hpp"
 #include "localization.hpp"
 #include "layout.hpp"
+#include "extension-host.hpp"
 #include <algorithm>
 #include <map>
 #include <iomanip>
@@ -95,6 +96,7 @@ public:
   int width=1280, height=720;
   int viewport_width=0,viewport_height=0;
   std::string screen_id,preview_screen;
+  ExtensionHost* extensions=nullptr;
   explicit ScreenMarkup(GameSession& game, Json assets, fs::path bundle):game(game),assets(std::move(assets)),bundle(std::move(bundle)){}
   std::string asset(const Json& id) const {
     if (!id.is_string() || !assets.contains(id.get<std::string>())) return "";
@@ -461,9 +463,11 @@ public:
     if(e.contains("borderWidth"))style+="border-width:"+number(e.at("borderWidth"))+"px;border-color:"+css_color(e.value("borderColor","#ffffff"))+";";
     style+="font-size:"+number(e.value("fontSize",20.0))+"px;border-radius:"+number(e.value("radius",0.0))+"px;opacity:"+number(e.value("opacity",1.0))+";text-align:"+e.value("align","left")+";";
     if(kind=="collection")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
+    if(kind=="plugin")style+="overflow:visible;";
     // Schedule popups need an elevated stacking layer, but their transparent
     // container must not swallow authored navigation buttons beneath it.
-    style+=(kind=="plugin"||kind=="group"||kind=="schedule")?"pointer-events:none;":"pointer-events:auto;";
+    // Plugin characters are decoration: they never swallow clicks meant for widgets beneath them.
+    style+=(kind=="group"||kind=="schedule"||kind=="plugin")?"pointer-events:none;":"pointer-events:auto;";
     if(kind=="schedule"&&e.value("scheduleLayout","columns")=="menu")for(const auto& a:display_content.at("activities"))if(!a.value("previewAttributes",Json::array()).empty()){style+="overflow-x:hidden;overflow-y:auto;pointer-events:auto;";break;}
     auto body=element_body(e);
     if(!e.value("_boundEnabled",true)||(e.contains("enabledCondition")&&!visual_condition(e.at("enabledCondition")))) {
@@ -471,14 +475,15 @@ public:
         const auto end=body.find('>',at);if(body.substr(at,end-at).find(" disabled")==std::string::npos)body.insert(at+tag.size(),"disabled=\"disabled\" ");at=body.find('>',at)+1;
       }
     }
-    return "<div id=\"node-"+escape(e.value("id",""))+"\" class=\"node "+kind+(kind=="plugin"||kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
+    return "<div id=\"node-"+escape(e.value("id",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
   }
   std::string element_body(const Json& e) {
     const std::string kind=e.value("kind","panel");
-    if(kind=="plugin"||kind=="panel"||kind=="group")return "";
+    if(kind=="panel"||kind=="group")return "";
     if(kind=="input"){const auto id=e.value("userFieldId","");return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;color:inherit;font-size:inherit;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
     if(kind=="meter"){const double maximum=e.value("maxValue",100.0),value=e.value("value",0.0),ratio=maximum>0?std::clamp(value/maximum,0.0,1.0):0.0;return "<div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div>";}
     if(kind=="image")return image(e);
+    if(kind=="plugin")return plugin_body(e);
     if(kind=="text")return escape(e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
     if(kind=="dialogue")return "<div class=\"dialogue\">"+escape(bind("story"))+"</div>";
     if(kind=="services"||kind=="diets"||kind=="sell"||kind=="policies"||kind=="actions")return facility_body(e);
@@ -596,6 +601,14 @@ public:
     }
     return out;
   }
+  /** Extension elements mount per screen instance; unavailable plugins show a placeholder, never an error. */
+  std::string plugin_body(const Json& e) {
+    const auto ext=e.value("extension",Json::object());const auto plugin=ext.value("plugin","");
+    const auto instance=screen_id+"/"+e.value("id","");
+    if(extensions&&extensions->mount(instance,e))return "<raising-extension id=\"extension-"+escape(e.value("id",""))+"\" data-instance=\""+escape(instance)+"\" style=\"display:block;position:absolute;left:0;top:0;width:100%;height:100%;\"></raising-extension>";
+    const auto* mount=extensions?extensions->find(instance):nullptr;const bool loaded=extensions&&extensions->plugin(plugin)&&extensions->plugin(plugin)->available;
+    return "<div class=\"plugin-placeholder\" data-instance=\""+escape(instance)+"\" style=\"display:block;width:100%;height:100%;box-sizing:border-box;padding:8px;border-width:2px;border-color:#b98f5e;background-color:rgba(70,52,62,150);color:#fff0d0;font-size:18px;text-align:center;\">"+escape((loaded?"플러그인 오류: ":"플러그인 필요: ")+plugin)+(loaded&&mount&&!mount->error.empty()?"<br/>"+escape(mount->error):"")+"</div>";
+  }
   Json fallback_screen(const std::string& phase) const {
     return {{"id",phase},{"elements",Json::array({
       {{"id","background"},{"kind","image"},{"imageSource","background"},{"fit","cover"},{"x",0},{"y",0},{"width",width},{"height",height}},
@@ -608,6 +621,7 @@ public:
   }
   std::string document() {
     refreshDisplay();
+    if(extensions)extensions->begin_sync();
     actions.clear(); labels.clear();
     const auto& visual=display_content.at("project").at("visual");
     const auto dimensions=logical_viewport(visual,viewport_width,viewport_height);width=dimensions.first;height=dimensions.second;
@@ -674,6 +688,7 @@ public:
     if(screen_id=="title"&&localization.value("locales",Json::array()).size()>1){std::string label=locale;for(const auto& l:localization.at("locales"))if(l.at("id")==locale)label=l.value("label",locale);out+="<div style=\"position:absolute;right:12px;bottom:12px;width:240px;z-index:200;\">"+button("engine-language","Language: "+label+" · F2",{{"type","nextLocale"}})+"</div>";}
     if(!game.message.empty())out+="<div class=\"status\">"+escape(game.message)+"</div>";
     out+=timeline_overlay();
+    if(extensions)extensions->end_sync();
     return out+"</body></rml>";
   }
 };

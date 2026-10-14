@@ -10,6 +10,8 @@ import { parseTree, type ParseError, type Node } from 'jsonc-parser';
 import {localizeContent,localeId} from '../localization/catalog.js';
 import {projectDataUi} from '../visual/data-ui-projection.js';
 import {PlayerPresentation,type PlayerPresentationEnvelope,type TimelineAction} from '../player-service/presentation.js';
+import type {ExtensionHost} from './extensions.js';
+type PresentationEnvelope=PlayerPresentationEnvelope&{extensions?:Record<string,unknown>};
 
 export interface RuntimeRequest { request(input: unknown): unknown }
 export interface WebFiles { read(): Promise<string | null>; write(text: string): Promise<void> }
@@ -55,7 +57,7 @@ export class WebPlayerController implements PlayerBridge {
   generation = 1;
   presentation = new PlayerPresentation();
   constructor(readonly content: ContentSnapshot, private readonly runtime: RuntimeRequest,
-    private readonly files: WebFiles, private readonly validateSave: SaveValidator) {}
+    private readonly files: WebFiles, private readonly validateSave: SaveValidator, readonly extensions: ExtensionHost | null = null) {}
 
   private projection(state = this.session?.state ?? null,content=this.content): Exclude<Projection, Failure> {
     const result = this.runtime.request({ operation: 'view', content, state }) as Projection;
@@ -98,17 +100,21 @@ export class WebPlayerController implements PlayerBridge {
     const r = this.runtime.request({ operation: 'create', content: this.content, seed: origin.seed, options: { ...origin, ...(userValues !== undefined ? { userValues } : {}) } }) as StateReply;
     if (!r.ok) return this.reply(`[${r.error.code}] ${r.error.message} (${r.error.path ?? '/userValues'})`);
     if (this.content.project.userFields?.length) origin.userValues = structuredClone(userValues ?? {});
-    this.session = { origin, commands: [], state: r.state }; this.presentation.clear(); this.generation++;
+    this.session = { origin, commands: [], state: r.state }; this.presentation.clear(); this.extensions?.reset(); this.generation++;
     return this.reply();
   }
   private dispatch(command: unknown, cues: string[]): string | null {
     const session = this.session!;
     if (session.commands.length >= MAX_COMMANDS) return '명령 기록 한도를 초과했습니다.';
+    // Single choke point for submitted commands: extensions observe every reply exactly once.
+    const observing = this.extensions?.active ? this.extensions : null;
+    const before = observing ? { state: session.state, narrative: this.projection(session.state).narrative } : null;
     const r = this.runtime.request({ operation: 'command', content: this.content, state: session.state,
       command, expectedRevision: session.state.stateRevision }) as StateReply;
-    if (!r.ok) return `[${r.error.code}] ${r.error.message} (${r.error.path ?? '/'})`;
+    if (!r.ok) { const error = `[${r.error.code}] ${r.error.message} (${r.error.path ?? '/'})`; observing?.observe(before, before, command, error); return error; }
     if (!r.transition) throw new Error('런타임 명령 응답에 전이가 없습니다.');
     this.session = { origin: session.origin, commands: [...session.commands, r.transition.command], state: r.state };
+    observing?.observe(before, { state: r.state, narrative: this.projection(r.state).narrative }, command, null);
     cues.push(...r.transition.soundCues); return null;
   }
   private settle(cues: string[]): string | null {
@@ -154,7 +160,8 @@ export class WebPlayerController implements PlayerBridge {
   }
   async save(version: Version): Promise<PlayerReply> {
     if (!this.session || !this.current(version)) return this.reply('저장할 현재 게임이 없습니다.');
-    const presentation=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)?this.presentation.envelope(this.content,this.session.state):undefined;
+    const extensions=this.extensions?.save();
+    const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{})}:undefined;
     const text = canonical({ saveVersion: '1.0.0', coreVersion: CORE_VERSION,
       contentFingerprint: this.content.contentFingerprint, ...this.session,...(presentation?{playerPresentation:presentation}:{}) });
     if (new TextEncoder().encode(text).length > MAX_BYTES) return this.reply('세이브는 16 MiB 이하여야 합니다.');
@@ -167,8 +174,12 @@ export class WebPlayerController implements PlayerBridge {
       const text = await this.files.read(); if (text === null) return this.reply();
       if (!this.current(version)) return this.reply('불러오는 동안 게임이 변경되었습니다. 다시 선택해 주세요.');
       const value = parseSave(text);
-      if (!this.validateSave(value)) throw new Error('세이브 데이터 구조가 올바르지 않습니다.');
-      const saved = value as RunSession & { saveVersion: string; coreVersion: string; contentFingerprint: string;playerPresentation?:PlayerPresentationEnvelope };
+      // Plugin states are opaque to the save schema; validate them separately as a plain object.
+      const {extensions:savedExtensions,...presentationRest}=((value as {playerPresentation?:PresentationEnvelope}).playerPresentation??{}) as PresentationEnvelope;
+      if (savedExtensions !== undefined && (!savedExtensions || typeof savedExtensions !== 'object' || Array.isArray(savedExtensions))) throw new Error('세이브 데이터 구조가 올바르지 않습니다.');
+      const checked = savedExtensions === undefined ? value : { ...(value as object), playerPresentation: presentationRest };
+      if (!this.validateSave(checked)) throw new Error('세이브 데이터 구조가 올바르지 않습니다.');
+      const saved = checked as RunSession & { saveVersion: string; coreVersion: string; contentFingerprint: string;playerPresentation?:PlayerPresentationEnvelope };
       if (saved.saveVersion !== '1.0.0' || saved.coreVersion !== CORE_VERSION) throw new Error('지원하지 않는 세이브 또는 코어 버전입니다.');
       if (saved.contentFingerprint !== this.content.contentFingerprint) throw new Error('다른 콘텐츠로 만든 세이브입니다.');
       if (saved.origin.mode !== 'full') throw new Error('활동 전용 세이브는 플레이어에서 열 수 없습니다.');
@@ -186,6 +197,7 @@ export class WebPlayerController implements PlayerBridge {
         const error = this.settle([]);
         if (error) { this.session = previous; this.presentation.cursor=previousPresentation; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
       } catch (error) { this.session = previous; this.presentation.cursor=previousPresentation; this.presentation.battleSelection=previousBattleSelection; throw error; }
+      this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions);
       this.generation++; return this.reply(null, '저장한 게임을 불러왔습니다.');
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }
   }

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising.local/plugins/cutout-animation/rig.schema.json",
+  "title": "Cutout rig data (schemaVersion 1)",
+  "description": "Envelope `data` for documents of type `rig`. Structure only; semantic checks (cycles, references, key order) run in the C++ core.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "canvas", "bones", "slots", "attachments", "clips"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "maxLength": 80 },
+    "canvas": {
+      "type": "object", "additionalProperties": false, "required": ["width", "height", "originX", "originY"],
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
+        "originX": { "$ref": "#/$defs/coord" },
+        "originY": { "$ref": "#/$defs/coord" }
+      }
+    },
+    "bones": {
+      "type": "array", "minItems": 1, "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "parent"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "parent": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+          "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
+          "rotation": { "$ref": "#/$defs/angle" },
+          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" }
+        }
+      }
+    },
+    "slots": {
+      "description": "Array order is draw order, back to front.",
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "bone", "attachment"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "bone": { "$ref": "#/$defs/id" },
+          "attachment": { "anyOf": [{ "$ref": "#/$defs/name" }, { "type": "null" }] },
+          "alpha": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "attachments": {
+      "type": "array", "maxItems": 1024,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["slot", "name", "imageAssetId", "width", "height"],
+        "properties": {
+          "slot": { "$ref": "#/$defs/id" },
+          "name": { "$ref": "#/$defs/name" },
+          "imageAssetId": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
+          "rotation": { "$ref": "#/$defs/angle" },
+          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
+          "pivotX": { "type": "number", "minimum": -4, "maximum": 4 },
+          "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
+          "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
+          "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 }
+        }
+      }
+    },
+    "clips": {
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "durationMs", "loop", "tracks"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "durationMs": { "type": "integer", "minimum": 1, "maximum": 600000 },
+          "loop": { "type": "boolean" },
+          "tracks": {
+            "type": "array", "maxItems": 2048,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["target", "property", "keys"],
+              "properties": {
+                "target": { "type": "string", "pattern": "^(bone|slot):[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment"] },
+                "keys": {
+                  "type": "array", "maxItems": 4096,
+                  "items": {
+                    "type": "object", "additionalProperties": false, "required": ["timeMs", "value"],
+                    "properties": {
+                      "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
+                      "value": { "anyOf": [{ "type": "number" }, { "$ref": "#/$defs/name" }, { "type": "null" }] },
+                      "interp": { "enum": ["step", "linear"] }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "events": {
+            "type": "array", "maxItems": 256,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["timeMs", "name"],
+              "properties": { "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 }, "name": { "$ref": "#/$defs/name" } }
+            }
+          }
+        }
+      }
+    },
+    "mix": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "defaultMs": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "pairs": {
+          "type": "array", "maxItems": 1024,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["from", "to", "durationMs"],
+            "properties": { "from": { "$ref": "#/$defs/id" }, "to": { "$ref": "#/$defs/id" }, "durationMs": { "type": "integer", "minimum": 0, "maximum": 10000 } }
+          }
+        }
+      }
+    },
+    "editor": {
+      "description": "Non-essential authoring metadata (view, bone colors). Ignored by runtimes.",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 64 },
+    "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$", "maxLength": 64 },
+    "coord": { "type": "number", "minimum": -100000, "maximum": 100000 },
+    "angle": { "type": "number", "minimum": -36000, "maximum": 36000 },
+    "scale": { "type": "number", "minimum": -100, "maximum": 100 }
+  }
+}

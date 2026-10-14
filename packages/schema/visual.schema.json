@@ -1110,10 +1110,16 @@
             "props": {
               "type": "object",
               "maxProperties": 32,
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "maxLength": 64
+              },
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 256
                   },
                   {
                     "type": "number"
@@ -1546,12 +1552,12 @@
             ]
           },
           "then": {
-            "required": [
-              "extension"
-            ],
             "properties": {
               "extension": {}
-            }
+            },
+            "required": [
+              "extension"
+            ]
           }
         }
       ]
@@ -1703,8 +1709,7 @@
             "button",
             "meter",
             "group",
-            "input",
-            "plugin"
+            "input"
           ]
         },
         "label": {
@@ -2107,46 +2112,6 @@
         },
         "userFieldId": {
           "$ref": "common.schema.json#/$defs/id"
-        },
-        "extension": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "plugin",
-            "type",
-            "ref"
-          ],
-          "properties": {
-            "plugin": {
-              "$ref": "common.schema.json#/$defs/id"
-            },
-            "type": {
-              "$ref": "common.schema.json#/$defs/id"
-            },
-            "ref": {
-              "$ref": "common.schema.json#/$defs/id"
-            },
-            "props": {
-              "type": "object",
-              "maxProperties": 32,
-              "additionalProperties": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "boolean"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          }
         }
       },
       "required": [
@@ -2509,26 +2474,6 @@
             "required": [
               "userFieldId"
             ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "plugin"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "required": [
-              "extension"
-            ],
-            "properties": {
-              "extension": {}
-            }
           }
         }
       ]

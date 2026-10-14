@@ -15,11 +15,15 @@
 #include <QTreeWidget>
 class RendererPreviewDock;
 class QPushButton;
+class QDockWidget;
+class QMenu;
+class StudioPluginManager;
 
 class StudioWindow : public QMainWindow {
   Q_OBJECT
 public:
   explicit StudioWindow(QString engineRoot, QWidget *parent = nullptr);
+  ~StudioWindow() override;
   void openProject(const QString &root);
   bool busy() const { return bridge.busy(); }
   QJsonObject currentView() const { return view; }
@@ -27,6 +31,12 @@ public:
   QString selectedId() const { return selection; }
   QString playAutomation, playReport;
   QString lastError;
+  /** Automation: package file used by 패키지 설치… instead of the file dialog. */
+  QString pluginPackagePath;
+  StudioPluginManager *pluginManager() const { return plugins; }
+  /** Mirrors a service `plugins` object; with load=true also (un)loads authoring DLLs. */
+  void applyPluginState(const QJsonObject &state, bool load = true);
+  QDockWidget *addStudioDock(const QString &title, const QString &name, QWidget *child, Qt::DockWidgetArea area);
 signals:
   void updated();
   void playerFinished(int code);
@@ -35,6 +45,21 @@ protected:
   void closeEvent(QCloseEvent *event) override;
 
 private:
+  // The plugin host forwards StudioHost calls to the window's own state and request().
+  friend class StudioPluginManager;
+  StudioPluginManager *plugins;
+  QMenu *viewMenu, *pluginsMenu, *paletteMenu;
+  QWidget *pluginGroup;
+  QLabel *pluginStatusLabel;
+  QComboBox *pluginRefField;
+  QLineEdit *pluginPropsField;
+  QPushButton *pluginEditButton;
+  void showPluginManager();
+  void rebuildPluginUi();
+  void addPluginElement(const QString &plugin, const QString &type);
+  void updatePluginInspector(const QJsonObject &element);
+  void editPluginElement();
+  void editPluginProps();
   QString engineRoot, screenId = "home", selection, projectFile;
   QStringList openScreens;
   StudioBridge bridge;

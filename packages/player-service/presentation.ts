@@ -2,7 +2,7 @@ import type {ContentSnapshot,RunState} from '../core/model.js';
 import {planActivityTimeline,createTimelineCursor,validateTimelineCursor,advanceTimeline,skipTimeline,type TimelineCursor,type TimelinePlan} from '../visual/timeline.js';
 import {validateBattleSelection,type BattleSelection} from './battle.js';
 
-export interface PlayerPresentationEnvelope {version:1;timeline:TimelineCursor|null;battleSelection?:BattleSelection|null;extensions?:Record<string,unknown>}
+export interface PlayerPresentationEnvelope {version:1;timeline:TimelineCursor|null;battleSelection?:BattleSelection|null;/** Opaque per-plugin state (plugin-host CONTRACT §8), keyed by plugin id. */extensions?:Record<string,unknown>}
 export interface TimelineView {plan:TimelinePlan;cursor:TimelineCursor}
 export type TimelineAction={type:'timelineTick';deltaMs:number}|{type:'timelinePause'}|{type:'timelineSpeed'}|{type:'timelineSkip'};
 
