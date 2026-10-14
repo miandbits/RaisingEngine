@@ -52,6 +52,12 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /스킨 ID/);
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addSkin', id: 'winter', name: '겨울' } } } });
   assert.equal(reply.pluginResult.ok, true); assert.deepEqual(reply.pluginResult.rig.skins, [{ id: 'winter', name: '겨울', attachments: [] }]);
+  // IK ops (plugin 1.3.0) on the same path: a one-bone aim with a created target, then a refused chain.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addIk', bones: ['body'], createTarget: true } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.rig.ik, [{ id: 'body-ik', name: 'body-ik', bones: ['body'], target: 'body-target', bendPositive: true }]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'addIk', bones: ['root', 'root'], target: 'body' } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /부모 → 자식/);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });

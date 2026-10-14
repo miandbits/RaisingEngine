@@ -51,6 +51,10 @@ class RigCanvas : public QWidget {
   void setTrail(const QPolygonF& points, const QPolygonF& keyPoints);
   /** Ghost layers rendered so far (cache misses; tests check redraws reuse them). */
   int ghostRenders() const { return ghostRenders_; }
+  /** IK (plugin 1.3.0): target bones are drawn as crosshairs, chains of `selectedIk` highlighted. */
+  void setSelectedIk(const QString& id) { selectedIk_ = id; update(); }
+  bool isIkTarget(int bone) const;
+  static QColor ikColor();
   /** Fit the authoring canvas into the widget (also re-enables auto fit on resize). */
   void fitToCanvas();
   QTransform viewTransform() const;
@@ -106,7 +110,9 @@ class RigCanvas : public QWidget {
   qreal layerDpr_ = 0;
   int ghostRenders_ = 0;
   QPolygonF trail_, trailKeys_;
+  QString selectedIk_;
   void paintGhosts(QPainter& p);
+  void paintIk(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;
 };
 }  // namespace cutout_studio

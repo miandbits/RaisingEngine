@@ -39,13 +39,16 @@ struct Attachment {
   double width = 0, height = 0;       // source image pixels (checked against PNG by the service)
 };
 
-/** Expression is the rig-level track `{"target":"rig","property":"expression"}` (step only). */
-enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression };
+/** Expression is the rig-level track `{"target":"rig","property":"expression"}` (step only).
+ *  Mix / BendPositive key IK constraints: `{"target":"ik:<id>"}` (bend is step only, value bool). */
+enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive };
 enum class Interp { Step, Linear, Bezier };
 /** `curve` is used only when interp is Bezier (segment from this key to the next). */
 struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; };
-/** bone=false + rig=true: the rig expression track (target "", targetIndex -1, key.name = expression id). */
-struct Track { bool bone = true; bool rig = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; };
+/** bone=false + rig=true: the rig expression track (target "", targetIndex -1, key.name = expression id).
+ *  bone=false + ik=true: an IK constraint track (target = constraint id, targetIndex = Rig::ik index;
+ *  bendPositive keys carry value 1/0). */
+struct Track { bool bone = true; bool rig = false; bool ik = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; };
 struct ClipEvent { int64_t timeMs = 0; std::string name; };
 struct Clip { std::string id, name; int64_t durationMs = 1000; bool loop = true; std::vector<Track> tracks; std::vector<ClipEvent> events; };
 struct MixPair { std::string from, to; int64_t durationMs = 0; };
@@ -58,6 +61,23 @@ struct Expression {
   std::string id, name;
   std::vector<std::pair<int, std::optional<std::string>>> slots;  // slot index -> attachment name (nullopt = hidden)
   std::vector<BoneOverride> bones;
+};
+
+/**
+ * IK constraint (plugin 1.3.0). `bones` = 1 (aim: the bone's local +x axis points at the target)
+ * or 2 (parent, direct child: two-bone limb whose effector is the origin of `tip`, the child's
+ * first child bone). Solved after expressions on world transforms, in `Rig::ikOrder`.
+ */
+struct IkConstraint {
+  std::string id, name;
+  std::vector<int> bones;     // chain, parent first
+  int target = -1;
+  int tip = -1;               // two-bone effector bone (-1 = none: the child origin aims at the target)
+  double mix = 1;
+  bool bendPositive = true;   // two-bone: the child turns in the positive (clockwise on screen) direction
+  bool stretch = false;       // accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH)
+  int order = 0;
+  std::vector<int> affected;  // bones[0] and its descendants, parents first: world recomputed after solving
 };
 
 struct Rig {
@@ -73,12 +93,15 @@ struct Rig {
   std::vector<MixPair> mixes;
   std::vector<Skin> skins;
   std::vector<Expression> expressions;
+  std::vector<IkConstraint> ik;
+  std::vector<int> ikOrder;         // evaluation order: (order, array index) ascending
 
   int boneIndex(const std::string& id) const;
   int slotIndex(const std::string& id) const;
   int clipIndex(const std::string& id) const;
   int skinIndex(const std::string& id) const;        // -1 = unknown / "" (default attachments only)
   int expressionIndex(const std::string& id) const;  // -1 = unknown / none
+  int ikIndex(const std::string& id) const;
   /** Lookup order: skin `skin` (when >= 0) first, then the rig's default attachments. */
   const Attachment* attachment(const std::string& slot, const std::string& name, int skin = -1) const;
   int64_t mixDuration(const std::string& from, const std::string& to) const;

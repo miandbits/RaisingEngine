@@ -135,6 +135,56 @@ Json lookScript() {
     {{"op", "setSkin"}, {"instance", "a"}, {"skin", ""}}, frame,
   });
 }
+/**
+ * Two-bone arm for IK (plugin 1.3.0): root -> upper (shoulder) -> lower (elbow, 50 px) -> hand
+ * (wrist, 50 px); target `t` hangs from the root. `ik` holds one constraint `arm` on [upper, lower].
+ */
+Json armRig(double tx, double ty) {
+  Json d = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 400, "height": 400, "originX": 200, "originY": 200},
+    "bones": [
+      {"id": "root", "parent": null, "x": 0, "y": 0},
+      {"id": "upper", "parent": "root", "x": 0, "y": 0},
+      {"id": "lower", "parent": "upper", "x": 50, "y": 0},
+      {"id": "hand", "parent": "lower", "x": 50, "y": 0},
+      {"id": "t", "parent": "root", "x": 0, "y": 0}],
+    "slots": [{"id": "forearm", "bone": "lower", "attachment": "forearm"}, {"id": "palm", "bone": "hand", "attachment": "palm"}],
+    "attachments": [
+      {"slot": "forearm", "name": "forearm", "imageAssetId": "img-forearm", "width": 50, "height": 10, "pivotX": 0, "pivotY": 0.5},
+      {"slot": "palm", "name": "palm", "imageAssetId": "img-palm", "width": 12, "height": 12}],
+    "clips": [],
+    "ik": [{"id": "arm", "bones": ["upper", "lower"], "target": "t", "mix": 1, "bendPositive": true}]})");
+  d["bones"][4]["x"] = tx; d["bones"][4]["y"] = ty;
+  return d;
+}
+/** armRig under a rotated, scaled root plus a head aiming at the hand target and a clip that moves
+ *  the target and keys mix/bend: the IK parity fixture (tests/plugins/cutout-ik-parity.test.mjs). */
+Json ikParityRig() {
+  Json d = armRig(70, 40);
+  d["bones"][0] = {{"id", "root"}, {"parent", nullptr}, {"x", 200}, {"y", 200}, {"rotation", 15}, {"scaleX", 1.3}, {"scaleY", 1.3}};
+  d["bones"][2]["rotation"] = 25;
+  d["bones"].push_back({{"id", "head"}, {"parent", "root"}, {"x", -20}, {"y", -60}, {"scaleX", -1}});
+  d["ik"].push_back({{"id", "look"}, {"bones", {"head"}}, {"target", "t"}, {"mix", 0.8}, {"order", 1}});
+  d["slots"].push_back({{"id", "face"}, {"bone", "head"}, {"attachment", "face"}});
+  d["attachments"].push_back({{"slot", "face"}, {"name", "face"}, {"imageAssetId", "img-face"}, {"width", 30}, {"height", 20}, {"x", 10}});
+  d["clips"].push_back(Json::parse(R"({"id": "reach", "durationMs": 1000, "loop": true, "tracks": [
+    {"target": "bone:t", "property": "x", "keys": [{"timeMs": 0, "value": 70}, {"timeMs": 500, "value": 160, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 1000, "value": 70}]},
+    {"target": "bone:t", "property": "y", "keys": [{"timeMs": 0, "value": 40}, {"timeMs": 500, "value": -30}, {"timeMs": 1000, "value": 40}]},
+    {"target": "ik:arm", "property": "mix", "keys": [{"timeMs": 0, "value": 1}, {"timeMs": 700, "value": 0.25}, {"timeMs": 1000, "value": 1}]},
+    {"target": "ik:arm", "property": "bendPositive", "keys": [{"timeMs": 0, "value": true}, {"timeMs": 600, "value": false}]}
+  ]})"));
+  return d;
+}
+Json ikParityScript() {
+  const Json controller = {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}};
+  const Json element = {{"type", "character"}, {"ref", "arm-main"}, {"width", 400}, {"height", 400}, {"props", {{"scale", 1}}}};
+  const Json frame = {{"op", "frame"}, {"instance", "a"}};
+  Json script = Json::array({
+    {{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "arm"}, {"data", ikParityRig()}}, {{"type", "controller"}, {"id", "arm-main"}, {"data", controller}}})}},
+    {{"op", "mount"}, {"instance", "a"}, {"element", element}}, frame});
+  for (double dt : {16.0, 125.5, 233.25, 180.0, 60.0, 90.0, 210.0, 333.0}) { script.push_back({{"op", "update"}, {"dtMs", dt}}); script.push_back(frame); }
+  for (double ms : {0.0, 250.0, 650.0, 1000.0}) script.push_back({{"op", "sample"}, {"rig", ikParityRig()}, {"clip", "reach"}, {"timeMs", ms}});
+  return script;
+}
 const std::vector<double>& parityTimes() {
   static const std::vector<double> t = {0, 1, 33.25, 100, 125, 250, 333.3333, 399.9, 400, 512.5, 600, 650.75, 777.7, 899, 999.99, 1000};
   return t;
@@ -154,6 +204,14 @@ int main(int argc, char** argv) {
     for (double t : parityTimes())
       samples.push_back({{"timeMs", t}, {"pose", host.handle({{"op", "sample"}, {"rig", bezierRig()}, {"clip", "ease"}, {"timeMs", t}})["pose"]}});
     std::cout << Json({{"rig", bezierRig()}, {"clip", "ease"}, {"samples", samples}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--ik-parity") {
+    // Native reference for IK draw lists and sampled poses (replayed through the Wasm runtime).
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : ikParityScript()) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", ikParityScript()}, {"replies", replies}}).dump() << "\n";
     return 0;
   }
   if (argc > 1 && std::string(argv[1]) == "--look-parity") {
@@ -1153,6 +1211,250 @@ int main(int argc, char** argv) {
     Instance back(r, parseController("hero-main", controllerData()));
     back.restoreState(old);
     check(back.describe()["tracks"].size() == s["tracks"].size(), "1.x save restores");
+  });
+
+  // ---- IK constraints (plugin 1.3.0) ----
+  auto ikPose = [](const Json& d, int clip = -1, double timeMs = 0) {
+    const Rig r = parseRig("arm", d);
+    return samplePose(r, clip, timeMs);
+  };
+  auto at = [](const Pose& p, size_t bone) { return std::pair<double, double>{p.world[bone].e, p.world[bone].f}; };
+  auto reaches = [&](const Pose& p, double x, double y, double eps = 1e-9) { return near(at(p, 3).first, x, eps) && near(at(p, 3).second, y, eps); };
+  // Bend side on screen: cross(elbow - shoulder, wrist - elbow) (> 0 = clockwise on a y-down screen).
+  auto bendCross = [&](const Pose& p) {
+    const auto s = at(p, 1), e = at(p, 2), w = at(p, 3);
+    return (e.first - s.first) * (w.second - e.second) - (e.second - s.second) * (w.first - e.first);
+  };
+  test("ik validation", [&] {
+    check(validateRig(armRig(60, 40)).empty(), "arm fixture validates");
+    check(validateRig(ikParityRig()).empty(), "parity fixture validates");
+    auto bad = [&](const std::function<void(Json&)>& edit, const std::string& code) {
+      Json d = armRig(60, 40);
+      edit(d);
+      return hasCode(validateRig(d), code);
+    };
+    check(bad([](Json& d) { d["ik"].push_back(d["ik"][0]); }, "ANIM_IK_DUP_ID"), "duplicate id");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"upper", "elbow"}; }, "ANIM_IK_BONE_MISSING"), "unknown chain bone");
+    check(bad([](Json& d) { d["ik"][0]["target"] = "nobody"; }, "ANIM_IK_BONE_MISSING"), "unknown target");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"upper", "hand"}; }, "ANIM_IK_CHAIN"), "non-adjacent chain");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"lower", "upper"}; }, "ANIM_IK_CHAIN"), "child first");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = Json::array(); }, "ANIM_IK_CHAIN"), "empty chain");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"root", "upper", "lower"}; }, "ANIM_IK_CHAIN"), "three bones");
+    check(bad([](Json& d) { d["ik"][0]["target"] = "lower"; }, "ANIM_IK_TARGET"), "target in the chain");
+    check(bad([](Json& d) { d["ik"][0]["target"] = "hand"; }, "ANIM_IK_TARGET"), "target below the chain end");
+    check(bad([](Json& d) { d["ik"][0]["mix"] = 1.5; }, "ANIM_IK_MIX"), "mix range");
+    check(bad([](Json& d) { d["ik"][0]["bendPositive"] = 1; }, "ANIM_STRUCTURE"), "bend must be bool");
+    {
+      Json s = armRig(60, 40);
+      s["ik"][0]["stretch"] = true;
+      const auto ds = validateRig(s);
+      check(ds.size() == 1 && ds[0].code == "ANIM_IK_STRETCH" && ds[0].severity == "warning", "stretch: accepted, warned, ignored");
+    }
+    // Cycle: `a` aims upper at a bone under head, `b` aims head at a bone under upper.
+    check(bad([](Json& d) {
+      d["bones"].push_back({{"id", "head"}, {"parent", "root"}, {"x", 0}, {"y", -40}});
+      d["bones"].push_back({{"id", "eye"}, {"parent", "head"}, {"x", 5}, {"y", 0}});
+      d["ik"] = Json::array({{{"id", "a"}, {"bones", {"upper"}}, {"target", "eye"}}, {{"id", "b"}, {"bones", {"head"}}, {"target", "lower"}}});
+    }, "ANIM_IK_CYCLE"), "dependency cycle");
+    // Order: `look` aims at the hand that `arm` moves, so it must be solved after it.
+    Json d = armRig(60, 40);
+    d["bones"].push_back({{"id", "head"}, {"parent", "root"}, {"x", 0}, {"y", -40}});
+    d["ik"].push_back({{"id", "look"}, {"bones", {"head"}}, {"target", "hand"}});
+    check(validateRig(d).empty(), "dependent constraint after its source: fine");
+    d["ik"][1]["order"] = -1;
+    const auto ds = validateRig(d);
+    check(hasCode(ds, "ANIM_IK_ORDER") && !hasCode(ds, "ANIM_IK_CYCLE") && parseRig("x", d).ikOrder == std::vector<int>({1, 0}), "order before its source: warning, order honoured");
+    // Tracks.
+    auto track = [&](const Json& tr, const std::string& code) {
+      Json x = armRig(60, 40);
+      x["clips"] = Json::array({{{"id", "c"}, {"durationMs", 1000}, {"loop", false}, {"tracks", Json::array({tr})}}});
+      return hasCode(validateRig(x), code);
+    };
+    check(!track({{"target", "ik:arm"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 0.5}}}}}, "ANIM_PROPERTY") &&
+          track({{"target", "ik:arm"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 1.5}}}}}, "ANIM_IK_MIX"), "mix keys 0..1");
+    check(track({{"target", "ik:nope"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_TARGET_MISSING"), "unknown constraint track");
+    check(track({{"target", "ik:arm"}, {"property", "x"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_PROPERTY"), "ik tracks only key mix/bend");
+    check(track({{"target", "bone:upper"}, {"property", "mix"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_PROPERTY"), "mix only on ik tracks");
+    check(track({{"target", "ik:arm"}, {"property", "bendPositive"}, {"keys", {{{"timeMs", 0}, {"value", 1}}}}}, "ANIM_KEY_VALUE"), "bend keys are bool");
+    check(track({{"target", "ik:arm"}, {"property", "bendPositive"}, {"keys", {{{"timeMs", 0}, {"value", true}, {"interp", "bezier"}, {"curve", {0, 0, 1, 1}}}}}}, "ANIM_INTERP"), "bend keys are step");
+  });
+
+  test("ik two-bone: reach, unreachable, fold, bend flip, mix", [&] {
+    Pose p = ikPose(armRig(60, 40));
+    check(reaches(p, 60, 40), "reachable target: the wrist lands on it");
+    check(near(std::hypot(at(p, 2).first, at(p, 2).second), 50, 1e-9), "upper link keeps its length");
+    check(p.bones[1].rotation == 0 && p.bones[2].rotation == 0, "animated (keyable) values untouched");
+    check(!p.applied.empty() && !near(p.applied[1].rotation, 0), "solved rotations in applied");
+    check(bendCross(p) > 0, "bendPositive: clockwise bend on screen");
+    Json flip = armRig(60, 40);
+    flip["ik"][0]["bendPositive"] = false;
+    const Pose q = ikPose(flip);
+    check(reaches(q, 60, 40) && bendCross(q) < 0, "bend flip: same wrist, elbow on the other side");
+    // The two elbows are mirror images across the shoulder -> target line.
+    const double ux = 60 / std::hypot(60, 40), uy = 40 / std::hypot(60, 40);
+    const auto e1 = at(p, 2), e2 = at(q, 2);
+    check(near(e1.first * ux + e1.second * uy, e2.first * ux + e2.second * uy, 1e-9) && near(e1.first * uy - e1.second * ux, -(e2.first * uy - e2.second * ux), 1e-9), "mirrored elbows");
+    p = ikPose(armRig(0, 300));
+    check(near(at(p, 2).first, 0, 1e-9) && near(at(p, 2).second, 50, 1e-9) && reaches(p, 0, 100), "unreachable: straight at the target");
+    Json shortArm = armRig(10, 0);
+    shortArm["bones"][3]["x"] = 30;
+    p = ikPose(shortArm);
+    check(near(at(p, 2).first, 50, 1e-6) && reaches(p, 20, 0, 1e-6), "too close: folded towards the target");
+    Json zero = armRig(0, 0);
+    p = ikPose(zero);
+    check(reaches(p, 100, 0) && p.applied[1].rotation == 0, "target on the shoulder: no direction, FK pose");
+    // mix
+    Json m = armRig(60, 40);
+    m["ik"][0]["mix"] = 0;
+    check(reaches(ikPose(m), 100, 0), "mix 0 = forward kinematics");
+    const Pose full = ikPose(armRig(60, 40));
+    m["ik"][0]["mix"] = 0.5;
+    p = ikPose(m);
+    check(near(p.applied[1].rotation, full.applied[1].rotation / 2, 1e-9) && near(p.applied[2].rotation, full.applied[2].rotation / 2, 1e-9), "mix 0.5 = halfway rotations");
+    // No effector (end bone without children): the child origin aims at the target.
+    Json noTip = armRig(0, 80);
+    noTip["bones"].erase(3);
+    noTip["slots"].erase(1); noTip["attachments"].erase(1);
+    p = ikPose(noTip);
+    check(near(at(p, 2).first, 0, 1e-9) && near(at(p, 2).second, 50, 1e-9), "no tip: elbow points at the target");
+  });
+
+  test("ik respects rotated, scaled and mirrored parents", [&] {
+    for (const Json& rootT : {Json{{"rotation", 30}, {"scaleX", 2}, {"scaleY", 0.5}}, Json{{"rotation", -70}, {"scaleX", -1.5}, {"scaleY", 1}}}) {
+      Json d = armRig(60, 40);
+      for (auto it = rootT.begin(); it != rootT.end(); ++it) d["bones"][0][it.key()] = it.value();
+      d["bones"][0]["x"] = 10; d["bones"][0]["y"] = 20;
+      const Pose p = ikPose(d);
+      const auto tw = at(p, 4);
+      check(reaches(p, tw.first, tw.second, 1e-9), "any ancestor transform is exact: " + rootT.dump());
+    }
+    for (const Json& upperT : {Json{{"scaleX", 1.5}, {"scaleY", 1.5}}, Json{{"scaleX", -1.2}, {"scaleY", -1.2}}, Json{{"scaleX", -1}, {"scaleY", 1}, {"rotation", 40}}}) {
+      Json d = armRig(60, 50);
+      for (auto it = upperT.begin(); it != upperT.end(); ++it) d["bones"][1][it.key()] = it.value();
+      d["bones"][2]["scaleX"] = 0.8;  // the child's own scale shortens the forearm link exactly
+      const Pose p = ikPose(d);
+      check(reaches(p, 60, 50, 1e-9), "uniform / mirrored upper bone is exact: " + upperT.dump());
+    }
+    Json d = armRig(60, 40);
+    d["bones"][0]["scaleX"] = -1;  // a mirrored parent space keeps bendPositive's side on screen
+    d["bones"][4]["x"] = -60;
+    check(bendCross(ikPose(d)) > 0 && reaches(ikPose(d), 60, 40), "mirrored root: same screen side");
+  });
+
+  test("ik one-bone aim", [&] {
+    Json d = armRig(0, 80);
+    d["ik"][0]["bones"] = {"upper"};
+    Pose p = ikPose(d);
+    check(near(std::atan2(p.world[1].b, p.world[1].a) * 180 / 3.14159265358979323846, 90, 1e-9), "x axis points at the target");
+    d["bones"][0]["rotation"] = 30; d["bones"][0]["scaleX"] = 2; d["bones"][0]["scaleY"] = 0.5;
+    d["bones"][1]["scaleX"] = -1;  // a flipped bone aims its (flipped) +x axis
+    p = ikPose(d);
+    const double ax = p.world[1].a, ay = p.world[1].b, tx = p.world[4].e - p.world[1].e, ty = p.world[4].f - p.world[1].f;
+    check(near(ax * ty - ay * tx, 0, 1e-9) && ax * tx + ay * ty > 0, "aim exact under a skewing parent and a flipped bone");
+    d["ik"][0]["mix"] = 0.25;
+    check(near(ikPose(d).applied[1].rotation, p.applied[1].rotation * 0.25, 1e-9), "aim mix");
+  });
+
+  test("ik in clips, instances, frame-rate determinism, save/restore", [&] {
+    const Json d = ikParityRig();
+    const auto r = std::make_shared<const Rig>(parseRig("arm", d));
+    const int clip = r->clipIndex("reach");
+    Pose p = samplePose(*r, clip, 350);
+    check(near(p.ikMix[0], 1 - 0.75 * 350.0 / 700) && p.ikBend[0] == 1, "mix keys sampled, bend before its key");
+    check(samplePose(*r, clip, 650).ikBend[0] == 0, "bend step key");
+    p = samplePose(*r, clip, 0);
+    check(reaches(p, p.world[4].e, p.world[4].f, 1e-9), "full mix in the clip: the wrist follows the animated target");
+    Look noIk;
+    noIk.ik = false;
+    const Pose fk = samplePose(*r, clip, 0, noIk);
+    check(fk.applied.empty() && !near(fk.world[3].e, p.world[3].e), "look.ik = false: plain FK");
+    Instance a(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    Instance b(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    for (int i = 0; i < 60; i++) a.update(10);
+    for (int i = 0; i < 24; i++) b.update(25);
+    const auto da = a.drawList(), db = b.drawList();
+    bool same = da.size() == db.size();
+    for (size_t i = 0; same && i < da.size(); i++) same = da[i].matrix.a == db[i].matrix.a && da[i].matrix.e == db[i].matrix.e && da[i].matrix.f == db[i].matrix.f;
+    check(same, "60 x 10 ms == 24 x 25 ms: identical draw lists");
+    const Pose ip = a.pose(), sp = samplePose(*r, clip, 600);
+    check(near(ip.world[3].e, sp.world[3].e, 1e-9) && near(ip.world[2].f, sp.world[2].f, 1e-9), "Instance::pose == samplePose (IK after the expression layer)");
+    const Json saved = a.saveState();
+    check(!saved.contains("ik") && saved["tracks"].size() == 1, "IK adds no save state");
+    Instance c(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    c.restoreState(saved);
+    Instance fresh(r, parseController("c", {{"schemaVersion", 1}, {"rig", "arm"}, {"defaultClip", "reach"}}));
+    check(c.drawList().size() == fresh.drawList().size() && near(c.drawList()[0].matrix.e, fresh.drawList()[0].matrix.e, 1e-9), "restore: looping clip restarts at 0, IK applied the same");
+    const Pose x = samplePose(*r, -1, 0);
+    check(x.ikMix.size() == 2 && x.ikMix[1] == 0.8 && x.ikBend[0] == 1, "setup values");
+  });
+
+  test("ik edit ops", [&] {
+    Json base = armRig(60, 40);
+    base.erase("ik");
+    base["bones"][2]["rotation"] = 30;  // a bent elbow (clockwise on screen)
+    const Pose before = ikPose(base);
+    auto r = applyEdit(base, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"createTarget", true}});
+    const Json& k = r.data["ik"][0];
+    check(k["id"] == "lower-ik" && k["target"] == "lower-target" && k["bendPositive"] == true && r.extra["target"] == "lower-target", "defaults: ids, inferred bend side");
+    check(r.data["bones"].back()["id"] == "lower-target" && r.affected.size() == 2, "target bone created");
+    const Pose after = ikPose(r.data);
+    check(near(after.world[3].e, before.world[3].e, 1e-6) && near(after.world[3].f, before.world[3].f, 1e-6) && near(after.applied[2].rotation, 30, 1e-6), "new constraint holds the current pose");
+    check(r.data["bones"].back()["parent"] == "root", "target under the chain's top ancestor");
+    r = applyEdit(base, {{"op", "addIk"}, {"id", "aim"}, {"bones", {"upper"}}, {"createTarget", true}, {"targetId", "aim-at"}, {"mix", 0.5}});
+    check(near(ikPose(r.data).applied[1].rotation, 0, 1e-6) && r.data["ik"][0]["mix"] == 0.5, "aim target on the x axis: no jump");
+    check(refused(base, {{"op", "addIk"}, {"bones", {"upper", "hand"}}, {"createTarget", true}}), "non-adjacent chain refused");
+    check(refused(base, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"target", "hand"}}), "target below the chain refused");
+    check(refused(base, {{"op", "addIk"}, {"bones", {"upper", "lower"}}}), "needs a target");
+    Json d = armRig(60, 40);
+    check(refused(d, {{"op", "addIk"}, {"id", "arm"}, {"bones", {"upper"}}, {"target", "t"}}), "duplicate id refused");
+    r = applyEdit(d, {{"op", "setIk"}, {"ik", "arm"}, {"mix", 0.5}, {"bendPositive", false}, {"order", 3}});
+    check(r.data["ik"][0]["mix"] == 0.5 && r.data["ik"][0]["bendPositive"] == false && r.data["ik"][0]["order"] == 3, "setIk");
+    check(refused(d, {{"op", "setIk"}, {"ik", "arm"}, {"mix", 2}}) && refused(d, {{"op", "setIk"}, {"ik", "arm"}, {"target", "hand"}}) && refused(d, {{"op", "setIk"}, {"ik", "nope"}, {"mix", 1}}), "setIk refusals");
+    // Keys.
+    d["clips"] = Json::array({{{"id", "c"}, {"durationMs", 1000}, {"loop", false}, {"tracks", Json::array()}}});
+    r = applyEdit(d, {{"op", "batch"}, {"operations", {
+      {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "mix"}, {"timeMs", 0}, {"value", 0}, {"interp", "easeIn"}},
+      {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "mix"}, {"timeMs", 500}, {"value", 1}},
+      {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "bendPositive"}, {"timeMs", 200}, {"value", false}, {"interp", "linear"}}}}});
+    check(trackOf(r.data, "c", "ik:arm", "mix")[0]["interp"] == "bezier" && trackOf(r.data, "c", "ik:arm", "bendPositive") == Json::array({{{"timeMs", 200}, {"value", false}}}) && validateRig(r.data).empty(), "mix keys with curves, bend keys step");
+    const Json keyed = r.data;
+    check(refused(d, {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "mix"}, {"timeMs", 0}, {"value", 1.2}}), "mix key range");
+    check(refused(d, {{"op", "setKey"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "rotation"}, {"timeMs", 0}, {"value", 1}}), "ik keys mix/bend only");
+    check(refused(keyed, {{"op", "setInterp"}, {"clip", "c"}, {"target", "ik:arm"}, {"property", "bendPositive"}, {"timeMs", 200}, {"interp", "linear"}}), "bend interp refused");
+    const Json board = applyEdit(keyed, {{"op", "copyKeys"}, {"clip", "c"}, {"keys", Json::array({ref("ik:arm", "bendPositive", 200), ref("ik:arm", "mix", 500)})}}).extra["clipboard"];
+    check(!board["keys"][0].contains("interp") && board["keys"][1]["interp"] == "linear", "copied bend keys carry no interp");
+    // Rename / delete.
+    r = applyEdit(keyed, {{"op", "renameIk"}, {"ik", "arm"}, {"id", "left-arm"}, {"name", "왼팔"}});
+    check(r.data["ik"][0]["id"] == "left-arm" && r.data["ik"][0]["name"] == "왼팔" && trackOf(r.data, "c", "ik:left-arm", "mix").size() == 2 && r.extra["tracks"] == 2 && validateRig(r.data).empty(), "renameIk renames tracks");
+    r = applyEdit(keyed, {{"op", "deleteIk"}, {"ik", "arm"}, {"deleteTarget", true}});
+    check(!r.data.contains("ik") && r.data["clips"][0]["tracks"].empty() && r.extra["keys"] == 3 && r.extra["deletedTarget"] == "t" && validateRig(r.data).empty(), "deleteIk removes keys, list and the unused target");
+    // Hierarchy edits keep constraints consistent.
+    check(refused(keyed, {{"op", "reparentBone"}, {"bone", "lower"}, {"parent", "root"}}), "reparent breaking the chain refused");
+    check(refused(keyed, {{"op", "reparentBone"}, {"bone", "t"}, {"parent", "lower"}}), "reparent of the target into the chain refused");
+    check(validateRig(applyEdit(keyed, {{"op", "reparentBone"}, {"bone", "t"}, {"parent", nullptr}}).data).empty(), "harmless reparent of the target allowed");
+    check(refused(keyed, {{"op", "deleteBone"}, {"bone", "t"}}), "deleting a target needs cascade");
+    r = applyEdit(keyed, {{"op", "deleteBone"}, {"bone", "lower"}, {"cascade", true}});
+    check(!r.data.contains("ik") && r.data["clips"][0]["tracks"].empty() && hasCode(r.diagnostics, "ANIM_IK_REMOVED") && validateRig(r.data).empty(), "cascade removes the constraint and its keys");
+    r = applyEdit(d, {{"op", "setPivot"}, {"bone", "lower"}, {"localX", 10}, {"localY", 0}});
+    check(validateRig(r.data).empty() && reaches(ikPose(r.data), 60, 40, 1e-9), "setPivot keeps refs; still reaches");
+    // Bake: the solved rotations become keys (FK pose kept with mix 0).
+    r = applyEdit(keyed, {{"op", "bakeIk"}, {"clip", "c"}, {"timeMs", 700}, {"disable", true}});
+    const Pose solved = ikPose(keyed, 0, 700), baked = ikPose(r.data, 0, 700);
+    check(near(baked.bones[1].rotation, solved.applied[1].rotation, 1e-5) && near(baked.world[3].e, solved.world[3].e, 1e-3) && near(baked.world[3].f, solved.world[3].f, 1e-3) && baked.ikMix[0] == 0, "bakeIk keys the solved pose");
+    check(r.extra["keys"].size() == 3, "two rotations + mix 0");
+    Host host;
+    const Json op = {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"createTarget", true}};
+    check(host.handle({{"op", "edit"}, {"rig", base}, {"operation", op}})["rig"] == applyEdit(base, op).data, "host edit = core edit");
+  });
+
+  test("ik host sample reply", [&] {
+    Host host;
+    const auto reply = host.handle({{"op", "sample"}, {"rig", ikParityRig()}, {"clip", "reach"}, {"timeMs", 650}});
+    check(reply["pose"]["ik"]["arm"]["bendPositive"] == false && near(reply["pose"]["ik"]["look"]["mix"].get<double>(), 0.8), "constraint values in the pose");
+    const Rig r = parseRig("arm", ikParityRig());
+    const Pose p = samplePose(r, r.clipIndex("reach"), 650);
+    check(reply["pose"]["bones"]["upper"]["appliedRotation"].get<double>() == p.applied[1].rotation && reply["pose"]["bones"]["upper"]["world"][4].get<double>() == p.world[1].e, "solved rotation and world");
+    check(!host.handle({{"op", "sample"}, {"rig", rigData()}, {"timeMs", 0}})["pose"].contains("ik"), "rigs without IK keep the 1.2 shape");
   });
 
   test("host sample op evaluates bezier like samplePose", [] {

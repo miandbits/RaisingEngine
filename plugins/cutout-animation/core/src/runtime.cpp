@@ -7,6 +7,8 @@
 namespace cutout {
 namespace {
 constexpr double MAX_DT_MS = 10000;
+constexpr double PI = 3.14159265358979323846, DEG = 180 / PI, RAD = PI / 180;
+constexpr double IK_EPS = 1e-9;  // shorter distances/links are degenerate: no direction to solve for
 constexpr int64_t MAX_COMPLETES_PER_UPDATE = 64;
 const char* thenName(Then t) { return t == Then::Hold ? "hold" : t == Then::Stop ? "stop" : "default"; }
 Then parseThen(const std::string& s) { return s == "hold" ? Then::Hold : s == "stop" ? Then::Stop : Then::Default; }
@@ -80,6 +82,7 @@ static Pose setupPose(const Rig& rig) {
   Pose pose;
   for (const auto& b : rig.bones) pose.bones.push_back(b.setup);
   for (const auto& s : rig.slots) { pose.attachments.push_back(s.attachment); pose.alpha.push_back(s.alpha); }
+  for (const auto& k : rig.ik) { pose.ikMix.push_back(k.mix); pose.ikBend.push_back(k.bendPositive); }
   return pose;
 }
 static void computeWorld(const Rig& rig, Pose& pose) {
@@ -100,6 +103,13 @@ static double clipTime(const Clip& clip, double timeMs, bool loop) {
 static void applyClip(const Rig& rig, const Clip& clip, double t, Pose& pose) {
   for (const auto& tr : clip.tracks) {
     if (tr.targetIndex < 0) continue;
+    if (tr.ik) {
+      const size_t i = size_t(tr.targetIndex);
+      if (i >= pose.ikMix.size()) continue;
+      if (tr.property == Property::Mix) pose.ikMix[i] = sampleTrack(tr, t, pose.ikMix[i]);
+      else if (!tr.keys.empty()) pose.ikBend[i] = sampleTrack(tr, t, pose.ikBend[i]) >= 0.5;  // step keys: 1/0
+      continue;
+    }
     if (tr.bone) { auto& value = field(pose.bones[tr.targetIndex], tr.property); value = sampleTrack(tr, t, value); }
     else if (tr.property == Property::Alpha) pose.alpha[tr.targetIndex] = sampleTrack(tr, t, pose.alpha[tr.targetIndex]);
     else if (!tr.keys.empty()) pose.attachments[tr.targetIndex] = sampleAttachment(tr, t);
@@ -114,9 +124,100 @@ static Pose blend(const Pose& a, const Pose& b, double alpha) {
     o.scaleX = lerp(x.scaleX, o.scaleX, alpha); o.scaleY = lerp(x.scaleY, o.scaleY, alpha);
   }
   for (size_t i = 0; i < out.alpha.size(); i++) out.alpha[i] = lerp(a.alpha[i], out.alpha[i], alpha);
-  // Attachments cannot interpolate: switch halfway through the mix.
-  if (alpha < 0.5) out.attachments = a.attachments;
+  for (size_t i = 0; i < out.ikMix.size() && i < a.ikMix.size(); i++) out.ikMix[i] = lerp(a.ikMix[i], out.ikMix[i], alpha);
+  // Attachments (and the IK bend direction) cannot interpolate: switch halfway through the mix.
+  if (alpha < 0.5) { out.attachments = a.attachments; out.ikBend = a.ikBend; }
   return out;
+}
+
+// ---- IK constraints (plugin 1.3.0) ----
+/** `from` turned towards `to` (degrees) the short way round, by `mix`: mix 1 lands on `to` mod 360. */
+static double blendAngle(double from, double to, double mix) {
+  double d = std::fmod(to - from, 360.0);
+  if (d > 180) d -= 360;
+  else if (d < -180) d += 360;
+  return from + d * mix;
+}
+/**
+ * One-bone aim: rotate the bone in its parent space so its local +x axis points at the target.
+ * Exact for any parent transform (an affine map keeps directions parallel); a negative scaleX
+ * flips the axis.
+ */
+static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix) {
+  const int b = k.bones[0], parent = rig.bones[size_t(b)].parentIndex;
+  const auto inv = (parent < 0 ? Affine{} : pose.world[size_t(parent)]).inverse();
+  if (!inv) return false;
+  double lx, ly;
+  inv->apply(tx, ty, lx, ly);
+  Transform& t = pose.applied[size_t(b)];
+  const double dx = lx - t.x, dy = ly - t.y;
+  if (std::hypot(dx, dy) < IK_EPS) return false;
+  t.rotation = blendAngle(t.rotation, (std::atan2(dy, dx) - (t.scaleX < 0 ? PI : 0)) * DEG, mix);
+  return true;
+}
+/**
+ * Two-bone limb (law of cosines) in the upper bone's parent space, where its local rotation acts
+ * rigidly: exact for any ancestor transform. Links: upper origin -> child origin (l1, through the
+ * upper bone's scale) and child origin -> effector (l2, the tip bone's origin through the child's
+ * scale). A mirrored upper bone (one negative scale) reverses the child's rotation sense; an
+ * upper bone with non-uniform scale uses the geometric mean for l2 (approximate, like Spine).
+ * Unreachable targets clamp the cosine: the limb points straight at it (too far) or folds (too
+ * close). bendPositive picks the side on screen: a mirrored parent space flips it back.
+ */
+static bool solveTwoBone(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, bool bendPositive) {
+  const int up = k.bones[0], low = k.bones[1], parent = rig.bones[size_t(up)].parentIndex;
+  const Affine pw = parent < 0 ? Affine{} : pose.world[size_t(parent)];
+  const auto inv = pw.inverse();
+  if (!inv) return false;
+  double lx, ly;
+  inv->apply(tx, ty, lx, ly);
+  Transform& tu = pose.applied[size_t(up)];
+  Transform& tl = pose.applied[size_t(low)];
+  const double dx = lx - tu.x, dy = ly - tu.y, dist = std::hypot(dx, dy);
+  if (dist < IK_EPS) return false;
+  const double fx = tu.scaleX < 0 ? -1 : 1, fy = tu.scaleY < 0 ? -1 : 1, sense = fx * fy;
+  const double mean = std::sqrt(std::fabs(tu.scaleX * tu.scaleY));
+  const double c1x = tu.scaleX * tl.x, c1y = tu.scaleY * tl.y;
+  const double ex = k.tip >= 0 ? pose.applied[size_t(k.tip)].x : 0, ey = k.tip >= 0 ? pose.applied[size_t(k.tip)].y : 0;
+  const double c2x = mean * fx * tl.scaleX * ex, c2y = mean * fy * tl.scaleY * ey;
+  const double l1 = std::hypot(c1x, c1y), l2 = std::hypot(c2x, c2y);
+  const double th1 = std::atan2(c1y, c1x), th2 = std::atan2(c2y, c2x), aim = std::atan2(dy, dx);
+  const double b0 = sense * tl.rotation * RAD;
+  double a = 0, b = b0;
+  if (l1 < IK_EPS && l2 < IK_EPS) return false;
+  if (l2 < IK_EPS) a = aim - th1;            // no effector: the child origin aims at the target
+  else if (l1 < IK_EPS) a = aim - th2 - b0;  // child on the upper origin: one rotation reaches
+  else {
+    const double side = (bendPositive ? 1 : -1) * (pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1);
+    const double cosine = std::clamp((dist * dist - l1 * l1 - l2 * l2) / (2 * l1 * l2), -1.0, 1.0);
+    const double bend = side * std::acos(cosine);
+    const double first = aim - std::atan2(l2 * std::sin(bend), l1 + l2 * std::cos(bend));
+    a = first - th1;
+    b = bend + th1 - th2;
+  }
+  tu.rotation = blendAngle(tu.rotation, a * DEG, mix);
+  tl.rotation = blendAngle(tl.rotation, sense * b * DEG, mix);
+  return true;
+}
+void applyIk(const Rig& rig, Pose& pose) {
+  if (rig.ik.empty() || pose.world.size() != rig.bones.size() || pose.bones.size() != rig.bones.size()) return;
+  pose.applied = pose.bones;
+  for (int ci : rig.ikOrder) {
+    const IkConstraint& k = rig.ik[size_t(ci)];
+    const double mix = size_t(ci) < pose.ikMix.size() ? std::clamp(pose.ikMix[size_t(ci)], 0.0, 1.0) : k.mix;
+    const bool bend = size_t(ci) < pose.ikBend.size() ? pose.ikBend[size_t(ci)] != 0 : k.bendPositive;
+    if (!(mix > 0) || k.target < 0 || k.bones.empty() || k.bones[0] < 0) continue;
+    const double tx = pose.world[size_t(k.target)].e, ty = pose.world[size_t(k.target)].f;
+    const bool solved = k.bones.size() == 1 ? solveAim(rig, pose, k, tx, ty, mix) : solveTwoBone(rig, pose, k, tx, ty, mix, bend);
+    if (!solved) continue;
+    // Later constraints see this one's result (a spine solved before an arm moves the shoulder).
+    for (int i : k.affected) {
+      const auto& t = pose.applied[size_t(i)];
+      const Affine local = Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+      const int p = rig.bones[size_t(i)].parentIndex;
+      pose.world[size_t(i)] = p < 0 ? local : pose.world[size_t(p)] * local;
+    }
+  }
 }
 
 Pose samplePose(const Rig& rig, int clip, double timeMs, const Look& look) {
@@ -131,6 +232,7 @@ Pose samplePose(const Rig& rig, int clip, double timeMs, const Look& look) {
   // The sampled clip plays as the base track, so the expression applies after it (Instance::pose rule).
   if (look.expressions) applyExpression(rig, expression, pose);
   computeWorld(rig, pose);
+  if (look.ik) applyIk(rig, pose);
   return pose;
 }
 
@@ -408,7 +510,9 @@ Pose Instance::pose() const {
     } else pose = to;
   }
   if (!expressed) applyExpression(*rig_, expression, pose);
+  // Order of operations (every runtime and the editor): tracks -> expression -> world -> IK.
   computeWorld(*rig_, pose);
+  applyIk(*rig_, pose);
   return pose;
 }
 

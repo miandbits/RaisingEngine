@@ -40,6 +40,12 @@ struct EditResult {
  * bone, x?..scaleY? (null drops a channel) | remove} captureExpression {id, name?, clip?,
  * timeMs?, slots?, bones?, from?, replace?}. Expression keys: setKey {target:"rig",
  * property:"expression", value: id|null} (step only).
+ * IK (plugin 1.3.0): addIk {id?, name?, bones, target? | createTarget (+ targetId?, targetParent?),
+ * mix?, bendPositive?, order?} setIk {ik, name?, mix?, bendPositive?, order?, target?, bones?}
+ * renameIk {ik, id?, name?} (renames ik:<id> tracks) deleteIk {ik, deleteTarget?} bakeIk {clip,
+ * timeMs, ik?, disable?}; keys: setKey {target:"ik:<id>", property: mix (0..1) | bendPositive (bool,
+ * step)}. reparentBone refuses to break a constraint; deleteBone of a chain/target bone needs
+ * cascade and removes the constraint.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

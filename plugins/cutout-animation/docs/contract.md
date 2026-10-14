@@ -76,6 +76,74 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   drawing. `look.expressions = false` gives the raw keyable values (the editor's properties,
   K and drags use them so a previewed expression never gets baked into keys).
 
+## IK constraints (plugin 1.3.0)
+
+* `ik: [{id, name?, bones, target, mix?, bendPositive?, stretch?, order?}]` (optional; absent =
+  no constraints). `bones` is the chain, parent first:
+  * **1 bone = aim**: the bone is rotated so its local **+x axis** points at the target (a
+    negative `scaleX` flips that axis, like the drawing does).
+  * **2 bones = two-bone limb** `[upper, lower]`, `lower` a **direct child** of `upper`. Bones
+    have no length in this format, so the **effector** is the origin of `lower`'s **first child
+    bone** in `bones` array order (hand, foot). Without a child the limb degenerates to aiming
+    `lower`'s origin at the target. `upper` and `lower` are rotated (law of cosines).
+  * `target`: the bone whose **world origin** the effector reaches. It must not be a chain bone
+    or a descendant of one (solving would move it).
+  * `mix` 0..1 (default 1): `rotation = animated + shortestDelta(animated → solved) · mix`, so
+    0 = forward kinematics, 1 = fully solved, 0.5 = halfway (the short way round, ±180°).
+  * `bendPositive` (default true): the side a two-bone limb bends to **on screen** —
+    `cross(lower − upper, effector − lower) > 0`, i.e. the lower link turns clockwise from the
+    upper link on a y-down screen. A mirrored parent space keeps the on-screen side.
+  * `order` integer −1000..1000 (default 0): constraints are solved in ascending `order`, ties
+    in array order. `stretch` is accepted and **not applied** in 1.3.0 (warning
+    `ANIM_IK_STRETCH`).
+* **Order of operations** (all runtimes, `samplePose`, onion skin, trail and drawing): tracks
+  0..15 (with the expression layer between track 0 and 1) → world transforms → **IK
+  constraints in order**, each reading the current world of its target and chain parent and
+  recomputing the world of its chain and every descendant → draw list. A constraint solved
+  later sees the result of earlier ones (a spine solved before an arm moves the shoulder).
+* Solving happens in the parent space of the chain's first bone, where its local rotation acts
+  rigidly: the result is **exact for any ancestor transform** (rotation, non-uniform scale,
+  skew, mirror). A uniformly scaled or mirrored upper bone and any scale of the lower bone are
+  exact too; an upper bone with non-uniform scale uses the geometric mean for the lower link
+  (approximate, as in Spine). Unreachable targets clamp: too far = the limb points straight at
+  the target, too close = folded. Zero distances/links leave the pose unchanged (no NaN).
+  Results depend only on clip time and data, so they are frame-rate independent and the
+  native and Wasm runtimes run the same code (`core/src/runtime.cpp`, `applyIk`).
+* `Pose.bones` stay the **animated (keyable) values**; `Pose.world` includes the constraints and
+  `Pose.applied` holds the solved local values. The editor's properties, K and drags use the
+  animated values (a constraint never bakes itself into keys); `bakeIk` does that on request.
+  The host `sample` reply adds `ik: {<id>: {mix, bendPositive}}` and `appliedRotation` per bone
+  for rigs that have constraints (other rigs keep the 1.2 reply shape).
+* Keys: track `{"target": "ik:<id>", "property": "mix" | "bendPositive"}`. `mix` keys are
+  numeric 0..1 with every interp (curves too); `bendPositive` keys are booleans and always step
+  (`bezier` → `ANIM_INTERP`, a non-boolean value → `ANIM_KEY_VALUE`). `ik:` tracks only key
+  these two properties and they are only keyed there (`ANIM_PROPERTY`); an unknown id is
+  `ANIM_TARGET_MISSING`. Cross-fades lerp `mix` and switch `bendPositive` halfway.
+* Validation: `ANIM_IK_DUP_ID`, `ANIM_IK_BONE_MISSING` (chain or target), `ANIM_IK_CHAIN` (not
+  1–2 bones, or not a direct parent → child pair), `ANIM_IK_TARGET` (target in or below the
+  chain), `ANIM_IK_MIX` (setup or key out of 0..1), `ANIM_IK_CYCLE` (constraints that move each
+  other's target or chain base: no order can satisfy them; a constraint moves every strict
+  descendant of its chain bones), warning `ANIM_IK_ORDER` (a dependent constraint is solved
+  first; the order is honoured anyway), `ANIM_STRUCTURE` for wrong field types.
+* Editing ops (`edit`; each is one undo step in the editor):
+  * `addIk {id?, name?, bones, target? | createTarget: true (+ targetId?, targetParent?), mix?,
+    bendPositive?, order?}`: `createTarget` adds a bone where the chain end is shown now (two
+    bones: the effector; aim: on the bone's x axis at the first child's distance or 60 px),
+    under the chain's top-level ancestor; without `bendPositive` the current bend side is kept,
+    so creating a constraint never moves the limb. `extra.ik`, `extra.target`.
+  * `setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, bones?}`,
+    `renameIk {ik, id?, name?}` (renames `ik:<id>` tracks; `extra.tracks`),
+    `deleteIk {ik, deleteTarget?}` (removes its tracks; `deleteTarget` also deletes the target
+    bone when no other constraint or part uses it), `bakeIk {clip, timeMs, ik?, disable?}` (keys
+    the solved rotation of every chain bone at `timeMs`; `disable` also keys `mix` 0 there).
+  * Hierarchy edits keep references consistent: `reparentBone` is refused when it would break a
+    constraint (chain no longer adjacent, target moved into a chain); `deleteBone` of a chain or
+    target bone needs `cascade` and then removes those constraints and their tracks (warning
+    `ANIM_IK_REMOVED`); `setPivot` keeps ids (the chain simply solves around the new origin).
+  * Deleting the last constraint removes the `ik` list (documents keep the 1.2 shape).
+* Editor-only: the constraint shown in the IK page, the target crosshair and the highlighted
+  chain on the canvas never reach documents.
+
 ## Clips and keys
 
 * Keys store **absolute** values (not offsets from the setup pose). Editing the setup pose
@@ -154,7 +222,8 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   Documents with `skins`, `expressions`, rig expression tracks or the controller fields
   `defaultSkin`/`defaultExpression`/binding `skin`/`expression` need plugin 1.2.0; documents
   without them are unchanged (editing ops never add empty `skins`/`expressions` lists, and
-  deleting the last skin or expression removes the list).
+  deleting the last skin or expression removes the list). Documents with `ik` or `ik:<id>` tracks
+  need plugin 1.3.0; without them they are unchanged.
 * Skin/expression editing ops (`edit`, plugin 1.2.0; each is one undo step in the editor):
   * `addSkin {id, name?, from?}` (`from` copies another skin's attachments),
     `duplicateSkin {skin, id, name?}`, `renameSkin {skin, id?, name?}` and
@@ -194,7 +263,8 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * Tracks 0..15 applied in ascending order; a higher track overrides only the properties
   its clip keys. Track 0 is the base action; controller `layers` (e.g. blink) run on 1..15.
   The active expression (plugin 1.2.0) applies between track 0 and track 1; the instance skin
-  resolves every attachment name at draw time.
+  resolves every attachment name at draw time; IK constraints (plugin 1.3.0) are solved on the
+  world transforms after all tracks.
 * `play` replaces the track entry. If the mix duration (`mix.pairs` → `mix.defaultMs`, or
   explicit) is > 0, the old entry keeps animating and is cross-faded linearly; attachments
   switch at the halfway point. Events and completions of the outgoing entry are suppressed.
@@ -256,7 +326,7 @@ so it cannot duplicate a game effect.
 
 `playerPresentation.extensions["cutout-animation"]` stores per mounted instance:
 controller ref, active clip per track, binding, `then`, `stopOn`, speed, and (plugin 1.2.0)
-`skin` and `expression`.
+`skin` and `expression`. IK adds no state: constraint values come from the rig and the clips.
 
 * Policy: skin and expression are both restored. An id removed since the save falls back to
   the controller default; saves without these fields (1.x) keep the current look.

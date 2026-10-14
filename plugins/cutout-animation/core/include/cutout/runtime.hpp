@@ -52,13 +52,20 @@ struct DrawItem {
  * Pose: channel values plus the skin its attachment names resolve in (-1 = default list only)
  * and the expression that was applied (-1 = none). Drawing always looks attachments up with
  * Rig::attachment(slot, name, pose.skin).
+ * IK (plugin 1.3.0): `bones` stay the animated (keyable) local values; `world` includes the
+ * solved constraints and `applied` holds the local values it was built from (empty when the rig
+ * has no IK: then it equals `bones`). ikMix/ikBend are the sampled constraint settings.
  */
 struct Pose {
   std::vector<Transform> bones; std::vector<Affine> world; std::vector<std::optional<std::string>> attachments; std::vector<double> alpha;
   int skin = -1, expression = -1;
+  std::vector<double> ikMix; std::vector<char> ikBend;
+  std::vector<Transform> applied;
+  const Transform& local(size_t bone) const { return applied.size() > bone ? applied[bone] : bones[bone]; }
 };
-/** Skin/expression for samplePose. expressions=false skips every expression (raw clip values). */
-struct Look { int skin = -1; int expression = -1; bool expressions = true; };
+/** Skin/expression for samplePose. expressions=false skips every expression (raw clip values);
+ *  ik=false skips the IK constraints (world = plain forward kinematics of the animated values). */
+struct Look { int skin = -1; int expression = -1; bool expressions = true; bool ik = true; };
 
 class Instance {
  public:
@@ -125,5 +132,11 @@ class Instance {
 Pose samplePose(const Rig& rig, int clip, double timeMs, const Look& look = {});
 /** Apply expression `index` (>= 0) onto `pose`: listed slots/bone channels are set absolutely. */
 void applyExpression(const Rig& rig, int index, Pose& pose);
+/**
+ * Solve the rig's IK constraints on a pose whose world matrices are computed (Rig::ikOrder; each
+ * rotates its chain so the effector reaches the target's world origin, blended by mix) and
+ * recompute the world of every bone they move. Fills pose.applied. No-op without constraints.
+ */
+void applyIk(const Rig& rig, Pose& pose);
 double sampleTrack(const Track& track, double timeMs, double fallback);
 }  // namespace cutout

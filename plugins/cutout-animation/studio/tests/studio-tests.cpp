@@ -1292,6 +1292,164 @@ class StudioTests : public QObject {
     panel->setMode(CutoutPanel::Mode::Setup);
   }
 
+  void ikConstraints() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setTool(RigCanvas::Move);
+    pump();
+    // An arm: shoulder -> elbow -> wrist (each bone 60 px above its parent), elbow bent 40°.
+    panel->selectItem("bone:root");
+    answers = {"shoulder"};
+    QVERIFY(gesture("add shoulder", 1, [&] { click("cutoutAddBone"); }));
+    answers = {"elbow"};
+    QVERIFY(gesture("add elbow", 1, [&] { click("cutoutAddBone"); }));
+    answers = {"wrist"};
+    QVERIFY(gesture("add wrist", 1, [&] { click("cutoutAddBone"); }));
+    panel->selectItem("bone:elbow");
+    QVERIFY(gesture("bend the elbow", 1, [&] { setSpin("cutoutPropRotation", 40); }));
+    auto solved = [&](const Json& data) {
+      const cutout::Rig r = cutout::parseRig("hero", data);
+      return std::make_pair(r, cutout::samplePose(r, -1, 0));
+    };
+    auto worldOf = [&](const Json& data, const char* bone) {
+      const auto [r, pose] = solved(data);
+      const auto& w = pose.world[size_t(r.boneIndex(bone))];
+      return QPointF(w.e, w.f);
+    };
+    auto bendSide = [&](const Json& data) {
+      const QPointF s = worldOf(data, "shoulder"), e = worldOf(data, "elbow"), w = worldOf(data, "wrist");
+      return (e.x() - s.x()) * (w.y() - e.y()) - (e.y() - s.y()) * (w.x() - e.x());
+    };
+    auto closeTo = [](QPointF a, QPointF b, double eps = 1e-6) { return std::hypot(a.x() - b.x(), a.y() - b.y()) <= eps; };
+    const QPointF wristBefore = worldOf(rig(), "wrist");
+    const double sideBefore = bendSide(rig());
+    // 팔·다리 IK from the selected forearm bone: one edit, a target bone at the wrist, nothing jumps.
+    QVERIFY(gesture("new two-bone IK", 1, [&] { click("cutoutNewIk"); }));
+    QCOMPARE(rig()["ik"].size(), size_t(1));
+    QVERIFY(rig()["ik"][0]["bones"] == Json::array({"shoulder", "elbow"}));
+    const std::string target = rig()["ik"][0]["target"].get<std::string>();
+    QCOMPARE(qs(target), QString("elbow-target"));
+    QCOMPARE(panel->ikId(), QString("elbow-ik"));
+    QCOMPARE(panel->selection(), QString("bone:elbow-target"));
+    QVERIFY(closeTo(worldOf(rig(), target.c_str()), wristBefore) && closeTo(worldOf(rig(), "wrist"), wristBefore));
+    QVERIFY(bendSide(rig()) * sideBefore > 0);  // the inferred bend keeps the elbow where it was
+    QCOMPARE(find<QListWidget>("cutoutIkList")->count(), 1);
+    QVERIFY(find<QWidget>("cutoutIkMix")->isEnabled() && !find<QWidget>("cutoutIkKey")->isEnabled());  // keys only in Animate mode
+    // The target is drawn as an orange crosshair (deselected: the selection color would win).
+    const cutout::Rig parsed = cutout::parseRig("hero", rig());
+    QVERIFY(panel->canvas()->isIkTarget(parsed.boneIndex(target)) && !panel->canvas()->isIkTarget(parsed.boneIndex("wrist")));
+    panel->selectItem("");
+    pump();
+    const QPointF at = panel->canvas()->rigToWidget(world(target));
+    const QImage shot = panel->canvas()->grab().toImage();
+    const qreal dpr = shot.devicePixelRatio();
+    int orange = 0;
+    for (int dx = 9; dx <= 11; dx++)
+      for (int dy = -1; dy <= 1; dy++) {
+        const QColor c = shot.pixelColor(int((at.x() + dx) * dpr), int((at.y() + dy) * dpr));
+        orange += c.red() > 200 && c.green() > 80 && c.green() < 160 && c.blue() < 90;
+      }
+    QVERIFY2(orange > 0, "IK target crosshair");
+    // Drag the target in Setup mode: the arm follows live (preview only), release = ONE edit.
+    const QPointF shoulderAt = panel->canvas()->rigToWidget(world("shoulder"));
+    const QPointF to = at + (shoulderAt - at) * 0.3 + QPointF(6, 0);
+    const int editsBefore = host.edits;
+    mouse(panel->canvas(), QEvent::MouseButtonPress, at, Qt::LeftButton, Qt::LeftButton);
+    for (int i = 1; i <= 4; i++) mouse(panel->canvas(), QEvent::MouseMove, at + (to - at) * (i / 4.0), Qt::NoButton, Qt::LeftButton);
+    QCOMPARE(host.edits, editsBefore);
+    QVERIFY(closeTo(worldOf(panel->displayData(), "wrist"), worldOf(panel->displayData(), target.c_str()), 1e-6));
+    QVERIFY(!closeTo(worldOf(panel->displayData(), "wrist"), wristBefore, 1));
+    QVERIFY(gesture("drag IK target (setup)", 1, [&] { mouse(panel->canvas(), QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton); }));
+    QCOMPARE(host.edits, editsBefore + 1);
+    QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
+    const QPointF moved = worldOf(rig(), target.c_str());
+    QVERIFY(!closeTo(moved, wristBefore, 1) && closeTo(worldOf(rig(), "wrist"), moved, 1e-6));  // the limb follows the target
+    for (const auto& b : rig()["bones"]) if (b["id"] == "elbow") QCOMPARE(b["rotation"].get<double>(), 40.0);  // ... the arm's own data untouched
+    // Flip the bend (Setup: the constraint's setup value).
+    panel->selectIk("elbow-ik");
+    QVERIFY(gesture("toggle bend", 1, [&] { click("cutoutIkBend"); }));
+    QCOMPARE(rig()["ik"][0]["bendPositive"].get<bool>(), false);
+    QVERIFY(bendSide(rig()) * sideBefore < 0 && closeTo(worldOf(rig(), "wrist"), moved, 1e-6));
+    // Animate mode: dragging the target keys its position when K is pressed (auto-key off).
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("joy");
+    panel->setAutoKey(false);
+    panel->setPlayhead(200);
+    pump();
+    QVERIFY(find<QWidget>("cutoutIkKey")->isEnabled() && find<QWidget>("cutoutBakeIk")->isEnabled());
+    const QPointF from = panel->canvas()->rigToWidget(moved);
+    QVERIFY(gesture("drag target in animate (pending)", 0, [&] { drag(panel->canvas(), from, from + QPointF(-8, 10)); }));
+    QVERIFY(panel->hasPending());
+    QVERIFY(closeTo(worldOf(panel->displayData(), "wrist"), worldOf(panel->displayData(), target.c_str()), 1e-6));
+    QVERIFY(gesture("K keys the target", 1, [&] { QVERIFY(panel->keySelected()); }));
+    QVERIFY(!keyOf("joy", "bone:elbow-target", "x", 200).is_null() && !keyOf("joy", "bone:elbow-target", "y", 200).is_null());
+    // Mix and bend become keys of the constraint (auto-key on: each change commits).
+    panel->setAutoKey(true);
+    panel->setPlayhead(100);
+    QVERIFY(gesture("mix key", 1, [&] {
+      auto* mix = find<QDoubleSpinBox>("cutoutIkMix");
+      mix->setValue(0.5);
+      Q_EMIT mix->editingFinished();
+    }));
+    QCOMPARE(keyOf("joy", "ik:elbow-ik", "mix", 100)["value"].get<double>(), 0.5);
+    QCOMPARE(rig()["ik"][0].value("mix", 1.0), 1.0);  // the setup value stays
+    QVERIFY(gesture("bend key", 1, [&] { click("cutoutIkBend"); }));
+    QCOMPARE(keyOf("joy", "ik:elbow-ik", "bendPositive", 100)["value"].get<bool>(), true);
+    QVERIFY(!keyOf("joy", "ik:elbow-ik", "bendPositive", 100).contains("interp"));
+    pump();
+    QVERIFY(rowOf("ik:elbow-ik", "mix") >= 0 && rowOf("ik:elbow-ik", "bendPositive") >= 0);
+    QVERIFY(panel->dopesheet()->rows()[rowOf("ik:elbow-ik", "bendPositive")].attachment);  // drawn as step keys
+    QVERIFY(panel->dopesheet()->rows()[rowOf("ik:elbow-ik", "mix")].label.contains("혼합"));
+    // Clicking an IK row shows its constraint (IK page) and its mix curve in the graph.
+    panel->dopesheet()->selectKey(rowOf("ik:elbow-ik", "mix"), 100);
+    panel->dopesheet()->onRowSelected(rowOf("ik:elbow-ik", "mix"));
+    pump();
+    QVERIFY(panel->selection().isEmpty() && panel->ikId() == "elbow-ik");
+    QCOMPARE(find<QTabWidget>("cutoutLookTabs")->currentIndex(), 2);
+    QVERIFY(!panel->graph()->channels().isEmpty() && panel->graph()->channels()[0].property == "mix");
+    {
+      const auto [r, pose] = solved(rig());
+      const cutout::Pose at100 = cutout::samplePose(r, r.clipIndex("joy"), 100);
+      QCOMPARE(at100.ikMix[0], 0.5);
+    }
+    panel->setPlayhead(300);
+    QVERIFY(gesture("IK key", 1, [&] { click("cutoutIkKey"); }));
+    QVERIFY(!keyOf("joy", "ik:elbow-ik", "mix", 300).is_null() && !keyOf("joy", "ik:elbow-ik", "bendPositive", 300).is_null());
+    // Bake: the solved rotations become keys and mix goes to 0 there (the pose stays).
+    const auto bakeBefore = solved(rig());
+    const cutout::Pose solvedAt = cutout::samplePose(bakeBefore.first, bakeBefore.first.clipIndex("joy"), 300);
+    QVERIFY(gesture("bake IK", 1, [&] { click("cutoutBakeIk"); }));
+    QCOMPARE(keyOf("joy", "ik:elbow-ik", "mix", 300)["value"].get<double>(), 0.0);
+    {
+      const auto [r, pose] = solved(rig());
+      const cutout::Pose baked = cutout::samplePose(r, r.clipIndex("joy"), 300);
+      const size_t wrist = size_t(r.boneIndex("wrist"));
+      QVERIFY(std::hypot(baked.world[wrist].e - solvedAt.world[wrist].e, baked.world[wrist].f - solvedAt.world[wrist].f) < 1e-3);
+      QVERIFY(!keyOf("joy", "bone:shoulder", "rotation", 300).is_null() && !keyOf("joy", "bone:elbow", "rotation", 300).is_null());
+    }
+    undo();
+    QVERIFY(keyOf("joy", "bone:shoulder", "rotation", 300).is_null());
+    redo();
+    // Rename keeps the keys attached; delete (with its unused target) and undo.
+    answers = {"left-arm"};
+    QVERIFY(gesture("rename IK", 1, [&] { click("cutoutRenameIk"); }));
+    QCOMPARE(panel->ikId(), QString("left-arm"));
+    QVERIFY(!keyOf("joy", "ik:left-arm", "mix", 100).is_null() && keyOf("joy", "ik:elbow-ik", "mix", 100).is_null());
+    panel->setAutoKey(false);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    QVERIFY(gesture("delete IK", 1, [&] { click("cutoutDeleteIk"); }));
+    QVERIFY(!rig().contains("ik") && track("joy", "ik:left-arm", "mix") == nullptr && !cutout::setupWorld(rig()).count("elbow-target"));
+    undo();
+    QCOMPARE(rig()["ik"][0]["id"].get<std::string>(), std::string("left-arm"));
+    // Hierarchy edits that would break the constraint are refused (no edit, a status instead).
+    QVERIFY(gesture("reparent breaking the chain", 0, [&] { QVERIFY(!panel->requestReparent("elbow", "root")); }));
+    QVERIFY(panel->status().contains("IK"));
+    QVERIFY(gesture("target into its own chain", 0, [&] { panel->selectIk("left-arm"); QVERIFY(!panel->setIkTarget("wrist")); }));
+  }
+
   void paintElementDrawsPixels() {
     QImage img(300, 450, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);

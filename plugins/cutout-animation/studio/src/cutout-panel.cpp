@@ -26,9 +26,10 @@ const Json& listOf(const Json& data, const char* key) {
 }
 Json batch(const std::vector<Json>& ops) { return ops.size() == 1 ? ops[0] : Json{{"op", "batch"}, {"operations", ops}}; }
 QString capital(const QString& s) { return s.left(1).toUpper() + s.mid(1); }
-const char* NUMERIC_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "alpha"};
+const char* NUMERIC_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "alpha", "mix"};
 QString propertyLabel(const QString& property) {
-  static const QMap<QString, QString> names = {{"x", "X"}, {"y", "Y"}, {"rotation", "회전"}, {"scaleX", "크기 X"}, {"scaleY", "크기 Y"}, {"alpha", "투명도"}, {"attachment", "그림"}};
+  static const QMap<QString, QString> names = {{"x", "X"}, {"y", "Y"}, {"rotation", "회전"}, {"scaleX", "크기 X"}, {"scaleY", "크기 Y"}, {"alpha", "투명도"}, {"attachment", "그림"},
+                                               {"mix", "혼합"}, {"bendPositive", "굽힘"}};
   return names.value(property, property);
 }
 std::string interpOf(const Json& key) { return key.contains("interp") && key.at("interp").is_string() ? key.at("interp").get<std::string>() : "linear"; }
@@ -246,7 +247,7 @@ QWidget* spacer() {
 
 // Spine-like single layout, the same in the host workspace and in an old host's dock:
 //   mode bar (always visible)
-//   [ left: 계층 / 그리기 순서 / 캐릭터 | center: tools + canvas | right: 속성 · 키 / 스킨 · 표정 / 진단 ]
+//   [ left: 계층 / 그리기 순서 / 캐릭터 | center: tools + canvas | right: 속성 · 키 / 스킨 · 표정 · IK / 진단 ]
 //   [ bottom tabs: 애니메이션 (clips | transport + dopesheet/graph | mix) · 게임 연결 ]
 // Every pane is a splitter child with a small minimum: lists scroll and tool rows overflow
 // instead of imposing a large minimum height/width on the window.
@@ -554,7 +555,96 @@ QWidget* CutoutPanel::buildLooks() {
   expressions->addWidget(expressionTable_, 2);
   lookTabs_->addTab(skinPage, "스킨");
   lookTabs_->addTab(expressionPage, "표정");
-  return section("스킨 · 표정", "cutoutSectionLooks", lookTabs_);
+  // IK shares the section as a third page: one more section would not fit the 1280x720 minimum.
+  lookTabs_->addTab(buildIk(), "IK");
+  return section("스킨 · 표정 · IK", "cutoutSectionLooks", lookTabs_);
+}
+
+// IK constraints (plugin 1.3.0): the list, chain tools and the selected constraint's values, as the
+// "IK" page of the 스킨 · 표정 · IK section (it scrolls like the look pages).
+QWidget* CutoutPanel::buildIk() {
+  auto* inner = new QWidget;
+  auto* layout = new QVBoxLayout(inner);
+  layout->setContentsMargins(0, 2, 0, 0);
+  layout->setSpacing(2);
+  auto button = [this](QToolBar* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
+    auto* b = new QPushButton(text);
+    b->setObjectName(name);
+    b->setToolTip(tip);
+    connect(b, &QPushButton::clicked, this, [fn] { fn(); });
+    row->addWidget(b);
+    return b;
+  };
+  ikList_ = new QListWidget;
+  ikList_->setObjectName("cutoutIkList");
+  ikList_->setMinimumHeight(24);
+  ikList_->setToolTip("IK 제약 · 캔버스의 대상 본(✛)을 끌면 팔·다리가 따라옵니다. 고른 제약의 사슬은 캔버스에 주황색으로 강조됩니다.");
+  connect(ikList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
+    if (!filling_ && item) selectIk(item->data(Qt::UserRole).toString());
+  });
+  auto* tools = toolRow("cutoutIkTools");
+  button(tools, "팔·다리 IK", "cutoutNewIk", "선택한 본(아래팔·정강이처럼 사슬의 끝)과 그 부모로 두 본 IK를 만들고, 손·발 자리에 대상 본(✛)을 만듭니다.\n끝점은 선택한 본의 첫 자식 본(손·발)입니다.", [this] { return newIk(false); });
+  button(tools, "조준 IK", "cutoutNewAimIk", "선택한 본의 x축(→)이 대상 본을 향하게 하는 한 본 IK를 만듭니다(눈·머리·무기 조준).", [this] { return newIk(true); });
+  button(tools, "이름 변경", "cutoutRenameIk", "IK ID를 바꿉니다. 이 IK의 키(혼합·굽힘)도 함께 바뀝니다.", [this] { return renameIk(); });
+  button(tools, "삭제", "cutoutDeleteIk", "고른 IK와 그 키를 삭제합니다(다른 곳에서 쓰지 않는 대상 본도 함께).", [this] { return deleteIk(); });
+  auto* form = new QFormLayout;
+  form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  ikTarget_ = new QComboBox;
+  ikTarget_->setObjectName("cutoutIkTarget");
+  ikTarget_->setToolTip("사슬 끝이 닿으려는 본 · 사슬의 본이나 그 자손은 고를 수 없습니다.");
+  ikTarget_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  ikTarget_->setMinimumContentsLength(6);
+  connect(ikTarget_, &QComboBox::activated, this, [this] { if (!filling_) setIkTarget(ikTarget_->currentData().toString()); });
+  ikMix_ = new QDoubleSpinBox;
+  ikMix_->setObjectName("cutoutIkMix");
+  ikMix_->setRange(0, 1);
+  ikMix_->setDecimals(3);
+  ikMix_->setSingleStep(0.05);
+  ikMix_->setKeyboardTracking(false);
+  ikMix_->setToolTip("1 = IK가 자세를 완전히 정함 · 0 = 키로 만든 회전(FK) 그대로. 애니메이션 모드에서는 이 시간의 키가 됩니다.");
+  connect(ikMix_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (filling_ || std::fabs(ikMix_->value() - ikMix_->property("shown").toDouble()) < 5e-4) return;  // focus-out without change
+    setIkMix(ikMix_->value());
+  });
+  ikBend_ = new QCheckBox("양(+) 방향 · 시계 방향으로 굽힘");
+  ikBend_->setObjectName("cutoutIkBend");
+  ikBend_->setToolTip("팔꿈치·무릎이 굽는 쪽을 뒤집습니다(두 본 IK). 애니메이션 모드에서는 이 시간의 계단 키가 됩니다.");
+  connect(ikBend_, &QCheckBox::clicked, this, [this](bool on) { if (!filling_) setIkBend(on); });
+  ikOrder_ = new QSpinBox;
+  ikOrder_->setObjectName("cutoutIkOrder");
+  ikOrder_->setRange(-1000, 1000);
+  ikOrder_->setKeyboardTracking(false);
+  ikOrder_->setToolTip("작은 순서부터 풉니다. 다른 IK가 움직이는 본을 대상·사슬로 쓰는 IK는 더 큰 순서로 두세요.");
+  connect(ikOrder_, &QSpinBox::editingFinished, this, [this] {
+    if (!filling_ && ikOrder_->value() != ikOrder_->property("shown").toInt()) setIkOrder(ikOrder_->value());
+  });
+  form->addRow("대상 본 ✛", ikTarget_);
+  form->addRow("혼합 (mix)", ikMix_);
+  form->addRow("굽힘", ikBend_);
+  form->addRow("순서", ikOrder_);
+  auto* keyTools = toolRow("cutoutIkKeyTools");
+  QPushButton* key = button(keyTools, "IK 키", "cutoutIkKey", "애니메이션 모드: 이 시간에 고른 IK의 혼합·굽힘 키를 넣습니다.", [this] { return keyIk(); });
+  button(keyTools, "대상 선택", "cutoutIkSelectTarget", "고른 IK의 대상 본을 선택합니다(캔버스에서 끌어 옮기기).", [this] { return selectIkTarget(); });
+  QPushButton* bake = button(keyTools, "IK 결과를 키로 굽기", "cutoutBakeIk", "애니메이션 모드: IK가 만든 회전을 이 시간의 회전 키로 넣고 혼합을 0으로 키합니다.\n그 뒤로는 키(FK)로 다듬습니다.", [this] { return bakeIk(); });
+  ikInfo_ = new QLabel;
+  ikInfo_->setObjectName("cutoutIkInfo");
+  ikInfo_->setWordWrap(true);
+  ikInfo_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  ikInfo_->setStyleSheet("color:#a7b4c2;");
+  layout->addWidget(ikList_, 1);
+  layout->addWidget(tools);
+  layout->addLayout(form);
+  layout->addWidget(keyTools);
+  layout->addWidget(ikInfo_);
+  ikEditors_ = {ikTarget_, ikMix_, ikBend_, ikOrder_};
+  ikAnimateTools_ = {key, bake};
+  auto* scroll = new QScrollArea;
+  scroll->setObjectName("cutoutIkPage");
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setWidget(inner);
+  scroll->setMinimumHeight(30);
+  return scroll;
 }
 
 QWidget* CutoutPanel::buildWorkspace() {
@@ -969,6 +1059,13 @@ QWidget* CutoutPanel::buildAnimateTab() {
     if (row < 0 || row >= dopesheet_->rows().size()) return;
     // The rig expression row has no canvas item: show the expression list instead.
     if (dopesheet_->rows()[row].target == "rig") { if (lookTabs_) lookTabs_->setCurrentIndex(1); return; }
+    // An IK row: its constraint in the IK page; no canvas selection, so the graph shows its mix curve.
+    if (refKind(dopesheet_->rows()[row].target) == "ik") {
+      if (lookTabs_) lookTabs_->setCurrentIndex(2);
+      selectIk(refId(dopesheet_->rows()[row].target));
+      selectItem(QString());
+      return;
+    }
     selectItem(dopesheet_->rows()[row].target);
   };
   auto* scroll = new QScrollArea;
@@ -1612,6 +1709,7 @@ void CutoutPanel::refreshProperties() {
   keyButton_->setStyleSheet(state == "modified" ? "background:#f59e0b;color:#111;font-weight:bold;" : state == "keyed" ? "background:#16a34a;color:white;" : "");
   discardButton_->setEnabled(working_.has_value());
   filling_ = false;
+  refreshIk();  // mix/bend shown at the playhead follow every pose change
 }
 
 QString CutoutPanel::keyState() const {
@@ -1659,8 +1757,10 @@ void CutoutPanel::refreshDopesheet() {
       Dopesheet::Row row;
       row.target = qs(t.value("target", std::string()));
       row.property = qs(t.value("property", std::string()));
-      row.attachment = row.property == "attachment" || row.property == "expression";  // both switch (step)
-      row.label = row.target == "rig" ? QString("표정 (리그)") : QString("%1 %2").arg(refId(row.target), propertyLabel(row.property));
+      row.attachment = row.property == "attachment" || row.property == "expression" || row.property == "bendPositive";  // all switch (step)
+      row.label = row.target == "rig" ? QString("표정 (리그)")
+                  : refKind(row.target) == "ik" ? QString("IK %1 %2").arg(refId(row.target), propertyLabel(row.property))
+                                                : QString("%1 %2").arg(refId(row.target), propertyLabel(row.property));
       for (const auto& k : listOf(t, "keys")) {
         row.times << int(k.value("timeMs", int64_t(0)));
         row.step << (interpOf(k) == "step");
@@ -1714,7 +1814,7 @@ QString CutoutPanel::graphTarget() const {
 void CutoutPanel::refreshGraph() {
   // Numeric tracks of the selected bone/slot in the current clip, one colored channel each.
   static const QMap<QString, QColor> colors = {{"x", QColor("#f87171")}, {"y", QColor("#4ade80")}, {"rotation", QColor("#60a5fa")},
-                                               {"scaleX", QColor("#fb923c")}, {"scaleY", QColor("#c084fc")}, {"alpha", QColor("#e5e7eb")}};
+                                               {"scaleX", QColor("#fb923c")}, {"scaleY", QColor("#c084fc")}, {"alpha", QColor("#e5e7eb")}, {"mix", RigCanvas::ikColor()}};
   QVector<GraphEditor::Channel> channels;
   int duration = 1000;
   const QString target = graphTarget();
@@ -2223,6 +2323,17 @@ void CutoutPanel::selectController(const QString& id) {
 }
 void CutoutPanel::selectItem(const QString& ref) {
   selection_ = ref;
+  // Picking a chain or target bone shows its IK (the current one when it already uses the bone).
+  if (refKind(ref) == "bone") {
+    auto uses = [&](const Json& k) {
+      bool in = k.value("target", std::string()) == ss(refId(ref));
+      for (const auto& b : listOf(k, "bones")) in = in || (b.is_string() && b.get<std::string>() == ss(refId(ref)));
+      return in;
+    };
+    const Json* current = findIn(displayData(), "ik", ss(ikId_));
+    if (!current || !uses(*current))
+      for (const auto& k : listOf(displayData(), "ik")) if (uses(k)) { ikId_ = qs(k.value("id", std::string())); break; }
+  }
   {
     QSignalBlocker b1(tree_), b2(drawOrder_);
     filling_ = true;
@@ -2283,7 +2394,7 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   const QString name = QFileInfo(file).completeBaseName();
   if (file.startsWith(RIG_DIR)) selectRig(name);
   else if (file.startsWith(CONTROLLER_DIR)) { selectController(name); showControllerTab(); return; }
-  static const QRegularExpression re("/(bones|slots|clips|attachments|skins|expressions)/(\\d+)");
+  static const QRegularExpression re("/(bones|slots|clips|attachments|skins|expressions|ik)/(\\d+)");
   const auto m = re.match(pointer);
   if (!m.hasMatch()) return;
   const Json data = committedRig();
@@ -2291,6 +2402,11 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   const Json& list = listOf(data, ss(m.captured(1)).c_str());
   if (index >= list.size()) return;
   const QString kind = m.captured(1);
+  if (kind == "ik") {
+    lookTabs_->setCurrentIndex(2);
+    selectIk(qs(list[index].value("id", std::string())));
+    return;
+  }
   if (kind == "skins" || kind == "expressions") {
     lookTabs_->setCurrentIndex(kind == "skins" ? 0 : 1);
     if (kind == "skins") setPreviewSkin(qs(list[index].value("id", std::string())));
@@ -2418,9 +2534,16 @@ void CutoutPanel::importAndAddPart(const QString& file, const QString& slot, con
 bool CutoutPanel::deleteSelected() {
   const QString kind = refKind(selection_), id = refId(selection_);
   if (kind == "bone") {
-    int parts = 0;
+    int parts = 0, iks = 0;
     for (const auto& s : listOf(displayData(), "slots")) parts += qs(s.value("bone", std::string())) == id;
-    if (!askConfirm("본 삭제", QString("본 「%1」를 삭제할까요?%2 자식 본은 위 본으로 옮겨집니다.").arg(id, parts ? QString(" 붙어 있는 조각 %1개도 삭제됩니다.").arg(parts) : QString())))
+    for (const auto& k : listOf(displayData(), "ik")) {
+      bool uses = qs(k.value("target", std::string())) == id;
+      for (const auto& b : listOf(k, "bones")) uses = uses || (b.is_string() && qs(b.get<std::string>()) == id);
+      iks += uses;
+    }
+    if (!askConfirm("본 삭제", QString("본 「%1」를 삭제할까요?%2%3 자식 본은 위 본으로 옮겨집니다.")
+                                   .arg(id, parts ? QString(" 붙어 있는 조각 %1개도 삭제됩니다.").arg(parts) : QString(),
+                                        iks ? QString(" 이 본을 쓰는 IK %1개와 그 키도 삭제됩니다.").arg(iks) : QString())))
       return false;
     return runOps({{{"op", "deleteBone"}, {"bone", ss(id)}, {"cascade", true}}}, false);
   }
@@ -3442,6 +3565,174 @@ bool CutoutPanel::keyExpression() {
   if (!runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", "rig"}, {"property", "expression"}, {"timeMs", playheadMs_}, {"value", value}}}, false)) return false;
   setStatus(QString("「%1」 %2ms에 표정 키(%3)를 넣었습니다. 다음 키까지 이 표정이 유지됩니다(계단). 되돌리기: Ctrl+Z")
                 .arg(clipId_).arg(playheadMs_).arg(previewExpression_.isEmpty() ? QString("표정 없음") : previewExpression_));
+  return true;
+}
+
+// ---------------------------------------------------------------- IK constraints
+void CutoutPanel::refreshIk() {
+  if (!ikList_) return;
+  const bool wasFilling = filling_;
+  filling_ = true;
+  const Json data = displayData();
+  const Json& list = listOf(data, "ik");
+  if (!ikId_.isEmpty() && !findIn(data, "ik", ss(ikId_))) ikId_.clear();
+  if (ikId_.isEmpty() && !list.empty()) ikId_ = qs(list[0].value("id", std::string()));
+  {
+    QSignalBlocker block(ikList_);
+    ikList_->clear();
+    for (const auto& k : list) {
+      const QString id = qs(k.value("id", std::string())), name = qs(k.value("name", std::string()));
+      QStringList chain;
+      for (const auto& b : listOf(k, "bones")) chain << qs(b.is_string() ? b.get<std::string>() : std::string());
+      auto* item = new QListWidgetItem(QString("%1%2 · %3 %4 ✛ %5").arg(id, name.isEmpty() || name == id ? QString() : " (" + name + ")",
+                                                                       chain.size() == 1 ? QString("조준") : QString("팔·다리"), chain.join(" → "),
+                                                                       qs(k.value("target", std::string()))), ikList_);
+      item->setData(Qt::UserRole, id);
+      if (id == ikId_) ikList_->setCurrentItem(item);
+    }
+  }
+  const Json* k = findIn(data, "ik", ss(ikId_));
+  const bool animate = mode_ == Mode::Animate;
+  const int index = rig_ ? rig_->ikIndex(ss(ikId_)) : -1;
+  double mix = k ? k->value("mix", 1.0) : 1;
+  bool bend = k ? k->value("bendPositive", true) : true;
+  if (animate && index >= 0) {
+    // Animate mode shows the sampled (keyed) values at the playhead: editing them makes keys.
+    const cutout::Pose pose = currentPose(false);
+    if (size_t(index) < pose.ikMix.size()) { mix = pose.ikMix[size_t(index)]; bend = pose.ikBend[size_t(index)] != 0; }
+  }
+  {
+    QSignalBlocker b1(ikTarget_), b2(ikMix_), b3(ikBend_), b4(ikOrder_);
+    ikTarget_->clear();
+    std::set<std::string> chain;
+    if (k) for (const auto& b : listOf(*k, "bones")) if (b.is_string()) chain.insert(b.get<std::string>());
+    for (const auto& b : listOf(data, "bones")) {
+      const std::string id = b.value("id", std::string());
+      if (!chain.count(id)) ikTarget_->addItem(qs(id), qs(id));
+    }
+    ikTarget_->setCurrentIndex(k ? ikTarget_->findData(qs(k->value("target", std::string()))) : -1);
+    ikMix_->setValue(mix);
+    ikMix_->setProperty("shown", ikMix_->value());
+    ikBend_->setChecked(bend);
+    ikOrder_->setValue(k ? int(k->value("order", int64_t(0))) : 0);
+    ikOrder_->setProperty("shown", ikOrder_->value());
+  }
+  for (QWidget* w : ikEditors_) w->setEnabled(k);
+  for (QWidget* w : ikAnimateTools_) w->setEnabled(k && animate);
+  QString info = "본을 고른 뒤 「팔·다리 IK」(아래팔·정강이) 또는 「조준 IK」(머리·눈)를 누르세요. 캔버스의 ✛ 대상 본을 끌면 사슬이 따라옵니다.";
+  if (k && index >= 0) {
+    const auto& c = rig_->ik[size_t(index)];
+    const QString tip = c.bones.size() == 1 ? QString("x축(→)이 대상을 향함") : c.tip >= 0 ? QString("끝점: %1의 원점").arg(qs(rig_->bones[size_t(c.tip)].id))
+                                                                                      : QString("끝점 본 없음 · %1의 원점이 대상을 향함").arg(qs(rig_->bones[size_t(c.bones.back())].id));
+    info = tip + (animate ? " · 애니메이션 모드: 혼합·굽힘을 바꾸면 이 시간의 키가 되고, ✛를 끌면 대상 본 위치가 바뀝니다(K로 키)."
+                          : " · 조립 모드: 값은 IK의 기본값입니다. ✛를 끌면 대상 본의 기본 자세가 바뀝니다.");
+  }
+  ikInfo_->setText(info);
+  if (canvas_) canvas_->setSelectedIk(ikId_);
+  filling_ = wasFilling;
+}
+const Json* CutoutPanel::currentIk() const {
+  return ikId_.isEmpty() ? nullptr : findIn(displayData(), "ik", ss(ikId_));
+}
+bool CutoutPanel::newIk(bool aim) {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  const QString bone = selectedBone();
+  if (bone.isEmpty()) { setStatus(aim ? "조준할 본(머리·눈 등)을 먼저 선택하세요." : "IK 사슬의 끝이 될 본(아래팔·정강이 등)을 먼저 선택하세요.", true); return false; }
+  Json bones = Json::array();
+  if (!aim) {
+    const Json* b = findIn(displayData(), "bones", ss(bone));
+    const std::string parent = b && b->contains("parent") && b->at("parent").is_string() ? b->at("parent").get<std::string>() : std::string();
+    if (parent.empty()) { setStatus("두 본 IK에는 부모 본이 필요합니다. 위팔 아래의 아래팔처럼 부모가 있는 본을 고르거나 「조준 IK」를 쓰세요.", true); return false; }
+    bones.push_back(parent);
+  }
+  bones.push_back(ss(bone));
+  QString target;
+  const bool ok = runOps({{{"op", "addIk"}, {"bones", bones}, {"createTarget", true}}}, false, [&](const cutout::EditResult& r) {
+    // Before the commit rebuilds the view: the new constraint and its target are shown selected.
+    ikId_ = qs(r.extra.value("ik", std::string()));
+    target = qs(r.extra.value("target", std::string()));
+    selection_ = "bone:" + target;
+  });
+  if (!ok) return false;
+  setStatus(QString("IK 「%1」를 만들었습니다. 캔버스의 ✛ 「%2」를 끌면 %3. 되돌리기: Ctrl+Z")
+                .arg(ikId_, target, aim ? QString("「%1」가 그쪽을 바라봅니다").arg(bone) : QString("팔·다리가 따라옵니다")));
+  return true;
+}
+bool CutoutPanel::selectIk(const QString& id) {
+  if (!findIn(displayData(), "ik", ss(id))) { setStatus("없는 IK입니다: " + id, true); return false; }
+  ikId_ = id;
+  refreshIk();
+  return true;
+}
+bool CutoutPanel::selectIkTarget() {
+  const Json* k = currentIk();
+  if (!k) { setStatus("먼저 IK를 고르세요.", true); return false; }
+  selectItem("bone:" + qs(k->value("target", std::string())));
+  return true;
+}
+bool CutoutPanel::setIkMix(double mix) {
+  const Json* k = currentIk();
+  if (!k) { setStatus("먼저 IK를 만들거나 고르세요.", true); refreshIk(); return false; }
+  if (mode_ == Mode::Animate) {
+    if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); refreshIk(); return false; }
+    return runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", "ik:" + ss(ikId_)}, {"property", "mix"}, {"timeMs", playheadMs_}, {"value", mix}}}, true);
+  }
+  return runOps({{{"op", "setIk"}, {"ik", ss(ikId_)}, {"mix", mix}}}, false);
+}
+bool CutoutPanel::setIkBend(bool positive) {
+  const Json* k = currentIk();
+  if (!k) { setStatus("먼저 IK를 만들거나 고르세요.", true); refreshIk(); return false; }
+  if (mode_ == Mode::Animate) {
+    if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); refreshIk(); return false; }
+    return runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", "ik:" + ss(ikId_)}, {"property", "bendPositive"}, {"timeMs", playheadMs_}, {"value", positive}}}, true);
+  }
+  return runOps({{{"op", "setIk"}, {"ik", ss(ikId_)}, {"bendPositive", positive}}}, false);
+}
+bool CutoutPanel::setIkOrder(int order) {
+  if (!currentIk()) { setStatus("먼저 IK를 고르세요.", true); return false; }
+  return runOps({{{"op", "setIk"}, {"ik", ss(ikId_)}, {"order", order == 0 ? Json(nullptr) : Json(order)}}}, false);
+}
+bool CutoutPanel::setIkTarget(const QString& bone) {
+  if (!currentIk()) { setStatus("먼저 IK를 고르세요.", true); return false; }
+  if (bone.isEmpty()) return false;
+  return runOps({{{"op", "setIk"}, {"ik", ss(ikId_)}, {"target", ss(bone)}}}, false);
+}
+bool CutoutPanel::renameIk() {
+  const Json* k = currentIk();
+  if (!k) { setStatus("이름을 바꿀 IK를 고르세요.", true); return false; }
+  const QString id = askText("IK 이름 변경", "새 IK ID (이 IK의 키도 함께 바뀝니다)", ikId_);
+  if (id.isEmpty() || id == ikId_) return false;
+  return runOps({{{"op", "renameIk"}, {"ik", ss(ikId_)}, {"id", ss(id)}}}, false, [&](const cutout::EditResult&) { ikId_ = id; });
+}
+bool CutoutPanel::deleteIk() {
+  const Json* k = currentIk();
+  if (!k) { setStatus("삭제할 IK를 고르세요.", true); return false; }
+  const QString target = qs(k->value("target", std::string()));
+  if (!askConfirm("IK 삭제", QString("IK 「%1」와 그 키를 삭제할까요? 다른 곳에서 쓰지 않는 대상 본 「%2」도 함께 삭제됩니다. 사슬의 본은 그대로 남습니다.").arg(ikId_, target)))
+    return false;
+  const QString id = ikId_;
+  return runOps({{{"op", "deleteIk"}, {"ik", ss(id)}, {"deleteTarget", true}}}, false, [&](const cutout::EditResult&) {
+    ikId_.clear();
+    if (selection_ == "bone:" + target) selection_.clear();
+  });
+}
+bool CutoutPanel::keyIk() {
+  if (mode_ != Mode::Animate) { setStatus("IK 키는 애니메이션 모드에서 넣습니다.", true); return false; }
+  if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return false; }
+  if (!currentIk() || !rig_) { setStatus("키를 넣을 IK를 고르세요.", true); return false; }
+  const int index = rig_->ikIndex(ss(ikId_));
+  const cutout::Pose pose = currentPose(false);
+  if (index < 0 || size_t(index) >= pose.ikMix.size()) return false;
+  const std::string target = "ik:" + ss(ikId_);
+  return runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", target}, {"property", "mix"}, {"timeMs", playheadMs_}, {"value", pose.ikMix[size_t(index)]}},
+                 {{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", target}, {"property", "bendPositive"}, {"timeMs", playheadMs_}, {"value", pose.ikBend[size_t(index)] != 0}}}, false);
+}
+bool CutoutPanel::bakeIk() {
+  if (mode_ != Mode::Animate) { setStatus("IK 굽기는 애니메이션 모드에서 합니다(클립의 이 시간에 키를 넣음).", true); return false; }
+  if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return false; }
+  if (!currentIk()) { setStatus("구울 IK를 고르세요.", true); return false; }
+  if (!runOps({{{"op", "bakeIk"}, {"clip", ss(clipId_)}, {"timeMs", playheadMs_}, {"ik", ss(ikId_)}, {"disable", true}}}, false)) return false;
+  setStatus(QString("「%1」 %2ms: IK 회전을 키로 굽고 혼합을 0으로 키했습니다. 이 시간부터는 회전 키로 다듬으세요. 되돌리기: Ctrl+Z").arg(clipId_).arg(playheadMs_));
   return true;
 }
 

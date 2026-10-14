@@ -172,7 +172,14 @@ void ensureUniqueClip(Json& d, const Str& id) {
   if (!validId(id)) throw EditError("클립 ID는 소문자 영문·숫자·하이픈 형식이어야 합니다: " + id);
   if (findIndex(arr(d, "clips"), "id", id) >= 0) throw EditError("이미 있는 클립 ID입니다: " + id);
 }
-struct Target { bool bone; Str id; Property property; bool rig = false; };
+/** Keys of these properties always switch (no interp/curve is stored, copied or accepted). */
+bool stepOnly(const Str& property) { return property == "attachment" || property == "expression" || property == "bendPositive"; }
+Json& ikAt(Json& d, const Str& id) {
+  const int i = findIndex(listOr(d, "ik"), "id", id);
+  if (i < 0) throw EditError("없는 IK 제약입니다: " + id);
+  return d["ik"][size_t(i)];
+}
+struct Target { bool bone; Str id; Property property; bool rig = false; bool ik = false; };
 Target target(Json& d, const Json& op) {
   const Str target = reqStr(op, "target"), prop = reqStr(op, "property");
   const auto p = parseProperty(prop);
@@ -183,8 +190,16 @@ Target target(Json& d, const Json& op) {
     return {false, "", *p, true};
   }
   if (*p == Property::Expression) throw EditError("표정 키의 대상은 rig입니다(target: \"rig\").");
+  // IK constraint tracks (plugin 1.3.0): mix (numeric) and bendPositive (step, bool).
+  const bool ikProp = *p == Property::Mix || *p == Property::BendPositive;
+  if (target.rfind("ik:", 0) == 0) {
+    if (!ikProp) throw EditError("IK 트랙의 속성은 mix, bendPositive입니다.");
+    ikAt(d, target.substr(3));
+    return {false, target.substr(3), *p, false, true};
+  }
+  if (ikProp) throw EditError("mix·bendPositive 키의 대상은 ik:<id>입니다.");
   const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0;
-  if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id> 또는 slot:<id> 형식입니다.");
+  if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id>, slot:<id>, ik:<id> 또는 rig 형식입니다.");
   const Str id = target.substr(5);
   if (isBone) bone(d, id); else slot(d, id);
   const bool slotProp = *p == Property::Alpha || *p == Property::Attachment;
@@ -244,6 +259,36 @@ bool writeInterp(Json& key, const Json& op, const Json& track) {
   return true;
 }
 
+// ---- IK helpers (ops below) ----
+/** First IK error of `d` ("" = fine): hierarchy edits refuse to break a constraint. */
+Str ikProblem(const Json& d) {
+  if (listOr(d, "ik").empty()) return "";
+  for (const auto& x : validateRig(d)) if (x.severity == "error" && x.code.rfind("ANIM_IK_", 0) == 0) return x.message;
+  return "";
+}
+/** Constraint ids whose chain or target is `bone`. */
+std::vector<Str> ikUsing(const Json& d, const Str& bone) {
+  std::vector<Str> out;
+  for (const auto& k : listOr(d, "ik")) {
+    bool uses = optStr(k, "target") == bone;
+    for (const auto& b : listOr(k, "bones")) uses = uses || (b.is_string() && b.get<Str>() == bone);
+    if (uses) out.push_back(optStr(k, "id"));
+  }
+  return out;
+}
+Str refListOf(const std::vector<Str>& ids) { Str s; for (const auto& x : ids) s += (s.empty() ? "" : ", ") + x; return s; }
+/** Drop constraint `id` and its clip tracks (ik:<id>); the last one gone removes the list. */
+size_t removeIk(Json& d, const Str& id) {
+  auto& list = arr(d, "ik");
+  list.erase(list.begin() + findIndex(list, "id", id));
+  if (list.empty()) d.erase("ik");
+  size_t keys = 0;
+  for (auto& c : arr(d, "clips"))
+    for (const auto& t : arr(c, "tracks")) if (t.value("target", Str()) == "ik:" + id) keys += t.contains("keys") ? t.at("keys").size() : 0;
+  removeTracks(d, {"ik:" + id});
+  return keys;
+}
+
 // ---- Bones ----
 void addBone(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -292,6 +337,7 @@ void reparentBone(EditResult& r, const Json& op) {
   // Keep the world pose: new local = newParentWorld^-1 * oldWorld.
   writeT(b, decomposeNear(inv * world[id], readT(b), &skew));
   b["parent"] = parent.empty() ? Json(nullptr) : Json(parent);
+  if (const Str problem = ikProblem(d); !problem.empty()) throw EditError("IK 제약이 깨져 옮기지 않았습니다: " + problem);
   if (skew > 1e-6) warn(r, "ANIM_REPARENT_SKEW", "", "부모의 비균일 크기 때문에 기울임이 생겨 모양이 조금 달라질 수 있습니다.");
   if (targetHasKeys(d, "bone:" + id)) warn(r, "ANIM_REPARENT_KEYS", "", "이 본의 기존 애니메이션 키는 이전 부모 기준 값입니다. 필요하면 키를 다시 맞추세요.");
   r.affected.push_back("bone:" + id);
@@ -354,6 +400,15 @@ void deleteBone(EditResult& r, const Json& op) {
   for (auto& s : arr(d, "slots")) if (s.value("bone", Str()) == id) slotsOn.insert(s.value("id", Str()));
   if (!slotsOn.empty() && !op.value("cascade", false))
     throw EditError("이 본에 조각 " + std::to_string(slotsOn.size()) + "개가 붙어 있습니다. 함께 삭제하려면 조각도 삭제를 선택하세요.");
+  // IK constraints whose chain or target is this bone cannot survive it: removed with cascade.
+  const std::vector<Str> iks = ikUsing(d, id);
+  if (!iks.empty() && !op.value("cascade", false))
+    throw EditError("IK 제약 " + refListOf(iks) + "이(가) 이 본을 씁니다. 함께 삭제하려면 cascade를 켜세요.");
+  for (const auto& ik : iks) {
+    removeIk(d, ik);
+    r.affected.push_back("ik:" + ik);
+    warn(r, "ANIM_IK_REMOVED", "", "본을 지우면서 IK 제약 「" + ik + "」도 지웠습니다.");
+  }
   const Str parent = parentOf(b);
   auto world = setupWorld(d);
   const Affine inv = parent.empty() ? Affine{} : inverseOr(world[parent], "부모 본");
@@ -496,7 +551,10 @@ void setKey(EditResult& r, const Json& op) {
   if (t < 0 || t > duration) throw EditError("키 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
   if (!op.contains("value")) throw EditError("키 값이 필요합니다.");
   Json value = op.at("value");
-  if (tg.property == Property::Expression) {
+  if (tg.property == Property::BendPositive) {
+    if (value.is_number() && (value == 0 || value == 1)) value = value == 1;  // 0/1 from numeric tools
+    if (!value.is_boolean()) throw EditError("IK 굽힘 키 값은 true 또는 false입니다.");
+  } else if (tg.property == Property::Expression) {
     if (!value.is_null() && (!value.is_string() || findIndex(listOr(d, "expressions"), "id", value.get<Str>()) < 0))
       throw EditError("없는 표정입니다: " + (value.is_string() ? value.get<Str>() : value.dump()));
   } else if (tg.property == Property::Attachment) {
@@ -506,6 +564,7 @@ void setKey(EditResult& r, const Json& op) {
     const double v = num(op, "value", 0);
     if (!value.is_number()) throw EditError("키 값은 숫자여야 합니다.");
     if (tg.property == Property::Alpha && (v < 0 || v > 1)) throw EditError("투명도는 0..1이어야 합니다.");
+    if (tg.property == Property::Mix && (v < 0 || v > 1)) throw EditError("IK 혼합(mix)은 0..1이어야 합니다.");
     value = clean(v);
   }
   const Str targetText = op.at("target").get<Str>(), prop = op.at("property").get<Str>();
@@ -515,11 +574,11 @@ void setKey(EditResult& r, const Json& op) {
   for (auto& k : arr(*tr, "keys")) if (k.value("timeMs", int64_t(-1)) == t) key = &k;
   if (!key) { arr(*tr, "keys").push_back({{"timeMs", t}}); key = &arr(*tr, "keys").back(); }
   (*key)["value"] = value;
-  const bool stepOnly = tg.property == Property::Attachment || tg.property == Property::Expression;
-  if (stepOnly) { key->erase("interp"); key->erase("curve"); }
+  const bool step = stepOnly(prop);
+  if (step) { key->erase("interp"); key->erase("curve"); }
   sortKeys(*tr);
   // After sorting: "auto" handles read the neighbours including this key's new value.
-  if (!stepOnly) writeInterp(keyAt(*tr, t), op, *tr);
+  if (!step) writeInterp(keyAt(*tr, t), op, *tr);
   r.affected.push_back(keyRef(clipId, op, t));
 }
 Json& existingTrack(Json& d, const Json& op, Json*& clipOut) {
@@ -558,7 +617,7 @@ void moveKey(EditResult& r, const Json& op) {
 void setInterp(EditResult& r, const Json& op) {
   Json* c = nullptr;
   Json& tr = existingTrack(r.data, op, c);
-  if (op.value("property", Str()) == "attachment" || op.value("property", Str()) == "expression") throw EditError("첨부·표정 키는 항상 계단(step) 전환입니다.");
+  if (stepOnly(op.value("property", Str()))) throw EditError("첨부·표정·IK 굽힘 키는 항상 계단(step) 전환입니다.");
   const int64_t t = ms(op, "timeMs");
   if (!has(op, "preset")) reqStr(op, "interp");
   writeInterp(keyAt(tr, t), op, tr);
@@ -567,7 +626,7 @@ void setInterp(EditResult& r, const Json& op) {
 void setCurve(EditResult& r, const Json& op) {
   Json* c = nullptr;
   Json& tr = existingTrack(r.data, op, c);
-  if (op.value("property", Str()) == "attachment" || op.value("property", Str()) == "expression") throw EditError("첨부·표정 키는 항상 계단(step) 전환입니다.");
+  if (stepOnly(op.value("property", Str()))) throw EditError("첨부·표정·IK 굽힘 키는 항상 계단(step) 전환입니다.");
   const int64_t t = ms(op, "timeMs");
   Json& key = keyAt(tr, t);
   key["interp"] = "bezier";
@@ -688,7 +747,7 @@ void copyKeys(EditResult& r, const Json& op) {
       const int64_t t = k.value("timeMs", int64_t(-1));
       if (!p.times.count(t)) continue;
       Json e{{"target", p.target}, {"property", p.property}, {"offsetMs", t - lo}, {"value", k.contains("value") ? k.at("value") : Json(nullptr)}};
-      if (p.property != "attachment" && p.property != "expression") {
+      if (!stepOnly(p.property)) {
         e["interp"] = k.contains("interp") && k.at("interp").is_string() ? k.at("interp") : Json("linear");
         if (e["interp"] == "bezier") e["curve"] = curveJson(curveOf(k));
       }
@@ -1249,6 +1308,182 @@ void captureExpression(EditResult& r, const Json& op) {
   r.extra["expression"] = e;
 }
 
+// ---- IK constraints (plugin 1.3.0) ----
+/** Constraint pose (the setup pose, constraints applied) of rig data; refuses data that does not parse. */
+Pose ikSetupPose(const Json& d, Rig& rig) {
+  try { rig = parseRig("ik", d); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+  return samplePose(rig, -1, 0);
+}
+double optUnit(const Json& op, const char* k) {
+  const double v = num(op, k, 1);
+  if (v < 0 || v > 1) throw EditError("IK 혼합(mix)은 0..1이어야 합니다.");
+  return v;
+}
+/**
+ * addIk {id?, name?, bones: [parent?, child], target? | createTarget: true (+ targetId?,
+ * targetParent?), mix?, bendPositive?, order?}. createTarget adds a bone at the chain end as
+ * shown now (two-bone: the effector = the child's first child, else the child origin; aim: on
+ * the bone's x axis), under the chain's top-level ancestor, so the new constraint starts by
+ * holding the current pose; bendPositive defaults to the chain's current bend side.
+ */
+void addIk(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  if (!has(op, "bones") || !op.at("bones").is_array() || op.at("bones").empty() || op.at("bones").size() > 2)
+    throw EditError("bones는 본 1개(조준) 또는 2개(부모 → 자식) ID 배열입니다.");
+  std::vector<Str> chain;
+  for (const auto& b : op.at("bones")) { chain.push_back(b.is_string() ? b.get<Str>() : Str()); bone(d, chain.back()); }
+  if (chain.size() == 2 && parentOf(bone(d, chain[1])) != chain[0]) throw EditError("두 본 IK 사슬은 직접 부모 → 자식이어야 합니다: " + chain[0] + " → " + chain[1]);
+  Str id = has(op, "id") ? reqStr(op, "id") : slugId(chain.back() + "-ik", "ik");
+  if (!has(op, "id")) for (int n = 2; findIndex(listOr(d, "ik"), "id", id) >= 0; n++) id = slugId(chain.back() + "-ik-" + std::to_string(n), "ik");
+  ensureUniqueIn(d, "ik", id, "IK");
+  Rig rig;
+  const Pose pose = ikSetupPose(d, rig);
+  const int end = rig.boneIndex(chain.back());
+  int tip = -1;
+  for (size_t i = 0; i < rig.bones.size() && tip < 0; i++) if (rig.bones[i].parentIndex == end) tip = int(i);
+  Json k{{"id", id}, {"name", displayName(op, id)}, {"bones", chain}};
+  Str target = optStr(op, "target");
+  if (target.empty()) {
+    if (!(has(op, "createTarget") && op.at("createTarget") == true)) throw EditError("target(대상 본) 또는 createTarget: true가 필요합니다.");
+    // Where the chain end is shown now: the solve then starts from the current pose.
+    const Affine& w = pose.world[size_t(end)];
+    double wx = w.e, wy = w.f;
+    if (chain.size() == 2 && tip >= 0) { wx = pose.world[size_t(tip)].e; wy = pose.world[size_t(tip)].f; }
+    else if (chain.size() == 1) {
+      const double axis = std::hypot(w.a, w.b);
+      const double len = tip >= 0 ? std::hypot(pose.world[size_t(tip)].e - w.e, pose.world[size_t(tip)].f - w.f) : 0;
+      const double reach = len > 1 ? len : 60;
+      if (axis > 1e-9) { wx += w.a / axis * reach; wy += w.b / axis * reach; }
+    }
+    Str top = chain[0];
+    for (Str p = parentOf(bone(d, top)); !p.empty(); p = parentOf(bone(d, p))) top = p;
+    const Str parent = has(op, "targetParent") ? reqStr(op, "targetParent") : top == chain[0] ? Str() : top;
+    target = has(op, "targetId") ? reqStr(op, "targetId") : slugId(chain.back() + "-target", "ik-target");
+    if (!has(op, "targetId")) for (int n = 2; findIndex(arr(d, "bones"), "id", target) >= 0; n++) target = slugId(chain.back() + "-target-" + std::to_string(n), "ik-target");
+    ensureUniqueBone(d, target);
+    if (!parent.empty()) bone(d, parent);
+    const int pi = parent.empty() ? -1 : rig.boneIndex(parent);
+    const auto inv = (pi < 0 ? Affine{} : pose.world[size_t(pi)]).inverse();
+    if (!inv) throw EditError("대상 본의 부모 크기가 0이라 계산할 수 없습니다.");
+    Transform t;
+    inv->apply(wx, wy, t.x, t.y);
+    Json b{{"id", target}, {"parent", parent.empty() ? Json(nullptr) : Json(parent)}};
+    writeT(b, t);
+    arr(d, "bones").push_back(b);
+    r.affected.push_back("bone:" + target);
+  } else bone(d, target);
+  k["target"] = target;
+  if (has(op, "mix")) k["mix"] = clean(optUnit(op, "mix"));
+  bool bend = true;
+  if (has(op, "bendPositive")) {
+    if (!op.at("bendPositive").is_boolean()) throw EditError("bendPositive는 true 또는 false입니다.");
+    bend = op.at("bendPositive").get<bool>();
+  } else if (chain.size() == 2 && tip >= 0) {
+    // Keep the side the limb bends to now (the angle between its two links, on screen).
+    const int up = rig.boneIndex(chain[0]);
+    const Affine& u = pose.world[size_t(up)];
+    const Affine& l = pose.world[size_t(end)];
+    const Affine& e = pose.world[size_t(tip)];
+    const double cross = (l.e - u.e) * (e.f - l.f) - (l.f - u.f) * (e.e - l.e);
+    bend = cross >= 0;
+  }
+  k["bendPositive"] = bend;
+  if (has(op, "order")) k["order"] = int64_t(num(op, "order", 0));
+  arr(d, "ik").push_back(k);
+  if (const Str problem = ikProblem(d); !problem.empty()) throw EditError(problem);
+  r.affected.push_back("ik:" + id);
+  r.extra["ik"] = id;
+  r.extra["target"] = target;
+}
+/** setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, bones?}: setup values of one constraint. */
+void setIk(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "ik");
+  Json& k = ikAt(d, id);
+  if (has(op, "name")) k["name"] = displayName(op, id);
+  if (has(op, "mix")) k["mix"] = clean(optUnit(op, "mix"));
+  if (has(op, "bendPositive")) {
+    if (!op.at("bendPositive").is_boolean()) throw EditError("bendPositive는 true 또는 false입니다.");
+    k["bendPositive"] = op.at("bendPositive");
+  }
+  if (op.contains("order")) {
+    if (op.at("order").is_null()) k.erase("order");
+    else k["order"] = int64_t(num(op, "order", 0));
+  }
+  if (has(op, "target")) { bone(d, reqStr(op, "target")); k["target"] = reqStr(op, "target"); }
+  if (has(op, "bones")) {
+    if (!op.at("bones").is_array()) throw EditError("bones는 본 ID 배열입니다.");
+    k["bones"] = op.at("bones");
+  }
+  if (const Str problem = ikProblem(d); !problem.empty()) throw EditError(problem);
+  r.affected.push_back("ik:" + id);
+}
+/** renameIk {ik, id?, name?}: a new id also renames its clip tracks (ik:<old> -> ik:<new>). */
+void renameIk(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "ik");
+  Json& k = ikAt(d, from);
+  const Str to = has(op, "id") ? reqStr(op, "id") : from;
+  if (has(op, "name")) k["name"] = displayName(op, to);
+  r.affected.push_back("ik:" + to);
+  if (to == from) return;
+  ensureUniqueIn(d, "ik", to, "IK");
+  k["id"] = to;
+  size_t tracks = 0;
+  for (auto& c : arr(d, "clips"))
+    for (auto& t : arr(c, "tracks")) if (t.value("target", Str()) == "ik:" + from) { t["target"] = "ik:" + to; tracks++; }
+  r.extra["tracks"] = tracks;
+}
+/** deleteIk {ik, deleteTarget?}: the constraint, its keys and (deleteTarget) its target bone when nothing else uses it. */
+void deleteIk(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "ik");
+  const Str target = optStr(ikAt(d, id), "target");
+  r.extra["keys"] = removeIk(d, id);
+  r.affected.push_back("ik:" + id);
+  if (has(op, "deleteTarget") && op.at("deleteTarget") == true && ikUsing(d, target).empty()) {
+    bool partsOn = false;
+    for (const auto& s : listOr(d, "slots")) partsOn = partsOn || optStr(s, "bone") == target;
+    if (!partsOn) {
+      deleteBone(r, {{"bone", target}});
+      r.extra["deletedTarget"] = target;
+    }
+  }
+}
+/**
+ * bakeIk {clip, timeMs, ik?, disable?} ("IK 결과를 키로 굽기"): keys the solved local rotation of
+ * every chain bone of `ik` (all constraints without it) at timeMs, so the pose stays when the
+ * constraint is later turned off; disable: true also keys mix 0 there.
+ */
+void bakeIk(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip");
+  const Json& c = clip(d, clipId);
+  const int64_t t = ms(op, "timeMs");
+  if (t < 0 || t > c.value("durationMs", int64_t(0))) throw EditError("키 시간이 클립 범위 밖입니다.");
+  Rig rig;
+  try { rig = parseRig("bake", d); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+  for (auto& x : rig.clips) x.loop = false;  // the clip end is a real time here, not the next loop's start
+  const Pose pose = samplePose(rig, rig.clipIndex(clipId), double(t));
+  const Str only = optStr(op, "ik");
+  if (!only.empty()) ikAt(d, only);
+  if (rig.ik.empty()) throw EditError("이 리그에는 IK 제약이 없습니다.");
+  Json keyed = Json::array();
+  for (const auto& k : rig.ik) {
+    if (!only.empty() && k.id != only) continue;
+    for (int b : k.bones) {
+      const Str boneId = rig.bones[size_t(b)].id;
+      setKey(r, {{"clip", clipId}, {"target", "bone:" + boneId}, {"property", "rotation"}, {"timeMs", t}, {"value", clean(pose.local(size_t(b)).rotation)}});
+      keyed.push_back(refJson("bone:" + boneId, "rotation", t));
+    }
+    if (has(op, "disable") && op.at("disable") == true) {
+      setKey(r, {{"clip", clipId}, {"target", "ik:" + k.id}, {"property", "mix"}, {"timeMs", t}, {"value", 0}});
+      keyed.push_back(refJson("ik:" + k.id, "mix", t));
+    }
+  }
+  r.extra["keys"] = keyed;
+}
+
 void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth) {
   if (!op.is_object()) throw EditError("편집 명령은 객체여야 합니다.");
   const Str name = reqStr(op, "op");
@@ -1275,6 +1510,7 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"applySetupDeltaToKeys", applySetupDeltaToKeys},
     {"addSkin", addSkin}, {"duplicateSkin", duplicateSkin}, {"setSkinAttachment", setSkinAttachment}, {"removeSkinAttachment", removeSkinAttachment},
     {"addExpression", addExpression}, {"setExpressionSlot", setExpressionSlot}, {"setExpressionBone", setExpressionBone}, {"captureExpression", captureExpression},
+    {"addIk", addIk}, {"setIk", setIk}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
   };
   if (auto it = simple.find(name); it != simple.end()) return it->second(r, op);
   if (name == "renameClip") return renameClip(r, op, controllers);

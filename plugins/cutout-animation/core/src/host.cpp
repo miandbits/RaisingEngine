@@ -40,9 +40,19 @@ Json poseJson(const Rig& rig, const Pose& pose) {
   }
   for (size_t i = 0; i < rig.slots.size(); i++)
     slots[rig.slots[i].id] = {{"attachment", pose.attachments[i] ? Json(*pose.attachments[i]) : Json(nullptr)}, {"alpha", pose.alpha[i]}};
-  return {{"bones", bones}, {"slots", slots},
-          {"skin", pose.skin >= 0 && pose.skin < int(rig.skins.size()) ? Json(rig.skins[size_t(pose.skin)].id) : Json(nullptr)},
-          {"expression", pose.expression >= 0 && pose.expression < int(rig.expressions.size()) ? Json(rig.expressions[size_t(pose.expression)].id) : Json(nullptr)}};
+  Json out = {{"bones", bones}, {"slots", slots},
+              {"skin", pose.skin >= 0 && pose.skin < int(rig.skins.size()) ? Json(rig.skins[size_t(pose.skin)].id) : Json(nullptr)},
+              {"expression", pose.expression >= 0 && pose.expression < int(rig.expressions.size()) ? Json(rig.expressions[size_t(pose.expression)].id) : Json(nullptr)}};
+  // IK (plugin 1.3.0): bone x..scaleY stay the animated values, `world` is solved; the solved local
+  // rotation is `appliedRotation`. Rigs without IK keep the 1.2 reply shape.
+  if (!rig.ik.empty()) {
+    Json ik = Json::object();
+    for (size_t i = 0; i < rig.ik.size(); i++)
+      ik[rig.ik[i].id] = {{"mix", i < pose.ikMix.size() ? pose.ikMix[i] : rig.ik[i].mix}, {"bendPositive", i < pose.ikBend.size() ? pose.ikBend[i] != 0 : rig.ik[i].bendPositive}};
+    out["ik"] = ik;
+    for (size_t i = 0; i < rig.bones.size(); i++) out["bones"][rig.bones[i].id]["appliedRotation"] = pose.local(i).rotation;
+  }
+  return out;
 }
 
 Affine Host::placement(const std::string& id, const Rig& rig) const {

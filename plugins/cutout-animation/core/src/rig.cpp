@@ -1,5 +1,7 @@
 #include "cutout/rig.hpp"
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <set>
 #include <stdexcept>
 
@@ -67,6 +69,98 @@ const Json& arrayOr(const Json& obj, const char* key) {
   static const Json empty = Json::array();
   return obj.is_object() && obj.contains(key) && obj.at(key).is_array() ? obj.at(key) : empty;
 }
+
+/**
+ * IK constraints (plugin 1.3.0): ids, chain shape, target placement, mix and dependencies.
+ * A constraint moves every strict descendant of its chain bones; B depends on A when A moves
+ * B's target or B's chain base. A dependency cycle can never be satisfied by any order
+ * (ANIM_IK_CYCLE); an `order` that solves B before A is only a warning (ANIM_IK_ORDER).
+ * Returns the ids `ik:<id>` tracks may use.
+ */
+std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string, std::string>& parentOf) {
+  std::set<std::string> ids;
+  if (data.contains("ik") && !data.at("ik").is_array()) c.error("/ik", "ANIM_STRUCTURE", "ik는 배열입니다.");
+  const auto& list = arrayOr(data, "ik");
+  // Strict ancestor test with a guard: a cyclic hierarchy is reported by the bone checks.
+  auto under = [&](std::string b, const std::string& ancestor) {
+    size_t guard = 0;
+    for (b = parentOf.count(b) ? parentOf[b] : ""; !b.empty() && guard++ <= parentOf.size(); b = parentOf.count(b) ? parentOf[b] : "")
+      if (b == ancestor) return true;
+    return false;
+  };
+  struct Info { std::vector<std::string> chain; std::string target; int64_t order = 0; bool ok = false; };
+  std::vector<Info> info(list.size());
+  for (size_t i = 0; i < list.size(); i++) {
+    const Json& k = list[i];
+    const std::string p = at("/ik", i), id = text(k, "id");
+    if (!k.is_object()) { c.error(p, "ANIM_STRUCTURE", "IK 제약은 객체입니다."); continue; }
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "IK 제약 ID가 필요합니다.");
+    else if (!ids.insert(id).second) c.error(at(p, "id"), "ANIM_IK_DUP_ID", "중복된 IK 제약 ID: " + id);
+    bool ok = true;
+    const Json bones = k.contains("bones") ? k.at("bones") : Json();
+    if (!bones.is_array() || bones.empty() || bones.size() > 2) { c.error(at(p, "bones"), "ANIM_IK_CHAIN", "IK 사슬은 본 1개(조준) 또는 2개(부모 → 자식 팔·다리)입니다."); ok = false; }
+    else
+      for (size_t b = 0; b < bones.size(); b++) {
+        const std::string bone = bones[b].is_string() ? bones[b].get<std::string>() : "";
+        if (!parentOf.count(bone)) { c.error(at(at(p, "bones"), b), "ANIM_IK_BONE_MISSING", "IK 사슬이 없는 본을 가리킵니다: " + bone); ok = false; }
+        info[i].chain.push_back(bone);
+      }
+    if (ok && info[i].chain.size() == 2 && parentOf[info[i].chain[1]] != info[i].chain[0]) {
+      c.error(at(p, "bones"), "ANIM_IK_CHAIN", "두 본 IK 사슬은 직접 부모 → 자식이어야 합니다: " + info[i].chain[0] + " → " + info[i].chain[1]);
+      ok = false;
+    }
+    info[i].target = text(k, "target");
+    if (!parentOf.count(info[i].target)) { c.error(at(p, "target"), "ANIM_IK_BONE_MISSING", "IK 대상 본이 없습니다: " + info[i].target); ok = false; }
+    else if (ok)
+      for (const auto& bone : info[i].chain)
+        if (info[i].target == bone || under(info[i].target, bone)) {
+          // Solving rotates the chain: a target inside it (or hanging from it) would chase itself.
+          c.error(at(p, "target"), "ANIM_IK_TARGET", "IK 대상은 사슬의 본이나 그 자손일 수 없습니다: " + info[i].target);
+          ok = false;
+          break;
+        }
+    const double mix = number(c, k, p, "mix", 1);
+    if (mix < 0 || mix > 1) c.error(at(p, "mix"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
+    for (const char* flag : {"bendPositive", "stretch"})
+      if (k.contains(flag) && !k.at(flag).is_boolean()) c.error(at(p, flag), "ANIM_STRUCTURE", std::string(flag) + "는 true 또는 false입니다.");
+    if (k.contains("stretch") && k.at("stretch") == true) c.warn(at(p, "stretch"), "ANIM_IK_STRETCH", "늘이기(stretch)는 아직 지원하지 않아 무시됩니다.");
+    if (k.contains("order") && (!k.at("order").is_number_integer() || std::llabs(k.at("order").get<int64_t>()) > 1000))
+      c.error(at(p, "order"), "ANIM_STRUCTURE", "IK 순서(order)는 -1000..1000 정수입니다.");
+    else info[i].order = k.value("order", int64_t(0));
+    info[i].ok = ok;
+  }
+  // dep[b] = constraints that move b's target or chain base (b must be solved after them).
+  const size_t n = list.size();
+  std::vector<std::vector<size_t>> dep(n);
+  for (size_t b = 0; b < n; b++)
+    for (size_t a = 0; a < n; a++) {
+      if (a == b || !info[a].ok || !info[b].ok) continue;
+      bool moves = false;
+      for (const auto& bone : info[a].chain) moves = moves || under(info[b].target, bone) || under(info[b].chain[0], bone);
+      if (moves) dep[b].push_back(a);
+    }
+  std::vector<int> state(n, 0);  // 0 new, 1 on the stack, 2 done
+  std::set<size_t> cyclic;
+  std::vector<size_t> stack;
+  std::function<void(size_t)> visit = [&](size_t v) {
+    state[v] = 1;
+    stack.push_back(v);
+    for (size_t w : dep[v]) {
+      if (state[w] == 1) cyclic.insert(std::find(stack.begin(), stack.end(), w), stack.end());
+      else if (state[w] == 0) visit(w);
+    }
+    stack.pop_back();
+    state[v] = 2;
+  };
+  for (size_t v = 0; v < n; v++) if (state[v] == 0) visit(v);
+  for (size_t v : cyclic) c.error(at("/ik", v), "ANIM_IK_CYCLE", "IK 제약끼리 서로의 대상·사슬을 움직여 순환합니다: " + text(list[v], "id"));
+  auto solvedBefore = [&](size_t a, size_t b) { return info[a].order < info[b].order || (info[a].order == info[b].order && a < b); };
+  for (size_t b = 0; b < n; b++)
+    for (size_t a : dep[b])
+      if (!cyclic.count(b) && solvedBefore(b, a))
+        c.warn(at(at("/ik", b), "order"), "ANIM_IK_ORDER", "IK 「" + text(list[a], "id") + "」가 이 제약의 대상·사슬을 움직입니다. 「" + text(list[b], "id") + "」의 order를 더 크게 하세요.");
+  return ids;
+}
 }  // namespace
 
 std::optional<Affine> Affine::inverse() const {
@@ -85,11 +179,13 @@ const char* propertyName(Property p) {
     case Property::X: return "x"; case Property::Y: return "y"; case Property::Rotation: return "rotation";
     case Property::ScaleX: return "scaleX"; case Property::ScaleY: return "scaleY";
     case Property::Alpha: return "alpha"; case Property::Attachment: return "attachment"; case Property::Expression: return "expression";
+    case Property::Mix: return "mix"; case Property::BendPositive: return "bendPositive";
   }
   return "";
 }
 std::optional<Property> parseProperty(const std::string& n) {
-  for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment, Property::Expression})
+  for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment, Property::Expression,
+                 Property::Mix, Property::BendPositive})
     if (n == propertyName(p)) return p;
   return std::nullopt;
 }
@@ -99,6 +195,7 @@ int Rig::slotIndex(const std::string& id) const { for (size_t i = 0; i < slots.s
 int Rig::clipIndex(const std::string& id) const { for (size_t i = 0; i < clips.size(); i++) if (clips[i].id == id) return int(i); return -1; }
 int Rig::skinIndex(const std::string& id) const { for (size_t i = 0; i < skins.size(); i++) if (skins[i].id == id) return int(i); return -1; }
 int Rig::expressionIndex(const std::string& id) const { for (size_t i = 0; i < expressions.size(); i++) if (expressions[i].id == id) return int(i); return -1; }
+int Rig::ikIndex(const std::string& id) const { for (size_t i = 0; i < ik.size(); i++) if (ik[i].id == id) return int(i); return -1; }
 const Attachment* Rig::attachment(const std::string& slot, const std::string& name, int skin) const {
   if (skin >= 0 && skin < int(skins.size()))
     for (const auto& a : skins[size_t(skin)].attachments) if (a.slot == slot && a.name == name) return &a;
@@ -143,6 +240,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       if (!seen.insert(cur).second) { c.error(p, "ANIM_PARENT_CYCLE", "부모 관계가 순환합니다: " + id); break; }
     }
   }
+
+  const std::set<std::string> ikIds = checkIk(c, data, parentOf);
 
   // Slots and attachments.
   const auto& slots = arrayOr(data, "slots");
@@ -245,13 +344,17 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       const auto& track = tracks[ti];
       const std::string tp = at(at(p, "tracks"), ti), target = text(track, "target"), propertyText = text(track, "property");
       const auto property = parseProperty(propertyText);
-      const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0, isRig = target == "rig";
-      const std::string targetId = target.size() > 5 ? target.substr(5) : "";
+      const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0, isRig = target == "rig", isIk = target.rfind("ik:", 0) == 0;
+      const std::string targetId = isIk ? target.substr(3) : target.size() > 5 ? target.substr(5) : "";
       if (!property) { c.error(at(tp, "property"), "ANIM_PROPERTY", "알 수 없는 트랙 속성: " + propertyText); continue; }
       const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment;
+      const bool ikProperty = *property == Property::Mix || *property == Property::BendPositive;
       if (isRig != (*property == Property::Expression))
         c.error(at(tp, "property"), "ANIM_PROPERTY", isRig ? "rig 트랙의 속성은 expression뿐입니다." : "expression 속성은 rig 트랙에만 씁니다.");
       else if (isRig) {}
+      else if (isIk != ikProperty)
+        c.error(at(tp, "property"), "ANIM_PROPERTY", isIk ? "IK 트랙의 속성은 mix, bendPositive입니다." : "mix·bendPositive 속성은 IK 트랙(ik:<id>)에만 씁니다.");
+      else if (isIk) { if (!ikIds.count(targetId)) c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙이 없는 IK 제약을 가리킵니다: " + target); }
       else if ((!isBone && !isSlot) || (isBone && !parentOf.count(targetId)) || (isSlot && !slotIds.count(targetId)))
         c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙 대상이 없습니다: " + target);
       else if (isBone == slotProperty) c.error(at(tp, "property"), "ANIM_PROPERTY", "대상 종류에 맞지 않는 속성입니다: " + propertyText);
@@ -269,11 +372,13 @@ std::vector<Diagnostic> validateRig(const Json& data) {
         previous = t;
         const std::string interp = text(key, "interp");
         if (!interp.empty() && interp != "step" && interp != "linear" && interp != "bezier") c.error(at(kp, "interp"), "ANIM_INTERP", "보간은 step, linear, bezier 중 하나입니다.");
-        else if (interp == "bezier" && (*property == Property::Attachment || *property == Property::Expression))
-          c.error(at(kp, "interp"), "ANIM_INTERP", "첨부·표정 키는 항상 계단(step) 전환입니다.");
+        else if (interp == "bezier" && (*property == Property::Attachment || *property == Property::Expression || *property == Property::BendPositive))
+          c.error(at(kp, "interp"), "ANIM_INTERP", "첨부·표정·IK 굽힘 키는 항상 계단(step) 전환입니다.");
         if (interp == "bezier") checkCurve(c, key, kp);
         else if (key.contains("curve")) c.warn(at(kp, "curve"), "ANIM_CURVE_UNUSED", "bezier가 아닌 키의 curve는 쓰이지 않습니다.");
-        if (*property == Property::Expression) {
+        if (*property == Property::BendPositive) {
+          if (!key.contains("value") || !key.at("value").is_boolean()) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "IK 굽힘 키 값은 true 또는 false입니다.");
+        } else if (*property == Property::Expression) {
           if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "표정 키 값은 표정 ID 또는 null입니다.");
           else if (key.at("value").is_string() && !expressionIds.count(key.at("value").get<std::string>()))
             c.error(at(kp, "value"), "ANIM_EXPRESSION_UNKNOWN", "없는 표정을 가리킵니다: " + key.at("value").get<std::string>());
@@ -284,6 +389,7 @@ std::vector<Diagnostic> validateRig(const Json& data) {
           else if (key.at("value").is_string()) referenced.insert({targetId, key.at("value").get<std::string>()});
         } else if (!key.contains("value") || !finiteNumber(key.at("value"))) c.error(at(kp, "value"), "ANIM_NONFINITE", "키 값은 유한한 숫자여야 합니다.");
         else if (*property == Property::Alpha && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp, "value"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
+        else if (*property == Property::Mix && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp, "value"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
       }
     }
     const auto& events = arrayOr(clip, "events");
@@ -368,17 +474,37 @@ Rig parseRig(const std::string& id, const Json& data) {
       }
     rig.expressions.push_back(x);
   }
+  for (const auto& k : arrayOr(data, "ik")) {
+    IkConstraint x; x.id = k.at("id"); x.name = k.value("name", x.id);
+    for (const auto& b : k.at("bones")) x.bones.push_back(rig.boneIndex(b.get<std::string>()));
+    x.target = rig.boneIndex(k.at("target").get<std::string>());
+    x.mix = k.value("mix", 1.0); x.bendPositive = k.value("bendPositive", true); x.stretch = k.value("stretch", false); x.order = k.value("order", 0);
+    // The effector of a two-bone chain: the first child (array order) of its end bone.
+    if (x.bones.size() == 2)
+      for (size_t i = 0; i < rig.bones.size() && x.tip < 0; i++) if (rig.bones[i].parentIndex == x.bones[1]) x.tip = int(i);
+    std::vector<char> inside(rig.bones.size(), 0);
+    for (int i : rig.evalOrder) {
+      const int p = rig.bones[size_t(i)].parentIndex;
+      inside[size_t(i)] = i == x.bones[0] || (p >= 0 && inside[size_t(p)]);
+      if (inside[size_t(i)]) x.affected.push_back(i);
+    }
+    rig.ik.push_back(x);
+  }
+  for (size_t i = 0; i < rig.ik.size(); i++) rig.ikOrder.push_back(int(i));
+  std::stable_sort(rig.ikOrder.begin(), rig.ikOrder.end(), [&](int a, int b) { return rig.ik[size_t(a)].order < rig.ik[size_t(b)].order; });
   for (const auto& c : arrayOr(data, "clips")) {
     Clip clip; clip.id = c.at("id"); clip.name = c.value("name", clip.id); clip.durationMs = c.at("durationMs"); clip.loop = c.value("loop", true);
     for (const auto& t : arrayOr(c, "tracks")) {
       Track track; const std::string target = t.at("target");
       track.rig = target == "rig";
-      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(5);
-      track.targetIndex = track.rig ? -1 : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
+      track.ik = target.rfind("ik:", 0) == 0;
+      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(track.ik ? 3 : 5);
+      track.targetIndex = track.rig ? -1 : track.ik ? rig.ikIndex(track.target) : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
       track.property = *parseProperty(t.at("property"));
       for (const auto& k : arrayOr(t, "keys")) {
         Key key; key.timeMs = k.at("timeMs");
         if (track.property == Property::Attachment || track.property == Property::Expression) { key.interp = Interp::Step; if (k.at("value").is_string()) key.name = k.at("value").get<std::string>(); }
+        else if (track.property == Property::BendPositive) { key.interp = Interp::Step; key.value = k.at("value").get<bool>() ? 1 : 0; }
         else {
           key.value = k.at("value");
           const std::string interp = text(k, "interp");

@@ -167,6 +167,21 @@ class CutoutPanel : public QWidget {
   bool setExpressionBone(const QString& bone, const QMap<QString, double>& values);
   /** 표정 키: rig expression key (the previewed expression, or none) at the playhead. */
   bool keyExpression();
+  // ---- IK constraints (plugin 1.3.0). Setup mode edits the constraint (setIk); Animate mode keys
+  // mix/bend at the playhead (ik:<id> tracks). Dragging the target bone is an ordinary bone drag.
+  /** 팔·다리 IK (aim=false): [parent, selected bone]; 조준 IK (aim=true): [selected]. Creates the target bone. */
+  bool newIk(bool aim = false);
+  bool selectIk(const QString& id);
+  QString ikId() const { return ikId_; }
+  bool setIkMix(double mix);
+  bool setIkBend(bool positive);
+  bool setIkOrder(int order);
+  bool setIkTarget(const QString& bone);
+  bool selectIkTarget();  // canvas/tree selection = the constraint's target bone
+  bool renameIk();
+  bool deleteIk();        // also its target bone when nothing else uses it
+  bool keyIk();           // IK 키: mix + bend of the selected constraint at the playhead
+  bool bakeIk();          // IK 결과를 키로 굽기: solved rotations as keys, mix 0 there
   // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
   struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
   const OnionSettings& onionSettings() const { return onion_; }
@@ -230,6 +245,7 @@ class CutoutPanel : public QWidget {
   QJsonArray characters_;  // project characters (kind "character") for characterId
   QString rigId_, controllerId_, selection_, clipId_, status_;
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
+  QString ikId_;                              // IK constraint shown in the IK section (editor state)
   Mode mode_ = Mode::Setup;
   int playheadMs_ = 0, lastRevision_ = -1;
   double playheadExact_ = 0;
@@ -311,6 +327,13 @@ class CutoutPanel : public QWidget {
   QListWidget *skinList_ = nullptr, *skinAttachments_ = nullptr, *expressionList_ = nullptr;
   QLabel* skinHint_ = nullptr;
   QTableWidget* expressionTable_ = nullptr;
+  QListWidget* ikList_ = nullptr;
+  QComboBox* ikTarget_ = nullptr;
+  QDoubleSpinBox* ikMix_ = nullptr;
+  QCheckBox* ikBend_ = nullptr;
+  QSpinBox* ikOrder_ = nullptr;
+  QLabel* ikInfo_ = nullptr;
+  QVector<QWidget*> ikEditors_, ikAnimateTools_;
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;
@@ -323,6 +346,9 @@ class CutoutPanel : public QWidget {
   QWidget* buildCharacters();
   QWidget* buildLooks();
   void refreshLooks();
+  QWidget* buildIk();
+  void refreshIk();
+  const cutout::Json* currentIk() const;  // ikId_ in displayData(), with a status when none
   cutout::Look lookFor(const cutout::Rig& rig) const;  // preview skin/expression ids -> indices of `rig`
   /** Preview skin when it provides (slot, name): setup edits of that attachment go to the skin. */
   QString skinProviding(const QString& slot, const QString& name) const;

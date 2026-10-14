@@ -11,7 +11,7 @@
 namespace cutout_studio {
 namespace {
 constexpr double PI = 3.14159265358979323846;
-const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d"), TRAIL_COLOR("#38bdf8");
+const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d"), TRAIL_COLOR("#38bdf8"), IK_COLOR("#f97316");
 double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 * PI; return a; }
 }  // namespace
 
@@ -112,6 +112,40 @@ void RigCanvas::paintGhosts(QPainter& p) {
     for (auto it = layers_.begin(); it != layers_.end();) it = used.contains(it.key()) ? std::next(it) : layers_.erase(it);
 }
 
+QColor RigCanvas::ikColor() { return IK_COLOR; }
+bool RigCanvas::isIkTarget(int bone) const {
+  if (!rig_) return false;
+  for (const auto& k : rig_->ik) if (k.target == bone) return true;
+  return false;
+}
+// IK overlay: a dashed line from each chain's effector to its target (where the limb is pulled)
+// and the selected constraint's chain links drawn thick, so solved bones read as "driven".
+void RigCanvas::paintIk(QPainter& p) {
+  if (!rig_ || rig_->ik.empty() || pose_.world.size() != rig_->bones.size()) return;
+  auto origin = [&](int b) { return rigToWidget(QPointF(pose_.world[size_t(b)].e, pose_.world[size_t(b)].f)); };
+  for (const auto& k : rig_->ik) {
+    if (k.target < 0 || k.bones.empty() || k.bones[0] < 0) continue;
+    const bool selected = qs(k.id) == selectedIk_;
+    QColor line = IK_COLOR;
+    line.setAlpha(selected ? 255 : 150);
+    if (selected) {
+      p.setPen(QPen(line, 4, Qt::SolidLine, Qt::RoundCap));
+      QPolygonF chain;
+      for (int b : k.bones) chain << origin(b);
+      if (k.tip >= 0) chain << origin(k.tip);
+      if (k.bones.size() == 1) {
+        const auto& w = pose_.world[size_t(k.bones[0])];
+        const double len = std::hypot(w.a, w.b);
+        if (len > 1e-9) chain << origin(k.bones[0]) + QPointF(w.a / len, w.b / len) * 28;
+      }
+      p.drawPolyline(chain);
+    }
+    const int end = k.tip >= 0 ? k.tip : k.bones.back();
+    p.setPen(QPen(line, 1.5, Qt::DashLine));
+    p.drawLine(origin(end), origin(k.target));
+  }
+}
+
 void RigCanvas::fitToCanvas() {
   autoFit_ = true;
   const double rw = rig_ && rig_->width > 0 ? rig_->width : 512, rh = rig_ && rig_->height > 0 ? rig_->height : 512;
@@ -200,6 +234,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
         p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
         p.drawPolygon(t.map(QPolygonF(QRectF(0, 0, att->width, att->height))));
       }
+      paintIk(p);
       // Bone gizmos: link to parent, origin circle (= rotation center) and local x axis.
       for (size_t i = 0; i < rig_->bones.size(); i++) {
         const auto& w = pose_.world[i];
@@ -209,6 +244,14 @@ void RigCanvas::paintEvent(QPaintEvent*) {
         if (parent >= 0) {
           p.setPen(QPen(QColor(255, 255, 255, 90), 1));
           p.drawLine(rigToWidget(QPointF(pose_.world[size_t(parent)].e, pose_.world[size_t(parent)].f)), at);
+        }
+        if (isIkTarget(int(i))) {
+          // IK target: a crosshair (no axis: only its origin matters) that reads as "drag me".
+          p.setPen(QPen(selected ? SELECT_COLOR : IK_COLOR, selected ? 2.5 : 2));
+          p.drawEllipse(at, 8.0, 8.0);
+          p.drawLine(at - QPointF(12, 0), at + QPointF(12, 0));
+          p.drawLine(at - QPointF(0, 12), at + QPointF(0, 12));
+          continue;
         }
         const double len = std::hypot(w.a, w.b);
         const QPointF axis = len > 1e-9 ? QPointF(w.a / len, w.b / len) * 18 : QPointF(18, 0);

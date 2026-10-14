@@ -182,6 +182,29 @@ test('skins and expressions (plugin 1.2.0): schema-valid documents, per-skin ima
   assert.ok(all.some(c => c.startsWith(`error:ANIM_PROPERTY:${RIG}/data/clips/0/tracks/1/property`)), all.join('\n'));
 });
 
+test('IK constraints (plugin 1.3.0): schema-valid rig ik + ik:<id> tracks, core IK diagnostics through the service', async () => {
+  const root = await newProject();
+  const rig = rigData({
+    bones: [{ id: 'root', parent: null }, { id: 'body', parent: 'root', y: -100 }, { id: 'upper', parent: 'body', x: 20 }, { id: 'lower', parent: 'upper', x: 40 },
+      { id: 'hand', parent: 'lower', x: 40 }, { id: 'hand-target', parent: 'root', x: 90, y: -90 }],
+    ik: [{ id: 'arm', name: '팔', bones: ['upper', 'lower'], target: 'hand-target', mix: 1, bendPositive: false, order: 1 }],
+  });
+  rig.clips[0].tracks.push({ target: 'ik:arm', property: 'mix', keys: [{ timeMs: 0, value: 1, interp: 'bezier', curve: [0.42, 0, 0.58, 1] }, { timeMs: 500, value: 0.5 }] },
+    { target: 'ik:arm', property: 'bendPositive', keys: [{ timeMs: 0, value: false }, { timeMs: 500, value: true }] });
+  await addCutout(root, { rig });
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID') || c.includes('ANIM_')), false, all.join('\n'));
+  // The core's IK checks reach Studio/MCP diagnostics with their pointers.
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.ik[0].target = 'hand';
+  bad.data.clips[0].tracks.at(-2).keys[1].value = 1.5;
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.includes(`error:ANIM_IK_TARGET:${RIG}/data/ik/0/target`), all.join('\n'));
+  assert.ok(all.some(c => c.startsWith(`error:ANIM_IK_MIX:${RIG}/data/clips/0/tracks/1/keys/1/value`)), all.join('\n'));
+});
+
 test('host-reserved posterAssetId must name an image asset, also without the plugin, and the cutout service ignores it', async () => {
   const root = await newProject();
   await addCutout(root); await addElement(root, { plugin: 'cutout-animation', type: 'character', ref: 'hero-main', props: { scale: 1, posterAssetId: 'hero-torso' } });
