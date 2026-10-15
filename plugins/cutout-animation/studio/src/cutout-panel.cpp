@@ -337,29 +337,41 @@ class SkinImageDialog : public QDialog {
 // ============================================================================
 namespace {
 /**
- * Wheel events over an unfocused spin box or combo box of `panel` go to the widget's parent (the
- * scroll area scrolls); once the field has keyboard focus (clicked, tabbed into) the wheel steps
- * its value as usual. Fields get Qt::StrongFocus so a wheel never focuses them.
+ * Wheel events over an unfocused spin box or combo box of `panel` scroll the nearest scroll area
+ * instead; once the field has keyboard focus (clicked, tabbed into) the wheel steps its value as
+ * usual. Qt gives a Qt::WheelFocus widget (spin boxes, their line edits, combo boxes) the focus
+ * before any event filter sees a real wheel event, so the fields and their inner line edits are
+ * switched to Qt::StrongFocus as soon as they are shown or hovered, before the first wheel.
  */
 class WheelGuard : public QObject {
  public:
   explicit WheelGuard(QWidget* panel) : QObject(panel), panel_(panel) {}
   bool eventFilter(QObject* watched, QEvent* event) override {
-    if (event->type() != QEvent::Wheel || !watched->isWidgetType()) return false;
-    QWidget* field = static_cast<QWidget*>(watched);
-    // The spin box's line edit or the combo's view also see the wheel: act on the field itself.
-    while (field && !qobject_cast<QAbstractSpinBox*>(field) && !qobject_cast<QComboBox*>(field)) {
-      if (field == panel_) return false;
-      field = field->parentWidget();
-    }
-    if (!field || !panel_->isAncestorOf(field)) return false;
-    if (field->focusPolicy() == Qt::WheelFocus) field->setFocusPolicy(Qt::StrongFocus);
+    const QEvent::Type type = event->type();
+    if ((type != QEvent::Wheel && type != QEvent::Show && type != QEvent::Enter) || !watched->isWidgetType()) return false;
+    QWidget* field = fieldOf(static_cast<QWidget*>(watched));
+    if (!field) return false;
+    calm(field);
+    if (type != QEvent::Wheel) return false;
     if (field->hasFocus() || (qobject_cast<QComboBox*>(field) && static_cast<QComboBox*>(field)->view()->isVisible())) return false;
-    if (QWidget* parent = field->parentWidget()) QCoreApplication::sendEvent(parent, event);
+    // A forwarded (non-spontaneous) wheel is not propagated by Qt: hand it to the scroll area.
+    for (QWidget* p = field->parentWidget(); p && p != panel_; p = p->parentWidget())
+      if (auto* area = qobject_cast<QAbstractScrollArea*>(p)) { QCoreApplication::sendEvent(area->viewport(), event); break; }
     return true;
   }
 
  private:
+  /** The spin box / combo box of `w` (itself, or its line edit or popup view) inside the panel. */
+  QWidget* fieldOf(QWidget* w) const {
+    for (; w && w != panel_; w = w->parentWidget())
+      if (qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QComboBox*>(w)) return panel_->isAncestorOf(w) ? w : nullptr;
+    return nullptr;
+  }
+  static void calm(QWidget* field) {
+    if (field->focusPolicy() == Qt::WheelFocus) field->setFocusPolicy(Qt::StrongFocus);
+    for (QWidget* c : field->findChildren<QWidget*>(Qt::FindDirectChildrenOnly))
+      if (c->focusPolicy() == Qt::WheelFocus) c->setFocusPolicy(Qt::StrongFocus);
+  }
   QWidget* panel_;
 };
 }  // namespace

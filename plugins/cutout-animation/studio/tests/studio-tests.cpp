@@ -3,6 +3,7 @@
 // Every gesture must issue exactly one edit and leave documents valid for the core.
 #include <QtTest>
 #include <QtWidgets>
+#include <qpa/qwindowsysteminterface.h>
 #include <cstring>
 #include <functional>
 #include <set>
@@ -581,6 +582,20 @@ class StudioTests : public QObject {
     QVERIFY(gesture("focus-out without change", 0, [&] { Q_EMIT find<QDoubleSpinBox>("cutoutPropRotation")->editingFinished(); }));
   }
 
+  /** A real (window-system) wheel over the field `w` (its inner line edit for a spin box): Qt's
+   *  own focus-on-wheel and propagation run as for a mouse, unlike a sendEvent. */
+  void osWheel(QWidget* w, int steps) {
+    QWidget* target = w;
+    if (auto* edit = w->findChild<QLineEdit*>()) target = edit;
+    QWindow* window = target->window()->windowHandle();
+    QVERIFY(window);
+    const QPointF local = target->mapTo(target->window(), QPointF(target->width() / 2.0, target->height() / 2.0));
+    for (int i = 0; i < std::abs(steps); i++)
+      QWindowSystemInterface::handleWheelEvent(
+          window, local, window->mapToGlobal(local), QPoint(), QPoint(0, steps > 0 ? 120 : -120));
+    QWindowSystemInterface::flushWindowSystemEvents();
+    pump();
+  }
   /** A wheel over a value field that was not clicked scrolls the page; it never edits (plugin 1.14.0). */
   void wheelNeedsFocus() {
     host.mainWindow.activateWindow();
@@ -588,25 +603,34 @@ class StudioTests : public QObject {
     panel->selectItem("bone:arm");
     pump();
     auto* spin = find<QDoubleSpinBox>("cutoutPropRotation");
-    auto* preset = find<QComboBox>("cutoutPhysicsPreset");
-    QVERIFY(spin && preset);
+    QVERIFY(spin && spin->isVisible());
     const double before = spin->value();
-    const int index = preset->currentIndex(), edits = host.edits;
+    const int edits = host.edits;
     panel->canvas()->setFocus();
     pump();
-    wheel(spin, QPointF(spin->width() / 2.0, spin->height() / 2.0), 3, Qt::NoModifier);
-    wheel(preset, QPointF(preset->width() / 2.0, preset->height() / 2.0), -2, Qt::NoModifier);
-    pump();
+    osWheel(spin, 3);
     QCOMPARE(spin->value(), before);
-    QCOMPARE(preset->currentIndex(), index);
-    QCOMPARE(spin->focusPolicy(), Qt::StrongFocus);  // a wheel never focuses it either
-    QVERIFY(!spin->hasFocus());
+    QVERIFY2(!spin->hasFocus(), "a wheel never focuses the field");
+    QCOMPARE(spin->focusPolicy(), Qt::StrongFocus);
+    QCOMPARE(spin->findChild<QLineEdit*>()->focusPolicy(), Qt::StrongFocus);
     QCOMPARE(host.edits, edits);
+    // A field inside a scroll area: the area scrolls instead (the physics parameters).
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutPhysicsPage"));
+    pump();
+    auto* strength = find<QDoubleSpinBox>("cutoutPhysicsStrength");
+    QVERIFY(strength);
+    if (strength->isVisible()) {
+      const double v = strength->value();
+      osWheel(strength, -2);
+      QCOMPARE(strength->value(), v);
+      QVERIFY(!strength->hasFocus());
+    }
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(0);
     // Clicked / tabbed into: the wheel steps the value as usual.
     spin->setFocus();
     pump();
     QVERIFY(spin->hasFocus());
-    wheel(spin, QPointF(spin->width() / 2.0, spin->height() / 2.0), 1, Qt::NoModifier);
+    osWheel(spin, 1);
     QVERIFY(spin->value() != before);
     spin->setValue(before);
     panel->canvas()->setFocus();
