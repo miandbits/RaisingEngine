@@ -11,4 +11,4 @@ plugin-store/
 
 # Local authoring test drafts; the finished two-trainees sample is versioned.
 projects/two-trainees-lab*/
-projects/*/.studio/
+projects/**/.studio/

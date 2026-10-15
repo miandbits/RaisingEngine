@@ -35,6 +35,9 @@ public:
   QJsonObject projectData() const;
   QString selectedId() const { return selection; }
   QString playAutomation, playReport;
+  QString lastRecording, recordingRoot;
+  QJsonObject lastGoalReport;
+  QJsonObject lastGoalImpact;
   QString lastError;
   /** Automation: package file used by 패키지 설치… instead of the file dialog. */
   QString pluginPackagePath;
@@ -53,6 +56,8 @@ public:
 signals:
   void updated();
   void playerFinished(int code);
+  void goalReportReady(QJsonObject report);
+  void goalImpactReady(QJsonObject report);
 
 protected:
   void closeEvent(QCloseEvent *event) override;
@@ -172,9 +177,24 @@ private:
   void editRules();
   void editRoster();
   void editCharacterState();
+  void editTimeSessions();
   void editLogicDocument();
   void editWorkflows();
   void showRuleDebugger();
+  QWidget *makeRuleDebuggerPanel();
+  void showAuthoringWorkspace();
+  void editUiComposition();
+  void editTactics();
+  void editDirection();
+  void organizeContent();
+  void createBenchmark();
+  void runAssuranceDialog();
+  void goalRoutesDialog();
+  void goalSearchDialog(QJsonObject source = {});
+  void goalCompareDialog(QString jobId = {}, QJsonObject impactLink = {});
+  void goalImpactDialog(QJsonObject report = {});
+  void acceptGoalImpact(QJsonObject report);
+  void acceptGoalReport(QJsonObject report);
   QDockWidget *ruleDebugDock=nullptr;
   QDockWidget *analysisDock=nullptr;
   void editComponentInstance();

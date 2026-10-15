@@ -1,0 +1,59 @@
+#include "studio.hpp"
+#include <QDialog>
+#include <QFileDialog>
+#include <QFormLayout>
+#include <QHeaderView>
+#include <QPointer>
+#include <QPushButton>
+#include <QTableWidget>
+#include <QVBoxLayout>
+#include <QDateTime>
+#include <memory>
+
+void StudioWindow::acceptGoalReport(QJsonObject report){
+  lastGoalReport=report;
+  const auto rows=report.value("reports").toArray();int passed=0;for(auto value:rows)if(value.toObject().value("ok").toBool())++passed;
+  const auto message=tr("목표 경로 회귀: %1/%2 통과%3").arg(passed).arg(rows.size()).arg(report.value("ok").toBool()?QString():tr(" · 실패/미완료: 디자인 > 목표 경로 기록 · 회귀 검사에서 확인하세요."));
+  log->appendPlainText(message);if(!report.value("ok").toBool())errorLabel->setText(message+report.value("error").toString());
+  emit goalReportReady(report);
+}
+
+void StudioWindow::goalRoutesDialog(){
+  if(bridge.busy()||projectData().isEmpty())return;
+  if(auto old=findChild<QDialog*>("goalRoutesDialog")){old->show();old->raise();return;}
+  auto dialog=new QDialog(this);dialog->setObjectName("goalRoutesDialog");dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle(tr("목표 경로 기록 · 회귀 검사"));dialog->resize(1120,820);
+  QPointer<QDialog> guard(dialog);const auto root=view.value("root");
+  auto valid=[=,this]{return guard&&root==view.value("root")&&!bridge.busy();};
+  auto box=new QVBoxLayout(dialog);auto help=new QLabel(tr("① 새 플레이 기록 → 실제 게임을 플레이하고 종료  ② 최근 기록 읽기 → 목표 엔딩 확인 → 경로 저장\n등록 경로는 프로젝트 저장 때마다 최신 콘텐츠로 자동 검사합니다. 중간 저장 복원 뒤의 명령·난수·엔딩도 비교합니다. 실패는 기록된 경로의 실패이며 모든 경로의 도달 불가능 판정은 아닙니다."));help->setWordWrap(true);box->addWidget(help);
+  auto bar=new QHBoxLayout;box->addLayout(bar);
+  auto record=new QPushButton(tr("새 플레이 기록"));record->setObjectName("goalRecord");auto refresh=new QPushButton(tr("목록 새로고침"));refresh->setObjectName("goalRefresh");auto run=new QPushButton(tr("선택 경로 검사"));run->setObjectName("goalRun");auto all=new QPushButton(tr("전체 검사"));all->setObjectName("goalRunAll");for(auto b:{record,refresh,run,all})bar->addWidget(b);bar->addStretch();
+  auto table=new QTableWidget(0,5);table->setObjectName("goalRoutes");table->setHorizontalHeaderLabels({tr("이름 / ID"),tr("목표 엔딩 / 사건"),tr("명령 수"),tr("검사 결과"),tr("실패 위치 · 원인")});table->setSelectionBehavior(QAbstractItemView::SelectRows);table->setSelectionMode(QAbstractItemView::SingleSelection);table->setEditTriggers(QAbstractItemView::NoEditTriggers);table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);table->horizontalHeader()->setSectionResizeMode(4,QHeaderView::Stretch);box->addWidget(table);
+  auto compare=new QPushButton(tr("경로 그래프 · 재생 / 비교"));compare->setObjectName("goalCompareOpen");bar->addWidget(compare);connect(compare,&QPushButton::clicked,dialog,[this]{goalCompareDialog();});
+  auto search=new QPushButton(tr("목표 엔딩 / 사건 경로 찾기"));search->setObjectName("goalSearchOpen");bar->addWidget(search);
+  auto alternative=new QPushButton(tr("선택 경로의 대체 경로 찾기"));alternative->setObjectName("goalAlternative");bar->addWidget(alternative);
+  connect(search,&QPushButton::clicked,dialog,[this]{goalSearchDialog();});
+  connect(alternative,&QPushButton::clicked,dialog,[=,this]{int row=table->currentRow();if(row>=0&&table->item(row,0))goalSearchDialog(table->item(row,0)->data(Qt::UserRole).toJsonObject());});
+  auto form=new QFormLayout;box->addLayout(form);auto id=new QLineEdit("route-"+QString::number(QDateTime::currentMSecsSinceEpoch()));id->setObjectName("goalId");auto name=new QLineEdit(tr("새 목표 경로"));name->setObjectName("goalName");auto ending=new QComboBox;ending->setObjectName("goalEnding");ending->addItem(tr("기록에서 엔딩 선택"),QString());for(auto value:view.value("documents").toArray()){auto d=value.toObject();if(d.value("kind")=="ending"){auto e=d.value("data").toObject();ending->addItem(e.value("label").toString(e.value("name").toString(e.value("id").toString()))+" · "+e.value("id").toString(),e.value("id").toString());}}
+  for(auto value:view.value("documents").toArray()){auto d=value.toObject();if(d.value("kind")=="event"){auto e=d.value("data").toObject();ending->addItem(tr("사건 · ")+e.value("label").toString(e.value("id").toString()),"event:"+e.value("id").toString());}}
+  auto targetKey=[](QJsonObject r){auto t=r.value("target").toObject();return t.isEmpty()?r.value("endingId").toString():(t.value("kind")=="event"?"event:":"")+t.value("id").toString();};
+  auto interval=new QSpinBox;interval->setObjectName("goalInterval");interval->setRange(1,1000);interval->setValue(10);form->addRow(tr("경로 ID"),id);form->addRow(tr("이름"),name);form->addRow(tr("목표 엔딩 / 사건"),ending);form->addRow(tr("N 명령마다 저장/복원 (실제 저장 위치도 포함)"),interval);
+  auto source=new QLineEdit(lastRecording);source->setObjectName("goalRecordingFile");auto sourceBar=new QHBoxLayout;sourceBar->addWidget(source);auto browse=new QPushButton(tr("기록 파일…"));browse->setObjectName("goalBrowse");auto recent=new QPushButton(tr("최근 기록 읽기"));recent->setObjectName("goalRecent");auto read=new QPushButton(tr("파일 읽기"));read->setObjectName("goalImport");sourceBar->addWidget(browse);sourceBar->addWidget(recent);sourceBar->addWidget(read);box->addLayout(sourceBar);
+  auto save=new QPushButton(tr("목표 경로 저장"));save->setObjectName("goalSave");box->addWidget(save);auto summary=new QLabel(tr("기록 파일을 읽거나 등록된 경로를 선택하세요."));summary->setObjectName("goalSummary");summary->setWordWrap(true);box->addWidget(summary);auto detail=new QPlainTextEdit;detail->setObjectName("goalDetails");detail->setReadOnly(true);detail->setMaximumHeight(200);box->addWidget(detail);
+  auto selected=std::make_shared<QJsonObject>();auto expected=std::make_shared<QString>();auto storedId=std::make_shared<QString>();
+  auto showReport=[=](QJsonObject report){if(!guard)return;const auto rows=report.value("reports").toArray();int passed=0;for(auto v:rows){auto r=v.toObject(),failure=r.value("failure").toObject();if(r.value("ok").toBool())++passed;for(int i=0;i<table->rowCount();++i){auto item=table->item(i,0);auto entry=item->data(Qt::UserRole).toJsonObject();if(entry.value("route").toObject().value("id")!=r.value("id"))continue;table->item(i,3)->setText(r.value("ok").toBool()?tr("통과 · 저장 %1회").arg(r.value("saves").toInt()):tr("실패/미완료"));table->item(i,4)->setText(failure.isEmpty()?(r.value("contentChanged").toBool()?tr("콘텐츠 변경 후 재확인"):QString()):tr("명령 %1 · %2 · %3").arg(failure.value("step").toInt()).arg(failure.value("code").toString(),failure.value("message").toString()));}}
+    summary->setText(tr("%1/%2 경로 통과 · 검사한 초안 r%3\n%4%5").arg(passed).arg(rows.size()).arg(report.value("testedRevision").toInt()).arg(report.value("file").toString(),report.value("error").toString()));detail->setPlainText(QString::fromUtf8(QJsonDocument(report).toJson()));};
+  connect(this,&StudioWindow::goalReportReady,dialog,showReport);
+  connect(this,&StudioWindow::updated,dialog,[=,this]{if(root!=view.value("root"))return;if(!lastGoalReport.isEmpty()&&lastGoalReport.value("testedRevision")!=view.value("revision"))summary->setText(tr("검사 후 초안이 변경되었습니다. 저장하거나 전체 검사로 현재 결과를 확인하세요."));});
+  auto reload=[=,this]{if(!valid())return;request("goalRoutesList",{},[=,this](QJsonObject reply){if(!guard)return;table->setRowCount(0);for(auto v:reply.value("goalRoutes").toArray()){auto e=v.toObject(),r=e.value("route").toObject();int row=table->rowCount();table->insertRow(row);QStringList cells{r.value("name").toString()+" · "+r.value("id").toString(),targetKey(r),QString::number(r.value("commands").toArray().size()),tr("미검사"),e.value("error").toString()};for(int c=0;c<5;++c)table->setItem(row,c,new QTableWidgetItem(cells[c]));table->item(row,0)->setData(Qt::UserRole,e);}if(!lastGoalReport.isEmpty())showReport(lastGoalReport);});};
+  connect(refresh,&QPushButton::clicked,dialog,reload);
+  connect(table,&QTableWidget::currentCellChanged,dialog,[=](int row,int,int,int){if(row<0||!table->item(row,0))return;auto e=table->item(row,0)->data(Qt::UserRole).toJsonObject();*selected=e.value("route").toObject();*expected=e.value("revision").toString();*storedId=selected->value("id").toString();id->setText(*storedId);name->setText(selected->value("name").toString());ending->setCurrentIndex(ending->findData(targetKey(*selected)));interval->setValue(selected->value("checkpointEvery").toInt(10));detail->setPlainText(QString::fromUtf8(QJsonDocument(*selected).toJson()));});
+  connect(record,&QPushButton::clicked,dialog,[=,this]{if(!valid())return;if(player.state()!=QProcess::NotRunning){summary->setText(tr("진행 중인 플레이를 종료한 뒤 새 기록을 시작하세요."));return;}request("goalRecordPrepare",{},[=,this](QJsonObject reply){if(!guard)return;if(!reply.value("recordingSupported").toBool()){summary->setText(reply.value("error").toString());return;}dialog->hide();play();});});
+  connect(this,&StudioWindow::playerFinished,dialog,[=,this](int){if(root!=view.value("root")||dialog->isVisible())return;source->setText(lastRecording);summary->setText(tr("플레이 종료 · 최근 기록 읽기로 목표 경로를 등록하세요."));dialog->show();dialog->raise();});
+  connect(browse,&QPushButton::clicked,dialog,[=]{auto file=QFileDialog::getOpenFileName(dialog,tr("플레이 기록 선택"),source->text(),"JSON (*.json)");if(!file.isEmpty())source->setText(file);});
+  auto import=[=,this]{if(!valid())return;QJsonObject metadata{{"id",id->text().trimmed()},{"name",name->text().trimmed()},{"checkpointEvery",interval->value()}};auto key=ending->currentData().toString();if(key.startsWith("event:"))metadata["target"]=QJsonObject{{"kind","event"},{"id",key.mid(6)}};else if(!key.isEmpty())metadata["endingId"]=key;request("goalRouteImport",{{"file",source->text()},{"metadata",metadata}},[=](QJsonObject reply){if(!guard)return;auto r=reply.value("goalRoute").toObject();if(r.isEmpty()){summary->setText(reply.value("error").toString());return;}*selected=r;expected->clear();storedId->clear();ending->setCurrentIndex(ending->findData(targetKey(r)));summary->setText(tr("기록 %1명령 · 목표 경로 저장으로 등록하세요.").arg(r.value("commands").toArray().size()));detail->setPlainText(QString::fromUtf8(QJsonDocument(r).toJson()));});};
+  connect(read,&QPushButton::clicked,dialog,import);connect(recent,&QPushButton::clicked,dialog,[=,this]{source->setText(lastRecording);import();});
+  connect(save,&QPushButton::clicked,dialog,[=,this]{if(!valid())return;if(selected->isEmpty()){summary->setText(tr("먼저 플레이 기록을 읽어 주세요."));return;}auto r=*selected;r["id"]=id->text().trimmed();r["name"]=name->text().trimmed();auto key=ending->currentData().toString();r.remove("target");r.remove("endingId");if(key.startsWith("event:"))r["target"]=QJsonObject{{"kind","event"},{"id",key.mid(6)}};else r["endingId"]=key;r["checkpointEvery"]=interval->value();const QJsonValue revision=(*storedId==r.value("id").toString()&&!expected->isEmpty())?QJsonValue(*expected):QJsonValue();request("goalRouteSave",{{"route",r},{"expectedRevision",revision}},[=](QJsonObject reply){if(!guard)return;const auto entry=reply.value("goalRouteSaved").toObject();if(entry.isEmpty()){summary->setText(reply.value("error").toString());return;}*selected=entry.value("route").toObject();*expected=entry.value("revision").toString();*storedId=selected->value("id").toString();summary->setText(tr("경로 저장 완료 · 프로젝트 저장 시 자동 검사됩니다."));reload();});});
+  auto check=[=,this](bool every){if(!valid())return;QJsonArray ids;if(!every){int row=table->currentRow();if(row<0)return;auto r=table->item(row,0)->data(Qt::UserRole).toJsonObject().value("route").toObject();ids.append(r.value("id"));}summary->setText(tr("최신 콘텐츠로 재생·중간 저장 복원 검사 중…"));run->setEnabled(false);all->setEnabled(false);request("goalRoutesRun",{{"ids",ids}},[=,this](QJsonObject reply){if(!guard)return;run->setEnabled(true);all->setEnabled(true);if(!reply.contains("goalReport")){summary->setText(reply.value("error").toString());return;}acceptGoalReport(reply.value("goalReport").toObject());});};
+  connect(run,&QPushButton::clicked,dialog,[=]{check(false);});connect(all,&QPushButton::clicked,dialog,[=]{check(true);});
+  dialog->show();reload();
+}

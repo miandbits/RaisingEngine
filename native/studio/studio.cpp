@@ -162,7 +162,16 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       [this] { closeScreen(documents->currentIndex()); }, QKeySequence::Close);
   viewMenu = menuBar()->addMenu(tr("보기"));
   auto designMenu = menuBar()->addMenu(tr("디자인"));
+  designMenu->addAction(tr("완결 샘플 제작…"),this,&StudioWindow::createBenchmark)->setObjectName("createBenchmark");
+  designMenu->addAction(tr("제작 시험 검증…"),this,&StudioWindow::runAssuranceDialog)->setObjectName("runAssurance");
+  designMenu->addAction(tr("목표 경로 기록 · 회귀 검사…"),this,&StudioWindow::goalRoutesDialog)->setObjectName("goalRoutes");
+  designMenu->addAction(tr("저장 기준 비교 결과…"),this,[this]{goalImpactDialog();})->setObjectName("goalImpact");
+  designMenu->addAction(tr("연출 작업실…"),this,&StudioWindow::editDirection)->setObjectName("editDirection");
+  designMenu->addAction(tr("다인 전투 · 탐험 · 성장…"),this,&StudioWindow::editTactics)->setObjectName("editTactics");
+  designMenu->addAction(tr("UI 조합 · 중첩 / 배치 / 선택 / 모달…"),this,&StudioWindow::editUiComposition)->setObjectName("editUiComposition");
+  designMenu->addAction(tr("제작 작업실 · 데이터 / 행동 / 진행…"),this,&StudioWindow::showAuthoringWorkspace)->setObjectName("showAuthoringWorkspace");
   designMenu->addAction(tr("다인 육성 · 대상과 활동 배정…"),this,&StudioWindow::editRoster)->setObjectName("editRoster");
+  designMenu->addAction(tr("시간 · 행동력 · 예약 사건…"),this,&StudioWindow::editTimeSessions)->setObjectName("editTimeSessions");
   designMenu->addAction(tr("캐릭터 소유 상태 · 관계 · 행동 연결…"),this,&StudioWindow::editCharacterState)->setObjectName("editCharacterState");
   designMenu->addAction(tr("공통 스타일 · 프로젝트 폰트…"),this,&StudioWindow::editDesignSystem)->setObjectName("editDesignSystem");
   designMenu->addAction(tr("폰트 파일 가져오기…"),this,&StudioWindow::importFont)->setObjectName("importFont");
@@ -728,6 +737,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
             }
           });
   auto contentMenu = menuBar()->addMenu(tr("콘텐츠"));
+  contentMenu->addAction(tr("콘텐츠 일괄 정리…"),this,&StudioWindow::organizeContent)->setObjectName("organizeContent");
   contentMenu->addAction(tr("숙련 단계 활동 만들기…"), this, &StudioWindow::createProgressionActivity)->setObjectName("progressionAuthoringAction");
   for (const auto &p :
        QList<QPair<QString, QString>>{{"activity", tr("새 활동")},
@@ -1037,6 +1047,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
+      if(recordingRoot!=view.value("root").toString()){lastRecording.clear();lastGoalReport={};lastGoalImpact={};recordingRoot=view.value("root").toString();if(auto dialog=findChild<QDialog*>("goalRoutesDialog"))dialog->close();}
       conditionPreview={};
       validatedRevision=-1;
       validationSummary->setText(tr("검증을 누르면 결과와 오류 위치를 표시합니다."));
@@ -1064,6 +1075,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     }
     if (done)
       done(reply);
+    if(reply.value("goalImpact").isObject()&&method=="save")acceptGoalImpact(reply.value("goalImpact").toObject());
     // Loading runs after the caller's continuation so a plugin's activate()
     // request cannot pre-empt a chained editor request.
     if (pluginReply) applyPluginState(plugins->state());
@@ -1529,7 +1541,7 @@ void StudioWindow::save() {
     QTimer::singleShot(50, this, &StudioWindow::save);
     return;
   }
-  request("save");
+  request("save",{},[this](QJsonObject reply){if(reply.contains("goalReport"))acceptGoalReport(reply.value("goalReport").toObject());});
 }
 void StudioWindow::play() {
   if (bridge.busy()) {
@@ -1543,6 +1555,7 @@ void StudioWindow::play() {
       return;
     auto p = reply["play"].toObject();
     playRevision = p["revision"].toInt();
+    lastRecording=p.value("recording").toString();
     previousState = {};
     playerBuffer.clear();
     log->clear();
@@ -1557,6 +1570,7 @@ void StudioWindow::play() {
                         "--report",
                         playReport.isEmpty() ? p["report"].toString()
                                              : playReport};
+    if(!lastRecording.isEmpty())args << "--record-route" << lastRecording;
     if (!playAutomation.isEmpty())
       args << "--automation" << playAutomation;
     if(!previewLocaleField->currentData().toString().isEmpty())args << "--locale" << previewLocaleField->currentData().toString();

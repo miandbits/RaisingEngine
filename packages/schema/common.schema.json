@@ -1169,6 +1169,128 @@
             "actionId",
             "quantity"
           ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "advanceSession"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "cancelSession"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "ticks"
+          ],
+          "properties": {
+            "type": {
+              "const": "waitTime"
+            },
+            "ticks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "tacticsAction"
+            },
+            "unitId": {
+              "$ref": "#/$defs/id"
+            },
+            "skillId": {
+              "$ref": "#/$defs/id"
+            },
+            "targetId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "type",
+            "unitId",
+            "skillId",
+            "targetId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "tacticsEquip"
+            },
+            "unitId": {
+              "$ref": "#/$defs/id"
+            },
+            "equipmentId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "type",
+            "unitId",
+            "equipmentId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "tacticsFlee"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "tacticsUnequip"
+            },
+            "unitId": {
+              "$ref": "#/$defs/id"
+            },
+            "slot": {
+              "enum": [
+                "weapon",
+                "armor",
+                "accessory"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "unitId",
+            "slot"
+          ]
         }
       ]
     },

@@ -1,3 +1,4 @@
+import type {TacticsState,TacticsCommand} from './tactics-model.js';
 import type { SystemsDefinition } from '../schema/generated/systems.js';
 import type { PresentationState, Change } from '../core/model.js';
 export type { SystemsDefinition };
@@ -12,7 +13,7 @@ export interface BattleActionView {
   id: string; name: string; battleAction: 'attack'|'guard'|'flee'|'useItem'; itemId?: string;
   target: 'self'|'enemy'|'none'; enabled: boolean; reason: string|null;
 }
-export type SystemsCommand =
+export type SystemsCommand = TacticsCommand
   | { type: 'acceptQuest'; questId: string }
   | { type: 'claimQuest'; questId: string }
   | { type: 'equip'; equipmentId: string }
@@ -22,6 +23,7 @@ export type SystemsCommand =
   | { type: 'battleAction'; action: 'attack' | 'guard' | 'flee' }
   | { type: 'battleAction'; action: 'useItem'; itemId: string };
 export interface SystemsState {
+  tactics?: TacticsState;
   equipment: Record<EquipmentSlot, string | null>;
   quests: Record<string, { status: 'accepted' | 'completed' | 'claimed'; progress: number }>;
   unlockedStages: string[];

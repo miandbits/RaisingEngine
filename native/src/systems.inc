@@ -10,6 +10,7 @@ int equipmentReserved(const J &c, const J &s, const std::string &itemId) {
     auto e = find(c["project"]["systems"]["equipment"], id);
     if (e && (*e)["itemId"] == itemId) ++count;
   }
+  if(s["systems"].contains("tactics"))for(const auto& slots:s["systems"]["tactics"]["equipment"])for(const auto& id:slots){auto e=find(c["project"]["systems"]["equipment"],id);if(e&&(*e)["itemId"]==itemId)++count;}
   return count;
 }
 J heroStats(const J &c, const J &s) {
@@ -39,14 +40,18 @@ J systemsReward(const J &c, J &s, const J &value, const std::string &source, boo
   if(recorded)for(const auto& change:changes)recorded->push_back(change);
   return discarded;
 }
+void finishExpedition(J&,const std::string&);
+#include "tactics.inc"
 void enterExpeditionNode(const J &c, J &s, const J &nodeId, J &sounds) {
   auto &sys = s["systems"], &trip = sys["expedition"];
   const auto &d = c["project"]["systems"];
   auto definition = find(d["expeditions"], trip["expeditionId"]);
   auto node = find((*definition)["nodes"], nodeId);
+  if(node->contains("requirements"))need(condition(c,s,(*node)["requirements"]),"NODE_LOCKED","탐험 지점 진입 조건을 만족하지 않습니다.","/command/nodeId");
   trip["nodeId"] = (*node)["id"];
   if (node->contains("presentation")) scene(s, (*node)["presentation"], sounds);
   s["phase"] = "expedition";
+  if(node->contains("encounterId")&&!contains(trip["clearedNodes"],(*node)["id"])){startTactics(c,s,str(*node,"encounterId"));return;}
   if (node->contains("enemyId") && !contains(trip["clearedNodes"], (*node)["id"])) {
     auto enemy = find(d["enemies"], (*node)["enemyId"]);
     sys["battle"] = {{"enemyId", (*enemy)["id"]}, {"enemyHp", (*enemy)["maxHp"]}, {"turn", 0}};
@@ -74,6 +79,7 @@ void finishExpedition(J &s, const std::string &outcome) {
 void systems(const J &c, J &s, const J &cmd, J &sounds) {
   need(c["project"].contains("systems") && s.contains("systems") && s.contains("gameplay") && s["mode"] == "full", "SYSTEMS_UNAVAILABLE", "확장 시스템이 있는 전체 실행 모드가 필요합니다.", "/project/systems");
   const auto &d = c["project"]["systems"]; auto &sys = s["systems"]; auto type = str(cmd, "type");
+  if(type=="tacticsUnequip"||type=="tacticsAction"||type=="tacticsFlee"||type=="tacticsEquip"){tacticsCommand(c,s,cmd);return;}
   if (type == "equip" || type == "unequip" || type == "acceptQuest" || type == "claimQuest") {
     need(s["phase"] == "planning" || s["phase"] == "ready", "WRONG_PHASE", "일정 편성 중에만 장비·퀘스트를 변경할 수 있습니다.", "/phase");
     if (type == "equip") {
@@ -130,7 +136,7 @@ void systems(const J &c, J &s, const J &cmd, J &sounds) {
   if (number(battle["enemyHp"]) == 0) {
     J rewardChanges=J::array();auto discarded = systemsReward(c, s, (*enemy)["rewards"], "/systems/enemies/" + id + "/rewards", true,battle.contains("log")?&rewardChanges:nullptr);
     trip["clearedNodes"].push_back((*node)["id"]);
-    for (const auto &quest : d["quests"]) { auto qid = str(quest, "id"); if (quest["enemyId"] == id && sys["quests"].contains(qid) && sys["quests"][qid]["status"] == "accepted") {
+    for (const auto &quest : d["quests"]) { auto qid = str(quest, "id"); if (!quest.contains("encounterId") && quest["enemyId"] == id && sys["quests"].contains(qid) && sys["quests"][qid]["status"] == "accepted") {
       auto &q = sys["quests"][qid]; q["progress"] = std::min(number(quest["targetCount"]), number(q["progress"]) + 1); if (q["progress"] >= quest["targetCount"]) q["status"] = "completed";
     } }
     record();result("victory", discarded,rewardChanges); sys["battle"] = nullptr; s["phase"] = "expedition"; return;

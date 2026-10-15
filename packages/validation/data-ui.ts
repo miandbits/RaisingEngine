@@ -1,3 +1,4 @@
+import { componentLeaves } from './ui-composition.js';
 import { isObject, type JsonObject, type ProjectDocument } from './model.js';
 import { objectItems, type Index, type SemanticContext } from './context.js';
 import { sourceFields } from '../visual/data-ui.js';
@@ -18,13 +19,13 @@ export function checkDataUi(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   }
   const refs:Record<string,Set<unknown>>={screenId:new Set(objectItems(visual.screens).map(x=>x.id)),actionId:new Set(objectItems(gameplay.actions).map(x=>x.id)),shopId:new Set(objectItems(gameplay.shops).map(x=>x.id)),itemId:new Set(objectItems(gameplay.items).map(x=>x.id)),groupId:new Set(objectItems(gameplay.policyGroups).map(x=>x.id)),locationId:new Set(objectItems(gameplay.locations).map(x=>x.id)),interactionId:new Set(objectItems(gameplay.interactions).map(x=>x.id))};
   const required:Record<string,string[]>={navigate:['screenId'],visit:['locationId'],buy:['shopId','itemId'],sell:['shopId','itemId'],executeAction:['actionId'],selectPolicy:['groupId'],interact:['interactionId'],useService:['serviceId'],equip:['equipmentId'],unequip:['slot'],acceptQuest:['questId'],claimQuest:['questId'],moveExpedition:['nodeId'],battleAction:['battleAction'],selectBattleAction:['battleAction'],selectBattleTarget:['battleTarget']};
-  const supported=['start','advance','save','load','sound','navigate','visit','buy','sell','executeAction','selectPolicy','interact','useService','setDiet','equip','unequip','acceptQuest','claimQuest','moveExpedition','returnFromExpedition','battleAction','selectBattleAction','selectBattleTarget','confirmBattleAction','cancelBattleAction'];
+  const supported=['start','advance','save','load','sound','navigate','visit','buy','sell','executeAction','selectPolicy','interact','useService','setDiet','equip','unequip','acceptQuest','claimQuest','moveExpedition','returnFromExpedition','battleAction','selectBattleAction','selectBattleTarget','confirmBattleAction','cancelBattleAction','selectRow','openModal','closeModal','executeActorAction'];
   for(const [i,screen] of objectItems(visual.screens).entries())for(const [j,element] of objectItems(screen.elements).entries()){
     if(element.kind!=='collection')continue;
     const p=`/visual/screens/${i}/elements/${j}`,source=(element.source??{}) as JsonObject,kind=String(source.type);
     const component=objectItems(visual.components).find(x=>x.id===element.componentId);
     if(!component){ctx.report(doc,p+'/componentId','UI_COMPONENT_REFERENCE','연결된 재사용 UI가 없습니다.');continue;}
-    const children=objectItems(component.elements),bindings=objectItems(element.bindings),fields:Record<string,string>={...(sourceFields[kind]??{})};
+    const children=componentLeaves(visual,String(component.id)),bindings=objectItems(element.bindings),fields:Record<string,string>={...(sourceFields[kind]??{})};
     let table:JsonObject|undefined;
     if(kind==='table'){
       table=ctx.resolve(tables,String(source.tableId),doc,p+'/source/tableId','데이터 표')?.data;

@@ -10,6 +10,7 @@ using Json = nlohmann::json;
 namespace fs = std::filesystem;
 #include "timeline.hpp"
 #include "battle-selection.hpp"
+#include "direction.hpp"
 
 inline Json read_json(const fs::path& file, uintmax_t limit = 64 * 1024 * 1024) {
   if (!fs::is_regular_file(file) || fs::file_size(file) > limit) throw std::runtime_error("File missing or too large: " + file.u8string());
@@ -24,6 +25,7 @@ public:
   std::vector<std::string> sound_cues;
   Json timeline_plan=nullptr,timeline_cursor=nullptr;
   Json battle_selection=nullptr;
+  Json direction_cursor=nullptr;
   // Presentation hooks for runtime extensions. They receive copies and cannot change state.
   std::function<void(const Json&,const Json&,const Json&,const std::string&)> observer;
   std::function<Json()> extension_state;
@@ -118,7 +120,8 @@ public:
       {"origin", origin},
       {"commands", commands}, {"state", state}};
     const Json extensions=extension_state?extension_state():Json();
-    if(timeline_active()||!battle_selection.is_null()||!extensions.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;if(!extensions.is_null())envelope["playerPresentation"]["extensions"]=extensions;}
+    if(timeline_active()||!battle_selection.is_null()||!extensions.is_null()||!direction_cursor.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;if(!extensions.is_null())envelope["playerPresentation"]["extensions"]=extensions;}
+    if(!direction_cursor.is_null())envelope["playerPresentation"]["direction"]=direction_cursor;
     fs::create_directories(file.parent_path());
     auto temp = file; temp += ".tmp";
     { std::ofstream out(temp, std::ios::binary | std::ios::trunc); if (!out) throw std::runtime_error("저장 파일을 열 수 없습니다."); out << envelope.dump(2); out.flush(); if (!out) throw std::runtime_error("저장 파일 쓰기에 실패했습니다."); }
@@ -146,13 +149,14 @@ public:
     for (const auto& command : saved.at("commands")) replay = call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}}).at("state");
     if (replay != saved.at("state")) throw std::runtime_error("저장 데이터와 명령 재현 결과가 다릅니다.");
     const auto restored_plan=plan_activity_timeline(content,replay);Json restored_cursor=restored_plan.is_null()?Json():create_timeline_cursor(restored_plan);
-    Json restored_battle=nullptr,restored_extensions=nullptr;
+    Json restored_battle=nullptr,restored_extensions=nullptr,restored_direction=nullptr;
     if(saved.contains("playerPresentation")) {
       const auto presentation=saved.at("playerPresentation");
       if(!presentation.is_object()||!presentation.contains("version")||presentation.at("version")!=1||!presentation.contains("timeline"))throw std::runtime_error("Invalid player presentation save");
-      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions")throw std::runtime_error("Invalid player presentation save");
+      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction")throw std::runtime_error("Invalid player presentation save");
       // Opaque plugin states; a missing plugin later ignores (and preserves) its entry.
       if(presentation.contains("extensions")){if(!presentation.at("extensions").is_object())throw std::runtime_error("Invalid player presentation save");restored_extensions=presentation.at("extensions");}
+      if(presentation.contains("direction")){restored_direction=presentation.at("direction");if(!direction_valid(direction_config(content),restored_direction))throw std::runtime_error("Invalid direction cursor");}
       const auto cursor=presentation.at("timeline");
       if(cursor.is_null()){if(!restored_plan.is_null())throw std::runtime_error("Missing timeline cursor");restored_cursor=nullptr;}
       else {if(!validate_timeline_cursor(restored_plan,cursor))throw std::runtime_error("Invalid timeline cursor");restored_cursor=cursor;}
@@ -161,7 +165,7 @@ public:
         call({{"operation","command"},{"state",replay},{"command",battle_command(restored_battle)},{"expectedRevision",replay.at("stateRevision")}});
       }
     }
-    state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;refresh(); settle();
+    state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
     message = "저장한 지점에서 이어갑니다.";
   }
 };

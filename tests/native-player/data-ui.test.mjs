@@ -39,7 +39,7 @@ test('native authored collection rows bind canonical actions, scroll, conditions
   project.visual.screens.find(s=>s.id==='market').elements=[shop,{id:'to-home',kind:'button',x:30,y:550,width:300,height:50,text:'Home',action:'visit',locationId:'home'}];
   await writeFile(path,JSON.stringify(project));
   const built=await buildSnapshot(await loadProject(projectRoot));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
-  const destination=resolve(root,'game');await exportGame({content:built.snapshot,projectRoot,destination,target:'windows',runtimes:{windows:resolve('dist/native-player-app'),web:resolve('dist/web')}});
+  const destination=resolve(root,'game');await exportGame({content:built.snapshot,projectRoot,destination,target:'windows',runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-app'),web:resolve('dist/web')}});
   const steps=[{click:'start'},{checkpoint:'home'},
     {click:'tasks__task-9__button'},{checkpoint:'confirm'},{click:'cancel-purchase'},{checkpoint:'cancel'},
     {click:'tasks__task-9__button'},{click:'confirm-purchase'},{checkpoint:'earned'},

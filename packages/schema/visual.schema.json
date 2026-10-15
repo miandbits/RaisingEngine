@@ -319,6 +319,249 @@
           "timelineId"
         ]
       }
+    },
+    "direction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actors": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "maxLength": 64
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "assetId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "maxLength": 64
+              },
+              "expressions": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*$",
+                      "maxLength": 64
+                    },
+                    "assetId": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*$",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "assetId"
+                  ]
+                }
+              },
+              "outfits": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*$",
+                      "maxLength": 64
+                    },
+                    "assetId": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*$",
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "assetId"
+                  ]
+                }
+              },
+              "motions": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*$",
+                      "maxLength": 64
+                    },
+                    "frames": {
+                      "type": "array",
+                      "maxItems": 120,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]*$",
+                        "maxLength": 64
+                      },
+                      "minItems": 1
+                    },
+                    "frameMs": {
+                      "type": "integer",
+                      "minimum": 16,
+                      "maximum": 10000
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "frames",
+                    "frameMs"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "assetId"
+            ]
+          },
+          "minItems": 1
+        },
+        "sequences": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "maxLength": 64
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "stages": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "durationMs": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 60000
+                    },
+                    "cues": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "actorId": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]*$",
+                            "maxLength": 64
+                          },
+                          "x": {
+                            "type": "number",
+                            "minimum": -4096,
+                            "maximum": 4096
+                          },
+                          "y": {
+                            "type": "number",
+                            "minimum": -4096,
+                            "maximum": 4096
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 4096
+                          },
+                          "height": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 4096
+                          },
+                          "toX": {
+                            "type": "number",
+                            "minimum": -4096,
+                            "maximum": 4096
+                          },
+                          "toY": {
+                            "type": "number",
+                            "minimum": -4096,
+                            "maximum": 4096
+                          },
+                          "opacity": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "expressionId": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "outfitId": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "motionId": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "required": [
+                          "actorId",
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ]
+                      },
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "durationMs",
+                    "cues"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "stages"
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "actors",
+        "sequences"
+      ]
     }
   },
   "required": [
@@ -345,6 +588,9 @@
           "items": {
             "$ref": "#/$defs/element"
           }
+        },
+        "modal": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -440,7 +686,8 @@
             "attribute-value",
             "relationship-value",
             "item-count",
-            "user-field"
+            "user-field",
+            "selected-field"
           ]
         },
         "imageSource": {
@@ -552,7 +799,12 @@
             "selectBattleAction",
             "selectBattleTarget",
             "confirmBattleAction",
-            "cancelBattleAction"
+            "cancelBattleAction",
+            "selectRow",
+            "openModal",
+            "closeModal",
+            "executeActorAction",
+            "playSequence"
           ]
         },
         "screenId": {
@@ -787,7 +1039,12 @@
                       "selectBattleAction",
                       "selectBattleTarget",
                       "confirmBattleAction",
-                      "cancelBattleAction"
+                      "cancelBattleAction",
+                      "selectRow",
+                      "openModal",
+                      "closeModal",
+                      "executeActorAction",
+                      "playSequence"
                     ]
                   },
                   "screenId": {
@@ -874,6 +1131,58 @@
                   },
                   "userFieldId": {
                     "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "tooltip": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "selectionKey": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "selectionField": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "selectionBindings": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "property": {
+                          "enum": [
+                            "actionId",
+                            "actorId",
+                            "itemId",
+                            "shopId",
+                            "characterId",
+                            "groupId",
+                            "optionId",
+                            "quantity",
+                            "screenId"
+                          ]
+                        },
+                        "field": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "property",
+                        "field"
+                      ]
+                    }
+                  },
+                  "actorId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "sequenceId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "maxLength": 64
                   }
                 }
               }
@@ -987,7 +1296,9 @@
             "additionalProperties": false,
             "properties": {
               "elementId": {
-                "$ref": "common.schema.json#/$defs/id"
+                "type": "string",
+                "maxLength": 600,
+                "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$"
               },
               "property": {
                 "enum": [
@@ -1134,6 +1445,126 @@
               }
             }
           }
+        },
+        "flowLayout": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "enum": [
+                "row",
+                "column",
+                "grid"
+              ]
+            },
+            "gap": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "padding": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "direction"
+          ]
+        },
+        "overflow": {
+          "enum": [
+            "visible",
+            "hidden",
+            "scroll"
+          ]
+        },
+        "sort": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "direction": {
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          "required": [
+            "field",
+            "direction"
+          ]
+        },
+        "selectionKey": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "selectionField": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "selectionBindings": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "property": {
+                "enum": [
+                  "actionId",
+                  "actorId",
+                  "itemId",
+                  "shopId",
+                  "characterId",
+                  "groupId",
+                  "optionId",
+                  "quantity",
+                  "screenId"
+                ]
+              },
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "property",
+              "field"
+            ]
+          }
+        },
+        "tooltip": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "actorId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "tacticsPanel": {
+          "enum": [
+            "all",
+            "units",
+            "actions",
+            "log",
+            "growth"
+          ]
+        },
+        "sequenceId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 64
         }
       },
       "required": [
@@ -1174,7 +1605,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "screenId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1194,7 +1648,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "locationId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1214,7 +1691,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "interactionId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1234,16 +1734,37 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "shopId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
-              "shopId": {},
-              "itemId": {}
+              "shopId": {}
             },
             "required": [
-              "shopId",
-              "itemId"
+              "shopId"
             ]
           }
         },
@@ -1338,17 +1859,38 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "shopId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
-            "required": [
-              "shopId",
-              "itemId"
-            ],
             "properties": {
-              "shopId": {},
-              "itemId": {}
-            }
+              "shopId": {}
+            },
+            "required": [
+              "shopId"
+            ]
           }
         },
         {
@@ -1360,15 +1902,38 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "serviceId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
-            "required": [
-              "serviceId"
-            ],
             "properties": {
               "serviceId": {}
-            }
+            },
+            "required": [
+              "serviceId"
+            ]
           }
         },
         {
@@ -1380,7 +1945,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "actionId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1400,7 +1988,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "groupId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1442,7 +2053,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "battleAction"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1462,7 +2096,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "battleTarget"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1479,17 +2136,46 @@
               "action": {
                 "enum": [
                   "battleAction",
-                  "selectBattleAction"
+                  "selectBattleAction",
+                  "playSequence"
                 ]
               },
               "battleAction": {
                 "const": "useItem"
+              },
+              "sequenceId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "maxLength": 64
               }
             },
             "required": [
               "action",
               "battleAction"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "itemId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -1709,7 +2395,8 @@
             "button",
             "meter",
             "group",
-            "input"
+            "input",
+            "component"
           ]
         },
         "label": {
@@ -1758,7 +2445,8 @@
             "attribute-value",
             "relationship-value",
             "item-count",
-            "user-field"
+            "user-field",
+            "selected-field"
           ]
         },
         "imageSource": {
@@ -1870,7 +2558,12 @@
             "selectBattleAction",
             "selectBattleTarget",
             "confirmBattleAction",
-            "cancelBattleAction"
+            "cancelBattleAction",
+            "selectRow",
+            "openModal",
+            "closeModal",
+            "executeActorAction",
+            "playSequence"
           ]
         },
         "screenId": {
@@ -2112,6 +2805,334 @@
         },
         "userFieldId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "flowLayout": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "enum": [
+                "row",
+                "column",
+                "grid"
+              ]
+            },
+            "gap": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "padding": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "direction"
+          ]
+        },
+        "overflow": {
+          "enum": [
+            "visible",
+            "hidden",
+            "scroll"
+          ]
+        },
+        "sort": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "direction": {
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          "required": [
+            "field",
+            "direction"
+          ]
+        },
+        "selectionKey": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "selectionField": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "selectionBindings": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "property": {
+                "enum": [
+                  "actionId",
+                  "actorId",
+                  "itemId",
+                  "shopId",
+                  "characterId",
+                  "groupId",
+                  "optionId",
+                  "quantity",
+                  "screenId"
+                ]
+              },
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "property",
+              "field"
+            ]
+          }
+        },
+        "tooltip": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "actorId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "componentId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "overrides": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "elementId",
+              "values"
+            ],
+            "properties": {
+              "elementId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "imageAssetId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "action": {
+                    "enum": [
+                      "start",
+                      "advance",
+                      "save",
+                      "load",
+                      "sound",
+                      "navigate",
+                      "visit",
+                      "buy",
+                      "interact",
+                      "acceptQuest",
+                      "claimQuest",
+                      "equip",
+                      "unequip",
+                      "moveExpedition",
+                      "returnFromExpedition",
+                      "battleAction",
+                      "sell",
+                      "useService",
+                      "setDiet",
+                      "executeAction",
+                      "selectPolicy",
+                      "selectBattleAction",
+                      "selectBattleTarget",
+                      "confirmBattleAction",
+                      "cancelBattleAction",
+                      "selectRow",
+                      "openModal",
+                      "closeModal",
+                      "executeActorAction",
+                      "playSequence"
+                    ]
+                  },
+                  "screenId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "locationId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "shopId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "itemId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "interactionId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 999
+                  },
+                  "styleId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "fill": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "fontSize": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 120
+                  },
+                  "serviceId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "dietId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "actionId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "groupId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "$ref": "common.schema.json#/$defs/id"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "type": "number"
+                  },
+                  "maxValue": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "battleAction": {
+                    "enum": [
+                      "attack",
+                      "guard",
+                      "useItem",
+                      "flee"
+                    ]
+                  },
+                  "battleTarget": {
+                    "enum": [
+                      "self",
+                      "enemy"
+                    ]
+                  },
+                  "clipChildren": {
+                    "type": "boolean"
+                  },
+                  "userFieldId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "tooltip": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "selectionKey": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "selectionField": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "selectionBindings": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "property": {
+                          "enum": [
+                            "actionId",
+                            "actorId",
+                            "itemId",
+                            "shopId",
+                            "characterId",
+                            "groupId",
+                            "optionId",
+                            "quantity",
+                            "screenId"
+                          ]
+                        },
+                        "field": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "property",
+                        "field"
+                      ]
+                    }
+                  },
+                  "actorId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "sequenceId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "maxLength": 64
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tacticsPanel": {
+          "enum": [
+            "all",
+            "units",
+            "actions",
+            "log",
+            "growth"
+          ]
+        },
+        "sequenceId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 64
         }
       },
       "required": [
@@ -2152,7 +3173,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "screenId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -2172,7 +3216,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "locationId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -2192,7 +3259,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "interactionId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -2212,16 +3302,37 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "shopId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
-              "shopId": {},
-              "itemId": {}
+              "shopId": {}
             },
             "required": [
-              "shopId",
-              "itemId"
+              "shopId"
             ]
           }
         },
@@ -2296,17 +3407,38 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "shopId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
-            "required": [
-              "shopId",
-              "itemId"
-            ],
             "properties": {
-              "shopId": {},
-              "itemId": {}
-            }
+              "shopId": {}
+            },
+            "required": [
+              "shopId"
+            ]
           }
         },
         {
@@ -2318,15 +3450,38 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "serviceId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
-            "required": [
-              "serviceId"
-            ],
             "properties": {
               "serviceId": {}
-            }
+            },
+            "required": [
+              "serviceId"
+            ]
           }
         },
         {
@@ -2338,7 +3493,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "actionId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -2358,7 +3536,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "groupId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -2378,7 +3579,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "battleAction"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -2398,7 +3622,30 @@
             },
             "required": [
               "action"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "battleTarget"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {
@@ -2415,17 +3662,46 @@
               "action": {
                 "enum": [
                   "battleAction",
-                  "selectBattleAction"
+                  "selectBattleAction",
+                  "playSequence"
                 ]
               },
               "battleAction": {
                 "const": "useItem"
+              },
+              "sequenceId": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "maxLength": 64
               }
             },
             "required": [
               "action",
               "battleAction"
-            ]
+            ],
+            "not": {
+              "required": [
+                "selectionBindings",
+                "selectionKey"
+              ],
+              "properties": {
+                "selectionBindings": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "property": {
+                        "const": "itemId"
+                      }
+                    },
+                    "required": [
+                      "property"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "selectionKey": {}
+              }
+            }
           },
           "then": {
             "properties": {

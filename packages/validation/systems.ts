@@ -1,7 +1,9 @@
+import {checkTactics} from './tactics.js';
 import { isObject, type JsonObject, type ProjectDocument } from './model.js';
 import { objectItems, type Index, type SemanticContext } from './context.js';
 
 export function checkSystems(ctx: SemanticContext, doc: ProjectDocument, data: JsonObject): void {
+  checkTactics(ctx,doc,data);
   const root = doc.data as JsonObject, gameplay = root.gameplay;
   if (!isObject(gameplay)) { ctx.report(doc, '/systems', 'SYSTEMS_GAMEPLAY_REQUIRED', '확장 시스템에는 장소·물품 정의가 필요합니다.'); return; }
   const indexes: Record<string, Index> = {};
@@ -30,6 +32,7 @@ export function checkSystems(ctx: SemanticContext, doc: ProjectDocument, data: J
       if (items.has(id) && Number(item.quantity) > Number(items.get(id)!.maxStack)) ctx.report(doc, `${path}/items/${i}/quantity`, 'REWARD_CAPACITY', '한 번의 보상 수량이 최대 보유량을 초과합니다.', [id]);
     });
   }
+  if(isObject(data.tactics))objectItems(data.tactics.encounters).forEach((e,i)=>rewards(e.rewards as JsonObject,`/systems/tactics/encounters/${i}/rewards`));
   objectItems(data.enemies).forEach((e, i) => rewards(e.rewards as JsonObject, `/systems/enemies/${i}/rewards`));
   objectItems(data.quests).forEach((q, i) => {
     const p = `/systems/quests/${i}`; refLocation(q.locationId as string, `${p}/locationId`);

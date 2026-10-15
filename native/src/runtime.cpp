@@ -419,6 +419,7 @@ J create(const J &c, const J &seed, const J &options) {
     for(const auto &key:r["localAttributeIds"])s["attributes"][key.get<std::string>()]=s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()];
   }
   createCharacterState(c,s);
+  if(c["project"].contains("progression"))s["progression"]={{"tick",0},{"actionPoints",c["project"]["progression"]["actionPoints"]["initial"]},{"handled",J::array()},{"pending",nullptr}};
   return {{"ok", true}, {"state", s}};
 }
 void scene(J &s, const J &v, J &sounds) {
@@ -667,10 +668,12 @@ J execute(const J &c, const J &before, J &s, bool individual = false) {
 #include "roster.inc"
 #include "gameplay.inc"
 #include "systems.inc"
+#include "progression.inc"
 void parseCommand(const J &cmd, int count) {
   need(cmd.is_object(), "INVALID_COMMAND", "명령은 객체여야 합니다.", "/command");
   auto type = cmd.contains("type") && cmd["type"].is_string() ? str(cmd, "type") : std::string();
-  if (type == "acceptQuest" || type == "claimQuest" || type == "equip" || type == "unequip" || type == "moveExpedition") {
+  if(type=="tacticsUnequip"||type=="tacticsAction"||type=="tacticsEquip"||type=="tacticsFlee"){std::vector<std::string> fields=type=="tacticsAction"?std::vector<std::string>{"unitId","skillId","targetId"}:type=="tacticsEquip"?std::vector<std::string>{"unitId","equipmentId"}:type=="tacticsUnequip"?std::vector<std::string>{"unitId","slot"}:std::vector<std::string>{};need(cmd.size()==fields.size()+1,"INVALID_COMMAND","전투 명령의 필드를 확인하세요.","/command");for(const auto& k:fields)need(cmd.contains(k)&&cmd[k].is_string()&&!cmd[k].get<std::string>().empty(),"INVALID_COMMAND","전투 명령의 ID가 필요합니다.","/command/"+k);
+  } else if (type == "acceptQuest" || type == "claimQuest" || type == "equip" || type == "unequip" || type == "moveExpedition") {
     std::string field = type == "equip" ? "equipmentId" : type == "unequip" ? "slot" : type == "moveExpedition" ? "nodeId" : "questId";
     need(cmd.size() == 2 && cmd.contains(field) && cmd[field].is_string() && !cmd[field].get<std::string>().empty(), "INVALID_COMMAND", "시스템 명령의 ID가 필요합니다.", "/command/" + field);
     if (type == "unequip") need(cmd["slot"] == "weapon" || cmd["slot"] == "armor" || cmd["slot"] == "accessory", "INVALID_COMMAND", "장비 슬롯이 올바르지 않습니다.", "/command/slot");
@@ -691,6 +694,8 @@ void parseCommand(const J &cmd, int count) {
          !cmd["groupId"].get<std::string>().empty() && cmd.contains("optionId") &&
          (cmd["optionId"].is_null() || (cmd["optionId"].is_string() && !cmd["optionId"].get<std::string>().empty())),
          "INVALID_COMMAND", "정책 그룹과 선택지 또는 null이 필요합니다.", "/command");
+  } else if(type=="waitTime") {
+    need(cmd.size()==2&&cmd.contains("ticks")&&integer(cmd["ticks"])&&number(cmd["ticks"])>0&&number(cmd["ticks"])<=1000000,"INVALID_COMMAND","대기 시간은 1..1000000 정수입니다.","/command/ticks");
   } else if (type == "executeActorAction") {
     need(cmd.size()==4&&cmd.contains("actorId")&&cmd["actorId"].is_string()&&!cmd["actorId"].get<std::string>().empty()&&cmd.contains("actionId")&&cmd["actionId"].is_string()&&!cmd["actionId"].get<std::string>().empty()&&cmd.contains("quantity")&&integer(cmd["quantity"])&&number(cmd["quantity"])>0&&number(cmd["quantity"])<=2147483647LL,"INVALID_COMMAND","실행자·행동 ID와 양의 정수 수량이 필요합니다.","/command");
   } else if (type == "executeAction") {
@@ -731,7 +736,7 @@ void parseCommand(const J &cmd, int count) {
              !cmd["choiceId"].get<std::string>().empty(),
          "INVALID_COMMAND", "choose에는 choiceId가 필요합니다.", "/command/choiceId");
   else
-    need(cmd.size() == 1 && (type == "executeActivity" || type == "acknowledgeResult" ||
+    need(cmd.size() == 1 && (type == "advanceSession" || type == "cancelSession" || type == "executeActivity" || type == "acknowledgeResult" ||
                              type == "completePeriodWithoutEvents" || type == "resolvePeriodEnd" ||
                              type == "advanceNarrative"),
          "INVALID_COMMAND", "지원하지 않는 명령 또는 추가 필드입니다.", "/command/type");
@@ -751,11 +756,14 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
        "상태 버전을 증가시킬 수 없습니다.", "/stateRevision");
   calendar(c, old);
   parseCommand(cmd, periods(c));
+  progressionGuard(old,cmd);
   RuleScope rulesScope;
   activeRules->relationships = old["relationships"];
   J s = old, activity = nullptr, narrative = nullptr, decisions = J::array(), sounds = J::array();
   auto type = str(cmd, "type");
-  if (type == "acceptQuest" || type == "claimQuest" || type == "equip" || type == "unequip" || type == "moveExpedition" || type == "returnFromExpedition" || type == "battleAction")
+  if(type=="advanceSession"||type=="cancelSession"||type=="waitTime")progressSession(c,s,cmd,sounds);
+  else if((type=="executeAction"||type=="executeActorAction")&&startTimedAction(c,s,cmd)){}
+  else if (type == "tacticsUnequip" || type == "tacticsAction" || type == "tacticsFlee" || type == "tacticsEquip" || type == "acceptQuest" || type == "claimQuest" || type == "equip" || type == "unequip" || type == "moveExpedition" || type == "returnFromExpedition" || type == "battleAction")
     systems(c, s, cmd, sounds);
   else if (type == "navigate" || type == "visit" || type == "buy" || type == "sell" ||
            type == "useService" || type == "setDiet" || type == "interact" ||

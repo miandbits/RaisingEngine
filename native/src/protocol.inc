@@ -54,6 +54,15 @@ std::string process(const std::string &text) {
           checkContent(c);
           auto id = request["subject"].at("id");
           need(find(c["events"], id), "UNKNOWN_NARRATIVE", "사건이 없습니다.", "/subject/id");
+          const auto event=find(c["events"],id);
+          if(event->value("trigger","")=="interaction"){
+            const bool completed=eventCompleted(c,s,id),inWindow=s["periodIndex"]>=(*event)["window"]["fromPeriod"]&&s["periodIndex"]<=(*event)["window"]["throughPeriod"];
+            const bool matches=condition(c,s,(*event)["requirements"],"/events/"+id.get<std::string>()+"/requirements");
+            const bool ready=s["mode"]=="full"&&(s["phase"]=="planning"||s["phase"]=="ready");
+            const bool eligible=ready&&!completed&&inWindow&&matches;
+            const auto reason=!ready?"wrong-phase":completed?"already-completed":!inWindow?"outside-window":!matches?"requirements-not-met":"interaction-ready";
+            return J({{"ok",true},{"eligible",eligible},{"reason",reason},{"checks",J::array({{{"kind","invocation"},{"status","information"},{"reason","행동 또는 예약 연결에서만 발생합니다. 조건 충족은 도달 가능성 증명이 아닙니다."},{"path","/events/"+id.get<std::string>()}}})},{"trace",trace},{"eventDecisions",J::array()}}).dump();
+          }
           auto decisions = inspect(c, s);
           auto decision = J::object();
           for (const auto &entry : decisions) if (entry["eventId"] == id) decision = entry;

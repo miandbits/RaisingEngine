@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
       {"engine-root", "Engine repository directory", "directory", defaultRoot});
   parser.addOption({"project", "Project directory", "directory"});
   parser.addOption({"analysis", "Open archived automatic play results"});
+  parser.addOption({"workspace", "Open integrated authoring workspace"});
   parser.process(app);
   StudioWindow window(parser.value("engine-root"));
   window.show();
@@ -36,6 +37,15 @@ int main(int argc, char **argv) {
       if (window.busy()) return;
       ready->stop();
       if (auto action = window.findChild<QAction *>("showAnalysis")) action->trigger();
+    });
+    ready->start(500);
+  }
+  if (parser.isSet("workspace")) {
+    auto ready = new QTimer(&window);
+    QObject::connect(ready, &QTimer::timeout, &window, [&window, ready] {
+      if (window.busy()) return;
+      ready->stop();
+      if (auto action = window.findChild<QAction *>("showAuthoringWorkspace")) action->trigger();
     });
     ready->start(500);
   }

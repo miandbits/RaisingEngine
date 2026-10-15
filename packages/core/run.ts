@@ -1,3 +1,4 @@
+import { createProgression, guardProgression, startTimedAction, progressSession } from './progression.js';
 import { resolveUserValues } from './user-fields.js';
 import { createRoster, assignActivities, executeRoster, beginActorAction } from './roster.js';
 import type { Overrides } from '../schema/generated/project.js';
@@ -78,6 +79,7 @@ export function createRun(content: ContentSnapshot, seed: number,
     if (content.project.systems) state.systems = createSystems();
     if (options.initialOverrides !== undefined) mergeOverrides(content, state, options.initialOverrides, '/initialOverrides');
     createRoster(content, state);
+    createProgression(content, state);
     return { ok: true, state: freeze(state) };
   } catch (error) {
     if (error instanceof CoreFault) return { ok: false, error: error.diagnostic() };
@@ -87,7 +89,9 @@ export function createRun(content: ContentSnapshot, seed: number,
 
 function parseCommand(input: unknown, periods: number): Command {
   requireCore(object(input), 'INVALID_COMMAND', '명령은 객체여야 합니다.', '/command');
-  if (['acceptQuest', 'claimQuest', 'equip', 'unequip', 'moveExpedition'].includes(input.type as string)) {
+  if(input.type==='tacticsUnequip'||input.type==='tacticsAction'||input.type==='tacticsEquip'||input.type==='tacticsFlee'){
+    const fields=input.type==='tacticsAction'?['unitId','skillId','targetId']:input.type==='tacticsEquip'?['unitId','equipmentId']:input.type==='tacticsUnequip'?['unitId','slot']:[];requireCore(Object.keys(input).length===fields.length+1&&fields.every(k=>typeof input[k]==='string'&&String(input[k]).length>0),'INVALID_COMMAND','전투 명령의 대상과 스킬을 확인하세요.','/command');
+  } else if (['acceptQuest', 'claimQuest', 'equip', 'unequip', 'moveExpedition'].includes(input.type as string)) {
     const field = input.type === 'equip' ? 'equipmentId' : input.type === 'unequip' ? 'slot' : input.type === 'moveExpedition' ? 'nodeId' : 'questId';
     requireCore(Object.keys(input).length === 2 && typeof input[field] === 'string' && (input[field] as string).length > 0,
       'INVALID_COMMAND', '시스템 명령의 ID가 필요합니다.', `/command/${field}`);
@@ -109,6 +113,8 @@ function parseCommand(input: unknown, periods: number): Command {
       'INVALID_COMMAND', `${input.type}에는 ${field}가 필요합니다.`, `/command/${field}`);
   } else if (input.type === 'selectPolicy') {
     requireCore(Object.keys(input).length === 3 && typeof input.groupId === 'string' && input.groupId.length > 0 && (input.optionId === null || typeof input.optionId === 'string' && input.optionId.length > 0), 'INVALID_COMMAND', '정책 그룹 ID와 선택 ID 또는 null이 필요합니다.', '/command');
+  } else if (input.type === 'waitTime') {
+    requireCore(Object.keys(input).length===2 && typeof input.ticks==='number' && Number.isInteger(input.ticks) && input.ticks>0 && input.ticks<=1000000,'INVALID_COMMAND','대기 시간은 1..1000000 정수입니다.','/command/ticks');
   } else if (input.type === 'executeActorAction') {
     requireCore(Object.keys(input).length===4 && typeof input.actorId==='string' && input.actorId.length>0 && typeof input.actionId==='string' && input.actionId.length>0 && typeof input.quantity==='number' && Number.isInteger(input.quantity) && input.quantity>0 && input.quantity<=2147483647,'INVALID_COMMAND','실행자·행동 ID와 양의 정수 수량이 필요합니다.','/command');
   } else if (input.type === 'executeAction') {
@@ -126,7 +132,7 @@ function parseCommand(input: unknown, periods: number): Command {
     requireCore(Object.keys(input).length === 2 && typeof input.choiceId === 'string' && input.choiceId.length > 0,
       'INVALID_COMMAND', 'choose에는 choiceId가 필요합니다.', '/command/choiceId');
   } else {
-    requireCore(Object.keys(input).length === 1 && ['executeActivity', 'acknowledgeResult', 'completePeriodWithoutEvents', 'resolvePeriodEnd', 'advanceNarrative'].includes(input.type as string),
+    requireCore(Object.keys(input).length === 1 && ['advanceSession', 'cancelSession', 'executeActivity', 'acknowledgeResult', 'completePeriodWithoutEvents', 'resolvePeriodEnd', 'advanceNarrative'].includes(input.type as string),
       'INVALID_COMMAND', '지원하지 않는 명령 또는 추가 필드입니다.', '/command/type');
   }
   return structuredClone(input) as Command;
@@ -204,20 +210,24 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     calendarTime(content, state);
     const command = parseCommand(input, content.project.periodsPerMonth);
     const draft = structuredClone(state) as RunData;
+    guardProgression(draft, command);
     beginRuleCommand(draft);
     let activity: ActivityResult | null = null;
     let narrative: NarrativeStep | null = null;
     let eventDecisions: EventDecision[] = [];
     const soundCues: string[] = [];
     switch (command.type) {
+      case 'advanceSession': case 'cancelSession': case 'waitTime': progressSession(content,draft,command,soundCues); break;
       case 'assignActivities': assignActivities(content, state, draft, command.assignments); break;
       case 'executeActorAction':
+        if(startTimedAction(content,draft,command))break;
         beginActorAction(content,draft,command.actorId,command.actionId);
         applyGameplay(content,draft,{type:'executeAction',actionId:command.actionId,quantity:command.quantity},soundCues);
         break;
-      case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction':
+      case 'tacticsUnequip': case 'tacticsAction': case 'tacticsFlee': case 'tacticsEquip': case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction':
         applySystems(content, draft, command, soundCues); break;
       case 'navigate': case 'visit': case 'buy': case 'interact': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy':
+        if(command.type==='executeAction' && startTimedAction(content,draft,command))break;
         applyGameplay(content, draft, command, soundCues);
         if (command.type === 'executeAction') {
           const expeditionId = content.project.gameplay?.actions?.find(a => a.id === command.actionId)?.expeditionId;

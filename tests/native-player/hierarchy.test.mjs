@@ -32,7 +32,7 @@ test('native hierarchy resolves parent anchors, inherited conditions, component 
    bindings:[{elementId:'card-text',property:'text',field:'name'}]},
  ];await writeFile(file,JSON.stringify(p));
  const built=await buildSnapshot(await loadProject(projectRoot));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
- const destination=resolve(root,'game');await exportGame({content:built.snapshot,projectRoot,destination,target:'windows',runtimes:{windows:resolve('dist/native-player-app'),web:resolve('dist/web')}});
+ const destination=resolve(root,'game');await exportGame({content:built.snapshot,projectRoot,destination,target:'windows',runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-app'),web:resolve('dist/web')}});
  const steps=[{click:'start'},{checkpoint:'initial',screenshot:resolve(root,'initial.png')},
   {clickWindow:'clipped-button'},{checkpoint:'clipped-click'},{resize:{width:1600,height:720}},{waitFrames:20},{checkpoint:'wide',screenshot:resolve(root,'wide.png')},
   {clickWindow:'nested-button'},{checkpoint:'navigated'},{key:'F5'},{key:'F9'},{checkpoint:'restored'}];

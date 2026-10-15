@@ -16,22 +16,15 @@ export function applyCommands(content: ContentSnapshot, state: RunState, command
   }
   return { state, commands, transitions };
 }
-function candidates(content: ContentSnapshot, state: RunState, reasons: Record<string, number>,random?:()=>number,budget=Infinity): Candidate[] {
-  const result: Candidate[] = [];
-  const pending:Command[][]=[];
-  const attempt = (commands: Command[]) => {pending.push(commands);};
-  const execute = (commands: Command[]) => {
-    let next = state; const transitions: Readonly<Transition>[] = [];
-    for (const command of commands) {
-      const r = dispatchCommand(content, next, command, next.stateRevision);
-      if (!r.ok) { add(reasons, r.error.code); return; }
-      next = r.state; transitions.push(r.transition as Readonly<Transition>);
-    }
-    result.push({ state: next, commands, transitions });
-  };
-  if (state.phase === 'planning' || state.phase === 'ready') {
+export function commandAttempts(content: ContentSnapshot,state: RunState,random?:()=>number):Command[][] {
+  const pending:Command[][]=[];const attempt=(commands:Command[])=>pending.push(commands);
+  if (state.progression?.pending && (state.phase==='planning'||state.phase==='ready')) {
+    attempt([{type:'advanceSession'}]);attempt([{type:'cancelSession'}]);
+  } else if (state.phase === 'planning' || state.phase === 'ready') {
+    if(content.project.progression)attempt([{type:'waitTime',ticks:1}]);
     const systems = content.project.systems;
     if (systems && state.systems) {
+      for(const unit of systems.tactics?.units.filter(u=>u.control==='player')??[]){for(const equipment of systems.equipment)attempt([{type:'tacticsEquip',unitId:unit.id,equipmentId:equipment.id}]);for(const slot of ['weapon','armor','accessory'] as const)if(state.systems.tactics?.equipment[unit.id]?.[slot])attempt([{type:'tacticsUnequip',unitId:unit.id,slot}]);}
       for (const quest of systems.quests) {
         attempt([{ type: 'acceptQuest', questId: quest.id }]);
         attempt([{ type: 'claimQuest', questId: quest.id }]);
@@ -82,8 +75,16 @@ function candidates(content: ContentSnapshot, state: RunState, reasons: Record<s
     for (const nodeId of [...node.connections].sort()) attempt([{ type: 'moveExpedition', nodeId }]);
     attempt([{ type: 'returnFromExpedition' }]);
   } else if (state.phase === 'battle') {
-    for (const action of ['attack', 'guard', 'flee'] as const) attempt([{ type: 'battleAction', action }]);
-    for (const item of content.project.systems!.consumables) attempt([{ type: 'battleAction', action: 'useItem', itemId: item.itemId }]);
+    const battle=state.systems?.tactics?.active;
+    if(battle){
+      const actor=battle.units.find(u=>u.id===battle.order[battle.cursor])!;
+      const unit=content.project.systems!.tactics!.units.find(u=>u.id===actor.unitId)!;
+      for(const skillId of unit.skillIds)for(const target of battle.units)if(target.hp>0)attempt([{type:'tacticsAction',unitId:actor.id,skillId,targetId:target.id}]);
+      attempt([{type:'tacticsFlee'}]);
+    }else{
+      for (const action of ['attack', 'guard', 'flee'] as const) attempt([{ type: 'battleAction', action }]);
+      for (const item of content.project.systems!.consumables) attempt([{ type: 'battleAction', action: 'useItem', itemId: item.itemId }]);
+    }
   } else if (state.phase === 'narrative') {
     const cursor = state.activeNarrative!;
     const story = (cursor.kind === 'event' ? content.events : content.endings).find(e => e.id === cursor.id)!;
@@ -92,6 +93,19 @@ function candidates(content: ContentSnapshot, state: RunState, reasons: Record<s
     else attempt([{ type: 'advanceNarrative' }]);
   } else if (state.phase === 'activity-result') attempt([{ type: 'acknowledgeResult' }]);
   else if (state.phase === 'period-end') attempt([{ type: 'resolvePeriodEnd' }]);
+  return pending;
+}
+function candidates(content: ContentSnapshot, state: RunState, reasons: Record<string, number>,random?:()=>number,budget=Infinity): Candidate[] {
+  const result:Candidate[]=[];const pending=commandAttempts(content,state,random);
+  const execute = (commands: Command[]) => {
+    let next = state; const transitions: Readonly<Transition>[] = [];
+    for (const command of commands) {
+      const r = dispatchCommand(content, next, command, next.stateRevision);
+      if (!r.ok) { add(reasons, r.error.code); return; }
+      next = r.state; transitions.push(r.transition as Readonly<Transition>);
+    }
+    result.push({ state: next, commands, transitions });
+  };
   if(random)for(let i=pending.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pending[i],pending[j]]=[pending[j]!,pending[i]!];}
   for(const commands of pending){if(commands.length>budget)continue;execute(commands);if(random&&result.length)break;}
   return result;
@@ -307,7 +321,10 @@ export async function runAnalysis(content: ContentSnapshot, input: AnalysisOptio
           + (options.target!.kind !== 'ending' && t.state.periodIndex > content.events.find(e => e.id === target.id)!.window.throughPeriod ? 1000000 : 0)
           + competitors.reduce((sum,e) => sum + 10 / (1 + distance(content,t.state,e.requirements)), 0);
         const ranked = expanded.map(t => ({ t, score: score(t) }));
-        ranked.sort((a, b) => Number(reached(b.t, options.target)) - Number(reached(a.t, options.target)) || a.score - b.score || b.t.state.periodIndex - a.t.state.periodIndex);
+        // Equal-distance equipment/visit loops must not crowd out the next time boundary.
+        // This is a tie-break only; requirements and target attainment remain primary.
+        const phaseProgress = (t: Trace) => ({finished:5,narrative:4,'period-end':3,'activity-result':2,ready:1,planning:0,battle:0,expedition:0}[t.state.phase]);
+        ranked.sort((a, b) => Number(reached(b.t, options.target)) - Number(reached(a.t, options.target)) || a.score - b.score || b.t.state.periodIndex - a.t.state.periodIndex || phaseProgress(b.t)-phaseProgress(a.t));
         expanded.splice(0, expanded.length, ...ranked.map(r => r.t));
       }
       beam = expanded.slice(0, options.target ? options.beamWidth ?? 12 : 1);

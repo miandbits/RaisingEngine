@@ -6,6 +6,7 @@ import { checkLocalization } from './localization.js';
 import { checkGameplay } from './gameplay.js';
 import { checkUserFields } from './user-fields.js';
 import { checkSystems } from './systems.js';
+import { checkProgression } from './progression.js';
 import { checkRoster, checkOwner } from './roster.js';
 
 export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
@@ -97,6 +98,7 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
   }
   if (root && project) {
     checkRoster(ctx, root, project);
+    checkProgression(ctx, root, project);
     checkUserFields(ctx, root, project);
     checkLocalization(ctx, root, documents);
     if (isObject(project.visual)) checkVisual(ctx, root, project.visual);

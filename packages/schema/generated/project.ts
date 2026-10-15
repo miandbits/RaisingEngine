@@ -2681,6 +2681,31 @@ export type ProjectDefinition = Header & {
         ];
     stateModel?: "character-v1";
   };
+  progression?: {
+    unitLabel: string;
+    actionPoints: {
+      max: number;
+      initial: number;
+      recoveryPerTick: number;
+    };
+    /**
+     * @maxItems 512
+     */
+    actions: {
+      actionId: string;
+      duration: number;
+      actionPointCost: number;
+    }[];
+    /**
+     * @maxItems 128
+     */
+    appointments: {
+      id: string;
+      eventId: string;
+      atTick: number;
+      actorId?: string;
+    }[];
+  };
 };
 export type Element = {
   [k: string]: unknown;
@@ -2778,7 +2803,8 @@ export type Element = {
     | "attribute-value"
     | "relationship-value"
     | "item-count"
-    | "user-field";
+    | "user-field"
+    | "selected-field";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -3625,7 +3651,12 @@ export type Element = {
     | "selectBattleAction"
     | "selectBattleTarget"
     | "confirmBattleAction"
-    | "cancelBattleAction";
+    | "cancelBattleAction"
+    | "selectRow"
+    | "openModal"
+    | "closeModal"
+    | "executeActorAction"
+    | "playSequence";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -3700,7 +3731,12 @@ export type Element = {
         | "selectBattleAction"
         | "selectBattleTarget"
         | "confirmBattleAction"
-        | "cancelBattleAction";
+        | "cancelBattleAction"
+        | "selectRow"
+        | "openModal"
+        | "closeModal"
+        | "executeActorAction"
+        | "playSequence";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -3722,6 +3758,1816 @@ export type Element = {
       battleTarget?: "self" | "enemy";
       clipChildren?: boolean;
       userFieldId?: string;
+      tooltip?: string;
+      selectionKey?: string;
+      selectionField?: string;
+      /**
+       * @maxItems 16
+       */
+      selectionBindings?:
+        | []
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ];
+      actorId?: string;
+      sequenceId?: string;
     };
   }[];
   serviceId?: string;
@@ -3806,6 +5652,1828 @@ export type Element = {
       [k: string]: string | number | boolean | null;
     };
   };
+  flowLayout?: {
+    direction: "row" | "column" | "grid";
+    gap?: number;
+    padding?: number;
+    columns?: number;
+  };
+  overflow?: "visible" | "hidden" | "scroll";
+  sort?: {
+    field: string;
+    direction: "asc" | "desc";
+  };
+  selectionKey?: string;
+  selectionField?: string;
+  /**
+   * @maxItems 16
+   */
+  selectionBindings?:
+    | []
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ];
+  tooltip?: string;
+  actorId?: string;
+  tacticsPanel?: "all" | "units" | "actions" | "log" | "growth";
+  sequenceId?: string;
 };
 export type Condition =
   | {
@@ -3890,7 +7558,7 @@ export type ComponentChild = {
   [k: string]: unknown;
 } & {
   id: string;
-  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input";
+  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input" | "component";
   label?: string;
   x: number;
   y: number;
@@ -3914,7 +7582,8 @@ export type ComponentChild = {
     | "attribute-value"
     | "relationship-value"
     | "item-count"
-    | "user-field";
+    | "user-field"
+    | "selected-field";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -4761,7 +8430,12 @@ export type ComponentChild = {
     | "selectBattleAction"
     | "selectBattleTarget"
     | "confirmBattleAction"
-    | "cancelBattleAction";
+    | "cancelBattleAction"
+    | "selectRow"
+    | "openModal"
+    | "closeModal"
+    | "executeActorAction"
+    | "playSequence";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -4822,6 +8496,3702 @@ export type ComponentChild = {
   parentId?: string;
   clipChildren?: boolean;
   userFieldId?: string;
+  flowLayout?: {
+    direction: "row" | "column" | "grid";
+    gap?: number;
+    padding?: number;
+    columns?: number;
+  };
+  overflow?: "visible" | "hidden" | "scroll";
+  sort?: {
+    field: string;
+    direction: "asc" | "desc";
+  };
+  selectionKey?: string;
+  selectionField?: string;
+  /**
+   * @maxItems 16
+   */
+  selectionBindings?:
+    | []
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ];
+  tooltip?: string;
+  actorId?: string;
+  componentId?: string;
+  /**
+   * @maxItems 100
+   */
+  overrides?: {
+    elementId: string;
+    values: {
+      text?: string;
+      label?: string;
+      imageAssetId?: string;
+      action?:
+        | "start"
+        | "advance"
+        | "save"
+        | "load"
+        | "sound"
+        | "navigate"
+        | "visit"
+        | "buy"
+        | "interact"
+        | "acceptQuest"
+        | "claimQuest"
+        | "equip"
+        | "unequip"
+        | "moveExpedition"
+        | "returnFromExpedition"
+        | "battleAction"
+        | "sell"
+        | "useService"
+        | "setDiet"
+        | "executeAction"
+        | "selectPolicy"
+        | "selectBattleAction"
+        | "selectBattleTarget"
+        | "confirmBattleAction"
+        | "cancelBattleAction"
+        | "selectRow"
+        | "openModal"
+        | "closeModal"
+        | "executeActorAction"
+        | "playSequence";
+      screenId?: string;
+      locationId?: string;
+      shopId?: string;
+      itemId?: string;
+      interactionId?: string;
+      quantity?: number;
+      styleId?: string;
+      fill?: string;
+      color?: string;
+      fontSize?: number;
+      serviceId?: string;
+      dietId?: string;
+      actionId?: string;
+      groupId?: string;
+      optionId?: string | null;
+      value?: number;
+      maxValue?: number;
+      battleAction?: "attack" | "guard" | "useItem" | "flee";
+      battleTarget?: "self" | "enemy";
+      clipChildren?: boolean;
+      userFieldId?: string;
+      tooltip?: string;
+      selectionKey?: string;
+      selectionField?: string;
+      /**
+       * @maxItems 16
+       */
+      selectionBindings?:
+        | []
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ];
+      actorId?: string;
+      sequenceId?: string;
+    };
+  }[];
+  tacticsPanel?: "all" | "units" | "actions" | "log" | "growth";
+  sequenceId?: string;
 };
 export type Effects = (
   | {
@@ -5114,6 +12484,246 @@ export interface VisualDesign {
     failureTimelineId?: string;
     repeat?: "once" | "logicalDays";
   }[];
+  direction?: {
+    /**
+     * @minItems 1
+     * @maxItems 32
+     */
+    actors: [
+      {
+        id: string;
+        name: string;
+        assetId: string;
+        /**
+         * @maxItems 100
+         */
+        expressions?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        outfits?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        motions?: {
+          id: string;
+          /**
+           * @minItems 1
+           * @maxItems 120
+           */
+          frames: [string, ...string[]];
+          frameMs: number;
+        }[];
+      },
+      ...{
+        id: string;
+        name: string;
+        assetId: string;
+        /**
+         * @maxItems 100
+         */
+        expressions?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        outfits?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        motions?: {
+          id: string;
+          /**
+           * @minItems 1
+           * @maxItems 120
+           */
+          frames: [string, ...string[]];
+          frameMs: number;
+        }[];
+      }[]
+    ];
+    /**
+     * @minItems 1
+     * @maxItems 100
+     */
+    sequences: [
+      {
+        id: string;
+        name: string;
+        /**
+         * @minItems 1
+         * @maxItems 100
+         */
+        stages: [
+          {
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          },
+          ...{
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          }[]
+        ];
+      },
+      ...{
+        id: string;
+        name: string;
+        /**
+         * @minItems 1
+         * @maxItems 100
+         */
+        stages: [
+          {
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          },
+          ...{
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          }[]
+        ];
+      }[]
+    ];
+  };
 }
 export interface Scene {
   backgroundAssetId?: string | null;
@@ -5186,6 +12796,7 @@ export interface Screen {
    * @maxItems 100
    */
   elements: Element[];
+  modal?: boolean;
 }
 export interface StyleValues {
   fontSize?: number;
@@ -5555,6 +13166,8 @@ export interface SystemsDefinition {
         enemyId?: string;
         exit?: boolean;
         presentation?: Scene;
+        encounterId?: string;
+        requirements?: Condition;
       },
       ...{
         id: string;
@@ -5567,6 +13180,8 @@ export interface SystemsDefinition {
         enemyId?: string;
         exit?: boolean;
         presentation?: Scene;
+        encounterId?: string;
+        requirements?: Condition;
       }[]
     ];
   }[];
@@ -5591,6 +13206,7 @@ export interface SystemsDefinition {
       }[];
       effects: Effects;
     };
+    encounterId?: string;
   }[];
   /**
    * @maxItems 1000
@@ -5604,6 +13220,17999 @@ export interface SystemsDefinition {
     threshold: number;
     eventId?: string;
   }[];
+  tactics?: {
+    /**
+     * @maxItems 128
+     */
+    units: {
+      id: string;
+      name: string;
+      characterId?: string;
+      faction: string;
+      control: "player" | "ai";
+      row: number;
+      column: number;
+      stats: {
+        maxHp: number;
+        attack: number;
+        defense: number;
+        speed: number;
+      };
+      /**
+       * @maxItems 32
+       */
+      skillIds: string[];
+      statAttributes?: {
+        maxHp?: string;
+        attack?: string;
+        defense?: string;
+        speed?: string;
+      };
+    }[];
+    /**
+     * @maxItems 128
+     */
+    skills: {
+      id: string;
+      name: string;
+      target: "enemy" | "frontEnemy" | "ally" | "self" | "allEnemies" | "allAllies";
+      kind: "damage" | "heal" | "status";
+      power: number;
+      accuracy: number;
+      castTurns: number;
+      cooldown: number;
+      statusId?: string;
+    }[];
+    /**
+     * @maxItems 128
+     */
+    statuses: {
+      id: string;
+      name: string;
+      turns: number;
+      damage: number;
+      heal: number;
+      attack: number;
+      defense: number;
+      stun: boolean;
+    }[];
+    /**
+     * @maxItems 128
+     */
+    encounters: {
+      id: string;
+      name: string;
+      /**
+       * @maxItems 8
+       */
+      party:
+        | []
+        | [string]
+        | [string, string]
+        | [string, string, string]
+        | [string, string, string, string]
+        | [string, string, string, string, string]
+        | [string, string, string, string, string, string]
+        | [string, string, string, string, string, string, string]
+        | [string, string, string, string, string, string, string, string];
+      /**
+       * @maxItems 20
+       */
+      waves:
+        | []
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ]
+        | [
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            },
+            {
+              /**
+               * @maxItems 16
+               */
+              unitIds:
+                | []
+                | [string]
+                | [string, string]
+                | [string, string, string]
+                | [string, string, string, string]
+                | [string, string, string, string, string]
+                | [string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string]
+                | [string, string, string, string, string, string, string, string, string, string, string, string]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ]
+                | [
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string,
+                    string
+                  ];
+            }
+          ];
+      experience: number;
+      rewards: {
+        /**
+         * @maxItems 1000
+         */
+        items: {
+          itemId: string;
+          quantity: number;
+        }[];
+        effects: Effects;
+      };
+    }[];
+    growth: {
+      experiencePerLevel: number;
+      maxLevel: number;
+      perLevel: {
+        maxHp: number;
+        attack: number;
+        defense: number;
+        speed: number;
+      };
+    };
+  };
 }
 export interface UserFieldDefinition {
   id: string;

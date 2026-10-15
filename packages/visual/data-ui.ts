@@ -1,7 +1,7 @@
 import type { ContentSnapshot, RunState, DeepReadonly } from '../core/model.js';
 import type { GameplayView } from '../gameplay/model.js';
 import type { Element, ReadonlyDesign } from './model.js';
-import { resolveElementHierarchy, type ResolvedElement } from './components.js';
+import { resolveElementHierarchy, expandComponents, type ResolvedElement } from './components.js';
 import type { SystemsView } from '../systems/model.js';
 import type { BattleSelection } from '../player-service/battle.js';
 import { battleSourceFields, battleCollectionRows } from './battle-data.js';
@@ -35,12 +35,14 @@ export function collectionRows(design:ReadonlyDesign,element:DeepReadonly<Elemen
   }else if(source.type==='relationships'&&context.state){
     for(const character of context.content.characters)if(!source.characterId||source.characterId===character.id)for(const relationship of character.relationships)add(`${character.id}--${relationship.id}`,{name:character.name,characterId:character.id,relationshipId:relationship.id,relationshipName:relationship.label,value:context.state.relationships[character.id]?.[relationship.id]??relationship.initial,min:relationship.min,max:relationship.max,enabled:true,reason:''});
   }
-  return rows.filter(row=>matches(row,element.rowFilter)).slice(0,1000);
+  const filtered=rows.filter(row=>matches(row,element.rowFilter));
+  if(element.sort){const {field,direction}=element.sort;filtered.sort((a,b)=>{const x=a.values[field],y=b.values[field];if(x===y)return 0;if(x===undefined)return 1;if(y===undefined)return -1;return (x<y?-1:1)*(direction==='desc'?-1:1);});}
+  return filtered.slice(0,1000);
 }
 /** Returns card-local primitives. Container clipping/scrolling remains the renderer's job. */
 export function resolveCollectionRow(design:ReadonlyDesign,collection:DeepReadonly<Element>,row:DataRow,cardWidth:number):BoundElement[]{
   const component=design.components?.find(x=>x.id===collection.componentId);if(!component)return [];
-  const children=component.elements.map(child=>{
+  const children=expandComponents(design,resolveElementHierarchy(component.elements as readonly Element[],component,{width:Math.max(16,cardWidth),height:collection.rowHeight??component.height})).map(child=>{
     const element=structuredClone(child) as BoundElement;let enabled=row.enabled;
     for(const binding of collection.bindings??[]){if(binding.elementId!==child.id)continue;const value=row.values[binding.field];if(value===undefined)continue;
       if(binding.property==='visible'){if(value===false)element.hidden=true;continue;}
@@ -54,5 +56,6 @@ export function resolveCollectionRow(design:ReadonlyDesign,collection:DeepReadon
     if(element.kind==='button'||element.kind==='group'){element.dataEnabled=enabled;element.dataReason=row.reason;}
     return element;
   });
-  return resolveElementHierarchy(children,component,{width:Math.max(16,cardWidth),height:collection.rowHeight??component.height},{idPrefix:`${collection.id}__${row.id}__`}) as BoundElement[];
+  for(const e of children)for(const id of e._groupIds??[]){const parent=children.find(x=>x.id===id);if(parent?.hidden)e.hidden=true;if(parent?.dataEnabled===false){e.dataEnabled=false;e.dataReason=parent.dataReason??'';}}
+  return children.map(e=>({...e,id:`${collection.id}__${row.id}__${e.id}`}));
 }

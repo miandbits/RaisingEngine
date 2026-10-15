@@ -16,6 +16,9 @@
 #include <QScopeGuard>
 #include <QSplitter>
 #include <QTableWidget>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsItem>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
@@ -28,6 +31,26 @@ private slots:
   void rosterPlayIntegration();
   void characterStateAuthoringRoundtrip();
   void characterStatePlayIntegration();
+  void timeSessionAuthoringRoundtrip();
+  void authoringWorkspaceRoundtrip();
+  void uiCompositionAuthoringRoundtrip();
+  void uiCompositionPlayIntegration();
+  void commercialPilotAuthoring();
+  void commercialPilotPolish();
+  void commercialPilotPlay();
+  void goalRoutesRecordAndReplay();
+  void goalSearchAndRegister();
+  void goalCompareGraphReplay();
+  void goalHistoricalBaseline();
+  void goalSaveImpact();
+  void benchmarkAuthoringSuite();
+  void benchmarkPlayAndAssurance();
+  void directionAuthoringRoundtrip();
+  void directionPlayIntegration();
+  void tacticsAuthoringRoundtrip();
+  void tacticsPlayIntegration();
+  void authoringWorkspacePlayIntegration();
+  void timeSessionPlayIntegration();
   void screenSettingsRoundtrip();
   void screenSettingsGuards();
   void userFieldsAuthoringRoundtrip();
@@ -892,6 +915,18 @@ private slots:
 #include "project-settings-test.inc"
 #include "roster-test.inc"
 #include "character-state-test.inc"
+#include "time-session-test.inc"
+#include "authoring-workspace-test.inc"
+#include "ui-composition-test.inc"
+#include "tactics-test.inc"
+#include "direction-test.inc"
+#include "assurance-test.inc"
+#include "commercial-pilot-test.inc"
+#include "goal-routes-test.inc"
+#include "goal-search-test.inc"
+#include "goal-compare-test.inc"
+#include "goal-history-test.inc"
+#include "goal-impact-test.inc"
 #include "screen-settings-test.inc"
 #include "user-fields-test.inc"
 #include "text-binding-batch-test.inc"

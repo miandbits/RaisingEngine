@@ -1,3 +1,12 @@
+import {changeGoalBaseline} from './goal-approvals.mjs';
+import {resolveGoalImpact} from './goal-impact.mjs';
+import {createBenchmarkProject} from './benchmarks.mjs';
+import {runAssurance} from '../../dist/packages/analysis-service/assurance.js';
+import {GoalSearchJobs} from './goal-search.mjs';
+import {checkGoalImpacts,publishGoalImpacts,latestGoalImpact} from './goal-impact.mjs';
+import {listGoalBaselines} from './goal-baselines.mjs';
+import {GoalComparisons} from './goal-compare.mjs';
+import {listGoalRoutes, importGoalRecording, saveGoalRoute, checkGoalRoutes} from './goal-routes.mjs';
 // Qt and Electron use the same authoring transactions, validator and exporter.
 // stdout is a JSON-lines protocol; diagnostics belong on stderr.
 import { createInterface } from 'node:readline';
@@ -11,6 +20,7 @@ import { importFont } from '../../dist/packages/studio-service/fonts.js';
 import { extractMessages,contentFromDocuments } from '../../dist/packages/localization/catalog.js';
 import { createTemplateProject, createProjectFromSource } from '../../dist/packages/studio-service/templates.js';
 import { exportGame, hasPortraitTransforms } from '../../dist/packages/export-service/export.js';
+import { authoringWorkspace, workspaceImpact } from '../../dist/packages/authoring-workspace/index.js';
 import { RuleDebugSession, ruleImpact } from '../../dist/packages/rule-debug/index.js';
 import {AnalysisJobs} from '../../dist/packages/analysis-service/jobs.js';
 import { validateProject } from '../../dist/packages/validation/index.js';
@@ -24,6 +34,8 @@ const LOCK_FILE = 'plugins/lock.json';
 export class QtStudioService {
   debugSession = null;
   analysisJobs = new AnalysisJobs();
+  goalSearchJobs = new GoalSearchJobs();
+  goalComparisons = new GoalComparisons();
   constructor({ runtimes = { web: path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore } = {}) {
     this.runtimes = runtimes;
     this.pluginStore = pluginStorePath(pluginStore);
@@ -41,6 +53,8 @@ export class QtStudioService {
   }
   async handle(request) {
     const { method, params = {} } = request;
+    if(method==='goalCompareStep')return {error:null,goalComparisonStep:this.goalComparisons.step(this.editor,params)};
+    if(method==='goalSearchStatus'||method==='goalSearchStop')return {error:null,goalSearch:method==='goalSearchStop'?this.goalSearchJobs.cancel(params.root,params.jobId):this.goalSearchJobs.public(this.goalSearchJobs.get(params.root,params.jobId))};
     if(['analysisList','analysisStatus','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
       const jobs=this.analysisJobs;let analysis;
       if(method==='analysisList')analysis={jobs:(await jobs.list(params.root)).map(job=>({...job,result:{...job.result,routeGraph:undefined,traces:[]}}))};
@@ -54,6 +68,59 @@ export class QtStudioService {
     }
     let extra = {};
     switch (method) {
+      case 'goalRecordPrepare': {
+        const caps=await readFile(path.join(this.runtimes.windows,'capabilities.json'),'utf8').then(JSON.parse).catch(()=>({}));
+        if(!caps.toolFeatures?.includes('goal-route-recording-v1'))throw new Error('이 플레이어는 목표 경로 기록을 지원하지 않습니다. 최신 Windows 플레이어 런타임을 선택하세요.');
+        extra={recordingSupported:true};break;
+      }
+      case 'goalSearchStart': {
+        const content=await this.debugSnapshot(params.revision);
+        extra={goalSearch:await this.goalSearchJobs.start(this.editor.root,content,params.revision,params)};break;
+      }
+      case 'goalBaselineApprove':
+      case 'goalBaselineRestore': {
+        const content=await this.debugSnapshot(params.revision);
+        const resolved=await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);
+        if(method==='goalBaselineApprove'&&resolved.row.status!=='changed')throw Error('목표에 도달한 변경 경로만 승인할 수 있습니다.');
+        if(method==='goalBaselineRestore'&&!params.baselineId)throw Error('되돌릴 기준을 선택하세요.');
+        const entry=await changeGoalBaseline(this.editor.root,{expectedRevision:resolved.report.selectionRevision,route:resolved.route,baseline:resolved.baseline,content,reportId:resolved.report.id,name:params.name,note:params.note,restoreId:method==='goalBaselineRestore'?params.baselineId:undefined,validate:async()=>{this.editor.current(params.revision);await this.editor.assertDiskUnchanged();await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);}});
+        extra={goalApproval:entry};
+        try{const report=await checkGoalImpacts(this.editor.root,content,params.revision);extra.goalImpact=await publishGoalImpacts(this.editor,content,params.revision,report);}
+        catch(error){extra.goalImpact={rows:[],error:'기준 변경은 완료되었으나 재검사에 실패했습니다: '+error.message,stale:true,complete:false};}
+        break;
+      }
+      case 'goalImpactLatest': {const content=await this.debugSnapshot(params.revision);extra={goalImpact:await latestGoalImpact(this.editor.root,content)};break;}
+      case 'goalBaselineList': this.editor.current(params.revision);extra={goalBaselines:await listGoalBaselines(this.editor.root)};break;
+      case 'goalBaselineSave': {
+        const content=await this.debugSnapshot(params.revision);
+        extra={goalBaseline:await this.goalComparisons.capture(this.editor,content,params)};break;
+      }
+      case 'goalCompareOpen': {
+        const content=await this.debugSnapshot(params.revision);
+        extra={goalComparison:await this.goalComparisons.open(this.editor,this.goalSearchJobs,content,params)};break;
+      }
+      case 'goalSearchRegister': {
+        const content=await this.debugSnapshot(params.revision);
+        extra={goalSearchRegistered:await this.goalSearchJobs.register(this.editor,content,params)};break;
+      }
+      case 'goalRoutesList': this.editor.current(params.revision); extra={goalRoutes:await listGoalRoutes(this.editor.root)};break;
+      case 'goalRouteImport': {
+        this.editor.current(params.revision);
+        const route=await importGoalRecording(params.file,params.metadata);
+        const content=await this.debugSnapshot(params.revision);
+        if(route.gameId!==content.project.gameId)throw new Error('다른 게임의 기록입니다.');
+        extra={goalRoute:route};break;
+      }
+      case 'goalRouteSave': {
+        this.editor.current(params.revision);await this.editor.assertDiskUnchanged();
+        if(params.route?.gameId!==this.editor.documents.find(d=>d.kind==='project')?.data.gameId)throw new Error('현재 게임의 목표 경로만 저장할 수 있습니다.');
+        extra={goalRouteSaved:await saveGoalRoute(this.editor.root,params.route,params.expectedRevision??null)};break;
+      }
+      case 'goalRoutesRun': {
+        const content=await this.debugSnapshot(params.revision);
+        const report=await checkGoalRoutes(this.editor.root,content,params.ids);await this.editor.assertDiskUnchanged();
+        extra={goalReport:{...report,testedRevision:params.revision}};break;
+      }
       case 'conditionPreview': {
         const content=await this.debugSnapshot(params.revision);
         const created=createRun(content,42,{mode:'full',initialOverrides:{attributes:params.attributes??{},flags:{},relationships:{}}});
@@ -66,6 +133,14 @@ export class QtStudioService {
         ).map(e=>e.id);
         extra={conditionPreview:{revision:params.revision,attributes:created.state.attributes,phase,hidden}};
         break;
+      }
+      case 'createBenchmark': if(this.editor.root&&this.editor.view().dirty)throw new Error('현재 프로젝트의 변경을 먼저 저장하거나 되돌린 뒤 새 샘플을 만드세요.');await createBenchmarkProject(params.root,params);await this.editor.open(params.root);this.debugSession=null;break;
+      case 'assuranceRun': {
+        const content=await this.debugSnapshot(params.revision);
+        const report=await runAssurance(content,{runs:params.runs??32,seed:params.seed??42,maxCommands:150,timeoutMs:60000});
+        const folder=path.join(this.editor.root,'.studio','assurance');await mkdir(folder,{recursive:true});
+        const file=path.join(folder,'report-'+Date.now()+'.json');await writeFile(file,JSON.stringify(report,null,2));
+        extra={assurance:{...report,file}};break;
       }
       case 'analysisStart': {
         const content=await this.debugSnapshot(params.revision);
@@ -123,7 +198,21 @@ export class QtStudioService {
       case 'edit':
         this.editor.edit(params.edit, params.revision);
         await this.editor.validate(this.editor.revision); break;
-      case 'save': await this.editor.save(params.revision); break;
+      case 'save': {
+        await this.editor.save(params.revision);
+        const hasRoutes=await access(path.join(this.editor.root,'playtests','routes')).then(()=>true,()=>false);
+        if(hasRoutes){
+          let content;
+          try {content=await this.debugSnapshot(this.editor.revision);}catch(error){extra={goalReport:{ok:false,reports:[],error:error.message},goalImpact:{rows:[],error:error.message,complete:false,stale:true}};}
+          if(content){
+            try {if((await listGoalRoutes(this.editor.root)).length){const report=await checkGoalRoutes(this.editor.root,content);await this.editor.assertDiskUnchanged();extra.goalReport={...report,testedRevision:this.editor.revision};}}
+            catch(error){extra.goalReport={ok:false,reports:[],error:error.message,testedRevision:this.editor.revision};}
+            try {const report=await checkGoalImpacts(this.editor.root,content,this.editor.revision);extra.goalImpact=await publishGoalImpacts(this.editor,content,this.editor.revision,report);}
+            catch(error){extra.goalImpact={rows:[],error:error.message,complete:false,stale:true,testedRevision:this.editor.revision};}
+          }
+        }
+        break;
+      }
       case 'validate': await this.editor.validate(params.revision); break;
       case 'export': {
         const revision = params.revision;
@@ -143,6 +232,12 @@ export class QtStudioService {
             await this.editor.assertDiskUnchanged(); this.editor.current(revision);
           } });
         extra = { exported }; break;
+      }
+      case 'authoringWorkspace': {
+        this.editor.current(params.revision);
+        const view=this.editor.view();
+        const workspace=authoringWorkspace(view.documents);
+        extra={workspace,...(params.key?{workspaceImpact:workspaceImpact(workspace,params.key,params.depth??4)}:{})};break;
       }
       case 'debugStart': {
         const content = await this.debugSnapshot(params.revision);
@@ -223,6 +318,7 @@ export class QtStudioService {
         break;
       }
       case 'play': {
+        const capabilities=await readFile(path.join(this.runtimes.windows,'capabilities.json'),'utf8').then(JSON.parse).catch(()=>({}));
         this.editor.current(params.revision);
         await this.editor.validate(params.revision);
         if (this.editor.diagnostics.some(d => d.severity === 'error')) throw new Error('실행 전에 문제 패널의 오류를 수정하세요.');
@@ -239,7 +335,7 @@ export class QtStudioService {
         // Recheck before launch: an MCP save during export must not silently become this run.
         await this.editor.assertDiskUnchanged();
         extra = { play: { executable: path.join(exported.directory, 'RaisingPlayer.exe'),
-          directory: exported.directory, save: path.join(run, 'save.json'), report: path.join(run, 'report.json'),
+          directory: exported.directory, save: path.join(run, 'save.json'), report: path.join(run, 'report.json'), recording: capabilities.toolFeatures?.includes('goal-route-recording-v1')?path.join(run, 'recording.json'):null,
           revision: this.editor.revision, fingerprint: exported.contentFingerprint } };
         break;
       }

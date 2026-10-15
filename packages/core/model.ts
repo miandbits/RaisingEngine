@@ -69,6 +69,7 @@ export interface ActivityResult {
 }
 /** Internal transaction draft. Published states and restored sessions are deeply frozen. */
 export interface RunData extends Values {
+  progression?: import('./progression.js').ProgressionState;
   roster?: import('./roster.js').RosterState;
   userValues?: Record<string, string>;
   coreVersion: typeof CORE_VERSION;
@@ -89,6 +90,8 @@ export interface RunData extends Values {
 }
 export type RunState = DeepReadonly<RunData>;
 export type Command = GameplayCommand | SystemsCommand
+  | { type: 'advanceSession' | 'cancelSession' }
+  | { type: 'waitTime'; ticks: number }
   | { type: 'assignActivities'; assignments: Record<string, string> }
   | { type: 'executeActorAction'; actorId: string; actionId: string; quantity: number }
   | { type: 'setSchedule'; activityIds: string[] }

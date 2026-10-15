@@ -160,6 +160,35 @@ export type ScenarioSpecification = Header & {
                 actorId: string;
                 actionId: string;
                 quantity: number;
+              }
+            | {
+                type: "advanceSession";
+              }
+            | {
+                type: "cancelSession";
+              }
+            | {
+                type: "waitTime";
+                ticks: number;
+              }
+            | {
+                type: "tacticsAction";
+                unitId: string;
+                skillId: string;
+                targetId: string;
+              }
+            | {
+                type: "tacticsEquip";
+                unitId: string;
+                equipmentId: string;
+              }
+            | {
+                type: "tacticsFlee";
+              }
+            | {
+                type: "tacticsUnequip";
+                unitId: string;
+                slot: "weapon" | "armor" | "accessory";
               };
         }
     ),
@@ -314,6 +343,35 @@ export type ScenarioSpecification = Header & {
                 actorId: string;
                 actionId: string;
                 quantity: number;
+              }
+            | {
+                type: "advanceSession";
+              }
+            | {
+                type: "cancelSession";
+              }
+            | {
+                type: "waitTime";
+                ticks: number;
+              }
+            | {
+                type: "tacticsAction";
+                unitId: string;
+                skillId: string;
+                targetId: string;
+              }
+            | {
+                type: "tacticsEquip";
+                unitId: string;
+                equipmentId: string;
+              }
+            | {
+                type: "tacticsFlee";
+              }
+            | {
+                type: "tacticsUnequip";
+                unitId: string;
+                slot: "weapon" | "armor" | "accessory";
               };
         }
     )[]

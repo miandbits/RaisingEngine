@@ -48,6 +48,7 @@
       }
       filtered.push_back(row);if(filtered.size()==1000)break;
     }
+    if(collection.contains("sort")){const auto sort=collection.at("sort");const auto field=sort.value("field","");const bool desc=sort.value("direction","asc")=="desc";std::stable_sort(filtered.begin(),filtered.end(),[&](const Json& a,const Json& b){const auto x=a.at("values").value(field,Json()),y=b.at("values").value(field,Json());if(x==y)return false;if(x.is_null())return false;if(y.is_null())return true;return desc?y<x:x<y;});}
     return filtered;
   }
   Json expanded_collections(Json elements) const {
@@ -62,7 +63,7 @@
       element["_collectionExtent"]=rows.empty()?0:std::ceil(double(rows.size())/columns)*(rowHeight+gap)-gap;
       element["_collectionCount"]=rows.size();result.push_back(element);
       size_t index=0;for(const auto& row:rows) {
-        auto children=definition.at("elements");for(auto& child:children) {
+        auto children=expand_ui_components(visual,hierarchy_elements(definition.at("elements"),definition.value("width",cardWidth),definition.value("height",rowHeight),cardWidth,rowHeight,phase()),phase());for(auto& child:children) {
           const auto childId=child.value("id","");
           for(const auto& binding:element.value("bindings",Json::array()))if(binding.at("elementId")==childId) {
             const auto property=binding.value("property","");if(!row.at("values").contains(binding.value("field","")))continue;auto value=row.at("values").at(binding.value("field",""));
@@ -75,10 +76,13 @@
             else {if((property=="text"||property=="label")&&!value.is_string())value=value.dump();child[property]=value;if(property=="label")child["text"]=value;}
           }
         }
-        for(auto child:hierarchy_elements(children,definition.value("width",cardWidth),definition.value("height",rowHeight),cardWidth,rowHeight,phase())) {
+        for(auto& e:children)for(const auto& id:e.value("_groupIds",Json::array()))for(const auto& parent:children)if(parent.at("id")==id){if(parent.value("hidden",false))e["hidden"]=true;if(!parent.value("_boundEnabled",true))e["_boundEnabled"]=false;}
+        for(auto child:children) {
           const auto childId=child.value("id","");
           child["id"]=element.value("id","")+"__"+row.value("id","")+"__"+childId;
           child["_collectionParent"]=element.at("id");child["_rowId"]=row.at("id");
+          if(child.contains("_scrollParent"))child["_scrollParent"]=element.value("id","")+"__"+row.value("id","")+"__"+child.at("_scrollParent").get<std::string>();
+          if(element.contains("selectionKey")){child["_selectionSource"]=element;child["selectionKey"]=element.at("selectionKey");}
           child["x"]=child.value("x",0.0)+(index%columns)*(cardWidth+gap);child["y"]=child.value("y",0.0)+(index/columns)*(rowHeight+gap);
           if(child.contains("_clipRect")){child["_clipRect"]["x"]=child["_clipRect"].value("x",0.0)+(index%columns)*(cardWidth+gap);child["_clipRect"]["y"]=child["_clipRect"].value("y",0.0)+(index/columns)*(rowHeight+gap);}
           child["hidden"]=child.value("hidden",false)||!visible(element);

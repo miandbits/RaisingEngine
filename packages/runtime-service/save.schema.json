@@ -96,6 +96,43 @@
             "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
             "maxLength": 64
           }
+        },
+        "direction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sequenceId",
+            "elapsedMs",
+            "speed",
+            "paused",
+            "status"
+          ],
+          "properties": {
+            "sequenceId": {
+              "type": "string"
+            },
+            "elapsedMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 6000000
+            },
+            "speed": {
+              "enum": [
+                1,
+                4
+              ]
+            },
+            "paused": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "playing",
+                "completed",
+                "stopped"
+              ]
+            }
+          }
         }
       },
       "required": [
@@ -664,6 +701,105 @@
                   "type": "string"
                 }
               }
+            }
+          }
+        },
+        "progression": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tick",
+            "actionPoints",
+            "handled",
+            "pending"
+          ],
+          "properties": {
+            "tick": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "actionPoints": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "handled": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "outcome"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "fired",
+                      "skipped"
+                    ]
+                  }
+                }
+              }
+            },
+            "pending": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "remaining",
+                    "command"
+                  ],
+                  "properties": {
+                    "remaining": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    },
+                    "command": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "type",
+                            "actionId",
+                            "quantity"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "executeAction"
+                            },
+                            "actionId": {
+                              "type": "string"
+                            },
+                            "quantity": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 2147483647
+                            },
+                            "actorId": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
             }
           }
         }

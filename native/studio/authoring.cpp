@@ -21,7 +21,7 @@
 void StudioWindow::editWidgetSettings() {
   if (bridge.busy() || currentElement().isEmpty()) return;
   if (currentElement()["kind"] == "collection") { editDataUi(); return; }
-  if (QStringList{"actions", "policies"}.contains(currentElement()["kind"].toString())) { editRules(); return; }
+  if (currentElement()["kind"] == "policies") { editRules(); return; }
   if (QStringList{"services", "diets", "sell"}.contains(currentElement()["kind"].toString())) { editFacilities(); return; }
   auto value = currentElement();
   QDialog dialog(this); dialog.setObjectName("widgetSettingsDialog");
@@ -50,8 +50,8 @@ void StudioWindow::editWidgetSettings() {
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));
-  autoLabel->setChecked(value["autoLabel"].toBool(true)); if(kind=="button")form->addRow(autoLabel); else autoLabel->hide();
-  auto groups = value["scheduleGroups"].toArray();
+  autoLabel->setChecked(value.value("autoLabel").toBool(true)); if(kind=="button")form->addRow(autoLabel); else autoLabel->hide();
+  auto groups = value.value("scheduleGroups").toArray();
   auto table = new QTableWidget(groups.size(),2);table->setHorizontalHeaderLabels({tr("분류 ID"),tr("표시 이름")});table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
   table->setSelectionBehavior(QAbstractItemView::SelectRows);table->setObjectName("scheduleGroups");
   for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();table->setItem(i,0,new QTableWidgetItem(g["id"].toString()));table->setItem(i,1,new QTableWidgetItem(g["label"].toString()));}
@@ -62,7 +62,9 @@ void StudioWindow::editWidgetSettings() {
     if(kind=="schedule"&&doc["kind"]=="activity")entries.append(data);
     if(kind=="stats"&&doc["kind"]=="attributes")entries=data["attributes"].toArray();
   }
-  for(auto v:entries){auto a=v.toObject();auto item=new QListWidgetItem(a["label"].toString()+" · "+a["id"].toString(),list);item->setData(Qt::UserRole,a["id"].toString());item->setCheckState(value["attributeIds"].toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);}
+  const auto selectionField=kind=="actions"?QString("actionIds"):QString("attributeIds");
+  if(kind=="actions")entries=projectData().value("gameplay").toObject().value("actions").toArray();
+  for(auto v:entries){auto a=v.toObject();auto item=new QListWidgetItem(a.value("label").toString(a.value("name").toString())+" · "+a["id"].toString(),list);item->setData(Qt::UserRole,a["id"].toString());item->setCheckState(value[selectionField].toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);}
   int selected=-1;
   auto storeGroup=[&]{if(selected<0||selected>=groups.size())return;QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());auto g=groups[selected].toObject();g["activityIds"]=ids;groups[selected]=g;};
   connect(table,&QTableWidget::currentCellChanged,&dialog,[&](int row,int,int,int){storeGroup();selected=row;auto ids=row>=0&&row<groups.size()?groups[row].toObject()["activityIds"].toArray():QJsonArray();for(int i=0;i<list->count();i++)list->item(i)->setCheckState(ids.contains(list->item(i)->data(Qt::UserRole).toString())?Qt::Checked:Qt::Unchecked);});
@@ -70,13 +72,13 @@ void StudioWindow::editWidgetSettings() {
   connect(add,&QPushButton::clicked,&dialog,[&]{storeGroup();auto row=table->rowCount();groups.append(QJsonObject{{"id",QString("group-%1").arg(row+1)},{"label",tr("새 분류")},{"activityIds",QJsonArray()}});table->insertRow(row);table->setItem(row,0,new QTableWidgetItem(QString("group-%1").arg(row+1)));table->setItem(row,1,new QTableWidgetItem(tr("새 분류")));table->setCurrentCell(row,1);});
   connect(remove,&QPushButton::clicked,&dialog,[&]{int row=table->currentRow();if(row<0)return;selected=-1;groups.removeAt(row);table->removeRow(row);if(table->rowCount())table->setCurrentCell(qMin(row,table->rowCount()-1),0);});
   if(kind=="schedule"){layout->addWidget(new QLabel(tr("분류를 선택한 뒤 포함할 활동을 체크하세요.")));layout->addWidget(table);layout->addLayout(buttons);layout->addWidget(list);if(!groups.empty())table->setCurrentCell(0,0);}
-  else {table->hide();add->hide();remove->hide();if(kind=="stats"){layout->addWidget(new QLabel(tr("표시할 능력·자원 (선택하지 않으면 전체)")));layout->addWidget(list);}else list->hide();}
+  else {table->hide();add->hide();remove->hide();if(kind=="stats"||kind=="actions"){layout->addWidget(new QLabel(tr("표시할 항목 (선택하지 않으면 전체)")));layout->addWidget(list);}else list->hide();}
   auto ok = new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);layout->addWidget(ok);connect(ok,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(ok,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
   if(dialog.exec()!=QDialog::Accepted)return;
   storeGroup();if(!key.isEmpty())value[key]=mode->currentData().toString();
   for(auto it=frameFields.begin();it!=frameFields.end();++it){auto id=it.value()->currentData().toString();if(id.isEmpty())value.remove(it.key());else value[it.key()]=id;}
   if(kind=="schedule") {for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();g["id"]=table->item(i,0)->text().trimmed();g["label"]=table->item(i,1)->text();groups[i]=g;}value["scheduleGroups"]=groups;}
-  if(kind=="stats"){QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove("attributeIds");else value["attributeIds"]=ids;}
+  if(kind=="stats"||kind=="actions"){QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove(selectionField);else value[selectionField]=ids;}
   if(kind=="button")value["autoLabel"]=autoLabel->isChecked();
   auto project=projectData();auto visual=project["visual"].toObject();auto screens=visual["screens"].toArray();
   for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s["id"]!=screenId)continue;auto elements=s["elements"].toArray();for(int j=0;j<elements.size();j++)if(elements[j].toObject()["id"]==selection)elements[j]=value;s["elements"]=elements;screens[i]=s;}
@@ -162,7 +164,7 @@ void StudioWindow::importImage() {
   if (bridge.busy() || projectData().isEmpty())
     return;
   auto file = QFileDialog::getOpenFileName(this, tr("PNG 이미지 가져오기"), {},
-                                           tr("PNG 이미지 (*.png)"));
+                                           tr("PNG 이미지 (*.png)"), nullptr, qEnvironmentVariableIsSet("RAISING_QT_TEST") ? QFileDialog::DontUseNativeDialog : QFileDialog::Options{});
   if (file.isEmpty())
     return;
   QImageReader reader(file);

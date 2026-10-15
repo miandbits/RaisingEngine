@@ -4,8 +4,12 @@ import { checkDataUi } from './data-ui.js';
 import { checkHierarchy } from './hierarchy.js';
 import { resolveScreenElements } from '../visual/components.js';
 import type { ReadonlyDesign } from '../visual/model.js';
+import { checkUiComposition } from './ui-composition.js';
+import { checkDirection } from './direction.js';
 import { checkTimelines } from './timeline.js';
 export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonObject):void {
+  checkDirection(ctx,doc,visual);
+  checkUiComposition(ctx,doc,visual);
   checkDataUi(ctx,doc,visual);
   checkTimelines(ctx,doc,visual);
   const styleIds=new Set<string>();
@@ -30,7 +34,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if (e.binding === 'user-field' && e.kind !== 'text') ctx.report(doc, ep+'/binding', 'UI_USER_FIELD_BINDING_KIND', '사용자 필드 표시 바인딩은 텍스트 요소에 설정하세요.');
       if(e.clipChildren!==undefined&&e.kind!=='group')ctx.report(doc,ep+'/clipChildren','UI_GROUP_REQUIRED','자식 자르기는 그룹에만 설정할 수 있습니다.');
       for(const [field,ref] of [['actionIds','actionId'],['groupIds','groupId']])for(const [i,id] of ((e[field!]??[]) as string[]).entries())if(!refs[ref!]!.has(id))ctx.report(doc,`${ep}/${field}/${i}`,'UI_ACTION_REFERENCE',`연결 대상 '${id}'가 없습니다.`);
-      if(e.action==='executeAction'&&!e.actionId)ctx.report(doc,ep+'/actionId','UI_ACTION_REQUIRED','범용 행동을 선택하세요.');
+      if(e.action==='executeAction'&&!e.actionId&&!objectItems(e.selectionBindings).some(b=>b.property==='actionId'))ctx.report(doc,ep+'/actionId','UI_ACTION_REQUIRED','범용 행동을 선택하세요.');
       if(e.action==='selectPolicy'){
         if(!e.groupId)ctx.report(doc,ep+'/groupId','UI_ACTION_REQUIRED','정책 그룹을 선택하세요.');
         const group=objectItems(gameplay.policyGroups).find(x=>x.id===e.groupId);
@@ -55,8 +59,8 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if(e.scheduleLayout==='menu'&&!objectItems(e.scheduleGroups).length)ctx.report(doc,`${ep}/scheduleGroups`,'UI_SCHEDULE_GROUP_REQUIRED','분류 메뉴에는 활동 분류를 추가하세요.');
       const systemActions=['acceptQuest','claimQuest','equip','unequip','moveExpedition','returnFromExpedition','battleAction'];
       if(!root.systems&&(['equipment','quests','expedition','battle','relationship-stages'].includes(String(e.kind))||systemActions.includes(String(e.action))))ctx.report(doc,ep,'UI_SYSTEMS_REQUIRED','탐험·성장 작업실에서 시스템을 설정하세요.');
-      const required:Record<string,string[]>={navigate:['screenId'],visit:['locationId'],buy:['shopId','itemId'],sell:['shopId','itemId'],useService:['serviceId'],interact:['interactionId'],acceptQuest:['questId'],claimQuest:['questId'],equip:['equipmentId'],unequip:['slot'],moveExpedition:['nodeId'],battleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleTarget:['battleTarget']};
-      for(const field of required[String(e.action)]??[])if(!e[field])ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REQUIRED',`이 행동에는 ${field} 연결이 필요합니다.`);
+      const required:Record<string,string[]>={executeActorAction:['actionId','actorId'],openModal:['screenId'],navigate:['screenId'],visit:['locationId'],buy:['shopId','itemId'],sell:['shopId','itemId'],useService:['serviceId'],interact:['interactionId'],acceptQuest:['questId'],claimQuest:['questId'],equip:['equipmentId'],unequip:['slot'],moveExpedition:['nodeId'],battleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleTarget:['battleTarget']};
+      for(const field of required[String(e.action)]??[])if(!e[field]&&!objectItems(e.selectionBindings).some(b=>b.property===field))ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REQUIRED',`이 행동에는 ${field} 연결이 필요합니다.`);
       if(!e.parentId&&((e.x as number)<0||(e.y as number)<0||(e.x as number)+(e.width as number)>width||(e.y as number)+(e.height as number)>height))ctx.report(doc,ep,'UI_BOUNDS','요소가 기준 화면 영역을 벗어났습니다.');
       if(e.kind==='image'&&(e.imageSource??'asset')==='asset'&&!e.imageAssetId)ctx.report(doc,`${ep}/imageAssetId`,'UI_IMAGE_REQUIRED','고정 이미지는 이미지 에셋을 선택해야 합니다.');
       if(e.binding==='attribute-value'&&!ctx.attributes.has(String(e.attributeId)))ctx.report(doc,`${ep}/attributeId`,'UI_BINDING_REFERENCE',`능력·자원 '${e.attributeId}'가 없습니다.`);
@@ -82,7 +86,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
     checkHierarchy(ctx,doc,objectItems(component.elements),cp+'/elements');
     for(const [j,child] of objectItems(component.elements).entries()) {
       const ep=`${cp}/elements/${j}`;
-      if(!['panel','text','image','button','meter','group','input'].includes(String(child.kind)))ctx.report(doc,ep+'/kind','UI_COMPONENT_CHILD_KIND','재사용 UI 안에는 패널·텍스트·이미지·버튼·게이지·그룹만 배치할 수 있습니다. 중첩 구성은 지원하지 않습니다.');
+      if(!['panel','text','image','button','meter','group','input','component'].includes(String(child.kind)))ctx.report(doc,ep+'/kind','UI_COMPONENT_CHILD_KIND','재사용 UI 안에는 패널·텍스트·이미지·버튼·게이지·그룹만 배치할 수 있습니다. 중첩 구성은 지원하지 않습니다.');
       if(ids.has(String(child.id)))ctx.report(doc,ep+'/id','UI_ELEMENT_DUPLICATE','재사용 UI 안의 요소 ID가 중복되었습니다.');
       ids.add(String(child.id));checkElement(child,ep,Number(component.width),Number(component.height));
     }
@@ -124,7 +128,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
         elements.push(expanded);
       }
     }
-    elements.splice(0,elements.length,...resolveScreenElements(visual as unknown as ReadonlyDesign,id).map(x=>x as unknown as JsonObject));
+    try {elements.splice(0,elements.length,...resolveScreenElements(visual as unknown as ReadonlyDesign,id).map(x=>x as unknown as JsonObject));} catch {ctx.report(doc,p,"UI_EXPANSION_LIMIT","부품 순환·깊이 또는 펼친 요소 수 한도를 확인하세요.");continue;}
     const active=elements.filter(e=>!e.hidden&&(e.opacity??1)!==0&&(e.visibleWhen??'always')==='always');
     const has=(kind:string,action?:string)=>active.some(e=>e.kind===kind&&(!action||e.action===action));
     if((id==='title'||id==='ending')&&!has('button','start'))ctx.report(doc,p,'UI_NAVIGATION','이 화면에는 항상 표시되는 새 게임 버튼이 필요합니다.');

@@ -28,7 +28,7 @@ J systemsView(const J &c, const J &s) {
   J expedition = nullptr, battle = nullptr;
   if (!sys["expedition"].is_null()) {
     const auto &trip = sys["expedition"]; auto definition = find(d["expeditions"], trip["expeditionId"]); auto node = find((*definition)["nodes"], trip["nodeId"]); J connections = J::array();
-    for (const auto &id : (*node)["connections"]) connections.push_back({{"id", id}, {"name", (*find((*definition)["nodes"], id))["name"]}, {"enabled", s["phase"] == "expedition"}});
+    for (const auto &id : (*node)["connections"]) connections.push_back({{"id", id}, {"name", (*find((*definition)["nodes"], id))["name"]}, {"enabled", s["phase"] == "expedition"&&(!find((*definition)["nodes"],id)->contains("requirements")||condition(c,s,(*find((*definition)["nodes"],id))["requirements"]))}});
     expedition = {{"expeditionId", trip["expeditionId"]}, {"name", (*definition)["name"]}, {"nodeId", trip["nodeId"]}, {"nodeName", (*node)["name"]}, {"heroHp", trip["heroHp"]}, {"stats", trip["stats"]}, {"connections", connections}, {"canReturn", s["phase"] == "expedition"}};
     if (!node->value("description", "").empty()) expedition["nodeDescription"] = (*node)["description"];
     if (!sys["battle"].is_null()) { const auto &b = sys["battle"]; auto enemy = find(d["enemies"], b["enemyId"]); battle = {{"enemyId", b["enemyId"]}, {"enemyName", (*enemy)["name"]}, {"enemyHp", b["enemyHp"]}, {"enemyMaxHp", (*enemy)["maxHp"]}, {"turn", b["turn"]}, {"heroHp", trip["heroHp"]}, {"heroMaxHp", trip["stats"]["maxHp"]}};if(b.contains("log"))battle["log"]=b["log"]; }

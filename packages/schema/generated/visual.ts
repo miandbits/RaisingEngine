@@ -96,7 +96,8 @@ export type Element = {
     | "attribute-value"
     | "relationship-value"
     | "item-count"
-    | "user-field";
+    | "user-field"
+    | "selected-field";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -943,7 +944,12 @@ export type Element = {
     | "selectBattleAction"
     | "selectBattleTarget"
     | "confirmBattleAction"
-    | "cancelBattleAction";
+    | "cancelBattleAction"
+    | "selectRow"
+    | "openModal"
+    | "closeModal"
+    | "executeActorAction"
+    | "playSequence";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -1018,7 +1024,12 @@ export type Element = {
         | "selectBattleAction"
         | "selectBattleTarget"
         | "confirmBattleAction"
-        | "cancelBattleAction";
+        | "cancelBattleAction"
+        | "selectRow"
+        | "openModal"
+        | "closeModal"
+        | "executeActorAction"
+        | "playSequence";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -1040,6 +1051,1816 @@ export type Element = {
       battleTarget?: "self" | "enemy";
       clipChildren?: boolean;
       userFieldId?: string;
+      tooltip?: string;
+      selectionKey?: string;
+      selectionField?: string;
+      /**
+       * @maxItems 16
+       */
+      selectionBindings?:
+        | []
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ];
+      actorId?: string;
+      sequenceId?: string;
     };
   }[];
   serviceId?: string;
@@ -1124,6 +2945,1828 @@ export type Element = {
       [k: string]: string | number | boolean | null;
     };
   };
+  flowLayout?: {
+    direction: "row" | "column" | "grid";
+    gap?: number;
+    padding?: number;
+    columns?: number;
+  };
+  overflow?: "visible" | "hidden" | "scroll";
+  sort?: {
+    field: string;
+    direction: "asc" | "desc";
+  };
+  selectionKey?: string;
+  selectionField?: string;
+  /**
+   * @maxItems 16
+   */
+  selectionBindings?:
+    | []
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ];
+  tooltip?: string;
+  actorId?: string;
+  tacticsPanel?: "all" | "units" | "actions" | "log" | "growth";
+  sequenceId?: string;
 };
 export type Condition =
   | {
@@ -1208,7 +4851,7 @@ export type ComponentChild = {
   [k: string]: unknown;
 } & {
   id: string;
-  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input";
+  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input" | "component";
   label?: string;
   x: number;
   y: number;
@@ -1232,7 +4875,8 @@ export type ComponentChild = {
     | "attribute-value"
     | "relationship-value"
     | "item-count"
-    | "user-field";
+    | "user-field"
+    | "selected-field";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -2079,7 +5723,12 @@ export type ComponentChild = {
     | "selectBattleAction"
     | "selectBattleTarget"
     | "confirmBattleAction"
-    | "cancelBattleAction";
+    | "cancelBattleAction"
+    | "selectRow"
+    | "openModal"
+    | "closeModal"
+    | "executeActorAction"
+    | "playSequence";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -2140,6 +5789,3702 @@ export type ComponentChild = {
   parentId?: string;
   clipChildren?: boolean;
   userFieldId?: string;
+  flowLayout?: {
+    direction: "row" | "column" | "grid";
+    gap?: number;
+    padding?: number;
+    columns?: number;
+  };
+  overflow?: "visible" | "hidden" | "scroll";
+  sort?: {
+    field: string;
+    direction: "asc" | "desc";
+  };
+  selectionKey?: string;
+  selectionField?: string;
+  /**
+   * @maxItems 16
+   */
+  selectionBindings?:
+    | []
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId";
+          field: string;
+        }
+      ];
+  tooltip?: string;
+  actorId?: string;
+  componentId?: string;
+  /**
+   * @maxItems 100
+   */
+  overrides?: {
+    elementId: string;
+    values: {
+      text?: string;
+      label?: string;
+      imageAssetId?: string;
+      action?:
+        | "start"
+        | "advance"
+        | "save"
+        | "load"
+        | "sound"
+        | "navigate"
+        | "visit"
+        | "buy"
+        | "interact"
+        | "acceptQuest"
+        | "claimQuest"
+        | "equip"
+        | "unequip"
+        | "moveExpedition"
+        | "returnFromExpedition"
+        | "battleAction"
+        | "sell"
+        | "useService"
+        | "setDiet"
+        | "executeAction"
+        | "selectPolicy"
+        | "selectBattleAction"
+        | "selectBattleTarget"
+        | "confirmBattleAction"
+        | "cancelBattleAction"
+        | "selectRow"
+        | "openModal"
+        | "closeModal"
+        | "executeActorAction"
+        | "playSequence";
+      screenId?: string;
+      locationId?: string;
+      shopId?: string;
+      itemId?: string;
+      interactionId?: string;
+      quantity?: number;
+      styleId?: string;
+      fill?: string;
+      color?: string;
+      fontSize?: number;
+      serviceId?: string;
+      dietId?: string;
+      actionId?: string;
+      groupId?: string;
+      optionId?: string | null;
+      value?: number;
+      maxValue?: number;
+      battleAction?: "attack" | "guard" | "useItem" | "flee";
+      battleTarget?: "self" | "enemy";
+      clipChildren?: boolean;
+      userFieldId?: string;
+      tooltip?: string;
+      selectionKey?: string;
+      selectionField?: string;
+      /**
+       * @maxItems 16
+       */
+      selectionBindings?:
+        | []
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId";
+              field: string;
+            }
+          ];
+      actorId?: string;
+      sequenceId?: string;
+    };
+  }[];
+  tacticsPanel?: "all" | "units" | "actions" | "log" | "growth";
+  sequenceId?: string;
 };
 
 export interface VisualDesign {
@@ -2340,6 +9685,246 @@ export interface VisualDesign {
     failureTimelineId?: string;
     repeat?: "once" | "logicalDays";
   }[];
+  direction?: {
+    /**
+     * @minItems 1
+     * @maxItems 32
+     */
+    actors: [
+      {
+        id: string;
+        name: string;
+        assetId: string;
+        /**
+         * @maxItems 100
+         */
+        expressions?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        outfits?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        motions?: {
+          id: string;
+          /**
+           * @minItems 1
+           * @maxItems 120
+           */
+          frames: [string, ...string[]];
+          frameMs: number;
+        }[];
+      },
+      ...{
+        id: string;
+        name: string;
+        assetId: string;
+        /**
+         * @maxItems 100
+         */
+        expressions?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        outfits?: {
+          id: string;
+          assetId: string;
+        }[];
+        /**
+         * @maxItems 100
+         */
+        motions?: {
+          id: string;
+          /**
+           * @minItems 1
+           * @maxItems 120
+           */
+          frames: [string, ...string[]];
+          frameMs: number;
+        }[];
+      }[]
+    ];
+    /**
+     * @minItems 1
+     * @maxItems 100
+     */
+    sequences: [
+      {
+        id: string;
+        name: string;
+        /**
+         * @minItems 1
+         * @maxItems 100
+         */
+        stages: [
+          {
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          },
+          ...{
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          }[]
+        ];
+      },
+      ...{
+        id: string;
+        name: string;
+        /**
+         * @minItems 1
+         * @maxItems 100
+         */
+        stages: [
+          {
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          },
+          ...{
+            name: string;
+            durationMs: number;
+            /**
+             * @minItems 1
+             * @maxItems 32
+             */
+            cues: [
+              {
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              },
+              ...{
+                actorId: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                toX?: number;
+                toY?: number;
+                opacity?: number;
+                expressionId?: string;
+                outfitId?: string;
+                motionId?: string;
+              }[]
+            ];
+          }[]
+        ];
+      }[]
+    ];
+  };
 }
 export interface Scene {
   backgroundAssetId?: string | null;
@@ -2412,6 +9997,7 @@ export interface Screen {
    * @maxItems 100
    */
   elements: Element[];
+  modal?: boolean;
 }
 export interface StyleValues {
   fontSize?: number;

@@ -91,6 +91,15 @@ public:
   int plan_selected=0,plan_month=-1;
   Json pending_purchase=nullptr;
   Json pending_confirmation=Json::object();
+  Json ui_selections=Json::object();std::string ui_modal;
+  Json selected_values(const std::string& key) const {
+    if(!ui_selections.contains(key))return Json();const auto selected=ui_selections.at(key);
+    for(const auto& row:collection_rows(selected.at("source")))if(row.at("id")==selected.at("rowId")&&row.value("enabled",true))return row.at("values");return Json();
+  }
+  Json selection_action(Json action) const {
+    if(!action.contains("_selectionKey"))return action;const auto values=selected_values(action.at("_selectionKey"));if(values.is_null())throw std::runtime_error("대상을 다시 선택하세요.");
+    for(const auto& b:action.at("_selectionBindings")){const auto field=b.value("field","");if(!values.contains(field))throw std::runtime_error("선택 필드가 없습니다.");action[b.at("property").get<std::string>()]=values.at(field);}action.erase("_selectionKey");action.erase("_selectionBindings");return action;
+  }
   int pending_revision=-1;
   std::map<std::string,int> quantities;
   std::map<std::string,Json> actions;
@@ -146,6 +155,7 @@ public:
 #include "battle-data.inc"
 #include "collection.hpp"
 #include "timeline-screen.inc"
+#include "direction-screen.inc"
   std::string cost_summary(const Json& row,int quantity=1) const {
     std::string out;
     if(row.contains("price"))return attribute_name(row.value("currencyAttributeId","money"))+" "+number(row.value("price",0.0)*quantity);
@@ -162,6 +172,11 @@ public:
       if(value.value("op","")=="literal"){const auto amount=value.value("value",0.0)*(op=="add"?quantity:1);out+=(op=="set"?" = ":amount>=0?" +":" ")+number(amount);}else out+=" (현재 상태 기준 계산)";
     }
     return out;
+  }
+  bool progress_pending() const {return !game.state.is_null()&&game.state.contains("progression")&&!game.state.at("progression").at("pending").is_null();}
+  std::string time_summary(const std::string &id,int quantity) const {
+    if(!display_content.at("project").contains("progression"))return "";
+    const auto &cfg=display_content.at("project").at("progression");for(const auto &rule:cfg.at("actions"))if(rule.at("actionId")==id)return " · "+std::to_string(rule.value("duration",0LL)*quantity)+" "+cfg.value("unitLabel","")+" / 행동력 "+std::to_string(rule.value("actionPointCost",0LL)*quantity);return "";
   }
   std::string transaction_summary(const Json& action) const {
     const auto row=transaction_definition(action);const auto type=action.value("type","");const int quantity=action.value("quantity",1);
@@ -201,6 +216,17 @@ public:
         Json clear={{"type","selectPolicy"},{"groupId",group_id},{"optionId",nullptr}};std::string reason;const bool enabled=game.available(clear,&reason);out+=button("policy_clear__"+e.value("id","")+"__"+group_id,group.value("name","")+" 해제",clear,enabled,reason)+"<p>선택 시 비용 없이, 설정한 시점에 비용과 효과가 적용됩니다.</p>";
       }
     } else if(kind=="actions") {
+      if(game.state.contains("progression")){
+        const auto &p=game.state.at("progression");const auto &cfg=display_content.at("project").at("progression");const auto prefix="progress__"+e.value("id","")+"__";
+        out+="<p>게임 시간 "+std::to_string(p.value("tick",0))+" "+escape(cfg.value("unitLabel",""))+" · 행동력 "+std::to_string(p.value("actionPoints",0))+" / "+std::to_string(cfg.at("actionPoints").value("max",0))+"</p>";
+        if(!p.at("pending").is_null()){
+          const auto &pending=p.at("pending");std::string current="대기";
+          if(!pending.at("command").is_null()){const auto &cmd=pending.at("command");current=cmd.value("actionId","");for(const auto &a:display_content.at("project").at("gameplay").at("actions"))if(a.at("id")==cmd.at("actionId"))current=a.value("name",current);if(cmd.contains("actorId"))for(const auto &actor:display_content.at("characters"))if(actor.at("id")==cmd.at("actorId"))current=actor.value("name","")+" · "+current;}
+          out+="<p>진행 중: "+escape(current)+"</p>";out+="<p>남은 시간: "+std::to_string(pending.value("remaining",0))+" "+escape(cfg.value("unitLabel",""))+"</p>";
+          Json advance={{"type","advanceSession"}},cancel={{"type","cancelSession"}};std::string reason;const bool available=game.available(advance,&reason);
+          out+=button(prefix+"advance","다음 시점까지 진행",advance,available,reason)+button(prefix+"cancel","진행 취소 (행동력 반환 없음)",cancel,game.available(cancel));return out;
+        }else{Json wait={{"type","waitTime"},{"ticks",1}};out+=button(prefix+"wait","1 "+cfg.value("unitLabel","")+" 대기",wait,game.available(wait));}
+      }
       if(display_content.at("project").value("roster",Json::object()).value("stateModel","")=="character-v1"){
         const auto definitions=display_content.at("project").at("gameplay").value("actions",Json::array());
         for(const auto& member:display_content.at("project").at("roster").at("members")){
@@ -209,7 +235,7 @@ public:
           for(const auto& id:member.value("actionIds",Json::array()))for(const auto& definition:definitions)if(definition.at("id")==id&&included("actionIds",id)){
             const auto key="actor-action__"+e.value("id","")+"__"+actor+"__"+id.get<std::string>();const auto controls=quantity_controls(key,definition.value("maxQuantity",1));
             Json command={{"type","executeActorAction"},{"actorId",actor},{"actionId",id},{"quantity",quantities[key]}};std::string reason;const bool enabled=game.available(command,&reason);
-            out+="<div>"+controls+button(key,definition.value("name","실행"),command,enabled,reason)+"</div>";
+            out+="<div>"+controls+button(key,definition.value("name","실행")+time_summary(id.get<std::string>(),quantities[key]),command,enabled,reason)+"</div>";
           }
           out+="</div>";
         }
@@ -217,7 +243,7 @@ public:
       }
       for(const auto& row:gp.value("actions",Json::array())) {
         if(!included("actionIds",row.at("id")))continue;const auto id=row.at("id").get<std::string>();const auto key="action__"+e.value("id","")+"__"+id;const auto controls=quantity_controls(key,row.value("maxQuantity",1));const int quantity=quantities[key];Json action={{"type","executeAction"},{"actionId",id},{"quantity",quantity}};std::string reason;const bool enabled=game.available(action,&reason);
-        out+="<div class=\"facility-row\"><b>"+escape(row.value("name",""))+"</b><p>"+escape(cost_summary(row,quantity)+"\n"+effect_summary(row,quantity))+"</p>"+controls+button(key,row.value("name","실행"),action,enabled,reason)+"</div>";
+        out+="<div class=\"facility-row\"><b>"+escape(row.value("name",""))+"</b><p>"+escape(cost_summary(row,quantity)+"\n"+effect_summary(row,quantity))+"</p>"+controls+button(key,row.value("name","실행")+time_summary(id,quantity),action,enabled,reason)+"</div>";
       }
     } else if(kind=="diets") {
       for(const auto& row:gp.value("diets",Json::array())) {
@@ -266,6 +292,7 @@ public:
   }
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
     const auto& project=display_content.at("project");
+    if(name=="selected-field"){const auto values=selected_values(element.value("selectionKey",""));if(values.is_null())return "선택 없음";const auto value=values.value(element.value("selectionField",""),Json());std::string text=value.is_string()?value.get<std::string>():value.is_null()?"":value.dump(),format=element.value("valueFormat","{value}");size_t pos=0;while((pos=format.find("{value}",pos))!=std::string::npos){format.replace(pos,7,text);pos+=text.size();}return format;}
     if(name=="schedule-prompt") {
       if(plan_selected!=((1<<game.periods())-1))return "스케줄 결정.\n이번 달 딸의 예정은? 제 "+std::to_string(plan_slot+1)+"회";
       const int next=game.state.value("periodIndex",0)%game.periods();
@@ -361,7 +388,10 @@ public:
     }
     return out+"</div>";
   }
-  std::string systems_body(const std::string& kind) {
+  #include "tactics-ui.inc"
+  #include "requirement-hint.inc"
+  std::string systems_body(const std::string& kind,const std::string& panel="all") {
+    if(!game.state.is_null()&&display_content.at("project").contains("systems")&&display_content.at("project").at("systems").contains("tactics")&&kind=="battle")return tactics_body(panel);
     const auto view=systems();if(view.is_null())return "<p>표시할 정보가 없습니다.</p>";
     std::string out;
     if(kind=="equipment") {
@@ -398,8 +428,13 @@ public:
       if(trip.is_null())return "<p>일정에서 탐험 활동을 선택해 출발하세요.</p>"+battle_result(view);
       out="<div class=\"heading\">"+escape(trip.value("name",""))+"</div><p>현재 위치: "+escape(trip.value("nodeName",""))+" · 체력 "+std::to_string(trip.value("heroHp",0))+" / "+std::to_string(trip.at("stats").value("maxHp",0))+"</p>";
       if(!trip.value("nodeDescription","").empty())out+="<p class=\"expedition-description\" style=\"display:block;width:100%;white-space:pre-wrap;word-break:break-all;\">"+escape(trip.value("nodeDescription",""))+"</p>";
-      for(const auto& node:trip.at("connections"))out+=button("move-expedition-"+node.value("id",""),node.value("name",""),{{"type","moveExpedition"},{"nodeId",node.at("id")}},node.value("enabled",false));
-      out+=button("return-expedition","탐험에서 돌아가기",{{"type","returnFromExpedition"}},trip.value("canReturn",false));
+      for(const auto& node:trip.at("connections")){
+        const Json command={{"type","moveExpedition"},{"nodeId",node.at("id")}};
+        std::string reason;const bool enabled=game.available(command,&reason);
+        if(!enabled&&game.state.value("phase","")=="expedition")for(const auto& expedition:display_content.at("project").at("systems").at("expeditions"))if(expedition.at("id")==trip.at("expeditionId"))for(const auto& definition:expedition.at("nodes"))if(definition.at("id")==node.at("id")&&definition.contains("requirements"))reason="이동 조건: "+requirement_hint(definition.at("requirements"));
+        out+=button("move-expedition-"+node.value("id",""),node.value("name",""),command,enabled,reason);
+      }
+      out+=checked_button("return-expedition","탐험에서 돌아가기",{{"type","returnFromExpedition"}});
       out+=battle_result(view);
     }
     if(kind=="battle") {
@@ -412,7 +447,7 @@ public:
     return out;
   }
   std::string calendar_schedule(const Json& e) {
-    const bool editable=!game.state.is_null()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
+    const bool editable=!progress_pending()&&!game.state.is_null()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
     const int period=game.state.is_null()?0:game.state.value("periodIndex",0)%game.periods();
     const int monthIndex=game.state.is_null()?0:game.state.value("periodIndex",0)/game.periods();
     if(plan_month!=monthIndex){plan_month=monthIndex;plan_selected=game.state.is_null()||game.state.at("schedule").is_null()?0:((1<<game.periods())-1);plan_slot=period;plan_group.clear();plan.clear();if(!game.state.is_null()&&!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))plan.push_back(id.get<std::string>());}
@@ -478,12 +513,13 @@ public:
     if(e.contains("padding"))style+="padding:"+number(e.at("padding"))+"px;";
     if(e.contains("borderWidth"))style+="border-width:"+number(e.at("borderWidth"))+"px;border-color:"+css_color(e.value("borderColor","#ffffff"))+";";
     style+="font-size:"+number(e.value("fontSize",20.0))+"px;border-radius:"+number(e.value("radius",0.0))+"px;opacity:"+number(e.value("opacity",1.0))+";text-align:"+e.value("align","left")+";";
+    if(kind=="group"&&e.value("overflow","")=="scroll")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
     if(kind=="collection")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
     if(kind=="plugin")style+="overflow:visible;";
     // Schedule popups need an elevated stacking layer, but their transparent
     // container must not swallow authored navigation buttons beneath it.
     // Plugin characters are decoration: they never swallow clicks meant for widgets beneath them.
-    style+=(kind=="group"||kind=="schedule"||kind=="plugin")?"pointer-events:none;":"pointer-events:auto;";
+    style+=((kind=="group"&&e.value("overflow","")!="scroll")||kind=="schedule"||kind=="plugin")?"pointer-events:none;":"pointer-events:auto;";
     if(kind=="schedule"&&e.value("scheduleLayout","columns")=="menu")for(const auto& a:display_content.at("activities"))if(!a.value("previewAttributes",Json::array()).empty()){style+="overflow-x:hidden;overflow-y:auto;pointer-events:auto;";break;}
     auto body=element_body(e);
     if(!e.value("_boundEnabled",true)||(e.contains("enabledCondition")&&!visual_condition(e.at("enabledCondition")))) {
@@ -491,7 +527,7 @@ public:
         const auto end=body.find('>',at);if(body.substr(at,end-at).find(" disabled")==std::string::npos)body.insert(at+tag.size(),"disabled=\"disabled\" ");at=body.find('>',at)+1;
       }
     }
-    return "<div id=\"node-"+escape(e.value("id",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
+    return "<div id=\"node-"+escape(e.value("id",""))+"\" data-tooltip=\""+escape(e.value("tooltip",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
   }
   std::string roster_stats() {
     if(game.state.is_null())return "새 게임을 시작하면 대상별 능력을 표시합니다.";
@@ -516,7 +552,7 @@ public:
   }
   std::string roster_schedule() {
     if(game.state.is_null())return "새 게임을 시작하세요.";
-    const auto phase=game.state.value("phase","");const bool editable=phase=="planning"||phase=="ready";
+    const auto phase=game.state.value("phase","");const bool editable=!progress_pending()&&(phase=="planning"||phase=="ready");
     if(roster_revision!=game.state.value("stateRevision",0)){roster_draft=game.state.at("roster").at("assignments");roster_revision=game.state.value("stateRevision",0);}
     std::string out="<div style=\"margin:0;height:24px;\">이번 기간 · 캐릭터별 활동 (함께 정산)</div>";
     for(const auto& m:display_content.at("project").at("roster").at("members")) {
@@ -526,11 +562,16 @@ public:
       out+="</select></div>";
     }
     out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-assign","활동 배정 적용",{{"type","rosterCommit"}},editable)+"</div>";
-    out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-execute","배정한 활동 함께 실행",{{"type","executeActivity"}},phase=="ready"&&roster_draft==game.state.at("roster").at("assignments"))+"</div>";
+    out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-execute","배정한 활동 함께 실행",{{"type","executeActivity"}},editable&&phase=="ready"&&roster_draft==game.state.at("roster").at("assignments"))+"</div>";
     return out;
   }
   std::string element_body(const Json& e) {
     const std::string kind=e.value("kind","panel");
+    if(kind=="group"&&e.value("overflow","")=="scroll"){
+      std::string out;double extent=0;const double ox=e.value("_worldX",e.value("x",0.0)),oy=e.value("_worldY",e.value("y",0.0));
+      for(const auto& raw:render_elements)if(raw.value("_scrollParent","")==e.value("id","")){auto child=raw;child["_worldX"]=raw.value("x",0.0);child["_worldY"]=raw.value("y",0.0);child["x"]=raw.value("x",0.0)-ox;child["y"]=raw.value("y",0.0)-oy;extent=std::max(extent,child.value("y",0.0)+child.value("height",0.0));if(child.contains("_clipRect")){child["_clipRect"]["x"]=child["_clipRect"].value("x",0.0)-ox;child["_clipRect"]["y"]=child["_clipRect"].value("y",0.0)-oy;}out+=render_node(child);}
+      return "<div style=\"position:relative;width:100%;height:"+number(extent)+"px;\">"+out+"</div>";
+    }
     if(kind=="panel"||kind=="group")return "";
     if(kind=="input"){const auto id=e.value("userFieldId","");return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;color:inherit;font-size:inherit;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
     if(kind=="meter"){const double maximum=e.value("maxValue",100.0),value=e.value("value",0.0),ratio=maximum>0?std::clamp(value/maximum,0.0,1.0):0.0;return "<div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div>";}
@@ -539,13 +580,13 @@ public:
     if(kind=="text")return escape(e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
     if(kind=="dialogue")return "<div class=\"dialogue\">"+escape(bind("story"))+"</div>";
     if(kind=="services"||kind=="diets"||kind=="sell"||kind=="policies"||kind=="actions")return facility_body(e);
-    if(kind=="equipment"||kind=="quests"||kind=="expedition"||kind=="battle"||kind=="relationship-stages")return systems_body(kind);
+    if(kind=="equipment"||kind=="quests"||kind=="expedition"||kind=="battle"||kind=="relationship-stages")return systems_body(kind,e.value("tacticsPanel","all"));
     if(kind=="button") {
       Json action={{"type",e.value("action","advance")}};
       // An instance may override the action while retaining the definition's old
       // target fields. Only forward the fields belonging to the chosen command.
       static const std::map<std::string,std::vector<std::string>> parameters={
-        {"navigate",{"screenId"}},{"visit",{"locationId"}},{"interact",{"interactionId"}},
+        {"playSequence",{"sequenceId"}},{"openModal",{"screenId"}},{"selectRow",{"screenId","selectionKey","_rowId","_selectionSource"}},{"executeActorAction",{"actionId","actorId","quantity"}},{"navigate",{"screenId"}},{"visit",{"locationId"}},{"interact",{"interactionId"}},
         {"buy",{"shopId","itemId","quantity"}},{"sell",{"shopId","itemId","quantity"}},{"useService",{"serviceId","quantity"}},{"setDiet",{"dietId"}},{"equip",{"equipmentId"}},
         {"executeAction",{"actionId","quantity"}},{"selectPolicy",{"groupId","optionId"}},
         {"selectBattleAction",{"battleAction","itemId"}},{"selectBattleTarget",{"battleTarget"}},
@@ -556,26 +597,29 @@ public:
       if(selected!=parameters.end())for(const auto& key:selected->second)if(e.contains(key))action[key]=e[key];
       if(action.at("type")=="battleAction"){action["action"]=e.value("battleAction","attack");if(action["action"]=="useItem"&&e.contains("itemId"))action["itemId"]=e["itemId"];}
       if(action.at("type")=="selectBattleAction"&&action.value("itemId","").empty())action.erase("itemId");
-      if((action.at("type")=="buy"||action.at("type")=="sell"||action.at("type")=="useService"||action.at("type")=="executeAction")&&!action.contains("quantity"))action["quantity"]=1;
+      if((action.at("type")=="buy"||action.at("type")=="sell"||action.at("type")=="useService"||action.at("type")=="executeAction"||action.at("type")=="executeActorAction")&&!action.contains("quantity"))action["quantity"]=1;
       if(action.at("type")=="setDiet"&&!action.contains("dietId"))action["dietId"]=nullptr;
       if(action.at("type")=="selectPolicy"&&!action.contains("optionId"))action["optionId"]=nullptr;
-      const auto type=action.value("type","");std::string label=e.value("text","버튼");bool enabled=true;
+      if(e.contains("selectionBindings")){action["_selectionKey"]=e.value("selectionKey","");action["_selectionBindings"]=e.at("selectionBindings");}
+      auto boundAction=action;bool hasSelection=true;try{boundAction=selection_action(action);}catch(...){hasSelection=false;}
+      const auto type=action.value("type","");std::string label=e.value("text","버튼");bool enabled=hasSelection;
       const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
       if(type=="advance") {
         label=raw_phase=="planning"?"일정 확정":raw_phase=="ready"?"활동 시작":raw_phase=="activity-result"?"결과 확인 · 다음":raw_phase=="narrative"?"이야기 계속":"다음";
         enabled=raw_phase!="title"&&raw_phase!="finished"&&raw_phase!="battle"&&raw_phase!="expedition"&&phase()!="choice";
         if(!e.value("autoLabel",true)){label=e.value("text","");if(raw_phase=="planning"&&plan_month>=0&&plan_selected!=((1<<game.periods())-1))enabled=false;}
       }
+      if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){enabled=false;label="행동 진행 중";}
       if(type=="save")enabled=!game.state.is_null();
-      if(type=="navigate"||type=="visit"||type=="buy"||type=="sell"||type=="useService"||type=="setDiet"||type=="executeAction"||type=="selectPolicy"||type=="interact") {
+      if(type=="executeActorAction"||type=="navigate"||type=="visit"||type=="buy"||type=="sell"||type=="useService"||type=="setDiet"||type=="executeAction"||type=="selectPolicy"||type=="interact") {
         enabled=raw_phase=="planning"||raw_phase=="ready";
         // Preview against a serialized copy through the same C++ command contract.
         // This covers authored quantities and conditions without committing state.
-        if(enabled)try {game.call({{"operation","command"},{"state",game.state},{"command",action},{"expectedRevision",game.state.at("stateRevision")}});}catch(...){enabled=false;}
+        if(enabled)try {game.call({{"operation","command"},{"state",game.state},{"command",boundAction},{"expectedRevision",game.state.at("stateRevision")}});}catch(...){enabled=false;}
       }
       if(type=="equip"||type=="unequip"||type=="acceptQuest"||type=="claimQuest"||type=="moveExpedition"||type=="returnFromExpedition"||type=="battleAction")enabled=game.available(action);
       if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction")enabled=game.battle_ui_available(action);
-      enabled=enabled&&e.value("_boundEnabled",true)&&(!e.contains("enabledCondition")||visual_condition(e.at("enabledCondition")));
+      enabled=enabled&&hasSelection&&e.value("_boundEnabled",true)&&(!e.contains("enabledCondition")||visual_condition(e.at("enabledCondition")));
       auto result=button(e.value("id","button"),label,action,enabled);
       const std::string style="font-size:"+number(e.value("fontSize",20.0))+"px;";
       result.insert(7," style=\""+style+"\"");return result;
@@ -583,7 +627,7 @@ public:
     std::string out;
     if(kind=="collection") {
       out="<div style=\"position:relative;width:100%;height:"+number(e.value("_collectionExtent",0.0))+"px;\">";
-      for(const auto& child:render_elements)if(child.value("_collectionParent","")==e.value("id",""))out+=render_node(child);
+      for(const auto& child:render_elements)if(child.value("_collectionParent","")==e.value("id","")&&!child.contains("_scrollParent"))out+=render_node(child);
       return out+"</div>";
     }
     const auto gp=gameplay(), story=narrative();
@@ -604,7 +648,7 @@ public:
       if(e.value("scheduleLayout","columns")!="columns")return calendar_schedule(e);
       if(plan.size()!=size_t(game.periods())) {plan.clear();for(int i=0;i<game.periods();i++)plan.push_back(display_content.at("activities").at(0).value("id",""));}
       const int period=game.state.is_null()?0:game.state.value("periodIndex",0)%game.periods();
-      const bool editable=!game.state.is_null()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
+      const bool editable=!progress_pending()&&!game.state.is_null()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
       const auto column_width=std::max(70.0,(e.value("width",888.0)-12)/game.periods());
       for(int i=0;i<game.periods();i++) {out+="<div class=\"schedule-row\" style=\"width:"+number(column_width)+"px;\"><span>"+std::to_string(i+1)+"번째 일정</span><select style=\"width:"+number(column_width-16)+"px;\" id=\"plan-"+std::to_string(i)+"\""+(i<period||!editable?" disabled=\"disabled\"":"")+">";
         for(const auto& a:display_content.at("activities")){const auto summary=activity_preview(a);out+="<option style=\"width:"+number(column_width-32)+"px;"+(summary.empty()?std::string():"height:auto;min-height:40px;white-space:normal;")+"\" id=\"plan-"+std::to_string(i)+"-option-"+escape(a.value("id",""))+"\" value=\""+escape(a.value("id",""))+"\""+(plan[i]==a.at("id")?" selected=\"selected\"":"")+">"+escape(a.value("label","")+(summary.empty()?"":" · "+summary))+"</option>";}
@@ -747,12 +791,24 @@ public:
     extra_css+="scrollbarvertical{width:14px;} scrollbarhorizontal{height:14px;} scrollbarvertical slidertrack,scrollbarhorizontal slidertrack{background-color:#302c3a;} scrollbarvertical sliderbar,scrollbarhorizontal sliderbar{min-width:12px;min-height:24px;background-color:#8e809c;} scrollbarvertical sliderarrowdec,scrollbarvertical sliderarrowinc{height:12px;} scrollbarhorizontal sliderarrowdec,scrollbarhorizontal sliderarrowinc{width:12px;}";
     out.insert(out.find("</style>"),extra_css);
     out.insert(out.find("</style>"),".timeline-control button{width:100%;height:44px;min-height:0;padding:6px;border-width:1px;border-color:#acc6b3;background-color:#355c4c;color:#ffffff;font-size:18px;} .timeline-disabled button{background-color:#69796e;color:#bcc9c0;}");
-    for(const auto& raw:render_elements)if(!raw.contains("_collectionParent"))out+=render_node(raw);
-    if(!pending_purchase.is_null())out+="<div class=\"transaction-shade\"></div><div class=\"purchase-dialog list\" style=\"left:"+number(std::max(8,(width-540)/2))+"px;top:"+number(std::max(8,(height-440)/2))+"px;width:516px;\"><h3>"+escape(pending_confirmation.value("title","거래 확인"))+"</h3><p>"+escape(pending_confirmation.value("message","계속하시겠습니까?"))+"</p><p>"+escape(transaction_summary(pending_purchase))+"</p>"+button("confirm-purchase",pending_confirmation.value("confirmLabel","확인"),{{"type","confirmPurchase"}})+button("cancel-purchase",pending_confirmation.value("cancelLabel","취소"),{{"type","cancelPurchase"}})+"</div>";
+    std::string base;for(const auto& raw:render_elements)if(!raw.contains("_collectionParent")&&!raw.contains("_scrollParent"))base+=render_node(raw);
+    if(!ui_modal.empty()){
+      for(const std::string tag:{"<button ","<input ","<select "})for(size_t at=0;(at=base.find(tag,at))!=std::string::npos;at+=tag.size()+21)base.insert(at+tag.size(),"disabled=\"disabled\" ");
+    }out+=base;
+    if(!ui_modal.empty())for(const auto& modal:visual.at("screens"))if(modal.at("id")==ui_modal&&modal.value("modal",false)){
+      out+="<div id=\"ui-modal-shade\" style=\"z-index:9000;position:absolute;left:0;top:0;width:100%;height:100%;background-color:#000000aa;pointer-events:auto;\"></div><div id=\"ui-modal\" style=\"z-index:9001;position:absolute;left:0;top:0;width:100%;height:100%;\">";
+      auto modal_elements=expanded_collections(expanded_elements(visual,modal,width,height,phase()));
+      const auto prefix=ui_modal+"__";
+      for(auto& e:modal_elements){e["id"]=prefix+e.at("id").get<std::string>();for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}
+      for(const auto& e:modal_elements)if(!e.contains("_collectionParent")&&!e.contains("_scrollParent"))out+=render_node(e);out+="</div>";break;
+    }
+    out+="<div id=\"ui-tooltip\" style=\"display:none;position:absolute;pointer-events:none;width:280px;padding:10px;background-color:#202838;color:#ffffff;border-width:1px;border-color:#b9cde8;z-index:10000;\"></div>";
+    if(!pending_purchase.is_null())out+="<div class=\"transaction-shade\" style=\"z-index:10010;\"></div><div id=\"ui-confirmation\" class=\"purchase-dialog list\" style=\"z-index:10011;left:"+number(std::max(8,(width-540)/2))+"px;top:"+number(std::max(8,(height-440)/2))+"px;width:516px;\"><h3>"+escape(pending_confirmation.value("title","거래 확인"))+"</h3><p>"+escape(pending_confirmation.value("message","계속하시겠습니까?"))+"</p><p>"+escape(transaction_summary(pending_purchase))+"</p>"+button("confirm-purchase",pending_confirmation.value("confirmLabel","확인"),{{"type","confirmPurchase"}})+button("cancel-purchase",pending_confirmation.value("cancelLabel","취소"),{{"type","cancelPurchase"}})+"</div>";
     const auto localization=display_content.at("project").value("localization",Json::object());
     if(screen_id=="title"&&localization.value("locales",Json::array()).size()>1){std::string label=locale;for(const auto& l:localization.at("locales"))if(l.at("id")==locale)label=l.value("label",locale);out+="<div style=\"position:absolute;right:12px;bottom:12px;width:240px;z-index:200;\">"+button("engine-language","Language: "+label+" · F2",{{"type","nextLocale"}})+"</div>";}
     if(!game.message.empty())out+="<div class=\"status\">"+escape(game.message)+"</div>";
     out+=timeline_overlay();
+    out+=direction_overlay();
     if(extensions)extensions->end_sync();
     return out+"</body></rml>";
   }

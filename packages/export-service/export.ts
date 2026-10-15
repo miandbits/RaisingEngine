@@ -48,6 +48,11 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
   if(content.project.roster)requiredFeatures.push('roster-activities-v1');
+  if((content.project.visual as any)?.direction)requiredFeatures.push('direction-sequences-v1');
+  if(content.project.systems?.tactics||content.project.systems?.expeditions.some(e=>e.nodes.some(n=>n.requirements||n.encounterId))||content.project.systems?.quests.some(q=>q.encounterId))requiredFeatures.push('party-tactics-v1');
+  if(content.project.progression)requiredFeatures.push('progression-sessions-v1');
+  const ui=content.project.visual;
+  if(ui&&(ui.screens.some(s=>s.modal)||[...ui.screens.flatMap(s=>s.elements),...(ui.components??[]).flatMap(c=>c.elements)].some(e=>e.flowLayout||e.overflow||e.sort||e.selectionKey||e.tooltip||['selectRow','openModal','closeModal'].includes(e.action??''))||(ui.components??[]).some(c=>c.elements.some(e=>e.kind==='component'))))requiredFeatures.push('ui-composition-v1');
   if(content.project.roster?.stateModel==='character-v1')requiredFeatures.push('character-scoped-rules-v1');
   if(content.project.periodsPerMonth!==3||content.project.schedulePlayback==='continuous')requiredFeatures.push('monthly-schedule-v1');
   if(content.project.gameplay?.actions?.some(action=>action.flow?.some(step=>step.chance)))requiredFeatures.push('probabilistic-actions-v1');
