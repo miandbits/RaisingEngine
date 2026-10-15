@@ -22,9 +22,15 @@ Transform readT(const Json& o) {
   t.x = get("x", 0); t.y = get("y", 0); t.rotation = get("rotation", 0); t.scaleX = get("scaleX", 1); t.scaleY = get("scaleY", 1);
   return t;
 }
-void writeT(Json& o, const Transform& t) {
-  o["x"] = clean(t.x); o["y"] = clean(t.y);
-  auto opt = [&](const char* k, double v, double def) { v = clean(v); if (v == def) o.erase(k); else o[k] = v; };
+/** Finer rounding (1e-9) for ops that must leave the drawing unchanged (orientBones rotates
+ *  coordinates by arbitrary angles: 1e-6 rounding would move parts by up to ~1e-6 px). */
+double fine(double v) {
+  const double r = std::round(v * 1e9) / 1e9;
+  return r == 0 ? 0.0 : r;
+}
+void writeT(Json& o, const Transform& t, double (*round)(double) = clean) {
+  o["x"] = round(t.x); o["y"] = round(t.y);
+  auto opt = [&](const char* k, double v, double def) { v = round(v); if (v == def) o.erase(k); else o[k] = v; };
   opt("rotation", t.rotation, 0); opt("scaleX", t.scaleX, 1); opt("scaleY", t.scaleY, 1);
 }
 Affine local(const Transform& t) { return Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY); }
@@ -359,6 +365,38 @@ void dropBoneWeights(EditResult& r, const Str& boneId) {
 }
 
 // ---- Bones ----
+double boneLength(const Json& b) { return b.is_object() && b.contains("length") && b.at("length").is_number() ? b.at("length").get<double>() : 0; }
+/** `length` (px, 0..100000; 0 / null = point bone, the key is dropped) and `color` ("#rrggbb[aa]";
+ *  null / "" = default) of addBone/setBone (plugin 1.5.0). */
+void writeLook(Json& b, const Json& op) {
+  if (op.contains("length")) {
+    const double len = op.at("length").is_null() ? 0 : num(op, "length", 0);
+    if (!(len >= 0) || len > 100000) throw EditError("본 길이(length)는 0..100000 사이의 숫자(px)입니다.");
+    if (clean(len) == 0) b.erase("length"); else b["length"] = clean(len);
+  }
+  if (op.contains("color")) {
+    const Str c = optStr(op, "color");
+    if (c.empty()) b.erase("color");
+    else b["color"] = c;  // the edit is refused by validation when malformed (ANIM_BONE_COLOR)
+  }
+}
+/**
+ * A lower bone of a two-bone chain that gets a length would switch its implicit effector from
+ * its first child to its own tip (the 1.5.0 precedence). Gestures that set a length must never
+ * move a limb by surprise, so that child becomes the explicit `tip`.
+ */
+void pinLimbTips(EditResult& r, const Str& id) {
+  Json& d = r.data;
+  if (!d.contains("ik") || !d.at("ik").is_array()) return;
+  Str child;
+  for (const auto& c : arr(d, "bones")) if (parentOf(c) == id) { child = c.value("id", Str()); break; }
+  if (child.empty()) return;
+  for (auto& k : d["ik"])
+    if (k.is_object() && !k.contains("tip") && k.contains("bones") && k.at("bones").is_array() && k.at("bones").size() == 2 && k.at("bones")[1] == id) {
+      k["tip"] = child;
+      r.affected.push_back("ik:" + optStr(k, "id"));
+    }
+}
 void addBone(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str id = reqStr(op, "id");
@@ -374,6 +412,7 @@ void addBone(EditResult& r, const Json& op) {
   t.rotation = num(op, "rotation", 0); t.scaleX = num(op, "scaleX", 1); t.scaleY = num(op, "scaleY", 1);
   Json b{{"id", id}, {"parent", parent.empty() ? Json(nullptr) : Json(parent)}};
   writeT(b, t);
+  writeLook(b, op);
   arr(d, "bones").push_back(b);
   r.affected.push_back("bone:" + id);
 }
@@ -384,6 +423,9 @@ void setBone(EditResult& r, const Json& op) {
   t.x = num(op, "x", t.x); t.y = num(op, "y", t.y); t.rotation = num(op, "rotation", t.rotation);
   t.scaleX = num(op, "scaleX", t.scaleX); t.scaleY = num(op, "scaleY", t.scaleY);
   writeT(b, t);
+  const bool hadLength = boneLength(b) > 0;
+  writeLook(b, op);
+  if (!hadLength && boneLength(bone(r.data, id)) > 0) pinLimbTips(r, id);
   r.affected.push_back("bone:" + id);
 }
 void reparentBone(EditResult& r, const Json& op) {
@@ -1489,6 +1531,248 @@ bool naturalAimAxis(const Rig& rig, int bone, double& degrees, double& reach) {
   reach = far > 1 ? far : dist;
   return true;
 }
+// ---- Bone length and orientation (plugin 1.5.0) ----
+/** The listed `bones` (validated), or every bone in array order when absent. */
+std::vector<Str> boneList(Json& d, const Json& op) {
+  std::vector<Str> ids;
+  if (has(op, "bones")) {
+    if (!op.at("bones").is_array()) throw EditError("bones는 본 ID 배열입니다.");
+    for (const auto& v : op.at("bones")) { ids.push_back(v.is_string() ? v.get<Str>() : Str()); bone(d, ids.back()); }
+  } else for (const auto& b : arr(d, "bones")) ids.push_back(b.value("id", Str()));
+  return ids;
+}
+/**
+ * fitBoneLengths {bones?} ("자동 길이"): each bone's length becomes the distance (in its own
+ * space) to its first child bone (array order). Bones without a child keep theirs. A lower bone of
+ * a two-bone chain keeps its effector (the child is pinned as `tip`). extra.lengths {id: length}.
+ */
+void fitBoneLengths(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Json lengths = Json::object();
+  for (const Str& id : boneList(d, op)) {
+    const Json* child = nullptr;
+    for (const auto& c : arr(d, "bones")) if (parentOf(c) == id) { child = &c; break; }
+    if (!child) { if (has(op, "bones")) warn(r, "ANIM_BONE_NO_CHILD", "", "본 「" + id + "」에는 자식 본이 없어 길이를 그대로 둡니다."); continue; }
+    const Transform t = readT(*child);
+    const double len = clean(std::hypot(t.x, t.y));
+    Json& b = bone(d, id);
+    if (len == boneLength(b)) continue;
+    const bool had = boneLength(b) > 0;
+    writeLook(b, {{"length", len}});
+    if (!had && len > 0) pinLimbTips(r, id);
+    lengths[id] = len;
+    r.affected.push_back("bone:" + id);
+  }
+  if (lengths.empty()) throw EditError("길이를 바꿀 본이 없습니다(자식 본이 없거나 길이가 이미 맞습니다).");
+  r.extra["lengths"] = lengths;
+}
+/** Uniform scale (scaleX = scaleY at every time): only then does L · R(δ) stay a T·R·S transform
+ *  with rotation + δ, so a bone frame can turn without changing what is drawn. */
+bool uniformScale(Json& d, const Str& id) {
+  const Transform t = readT(bone(d, id));
+  if (std::fabs(t.scaleX - t.scaleY) > 1e-12) return false;
+  const Str target = "bone:" + id;
+  auto keyed = [](const Json* tr) { return tr && tr->contains("keys") && tr->at("keys").is_array() && !tr->at("keys").empty(); };
+  for (auto& c : arr(d, "clips")) {
+    const Json* sx = findTrack(c, target, "scaleX");
+    const Json* sy = findTrack(c, target, "scaleY");
+    if (keyed(sx) && keyed(sy)) { if (sx->at("keys") != sy->at("keys")) return false; continue; }
+    if (const Json* one = keyed(sx) ? sx : keyed(sy) ? sy : nullptr)
+      for (const auto& k : one->at("keys")) if (!k.contains("value") || !k.at("value").is_number() || k.at("value").get<double>() != t.scaleX) return false;
+  }
+  for (const auto& e : listOr(d, "expressions"))
+    if (e.contains("bones") && e.at("bones").is_object() && e.at("bones").contains(id)) {
+      const Json& o = e.at("bones").at(id);
+      if (o.contains("scaleX") != o.contains("scaleY") || (o.contains("scaleX") && o.at("scaleX") != o.at("scaleY"))) return false;
+    }
+  return true;
+}
+/**
+ * The x/y keys of a child bone are a vector in its parent's frame: turning that frame rotates the
+ * pair, which needs both channels at the same key times with the same interpolation (a linear map
+ * commutes with any shared easing). A source (clip or expression) keying one channel alone is
+ * fine only while no source keys the other one: that channel is then always its setup value.
+ * Returns "" when the child can be rotated, else the reason.
+ */
+Str pairProblem(Json& d, const Str& child) {
+  const Str target = "bone:" + child;
+  bool onlyX = false, onlyY = false, anyX = false, anyY = false;
+  auto keyed = [](const Json* tr) { return tr && tr->contains("keys") && tr->at("keys").is_array() && !tr->at("keys").empty(); };
+  for (auto& c : arr(d, "clips")) {
+    const Json* tx = findTrack(c, target, "x");
+    const Json* ty = findTrack(c, target, "y");
+    const bool kx = keyed(tx), ky = keyed(ty);
+    anyX = anyX || kx; anyY = anyY || ky;
+    onlyX = onlyX || (kx && !ky); onlyY = onlyY || (ky && !kx);
+    if (kx && ky) {
+      const Json& a = tx->at("keys");
+      const Json& b = ty->at("keys");
+      if (a.size() != b.size()) return "자식 본 「" + child + "」의 x·y 키 시간이 서로 다릅니다";
+      for (size_t i = 0; i < a.size(); i++)
+        if (a[i].value("timeMs", -1.0) != b[i].value("timeMs", -1.0) || a[i].value("interp", Str("linear")) != b[i].value("interp", Str("linear")) ||
+            (a[i].value("interp", Str()) == "bezier" && a[i].value("curve", Json()) != b[i].value("curve", Json())))
+          return "자식 본 「" + child + "」의 x·y 키 시간이나 보간이 서로 다릅니다";
+    }
+  }
+  for (const auto& e : listOr(d, "expressions"))
+    if (e.contains("bones") && e.at("bones").is_object() && e.at("bones").contains(child)) {
+      const Json& o = e.at("bones").at(child);
+      anyX = anyX || o.contains("x"); anyY = anyY || o.contains("y");
+      onlyX = onlyX || (o.contains("x") && !o.contains("y")); onlyY = onlyY || (o.contains("y") && !o.contains("x"));
+    }
+  if ((onlyX && anyY) || (onlyY && anyX)) return "자식 본 「" + child + "」의 x와 y를 따로 키한 클립·표정이 있습니다";
+  return "";
+}
+/** (x, y) seen from a frame turned by `deg`: R(-deg) · (x, y). */
+void unturn(double deg, double& x, double& y) {
+  const double a = deg * PI / 180, c = std::cos(a), s = std::sin(a), x0 = x;
+  x = c * x0 + s * y;
+  y = -s * x0 + c * y;
+}
+/** Turn bone `id`'s frame by `delta` degrees (L' = L · R(δ)) and express everything that lives in
+ *  it (child bones and their keys/expressions, attachments in every skin, aim axes) in the new
+ *  frame, so every pose draws exactly as before (the caller checked uniform scale and pairs). */
+void turnFrame(EditResult& r, const Str& id, double delta) {
+  Json& d = r.data;
+  const Str self = "bone:" + id;
+  auto shift = [&](Json& v, double by) { if (v.is_number()) v = fine(v.get<double>() + by); };
+  // The bone itself: rotation + δ (setup, keys, expression overrides).
+  { Json& b = bone(d, id); Transform t = readT(b); t.rotation += delta; writeT(b, t, fine); }
+  for (auto& c : arr(d, "clips"))
+    if (Json* tr = findTrack(c, self, "rotation")) for (auto& k : arr(*tr, "keys")) if (k.contains("value")) shift(k["value"], delta);
+  if (d.contains("expressions") && d["expressions"].is_array())
+    for (auto& e : d["expressions"])
+      if (e.contains("bones") && e["bones"].is_object() && e["bones"].contains(id) && e["bones"][id].contains("rotation")) shift(e["bones"][id]["rotation"], delta);
+  // Aim axes are bone-local directions: the same direction is δ less in the turned frame.
+  if (d.contains("ik") && d["ik"].is_array())
+    for (auto& k : d["ik"])
+      if (k.is_object() && k.contains("bones") && k["bones"] == Json::array({id})) {
+        double axis = std::fmod(k.value("aimAxis", 0.0) - delta, 360.0);
+        if (axis > 180) axis -= 360;
+        else if (axis <= -180) axis += 360;
+        const double rounded = fine(axis);
+        if (rounded == 0) k.erase("aimAxis"); else k["aimAxis"] = rounded;
+        r.affected.push_back("ik:" + optStr(k, "id"));
+      }
+  // Children: position R(-δ)·p, rotation - δ; key pairs rotate together (missing partner = setup).
+  for (auto& cb : arr(d, "bones")) {
+    if (parentOf(cb) != id) continue;
+    const Str child = cb.value("id", Str()), target = "bone:" + child;
+    const Transform setup = readT(cb);
+    Transform t = setup;
+    unturn(delta, t.x, t.y);
+    t.rotation -= delta;
+    writeT(cb, t, fine);
+    for (auto& c : arr(d, "clips")) {
+      Json* tx = findTrack(c, target, "x");
+      Json* ty = findTrack(c, target, "y");
+      const bool kx = tx && !arr(*tx, "keys").empty(), ky = ty && !arr(*ty, "keys").empty();
+      if (kx != ky) {  // the partner channel is constant (pairProblem): key it at the same times
+        Json made = kx ? *tx : *ty;
+        made["property"] = kx ? "y" : "x";
+        for (auto& k : made["keys"]) k["value"] = kx ? setup.y : setup.x;
+        if (Json* empty = kx ? ty : tx) *empty = made; else arr(c, "tracks").push_back(made);
+        tx = findTrack(c, target, "x");
+        ty = findTrack(c, target, "y");
+      }
+      if (kx || ky)
+        for (size_t i = 0; i < (*tx)["keys"].size(); i++) {
+          Json& a = (*tx)["keys"][i];
+          Json& b = (*ty)["keys"][i];
+          double x = a.value("value", setup.x), y = b.value("value", setup.y);
+          unturn(delta, x, y);
+          a["value"] = fine(x);
+          b["value"] = fine(y);
+        }
+      if (Json* tr = findTrack(c, target, "rotation")) for (auto& k : arr(*tr, "keys")) if (k.contains("value")) shift(k["value"], -delta);
+    }
+    if (d.contains("expressions") && d["expressions"].is_array())
+      for (auto& e : d["expressions"]) {
+        if (!e.contains("bones") || !e["bones"].is_object() || !e["bones"].contains(child)) continue;
+        Json& o = e["bones"][child];
+        if (o.contains("x") || o.contains("y")) {
+          double x = o.value("x", setup.x), y = o.value("y", setup.y);
+          unturn(delta, x, y);
+          o["x"] = fine(x);
+          o["y"] = fine(y);
+        }
+        if (o.contains("rotation")) shift(o["rotation"], -delta);
+      }
+    r.affected.push_back(target);
+  }
+  // Attachments of its slots, default and every skin: placement R(-δ)·offset.
+  std::set<Str> slotsOn;
+  for (const auto& sl : arr(d, "slots")) if (sl.value("bone", Str()) == id) slotsOn.insert(sl.value("id", Str()));
+  auto place = [&](Json& list) {
+    for (auto& a : list) {
+      if (!a.is_object() || !slotsOn.count(a.value("slot", Str()))) continue;
+      double x = a.value("x", 0.0), y = a.value("y", 0.0);
+      unturn(delta, x, y);
+      a["x"] = fine(x);
+      a["y"] = fine(y);
+      const double rot = fine(a.value("rotation", 0.0) - delta);
+      if (rot == 0) a.erase("rotation"); else a["rotation"] = rot;
+    }
+  };
+  place(arr(d, "attachments"));
+  if (d.contains("skins") && d["skins"].is_array()) for (auto& sk : d["skins"]) if (sk.is_object() && sk.contains("attachments")) place(sk["attachments"]);
+  for (const auto& sl : slotsOn) r.affected.push_back("slot:" + sl);
+  r.affected.push_back(self);
+}
+/**
+ * orientBones {bones?, fitLength? = true} ("본 방향 맞추기", migration of point-bone rigs): turns
+ * each bone's frame so +x points along its natural direction (first child bone, else its images:
+ * naturalAimAxis) and, with fitLength, sets its length to that reach, while every pose draws
+ * exactly as before (turnFrame). A bone is skipped (extra.skipped {id: reason}, warning
+ * ANIM_ORIENT_SKIPPED when listed) when it already has a length, has nothing to point at, has a
+ * non-uniform or mirrored scale anywhere, or a child whose x/y keys cannot rotate as pairs. Aim
+ * axes shrink by the turn (an arm aimed with aimAxis 90 ends at +x: no axis). The lower bone of a
+ * two-bone chain only gets a length when it keeps its effector (a child, pinned as `tip`).
+ * extra.oriented {id: degrees turned}.
+ */
+void orientBones(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const bool fitLength = !has(op, "fitLength") || op.at("fitLength") == true;
+  const std::vector<Str> ids = boneList(d, op);
+  Json oriented = Json::object(), skipped = Json::object();
+  for (const Str& id : ids) {
+    auto skip = [&](const Str& why) {
+      skipped[id] = why;
+      if (has(op, "bones")) warn(r, "ANIM_ORIENT_SKIPPED", "", "본 「" + id + "」: " + why);
+    };
+    if (boneLength(bone(d, id)) > 0) { skip("이미 길이가 있어 방향이 정해져 있습니다"); continue; }
+    Rig rig;
+    try { rig = parseRig("orient", d); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+    double degrees = 0, reach = 0;
+    if (!naturalAimAxis(rig, rig.boneIndex(id), degrees, reach)) { skip("가리킬 자식 본이나 그림이 없습니다"); continue; }
+    if (!uniformScale(d, id)) { skip("크기가 가로·세로 달라(또는 뒤집혀) 방향만 돌릴 수 없습니다"); continue; }
+    Str problem;
+    for (const auto& c : arr(d, "bones")) if (problem.empty() && parentOf(c) == id) problem = pairProblem(d, c.value("id", Str()));
+    if (!problem.empty()) { skip(problem); continue; }
+    // A lower bone without a child would switch its effector from its origin to the new tip.
+    bool lowerWithoutChild = false;
+    for (const auto& k : listOr(d, "ik"))
+      if (!k.contains("tip") && k.contains("bones") && k.at("bones").is_array() && k.at("bones").size() == 2 && k.at("bones")[1] == id) {
+        bool child = false;
+        for (const auto& c : arr(d, "bones")) child = child || parentOf(c) == id;
+        lowerWithoutChild = lowerWithoutChild || !child;
+      }
+    const double delta = clean(degrees);
+    const bool lengthen = fitLength && clean(reach) > 0 && !lowerWithoutChild;
+    if (fitLength && clean(reach) > 0 && lowerWithoutChild) warn(r, "ANIM_ORIENT_SKIPPED", "", "본 「" + id + "」: 두 본 IK의 끝점이 바뀌지 않도록 길이는 넣지 않았습니다.");
+    if (delta == 0 && !lengthen) continue;  // already pointing there: nothing to change
+    if (delta != 0) turnFrame(r, id, delta);
+    if (lengthen) {
+      writeLook(bone(d, id), {{"length", reach}});
+      pinLimbTips(r, id);
+    }
+    oriented[id] = delta;
+    r.affected.push_back("bone:" + id);
+  }
+  if (oriented.empty()) throw EditError(skipped.empty() ? Str("방향을 맞출 본이 없습니다.") : "방향을 맞출 수 있는 본이 없습니다: " + skipped.begin().value().get<Str>());
+  r.extra["oriented"] = oriented;
+  r.extra["skipped"] = skipped;
+}
 /**
  * addIk {id?, name?, bones: [parent?, child], target? | createTarget: true (+ targetId?,
  * targetParent?), mix?, bendPositive?, order?, aimAxis?}. createTarget adds a bone at the chain
@@ -1518,7 +1802,10 @@ void addIk(EditResult& r, const Json& op) {
     tip = rig.boneIndex(reqStr(op, "tip"));
     if (rig.bones[size_t(tip)].parentIndex != end) throw EditError("끝점(tip)은 아래 본 「" + chain.back() + "」의 직접 자식이어야 합니다: " + reqStr(op, "tip"));
   }
-  for (size_t i = 0; i < rig.bones.size() && tip < 0; i++) if (rig.bones[i].parentIndex == end) tip = int(i);
+  // A lower bone with a length (plugin 1.5.0) reaches with its own tip: no child is picked then.
+  const double endLength = rig.bones[size_t(end)].length;
+  const bool lengthTip = chain.size() == 2 && tip < 0 && endLength > 0;
+  for (size_t i = 0; i < rig.bones.size() && tip < 0 && !lengthTip; i++) if (rig.bones[i].parentIndex == end) tip = int(i);
   Json k{{"id", id}, {"name", displayName(op, id)}, {"bones", chain}};
   // A known end becomes the explicit effector: adding a sibling bone later never changes the limb.
   if (chain.size() == 2 && tip >= 0) k["tip"] = rig.bones[size_t(tip)].id;
@@ -1528,9 +1815,18 @@ void addIk(EditResult& r, const Json& op) {
     if (chain.size() != 1) throw EditError("조준 축(aimAxis)은 조준 IK(본 1개)에만 지정합니다.");
     axis = aimAxisOf(op);
     double natural = 0;
-    naturalAimAxis(rig, end, natural, reach);
+    if (endLength > 0) reach = endLength;
+    else naturalAimAxis(rig, end, natural, reach);
     hasAxis = true;
+  } else if (chain.size() == 1 && endLength > 0) {
+    hasAxis = true;  // a bone with a length points along +x (Spine): that is its natural aim
+    reach = endLength;
   } else if (chain.size() == 1) hasAxis = naturalAimAxis(rig, end, axis, reach);
+  // The two-bone effector as shown now (rig space); `effector` false = none (the origin aims).
+  double ex = 0, ey = 0;
+  const bool effector = chain.size() == 2 && (tip >= 0 || lengthTip);
+  if (tip >= 0) { ex = pose.world[size_t(tip)].e; ey = pose.world[size_t(tip)].f; }
+  else if (lengthTip) pose.world[size_t(end)].apply(endLength, 0, ex, ey);
   if (chain.size() == 1) putAimAxis(k, axis);
   Str target = optStr(op, "target");
   if (target.empty()) {
@@ -1538,7 +1834,7 @@ void addIk(EditResult& r, const Json& op) {
     // Where the chain end is shown now: the solve then starts from the current pose.
     const Affine& w = pose.world[size_t(end)];
     double wx = w.e, wy = w.f;
-    if (chain.size() == 2 && tip >= 0) { wx = pose.world[size_t(tip)].e; wy = pose.world[size_t(tip)].f; }
+    if (effector) { wx = ex; wy = ey; }
     else if (chain.size() == 1 && hasAxis) {
       // On the aim axis at the bone's own length (child or image end): solving changes nothing.
       const double cx = std::cos(axis * PI / 180), cy = std::sin(axis * PI / 180);
@@ -1574,13 +1870,12 @@ void addIk(EditResult& r, const Json& op) {
   if (has(op, "bendPositive")) {
     if (!op.at("bendPositive").is_boolean()) throw EditError("bendPositive는 true 또는 false입니다.");
     bend = op.at("bendPositive").get<bool>();
-  } else if (chain.size() == 2 && tip >= 0) {
+  } else if (effector) {
     // Keep the side the limb bends to now (the angle between its two links, on screen).
     const int up = rig.boneIndex(chain[0]);
     const Affine& u = pose.world[size_t(up)];
     const Affine& l = pose.world[size_t(end)];
-    const Affine& e = pose.world[size_t(tip)];
-    const double cross = (l.e - u.e) * (e.f - l.f) - (l.f - u.f) * (e.e - l.e);
+    const double cross = (l.e - u.e) * (ey - l.f) - (l.f - u.f) * (ex - l.e);
     bend = cross >= 0;
   }
   k["bendPositive"] = bend;
@@ -2092,7 +2387,7 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"applySetupDeltaToKeys", applySetupDeltaToKeys},
     {"addSkin", addSkin}, {"duplicateSkin", duplicateSkin}, {"setSkinAttachment", setSkinAttachment}, {"removeSkinAttachment", removeSkinAttachment},
     {"addExpression", addExpression}, {"setExpressionSlot", setExpressionSlot}, {"setExpressionBone", setExpressionBone}, {"captureExpression", captureExpression},
-    {"addIk", addIk}, {"setIk", setIk}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
+    {"addIk", addIk}, {"setIk", setIk}, {"fitBoneLengths", fitBoneLengths}, {"orientBones", orientBones}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
     {"convertToMesh", convertToMesh}, {"convertToRegion", convertToRegion}, {"setMeshVertices", setMeshVertices}, {"setWeights", setWeights},
     {"unbindMesh", unbindMesh}, {"autoWeights", [](EditResult& r, const Json& op) { autoWeights(r, op, false); }},
     {"bindMesh", [](EditResult& r, const Json& op) { autoWeights(r, op, true); }},

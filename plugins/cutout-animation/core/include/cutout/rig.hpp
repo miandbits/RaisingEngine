@@ -30,7 +30,11 @@ struct Affine {
 
 struct Transform { double x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1; };
 
-struct Bone { std::string id; std::string parent; Transform setup; int parentIndex = -1; };
+/** `length` (plugin 1.5.0, px >= 0, default 0 = point bone): the bone reaches from its origin to
+ *  (length, 0) in its own space (+x, Spine convention). Not a transform: it never moves anything
+ *  except the two-bone IK effector (IkConstraint::tipLength). `color` is an editor-only display
+ *  hint ("#rrggbb" / "#rrggbbaa", "" = default); runtimes ignore it. */
+struct Bone { std::string id; std::string parent; Transform setup; int parentIndex = -1; double length = 0; std::string color; };
 struct Slot { std::string id; std::string bone; std::optional<std::string> attachment; double alpha = 1; int boneIndex = -1; };
 /** One bone's share of a weighted mesh vertex; `bind` indexes Attachment::binds. */
 struct Influence { int bind = -1; double weight = 0; };
@@ -85,15 +89,18 @@ struct Expression {
 
 /**
  * IK constraint (plugin 1.3.0). `bones` = 1 (aim: the bone-local direction `aimAxis` (plugin 1.4.1,
- * degrees, default 0 = +x) points at the target) or 2 (parent, direct child: two-bone limb whose effector is the origin of `tip`: the explicit
- * `tip` bone (plugin 1.4.0, a direct child of the lower bone), else the lower bone's first child
- * bone in array order). Solved after expressions on world transforms, in `Rig::ikOrder`.
+ * degrees, default 0 = +x, the direction a bone length points) points at the target) or 2 (parent,
+ * direct child: two-bone limb). Two-bone effector precedence: the explicit `tip` bone's origin
+ * (plugin 1.4.0, a direct child of the lower bone) > the lower bone's own tip (length, 0) when its
+ * length > 0 (plugin 1.5.0) > its first child bone in array order > its origin. Solved after
+ * expressions on world transforms, in `Rig::ikOrder`.
  */
 struct IkConstraint {
   std::string id, name;
   std::vector<int> bones;     // chain, parent first
   int target = -1;
-  int tip = -1;               // two-bone effector bone (-1 = none: the child origin aims at the target)
+  int tip = -1;               // two-bone effector bone (-1 = none: tipLength, else the child origin aims at the target)
+  double tipLength = 0;       // two-bone, tip < 0: effector (tipLength, 0) in the lower bone (its length, plugin 1.5.0)
   bool explicitTip = false;   // `tip` named in the data (else the implicit first-child rule)
   double mix = 1;
   double aimAxis = 0;         // aim: bone-local direction (degrees, before the bone's scale) aimed at the target

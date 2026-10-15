@@ -16,6 +16,9 @@ double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 
 // Pick radii in widget px, matched to what is drawn: the IK crosshair's arms reach 12 px, so a
 // press anywhere on it grabs the target (the old 7 px circle let the body image under its ring win).
 constexpr double VERTEX_RADIUS = 7, IK_RADIUS = 12, BONE_RADIUS = 8, SELECTED_RADIUS = 9, AXIS_LENGTH = 18, AXIS_RADIUS = 5;
+// Bone bodies (plugin 1.5.0): a press within BODY_RADIUS of the origin->tip line (or inside the
+// drawn diamond) grabs the body; shorter than MIN_BODY on screen a bone is drawn as a point.
+constexpr double BODY_RADIUS = 4, MIN_BODY = 6;
 double segmentDistance(const QPointF& p, const QPointF& a, const QPointF& b) {
   const QPointF ab = b - a;
   const double len2 = QPointF::dotProduct(ab, ab);
@@ -262,6 +265,7 @@ void RigCanvas::paintIk(QPainter& p) {
       QPolygonF chain;
       for (int b : k.bones) chain << origin(b);
       if (k.tip >= 0) chain << origin(k.tip);
+      else if (k.tipLength > 0) chain << rigToWidget(boneTip(k.bones.back()));
       p.drawPolyline(chain);
     }
     double dx = 0, dy = 0;
@@ -275,9 +279,10 @@ void RigCanvas::paintIk(QPainter& p) {
       p.drawLine(to, to - dir * 8 + side * 4);
       p.drawLine(to, to - dir * 8 - side * 4);
     }
-    const int end = k.tip >= 0 ? k.tip : k.bones.back();
+    // From the effector: the tip bone, the lower bone's length tip, else the chain end.
+    const QPointF from = k.tip >= 0 ? origin(k.tip) : k.bones.size() == 2 && k.tipLength > 0 ? rigToWidget(boneTip(k.bones.back())) : origin(k.bones.back());
     p.setPen(QPen(line, 1.5, Qt::DashLine));
-    p.drawLine(origin(end), origin(k.target));
+    p.drawLine(from, origin(k.target));
   }
 }
 
@@ -314,14 +319,23 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
     const double d = dist(at);
     if (isIkTarget(int(i))) {
       if (d <= IK_RADIUS) out.push_back({ref, -1, HitIkTarget, d});
-    } else if (ref == selection_) {
-      // The selected bone's own gizmo: its origin and its drawn x axis both grab it.
+      continue;  // only its origin matters: no body
+    }
+    const QPolygonF shape = boneShape(int(i));
+    if (ref == selection_) {
+      // The selected bone's own gizmo: its origin and (point bones) its drawn x axis grab it;
+      // the axis is its "body": dragging it turns the bone.
       const double len = std::hypot(m.a, m.b);
       const QPointF axis = len > 1e-9 ? QPointF(m.a / len, m.b / len) * AXIS_LENGTH : QPointF(AXIS_LENGTH, 0);
-      const double onAxis = segmentDistance(w, at, at + axis);
-      if (d <= SELECTED_RADIUS || onAxis <= AXIS_RADIUS) out.push_back({ref, -1, HitSelectedBone, std::min(d, onAxis)});
+      const double onAxis = shape.isEmpty() ? segmentDistance(w, at, at + axis) : 1e9;
+      if (d <= SELECTED_RADIUS || onAxis <= AXIS_RADIUS) out.push_back({ref, -1, HitSelectedBone, std::min(d, onAxis), d > SELECTED_RADIUS});
     } else if (d <= BONE_RADIUS) {
       out.push_back({ref, -1, HitBone, d});
+    }
+    // Bone bodies rank after every handle and before images (Spine: the bone over its image).
+    if (!shape.isEmpty()) {
+      const double line = segmentDistance(w, at, rigToWidget(boneTip(int(i))));
+      if (line <= BODY_RADIUS || shape.containsPoint(w, Qt::OddEvenFill)) out.push_back({ref, -1, HitBoneBody, line, true});
     }
   }
   const QTransform view = viewTransform();
@@ -364,14 +378,49 @@ QString RigCanvas::hitTest(const QPointF& w, bool bones) const {
   for (const Hit& h : hitCandidates(w, bones)) if (h.vertex < 0) return h.ref;
   return {};
 }
-QString RigCanvas::pick(const QPointF& w, bool cycle) const {
+RigCanvas::Hit RigCanvas::pickHit(const QPointF& w, bool cycle) const {
   QStringList refs;  // distinct items in candidate order (a mesh vertex is not an item)
-  for (const Hit& h : hitCandidates(w)) if (h.vertex < 0 && !refs.contains(h.ref)) refs << h.ref;
+  QVector<Hit> first;  // each item's best candidate: a bone's origin before its body
+  for (const Hit& h : hitCandidates(w)) if (h.vertex < 0 && !refs.contains(h.ref)) { refs << h.ref; first << h; }
   if (refs.isEmpty()) return {};
-  if (!cycle) return refs[0];
+  if (!cycle) return first[0];
   // From the selection (or the default pick when it is not under the cursor) to the next one:
   // the first Alt+click already reaches what lies beneath, repeated ones wrap around the stack.
-  return refs[(std::max(0, int(refs.indexOf(selection_))) + 1) % refs.size()];
+  return first[(std::max(0, int(refs.indexOf(selection_))) + 1) % refs.size()];
+}
+QPointF RigCanvas::boneTip(int bone) const {
+  if (!rig_ || bone < 0 || size_t(bone) >= pose_.world.size() || size_t(bone) >= rig_->bones.size()) return {};
+  double x, y;
+  pose_.world[size_t(bone)].apply(rig_->bones[size_t(bone)].length, 0, x, y);
+  return {x, y};
+}
+QPolygonF RigCanvas::boneShape(int bone) const {
+  if (!rig_ || bone < 0 || size_t(bone) >= pose_.world.size() || size_t(bone) >= rig_->bones.size() || !(rig_->bones[size_t(bone)].length > 0) || isIkTarget(bone)) return {};
+  const auto& m = pose_.world[size_t(bone)];
+  const QPointF o = rigToWidget(QPointF(m.e, m.f)), t = rigToWidget(boneTip(bone)), v = t - o;
+  const double len = std::hypot(v.x(), v.y());
+  if (len < MIN_BODY) return {};
+  // Spine-like: widest a little after the origin, tapering to a point at the tip.
+  const QPointF dir = v / len, side(-dir.y(), dir.x());
+  const double half = std::clamp(len * 0.1, 2.5, 8.0), knee = std::min(len * 0.2, half * 2.5);
+  return QPolygonF({o, o + dir * knee + side * half, t, o + dir * knee - side * half});
+}
+QPointF RigCanvas::createEnd(const Drag& d) {
+  const QPointF v = d.current - d.start;
+  const double len = std::hypot(v.x(), v.y());
+  if (!d.shift || len < 1e-9) return d.current;
+  const double step = PI / 12, a = std::round(std::atan2(v.y(), v.x()) / step) * step;
+  return d.start + QPointF(std::cos(a), std::sin(a)) * len;
+}
+/** "#rrggbb" / "#rrggbbaa" bone colour (data), else the mode colour. */
+QColor RigCanvas::boneColor(int bone) const {
+  const std::string& c = rig_->bones[size_t(bone)].color;
+  if (c.size() == 7 || c.size() == 9) {
+    bool ok = true;
+    const uint v = QString::fromStdString(c.substr(1)).toUInt(&ok, 16);
+    if (ok) return c.size() == 7 ? QColor((v >> 16) & 255, (v >> 8) & 255, v & 255) : QColor((v >> 24) & 255, (v >> 16) & 255, (v >> 8) & 255, v & 255);
+  }
+  return QColor(animate_ ? "#f3a3a3" : "#9cc3ff");
 }
 
 void RigCanvas::updateHover(const QPointF& w, bool alt) {
@@ -379,9 +428,11 @@ void RigCanvas::updateHover(const QPointF& w, bool alt) {
   hoverAlt_ = alt;
   hoverInside_ = true;
   // Mesh modes own the left button (vertices/brush): nothing else would be picked there.
-  const QString ref = meshMode_ != MeshOff ? QString() : pick(w, alt);
-  if (ref == hoverRef_) return;
+  const Hit hit = meshMode_ != MeshOff ? Hit{} : pickHit(w, alt);
+  const QString ref = hit.ref;
+  if (ref == hoverRef_ && hit.body == hoverBody_) return;
   hoverRef_ = ref;
+  hoverBody_ = hit.body;
   if (ref.isEmpty()) unsetCursor();
   else setCursor(ref.startsWith("bone:") ? Qt::PointingHandCursor : Qt::OpenHandCursor);
   update();
@@ -408,8 +459,59 @@ void RigCanvas::paintHover(QPainter& p) {
     if (const int si = rig_->slotIndex(ss(id)); si >= 0) outlineSlot(p, si);
   } else if (const int bi = rig_->boneIndex(ss(id)); bi >= 0) {
     const auto& m = pose_.world[size_t(bi)];
+    const QPolygonF shape = boneShape(bi);
+    if (hoverBody_ && !shape.isEmpty()) { p.drawPolygon(shape); return; }  // the body a drag would turn
     const double r = isIkTarget(bi) ? IK_RADIUS + 2 : BONE_RADIUS + 1;
     p.drawEllipse(rigToWidget(QPointF(m.e, m.f)), r, r);
+  }
+}
+// Bones (plugin 1.5.0, Spine-like): a link to the parent, then a tapered body from origin to tip
+// for bones with a length (fill = bone colour), else the origin circle and local x axis tick.
+void RigCanvas::paintBones(QPainter& p) {
+  for (size_t i = 0; i < rig_->bones.size(); i++) {
+    const auto& w = pose_.world[i];
+    const QPointF at = rigToWidget(QPointF(w.e, w.f));
+    const QString ref = "bone:" + qs(rig_->bones[i].id);
+    const bool selected = ref == selection_, hovered = ref == hoverRef_ && !drag_;
+    const int parent = rig_->bones[i].parentIndex;
+    if (parent >= 0) {
+      // A child starting at its parent's tip needs no link (the bodies already join).
+      const bool long_ = rig_->bones[size_t(parent)].length > 0;
+      const QPointF from = rigToWidget(long_ ? boneTip(parent) : QPointF(pose_.world[size_t(parent)].e, pose_.world[size_t(parent)].f));
+      if (std::hypot(from.x() - at.x(), from.y() - at.y()) > 2) {
+        p.setPen(QPen(QColor(255, 255, 255, 90), 1, long_ ? Qt::DotLine : Qt::SolidLine));
+        p.drawLine(from, at);
+      }
+    }
+    if (isIkTarget(int(i))) {
+      // IK target: a crosshair (no axis: only its origin matters) that reads as "drag me".
+      p.setPen(QPen(selected ? SELECT_COLOR : IK_COLOR, selected ? 2.5 : 2));
+      p.drawEllipse(at, 8.0, 8.0);
+      p.drawLine(at - QPointF(12, 0), at + QPointF(12, 0));
+      p.drawLine(at - QPointF(0, 12), at + QPointF(0, 12));
+      continue;
+    }
+    const QColor color = boneColor(int(i));
+    const QPolygonF shape = boneShape(int(i));
+    if (!shape.isEmpty()) {
+      QColor fill = selected ? SELECT_COLOR : color;
+      fill.setAlpha(selected ? 190 : hovered ? 170 : 125);
+      p.setPen(QPen(selected ? SELECT_COLOR : color.darker(160), selected ? 2 : 1.2));
+      p.setBrush(fill);
+      p.drawPolygon(shape);
+      p.setPen(QPen(QColor("#0b1220"), 1));
+      p.setBrush(selected ? SELECT_COLOR : color.lighter(115));
+      p.drawEllipse(at, selected ? 4.5 : 3.5, selected ? 4.5 : 3.5);
+      p.setBrush(Qt::NoBrush);
+      continue;
+    }
+    const double len = std::hypot(w.a, w.b);
+    const QPointF axis = len > 1e-9 ? QPointF(w.a / len, w.b / len) * AXIS_LENGTH : QPointF(AXIS_LENGTH, 0);
+    p.setPen(QPen(selected ? SELECT_COLOR : QColor("#c8d2dc"), selected ? 2.5 : 1.5));
+    p.drawLine(at, at + axis);
+    p.setBrush(selected ? SELECT_COLOR : color);
+    p.drawEllipse(at, selected ? 6.0 : 4.5, selected ? 6.0 : 4.5);
+    p.setBrush(Qt::NoBrush);
   }
 }
 
@@ -448,38 +550,20 @@ void RigCanvas::paintEvent(QPaintEvent*) {
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
       for (size_t i = 0; i < rig_->slots.size(); i++) if ("slot:" + qs(rig_->slots[i].id) == selection_) outlineSlot(p, int(i));
       paintIk(p);
-      // Bone gizmos: link to parent, origin circle (= rotation center) and local x axis.
-      for (size_t i = 0; i < rig_->bones.size(); i++) {
-        const auto& w = pose_.world[i];
-        const QPointF at = rigToWidget(QPointF(w.e, w.f));
-        const bool selected = "bone:" + qs(rig_->bones[i].id) == selection_;
-        const int parent = rig_->bones[i].parentIndex;
-        if (parent >= 0) {
-          p.setPen(QPen(QColor(255, 255, 255, 90), 1));
-          p.drawLine(rigToWidget(QPointF(pose_.world[size_t(parent)].e, pose_.world[size_t(parent)].f)), at);
-        }
-        if (isIkTarget(int(i))) {
-          // IK target: a crosshair (no axis: only its origin matters) that reads as "drag me".
-          p.setPen(QPen(selected ? SELECT_COLOR : IK_COLOR, selected ? 2.5 : 2));
-          p.drawEllipse(at, 8.0, 8.0);
-          p.drawLine(at - QPointF(12, 0), at + QPointF(12, 0));
-          p.drawLine(at - QPointF(0, 12), at + QPointF(0, 12));
-          continue;
-        }
-        const double len = std::hypot(w.a, w.b);
-        const QPointF axis = len > 1e-9 ? QPointF(w.a / len, w.b / len) * 18 : QPointF(18, 0);
-        p.setPen(QPen(selected ? SELECT_COLOR : QColor("#c8d2dc"), selected ? 2.5 : 1.5));
-        p.drawLine(at, at + axis);
-        p.setBrush(selected ? SELECT_COLOR : QColor(animate_ ? "#f3a3a3" : "#9cc3ff"));
-        p.drawEllipse(at, selected ? 6.0 : 4.5, selected ? 6.0 : 4.5);
-        p.setBrush(Qt::NoBrush);
-      }
+      paintBones(p);
     }
     if (pose_.world.size() == rig_->bones.size()) paintHover(p);
     paintMesh(p);
     if (drag_ && drag_->moved && (drag_->tool == Rotate || drag_->tool == Scale)) {
       p.setPen(QPen(SELECT_COLOR, 1, Qt::DotLine));
       p.drawLine(rigToWidget(drag_->origin), rigToWidget(drag_->current));
+    }
+    if (tool_ == Create && drag_) {
+      // The bone being drawn (the panel previews the real one; this guide also shows a click).
+      const QPointF a = rigToWidget(drag_->start), b = rigToWidget(createEnd(*drag_));
+      p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
+      p.drawLine(a, b);
+      p.drawEllipse(a, 4, 4);
     }
     if (tool_ == Pivot && drag_) {
       const QPointF c = rigToWidget(drag_->current);
@@ -494,11 +578,12 @@ void RigCanvas::paintEvent(QPaintEvent*) {
     p.setPen(QColor("#f0c0c0"));
     p.drawText(rect().adjusted(16, 16, -16, -16), Qt::AlignCenter | Qt::TextWordWrap, message_);
   }
-  static const char* names[] = {"이동(V)", "회전(R)", "크기(S)", "회전 중심(P)"};
+  static const char* names[] = {"이동(V)", "회전(R)", "크기(S)", "회전 중심(P)", "본 만들기(C)"};
   p.setPen(QColor("#9aa4ae"));
   QString hint = meshMode_ == MeshVertices ? QString("메시 정점: 클릭·Shift+클릭 선택 · 빈 곳 끌기 상자 선택 · 정점 끌기로 이동") + (animate_ ? " (K로 변형 키)" : "")
                        : meshMode_ == MeshWeights ? QString("웨이트 칠하기: 끌어서 붓으로 칠함 · 색 = 고른 본의 웨이트(파랑 0 → 빨강 1)")
-                                                  : QString("도구: %1 · Shift 미세 조정/15° 스냅 · Alt+클릭 겹친 항목 차례로").arg(names[tool_ & 3]);
+                       : tool_ == Create ? QString("본 만들기: 끌어서 고른 본의 자식 본(길이·방향) · 클릭 = 점 본 · 본 원점 클릭 = 부모 고르기 · Shift 15° 스냅")
+                                         : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Shift 미세 조정/15° 스냅 · Alt+클릭 겹친 항목 차례로").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
   // What a click would pick (handles beat images): named so an overlap is never a surprise.
   const QString kind = hoverRef_.startsWith("slot:") ? "조각" : rig_ && isIkTarget(rig_->boneIndex(ss(hoverRef_.section(':', 1)))) ? "IK 대상" : "본";
   if (!hoverRef_.isEmpty()) hint = QString("가리킴: %1 %2 · ").arg(kind, hoverRef_.section(':', 1)) + hint;
@@ -518,7 +603,22 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
   if (e->button() != Qt::LeftButton) return;
   if (meshPress(e)) return;
   // One pick for every tool: handles first, Alt = the next candidate under the cursor.
-  const QString hit = pick(e->position(), e->modifiers() & Qt::AltModifier);
+  const Hit picked = pickHit(e->position(), e->modifiers() & Qt::AltModifier);
+  const QString hit = picked.ref;
+  if (tool_ == Create) {
+    // A bone origin picks the parent of the next bone; a press anywhere else starts drawing one
+    // (from the tip of the last bone, the next chain link). Release always commits (click = point bone).
+    if (hit.startsWith("bone:") && !picked.body) { if (hit != selection_ && onSelect) onSelect(hit); return; }
+    Drag d;
+    d.ref = selection_;
+    d.tool = Create;
+    d.start = d.current = d.origin = widgetToRig(e->position());
+    d.shift = e->modifiers() & Qt::ShiftModifier;
+    lastAngle_ = 0;
+    drag_ = d;
+    update();
+    return;
+  }
   // Move picks what is under the cursor; rotate/scale keep working on the selection unless a
   // bone handle is clicked, so a drag that starts over another image still turns the chosen bone.
   QString target = selection_;
@@ -532,6 +632,12 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
   }
   Drag d;
   d.ref = target; d.tool = tool_;
+  // Spine "pose" behaviour in both Move and Rotate: a bone's body turns it around its origin,
+  // its origin moves it.
+  if ((tool_ == Move || tool_ == Rotate) && target == hit && hit.startsWith("bone:")) {
+    d.body = picked.body;
+    d.tool = picked.body ? Rotate : Move;
+  }
   d.start = d.current = widgetToRig(e->position());
   d.origin = originOf ? originOf(target) : d.start;
   d.shift = e->modifiers() & Qt::ShiftModifier;
@@ -566,9 +672,10 @@ void RigCanvas::mouseReleaseEvent(QMouseEvent* e) {
   if (!drag_) return;
   Drag d = *drag_;
   d.current = widgetToRig(e->position());
+  if (d.tool == Create) d.shift = e->modifiers() & Qt::ShiftModifier;
   drag_.reset();
-  // Pivot placement is a click; other tools commit only real drags (a click just selects).
-  if ((d.moved || d.tool == Pivot) && onDrag) onDrag(d, true);
+  // Pivot placement and bone creation are clicks too; other tools commit only real drags (a click just selects).
+  if ((d.moved || d.tool == Pivot || d.tool == Create) && onDrag) onDrag(d, true);
   updateHover(e->position(), e->modifiers() & Qt::AltModifier);
   update();
 }
@@ -591,8 +698,8 @@ void RigCanvas::dropEvent(QDropEvent* e) {
   onDropImage(e->mimeData(), hitTest(e->position(), false));
 }
 void RigCanvas::keyPressEvent(QKeyEvent* e) {
-  const int tools[] = {Qt::Key_V, Qt::Key_R, Qt::Key_S, Qt::Key_P};
-  for (int i = 0; i < 4; i++) if (e->key() == tools[i] && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) { if (onTool) onTool(i); return; }
+  const int tools[] = {Qt::Key_V, Qt::Key_R, Qt::Key_S, Qt::Key_P, Qt::Key_C};
+  for (int i = 0; i < TOOL_COUNT; i++) if (e->key() == tools[i] && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) { if (onTool) onTool(i); return; }
   if (e->key() == Qt::Key_K && onKey) { onKey(); return; }
   if (e->key() == Qt::Key_O && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier)) && onOnion) { onOnion(); return; }
   if (e->key() == Qt::Key_F) { fitToCanvas(); return; }

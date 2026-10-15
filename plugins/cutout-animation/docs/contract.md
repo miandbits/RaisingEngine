@@ -22,6 +22,60 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * `width/height` are the source PNG size; the service warns when the file differs
   (`ANIM_IMAGE_SIZE_MISMATCH`).
 * `slots` array order is draw order (back → front). Hierarchy and draw order are independent.
+
+## Bone length (plugin 1.5.0)
+
+* A bone may carry `length` (px, number 0..100000, default/absent **0 = point bone**): the bone
+  reaches from its origin to `(length, 0)` in its own space, i.e. along its local **+x** after its
+  rotation and scale (Spine convention). Length is **not a transform**: it never moves the bone,
+  its children or its parts, so documents without lengths and documents with them play
+  identically except for the two-bone IK effector below. Validation `ANIM_BONE_LENGTH` (not a
+  finite number in range); the schema rejects the same values structurally.
+* `color` (optional, `"#rrggbb"` or `"#rrggbbaa"`, `ANIM_BONE_COLOR` otherwise) is an
+  **editor-only display hint** stored on the bone (like Spine's bone colour, so it travels with the
+  bone through reparenting, copy and MCP edits); runtimes ignore it. The rig `editor` block stays
+  free for view metadata.
+* IK with lengths: an aim chain still aims its `aimAxis` (default +x = the length direction), so a
+  bone with a length aims its tip at the target without any axis. Two-bone effector
+  **precedence**: explicit `tip` bone origin > the lower bone's own tip `(length, 0)` when its
+  length > 0 > its first child bone (array order) > its origin. All older documents have no
+  lengths and keep the 1.4 effector bit for bit.
+* Editor: bones with a length are drawn as a tapered diamond from origin to tip in their colour
+  (selected / hover states), point bones as the origin circle with an x-axis tick. Canvas picking:
+  mesh vertices > IK target crosshair > selected bone (origin, a point bone's axis) > bone origins
+  > **bone bodies** (inside the diamond or within 4 px of the origin→tip line) > parts; Alt+click
+  walks the candidates. In the Move (V) and Rotate (R) tools a press on a body turns the bone
+  around its origin and a press on its origin moves it. The **create tool** (C, setup mode only)
+  is one `addBone` per gesture: parent = the selected bone (a part's bone), else the first
+  top-level bone; `x`/`y` = the press point and `rotation`/`length` = the drag vector, both
+  expressed in the parent's shown world transform (the tip lands under the cursor); Shift snaps
+  the on-screen angle to 15°; a click without a drag makes a point bone.
+* Editing ops (`edit`): `addBone`/`setBone` take `length` (null/0 drops the key) and `color`
+  (null/"" drops it). Setting a length on the lower bone of a two-bone chain that has no `tip`
+  pins its first child as `tip`, so no gesture moves a limb by surprise.
+  * `fitBoneLengths {bones?}` ("자동 길이"): length = the distance from the origin to the first
+    child bone, in the bone's own space (all bones when `bones` is absent; childless bones keep
+    theirs, a listed one warns `ANIM_BONE_NO_CHILD`; nothing to change = refused). `extra.lengths`.
+  * `orientBones {bones?, fitLength? = true}` ("본 방향 맞추기", migration of point-bone rigs):
+    turns each point bone's frame by δ so +x points along its natural direction (first child bone,
+    else the area-weighted centre of its slots' setup images, as `addIk` reads it) and sets the
+    length to that reach. Everything expressed in the bone's frame is rewritten so **every pose
+    draws exactly as before** (setup, every clip, layered tracks, cross-fades, skins,
+    expressions, IK, weighted meshes, deform keys): the bone's rotation (setup, keys, expression
+    overrides) + δ; each child's position R(−δ)·p and rotation − δ (setup, keys, expressions);
+    attachment offsets of its slots in the default list and every skin R(−δ) and rotation − δ;
+    aim axes − δ (an `aimAxis: 90` arm ends at +x and loses the field). Child x/y keys rotate as
+    pairs; a channel keyed alone gets its partner keyed at the same times from setup, which is
+    only exact while no clip or expression keys that partner — otherwise the parent is skipped.
+    Also skipped (`extra.skipped {id: reason}`, warning `ANIM_ORIENT_SKIPPED` for listed bones):
+    bones that already have a length, nothing to point at, a scale that is not uniform at every
+    time (scaleX ≠ scaleY anywhere, e.g. a breathing body, or mirrored), and child keys that cannot
+    pair. A lower bone of a two-bone chain without `tip` and without a child keeps length 0
+    (its effector would move). Turned values are rounded to 1e-9 (not 1e-6) so draw lists stay
+    within 1e-6 px. `extra.oriented {id: δ°}`.
+  * `addIk` prefers lengths: an aim chain on a bone with a length stores no `aimAxis` and its
+    created target sits at the tip; a two-bone chain whose lower bone has a length stores no
+    implicit `tip` (the length tip is the effector) and its created target sits at that tip.
 * Editor-only visibility (eye icon) is never stored. Hiding a part in the game is
   `attachment: null` or `alpha: 0`, both keyable.
 
@@ -87,10 +141,11 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
     tilts an oblique axis exactly as the image tilts. Cutout limbs usually keep rotation 0 while
     their image hangs down: such an arm aims with `aimAxis: 90`. Absent and 0 are identical
     (bit for bit the 1.3.0 solve), so older documents play unchanged.
-  * **2 bones = two-bone limb** `[upper, lower]`, `lower` a **direct child** of `upper`. Bones
-    have no length in this format, so the **effector** is the origin of the `tip` bone (plugin
-    1.4.0, optional: must be a **direct child of `lower`**, `ANIM_IK_TIP` otherwise, also on an
-    aim chain), else of `lower`'s **first child bone** in `bones` array order (hand, foot). The
+  * **2 bones = two-bone limb** `[upper, lower]`, `lower` a **direct child** of `upper`. The
+    **effector** is the origin of the `tip` bone (plugin 1.4.0, optional: must be a **direct
+    child of `lower`**, `ANIM_IK_TIP` otherwise, also on an aim chain), else `lower`'s own tip
+    `(length, 0)` when it has a length (plugin 1.5.0, see Bone length), else the origin of
+    `lower`'s **first child bone** in `bones` array order (hand, foot). The
     explicit tip keeps a forearm with several children (hand, sleeve, weapon) pointing at the
     right one. Without a child the limb degenerates to aiming `lower`'s origin at the target.
     `upper` and `lower` are rotated (law of cosines). Two-bone chains solve from these bone

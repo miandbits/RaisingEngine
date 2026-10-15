@@ -2076,6 +2076,282 @@ class StudioTests : public QObject {
     QVERIFY(rig() == start);
   }
 
+  // Bone length (plugin 1.5.0), Spine-like: the create tool draws bones (one edit, length and
+  // rotation in the parent's space), a bone's body turns it and its origin moves it (Move and
+  // Rotate tools), bodies rank between handles and parts, 자동 길이 / 본 방향 맞추기 are one edit
+  // each and never move a drawn pixel, the length field is setup-only. Everything undoes.
+  void boneLengthCreateAndPose() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+    pump();
+    RigCanvas* canvas = panel->canvas();
+    const Json start = rig();
+    const int editsBefore = host.edits;
+    constexpr double PI = 3.14159265358979323846;
+    auto boneOf = [&](const QString& id) { const Json data = rig(); for (const auto& b : data["bones"]) if (b["id"] == ss(id)) return b; return Json(); };
+    auto tipOf = [&](const QString& id) {
+      const auto w = cutout::setupWorld(rig()).at(ss(id));
+      double x, y;
+      w.apply(boneOf(id).value("length", 0.0), 0, x, y);
+      return QPointF(x, y);
+    };
+    auto newBone = [&](const Json& before) {
+      const Json data = rig();
+      for (const auto& b : data["bones"]) {
+        bool old = false;
+        for (const auto& o : before["bones"]) old = old || o["id"] == b["id"];
+        if (!old) return qs(b["id"].get<std::string>());
+      }
+      return QString();
+    };
+    auto shiftDrag = [&](QPointF from, QPointF to) {
+      auto send = [&](QEvent::Type type, QPointF at, Qt::MouseButton b, Qt::MouseButtons bs) {
+        QMouseEvent e(type, at, canvas->mapToGlobal(at), b, bs, Qt::ShiftModifier);
+        QCoreApplication::sendEvent(canvas, &e);
+      };
+      send(QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
+      for (int i = 1; i <= 4; i++) send(QEvent::MouseMove, from + (to - from) * (i / 4.0), Qt::NoButton, Qt::LeftButton);
+      send(QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton);
+    };
+    // A widget point near `around` where no bone origin is pickable (create presses there draw).
+    auto freeSpot = [&](QPointF around) {
+      for (int r = 0; r <= 60; r += 6)
+        for (int a = 0; a < 8; a++) {
+          const QPointF at = around + QPointF(std::cos(a * PI / 4), std::sin(a * PI / 4)) * r;
+          bool handle = false;
+          for (const auto& h : canvas->hitCandidates(at)) handle = handle || (h.ref.startsWith("bone:") && !h.body);
+          if (!handle && canvas->rect().contains(at.toPoint())) return at;
+        }
+      return QPointF(-1, -1);
+    };
+
+    // (1) Create tool (button + C): a drag from a free point under a rotated parent. The bone is a
+    // child of the selection; the press is its origin and the release its tip, in any parent space.
+    click("cutoutToolCreate");
+    QCOMPARE(panel->tool(), int(RigCanvas::Create));
+    panel->selectItem("bone:arm");
+    pump();
+    const double armRotation = boneOf("arm").value("rotation", 0.0);
+    QVERIFY(std::fabs(armRotation) > 1);  // rotated by the property test: compensation is visible
+    const QPointF press = freeSpot(canvas->rigToWidget(world("arm") + QPointF(40, 30)));
+    QVERIFY(press.x() >= 0);
+    const QPointF release = press + QPointF(70, -25);
+    Json before = rig();
+    QVERIFY(gesture("create tool drag", 1, [&] { drag(canvas, press, release); }));
+    const QString made = newBone(before);
+    QVERIFY(!made.isEmpty());
+    QCOMPARE(panel->selection(), "bone:" + made);
+    {
+      const Json b = boneOf(made);
+      QCOMPARE(qs(b["parent"].get<std::string>()), QString("arm"));
+      // Expected in the parent's space: origin = inverse(arm world) · press, direction/length of the drag vector.
+      const auto inv = *cutout::setupWorld(before).at("arm").inverse();
+      const QPointF a = canvas->widgetToRig(press), z = canvas->widgetToRig(release);
+      double ax, ay, zx, zy;
+      inv.apply(a.x(), a.y(), ax, ay);
+      inv.apply(z.x(), z.y(), zx, zy);
+      QVERIFY2(std::fabs(b["x"].get<double>() - ax) < 1e-3 && std::fabs(b["y"].get<double>() - ay) < 1e-3, qPrintable(qs(b.dump())));
+      QVERIFY(std::fabs(b.value("rotation", 0.0) - std::atan2(zy - ay, zx - ax) * 180 / PI) < 1e-3);
+      QVERIFY(std::fabs(b["length"].get<double>() - std::hypot(zx - ax, zy - ay)) < 1e-3);
+      const QPointF tip = tipOf(made);
+      QVERIFY(std::hypot(tip.x() - z.x(), tip.y() - z.y()) < 1e-3);  // the tip is where the drag ended
+      QVERIFY(!canvas->boneShape(cutout::parseRig("h", rig()).boneIndex(ss(made))).isEmpty());  // drawn as a body
+    }
+    // Chaining: the new bone is selected, so a drag from its tip draws its child.
+    const QString first = made;
+    const QPointF chainFrom = canvas->rigToWidget(tipOf(first));
+    before = rig();
+    QVERIFY(gesture("create the next link from the tip (Shift: 15°)", 1, [&] { shiftDrag(chainFrom, chainFrom + QPointF(60, 22)); }));
+    const QString second = newBone(before);
+    QCOMPARE(qs(boneOf(second)["parent"].get<std::string>()), first);
+    {
+      // Shift snaps the on-screen angle (atan2(22, 60) ≈ 20°) to 15°.
+      const QPointF o = world(ss(second)), t = tipOf(second);
+      QVERIFY(std::fabs(std::atan2(t.y() - o.y(), t.x() - o.x()) * 180 / PI - 15) < 1e-3);
+      QVERIFY(std::hypot(o.x() - tipOf(first).x(), o.y() - tipOf(first).y()) < 1e-3);
+    }
+    // A click without a drag makes a point bone; a press on a bone origin only picks the parent.
+    const QPointF clickAt = freeSpot(chainFrom + QPointF(-30, 60));
+    QVERIFY(clickAt.x() >= 0);
+    before = rig();
+    QVERIFY(gesture("create tool click", 1, [&] { tap(canvas, clickAt); }));
+    const QString point = newBone(before);
+    QVERIFY(!point.isEmpty() && !boneOf(point).contains("length") && !boneOf(point).contains("rotation"));
+    QCOMPARE(qs(boneOf(point)["parent"].get<std::string>()), second);
+    QVERIFY(gesture("create tool on a bone origin selects the parent", 0, [&] { tap(canvas, canvas->rigToWidget(world(ss(second)))); }));
+    QCOMPARE(panel->selection(), "bone:" + second);
+    undo();
+    QVERIFY(boneOf(point).is_null());
+    redo();
+    QVERIFY(!boneOf(point).is_null());
+    // Animate mode: no creating (the tool is refused, the button disabled).
+    panel->setMode(CutoutPanel::Mode::Animate);
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    panel->setTool(RigCanvas::Create);
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    QVERIFY(!find<QToolButton>("cutoutToolCreate")->isEnabled());
+    panel->setMode(CutoutPanel::Mode::Setup);
+
+    // (2) Hit priority with bodies: handles > bone bodies > parts, Alt walks body -> part.
+    panel->setTool(RigCanvas::Move);
+    panel->selectItem("");
+    pump();
+    const int firstIndex = cutout::parseRig("h", rig()).boneIndex(ss(first));
+    const QPointF origin = canvas->rigToWidget(world(ss(first))), tip = canvas->rigToWidget(tipOf(first));
+    const QPointF mid = origin + (tip - origin) * 0.55;
+    {
+      const auto hits = canvas->hitCandidates(mid);
+      QVERIFY(!hits.isEmpty() && hits[0].ref == "bone:" + first && hits[0].rank == RigCanvas::HitBoneBody && hits[0].body);
+      QVERIFY(canvas->boneShape(firstIndex).containsPoint(mid, Qt::OddEvenFill));
+      const auto atOrigin = canvas->hitCandidates(origin + QPointF(2, 1));
+      QVERIFY(!atOrigin.isEmpty() && atOrigin[0].rank < RigCanvas::HitBoneBody && !atOrigin[0].body);  // the origin handle first
+    }
+    // A bone drawn across the body image: at its middle the bone body beats the part, Alt reaches the part.
+    QPointF overPart(-1, -1);
+    {
+      const cutout::Rig r = cutout::parseRig("hero", rig());
+      const cutout::Pose pose = cutout::samplePose(r, -1, 0);
+      const cutout::Attachment* att = nullptr;
+      const auto m = attachmentMatrix(r, pose, r.slotIndex("body"), &att);
+      QVERIFY(att);
+      const QPointF centre = canvas->rigToWidget(qtTransform(m).map(QPointF(att->width / 2, att->height / 2)));
+      for (int dy = -30; dy <= 30 && overPart.x() < 0; dy += 3)
+        for (int dx = -14; dx <= 14 && overPart.x() < 0; dx += 3)
+          if (const auto h = canvas->hitCandidates(centre + QPointF(dx, dy)); h.size() == 1 && h[0].ref == "slot:body") overPart = centre + QPointF(dx, dy);
+    }
+    QVERIFY(overPart.x() >= 0);
+    panel->setTool(RigCanvas::Create);
+    panel->selectItem("");
+    pump();
+    const QPointF across = freeSpot(overPart - QPointF(0, 26));
+    QVERIFY(across.x() >= 0);
+    before = rig();
+    QVERIFY(gesture("draw a root bone across the body image", 1, [&] { drag(canvas, across, across + (overPart - across) * 2); }));
+    const QString overBone = newBone(before);
+    QVERIFY(!overBone.isEmpty());
+    panel->setTool(RigCanvas::Move);
+    panel->selectItem("");
+    pump();
+    {
+      QStringList refs;
+      for (const auto& h : canvas->hitCandidates(overPart)) if (!refs.contains(h.ref)) refs << h.ref;
+      QVERIFY2(refs.size() >= 2 && refs[0] == "bone:" + overBone && refs.contains("slot:body"), qPrintable(refs.join(", ")));
+      QVERIFY(gesture("click the bone body over the part", 0, [&] { tap(canvas, overPart); }));
+      QCOMPARE(panel->selection(), "bone:" + overBone);
+      QVERIFY(gesture("alt-click reaches the part", 0, [&] { tap(canvas, overPart, Qt::AltModifier); }));
+      QCOMPARE(panel->selection(), refs[1]);
+    }
+
+    // (3) Move tool: dragging the body turns the bone around its origin; the origin moves it.
+    panel->selectItem("");
+    pump();
+    {
+      const Json b0 = boneOf(first);
+      const QPointF from = mid, pivot = origin;
+      const double turn = 25 * PI / 180;
+      const QPointF v = from - pivot;
+      const QPointF to = pivot + QPointF(v.x() * std::cos(turn) - v.y() * std::sin(turn), v.x() * std::sin(turn) + v.y() * std::cos(turn));
+      QVERIFY(gesture("drag the bone body (Move tool) turns it", 1, [&] { drag(canvas, from, to); }));
+      const Json b1 = boneOf(first);
+      QCOMPARE(panel->selection(), "bone:" + first);
+      QVERIFY2(std::fabs(b1.value("rotation", 0.0) - b0.value("rotation", 0.0) - 25) < 0.5, qPrintable(qs(b1.dump())));
+      QVERIFY(b1["x"] == b0["x"] && b1["y"] == b0["y"] && b1["length"] == b0["length"]);
+      const QPointF at = canvas->rigToWidget(world(ss(first))) + QPointF(2, 2);
+      QVERIFY(gesture("drag the origin moves it", 1, [&] { drag(canvas, at, at + QPointF(16, 10)); }));
+      const Json b2 = boneOf(first);
+      QVERIFY(b2.value("rotation", 0.0) == b1.value("rotation", 0.0) && (b2["x"] != b1["x"] || b2["y"] != b1["y"]));
+      // Rotate tool: the same split (origin = move, body = turn).
+      panel->setTool(RigCanvas::Rotate);
+      const QPointF at2 = canvas->rigToWidget(world(ss(first))) + QPointF(1, 2);
+      QVERIFY(gesture("rotate tool: origin drag moves", 1, [&] { drag(canvas, at2, at2 + QPointF(-12, 6)); }));
+      const Json b3 = boneOf(first);
+      QVERIFY(b3.value("rotation", 0.0) == b2.value("rotation", 0.0) && (b3["x"] != b2["x"] || b3["y"] != b2["y"]));
+      const QPointF o3 = canvas->rigToWidget(world(ss(first))), t3 = canvas->rigToWidget(tipOf(first)), m3 = o3 + (t3 - o3) * 0.6;
+      const QPointF w3 = m3 - o3, to3 = o3 + QPointF(w3.x() * std::cos(-turn) - w3.y() * std::sin(-turn), w3.x() * std::sin(-turn) + w3.y() * std::cos(-turn));
+      QVERIFY(gesture("rotate tool: body drag turns", 1, [&] { drag(canvas, m3, to3); }));
+      QVERIFY(std::fabs(boneOf(first).value("rotation", 0.0) - b3.value("rotation", 0.0) + 25) < 0.5);
+      undo();
+      QVERIFY(boneOf(first) == b3);
+      redo();
+      panel->setTool(RigCanvas::Move);
+    }
+
+    // (4) The length field (setup only) and the helpers: one edit each, nothing drawn moves.
+    panel->selectItem("bone:" + point);
+    pump();
+    QVERIFY(find<QDoubleSpinBox>("cutoutPropLength")->isEnabled());
+    QVERIFY(gesture("length field", 1, [&] { setSpin("cutoutPropLength", 33); }));
+    QCOMPARE(boneOf(point)["length"].get<double>(), 33.0);
+    panel->selectItem("bone:" + first);
+    pump();
+    QVERIFY(gesture("shorten by the field", 1, [&] { setSpin("cutoutPropLength", 12); }));
+    QCOMPARE(boneOf(first)["length"].get<double>(), 12.0);
+    {
+      const auto drawBefore = drawList();
+      QVERIFY(gesture("자동 길이 on a bone with a child", 1, [&] { click("cutoutFitBoneLengths"); }));
+      const QPointF o = world(ss(first)), c = world(ss(second));
+      QVERIFY(std::fabs(boneOf(first)["length"].get<double>() - std::hypot(c.x() - o.x(), c.y() - o.y())) < 1e-3);  // unscaled chain
+      const auto drawAfter = drawList();
+      QCOMPARE(drawAfter.size(), drawBefore.size());
+      for (size_t i = 0; i < drawAfter.size(); i++) QVERIFY(std::fabs(drawAfter[i].matrix.e - drawBefore[i].matrix.e) < 1e-9);
+    }
+    panel->selectItem("");
+    pump();
+    {
+      // Every clip at a few times: the migration keeps the animation (draw lists within 1e-6).
+      const Json data0 = rig();
+      auto sampled = [&](const Json& data) {
+        const auto r = std::make_shared<const cutout::Rig>(cutout::parseRig("hero", data));
+        std::vector<cutout::DrawItem> all;
+        cutout::Instance setup(r);
+        for (const auto& x : setup.drawList()) all.push_back(x);
+        for (const auto& c : r->clips)
+          for (double f : {0.0, 0.25, 0.5, 0.8, 1.0}) {
+            cutout::Instance inst(r);
+            inst.play(0, c.id, false);
+            inst.seek(0, f * double(c.durationMs));
+            for (const auto& x : inst.drawList()) all.push_back(x);
+          }
+        return all;
+      };
+      const auto a = sampled(data0);
+      int lengthsBefore = 0;
+      for (const auto& x : data0["bones"]) lengthsBefore += x.contains("length");
+      QVERIFY(gesture("본 방향 맞추기 (all bones)", 1, [&] { click("cutoutOrientBones"); }));
+      QVERIFY(panel->status().contains("방향"));
+      const auto b = sampled(rig());
+      QCOMPARE(b.size(), a.size());
+      double worst = 0;
+      for (size_t i = 0; i < a.size(); i++)
+        for (double d : {a[i].matrix.a - b[i].matrix.a, a[i].matrix.b - b[i].matrix.b, a[i].matrix.c - b[i].matrix.c, a[i].matrix.d - b[i].matrix.d, a[i].matrix.e - b[i].matrix.e, a[i].matrix.f - b[i].matrix.f})
+          worst = std::max(worst, std::fabs(d));
+      QVERIFY2(worst < 1e-6, qPrintable(QString::number(worst)));
+      int lengths = 0;
+      const Json oriented = rig();  // (a temporary's subobject would dangle in the range-for)
+      for (const auto& x : oriented["bones"]) lengths += x.contains("length");
+      QVERIFY2(lengths > lengthsBefore, qPrintable(panel->status()));
+      undo();
+      QVERIFY(rig() == data0);
+      redo();
+    }
+    // Animate mode: the length is not a key.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectItem("bone:" + first);
+    pump();
+    QVERIFY(!find<QDoubleSpinBox>("cutoutPropLength")->isEnabled());
+    QVERIFY(gesture("helpers refused while animating", 0, [&] { click("cutoutFitBoneLengths"); click("cutoutOrientBones"); }));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    if (const QString evidence = qEnvironmentVariable("CUTOUT_STUDIO_EVIDENCE"); !evidence.isEmpty())
+      QVERIFY(panel->window()->grab().save(evidence + "/studio-bone-length.png"));
+    for (int i = host.edits - editsBefore; i > 0; i--) undo();
+    QVERIFY(rig() == start);
+    panel->setTool(RigCanvas::Move);
+  }
+
   void paintElementDrawsPixels() {
     QImage img(300, 450, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);

@@ -15,15 +15,20 @@ namespace cutout_studio {
 class RigCanvas : public QWidget {
   Q_OBJECT
  public:
-  enum Tool { Move = 0, Rotate = 1, Scale = 2, Pivot = 3 };
+  /** Create (plugin 1.5.0, C): press-drag draws a new child bone of the selection (Drag::ref). */
+  enum Tool { Move = 0, Rotate = 1, Scale = 2, Pivot = 3, Create = 4 };
+  static constexpr int TOOL_COUNT = 5;
   struct Drag {
-    QString ref;            // "bone:<id>" | "slot:<id>"
-    int tool = Move;
+    QString ref;            // "bone:<id>" | "slot:<id>" (Create: the selection at the press = the parent)
+    int tool = Move;        // Move/Rotate tools pick per press: bone origin = Move, bone body = Rotate
     QPointF origin, start, current;  // rig space; origin = manipulation center
     double angle = 0;       // accumulated clockwise degrees (multi-turn safe)
     double ratio = 1;       // |current-origin| / |start-origin|
     bool shift = false, moved = false;
+    bool body = false;      // the press grabbed a bone's body (length shape / axis): rotates around its origin
   };
+  /** Create tool: where the new bone's tip is (rig space), Shift snapping the angle to 15°. */
+  static QPointF createEnd(const Drag& d);
   /** Onion-skin ghost: a pose of `rig` drawn behind the live pose, tinted (invalid tint =
    *  원래 색) at `alpha`. `key` identifies (rig data, clip, time) so its layer is cached. */
   struct Ghost {
@@ -62,12 +67,13 @@ class RigCanvas : public QWidget {
   QPointF rigToWidget(const QPointF& p) const;
   /** Something pickable under the cursor. Handles beat image parts (Spine-like): a crosshair or
    *  bone origin drawn over a body image is what the user aims at, the image is only behind it. */
-  enum HitRank { HitVertex = 0, HitIkTarget = 1, HitSelectedBone = 2, HitBone = 3, HitPart = 4 };
+  enum HitRank { HitVertex = 0, HitIkTarget = 1, HitSelectedBone = 2, HitBone = 3, HitBoneBody = 4, HitPart = 5 };
   struct Hit {
     QString ref;      // "bone:<id>" | "slot:<id>" (a vertex: the edited mesh's slot)
     int vertex = -1;  // mesh vertex index (vertex mode only)
     int rank = HitPart;
-    double distance = 0;  // handles: widget px from the handle; parts: depth (0 = topmost)
+    double distance = 0;  // handles/bodies: widget px from the handle/bone line; parts: depth (0 = topmost)
+    bool body = false;    // a bone grabbed away from its origin (length shape, selected axis): drags rotate
   };
   /** THE canvas hit test (click-select, drag start, hover and drops all use it): every candidate
    *  under `widgetPos`, best first — rank, then nearest/topmost. handles=false: parts only.
@@ -77,7 +83,14 @@ class RigCanvas : public QWidget {
   QString hitTest(const QPointF& widgetPos, bool bones = true) const;
   /** What a press picks: the best candidate, or with `cycle` (Alt) the one after the current
    *  selection in candidate order (wrapping), so repeated Alt+clicks walk through a stack. */
-  QString pick(const QPointF& widgetPos, bool cycle) const;
+  QString pick(const QPointF& widgetPos, bool cycle) const { return pickHit(widgetPos, cycle).ref; }
+  /** pick() with where on the item the press landed (the best candidate of that ref). */
+  Hit pickHit(const QPointF& widgetPos, bool cycle) const;
+  /** Drawn body of bone `bone` (plugin 1.5.0, widget px): a tapered diamond from its origin to its
+   *  tip (length along +x). Empty for point bones, IK targets and bones shorter than 6 px on screen. */
+  QPolygonF boneShape(int bone) const;
+  /** Rig-space tip of bone `bone` in the shown pose (its origin for a point bone). */
+  QPointF boneTip(int bone) const;
   /** Ref the cursor hovers (what a click would pick; highlighted on the canvas). */
   QString hoverRef() const { return hoverRef_; }
   bool dragging() const { return drag_.has_value(); }
@@ -152,11 +165,13 @@ class RigCanvas : public QWidget {
   // hover: what a click at the cursor would pick (Alt held = the cycled pick)
   QString hoverRef_;
   QPointF hoverAt_;
-  bool hoverInside_ = false, hoverAlt_ = false;
+  bool hoverInside_ = false, hoverAlt_ = false, hoverBody_ = false;
   void updateHover(const QPointF& widgetPos, bool alt);
   void refreshHover() { if (hoverInside_) updateHover(hoverAt_, hoverAlt_); }
   void paintHover(QPainter& p);
   void outlineSlot(QPainter& p, int slotIndex) const;
+  void paintBones(QPainter& p);
+  QColor boneColor(int bone) const;
   // mesh editing state (editor-only)
   int meshMode_ = MeshOff, meshBone_ = -1;
   QString meshSlot_;

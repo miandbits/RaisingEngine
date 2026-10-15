@@ -1957,6 +1957,270 @@ int main(int argc, char** argv) {
     check(sample["pose"]["deform"]["flag/flag"].size() == 18 && !host.handle({{"op", "sample"}, {"rig", rigData()}, {"timeMs", 0}})["pose"].contains("deform"), "sample reports deform only when keyed");
   });
 
+  // ---- Bone length, drawn bones, orientation (plugin 1.5.0) ----
+  // Largest difference between the draw lists of `a` and `b` (matrices and mesh positions) over the
+  // setup pose, every clip alone at many times, pairs of clips layered (track 0 + 1), cross-fades,
+  // and every skin x expression: the "nothing moves" check of orientBones.
+  auto drawDiff = [](const Json& a, const Json& b) {
+    const auto ra = std::make_shared<const Rig>(parseRig("a", a)), rb = std::make_shared<const Rig>(parseRig("b", b));
+    double worst = 0;
+    auto compare = [&](const std::function<void(Instance&)>& setup) {
+      Instance ia(ra), ib(rb);
+      setup(ia);
+      setup(ib);
+      const auto da = ia.drawList(), db = ib.drawList();
+      if (da.size() != db.size()) { worst = 1e9; return; }
+      for (size_t i = 0; i < da.size(); i++) {
+        const Affine& x = da[i].matrix;
+        const Affine& y = db[i].matrix;
+        for (double dv : {x.a - y.a, x.b - y.b, x.c - y.c, x.d - y.d, x.e - y.e, x.f - y.f}) worst = std::max(worst, std::fabs(dv));
+        if (da[i].positions.size() != db[i].positions.size() || da[i].imageAssetId != db[i].imageAssetId || da[i].alpha != db[i].alpha) { worst = 1e9; return; }
+        for (size_t k = 0; k < da[i].positions.size(); k++) worst = std::max(worst, std::fabs(da[i].positions[k] - db[i].positions[k]));
+      }
+    };
+    std::vector<std::string> skins{""}, expressions{""};
+    for (const auto& s : ra->skins) skins.push_back(s.id);
+    for (const auto& e : ra->expressions) expressions.push_back(e.id);
+    for (const auto& skin : skins)
+      for (const auto& expression : expressions) {
+        auto look = [&](Instance& inst) {
+          inst.setSkin(skin);
+          inst.setExpression(expression.empty() ? std::nullopt : std::optional<std::string>(expression));
+        };
+        compare(look);
+        for (const auto& c : ra->clips)
+          for (int step = 0; step <= 24; step++) {
+            const double t = double(c.durationMs) * step / 24.0 + (step % 5) * 0.37;
+            compare([&](Instance& inst) { look(inst); inst.play(0, c.id, false); inst.seek(0, t); });
+            for (const auto& layer : ra->clips)
+              if (layer.id != c.id && step % 6 == 0)
+                compare([&](Instance& inst) { look(inst); inst.play(0, c.id, false); inst.seek(0, t); inst.play(1, layer.id, false); inst.seek(1, t * 0.7); });
+          }
+        for (size_t i = 0; i + 1 < ra->clips.size(); i++)
+          compare([&](Instance& inst) { look(inst); inst.play(0, ra->clips[i].id); inst.seek(0, 130); inst.play(0, ra->clips[i + 1].id, std::nullopt, 1, Then::Default, 240); inst.update(90); });
+      }
+    return worst;
+  };
+  auto boneJson = [](const Json& d, const std::string& id) { for (const auto& b : d["bones"]) if (b["id"] == id) return b; return Json(); };
+  auto ikJson = [](const Json& d, const std::string& id) { for (const auto& k : d["ik"]) if (k["id"] == id) return k; return Json(); };
+  auto tipOf = [](const Rig& r, const Pose& p, const std::string& bone, double len) {
+    double x, y;
+    p.world[size_t(r.boneIndex(bone))].apply(len, 0, x, y);
+    return std::make_pair(x, y);
+  };
+
+  test("bone length and color: validation, parse, old documents unchanged", [&] {
+    Json d = rigData();
+    check(validateRig(d).empty() && parseRig("r", d).bones[1].length == 0 && parseRig("r", d).bones[1].color.empty(), "1.4 documents: point bones");
+    for (const Json& bad : {Json(-1), Json("10"), Json(100001), Json(nullptr)}) {
+      Json x = rigData();
+      x["bones"][1]["length"] = bad;
+      check(hasCode(validateRig(x), "ANIM_BONE_LENGTH"), "length " + bad.dump() + " refused");
+    }
+    for (const char* bad : {"#12", "red", "#12345g", "#1234567"}) {
+      Json x = rigData();
+      x["bones"][1]["color"] = bad;
+      check(hasCode(validateRig(x), "ANIM_BONE_COLOR"), std::string("color ") + bad + " refused");
+    }
+    d["bones"][1]["length"] = 96.5;
+    d["bones"][1]["color"] = "#a1B2c3";
+    d["bones"][2]["color"] = "#a1b2c3ff";
+    check(validateRig(d).empty(), "length + colors valid");
+    const Rig r = parseRig("r", d);
+    check(r.bones[1].length == 96.5 && r.bones[1].color == "#a1B2c3" && r.bones[2].color == "#a1b2c3ff", "parsed");
+    check(drawDiff(rigData(), d) == 0, "length is not a transform: identical draw lists");
+    EditResult e = applyEdit(rigData(), {{"op", "addBone"}, {"id", "tail"}, {"parent", "body"}, {"x", 10}, {"rotation", 30}, {"length", 40.25}, {"color", "#ff8800"}});
+    const Json tail = boneJson(e.data, "tail");
+    check(tail["length"] == 40.25 && tail["color"] == "#ff8800" && tail["rotation"] == 30, "addBone length/color");
+    e = applyEdit(e.data, {{"op", "setBone"}, {"bone", "tail"}, {"length", nullptr}, {"color", nullptr}});
+    check(!boneJson(e.data, "tail").contains("length") && !boneJson(e.data, "tail").contains("color"), "null clears (documents keep the 1.4 shape)");
+    bool refused = false;
+    try { applyEdit(rigData(), {{"op", "setBone"}, {"bone", "body"}, {"length", -3}}); } catch (const EditError&) { refused = true; }
+    check(refused, "negative length refused");
+    refused = false;
+    try { applyEdit(rigData(), {{"op", "setBone"}, {"bone", "body"}, {"color", "blue"}}); } catch (const EditError&) { refused = true; }
+    check(refused, "malformed color refused");
+  });
+
+  test("ik effector precedence: tip bone > lower length tip > first child > origin", [&] {
+    // Target 80 px from the shoulder: reachable by upper 50 + forearm length 30 or hand 50.
+    Json d = armRig(64, 48);
+    {
+      const Rig r = parseRig("arm", d);
+      const auto hand = tipOf(r, samplePose(r, -1, 0), "hand", 0);
+      check(near(hand.first, 64) && near(hand.second, 48) && r.ik[0].tip == r.boneIndex("hand") && r.ik[0].tipLength == 0, "no length: first child (1.4 rule)");
+    }
+    d["bones"][2]["length"] = 30;
+    {
+      const Rig r = parseRig("arm", d);
+      const auto end = tipOf(r, samplePose(r, -1, 0), "lower", 30);
+      check(r.ik[0].tip < 0 && r.ik[0].tipLength == 30 && near(end.first, 64) && near(end.second, 48), "lower length tip beats the first child");
+    }
+    d["ik"][0]["tip"] = "hand";
+    {
+      const Rig r = parseRig("arm", d);
+      const auto hand = tipOf(r, samplePose(r, -1, 0), "hand", 0);
+      check(r.ik[0].tipLength == 0 && near(hand.first, 64) && near(hand.second, 48), "explicit tip beats the length");
+    }
+    Json bare = armRig(64, 48);
+    bare["bones"].erase(3);  // no hand: the lower origin aims at the target
+    bare["slots"].erase(1);
+    bare["attachments"].erase(1);
+    {
+      const Rig r = parseRig("arm", bare);
+      const Pose p = samplePose(r, -1, 0);
+      const auto low = tipOf(r, p, "lower", 0);
+      check(r.ik[0].tip < 0 && std::fabs(low.first * 48 - low.second * 64) < 1e-6 && low.first > 0, "no child, no length: the origin aims (1.4 rule)");
+    }
+    // Aim: a bone with a length aims its tip (+x · length) at the target, aimAxis unchanged.
+    Json aim = hangingArm();
+    aim["bones"][1]["length"] = 100;
+    aim["ik"] = Json::array({{{"id", "aim"}, {"bones", {"arm"}}, {"target", "t"}}});
+    const Rig r = parseRig("arm", aim);
+    const Pose p = samplePose(r, -1, 0);
+    const auto o = tipOf(r, p, "arm", 0), end = tipOf(r, p, "arm", 100);
+    const double tx = p.world[size_t(r.boneIndex("t"))].e, ty = p.world[size_t(r.boneIndex("t"))].f;
+    check(std::fabs((end.first - o.first) * (ty - o.second) - (end.second - o.second) * (tx - o.first)) < 1e-6 && (end.first - o.first) * (tx - o.first) > 0, "aim: the tip lies on the line to the target");
+  });
+
+  test("ik with lengths: addIk prefers the length, setBone keeps the effector", [&] {
+    // Aim chain on a bone with a length: no aimAxis (its +x), target created at its tip.
+    Json aim = hangingArm();
+    aim["bones"][1]["length"] = 100;
+    EditResult e = applyEdit(aim, {{"op", "addIk"}, {"bones", {"arm"}}, {"createTarget", true}});
+    const Json k = ikJson(e.data, e.extra["ik"]);
+    const auto w = setupWorld(e.data);
+    check(!k.contains("aimAxis") && near(w.at(e.extra["target"].get<std::string>()).e, 330) && near(w.at(e.extra["target"].get<std::string>()).f, 100), "aim: +x at the length, no axis");
+    check(drawDiff(aim, e.data) < 1e-6, "creating the aim constraint moves nothing");
+    // Two-bone chain whose lower bone has a length (and a child): the length tip is the effector.
+    Json arm = armRig(64, 48);
+    arm.erase("ik");
+    arm["bones"][2]["length"] = 40;
+    e = applyEdit(arm, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"createTarget", true}});
+    const Json limb = ikJson(e.data, e.extra["ik"]);
+    const Json target = boneJson(e.data, e.extra["target"]);
+    check(!limb.contains("tip") && near(target["x"].get<double>(), 90) && near(target["y"].get<double>(), 0), "two-bone: no tip, target at the lower tip");
+    check(drawDiff(arm, e.data) < 1e-6, "creating the limb constraint moves nothing");
+    // setBone length on a lower bone that used its first child: the child is pinned as tip.
+    const Json before = armRig(64, 48);
+    e = applyEdit(before, {{"op", "setBone"}, {"bone", "lower"}, {"length", 30}});
+    check(e.data["ik"][0]["tip"] == "hand" && hasCode(validateRig(e.data), "ANIM_IK_TIP") == false, "first child pinned as tip");
+    check(drawDiff(before, e.data) < 1e-9, "the limb does not move");
+    check(std::find(e.affected.begin(), e.affected.end(), "ik:arm") != e.affected.end(), "ik reported as affected");
+  });
+
+  test("fitBoneLengths: distance to the first child", [&] {
+    const Json before = armRig(64, 48);
+    EditResult e = applyEdit(before, {{"op", "fitBoneLengths"}});
+    check(boneJson(e.data, "upper")["length"] == 50 && boneJson(e.data, "lower")["length"] == 50 && !boneJson(e.data, "hand").contains("length") && !boneJson(e.data, "root").contains("length"), "upper/lower get 50, childless and zero-distance bones none");
+    check(e.extra["lengths"] == Json({{"lower", 50}, {"upper", 50}}) && e.data["ik"][0]["tip"] == "hand", "extra.lengths, tip pinned");
+    check(drawDiff(before, e.data) < 1e-9, "nothing moves");
+    Json tilted = before;
+    tilted["bones"][3]["x"] = 30; tilted["bones"][3]["y"] = 40;
+    check(applyEdit(tilted, {{"op", "fitBoneLengths"}, {"bones", {"lower"}}}).data["bones"][2]["length"] == 50, "an off-axis child: its distance");
+    bool refused = false;
+    try { applyEdit(before, {{"op", "fitBoneLengths"}, {"bones", {"hand"}}}); } catch (const EditError&) { refused = true; }
+    check(refused, "nothing to fit: refused");
+    refused = false;
+    try { applyEdit(before, {{"op", "fitBoneLengths"}, {"bones", {"nope"}}}); } catch (const EditError&) { refused = true; }
+    check(refused, "unknown bone refused");
+  });
+
+  test("orientBones: hanging arm becomes a Spine bone, aimAxis 90 disappears", [&] {
+    Json d = hangingArm();
+    d["ik"] = Json::array({{{"id", "aim"}, {"bones", {"arm"}}, {"target", "t"}, {"aimAxis", 90}}});
+    EditResult e = applyEdit(d, {{"op", "orientBones"}, {"bones", {"arm"}}});
+    const Json arm = boneJson(e.data, "arm");
+    check(arm["rotation"] == 90 && arm["length"] == 100 && !e.data["ik"][0].contains("aimAxis"), "rotation 90, length 100, no aim axis");
+    check(e.extra["oriented"] == Json({{"arm", 90}}), "extra.oriented");
+    check(drawDiff(d, e.data) < 1e-6, "draws identically (IK solved)");
+    check(validateRig(e.data).empty(), "valid");
+    // Already has a length -> skipped (listed: warning); nothing at all -> refused.
+    bool refused = false;
+    try { applyEdit(e.data, {{"op", "orientBones"}, {"bones", {"arm"}}}); } catch (const EditError&) { refused = true; }
+    check(refused, "an oriented bone is not turned again");
+    e = applyEdit(d, {{"op", "orientBones"}, {"fitLength", false}});
+    check(!boneJson(e.data, "arm").contains("length") && e.extra["skipped"].contains("t") && !e.extra["oriented"].contains("root") && !hasCode(e.diagnostics, "ANIM_ORIENT_SKIPPED"), "fitLength false; unlisted skips are silent");
+  });
+
+  test("orientBones keeps animation identical (demo-like rig, IK, meshes, skins, expressions)", [&] {
+    // The demo character's shape: arms hang down (image along +y), a breathing body (non-uniform
+    // scale: kept), head/arm keys, an aim arm with aimAxis, a hand keyed on x only, a skin and an
+    // expression that override the arm and head.
+    Json demo = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 512, "height": 768, "originX": 256, "originY": 720},
+      "bones": [
+        {"id": "root", "parent": null, "x": 256, "y": 720},
+        {"id": "body", "parent": "root", "x": 0, "y": -80},
+        {"id": "head", "parent": "body", "x": 0, "y": -170},
+        {"id": "arm-left", "parent": "body", "x": -42.825279, "y": -148.936803},
+        {"id": "arm-right", "parent": "body", "x": 42.825279, "y": -151.360595, "rotation": 4, "scaleX": 1.1, "scaleY": 1.1},
+        {"id": "hand", "parent": "arm-right", "x": 2, "y": 104, "rotation": -7},
+        {"id": "t", "parent": "root", "x": -120, "y": -150}],
+      "slots": [
+        {"id": "arm-left", "bone": "arm-left", "attachment": "arm-left"}, {"id": "arm-right", "bone": "arm-right", "attachment": "arm-right"},
+        {"id": "body", "bone": "body", "attachment": "body"}, {"id": "hand", "bone": "hand", "attachment": "hand"},
+        {"id": "head", "bone": "head", "attachment": "head"}, {"id": "eyes", "bone": "head", "attachment": "open"}],
+      "attachments": [
+        {"slot": "body", "name": "body", "imageAssetId": "img-body", "width": 130, "height": 170, "pivotX": 0.5, "pivotY": 1},
+        {"slot": "arm-left", "name": "arm-left", "imageAssetId": "img-arm", "x": 0.825279, "y": 53.936803, "width": 40, "height": 120},
+        {"slot": "arm-right", "name": "arm-right", "imageAssetId": "img-arm", "width": 40, "height": 120, "pivotY": 0.08, "rotation": 3},
+        {"slot": "hand", "name": "hand", "imageAssetId": "img-hand", "width": 30, "height": 30, "y": 12},
+        {"slot": "head", "name": "head", "imageAssetId": "img-head", "y": -70, "width": 150, "height": 150},
+        {"slot": "eyes", "name": "open", "imageAssetId": "img-eyes-open", "y": -65, "width": 90, "height": 30},
+        {"slot": "eyes", "name": "closed", "imageAssetId": "img-eyes-closed", "y": -65, "width": 90, "height": 30}],
+      "skins": [{"id": "winter", "attachments": [
+        {"slot": "arm-left", "name": "arm-left", "imageAssetId": "img-arm-winter", "x": 2, "y": 50, "rotation": -6, "scaleX": 1.2, "width": 44, "height": 124}]}],
+      "expressions": [{"id": "wave", "slots": {"eyes": "closed"}, "bones": {"head": {"rotation": 8}, "arm-right": {"rotation": -40}, "hand": {"rotation": 15}}}],
+      "ik": [{"id": "look", "bones": ["arm-left"], "target": "t", "aimAxis": 90, "mix": 0.7}],
+      "clips": [
+        {"id": "idle", "durationMs": 2400, "loop": true, "tracks": [
+          {"target": "bone:body", "property": "scaleY", "keys": [{"timeMs": 0, "value": 1}, {"timeMs": 1200, "value": 1.03, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 2400, "value": 1}]},
+          {"target": "bone:head", "property": "rotation", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 1200, "value": 3}, {"timeMs": 2400, "value": 0}]},
+          {"target": "bone:t", "property": "y", "keys": [{"timeMs": 0, "value": -150}, {"timeMs": 1200, "value": -60}, {"timeMs": 2400, "value": -150}]}]},
+        {"id": "joy", "durationMs": 900, "loop": false, "tracks": [
+          {"target": "bone:head", "property": "x", "keys": [{"timeMs": 0, "value": 0}]},
+          {"target": "bone:head", "property": "y", "keys": [{"timeMs": 0, "value": -170}]},
+          {"target": "bone:head", "property": "rotation", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 300, "value": -8}, {"timeMs": 600, "value": 6, "interp": "step"}, {"timeMs": 900, "value": 0}]},
+          {"target": "bone:head", "property": "scaleX", "keys": [{"timeMs": 0, "value": 1}]},
+          {"target": "bone:head", "property": "scaleY", "keys": [{"timeMs": 0, "value": 1}]},
+          {"target": "bone:arm-left", "property": "x", "keys": [{"timeMs": 0, "value": -42.825279}]},
+          {"target": "bone:arm-left", "property": "y", "keys": [{"timeMs": 0, "value": -148.936803}]},
+          {"target": "bone:arm-left", "property": "rotation", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 450, "value": 35, "interp": "bezier", "curve": [0.3, 0, 0.2, 1]}, {"timeMs": 900, "value": 0}]},
+          {"target": "bone:arm-right", "property": "rotation", "keys": [{"timeMs": 0, "value": 4}, {"timeMs": 450, "value": -60}, {"timeMs": 900, "value": 4}]},
+          {"target": "bone:arm-right", "property": "scaleX", "keys": [{"timeMs": 0, "value": 1.1}, {"timeMs": 450, "value": 1.25, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 900, "value": 1.1}]},
+          {"target": "bone:arm-right", "property": "scaleY", "keys": [{"timeMs": 0, "value": 1.1}, {"timeMs": 450, "value": 1.25, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 900, "value": 1.1}]},
+          {"target": "bone:hand", "property": "x", "keys": [{"timeMs": 0, "value": 2}, {"timeMs": 450, "value": 14, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 900, "value": 2}]},
+          {"target": "slot:eyes", "property": "attachment", "keys": [{"timeMs": 0, "value": "open"}, {"timeMs": 500, "value": "closed"}]}]}]})");
+    check(validateRig(demo).empty(), "fixture valid");
+    EditResult e = applyEdit(demo, {{"op", "orientBones"}});
+    const double diff = drawDiff(demo, e.data);
+    check(diff < 1e-6, "draw lists identical (max diff " + std::to_string(diff) + ")");
+    check(validateRig(e.data).empty(), "result valid");
+    const Json& o = e.extra["oriented"];
+    check(o.contains("root") && o.contains("head") && o.contains("arm-left") && o.contains("arm-right") && o.contains("hand"), "root, head, arms, hand turned: " + o.dump());
+    check(e.extra["skipped"].contains("body") && e.extra["skipped"].contains("t"), "breathing body (non-uniform scale) and target skipped: " + e.extra["skipped"].dump());
+    check(!ikJson(e.data, "look").contains("aimAxis") || std::fabs(ikJson(e.data, "look")["aimAxis"].get<double>()) < 15, "aim axis absorbed by the turn");
+    check(near(o["arm-left"].get<double>(), 90, 1.0) && boneJson(e.data, "arm-right")["length"].get<double>() > 100, "arms point down with a length");
+    // hand.x keyed alone: its y track is made at the same times (y is never keyed elsewhere).
+    bool handY = false;
+    for (const auto& c : e.data["clips"]) for (const auto& t : c["tracks"]) handY = handY || (t["target"] == "bone:hand" && t["property"] == "y" && t["keys"].size() == 3);
+    check(handY, "hand y track made for the pair");
+    // A child keyed on x in one clip and on y in another cannot turn: its parent is skipped.
+    Json split = demo;
+    split["clips"][0]["tracks"].push_back({{"target", "bone:hand"}, {"property", "y"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 104}}, {{"timeMs", 900}, {"value", 90}}})}});
+    e = applyEdit(split, {{"op", "orientBones"}});
+    check(e.extra["skipped"].contains("arm-right") && drawDiff(split, e.data) < 1e-6, "split x/y keys: parent skipped, still identical");
+    // Fixtures with two-bone IK (rotated/scaled parents, mix/bend keys) and weighted meshes.
+    Json ik = ikParityRig();
+    ik["bones"][2]["x"] = 35; ik["bones"][2]["y"] = 35;  // lower off the upper's +x: upper turns 45°
+    e = applyEdit(ik, {{"op", "orientBones"}});
+    check(e.extra["oriented"].contains("upper") && e.extra["skipped"].contains("head") && drawDiff(ik, e.data) < 1e-6, "two-bone IK fixture identical, mirrored head skipped");
+    Json mesh = meshParityRig();
+    mesh["bones"][2]["x"] = 70.710678; mesh["bones"][2]["y"] = 70.710678;  // a weighted arm whose frame turns
+    e = applyEdit(mesh, {{"op", "orientBones"}});
+    check(e.extra["oriented"].contains("upper") && e.extra["oriented"].contains("hand") && drawDiff(mesh, e.data) < 1e-6, "weighted mesh + deform + skin fixture identical");
+  });
+
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;
 }

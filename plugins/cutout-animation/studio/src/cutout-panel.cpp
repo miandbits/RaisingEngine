@@ -12,7 +12,7 @@
 namespace cutout_studio {
 using cutout::Json;
 namespace {
-const char* PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "alpha"};
+const char* PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "alpha", "length"};
 QString refKind(const QString& ref) { return ref.section(':', 0, 0); }
 QString refId(const QString& ref) { return ref.section(':', 1); }
 const Json* findIn(const Json& data, const char* list, const std::string& id) {
@@ -519,6 +519,7 @@ void CutoutPanel::buildUi() {
   shortcut(Qt::Key_R, "cutoutShortcutRotate", [this] { setTool(RigCanvas::Rotate); });
   shortcut(Qt::Key_S, "cutoutShortcutScale", [this] { setTool(RigCanvas::Scale); });
   shortcut(Qt::Key_P, "cutoutShortcutPivot", [this] { setTool(RigCanvas::Pivot); });
+  shortcut(Qt::Key_C, "cutoutShortcutCreate", [this] { setTool(RigCanvas::Create); });
   shortcut(Qt::Key_K, "cutoutShortcutKey", [this] { keySelected(); });
   shortcut(Qt::Key_O, "cutoutShortcutOnion", [this] { setOnionSkin(!onion_.enabled); });
   shortcut(Qt::Key_Space, "cutoutShortcutPlay", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
@@ -1041,6 +1042,19 @@ QWidget* CutoutPanel::buildWorkspace() {
   treeButtons->addWidget(addBoneButton);
   treeButtons->addWidget(addPartButton);
   treeButtons->addWidget(deleteButton);
+  // Bone length helpers (plugin 1.5.0): the selected bone, or every bone when none is selected.
+  // Same row as 본 추가 (no extra height: the hierarchy keeps its minimum; » takes the overflow).
+  auto* fitLengths = new QPushButton("자동 길이");
+  fitLengths->setObjectName("cutoutFitBoneLengths");
+  fitLengths->setToolTip("고른 본(없으면 모든 본)의 길이를 첫 자식 본까지의 거리로 맞춥니다. 화면의 그림은 움직이지 않습니다.");
+  auto* orient = new QPushButton("본 방향 맞추기");
+  orient->setObjectName("cutoutOrientBones");
+  orient->setToolTip("점 본(길이 0)의 방향을 자식 본이나 그림 쪽으로 돌리고 길이를 넣습니다(Spine 식 본).\n"
+                     "자식·그림·키·조준 축을 함께 보정하므로 애니메이션은 그대로입니다. 고른 본(없으면 모든 본)에 적용합니다.");
+  connect(fitLengths, &QPushButton::clicked, this, [this] { fitBoneLengths(); });
+  connect(orient, &QPushButton::clicked, this, [this] { orientBones(); });
+  treeButtons->addWidget(fitLengths);
+  treeButtons->addWidget(orient);
   treeLayout->addWidget(tree_, 1);
   treeLayout->addWidget(treeButtons);
   auto* orderBody = new QWidget;
@@ -1082,10 +1096,10 @@ QWidget* CutoutPanel::buildWorkspace() {
   middleLayout->setContentsMargins(0, 0, 0, 0);
   middleLayout->setSpacing(2);
   auto* tools = toolRow("cutoutCanvasTools");
-  const char* toolNames[] = {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot"};
-  const char* toolLabels[] = {"선택/이동 (V)", "회전 (R)", "크기 (S)", "회전 중심 (P)"};
+  const char* toolNames[] = {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot", "cutoutToolCreate"};
+  const char* toolLabels[] = {"선택/이동 (V)", "회전 (R)", "크기 (S)", "회전 중심 (P)", "본 만들기 (C)"};
   auto* toolGroup = new QButtonGroup(this);
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < RigCanvas::TOOL_COUNT; i++) {
     auto* b = new QToolButton;
     b->setObjectName(toolNames[i]);
     b->setText(toolLabels[i]);
@@ -1095,6 +1109,7 @@ QWidget* CutoutPanel::buildWorkspace() {
     tools->addWidget(b);
     toolButtons_[i] = b;
   }
+  toolButtons_[RigCanvas::Create]->setToolTip("끌어서 본을 그립니다: 고른 본(없으면 루트)의 자식, 누른 곳이 원점, 끈 방향·거리가 회전·길이 · 클릭 = 길이 0 · Shift 15° · 본 원점 클릭 = 부모 고르기 (조립 모드)");
   toolButtons_[0]->setChecked(true);
   auto* fit = new QToolButton;
   fit->setObjectName("cutoutFitView");
@@ -1170,8 +1185,8 @@ QWidget* CutoutPanel::buildWorkspace() {
   selectionLabel_->setWordWrap(true);
   auto* form = new QFormLayout;
   form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-  const char* labels[] = {"X", "Y", "회전°", "크기 X", "크기 Y", "이미지 기준점 X", "이미지 기준점 Y", "투명도"};
-  for (int i = 0; i < 8; i++) {
+  const char* labels[] = {"X", "Y", "회전°", "크기 X", "크기 Y", "이미지 기준점 X", "이미지 기준점 Y", "투명도", "본 길이"};
+  for (int i = 0; i < 9; i++) {
     const QString key = PROPS[i];
     auto* s = new QDoubleSpinBox;
     s->setObjectName("cutoutProp" + capital(key));
@@ -1180,6 +1195,10 @@ QWidget* CutoutPanel::buildWorkspace() {
     else if (key == "rotation") { s->setRange(-36000, 36000); s->setDecimals(2); }
     else if (key.startsWith("scale")) { s->setRange(-100, 100); s->setDecimals(3); s->setSingleStep(0.01); }
     else if (key.startsWith("pivot")) { s->setRange(-4, 4); s->setDecimals(3); s->setSingleStep(0.05); }
+    else if (key == "length") {
+      s->setRange(0, 100000); s->setDecimals(2);
+      s->setToolTip("본이 원점에서 +x 방향으로 뻗는 길이(px, 0 = 점 본) · 캔버스에 본 모양으로 그려지고, 두 본 IK의 끝점이 됩니다. 조립 모드 전용.");
+    }
     else { s->setRange(0, 1); s->setDecimals(3); s->setSingleStep(0.05); }
     connect(s, &QDoubleSpinBox::editingFinished, this, [this, key, s] { commitProperty(key, s->value()); });
     props_[key] = s;
@@ -2036,8 +2055,9 @@ void CutoutPanel::refreshProperties() {
     const int i = rig_->boneIndex(ss(id));
     if (i >= 0) {
       const cutout::Transform t = animate && size_t(i) < pose.bones.size() ? pose.bones[size_t(i)] : rig_->bones[size_t(i)].setup;
-      values = {{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}};
+      values = {{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}, {"length", rig_->bones[size_t(i)].length}};
       for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) enabled[p] = true;
+      enabled["length"] = !animate;  // setup data, never keyed
       label = QString("본 %1%2").arg(id, animate ? QString(" · %1ms 자세").arg(playheadMs_) : QString(" · 기본 자세"));
     }
   } else if (kind == "slot" && rig_) {
@@ -2401,6 +2421,7 @@ void CutoutPanel::refreshModeUi() {
   }
   banner_->setProperty("mode", animate ? "animate" : "setup");
   toolButtons_[RigCanvas::Pivot]->setEnabled(!animate);
+  toolButtons_[RigCanvas::Create]->setEnabled(!animate);
   for (QWidget* w : {static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(playButton_), static_cast<QWidget*>(graph_)}) w->setEnabled(animate);
   for (QPushButton* b : presetButtons_) b->setEnabled(animate);
   for (QWidget* w : timelineTools_) w->setEnabled(animate);
@@ -2735,15 +2756,16 @@ void CutoutPanel::setMode(Mode mode) {
   mode_ = mode;
   if (mode == Mode::Animate) {
     bottomTabs_->setCurrentIndex(0);
-    if (tool() == RigCanvas::Pivot) setTool(RigCanvas::Move);
+    if (tool() == RigCanvas::Pivot || tool() == RigCanvas::Create) setTool(RigCanvas::Move);
   }
   rebuildDisplay();
 }
 int CutoutPanel::tool() const { return canvas_->tool(); }
 void CutoutPanel::setTool(int t) {
   if (t == RigCanvas::Pivot && mode_ == Mode::Animate) { setStatus("회전 중심은 조립 모드에서만 바꿀 수 있습니다.", true); return; }
+  if (t == RigCanvas::Create && mode_ == Mode::Animate) { setStatus("본은 조립 모드에서만 만들 수 있습니다.", true); return; }
   canvas_->setTool(t);
-  for (int i = 0; i < 4; i++) toolButtons_[i]->setChecked(i == t);
+  for (int i = 0; i < RigCanvas::TOOL_COUNT; i++) toolButtons_[i]->setChecked(i == t);
 }
 void CutoutPanel::showControllerTab() { bottomTabs_->setCurrentIndex(1); }
 void CutoutPanel::setAutoKey(bool on) { autoKeyCheck_->setChecked(on); }
@@ -2860,6 +2882,31 @@ bool CutoutPanel::addBone() {
   selection_ = before;
   return false;
 }
+bool CutoutPanel::fitBoneLengths() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  if (mode_ == Mode::Animate) { setStatus("본 길이는 조립 모드에서 바꿉니다.", true); return false; }
+  Json op = {{"op", "fitBoneLengths"}};
+  if (refKind(selection_) == "bone") op["bones"] = Json::array({ss(refId(selection_))});
+  size_t count = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { count = r.extra.value("lengths", Json::object()).size(); })) return false;
+  setStatus(QString("본 %1개의 길이를 첫 자식 본까지 맞췄습니다. 되돌리기: Ctrl+Z").arg(count));
+  return true;
+}
+bool CutoutPanel::orientBones() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  if (mode_ == Mode::Animate) { setStatus("본 방향은 조립 모드에서 맞춥니다.", true); return false; }
+  Json op = {{"op", "orientBones"}};
+  if (refKind(selection_) == "bone") op["bones"] = Json::array({ss(refId(selection_))});
+  size_t done = 0, skipped = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) {
+        done = r.extra.value("oriented", Json::object()).size();
+        skipped = r.extra.value("skipped", Json::object()).size();
+      }))
+    return false;
+  setStatus(QString("본 %1개의 방향과 길이를 맞췄습니다%2. 애니메이션은 그대로입니다. 되돌리기: Ctrl+Z")
+                .arg(done).arg(skipped ? QString(" (%1개는 그대로: 크기가 비균일하거나 가리킬 것이 없음)").arg(skipped) : QString()));
+  return true;
+}
 bool CutoutPanel::addPartInteractive() {
   if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
   PartChoice choice;
@@ -2969,6 +3016,31 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   auto snap = [&](double r) { return d.shift ? std::round(r / 15) * 15 : r; };
   const double ratio = d.shift ? 1 + (d.ratio - 1) * 0.25 : d.ratio;
   QString kind = refKind(d.ref), id = refId(d.ref);
+  if (d.tool == RigCanvas::Create) {
+    // A child of the selected bone (a part: its bone), else of the root (first top-level bone):
+    // origin at the press, rotation/length from the drag vector in the parent's space, so the
+    // tip lands exactly under the cursor whatever the parent's transform.
+    if (animate || createId_.isEmpty()) return {};
+    QString parent = kind == "bone" ? id : QString();
+    if (kind == "slot") { const int si = rig.slotIndex(ss(id)); if (si >= 0) parent = qs(rig.slots[size_t(si)].bone); }
+    if (rig.boneIndex(ss(parent)) < 0) {
+      parent.clear();
+      for (const auto& b : rig.bones) if (b.parentIndex < 0) { parent = qs(b.id); break; }
+    }
+    const int pi = rig.boneIndex(ss(parent));
+    const auto inv = (pi >= 0 ? pose.world[size_t(pi)] : cutout::Affine{}).inverse();
+    if (!inv) return {};
+    const QPointF end = d.moved ? RigCanvas::createEnd(d) : d.start;
+    double sx, sy, ex, ey;
+    inv->apply(d.start.x(), d.start.y(), sx, sy);
+    inv->apply(end.x(), end.y(), ex, ey);
+    Json op = {{"op", "addBone"}, {"id", ss(createId_)}, {"parent", parent.isEmpty() ? Json(nullptr) : Json(ss(parent))}, {"x", sx}, {"y", sy}};
+    if (const double len = std::hypot(ex - sx, ey - sy); len >= 0.01) {
+      op["rotation"] = std::atan2(ey - sy, ex - sx) * 180 / 3.14159265358979323846;
+      op["length"] = len;
+    }
+    return {op};
+  }
   if (d.tool == RigCanvas::Pivot) {
     if (animate) return {};
     QString bone = kind == "bone" ? id : QString();
@@ -3046,6 +3118,13 @@ void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
   }
   if (mode_ == Mode::Animate && clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); if (finished) dragActive_ = false; return; }
   if (d.tool == RigCanvas::Pivot && mode_ == Mode::Animate) { setStatus("회전 중심은 조립 모드에서만 바꿀 수 있습니다.", true); if (finished) dragActive_ = false; return; }
+  if (d.tool == RigCanvas::Create && mode_ == Mode::Animate) { setStatus("본은 조립 모드에서만 만들 수 있습니다.", true); if (finished) dragActive_ = false; return; }
+  if (d.tool == RigCanvas::Create && createId_.isEmpty()) {
+    // One id for the whole gesture (its previews and the commit), unique in the data at the press.
+    QString id = "bone";
+    for (int n = 2; findIn(dragBase_, "bones", ss(id)); n++) id = QString("bone-%1").arg(n);
+    createId_ = id;
+  }
   const std::vector<Json> ops = dragOps(d);
   if (!finished) {
     if (ops.empty()) return;
@@ -3055,7 +3134,17 @@ void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
   }
   dragActive_ = false;
   dragPreview_.reset();
+  const QString created = d.tool == RigCanvas::Create ? createId_ : QString();
+  createId_.clear();
   if (ops.empty()) { rebuildDisplay(false); return; }
+  if (!created.isEmpty()) {
+    // The new bone becomes the selection: the next drag (from its tip) draws its child.
+    const QString before = selection_;
+    selection_ = "bone:" + created;
+    if (runOps(ops, false)) setStatus(QString("본 「%1」을 만들었습니다. 이어서 끌면 그 자식 본이 됩니다. 되돌리기: Ctrl+Z").arg(created));
+    else selection_ = before;
+    return;
+  }
   // Remember setup deltas of keyed bones so the user can rebase existing keys explicitly.
   if (mode_ == Mode::Setup && ops[0].value("op", std::string()) == "setBone") {
     const std::string bone = ops[0].value("bone", std::string());
@@ -3076,6 +3165,11 @@ void CutoutPanel::commitProperty(const QString& property, double value) {
   if (spin && std::fabs(value - shown) < 0.5 * std::pow(10.0, -spin->decimals())) return;  // focus-out without change
   const QString kind = refKind(selection_), id = refId(selection_);
   const bool animate = mode_ == Mode::Animate;
+  if (kind == "bone" && property == "length") {
+    if (animate) { setStatus("본 길이는 조립 모드에서 바꿉니다(키가 아닙니다).", true); refreshProperties(); return; }
+    runOps({{{"op", "setBone"}, {"bone", ss(id)}, {"length", value}}}, false);
+    return;
+  }
   if (kind == "bone") {
     if (animate) {
       if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return; }
@@ -4065,6 +4159,7 @@ void CutoutPanel::refreshIk() {
   if (k && index >= 0) {
     const auto& c = rig_->ik[size_t(index)];
     const QString tip = c.bones.size() == 1 ? QString("조준 축 %1°가 대상을 향함").arg(c.aimAxis, 0, 'g', 6) : c.tip >= 0 ? QString("끝점: %1의 원점").arg(qs(rig_->bones[size_t(c.tip)].id))
+                      : c.tipLength > 0 ? QString("끝점: %1의 끝(길이 %2)").arg(qs(rig_->bones[size_t(c.bones.back())].id)).arg(c.tipLength, 0, 'g', 6)
                                                                                       : QString("끝점 본 없음 · %1의 원점이 대상을 향함").arg(qs(rig_->bones[size_t(c.bones.back())].id));
     info = tip + (animate ? " · 애니메이션 모드: 혼합·굽힘을 바꾸면 이 시간의 키가 되고, ✛를 끌면 대상 본 위치가 바뀝니다(K로 키)."
                           : " · 조립 모드: 값은 IK의 기본값입니다. ✛를 끌면 대상 본의 기본 자세가 바뀝니다.");

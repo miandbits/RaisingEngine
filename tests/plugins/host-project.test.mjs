@@ -230,6 +230,22 @@ test('mesh attachments (plugin 1.4.0): schema-valid weighted mesh + deform track
   assert.ok(all.some(c => c.startsWith(`error:ANIM_MESH_DEFORM:${RIG}/data/clips/0/tracks/1/attachment`)), all.join('\n'));
 });
 
+test('bone length and color (plugin 1.5.0): schema-valid optional fields, malformed ones are schema errors', async () => {
+  const root = await newProject();
+  const rig = rigData({ bones: [{ id: 'root', parent: null, length: 0 }, { id: 'body', parent: 'root', y: -100, rotation: -90, length: 96.5, color: '#ff8800' }, { id: 'head', parent: 'body', x: 96.5, color: '#3366ffcc' }] });
+  await addCutout(root, { rig });
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID') || c.includes('ANIM_')), false, all.join('\n'));
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.bones[1].length = -4;
+  bad.data.bones[2].color = 'blue';
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.some(c => c.startsWith('error:') && c.endsWith(`${RIG}/data/bones/1/length`)), all.join('\n'));
+  assert.ok(all.some(c => c.startsWith('error:') && c.endsWith(`${RIG}/data/bones/2/color`)), all.join('\n'));
+});
+
 test('host-reserved posterAssetId must name an image asset, also without the plugin, and the cutout service ignores it', async () => {
   const root = await newProject();
   await addCutout(root); await addElement(root, { plugin: 'cutout-animation', type: 'character', ref: 'hero-main', props: { scale: 1, posterAssetId: 'hero-torso' } });

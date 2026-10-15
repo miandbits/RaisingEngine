@@ -90,6 +90,10 @@ class CutoutPanel : public QWidget {
   bool renameCharacter();
   bool deleteCharacter();
   bool addBone();
+  /** 자동 길이 (plugin 1.5.0): the selected bone's (none = every bone's) length = distance to its first child. */
+  bool fitBoneLengths();
+  /** 본 방향 맞추기: core orientBones on the selected bone (none = every bone); nothing moves on screen. */
+  bool orientBones();
   bool addPartInteractive();
   bool addPart(const QString& assetId, const QString& slot, const QString& name, const QString& bone);
   /** importImage (asset gesture) then addPart (edit gesture) once the asset exists. */
@@ -330,7 +334,8 @@ class CutoutPanel : public QWidget {
   BoneTree* tree_ = nullptr;
   QListWidget* drawOrder_ = nullptr;
   RigCanvas* canvas_ = nullptr;
-  QToolButton* toolButtons_[4] = {};
+  QToolButton* toolButtons_[RigCanvas::TOOL_COUNT] = {};
+  QString createId_;  // id of the bone the create tool is drawing (stable across its previews)
   QMap<QString, QDoubleSpinBox*> props_;
   QComboBox* attachmentCombo_ = nullptr;
   QPushButton *keyButton_ = nullptr, *discardButton_ = nullptr, *deltaButton_ = nullptr;

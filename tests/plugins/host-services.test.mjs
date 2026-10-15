@@ -69,6 +69,14 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   assert.equal(reply.pluginResult.rig.clips[0].tracks.at(-1).attachment, 'torso');
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'bindMesh', slot: 'torso', bones: ['body'] } } } });
   assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /메시가 아닌/);
+  // Bone length ops (plugin 1.5.0): orientBones turns the root toward its child and gives it a
+  // length while the drawing stays; fitBoneLengths refuses when there is nothing to fit.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'orientBones' } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.rig.bones[0], { id: 'root', parent: null, x: 0, y: 0, rotation: -90, length: 100 });
+  assert.deepEqual([reply.pluginResult.oriented, Object.keys(reply.pluginResult.skipped)], [{ root: -90 }, ['body']]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'fitBoneLengths', bones: ['body'] } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /길이/);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });

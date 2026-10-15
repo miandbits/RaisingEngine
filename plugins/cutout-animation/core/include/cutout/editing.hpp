@@ -55,6 +55,14 @@ struct EditResult {
  * autoWeights} setWeights {vertices, bone, weight, strength? | weights} unbindMesh; deform keys:
  * setKey/deleteKey {target: "slot:<id>", property: "deform", attachment, offsets?} (refs of the
  * multi-key ops carry `attachment` too). deleteBone moves mesh weights off the deleted bone.
+ * Bone length (plugin 1.5.0): addBone/setBone take `length` (px >= 0, null/0 = point bone) and
+ * `color` ("#rrggbb[aa]", editor display only; null/"" = default); setting a length on the lower
+ * bone of a two-bone chain pins its first child as `tip` so the limb keeps its effector.
+ * fitBoneLengths {bones?} ("자동 길이": length = distance to the first child, extra.lengths)
+ * orientBones {bones?, fitLength?} ("본 방향 맞추기": turns point-bone frames toward their child /
+ * images, compensating children, keys, attachments and aim axes so nothing draws differently;
+ * extra.oriented / extra.skipped). addIk prefers a bone's length direction (+x) for aim chains
+ * and the lower bone's length tip as two-bone effector.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

@@ -27,7 +27,9 @@
           "parent": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
           "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
           "rotation": { "$ref": "#/$defs/angle" },
-          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" }
+          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
+          "length": { "description": "Bone length in px along its local +x (plugin 1.5.0; 0/absent = point bone). Drawn by the editor; the two-bone IK effector when the lower bone has no explicit tip.", "type": "number", "minimum": 0, "maximum": 100000 },
+          "color": { "description": "Editor-only display colour (#rrggbb or #rrggbbaa). Ignored by runtimes.", "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" }
         }
       }
     },
@@ -172,7 +174,7 @@
       }
     },
     "editor": {
-      "description": "Non-essential authoring metadata (view, bone colors). Ignored by runtimes.",
+      "description": "Non-essential authoring metadata (view). Ignored by runtimes. Bone display colours live on the bones (`color`, plugin 1.5.0).",
       "type": "object"
     }
   },

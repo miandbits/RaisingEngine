@@ -1,5 +1,6 @@
 #include "cutout/rig.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <set>
@@ -43,6 +44,14 @@ void checkTransform(Checker& c, const Json& obj, const std::string& pointer) {
     const double s = number(c, obj, pointer, k, 1);
     if (s == 0) c.warn(at(pointer, k), "ANIM_SCALE_ZERO", "크기 0은 조각을 보이지 않게 합니다.");
   }
+}
+/** Editor display colour of a bone: "#rrggbb" or "#rrggbbaa". */
+bool validColor(const Json& v) {
+  if (!v.is_string()) return false;
+  const std::string& t = v.get_ref<const std::string&>();
+  if ((t.size() != 7 && t.size() != 9) || t[0] != '#') return false;
+  for (size_t i = 1; i < t.size(); i++) if (!std::isxdigit(static_cast<unsigned char>(t[i]))) return false;
+  return true;
 }
 Transform readTransform(const Json& obj) {
   Transform t;
@@ -331,6 +340,14 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     boneAt[id] = i;
     parentOf[id] = bones[i].contains("parent") && bones[i].at("parent").is_string() ? bones[i].at("parent").get<std::string>() : "";
     checkTransform(c, bones[i], p);
+    // Length (plugin 1.5.0): display + two-bone effector only, so a generous but finite range.
+    if (bones[i].contains("length")) {
+      const Json& v = bones[i].at("length");
+      if (!v.is_number() || !std::isfinite(v.get<double>()) || v.get<double>() < 0 || v.get<double>() > 100000)
+        c.error(at(p, "length"), "ANIM_BONE_LENGTH", "본 길이(length)는 0..100000 사이의 숫자(px)입니다.");
+    }
+    if (bones[i].contains("color") && !validColor(bones[i].at("color")))
+      c.error(at(p, "color"), "ANIM_BONE_COLOR", "본 색(color)은 \"#rrggbb\" 또는 \"#rrggbbaa\" 형식입니다.");
   }
   if (bones.empty()) c.error("/bones", "ANIM_NO_BONES", "본이 하나 이상 필요합니다.");
   for (const auto& [id, parent] : parentOf) {
@@ -559,6 +576,8 @@ Rig parseRig(const std::string& id, const Json& data) {
   for (const auto& b : data.at("bones")) {
     Bone bone; bone.id = b.at("id"); bone.setup = readTransform(b);
     if (b.contains("parent") && b.at("parent").is_string()) bone.parent = b.at("parent");
+    bone.length = b.value("length", 0.0);
+    bone.color = b.value("color", std::string());
     rig.bones.push_back(bone);
   }
   for (auto& b : rig.bones) b.parentIndex = b.parent.empty() ? -1 : rig.boneIndex(b.parent);
@@ -638,10 +657,11 @@ Rig parseRig(const std::string& id, const Json& data) {
     for (const auto& b : k.at("bones")) x.bones.push_back(rig.boneIndex(b.get<std::string>()));
     x.target = rig.boneIndex(k.at("target").get<std::string>());
     x.mix = k.value("mix", 1.0); x.aimAxis = k.value("aimAxis", 0.0); x.bendPositive = k.value("bendPositive", true); x.stretch = k.value("stretch", false); x.order = k.value("order", 0);
-    // The effector of a two-bone chain: the explicit `tip` (plugin 1.4.0), else the first child
-    // (array order) of its end bone.
+    // The effector of a two-bone chain: the explicit `tip` (plugin 1.4.0), else the end bone's own
+    // tip when it has a length (plugin 1.5.0), else its first child (array order).
     x.explicitTip = k.contains("tip");
     if (x.explicitTip) x.tip = rig.boneIndex(k.at("tip").get<std::string>());
+    else if (x.bones.size() == 2 && rig.bones[size_t(x.bones[1])].length > 0) x.tipLength = rig.bones[size_t(x.bones[1])].length;
     else if (x.bones.size() == 2)
       for (size_t i = 0; i < rig.bones.size() && x.tip < 0; i++) if (rig.bones[i].parentIndex == x.bones[1]) x.tip = int(i);
     std::vector<char> inside(rig.bones.size(), 0);
