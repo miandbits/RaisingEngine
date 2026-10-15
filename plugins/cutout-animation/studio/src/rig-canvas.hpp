@@ -38,8 +38,8 @@ class RigCanvas : public QWidget {
 
   void setScene(std::shared_ptr<const cutout::Rig> rig, const cutout::Pose& pose);
   void setImages(ImageCache* images) { images_ = images; }
-  void setHiddenSlots(const QSet<QString>& hidden) { hidden_ = hidden; update(); }
-  void setSelection(const QString& ref) { selection_ = ref; update(); }
+  void setHiddenSlots(const QSet<QString>& hidden) { hidden_ = hidden; refreshHover(); update(); }
+  void setSelection(const QString& ref) { selection_ = ref; refreshHover(); update(); }
   void setTool(int tool) { tool_ = tool; update(); }
   int tool() const { return tool_; }
   void setAnimateMode(bool animate) { animate_ = animate; update(); }
@@ -60,8 +60,26 @@ class RigCanvas : public QWidget {
   QTransform viewTransform() const;
   QPointF widgetToRig(const QPointF& p) const;
   QPointF rigToWidget(const QPointF& p) const;
-  /** Ref under a widget point; bones=false skips bone handles (parts only). */
+  /** Something pickable under the cursor. Handles beat image parts (Spine-like): a crosshair or
+   *  bone origin drawn over a body image is what the user aims at, the image is only behind it. */
+  enum HitRank { HitVertex = 0, HitIkTarget = 1, HitSelectedBone = 2, HitBone = 3, HitPart = 4 };
+  struct Hit {
+    QString ref;      // "bone:<id>" | "slot:<id>" (a vertex: the edited mesh's slot)
+    int vertex = -1;  // mesh vertex index (vertex mode only)
+    int rank = HitPart;
+    double distance = 0;  // handles: widget px from the handle; parts: depth (0 = topmost)
+  };
+  /** THE canvas hit test (click-select, drag start, hover and drops all use it): every candidate
+   *  under `widgetPos`, best first — rank, then nearest/topmost. handles=false: parts only.
+   *  Editor-hidden parts (eye toggle) are never candidates. */
+  QVector<Hit> hitCandidates(const QPointF& widgetPos, bool handles = true) const;
+  /** Ref under a widget point (the best candidate, vertices aside); bones=false = parts only. */
   QString hitTest(const QPointF& widgetPos, bool bones = true) const;
+  /** What a press picks: the best candidate, or with `cycle` (Alt) the one after the current
+   *  selection in candidate order (wrapping), so repeated Alt+clicks walk through a stack. */
+  QString pick(const QPointF& widgetPos, bool cycle) const;
+  /** Ref the cursor hovers (what a click would pick; highlighted on the canvas). */
+  QString hoverRef() const { return hoverRef_; }
   bool dragging() const { return drag_.has_value(); }
 
   // ---- Mesh editing (plugin 1.4.0). While a mode is on, left-button gestures edit the mesh shown
@@ -73,7 +91,7 @@ class RigCanvas : public QWidget {
   QString meshSlot() const { return meshSlot_; }
   /** Rig-space vertices of the edited mesh as drawn now (empty = none / not a mesh). */
   QVector<QPointF> meshVertices() const;
-  /** Vertex handle under a widget point (-1 = none). */
+  /** Vertex handle under a widget point (-1 = none; vertex mode: the best hitCandidates vertex). */
   int vertexAt(const QPointF& widgetPos) const;
   /** Click/band selection (add = Shift). An empty click clears. */
   std::function<void(const QVector<int>& vertices, bool add)> onMeshSelect;
@@ -102,6 +120,8 @@ class RigCanvas : public QWidget {
   void wheelEvent(QWheelEvent*) override;
   void resizeEvent(QResizeEvent*) override;
   void keyPressEvent(QKeyEvent*) override;
+  void keyReleaseEvent(QKeyEvent*) override;
+  void leaveEvent(QEvent*) override;
 
  private:
   std::shared_ptr<const cutout::Rig> rig_;
@@ -129,6 +149,14 @@ class RigCanvas : public QWidget {
   int ghostRenders_ = 0;
   QPolygonF trail_, trailKeys_;
   QString selectedIk_;
+  // hover: what a click at the cursor would pick (Alt held = the cycled pick)
+  QString hoverRef_;
+  QPointF hoverAt_;
+  bool hoverInside_ = false, hoverAlt_ = false;
+  void updateHover(const QPointF& widgetPos, bool alt);
+  void refreshHover() { if (hoverInside_) updateHover(hoverAt_, hoverAlt_); }
+  void paintHover(QPainter& p);
+  void outlineSlot(QPainter& p, int slotIndex) const;
   // mesh editing state (editor-only)
   int meshMode_ = MeshOff, meshBone_ = -1;
   QString meshSlot_;
