@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "project-manager.hpp"
 #include "theme.hpp"
 #include "renderer-preview.hpp"
 #include "script-authoring.hpp"
@@ -20,6 +21,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsItem>
 #include <QTimer>
+#include <QTemporaryDir>
 #include <QToolBar>
 #include <QToolButton>
 #include <QtTest>
@@ -27,6 +29,7 @@
 class StudioTests : public QObject {
   Q_OBJECT
 private slots:
+  void projectManagerRoundtrip();
   void rosterAuthoringRoundtrip();
   void rosterPlayIntegration();
   void characterStateAuthoringRoundtrip();
@@ -954,5 +957,6 @@ private slots:
 #include "script-rounds-test.inc"
 #include "plugin-test.inc"
 #include "cutout-e2e-test.inc"
+#include "project-manager-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"

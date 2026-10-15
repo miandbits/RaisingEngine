@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "project-manager.hpp"
 #include "theme.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -26,11 +27,17 @@ int main(int argc, char **argv) {
   parser.addOption({"analysis", "Open archived automatic play results"});
   parser.addOption({"workspace", "Open integrated authoring workspace"});
   parser.process(app);
+  QString project = parser.value("project");
+  if (project.isEmpty()) {
+    ProjectManager manager(parser.value("engine-root"));
+    if (manager.exec() != QDialog::Accepted) return 0;
+    project = manager.selectedProject();
+  }
   StudioWindow window(parser.value("engine-root"));
   window.show();
-  if (parser.isSet("project"))
+  if (!project.isEmpty())
     QTimer::singleShot(150, &window,
-                       [&] { window.openProject(parser.value("project")); });
+                       [&] { window.openProject(project); });
   if (parser.isSet("analysis")) {
     auto ready = new QTimer(&window);
     QObject::connect(ready, &QTimer::timeout, &window, [&window, ready] {

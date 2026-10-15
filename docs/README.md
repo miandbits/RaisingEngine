@@ -7,6 +7,7 @@ Start with the [root README](../README.md). Older documents retain the implement
 | Topic | Document |
 |---|---|
 | Current scope and phase history | [Universal raising engine plan](universal-raising-engine-plan.md) |
+| Project manager and public release plan | [Startup workflow and history boundary](project-manager-and-public-release.md) |
 | Qt editor build and architecture | [Qt editor](../native/studio/README.md) |
 | Shared data contracts | [Data format](data-format/contract.md), [interfaces](interfaces.md) |
 | General rules and visual logic | [Rules](generic-rules.md), [logic/debugging](visual-logic-and-debugging.md) |

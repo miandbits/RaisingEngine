@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include <QStandardPaths>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -19,14 +20,15 @@ void StudioWindow::newProjectWizard() {
   base->addItem(tr("탐험·전투 샘플"),"academy-adventure");base->addItem(tr("기존 프로젝트의 콘텐츠 재사용"),"existing");base->setCurrentIndex(4);form->addRow(tr("시작 구성"),base);
   auto source=new QLineEdit(view.value("root").toString());source->setObjectName("newProjectSource");
   auto sourceRow=new QWidget;auto sourceLayout=new QHBoxLayout(sourceRow);sourceLayout->setContentsMargins(0,0,0,0);sourceLayout->addWidget(source);auto sourceBrowse=new QPushButton(tr("원본 선택…"));sourceLayout->addWidget(sourceBrowse);form->addRow(tr("원본 폴더"),sourceRow);
-  auto folder=new QLineEdit(engineRoot+"/projects/new-game");folder->setObjectName("newProjectDestination");
+  const auto userProjects=QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("Raising Studio Projects");
+  auto folder=new QLineEdit(userProjects+"/new-game");folder->setObjectName("newProjectDestination");
   auto folderRow=new QWidget;auto folderLayout=new QHBoxLayout(folderRow);folderLayout->setContentsMargins(0,0,0,0);folderLayout->addWidget(folder);auto browse=new QPushButton(tr("찾아보기…"));folderLayout->addWidget(browse);form->addRow(tr("새 프로젝트 폴더"),folderRow);
   auto help=new QLabel(tr("새 폴더 경로를 입력하거나 빈 폴더를 선택하세요. 기존 파일은 덮어쓰지 않습니다.\n기존 프로젝트 재사용은 저장된 콘텐츠와 에셋만 복제합니다. 저장 게임·분석·편집 기록은 복제하지 않습니다.\n제목·시작 날짜·육성 기간은 생성 후 ‘파일 → 프로젝트 설정’에서 변경할 수 있습니다."));help->setWordWrap(true);layout->addWidget(help);
   auto error=new QLabel;error->setObjectName("newProjectError");error->setWordWrap(true);layout->addWidget(error);
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->setObjectName("newProjectButtons");buttons->button(QDialogButtonBox::Ok)->setText(tr("프로젝트 만들기"));layout->addWidget(buttons);
   auto update=[=]{sourceRow->setEnabled(base->currentData()=="existing");};connect(base,qOverload<int>(&QComboBox::currentIndexChanged),&dialog,update);update();
   connect(sourceBrowse,&QPushButton::clicked,&dialog,[&]{auto selected=QFileDialog::getExistingDirectory(&dialog,tr("재사용할 프로젝트 폴더"),engineRoot+"/projects");if(!selected.isEmpty())source->setText(selected);});
-  connect(browse,&QPushButton::clicked,&dialog,[&]{auto selected=QFileDialog::getExistingDirectory(&dialog,tr("새 프로젝트를 만들 빈 폴더"),engineRoot+"/projects");if(!selected.isEmpty())folder->setText(selected);});
+  connect(browse,&QPushButton::clicked,&dialog,[&]{auto selected=QFileDialog::getExistingDirectory(&dialog,tr("새 프로젝트를 만들 빈 폴더"),userProjects);if(!selected.isEmpty())folder->setText(selected);});
   connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
   connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(folder->text().trimmed().isEmpty()){error->setText(tr("새 프로젝트 폴더를 입력하세요."));return;}if(base->currentData()=="existing"&&source->text().trimmed().isEmpty()){error->setText(tr("재사용할 원본 프로젝트 폴더를 선택하세요."));return;}dialog.accept();});
   if(dialog.exec()!=QDialog::Accepted)return;

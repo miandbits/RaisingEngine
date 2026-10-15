@@ -31,6 +31,8 @@ The Qt preview still uses the repository's Node service and dependencies. It is 
 
 ## Build and run
 
+Launching without `--project` opens the project manager: create a project from a public template, open an existing folder, or search recent projects. Projects can live outside the engine checkout. See [project manager and release boundary](docs/project-manager-and-public-release.md).
+
 Run from the repository root. Configure paths for your own Qt installation:
 
 ```powershell

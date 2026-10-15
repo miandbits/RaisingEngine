@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "project-manager.hpp"
 #include "hierarchy-tree.hpp"
 #include "hierarchy-lock.hpp"
 #include "inspector-wheel.hpp"
@@ -124,6 +125,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       tr("프로젝트 열기…"), this, [this] { chooseProject(false); },
       QKeySequence::Open);
   file->addAction(tr("새 프로젝트…"), this, [this] { chooseProject(true); }, QKeySequence::New)->setObjectName("newProject");
+  file->addAction(tr("프로젝트 선택기…"), this, [this] {
+    if (bridge.busy() || !mayDiscard()) return;
+    ProjectManager manager(engineRoot, this);
+    if (manager.exec() == QDialog::Accepted) openProject(manager.selectedProject());
+  })->setObjectName("showProjectManager");
   file->addAction(tr("프로젝트 설정…"), this, &StudioWindow::editProjectSettings)->setObjectName("projectSettings");
   saveAction = file->addAction(tr("프로젝트 저장"), this, &StudioWindow::save,
                                QKeySequence::Save);
@@ -1048,6 +1054,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
+      ProjectManager::remember(view.value("root").toString());
       if(recordingRoot!=view.value("root").toString()){lastRecording.clear();lastGoalReport={};lastGoalImpact={};recordingRoot=view.value("root").toString();if(auto dialog=findChild<QDialog*>("goalRoutesDialog"))dialog->close();}
       conditionPreview={};
       validatedRevision=-1;
