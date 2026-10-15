@@ -30,6 +30,25 @@ function meshImage(src: string): HTMLImageElement {
   if (!image) { image = new Image(); image.decoding = 'async'; image.src = src; meshImages.set(src, image); }
   return image;
 }
+/**
+ * Atlas mesh (plugin-atlas-v1): its picture is a sub-image of the page. It is copied once, pixel
+ * for pixel, into its own canvas, so the triangle clips (grown by a pixel) sample exactly what the
+ * separate image had around its edges, never a neighbour in the page.
+ */
+const regionImages = new Map<string, HTMLCanvasElement>();
+function regionImage(page: HTMLImageElement, src: string, region: NonNullable<ExtensionItem['region']>): HTMLCanvasElement | null {
+  const key = `${src}#${region.join(',')}`;
+  let canvas = regionImages.get(key);
+  if (!canvas) {
+    const [x, y, w, h] = region;
+    if (!page.complete || !page.naturalWidth || w <= 0 || h <= 0) return null;
+    canvas = document.createElement('canvas');
+    canvas.width = Math.round(w); canvas.height = Math.round(h);
+    canvas.getContext('2d')?.drawImage(page, x, y, w, h, 0, 0, canvas.width, canvas.height);
+    regionImages.set(key, canvas);
+  }
+  return canvas;
+}
 const MAX_MESH_VERTICES = 2048, MAX_MESH_INDICES = 3 * 4096;
 /** Bounding box of a well-formed mesh (pairs of the same count, indices in range), or null. */
 function meshBox(mesh: ExtensionItem['mesh']): { x: number; y: number; w: number; h: number } | null {
@@ -48,15 +67,17 @@ function meshBox(mesh: ExtensionItem['mesh']): { x: number; y: number; w: number
  * triangle grown by a pixel so anti-aliased clip edges of neighbours leave no seams. One
  * canvas per item keeps the back-to-front order with the <img> region items around it.
  */
-function MeshItem({ item, src }: { item: ExtensionItem; src: string }) {
+const MeshItem = React.memo(function MeshItem({ item, src }: { item: ExtensionItem; src: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const box = useMemo(() => meshBox(item.mesh), [item.mesh]);
   const [loaded, setLoaded] = useState(0);
   useEffect(() => {
     const canvas = ref.current, mesh = item.mesh;
     if (!canvas || !box || !mesh) return;
-    const image = meshImage(src);
-    if (!image.complete) { const done = () => setLoaded(n => n + 1); image.addEventListener('load', done, { once: true }); return () => image.removeEventListener('load', done); }
+    const page = meshImage(src);
+    if (!page.complete) { const done = () => setLoaded(n => n + 1); page.addEventListener('load', done, { once: true }); return () => page.removeEventListener('load', done); }
+    const image = item.region ? regionImage(page, src, item.region) : page;
+    if (!image) return;
     const dpr = window.devicePixelRatio || 1, w = Math.max(1, Math.ceil(box.w * dpr)), h = Math.max(1, Math.ceil(box.h * dpr));
     if (canvas.width !== w) canvas.width = w;
     if (canvas.height !== h) canvas.height = h;
@@ -65,7 +86,8 @@ function MeshItem({ item, src }: { item: ExtensionItem; src: string }) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
     // A full device pixel of overlap: two anti-aliased half-covered edges would otherwise show a light seam.
-    const iw = image.naturalWidth, ih = image.naturalHeight, p = mesh.positions, uv = mesh.uvs, grow = dpr;
+    const iw = image instanceof HTMLImageElement ? image.naturalWidth : image.width, ih = image instanceof HTMLImageElement ? image.naturalHeight : image.height;
+    const p = mesh.positions, uv = mesh.uvs, grow = dpr;
     if (!iw || !ih) { canvas.dataset.drawn = 'false'; return; }
     // meshBox validated every index and pair: the lookups below are in range.
     const px = (v: number) => (p[2 * v]! - box.x) * dpr, py = (v: number) => (p[2 * v + 1]! - box.y) * dpr;
@@ -95,7 +117,23 @@ function MeshItem({ item, src }: { item: ExtensionItem; src: string }) {
   if (!box) return null;  // a malformed mesh draws nothing (never the undeformed fallback rectangle)
   return <canvas ref={ref} className="visual-plugin-item visual-plugin-mesh" aria-hidden="true" data-image-asset-id={item.imageAssetId} data-mesh="true"
     style={{ left: box.x, top: box.y, width: box.w, height: box.h, opacity: item.alpha }}/>;
-}
+});
+/**
+ * A rectangle item. With an atlas region the page is shown through a clipped box of the item's
+ * size, offset to the sub-image (CSS sprite; the page's 2 px edge padding keeps filtering at the
+ * box edge identical to the separate image). Items unchanged between compact frames keep their
+ * object, so memo skips them.
+ */
+const RegionItem = React.memo(function RegionItem({ item, src }: { item: ExtensionItem; src: string }) {
+  const transform = `matrix(${item.matrix.join(',')})`;
+  if (!item.region) return <img className="visual-plugin-item" src={src} alt="" aria-hidden="true" draggable={false}
+    data-image-asset-id={item.imageAssetId} style={{ width: item.width, height: item.height, opacity: item.alpha, transform }}/>;
+  const [x, y, w, h] = item.region;
+  return <div className="visual-plugin-item visual-plugin-region" aria-hidden="true" data-image-asset-id={item.imageAssetId} data-region={item.region.join(',')}
+    style={{ width: item.width, height: item.height, opacity: item.alpha, transform }}>
+    <img src={src} alt="" draggable={false} style={{ transform: `scale(${item.width / w},${item.height / h}) translate(${-x}px,${-y}px)` }}/>
+  </div>;
+});
 
 /** Screen element of kind `plugin`: absolutely positioned images with the plugin's affine matrices (meshes on canvases). */
 export function ExtensionView({ instance, extension, width, height, assetUrl, editing = false }: {
@@ -115,8 +153,6 @@ export function ExtensionView({ instance, extension, width, height, assetUrl, ed
   const plugin = extension?.plugin ?? '?';
   if (!usable || error) return <div className="visual-plugin-placeholder" data-instance={instance} role="note">{!usable ? `플러그인 필요: ${plugin}` : `플러그인 오류: ${plugin}`}{error && <small>{error}</small>}</div>;
   return <div className="visual-plugin-layer" data-instance={instance}>
-    {items.map((item, index) => item.mesh ? <MeshItem key={index} item={item} src={assetUrl(item.imageAssetId)}/> : <img key={index} className="visual-plugin-item" src={assetUrl(item.imageAssetId)} alt="" aria-hidden="true" draggable={false}
-      data-image-asset-id={item.imageAssetId}
-      style={{ width: item.width, height: item.height, opacity: item.alpha, transform: `matrix(${item.matrix.join(',')})` }}/>)}
+    {items.map((item, index) => item.mesh ? <MeshItem key={index} item={item} src={assetUrl(item.imageAssetId)}/> : <RegionItem key={index} item={item} src={assetUrl(item.imageAssetId)}/>)}
   </div>;
 }

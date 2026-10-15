@@ -41,5 +41,7 @@ public:
     if(!file.empty()){music=sound(file,true);ma_sound_set_looping(music,MA_TRUE);ma_sound_seek_to_pcm_frame(music,0);ma_sound_start(music);current_music=file;}
     mute(muted);
   }
-  void effect(const std::string& file,bool muted){if(file.empty()||muted)return;auto* value=sound(file);ma_sound_set_looping(value,MA_FALSE);ma_sound_seek_to_pcm_frame(value,0);ma_sound_start(value);}
+  void effect(const std::string& file,bool muted){effect(file,muted,1.f,0.f);}
+  /** volume 0..1, pan -1 (left)..1 (right): plugin event sounds (extension notifications). */
+  void effect(const std::string& file,bool muted,float volume,float pan){if(file.empty()||muted)return;auto* value=sound(file);ma_sound_set_looping(value,MA_FALSE);ma_sound_set_volume(value,volume);ma_sound_set_pan(value,pan);ma_sound_seek_to_pcm_frame(value,0);ma_sound_start(value);}
 };

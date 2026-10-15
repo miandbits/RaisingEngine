@@ -40,6 +40,15 @@ export function pngPixel(bytes,x,y){
   }
   return [...decoded.subarray((y*width+x)*channels,(y*width+x)*channels+3)];
 }
+/** 50 ms of a quiet 440 Hz tone as a 16-bit mono PCM WAV (event sound fixture). */
+export function wav(ms=50,rate=22050){
+  const n=Math.round(rate*ms/1000),data=Buffer.alloc(n*2);
+  for(let i=0;i<n;i++)data.writeInt16LE(Math.round(Math.sin(2*Math.PI*440*i/rate)*2000),i*2);
+  const head=Buffer.alloc(44);head.write('RIFF',0,'ascii');head.writeUInt32LE(36+data.length,4);head.write('WAVEfmt ',8,'ascii');
+  head.writeUInt32LE(16,16);head.writeUInt16LE(1,20);head.writeUInt16LE(1,22);head.writeUInt32LE(rate,24);head.writeUInt32LE(rate*2,28);head.writeUInt16LE(2,32);head.writeUInt16LE(16,34);
+  head.write('data',36,'ascii');head.writeUInt32LE(data.length,40);
+  return Buffer.concat([head,data]);
+}
 export const close=(rgb,want,tolerance=40)=>rgb.every((v,i)=>Math.abs(v-want[i])<=tolerance);
 export const RED=[220,40,40],BLUE=[40,80,220];
 /**
@@ -74,7 +83,10 @@ export const rig={schemaVersion:1,canvas:{width:200,height:300,originX:100,origi
   clips:[{id:'idle',durationMs:1000,loop:true,tracks:[{target:'bone:body',property:'y',keys:[{timeMs:0,value:-100},{timeMs:500,value:-104},{timeMs:1000,value:-100}]}]},
     {id:'blink',durationMs:2000,loop:true,tracks:[{target:'slot:eyes',property:'attachment',keys:[{timeMs:0,value:'open'},{timeMs:1800,value:'closed'},{timeMs:1900,value:'open'}]}]},
     {id:'joy',durationMs:600,loop:false,tracks:[{target:'bone:head',property:'rotation',keys:[{timeMs:0,value:0},{timeMs:300,value:20},{timeMs:600,value:0}]},
-      {target:'bone:body',property:'scaleY',keys:[{timeMs:0,value:1},{timeMs:300,value:1.15},{timeMs:600,value:1}]}]}],
+      {target:'bone:body',property:'scaleY',keys:[{timeMs:0,value:1},{timeMs:300,value:1.15},{timeMs:600,value:1}]}],
+      // Clip event (plugin 1.8.0) with a definition payload and a sound the players may play.
+      events:[{timeMs:300,name:'cheer',string:'peak'}]}],
+  events:[{name:'cheer',int:7,audio:'anim-cheer',volume:0.5,balance:0.25}],
   mix:{defaultMs:0},
   // Outfits (plugin 1.2.0): same torso geometry, other images. The placed element wears summer
   // (props.skin); the cheer binding swaps to winter, and a save/load keeps it.
@@ -109,6 +121,7 @@ export async function makeGame({target,name,runtime=true,mesh=false}){
   for(const asset of content.assets){const relative=`assets/${asset.id}${extname(asset.path).toLowerCase()}`;await cp(resolve(projectRoot,asset.path),resolve(game,relative));assets[asset.id]=relative;}
   for(const [id,[w,h,colour]] of Object.entries(IMAGES)){const relative=`assets/${id}.png`;await writeFile(resolve(game,relative),png(w,h,colour));assets[id]=relative;}
   if(mesh){await writeFile(resolve(game,'assets/anim-arm.png'),pngBands(240,40,RED,BLUE));assets['anim-arm']='assets/anim-arm.png';}
+  await writeFile(resolve(game,'assets/anim-cheer.wav'),wav());assets['anim-cheer']='assets/anim-cheer.wav';
   const module=target==='windows'?'cutout-runtime.dll':'cutout-runtime.mjs';
   const extensions={version:1,plugins:[{id:'cutout-animation',version:'1.0.0',abi:'raising-extension-1',entry:`plugins/cutout-animation/${module}`,
     documents:[{type:'rig',id:'hero',data:mesh?meshRig():rig},{type:'controller',id:'hero-main',data:mesh?meshController:controller}]}]};

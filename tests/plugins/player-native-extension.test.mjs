@@ -16,7 +16,9 @@ async function run(f,name,steps,args=[]){
   return {report,save,ui,instance:tag=>ui(tag).extensions.instances.find(i=>i.instance===INSTANCE)};
 }
 const track=(instance,n)=>instance.state.tracks.find(t=>t.track===n);
-const near=(a,b,message)=>assert.ok(a.length===b.length&&a.every((v,i)=>Math.abs(v-b[i])<1e-6),`${message}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
+// The player asks for compact frames (plugin 1.9.0, CONTRACT.md §7): offsets and vertices travel in
+// 1/1000 px, matrix scale terms in 1e-6, so parity with the full-precision core is within 6e-4.
+const near=(a,b,message)=>assert.ok(a.length===b.length&&a.every((v,i)=>Math.abs(v-b[i])<6e-4),`${message}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
 /** Same op sequence through the Wasm build of the same core gives the expected draw items. */
 async function reference(updates,observeAfter=-1){
   const request=await referenceRuntime();
@@ -37,6 +39,7 @@ test('native player draws extension items, binds committed actions to clips and 
   const r=await run(f,'main',steps);
   const home=r.instance('home');
   assert.equal(home.available,true,home.error);
+  assert.equal(r.ui('home').extensions.timing.frameFormats,'2','compact frames negotiated in init');
   // props.skin 'summer' reaches the runtime through the host's element spec untouched.
   assert.deepEqual(home.items.map(i=>i.imageAssetId),['anim-torso-summer','anim-face','anim-eyes-open']);
   // Rig 200x300 fits the 300x450 element at scale 1.5; torso pivot (0.5,1) sits on the body bone 100px above the origin.
@@ -62,6 +65,13 @@ test('native player draws extension items, binds committed actions to clips and 
   for(const [a,b] of peak.items.map((item,i)=>[item.matrix,(r.instance('joy').items[i]).matrix]))assert.notDeepEqual(a,b,'joy pose differs from rest pose');
   near(peak.items[1].matrix,(await reference([100,100,100,100,100,300],5)).find(i=>i.imageAssetId==='anim-face').matrix,'joy parity');
   assert.equal(track(r.instance('back-to-idle'),0).clip,'idle','one-shot returns to the controller default clip');
+  // Clip event (plugin 1.8.0): reported with its payload; its sound goes to the player's audio once.
+  const fired=r.ui('back-to-idle').extensions;
+  assert.equal(r.ui('joy-300').extensions.eventCount,0,'the 300 ms event fires on the following advance (half-open interval)');
+  assert.deepEqual(fired.events.map(e=>[e.instance,e.plugin,e.clip,e.name,e.int,e.string,e.audio,e.volume,e.balance]),[[INSTANCE,'cutout-animation','joy','cheer',7,'peak','anim-cheer',0.5,0.25]]);
+  assert.deepEqual([fired.eventCount,fired.soundCount],[1,1]);
+  const sound=r.ui('back-to-idle').audio;
+  assert.deepEqual([sound.extensionSounds+sound.extensionSoundErrors,sound.extensionSoundMissing],[1,0],JSON.stringify(sound));
   // Save carries opaque plugin state; load restores the one-shot at its saved time.
   const saved=JSON.parse(await readFile(r.save,'utf8'));
   const state=saved.playerPresentation.extensions['cutout-animation'];

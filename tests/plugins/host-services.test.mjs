@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { QtStudioService } from '../../apps/qt-studio/service.mjs';
 import { McpWorkspace, toolError } from '../../dist/packages/mcp-service/workspace.js';
-import { addCutout, CUTOUT_VERSION, cutoutPackage, envelope, newProject, rigData, serialize, temp } from './host-helpers.mjs';
+import { addCutout, CUTOUT_VERSION, cutoutPackage, envelope, newProject, rigData, serialize, shapePng, temp } from './host-helpers.mjs';
 
 const RIG = 'plugins/cutout-animation/rig/hero.json';
 const conflict = async (promise, code = 'VERSION_CONFLICT') => {
@@ -25,7 +25,7 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   assert.deepEqual([reply.pluginInstalled.id, reply.pluginInstalled.version, reply.pluginInstalled.alreadyInstalled], ['cutout-animation', CUTOUT_VERSION, false]);
   const installed = reply.plugins.installed[0];
   assert.deepEqual(Object.keys(installed).sort(), ['directory', 'documentTypes', 'elementTypes', 'id', 'modules', 'name', 'version']);
-  assert.deepEqual(installed.documentTypes.map(t => t.type), ['rig', 'controller']);
+  assert.deepEqual(installed.documentTypes.map(t => t.type), ['rig', 'controller', 'settings']);
   assert.ok(installed.modules.some(m => m.role === 'runtime' && m.platform === 'web-wasm'));
 
   reply = await service.handle({ method: 'pluginEnable', params: { id: 'cutout-animation', revision: reply.view.revision } });
@@ -69,6 +69,52 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   assert.equal(reply.pluginResult.rig.clips[0].tracks.at(-1).attachment, 'torso');
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'bindMesh', slot: 'torso', bones: ['body'] } } } });
   assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /메시가 아닌/);
+  // Bone length ops (plugin 1.5.0): orientBones turns the root toward its child and gives it a
+  // length while the drawing stays; fitBoneLengths refuses when there is nothing to fit.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'orientBones' } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.rig.bones[0], { id: 'root', parent: null, x: 0, y: 0, rotation: -90, length: 100 });
+  assert.deepEqual([reply.pluginResult.oriented, Object.keys(reply.pluginResult.skipped)], [{ root: -90 }, ['body']]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'fitBoneLengths', bones: ['body'] } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /길이/);
+  // Freeform meshes (plugin 1.6.0): an outline op, and autoOutline whose PNG (imagePath) the
+  // service decodes into the core's alpha mask (the core has no PNG decoder).
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'createMeshFromOutline', slot: 'torso', hull: [0, 0, 40, 0, 20, 60], spacing: 8 } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual([reply.pluginResult.rig.attachments[0].hull, reply.pluginResult.rig.attachments[0].vertices.length > 12], [3, true]);
+  const disc = path.join(await temp('png'), 'disc.png');
+  await writeFile(disc, shapePng(40, 60, (x, y) => ((x + 0.5 - 20) ** 2 / 324 + (y + 0.5 - 30) ** 2 / 676 <= 1 ? 255 : 0)));
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'batch', operations: [{ op: 'autoOutline', slot: 'torso', imagePath: disc, detail: 0.6 }] } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  const traced = reply.pluginResult.rig.attachments[0], outline = reply.pluginResult.outline;
+  assert.equal(traced.type, 'mesh');
+  assert.ok(traced.hull === outline.length / 2 && traced.hull >= 6 && traced.hull <= 256, `hull ${traced.hull}`);
+  assert.ok(outline.every((v, i) => v >= 0 && v <= (i % 2 ? 60 : 40)) && outline.some((v, i) => i % 2 === 0 && v < 4) && outline.some((v, i) => i % 2 === 0 && v > 36), 'outline hugs the ellipse');
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'autoOutline', slot: 'torso' } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /mask/);
+  // Multi-bone transforms (plugin 1.7.0): the canvas gesture's op on the LLM path. Turning root by
+  // 90° with bone compensation leaves body where it was (its local turns the other way).
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: {
+    op: 'transformBones', bones: ['root'], delta: { rotation: 90 }, compensateBones: true } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.bones, ['root']);
+  assert.deepEqual(reply.pluginResult.rig.bones, [{ id: 'root', parent: null, x: 0, y: 0, rotation: 90 }, { id: 'body', parent: 'root', x: -100, y: 0, rotation: -90 }]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: {
+    op: 'transformBones', bones: ['body'], delta: { y: -4 }, clip: 'idle', timeMs: 500 } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.rig.clips[0].tracks.map(t => [t.property, t.keys.find(k => k.timeMs === 500)?.value]), [['y', -108], ['x', 0]]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: {
+    op: 'setBone', bone: 'body', axes: 'world', x: 30, y: -50 } } } });
+  assert.deepEqual([reply.pluginResult.ok, reply.pluginResult.rig.bones[1].x, reply.pluginResult.rig.bones[1].y], [true, 30, -50]);
+  // Clip events (plugin 1.8.0): definition + payload override keys on the LLM path, then a refused
+  // undefined name; the notification of the sample instance carries the payload.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'batch', operations: [
+    { op: 'addEventDef', name: 'step', int: 1, audio: 'sfx-step' }, { op: 'setEventKey', clip: 'idle', timeMs: 500, name: 'step', int: 3 }] } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual([reply.pluginResult.rig.events, reply.pluginResult.rig.clips[0].events], [[{ name: 'step', int: 1, audio: 'sfx-step' }], [{ timeMs: 500, name: 'step', int: 3 }]]);
+  const evented = reply.pluginResult.rig;
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: evented, operation: { op: 'setEventKey', clip: 'idle', timeMs: 100, name: 'jump' } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /정의되지 않은 이벤트/);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });

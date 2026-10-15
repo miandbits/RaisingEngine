@@ -75,6 +75,11 @@ The envelope (`extension.schema.json`) is validated by the engine; `data` is val
 the plugin (its JSON schema, then its service module). The path must equal
 `plugins/<plugin>/<type>/<id>.json`.
 
+Size: an extension document may be up to **8 MiB** as written by the editor (indented JSON;
+other project documents keep 2 MiB, `DOCUMENT_SIZE_LIMIT`). The loader and the editor's
+`create`/`replace` checks use the same limit, so a document that can be edited can be saved and
+reloaded (a 200-bone animation rig is ~0.8 MiB compact but ~2.7 MiB indented).
+
 ### Missing / disabled / incompatible plugins never delete data
 
 | Situation | Diagnostic (severity) | Behavior |
@@ -147,8 +152,16 @@ modules are never copied. Content snapshot and `contentFingerprint` do not inclu
 extension documents: changing animation never invalidates saves.
 
 Only plugins referenced by a screen element are exported; `documents` holds all of that
-plugin's documents sorted by `type`, `id`. Module files are flattened to their basename and
-re-hashed against `manifest.files` while copying.
+plugin's documents sorted by `type`, `id` (or what its `prepareExport` hook returned, §10).
+Module files are flattened to their basename and re-hashed against `manifest.files` while
+copying.
+
+**Export assets** (plugin api 1, optional): images a plugin's `prepareExport` made (cutout atlas
+pages) are written as `assets/<id>.png` and listed in game.json `assets` only, never in the
+content snapshot, so `contentFingerprint` does not change. Project images the hook reports as
+`replacedAssets` (their pixels now live in those assets) are left out of `assets/` unless some
+other string in the content (a screen image, a portrait…) still names them; `content.assets` keeps
+listing them, and players resolve only what game.json `assets` maps.
 
 ## 7. Runtime extension ABI (`raising-extension-1`)
 
@@ -168,7 +181,8 @@ Requests (replies are `{ "ok": true, … }` or `{ "ok": false, "error": "…" }`
 | `unmount` | `{instance}` | |
 | `observe` | `{before, after, command, error}` where before/after = `{state, narrative}` | `{signals, matched}` |
 | `update` | `{dtMs}` | `{notifications}` (presentation only) |
-| `frame` | `{instance}` | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha, mesh?}]}` |
+| `frame` | `{instance}` (+ `format`, `since`: compact frames below) | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha, mesh?, region?}]}` |
+| `meshes` | `{ids?}` (compact frames only) | `{meshEpoch, meshes:[{id, uvs, indices}]}` |
 | `saveAll` / `restoreAll` | — / `{state}` | opaque `state` |
 | `describeAll` | — | debug/report data |
 
@@ -192,9 +206,56 @@ a mesh). `exportBundle` collects them as `PreparedExtensions.features` (a failin
 `PLUGIN_SERVICE_ERROR`) and `exportGame` refuses a target player whose capabilities lack one,
 before anything is written.
 
+**Compact frames** (ABI extension, still `raising-extension-1`; plugins and hosts that do not use it
+keep the documented items above, both directions stay compatible). A host lists the formats it
+reads in `init`: `{op:"init", documents, frameFormats:[2]}`; a plugin that writes them answers
+`{…, frameFormat:2, meshEpoch, meshes:[{id, uvs, indices}]}` (the topology of every mesh it may
+draw, fixed for the init lifetime) and an older plugin simply ignores the field, so the host keeps
+format 1. Then `{op:"frame", instance, format:2, since?}` answers
+`{ok:true, format:2, meshEpoch, frame, items:[…]}` where each item is an array
+`[imageAssetId, a, b, c, d, e, f, width, height, alpha]`, extended by `region` (`[x, y, w, h]` or
+`null`, see atlases below) and, for a mesh, `meshId, [x, y, …]` (element-local positions; uvs and
+indices come from the `meshes` entry of that id). Numbers are fixed-point decimals: `a`–`d` to
+1e-6, `e`, `f`, sizes, region and positions to 1/1000 px, alpha to 1e-4 (sub-pixel; parity checks
+against format 1 use 6e-4). `frame` is a number the host sends back as `since` on the next request
+of that instance: an item identical to the one at the same index in that frame is sent as `0`
+("unchanged"; a paused character costs a few hundred bytes). A `since` that is not the instance's
+last frame (or 0) gets every item. A changed `meshEpoch` (a rig loaded after `init`) or an unknown
+mesh id is resolved with `{op:"meshes", ids?}` → `{meshEpoch, meshes:[{id, uvs, indices}]}`. Hosts
+that lose their cached items (a `0` they cannot resolve) send `since:0` next time. Measured on the
+200-bone stress rig (tests/plugins/cutout-perf.test.mjs): 146 KB → 39 KB per character and frame,
+native player 95 → 9 ms per frame for 20 characters, web 64 → 18 ms. Hosts expose their frame
+costs in reports (`extensions.timing`: frames, frameMs, bytes, frameFormats) and accept
+`RAISING_EXTENSION_FRAME_FORMATS=1` (native) / `window.raisingExtensionFrameFormats=[1]` (web) to
+stay on format 1 for diagnostics.
+
+**Atlas regions** (ABI extension, still `raising-extension-1`): an item (either format) may carry
+`region: [x, y, w, h]`: its picture is that sub-image (pixels) of `imageAssetId` (an atlas page).
+`matrix`/`width`/`height` and mesh `uvs` address the sub-image exactly as they address a whole
+image without `region`. Hosts that draw regions advertise **`plugin-atlas-v1`** (native: texture
+coordinates mapped into the page rectangle; web: the page through a clipped box (CSS sprite) for
+quads, a pixel copy of the sub-image for meshes) and a plugin that writes regions lists it in
+`requiredHostFeatures`, so `exportGame` refuses older players (§10 `prepareExport` makes the pages).
+
+**Wasm hosts and large requests**: `cwrap` string arguments are copied onto the module's stack
+(1 MB for cutout), which a large rig in `init`/`validate` overflows. A module that also exports
+`_malloc`, `_free`, `stringToUTF8`, `lengthBytesUTF8` and `UTF8ToString` is called with the request
+in heap memory (`_raising_extension_request(pointer)` → reply pointer); the web player and the
+cutout service do so (web limit 64 MiB, else 48 KiB through `cwrap`).
+
 Hosts must call `observe` exactly once per submitted command (after the reply), in
 command order, and never from frame callbacks. `update` uses wall-clock presentation
 time and is never consulted by game logic. Hosts ignore notifications for gameplay.
+
+**Event notifications and sounds** (ABI extension, still `raising-extension-1`): `update` replies
+`{notifications: {<instance>: [{kind, …}]}}`. An entry with `kind: "event"` may carry a payload
+next to its `name` (`int`, `float`, `string`, and `audio` = an audio asset id with `volume` 0..1
+and `balance` -1..1, defaults 1 / 0). Hosts keep the newest 32 event entries (plus `instance`,
+`plugin`, `clockMs`) for reports (`extensions.events`, `eventCount`, `soundCount`) and MAY play
+`audio` as a one-shot effect through their normal sound path while unmuted (native: miniaudio
+volume/pan, report `audio.extensionSounds`; web: `HTMLAudioElement.volume`, balance through a
+Web Audio stereo panner). A missing or undecodable file is counted, never an error of the game.
+Playing sounds is the host's job: plugins only name them, and nothing here reaches game state.
 
 ## 8. Save data
 
@@ -238,16 +299,33 @@ export async function createService({ pluginDir, manifest }) {
     validate({ documents: [{ file, type, id, data }], assets: [{ id, kind, path, absolutePath }],
                elements: [{ file, pointer, element }] }) { return [{ file, pointer, code, severity, message, relatedIds }]; },
     call(op, payload) { return json; },  // pure: never writes project files
-    requiredHostFeatures(documents) { return ['plugin-mesh-v1']; }   // optional (§7): export-time player needs
+    requiredHostFeatures(documents) { return ['plugin-mesh-v1']; },  // optional (§7): export-time player needs
+    // optional (plugin api 1): rewrite what is exported, add export assets (§6)
+    async prepareExport({ target, documents, assets: [{ id, kind, path }], readAsset, hostFeatures }) {
+      return { documents, assets: [{ id, kind: 'image', extension: '.png', bytes }], replacedAssets: [id], report };
+    }
   };
 }
 ```
 
+**`prepareExport`** runs in `exportBundle` before `requiredHostFeatures` (which then sees the
+returned documents). Input: the plugin's documents as they would be exported, the snapshot's
+assets, `readAsset(id)` (the file's bytes, re-hashed against the validated snapshot: a changed file
+is `PLUGIN_SERVICE_ERROR`) and `hostFeatures`, the target player's `capabilities.json`
+`visualFeatures` when the caller knows them (`exportExtensions(revision, content, target,
+hostFeatures)`; the Qt and Electron studios pass them, absent = unknown). Output (all optional):
+`documents` (same `type`s as the manifest, unique `type/id`; replaces the exported list, e.g.
+without settings documents), `assets` (PNG bytes, ids that no project asset uses, ≤ 64 MiB each),
+`replacedAssets` (project asset ids) and `report` (kept as `PreparedExtensions.reports[id]`). A
+throwing hook or a malformed result refuses the export (`PLUGIN_SERVICE_ERROR`); it must never write
+project files. Cutout packs the images its rigs draw into atlas pages when its settings document
+allows it and `hostFeatures` contains `plugin-atlas-v1` (plugins/cutout-animation/docs/contract.md).
+
 `packages/plugin-host` exports `installPackage`, `inspectPackage`, `uninstallPlugin`,
 `listInstalled`, `resolveProjectPlugins`, `pluginStatus`, `callProjectPlugin`,
 `loadService`, `exportBundle`. `StudioEditor({ pluginStore })` adds `plugins()` and
-`exportExtensions(revision, content, target)`; `exportGame({ …, extensions })` refuses
-plugin elements without prepared extensions. Hosts: Qt service methods `pluginStatus`,
+`exportExtensions(revision, content, target, hostFeatures?)`; `exportGame({ …, extensions })`
+refuses plugin elements without prepared extensions. Hosts: Qt service methods `pluginStatus`,
 `pluginInstall {file}`, `pluginEnable {id, version?, revision}`, `pluginDisable {id, revision}`,
 `pluginCall {plugin, op, payload}` and a `plugins` member in every reply; MCP tools
 `plugin_status`, `plugin_call`, `get_schema {name:"extension", plugin, type}` and the

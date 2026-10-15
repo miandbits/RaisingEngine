@@ -15,10 +15,18 @@
 class QPainter;
 
 namespace cutout_studio {
-inline cutout::Json toJson(const QJsonObject& o) { return cutout::Json::parse(QJsonDocument(o).toJson(QJsonDocument::Compact).toStdString()); }
-inline cutout::Json toJson(const QJsonArray& a) { return cutout::Json::parse(QJsonDocument(a).toJson(QJsonDocument::Compact).toStdString()); }
-inline QJsonObject toQtObject(const cutout::Json& j) { return QJsonDocument::fromJson(QByteArray::fromStdString(j.dump())).object(); }
-inline QJsonArray toQtArray(const cutout::Json& j) { return QJsonDocument::fromJson(QByteArray::fromStdString(j.dump())).array(); }
+/**
+ * Qt JSON <-> core JSON, value by value (plugin 1.9.0; the text round trip through dump/parse cost
+ * ~15 ms per conversion of a large rig, twice per edit). Numbers follow what the text round trip
+ * produced: integral values (and Qt integers) become core integers, others doubles; non-finite
+ * doubles become null.
+ */
+cutout::Json toJsonValue(const QJsonValue& v);
+QJsonValue toQtValue(const cutout::Json& j);
+inline cutout::Json toJson(const QJsonObject& o) { return toJsonValue(o); }
+inline cutout::Json toJson(const QJsonArray& a) { return toJsonValue(a); }
+inline QJsonObject toQtObject(const cutout::Json& j) { return j.is_object() ? toQtValue(j).toObject() : QJsonObject(); }
+inline QJsonArray toQtArray(const cutout::Json& j) { return j.is_array() ? toQtValue(j).toArray() : QJsonArray(); }
 inline QString qs(const std::string& s) { return QString::fromStdString(s); }
 inline std::string ss(const QString& s) { return s.toStdString(); }
 /** Affine maps (x,y) -> (a x + c y + e, b x + d y + f); QTransform(m11,m12,m21,m22,dx,dy) uses the same layout. */

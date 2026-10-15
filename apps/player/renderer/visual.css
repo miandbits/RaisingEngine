@@ -68,5 +68,7 @@
 .visual-plugin { overflow:visible; white-space:normal; pointer-events:none; }
 .visual-plugin-layer { position:absolute; inset:0; pointer-events:none; }
 .visual-plugin-item { position:absolute; left:0; top:0; max-width:none; transform-origin:0 0; user-select:none; }
+.visual-plugin-region { overflow:hidden; }
+.visual-plugin-region > img { position:absolute; left:0; top:0; max-width:none; transform-origin:0 0; }
 .visual-plugin-placeholder { box-sizing:border-box; width:100%; height:100%; padding:8px; display:flex; flex-direction:column; align-items:center; gap:4px; border:2px dashed #b98f5e; background:rgba(70,52,62,.6); color:#fff0d0; font-size:18px; text-align:center; }
 .visual-plugin-placeholder small { font-size:14px; opacity:.85; }

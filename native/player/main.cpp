@@ -82,9 +82,19 @@ public:
   void update_extensions() {
     if(!extensions.active())return;
     const double dt=preview()?0:extension_dt;extension_dt=0;
-    extensions.update(dt);extensions.frame();
+    extensions.update(dt);play_extension_sounds();extensions.frame();
   }
-  void advance_extensions(double delta){if(!extensions.active())return;extensions.update(delta);extensions.frame();}
+  void advance_extensions(double delta){if(!extensions.active())return;extensions.update(delta);play_extension_sounds();extensions.frame();}
+  /** Event sounds of plugin notifications (presentation only): a missing file never stops the game. */
+  uint64_t extension_sounds_played=0,extension_sound_errors=0,extension_sound_missing=0;
+  void play_extension_sounds() {
+    for(const auto& s:extensions.take_sounds()) {
+      if(muted)continue;
+      const auto file=markup.asset(s.asset);
+      if(file.empty()){++extension_sound_missing;continue;}
+      try{audio.effect(file,muted,float(s.volume),float(s.balance));++extension_sounds_played;}catch(const std::exception&){++extension_sound_errors;}
+    }
+  }
   void apply_preview() {
     if(!preview()||preview_element.empty())return;
     auto* element=document->GetElementById("node-"+preview_element);
@@ -459,7 +469,7 @@ public:
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource","initial"},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
-      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"loadedSounds",audio.loaded_count()},{"muted",muted}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
+      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
   }
   Rml::Element* find_element(const std::string& id) {
     if(auto* element=document->GetElementById(id))return element;

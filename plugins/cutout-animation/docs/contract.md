@@ -8,6 +8,7 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 * `plugins/cutout-animation/rig/<id>.json`: skeleton, parts, clips (`schema/rig.schema.json`)
 * `plugins/cutout-animation/controller/<id>.json`: game signal → clip bindings (`schema/controller.schema.json`)
+* `plugins/cutout-animation/settings/project.json`: export settings (plugin 1.9.0, `schema/settings.schema.json`)
 
 ## Coordinates and transforms
 
@@ -22,8 +23,113 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * `width/height` are the source PNG size; the service warns when the file differs
   (`ANIM_IMAGE_SIZE_MISMATCH`).
 * `slots` array order is draw order (back → front). Hierarchy and draw order are independent.
+
+## Bone length (plugin 1.5.0)
+
+* A bone may carry `length` (px, number 0..100000, default/absent **0 = point bone**): the bone
+  reaches from its origin to `(length, 0)` in its own space, i.e. along its local **+x** after its
+  rotation and scale (Spine convention). Length is **not a transform**: it never moves the bone,
+  its children or its parts, so documents without lengths and documents with them play
+  identically except for the two-bone IK effector below. Validation `ANIM_BONE_LENGTH` (not a
+  finite number in range); the schema rejects the same values structurally.
+* `color` (optional, `"#rrggbb"` or `"#rrggbbaa"`, `ANIM_BONE_COLOR` otherwise) is an
+  **editor-only display hint** stored on the bone (like Spine's bone colour, so it travels with the
+  bone through reparenting, copy and MCP edits); runtimes ignore it. The rig `editor` block stays
+  free for view metadata.
+* IK with lengths: an aim chain still aims its `aimAxis` (default +x = the length direction), so a
+  bone with a length aims its tip at the target without any axis. Two-bone effector
+  **precedence**: explicit `tip` bone origin > the lower bone's own tip `(length, 0)` when its
+  length > 0 > its first child bone (array order) > its origin. All older documents have no
+  lengths and keep the 1.4 effector bit for bit.
+* Editor: bones with a length are drawn as a tapered diamond from origin to tip in their colour
+  (selected / hover states), point bones as the origin circle with an x-axis tick. Canvas picking:
+  mesh vertices > IK target crosshair > selected bone (origin, a point bone's axis) > bone origins
+  > **bone bodies** (inside the diamond or within 4 px of the origin→tip line) > parts; Alt+click
+  walks the candidates. In the Move (V) and Rotate (R) tools a press on a body turns the bone
+  around its origin and a press on its origin moves it. The **create tool** (C, setup mode only)
+  is one `addBone` per gesture: parent = the selected bone (a part's bone), else the first
+  top-level bone; `x`/`y` = the press point and `rotation`/`length` = the drag vector, both
+  expressed in the parent's shown world transform (the tip lands under the cursor); Shift snaps
+  the on-screen angle to 15°; a click without a drag makes a point bone.
+* Editing ops (`edit`): `addBone`/`setBone` take `length` (null/0 drops the key) and `color`
+  (null/"" drops it). Setting a length on the lower bone of a two-bone chain that has no `tip`
+  pins its first child as `tip`, so no gesture moves a limb by surprise.
+  * `fitBoneLengths {bones?}` ("자동 길이"): length = the distance from the origin to the first
+    child bone, in the bone's own space (all bones when `bones` is absent; childless bones keep
+    theirs, a listed one warns `ANIM_BONE_NO_CHILD`; nothing to change = refused). `extra.lengths`.
+  * `orientBones {bones?, fitLength? = true}` ("본 방향 맞추기", migration of point-bone rigs):
+    turns each point bone's frame by δ so +x points along its natural direction (first child bone,
+    else the area-weighted centre of its slots' setup images, as `addIk` reads it) and sets the
+    length to that reach. Everything expressed in the bone's frame is rewritten so **every pose
+    draws exactly as before** (setup, every clip, layered tracks, cross-fades, skins,
+    expressions, IK, weighted meshes, deform keys): the bone's rotation (setup, keys, expression
+    overrides) + δ; each child's position R(−δ)·p and rotation − δ (setup, keys, expressions);
+    attachment offsets of its slots in the default list and every skin R(−δ) and rotation − δ;
+    aim axes − δ (an `aimAxis: 90` arm ends at +x and loses the field). Child x/y keys rotate as
+    pairs; a channel keyed alone gets its partner keyed at the same times from setup, which is
+    only exact while no clip or expression keys that partner — otherwise the parent is skipped.
+    Also skipped (`extra.skipped {id: reason}`, warning `ANIM_ORIENT_SKIPPED` for listed bones):
+    bones that already have a length, nothing to point at, a scale that is not uniform at every
+    time (scaleX ≠ scaleY anywhere, e.g. a breathing body, or mirrored), and child keys that cannot
+    pair. A lower bone of a two-bone chain without `tip` and without a child keeps length 0
+    (its effector would move). Turned values are rounded to 1e-9 (not 1e-6) so draw lists stay
+    within 1e-6 px. `extra.oriented {id: δ°}`.
+  * `addIk` prefers lengths: an aim chain on a bone with a length stores no `aimAxis` and its
+    created target sits at the tip; a two-bone chain whose lower bone has a length stores no
+    implicit `tip` (the length tip is the effector) and its created target sits at that tip.
 * Editor-only visibility (eye icon) is never stored. Hiding a part in the game is
   `attachment: null` or `alpha: 0`, both keyable.
+
+## Multi-bone selection, compensation and axis spaces (plugin 1.7.0)
+
+* No data change: selection, pivot mode, axis mode, relative input and the compensation toggles
+  are editor state (never stored). 1.7.0 adds edit ops and op flags only; every document plays
+  as before.
+* `transformBones {bones, delta: {x?, y?, rotation?, scaleX?, scaleY?}, space? = "world",
+  pivot? = "origin", clip?, timeMs?, compensateBones?, compensateImages?}` — one canvas gesture on
+  a bone selection (one bone or many; the LLM `edit` op gets the same op):
+  * `x`/`y`: a translation in rig px (`space: "world"`) or added to the local x/y (`"parent"`).
+    Only the **topmost** selected bones move (a selected descendant already follows its parent).
+  * `rotation` (degrees, clockwise on screen) and `scaleX`/`scaleY` (factors) about the pivot.
+    `pivot: "origin"`: every selected bone turns/scales about its own origin (local rotation
+    += δ, flipped under a mirrored parent; local scale ×= f), so a selected chain curls (Spine).
+    `pivot: "centroid"` (mean of the selected bones' origins) or `{x, y}` (rig px): the topmost
+    selected bones turn as one piece — their origins rotate/scale about the pivot in rig axes,
+    rotation += δ, scale ×= f; selected descendants follow unchanged.
+  * Values come from the pose the editor shows (forward kinematics + IK, no expressions). With
+    `clip` + `timeMs` the result is keyed (x+y, rotation, scaleX+scaleY: the channel groups that
+    change; existing keys keep their interpolation), otherwise the setup pose changes.
+    `extra.bones` lists the bones that changed. Refused: no/unknown bones, empty delta, zero scale
+    factor, unknown `pivot`/`space`, key time out of range.
+* **Compensation** (Spine "본 보정 / 이미지 보정", **setup pose only**): `compensateBones` /
+  `compensateImages` on `setBone` and `transformBones`. After the bones change, every direct
+  child bone that is not itself selected gets `local = newParentWorld⁻¹ · oldWorld` (so it and
+  its whole subtree stay put), and every attachment of the changed bones' slots — default list
+  and every skin — is re-placed the same way (offset x/y/rotation/scale). Values are rounded to
+  1e-9 so world poses stay within 1e-6. Keys and expression overrides are **not** rewritten
+  (they are absolute values in the old frame: warning `ANIM_COMPENSATE_KEYS`); non-uniform scale
+  can only be approximated (decomposition drops skew: `ANIM_COMPENSATE_SKEW`). With `clip` the
+  flags are ignored with warning `ANIM_COMPENSATE_SETUP_ONLY` (Spine compensates setup only; an
+  animator moving a parent wants the children to follow).
+* **Axis spaces** (`cutout::toAxes` / `fromAxes`; `setBone {axes: "local" | "parent" |
+  "world"}`): values are always stored local; `axes` only says in which space `x`/`y`/`rotation`
+  are given (channels left out keep their shown value; scale is always local).
+  * local: as stored (x/y in the parent's space, rotation relative to the parent).
+  * world: x/y = the origin in rig px, rotation = the on-screen angle of the bone's +x axis
+    (`parentWorld · R(rotation) · (1, 0)`), kept within ±180° of the parent angle + local value.
+  * parent: x/y = the origin's offset from the parent origin along the parent's **unscaled**
+    axes (px), rotation = the angle from the parent's +x axis — equal to local under an unscaled
+    parent. `setBone` converts with the setup world as it is at that op, so a `batch` processing
+    parents first sees each moved parent. Singular parent = refused.
+* Editor: Ctrl/Shift+click (canvas, hierarchy, dopesheet row) toggles items; with the Move tool a
+  drag on empty space is a box selection of bone origins (Ctrl/Shift adds; a click on empty space
+  clears; right/middle drag still pans); Ctrl+A (canvas or hierarchy) = all bones, Ctrl+Shift+A
+  (hierarchy only: on the canvas it stays the host's workspace toggle) = add every descendant of
+  the selected bones; both are also in the `선택 ▾` menu. Pressing a member of a multi-selection drags all
+  of it (`transformBones`), a plain click on it keeps only it. The numeric fields edit every
+  selected bone (one batch of `setBone` parents first, or `setKey` in Animate), show `—` where
+  values differ, and either set (absolute) or add (`상대값 입력`) the typed value. `K` keys every
+  selected bone (5 channels) and part (attachment); pose copy takes exactly the selected bones.
 
 ## Skins (plugin 1.2.0)
 
@@ -87,10 +193,11 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
     tilts an oblique axis exactly as the image tilts. Cutout limbs usually keep rotation 0 while
     their image hangs down: such an arm aims with `aimAxis: 90`. Absent and 0 are identical
     (bit for bit the 1.3.0 solve), so older documents play unchanged.
-  * **2 bones = two-bone limb** `[upper, lower]`, `lower` a **direct child** of `upper`. Bones
-    have no length in this format, so the **effector** is the origin of the `tip` bone (plugin
-    1.4.0, optional: must be a **direct child of `lower`**, `ANIM_IK_TIP` otherwise, also on an
-    aim chain), else of `lower`'s **first child bone** in `bones` array order (hand, foot). The
+  * **2 bones = two-bone limb** `[upper, lower]`, `lower` a **direct child** of `upper`. The
+    **effector** is the origin of the `tip` bone (plugin 1.4.0, optional: must be a **direct
+    child of `lower`**, `ANIM_IK_TIP` otherwise, also on an aim chain), else `lower`'s own tip
+    `(length, 0)` when it has a length (plugin 1.5.0, see Bone length), else the origin of
+    `lower`'s **first child bone** in `bones` array order (hand, foot). The
     explicit tip keeps a forearm with several children (hand, sleeve, weapon) pointing at the
     right one. Without a child the limb degenerates to aiming `lower`'s origin at the target.
     `upper` and `lower` are rotated (law of cosines). Two-bone chains solve from these bone
@@ -176,8 +283,9 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
     region's pixels: (0,0) top-left, (width,height) bottom-right; vertices may lie outside it).
   * `uvs: [u, v, …]` — texture coordinates 0..1, one pair per vertex.
   * `triangles: [i, j, k, …]` — vertex index triples (drawn in array order).
-  * `hull?` (the first `hull` vertices are the outline) and `edges?` (index pairs) are editor
-    metadata; runtimes ignore them.
+  * `hull?` (the first `hull` vertices are the outline) and `edges?` (index pairs: outline and,
+    from plugin 1.6.0, pinned internal edges — see Freeform meshes) are editor metadata;
+    runtimes ignore them.
   * `weights?: [[{bone, weight}, …] per vertex]` — 1..4 bone shares per vertex. Absent =
     **unweighted**: the mesh is placed exactly like a region (`slotBone world · offset ·
     pivot`) and follows the slot's bone; with `vertices = uv × size` it draws pixel-identically
@@ -250,6 +358,83 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
     outfit-only mesh drops its deform keys.
 * Editor-only: the mesh edit mode (정점 편집 / 웨이트 칠하기), the vertex selection, the brush
   (bone, weight, strength, radius) and the heat map never reach documents.
+
+## Freeform meshes (plugin 1.6.0)
+
+* No new required data: a freeform mesh is a `type: "mesh"` attachment like a grid. What 1.6.0
+  gives meaning to is the editor metadata: `hull` = the first `hull` vertices are the **outline
+  polygon in order** (either direction, simple), and `edges` = index pairs of the outline edges
+  (derived from the triangles: edges used by one triangle) **plus internal edges the author
+  pinned** (Spine's convention). Runtimes still ignore both; triangles alone are drawn.
+* Triangulation = **constrained Delaunay**: the outline is ear-clipped, flipped to Delaunay, the
+  interior vertices are inserted (a point on an existing edge splits it), pinned edges are forced
+  in by flipping the edges they cross (Sloan), and every flip keeps the outline and pinned edges.
+  The core does it with plain IEEE arithmetic (sqrt, no hypot/trig, no unordered iteration), so
+  native and Wasm produce identical documents (`tests/plugins/cutout-outline-parity.test.mjs`).
+  Every result tiles the outline exactly: positive triangles inside it, each edge used by at most
+  two, area sum = outline area. Limits as before (2048 vertices, 4096 triangles).
+* Meshes **with** an outline (`hull >= 3`: outline ops, and every full `convertToMesh` grid) are
+  re-triangulated from the outline on each structural edit. Meshes **without** one (alpha-trimmed
+  grids, documents of other tools) are edited locally on their existing triangles (split, fan
+  re-triangulation, flips); their outline vertices cannot be removed.
+* Vertex data follows every change: kept vertices keep their uv, weights and deform offsets
+  (renumbered); a new vertex gets uv, weights (merged per bone, normalized, top 4) and deform
+  offsets blended **barycentrically** from the old setup triangle it lies in (the nearest one when
+  outside), so the picture and the animation do not jump. Deform keys of the edited
+  (slot, name) whose offset count is the old vertex count are rewritten (warning
+  `ANIM_MESH_DEFORM_REMAPPED`, `extra.remappedKeys`); keys of another count belong to a
+  same-named mesh in another skin and are left alone; keys that no longer fit any mesh are
+  removed (`ANIM_MESH_DEFORM_REMOVED`, as in 1.4.0).
+* Editing ops (attachment = `{slot, name?, skin?}`; points in image pixels, rounded to 1e-6 like
+  stored vertices; every op reports `extra.vertices`, `extra.triangles`, `extra.hull`,
+  `extra.pinnedEdges`):
+  * `createMeshFromOutline {…, hull: [x, y, …] (>= 3 points), points?: [x, y, …] (interior),
+    spacing? (px, 2..10000: also fill the inside with a grid, kept spacing/2 from the outline),
+    edges?: [i, j, …] (pinned, indices into hull + points)}`: region or mesh → the constrained
+    Delaunay mesh. `uv = position / image size` (clamped). Refused with the reason: fewer than 3
+    points, a doubled point, a spike, **a self-intersecting outline** ("윤곽이 스스로
+    교차합니다(가장자리 i-j와 k-l)"), zero area, an interior point outside / on the outline, a pinned
+    edge crossing another or leaving the mesh. Re-outlining a mesh resamples its weights and
+    deform keys at the new vertices.
+  * `autoOutline {…, mask: {width, height, alpha: base64, one byte per pixel, row-major},
+    alphaThreshold? = 0.05 (0..1), detail? = 0.5 (0..1), spacing?, points?, edges?}`: the outline
+    of the **largest opaque region** of the mask (pixels with alpha > threshold × 255), grown by
+    the simplification tolerance (so the simplified polygon stays around the picture), traced with
+    marching squares on pixel-centre samples (points on [0, w] × [0, h], saddles kept apart) and
+    simplified by Douglas-Peucker with tolerance `0.5 + (1 − detail) × 4 % of the larger side` px
+    (grown until at most 256 points; shrunk while the result would cross itself); mask pixels
+    are scaled to the attachment's image size; then meshed as createMeshFromOutline.
+    `extra.outline` = the outline points. **The core decodes no PNG**: Qt passes the decoded
+    image's alpha; the node service fills `mask` from `imagePath` (an absolute PNG path, read
+    only: 8/16-bit gray, gray+alpha, RGB, RGBA, palettes with tRNS; interlaced PNGs are refused)
+    for `edit` operations (alone or in a batch) before calling the core. The trace function is
+    exported (`cutout::traceAlphaOutline`) so the editor previews exactly what the op makes.
+  * `addMeshVertex {…, position: [x, y]}`: with an outline, inside → an interior vertex
+    (appended), on an outline edge (within 1e-6 × size) → an outline vertex inserted right after
+    the edge's first vertex (later vertices shift by one; weights / deform keys follow), then
+    re-triangulation; without one, the triangle (or edge) under the point is split. Outside / on
+    an existing vertex is refused. `extra.vertex` = the new index.
+  * `removeMeshVertex {…, vertices}`: later vertices shift down; pinned edges touching them go.
+    Outline vertices only while >= 3 stay, the outline stays simple and every interior vertex
+    stays inside it; meshes without an outline only lose interior vertices.
+  * `addMeshEdge {…, edge: [a, b]}` / `removeMeshEdge {…, edge: [a, b]}`: pin / unpin an internal
+    edge (a crease the mesh folds along). Refused: the same vertex twice, an outline edge, an
+    already pinned (or, to remove, an unpinned) edge, an edge through another vertex, crossing an
+    outline or pinned edge, or running outside the mesh (across a concave notch).
+  * `retriangulate {…}`: the constrained Delaunay triangulation of the current vertices (from the
+    outline, so a mesh whose triangles folded after vertex drags is repaired; without an outline
+    by flipping). Vertices, uvs, weights and keys are untouched. Refused when the outline crosses
+    itself or an interior vertex left it.
+* Validation adds warnings only (the data is editor metadata): `ANIM_MESH_HULL` (a hull of 1..2
+  vertices), `ANIM_MESH_HULL_SELF` (the outline polygon is not simple, e.g. after dragging an
+  outline vertex across the mesh; re-triangulation is refused until it is fixed),
+  `ANIM_MESH_EDGES` (an edge joining a vertex to itself). Documents of 1.4.0/1.5.0 load, validate
+  and draw unchanged.
+* Editor rendering (Qt, not a data rule): a mesh whose vertices are one affine image of their uvs
+  (undeformed, or moved as a whole by its bones) is filled once through its outline; a deformed
+  mesh is drawn as textured-brush triangles, aliased inside (exact tiling) and antialiased only on
+  the outline. 2048 triangles, 1024² offscreen: ~1.3 ms rigid, ~7.5 ms deformed (was ~41 / 45 ms
+  with a clip path per triangle).
 
 ## Clips and keys
 
@@ -363,9 +548,57 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   * Deleting a slot or bone also removes its skin attachments and expression entries.
 * Rotation interpolates numerically (no shortest-path wrapping): 0→350 turns 350°.
 * Times are integer milliseconds, strictly increasing per track, within `0..durationMs`.
-* Events: `{timeMs, name}`. An event fires once per occurrence in the half-open interval
-  `[previous, current)` of clip time; for one-shot clips an event exactly at the end fires
-  with completion.
+* Events: `{timeMs, name, int?, float?, string?}`. An event fires once per occurrence in the
+  half-open interval `[previous, current)` of clip time; for one-shot clips an event exactly at
+  the end fires with completion (a looping clip never fires an event at exactly `durationMs`).
+  Seeking (editor scrubbing) never fires events. See "Clip events" below for definitions and
+  payloads.
+
+## Clip events (plugin 1.8.0)
+
+Spine-like event definitions at the rig level, all optional (rigs without them load and play as
+in 1.7):
+
+```json
+"events": [{"name": "footstep", "int": 1, "float": 0.5, "string": "left", "audio": "sfx-step", "volume": 0.8, "balance": -0.2}],
+"clips": [{"id": "walk", "...": "...", "events": [{"timeMs": 0, "name": "footstep"}, {"timeMs": 300, "name": "footstep", "string": "right"}]}]
+```
+
+* Definition: `name` (`$defs/name`, unique), default payload `int` (32-bit integer), `float`
+  (finite, |v| <= 1e6), `string` (<= 1000 bytes), and `audio` (an asset id of kind audio) with
+  `volume` 0..1 (default 1) and `balance` -1 (left)..1 (right) (default 0). Defaults (0, 0, "",
+  1, 0) are not stored by the editing ops. Volume/balance without audio warn
+  (`ANIM_EVENT_AUDIO_UNUSED`).
+* Keys: `name` plus optional `int` / `float` / `string` overriding the definition (audio, volume
+  and balance always come from the definition). Once `events` holds at least one definition every
+  key must name one (`ANIM_EVENT_UNKNOWN`); without definitions any name is valid (1.7 rigs).
+* Validation codes: `ANIM_EVENT_NAME` (definition name format), `ANIM_DUP_ID` (definition),
+  `ANIM_EVENT_PAYLOAD` (int/float/string types, volume/balance ranges), `ANIM_EVENT_AUDIO`
+  (core: not a non-empty id; service: the asset is missing or not of kind audio),
+  `ANIM_EVENT_TIME` (key time not an integer in `0..durationMs`), `ANIM_EVENT_UNKNOWN`,
+  `ANIM_EVENT_DUPLICATE` (warning: the same name twice at one time; both fire, editing ops
+  address the first).
+* Notification (`kind: "event"`, op `update`/`notifications`): `{kind, track, clip, serial, name}`
+  plus the resolved payload — only the fields that are set: `int`, `float`, `string` (key
+  override, else definition) and, when the definition has a sound, `audio`, `volume`, `balance`.
+  A rig without payloads produces exactly the 1.7 shape. Deterministic: the same notifications
+  (payload included) at any frame pacing.
+* **Presentation only.** Controller bindings react to game signals only; they never match clip
+  events, and events never reach game rules, costs or RNG. Playing `audio` is the host's job
+  (packages/plugin-host/CONTRACT.md §7): the native player plays it through its sound-effect path
+  (miniaudio volume/pan) and the web player through `HTMLAudioElement` (balance via a Web Audio
+  stereo panner), both only while sound is on; both report the newest 32 events with payload
+  (`extensions.events`) for automation. Other hosts may ignore sounds and read the payload only.
+* Editing ops (one gesture = one op): `addEventDef {name, int?, float?, string?, audio?, volume?,
+  balance?}` (the first definition also defines every name keys already use: `extra.defined`),
+  `setEventDef {event, ...}` (null removes a field), `renameEventDef {event, name}` (keys in every
+  clip follow: `extra.renamedKeys`), `deleteEventDef {event, force?}` (refused while keys use it;
+  force deletes them: `extra.removedKeys`), `setEventKey {clip, timeMs, name, newName?, int?,
+  float?, string?}` (creates or edits; null drops an override; `extra.keys`), `moveEventKey {clip,
+  name, fromMs, toMs}`, `deleteEventKey {clip, name, timeMs}`. The multi-key ops `moveKeys`,
+  `scaleKeys`, `deleteKeys`, `copyKeys`, `pasteKeys` take event keys as refs `{target: "event",
+  property: <name>, timeMs}` next to track keys; an event key collides only with a key of the same
+  name at the same time (different events may share a time). `setInterp`/`setCurve` refuse them.
 
 ## Playback (per instance)
 
@@ -378,8 +611,8 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   explicit) is > 0, the old entry keeps animating and is cross-faded linearly; attachments
   switch at the halfway point. Events and completions of the outgoing entry are suppressed.
 * Notifications: `start`, `interrupt` (replaced), `end` (no longer applied), `complete`
-  (every loop boundary with loop index; once for one-shots), `event`. Each is emitted once
-  per entry `serial`; hosts never need deduplication.
+  (every loop boundary with loop index; once for one-shots), `event` (with its payload, plugin
+  1.8.0). Each is emitted once per entry `serial`; hosts never need deduplication.
 * One-shot `then`: `default` (track 0 → controller default clip; other tracks stop),
   `hold` (stay on the last frame), `stop` (mix out to lower tracks/setup).
 * `update(dt)` clamps dt to 0..10 s; a long pause completes loops instead of replaying them.
@@ -387,7 +620,8 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 ## Controller bindings and game signals
 
 Signals are derived **only from committed game transitions** (one call per command), never
-from frames. Hosts call the core's `observe` op; all hosts use the same C++ derivation.
+from frames. Clip events are not signals: a binding can never depend on an animation event
+(game logic stays independent of presentation timing). Hosts call the core's `observe` op; all hosts use the same C++ derivation.
 
 | Signal | Params | When |
 |---|---|---|
@@ -453,3 +687,60 @@ offsets come from the rig and the clips.
 sine-like breath in three keys; default period 3200 ms) and `blink`
 (attachment swap open → half → closed → half → open with a 3–5 s idle gap) generate
 ordinary clips; they are editable data, not procedural runtime effects.
+
+## Large rigs (plugin 1.9.0)
+
+Measured on the deterministic stress rig (`core/tests/stress-rig.hpp`: 200 bones, 150 slots, 40
+grid meshes with 1680 vertices of which 1260 weighted, 30 clips / 9148 keys incl. a 3000-key clip,
+4 skins, 6 expressions, 6 IK constraints, event keys); `tests/plugins/cutout-perf.test.mjs`
+reports every layer and fails on ~3x regressions (core budgets in `core/tests/bench.hpp`).
+
+* **Compact frames** (engine CONTRACT.md §7): `init {frameFormats:[2]}` answers `frameFormat: 2`
+  and the mesh topology table; `frame {format:2, since}` answers fixed-point number arrays with
+  `0` for items unchanged since `since`. Both players use them; the documented items stay the
+  default for every other host. 146 KB → 39 KB per character and frame (a paused one: ~0.4 KB).
+* **Batched validation**: the `validate` op takes `controllers: [{data, pointer}]` and answers
+  `controllerDiagnostics` (one list each): the rig is validated and parsed once per pass (the
+  service also remembers the last results by rig text). `parseValidatedRig` skips the second
+  validation of data that was just validated.
+* Hosts pass large requests through Wasm heap memory (the runtime exports `stringToUTF8`,
+  `lengthBytesUTF8`, `UTF8ToString`): rigs above ~1 MB used to overflow the Wasm stack.
+* Plugin documents may be up to 8 MiB on disk (engine CONTRACT.md §3).
+
+## Settings document (plugin 1.9.0)
+
+`plugins/cutout-animation/settings/project.json` (type `settings`, id `project`, schema
+`schema/settings.schema.json`; any other id is warning `ANIM_SETTINGS_ID` and ignored). Absent =
+the defaults. It is project data (edited with ordinary edits, undoable, readable by MCP) and is
+never exported.
+
+```jsonc
+{ "schemaVersion": 1, "export": { "atlas": { "enabled": true, "maxPageSize": 2048, "padding": 2, "trim": true } } }
+```
+
+## Atlas packing on export (plugin 1.9.0)
+
+The service hook `prepareExport` (engine CONTRACT.md §10) packs every PNG that an exported rig
+draws (default attachments and skins) into pages of at most `maxPageSize` px when `enabled` and
+the target player advertises `plugin-atlas-v1`; other players (and exports whose caller passes no
+player features) keep separate files. Images that no rig draws are never read. Kept separate
+(`report.skipped`): non-PNG, 16-bit, interlaced or colour-managed (`gAMA`/`iCCP`/`cHRM`) PNGs and
+pictures larger than a page. Packing is deterministic (skyline, tallest first).
+
+* **Exact pixels**: a page holds byte copies of the pictures; around each one `padding` pixels
+  repeat its edge pixels, so linear filtering at a region's edge samples what the separate image
+  gave (its clamped edge). **Trimming** (`trim`, regions drawn at their own pixel size only: never
+  meshes, never pictures drawn scaled) drops fully transparent borders but keeps a 1 px
+  transparent ring, so edges still blend towards transparency exactly as before.
+* **Rig data**: each packed attachment gains `atlas: {page, x, y, width, height, trim?}` (schema
+  `$defs/attachment`): the picture is that sub-image of the page asset; `trim` is the rectangle
+  of the original picture it shows. Validation (`ANIM_ATLAS`): page id, non-negative position,
+  positive size, trim inside the picture, no trim on meshes.
+* **Draw items**: `imageAssetId` = the page, `region: [x, y, w, h]`; a trimmed region's matrix is
+  `matrix · translate(trim.x, trim.y)` with the trimmed width/height (the kept rectangle lands
+  where it was); meshes keep matrix, uvs and triangles (uvs address the sub-image).
+  `requiredHostFeatures` adds `plugin-atlas-v1` for such rigs.
+* **Export**: pages are `assets/cutout-atlas-<n>.png`; packed images' own files are left out
+  unless the content names them elsewhere (fewer files: the test fixture's 8 rig images become one
+  page). Screenshots with and without atlas differ by a mean of 0.0013/255 (native) and 0.004/255
+  (web) (`tests/plugins/cutout-atlas.test.mjs`).

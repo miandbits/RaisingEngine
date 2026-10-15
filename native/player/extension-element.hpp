@@ -4,27 +4,16 @@
 // textured quad. Drawing inside the RML tree keeps the authored z-order of the screen.
 // Mesh items (capability plugin-mesh-v1, CONTRACT.md §7) arrive as ready-made element-local
 // triangles: RmlUi geometry is triangle based, so they are emitted as they are.
+// Atlas items (plugin-atlas-v1) name a page and the sub-image (region) that is their picture:
+// their texture coordinates are mapped into that rectangle of the page texture.
+// Items are decoded once per frame reply by the host (ExtensionDrawItem): no JSON is read here.
 #include <RmlUi/Core.h>
 #include "extension-host.hpp"
 
 class ExtensionElement : public Rml::Element {
 public:
   static inline ExtensionHost* host=nullptr;
-  static constexpr size_t MAX_MESH_VERTICES=2048,MAX_MESH_INDICES=3*4096;
   explicit ExtensionElement(const Rml::String& tag):Rml::Element(tag){}
-  /** Validated mesh of an item (positions/uvs pairs of the same count, indices in range); false = draw nothing. */
-  static bool readMesh(const Json& mesh,Rml::byte alpha,Rml::Mesh& out) {
-    if(!mesh.is_object())return false;
-    const auto& p=mesh.value("positions",Json::array());const auto& uv=mesh.value("uvs",Json::array());const auto& ix=mesh.value("indices",Json::array());
-    if(!p.is_array()||!uv.is_array()||!ix.is_array()||p.size()%2||p.size()!=uv.size()||p.size()/2>MAX_MESH_VERTICES||ix.empty()||ix.size()%3||ix.size()>MAX_MESH_INDICES)return false;
-    const size_t n=p.size()/2;
-    for(size_t i=0;i<n;i++) {
-      if(!p[2*i].is_number()||!p[2*i+1].is_number()||!uv[2*i].is_number()||!uv[2*i+1].is_number())return false;
-      out.vertices.push_back({{p[2*i].get<float>(),p[2*i+1].get<float>()},Rml::ColourbPremultiplied(alpha,alpha,alpha,alpha),{uv[2*i].get<float>(),uv[2*i+1].get<float>()}});
-    }
-    for(const auto& v:ix){if(!v.is_number_integer()||v.get<int64_t>()<0||v.get<int64_t>()>=int64_t(n))return false;out.indices.push_back(v.get<int>());}
-    return true;
-  }
 protected:
   void OnRender() override {
     if(!host)return;
@@ -34,24 +23,33 @@ protected:
     const auto origin=GetAbsoluteOffset(Rml::BoxArea::Content);
     const float opacity=GetComputedValues().opacity();
     for(const auto& item:mount->items) {
-      const auto id=item.value("imageAssetId","");auto found=textures.find(id);
-      if(found==textures.end()){const auto path=host->asset_path(id);found=textures.emplace(id,path.empty()?Rml::Texture():render->LoadTexture(path)).first;}
-      const float alpha=std::clamp(float(item.value("alpha",1.0))*opacity,0.f,1.f);
+      if(!item.valid)continue;
+      auto found=textures.find(item.image);
+      if(found==textures.end()){const auto path=host->asset_path(item.image);found=textures.emplace(item.image,path.empty()?Rml::Texture():render->LoadTexture(path)).first;}
+      const float alpha=std::clamp(float(item.alpha)*opacity,0.f,1.f);
       if(!found->second||alpha<=0)continue;
       const auto a=Rml::byte(std::lround(alpha*255));
-      if(item.contains("mesh")) {
+      // The picture's 0..1 texture space: the whole image, or its atlas sub-image of the page.
+      float u0=0,v0=0,su=1,sv=1;
+      if(item.region) {
+        const auto size=found->second.GetDimensions();
+        if(size.x<=0||size.y<=0)continue;
+        u0=float(item.r[0]/size.x);v0=float(item.r[1]/size.y);su=float(item.r[2]/size.x);sv=float(item.r[3]/size.y);
+      }
+      if(item.mesh) {
         // A malformed mesh is skipped, never replaced by its fallback rectangle: that would show the undeformed image.
-        Rml::Mesh mesh;
-        if(readMesh(item.at("mesh"),a,mesh))render->MakeGeometry(std::move(mesh)).Render(origin,found->second);
+        if(!item.drawable_mesh())continue;
+        const auto& t=*item.topology;const size_t n=t.uvs.size()/2;
+        Rml::Mesh mesh;mesh.vertices.reserve(n);
+        for(size_t i=0;i<n;i++)mesh.vertices.push_back({{float(item.positions[2*i]),float(item.positions[2*i+1])},Rml::ColourbPremultiplied(a,a,a,a),{u0+su*float(t.uvs[2*i]),v0+sv*float(t.uvs[2*i+1])}});
+        mesh.indices.assign(t.indices.begin(),t.indices.end());
+        render->MakeGeometry(std::move(mesh)).Render(origin,found->second);
         continue;
       }
-      const auto& matrix=item.value("matrix",Json::array());
-      if(!matrix.is_array()||matrix.size()!=6)continue;
-      double m[6];for(int i=0;i<6;i++)m[i]=matrix[i].is_number()?matrix[i].get<double>():0;
-      const double w=item.value("width",0.0),h=item.value("height",0.0);
+      const double w=item.w,h=item.h;const double* m=item.m;
       if(w<=0||h<=0)continue;
       Rml::Mesh mesh;
-      const double corners[4][2]={{0,0},{w,0},{w,h},{0,h}};const float uv[4][2]={{0,0},{1,0},{1,1},{0,1}};
+      const double corners[4][2]={{0,0},{w,0},{w,h},{0,h}};const float uv[4][2]={{u0,v0},{u0+su,v0},{u0+su,v0+sv},{u0,v0+sv}};
       for(int i=0;i<4;i++) {
         const double x=corners[i][0],y=corners[i][1];
         mesh.vertices.push_back({{float(m[0]*x+m[2]*y+m[4]),float(m[1]*x+m[3]*y+m[5])},Rml::ColourbPremultiplied(a,a,a,a),{uv[i][0],uv[i][1]}});

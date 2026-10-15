@@ -65,7 +65,15 @@ test('web player renders plugin items with matrix transforms, observes commands 
   const saved=JSON.parse(await readFile(savePath,'utf8'));
   assert.equal(saved.playerPresentation.extensions['cutout-animation'].instances[INSTANCE].ref,'hero-main');
   assert.equal(saved.playerPresentation.timeline,null);
+  // Clip event (plugin 1.8.0): the host keeps it with its payload and hands its sound to the
+  // player's audio (here a probe listener: the player itself is muted by default).
+  assert.equal(d.eventCount,0,'the 300 ms event fires on the following tick (half-open interval)');
+  await page.evaluate(()=>{window.__sounds=[];window.raisingExtensions.setSoundListener(s=>window.__sounds.push(s));});
   await tick(page,700);d=await describe(page);assert.equal(track(d,0).clip,'idle','one-shot returns to the default clip');
+  assert.deepEqual(d.events.map(e=>[e.instance,e.plugin,e.clip,e.name,e.int,e.string,e.audio,e.volume,e.balance]),[[INSTANCE,'cutout-animation','joy','cheer',7,'peak','anim-cheer',0.5,0.25]]);
+  assert.deepEqual([d.eventCount,d.soundCount,d.soundsDelivered],[1,1,1]);
+  assert.deepEqual(await page.evaluate(()=>window.__sounds),[{asset:'anim-cheer',volume:0.5,balance:0.25}]);
+  await page.evaluate(()=>window.raisingExtensions.setSoundListener(null));
   const chooser=page.waitForEvent('filechooser');await page.locator('[data-element-id="load"] button').click();await (await chooser).setFiles(savePath);
   await page.waitForFunction(id=>{const i=window.raisingExtensions.describe().instances.find(x=>x.instance===id);return i?.state?.tracks?.[0]?.clip==='joy';},INSTANCE);
   d=await describe(page);assert.equal(track(d,0).timeMs,300,'one-shot resumes at its saved time');

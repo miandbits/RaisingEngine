@@ -2,8 +2,10 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <set>
 #include "cutout/curve.hpp"
+#include "cutout/mesh.hpp"
 #include "cutout/runtime.hpp"
 
 namespace cutout {
@@ -22,9 +24,15 @@ Transform readT(const Json& o) {
   t.x = get("x", 0); t.y = get("y", 0); t.rotation = get("rotation", 0); t.scaleX = get("scaleX", 1); t.scaleY = get("scaleY", 1);
   return t;
 }
-void writeT(Json& o, const Transform& t) {
-  o["x"] = clean(t.x); o["y"] = clean(t.y);
-  auto opt = [&](const char* k, double v, double def) { v = clean(v); if (v == def) o.erase(k); else o[k] = v; };
+/** Finer rounding (1e-9) for ops that must leave the drawing unchanged (orientBones rotates
+ *  coordinates by arbitrary angles: 1e-6 rounding would move parts by up to ~1e-6 px). */
+double fine(double v) {
+  const double r = std::round(v * 1e9) / 1e9;
+  return r == 0 ? 0.0 : r;
+}
+void writeT(Json& o, const Transform& t, double (*round)(double) = clean) {
+  o["x"] = round(t.x); o["y"] = round(t.y);
+  auto opt = [&](const char* k, double v, double def) { v = round(v); if (v == def) o.erase(k); else o[k] = v; };
   opt("rotation", t.rotation, 0); opt("scaleX", t.scaleX, 1); opt("scaleY", t.scaleY, 1);
 }
 Affine local(const Transform& t) { return Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY); }
@@ -359,6 +367,38 @@ void dropBoneWeights(EditResult& r, const Str& boneId) {
 }
 
 // ---- Bones ----
+double boneLength(const Json& b) { return b.is_object() && b.contains("length") && b.at("length").is_number() ? b.at("length").get<double>() : 0; }
+/** `length` (px, 0..100000; 0 / null = point bone, the key is dropped) and `color` ("#rrggbb[aa]";
+ *  null / "" = default) of addBone/setBone (plugin 1.5.0). */
+void writeLook(Json& b, const Json& op) {
+  if (op.contains("length")) {
+    const double len = op.at("length").is_null() ? 0 : num(op, "length", 0);
+    if (!(len >= 0) || len > 100000) throw EditError("본 길이(length)는 0..100000 사이의 숫자(px)입니다.");
+    if (clean(len) == 0) b.erase("length"); else b["length"] = clean(len);
+  }
+  if (op.contains("color")) {
+    const Str c = optStr(op, "color");
+    if (c.empty()) b.erase("color");
+    else b["color"] = c;  // the edit is refused by validation when malformed (ANIM_BONE_COLOR)
+  }
+}
+/**
+ * A lower bone of a two-bone chain that gets a length would switch its implicit effector from
+ * its first child to its own tip (the 1.5.0 precedence). Gestures that set a length must never
+ * move a limb by surprise, so that child becomes the explicit `tip`.
+ */
+void pinLimbTips(EditResult& r, const Str& id) {
+  Json& d = r.data;
+  if (!d.contains("ik") || !d.at("ik").is_array()) return;
+  Str child;
+  for (const auto& c : arr(d, "bones")) if (parentOf(c) == id) { child = c.value("id", Str()); break; }
+  if (child.empty()) return;
+  for (auto& k : d["ik"])
+    if (k.is_object() && !k.contains("tip") && k.contains("bones") && k.at("bones").is_array() && k.at("bones").size() == 2 && k.at("bones")[1] == id) {
+      k["tip"] = child;
+      r.affected.push_back("ik:" + optStr(k, "id"));
+    }
+}
 void addBone(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str id = reqStr(op, "id");
@@ -374,17 +414,210 @@ void addBone(EditResult& r, const Json& op) {
   t.rotation = num(op, "rotation", 0); t.scaleX = num(op, "scaleX", 1); t.scaleY = num(op, "scaleY", 1);
   Json b{{"id", id}, {"parent", parent.empty() ? Json(nullptr) : Json(parent)}};
   writeT(b, t);
+  writeLook(b, op);
   arr(d, "bones").push_back(b);
   r.affected.push_back("bone:" + id);
 }
+/** `axes` of setBone (plugin 1.7.0): the space its x/y/rotation are given in. */
+Axes axesOf(const Json& op) {
+  if (!has(op, "axes")) return Axes::Local;
+  const auto a = op.at("axes").is_string() ? parseAxes(op.at("axes").get<Str>()) : std::nullopt;
+  if (!a) throw EditError("axes는 local, parent, world 중 하나입니다.");
+  return *a;
+}
+bool flag(const Json& op, const char* k) { return has(op, k) && op.at(k) == true; }
+/**
+ * Bone / image compensation (plugin 1.7.0, Spine "보정", setup pose only): the bones in `changed`
+ * got new setup transforms; their direct children that are not in `keep` (the selection, which
+ * moves on purpose) get local = newParentWorld^-1 · oldWorld, so they (and everything below them)
+ * stay where they were, and with `images` every attachment of their slots (default and skins) is
+ * re-placed the same way. `before` is the data before the change. Values use the fine rounding:
+ * the drawn result must stay within 1e-6 px.
+ */
+void compensate(EditResult& r, const Json& before, const std::set<Str>& changed, const std::set<Str>& keep, bool bones, bool images) {
+  if ((!bones && !images) || changed.empty()) return;
+  Json& d = r.data;
+  const auto oldWorld = setupWorld(before), newWorld = setupWorld(d);
+  bool skewed = false, keyed = false;
+  auto rebase = [&](const Str& parent, const Affine& oldInParent, const Transform& hint) {
+    double skew = 0;
+    const Transform t = decomposeNear(inverseOr(newWorld.at(parent), "본") * oldWorld.at(parent) * oldInParent, hint, &skew);
+    skewed = skewed || skew > 1e-6;
+    return t;
+  };
+  if (bones)
+    for (auto& c : arr(d, "bones")) {
+      const Str id = c.value("id", Str()), parent = parentOf(c);
+      if (!changed.count(parent) || keep.count(id) || !oldWorld.count(parent) || !newWorld.count(parent)) continue;
+      writeT(c, rebase(parent, local(readT(c)), readT(c)), fine);
+      keyed = keyed || targetHasKeys(d, "bone:" + id);
+      for (const auto& e : listOr(d, "expressions")) keyed = keyed || (e.contains("bones") && e.at("bones").is_object() && e.at("bones").contains(id));
+      r.affected.push_back("bone:" + id);
+    }
+  if (images) {
+    std::map<Str, Str> slotBone;
+    for (const auto& s : arr(d, "slots")) if (changed.count(s.value("bone", Str()))) slotBone[s.value("id", Str())] = s.value("bone", Str());
+    auto place = [&](Json& list) {
+      for (auto& a : list) {
+        if (!a.is_object() || !slotBone.count(a.value("slot", Str()))) continue;
+        const Str b = slotBone[a.value("slot", Str())];
+        if (!oldWorld.count(b) || !newWorld.count(b)) continue;
+        writeT(a, rebase(b, local(readT(a)), readT(a)), fine);
+        r.affected.push_back("slot:" + a.value("slot", Str()));
+      }
+    };
+    place(arr(d, "attachments"));
+    if (d.contains("skins") && d["skins"].is_array())
+      for (auto& sk : d["skins"]) if (sk.is_object() && sk.contains("attachments") && sk["attachments"].is_array()) place(sk["attachments"]);
+  }
+  if (skewed) warn(r, "ANIM_COMPENSATE_SKEW", "", "비균일 크기 때문에 보정한 자식·그림에 기울임이 생겨 조금 달라질 수 있습니다.");
+  if (keyed) warn(r, "ANIM_COMPENSATE_KEYS", "", "보정한 자식 본의 기존 키·표정 값은 이전 기본 자세 기준입니다(보정은 기본 자세만 바꿉니다).");
+}
 void setBone(EditResult& r, const Json& op) {
   const Str id = reqStr(op, "bone");
+  const bool compBones = flag(op, "compensateBones"), compImages = flag(op, "compensateImages");
+  const Json before = compBones || compImages ? r.data : Json();
   Json& b = bone(r.data, id);
   Transform t = readT(b);
-  t.x = num(op, "x", t.x); t.y = num(op, "y", t.y); t.rotation = num(op, "rotation", t.rotation);
+  if (const Axes axes = axesOf(op); axes != Axes::Local && (has(op, "x") || has(op, "y") || has(op, "rotation"))) {
+    // Values given in parent/world axes are converted through the parent's setup world.
+    const Str parent = parentOf(b);
+    const Affine pw = parent.empty() ? Affine{} : setupWorld(r.data).at(parent);
+    Transform shown = toAxes(t, pw, axes);
+    shown.x = num(op, "x", shown.x); shown.y = num(op, "y", shown.y); shown.rotation = num(op, "rotation", shown.rotation);
+    const auto back = fromAxes(shown, pw, axes, t);
+    if (!back) throw EditError("부모 본의 크기가 0이라 " + optStr(op, "axes") + " 값으로 바꿀 수 없습니다.");
+    t.x = back->x; t.y = back->y; t.rotation = back->rotation;
+  } else { t.x = num(op, "x", t.x); t.y = num(op, "y", t.y); t.rotation = num(op, "rotation", t.rotation); }
   t.scaleX = num(op, "scaleX", t.scaleX); t.scaleY = num(op, "scaleY", t.scaleY);
   writeT(b, t);
+  const bool hadLength = boneLength(b) > 0;
+  writeLook(b, op);
+  if (!hadLength && boneLength(bone(r.data, id)) > 0) pinLimbTips(r, id);
+  compensate(r, before, {id}, {id}, compBones, compImages);
   r.affected.push_back("bone:" + id);
+}
+/**
+ * transformBones {bones, delta: {x?, y?, rotation?, scaleX?, scaleY?}, space?, pivot?, clip?, timeMs?,
+ * compensateBones?, compensateImages?} (plugin 1.7.0): one gesture on a bone selection; the canvas
+ * drag of a selection (one bone or many) and the LLM share it.
+ * - x/y: a translation in rig px (`space` "world", default) or added to the local x/y ("parent").
+ *   Only the topmost selected bones move: a selected descendant already follows its parent.
+ * - rotation (degrees, clockwise on screen) / scaleX, scaleY (factors) about `pivot`:
+ *   "origin" (default): every selected bone turns / scales about its own origin (local rotation
+ *   += δ, a mirrored parent flips the sign; local scale ×= f), so a selected chain curls;
+ *   "centroid" (the mean of the selected bones' origins) or {x, y} (rig px): the topmost bones turn
+ *   as a group (origins rotated / scaled about the pivot in rig axes, rotation += δ, scale ×= f).
+ * Values come from the pose shown (FK + IK, no expressions); with `clip` + `timeMs` the result is
+ * keyed there (x+y, rotation, scaleX+scaleY: the channel groups that change), otherwise the setup
+ * pose is edited. compensateBones / compensateImages keep unselected children / attached images in
+ * place (setup pose only; with a clip they are ignored, warning ANIM_COMPENSATE_SETUP_ONLY).
+ * extra.bones = the bones that changed.
+ */
+void setKey(EditResult& r, const Json& op);
+void transformBones(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  if (!has(op, "bones") || !op.at("bones").is_array() || op.at("bones").empty()) throw EditError("bones는 바꿀 본 ID 배열입니다.");
+  std::vector<Str> ids;
+  for (const auto& v : op.at("bones")) {
+    const Str id = v.is_string() ? v.get<Str>() : Str();
+    bone(d, id);
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+  }
+  const std::set<Str> selected(ids.begin(), ids.end());
+  const Json delta = has(op, "delta") ? op.at("delta") : Json::object();
+  if (!delta.is_object()) throw EditError("delta는 {x, y, rotation, scaleX, scaleY} 객체입니다.");
+  const double dx = num(delta, "x", 0), dy = num(delta, "y", 0), dr = num(delta, "rotation", 0), fx = num(delta, "scaleX", 1), fy = num(delta, "scaleY", 1);
+  if (fx == 0 || fy == 0) throw EditError("크기 배율은 0이 될 수 없습니다.");
+  const Str space = optStr(op, "space", "world");
+  if (space != "world" && space != "parent") throw EditError("space는 world 또는 parent입니다.");
+  Rig rig;
+  try { rig = parseRig("transform", d); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+  for (auto& c : rig.clips) c.loop = false;  // a key at the clip's end samples the end pose, not time 0
+  const bool animate = has(op, "clip");
+  int64_t t = 0;
+  if (animate) {
+    t = ms(op, "timeMs");
+    const Json& c = clip(d, reqStr(op, "clip"));
+    if (t < 0 || t > c.value("durationMs", int64_t(0))) throw EditError("키 시간이 클립 범위 밖입니다.");
+  }
+  Look look;
+  look.expressions = false;  // keyable values, as the properties panel shows them
+  const Pose pose = samplePose(rig, animate ? rig.clipIndex(optStr(op, "clip")) : -1, double(t), look);
+  auto parentWorld = [&](int i) { const int p = rig.bones[size_t(i)].parentIndex; return p >= 0 ? pose.world[size_t(p)] : Affine{}; };
+  // Pivot: each bone's own origin, the selection centroid, or a rig-space point.
+  bool group = false;
+  double cx = 0, cy = 0;
+  if (has(op, "pivot") && op.at("pivot").is_object()) { group = true; cx = num(op.at("pivot"), "x", 0); cy = num(op.at("pivot"), "y", 0); }
+  else if (const Str pivot = optStr(op, "pivot", "origin"); pivot == "centroid") {
+    group = true;
+    for (const Str& id : ids) { const auto& w = pose.world[size_t(rig.boneIndex(id))]; cx += w.e / double(ids.size()); cy += w.f / double(ids.size()); }
+  } else if (pivot != "origin") throw EditError("pivot은 origin, centroid 또는 {x, y}입니다.");
+  auto topmost = [&](int i) {
+    for (int p = rig.bones[size_t(i)].parentIndex, guard = 0; p >= 0 && guard++ < int(rig.bones.size()); p = rig.bones[size_t(p)].parentIndex)
+      if (selected.count(rig.bones[size_t(p)].id)) return false;
+    return true;
+  };
+  struct Change { Str id; Transform next; bool moved, turned, scaled; };
+  std::vector<Change> changes;
+  for (const Str& id : ids) {
+    const int i = rig.boneIndex(id);
+    const bool top = topmost(i);
+    if (group && !top) continue;  // follows its selected ancestor as part of the group
+    const Transform cur = pose.bones[size_t(i)];
+    Transform next = cur;
+    const Affine pw = parentWorld(i);
+    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1;
+    next.rotation += sign * dr;
+    next.scaleX *= fx;
+    next.scaleY *= fy;
+    double wx = pose.world[size_t(i)].e, wy = pose.world[size_t(i)].f;
+    if (group) {
+      // The origin turns and scales about the pivot in rig axes.
+      const double ox = (wx - cx) * fx, oy = (wy - cy) * fy, cs = std::cos(dr * PI / 180), sn = std::sin(dr * PI / 180);
+      wx = cx + cs * ox - sn * oy;
+      wy = cy + sn * ox + cs * oy;
+    }
+    const bool translate = top && (dx != 0 || dy != 0);
+    if (translate && space == "world") { wx += dx; wy += dy; }
+    if (group || (translate && space == "world")) {
+      const auto inv = pw.inverse();
+      if (!inv) throw EditError("본 「" + id + "」의 부모 크기가 0이라 옮길 수 없습니다.");
+      inv->apply(wx, wy, next.x, next.y);
+    }
+    if (translate && space == "parent") { next.x += dx; next.y += dy; }
+    const bool moved = translate || std::fabs(next.x - cur.x) > 1e-9 || std::fabs(next.y - cur.y) > 1e-9;
+    const bool turned = dr != 0, scaled = fx != 1 || fy != 1;
+    if (moved || turned || scaled) changes.push_back({id, next, moved, turned, scaled});
+  }
+  if (changes.empty()) throw EditError("바뀐 본이 없습니다(delta가 비어 있습니다).");
+  const bool compBones = flag(op, "compensateBones"), compImages = flag(op, "compensateImages");
+  std::vector<Str> changed;
+  if (animate) {
+    if (compBones || compImages) warn(r, "ANIM_COMPENSATE_SETUP_ONLY", "", "본·이미지 보정은 조립(기본 자세)에서만 적용됩니다. 키에는 적용하지 않았습니다.");
+    const Str clipId = reqStr(op, "clip");
+    for (const auto& c : changes) {
+      auto key = [&](const char* prop, double v) { setKey(r, {{"clip", clipId}, {"target", "bone:" + c.id}, {"property", prop}, {"timeMs", t}, {"value", v}}); };
+      if (c.moved) { key("x", c.next.x); key("y", c.next.y); }
+      if (c.turned) key("rotation", c.next.rotation);
+      if (c.scaled) { key("scaleX", c.next.scaleX); key("scaleY", c.next.scaleY); }
+      changed.push_back(c.id);
+    }
+  } else {
+    const Json before = compBones || compImages ? d : Json();
+    for (const auto& c : changes) {
+      Json& b = bone(d, c.id);
+      Transform s = readT(b);
+      if (c.moved) { s.x = c.next.x; s.y = c.next.y; }
+      if (c.turned) s.rotation = c.next.rotation;
+      if (c.scaled) { s.scaleX = c.next.scaleX; s.scaleY = c.next.scaleY; }
+      writeT(b, s);
+      r.affected.push_back("bone:" + c.id);
+      changed.push_back(c.id);
+    }
+    compensate(r, before, std::set<Str>(changed.begin(), changed.end()), selected, compBones, compImages);
+  }
+  r.extra["bones"] = changed;
 }
 void reparentBone(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -745,12 +978,212 @@ Json refJson(const Str& target, const Str& property, int64_t t, const Str& attac
   if (property == "deform") j["attachment"] = attachment;
   return j;
 }
-std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op) {
+// ---- Clip events (plugin 1.8.0) ----
+// Keys live in clips[].events as {timeMs, name, int?, float?, string?}, identified by (timeMs, name)
+// (the first match when a document repeats one); rig-level `events` holds optional definitions.
+// Multi-key ops take them as refs {target: "event", property: <name>, timeMs}.
+constexpr const char* EVENT_TARGET = "event";
+constexpr int64_t EVENT_INT_LIMIT = 2147483647;
+const char* const EVENT_PAYLOAD[] = {"int", "float", "string"};
+bool isEventRef(const Json& k) { return k.is_object() && k.value("target", Str()) == EVENT_TARGET; }
+bool eventDefined(const Json& d, const Str& name) { return findIndex(listOr(d, "events"), "name", name) >= 0; }
+Json& eventDefAt(Json& d, const Str& name) {
+  const int i = findIndex(arr(d, "events"), "name", name);
+  if (i < 0) throw EditError("없는 이벤트 정의입니다: " + name);
+  return d["events"][size_t(i)];
+}
+void checkEventName(const Str& name) {
+  if (!validName(name)) throw EditError("이벤트 이름은 영문·숫자로 시작하고 영문·숫자·_·-만 씁니다(64자 이하): " + name);
+}
+/** Key names must be defined once the rig has definitions (else any valid name is a new event). */
+void requireEventName(const Json& d, const Str& name) {
+  checkEventName(name);
+  if (!listOr(d, "events").empty() && !eventDefined(d, name)) throw EditError("정의되지 않은 이벤트입니다. 먼저 이벤트 목록에 추가하세요: " + name);
+}
+int findEvent(Json& c, int64_t t, const Str& name) {
+  auto& events = arr(c, "events");
+  for (size_t i = 0; i < events.size(); i++) if (events[i].value("timeMs", int64_t(-1)) == t && events[i].value("name", Str()) == name) return int(i);
+  return -1;
+}
+int eventAt(Json& c, int64_t t, const Str& name) {
+  const int i = findEvent(c, t, name);
+  if (i < 0) throw EditError("그 시간에 이벤트 키가 없습니다: " + name + " " + std::to_string(t) + "ms");
+  return i;
+}
+void sortEvents(Json& c) {
+  auto& events = arr(c, "events");
+  std::stable_sort(events.begin(), events.end(), [](const Json& a, const Json& b) { return a.value("timeMs", int64_t(0)) < b.value("timeMs", int64_t(0)); });
+  if (events.empty()) c.erase("events");
+}
+Str eventRef(const Str& clipId, const Str& name, int64_t t) { return "key:" + clipId + "/" + EVENT_TARGET + "/" + name + "@" + std::to_string(t); }
+/** int/float/string (+ audio, volume, balance for definitions) from `op` onto `e`; null removes a field. */
+void writeEventPayload(Json& e, const Json& op, bool definition) {
+  for (const char* k : EVENT_PAYLOAD) {
+    if (!op.contains(k)) continue;
+    const Json& v = op.at(k);
+    if (v.is_null()) { e.erase(k); continue; }
+    if (Str(k) == "int") {
+      if (!v.is_number() || v.get<double>() != std::floor(v.get<double>()) || std::fabs(v.get<double>()) > double(EVENT_INT_LIMIT)) throw EditError("이벤트 int 값은 32비트 정수입니다.");
+      e[k] = int64_t(v.get<double>());
+    } else if (Str(k) == "float") e[k] = clean(num(op, k, 0));
+    else {
+      if (!v.is_string() || v.get_ref<const Str&>().size() > 1000) throw EditError("이벤트 string 값은 1000바이트 이하의 문자열입니다.");
+      e[k] = v;
+    }
+  }
+  if (!definition) return;
+  if (op.contains("audio")) {
+    const Json& v = op.at("audio");
+    if (v.is_null() || (v.is_string() && v.get_ref<const Str&>().empty())) e.erase("audio");
+    else if (!v.is_string() || v.get_ref<const Str&>().size() > 64) throw EditError("이벤트 소리(audio)는 오디오 에셋 ID입니다.");
+    else e["audio"] = v;
+  }
+  // Defaults are not stored: volume 1 and balance 0 are what a missing field means.
+  if (op.contains("volume")) {
+    const double v = num(op, "volume", 1);
+    if (v < 0 || v > 1) throw EditError("이벤트 음량(volume)은 0..1입니다.");
+    if (op.at("volume").is_null() || clean(v) == 1) e.erase("volume"); else e["volume"] = clean(v);
+  }
+  if (op.contains("balance")) {
+    const double v = num(op, "balance", 0);
+    if (v < -1 || v > 1) throw EditError("이벤트 좌우(balance)는 -1..1입니다.");
+    if (op.at("balance").is_null() || clean(v) == 0) e.erase("balance"); else e["balance"] = clean(v);
+  }
+}
+/** Event names used by keys of any clip, in first-use order. */
+std::vector<Str> usedEventNames(Json& d) {
+  std::vector<Str> out;
+  for (auto& c : arr(d, "clips"))
+    for (const auto& e : listOr(c, "events")) {
+      const Str n = e.value("name", Str());
+      if (!n.empty() && std::find(out.begin(), out.end(), n) == out.end()) out.push_back(n);
+    }
+  return out;
+}
+/** addEventDef {name, int?, float?, string?, audio?, volume?, balance?}. The first definition also
+ *  defines every name keys already use (extra.defined), so the rig stays valid. */
+void addEventDef(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str name = reqStr(op, "name");
+  checkEventName(name);
+  if (eventDefined(d, name)) throw EditError("이미 있는 이벤트 이름입니다: " + name);
+  Json defined = Json::array();
+  if (listOr(d, "events").empty())
+    for (const auto& used : usedEventNames(d))
+      if (used != name && validName(used)) { arr(d, "events").push_back({{"name", used}}); defined.push_back(used); }
+  Json e{{"name", name}};
+  writeEventPayload(e, op, true);
+  arr(d, "events").push_back(e);
+  r.extra["defined"] = defined;
+  r.affected.push_back("event:" + name);
+}
+/** setEventDef {event, int?, float?, string?, audio?, volume?, balance?}: null removes a field. */
+void setEventDef(EditResult& r, const Json& op) {
+  const Str name = reqStr(op, "event");
+  writeEventPayload(eventDefAt(r.data, name), op, true);
+  r.affected.push_back("event:" + name);
+}
+/** renameEventDef {event, name}: every key of the old name in every clip follows (extra.renamedKeys). */
+void renameEventDef(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "event"), to = reqStr(op, "name");
+  Json& e = eventDefAt(d, from);
+  if (from == to) return;
+  checkEventName(to);
+  if (eventDefined(d, to)) throw EditError("이미 있는 이벤트 이름입니다: " + to);
+  e["name"] = to;
+  size_t renamed = 0;
+  for (auto& c : arr(d, "clips"))
+    for (auto& k : arr(c, "events")) if (k.value("name", Str()) == from) { k["name"] = to; renamed++; }
+  for (auto& c : arr(d, "clips")) if (listOr(c, "events").empty()) c.erase("events");
+  r.extra["renamedKeys"] = renamed;
+  r.affected.push_back("event:" + to);
+}
+/** deleteEventDef {event, force?}: refused while keys use it unless force (then they go too). */
+void deleteEventDef(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str name = reqStr(op, "event");
+  eventDefAt(d, name);
+  size_t used = 0;
+  for (auto& c : arr(d, "clips")) for (const auto& k : listOr(c, "events")) used += k.value("name", Str()) == name;
+  if (used && !op.value("force", false)) throw EditError("이 이벤트를 쓰는 키가 " + std::to_string(used) + "개 있습니다. 키까지 지우려면 force를 지정하세요.");
+  for (auto& c : arr(d, "clips")) {
+    auto& events = arr(c, "events");
+    events.erase(std::remove_if(events.begin(), events.end(), [&](const Json& k) { return k.value("name", Str()) == name; }), events.end());
+    if (events.empty()) c.erase("events");
+  }
+  auto& defs = arr(d, "events");
+  defs.erase(defs.begin() + findIndex(defs, "name", name));
+  if (defs.empty()) d.erase("events");
+  r.extra["removedKeys"] = used;
+  r.affected.push_back("event:" + name);
+}
+/**
+ * setEventKey {clip, timeMs, name, newName?, int?, float?, string?}: creates the key (timeMs, name)
+ * or edits it; newName renames that one key; payload fields override the definition (null = use
+ * the definition's value again).
+ */
+void setEventKey(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip"), name = reqStr(op, "name");
+  Json& c = clip(d, clipId);
+  const int64_t t = ms(op, "timeMs"), duration = c.value("durationMs", int64_t(0));
+  if (t < 0 || t > duration) throw EditError("이벤트 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
+  int i = findEvent(c, t, name);
+  if (i < 0) {
+    requireEventName(d, name);
+    arr(c, "events").push_back({{"timeMs", t}, {"name", name}});
+    i = int(c["events"].size()) - 1;
+  }
+  Json& e = c["events"][size_t(i)];
+  Str now = name;
+  if (has(op, "newName") && optStr(op, "newName") != name) {
+    now = reqStr(op, "newName");
+    requireEventName(d, now);
+    if (findEvent(c, t, now) >= 0) throw EditError("같은 시간에 이미 그 이벤트 키가 있습니다: " + now);
+    e["name"] = now;
+  }
+  writeEventPayload(e, op, false);
+  sortEvents(c);
+  r.extra["keys"] = Json::array({refJson(EVENT_TARGET, now, t)});
+  r.affected.push_back(eventRef(clipId, now, t));
+}
+/** moveEventKey {clip, name, fromMs, toMs}: refused on range and on a same-name key at toMs. */
+void moveEventKey(EditResult& r, const Json& op) {
+  Json& c = clip(r.data, reqStr(op, "clip"));
+  const Str name = reqStr(op, "name");
+  const int64_t from = ms(op, "fromMs"), to = ms(op, "toMs"), duration = c.value("durationMs", int64_t(0));
+  const int i = eventAt(c, from, name);
+  if (from == to) return;
+  if (to < 0 || to > duration) throw EditError("이벤트 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
+  if (findEvent(c, to, name) >= 0) throw EditError("같은 시간에 이미 그 이벤트 키가 있습니다: " + name + " " + std::to_string(to) + "ms");
+  c["events"][size_t(i)]["timeMs"] = to;
+  sortEvents(c);
+  r.affected.push_back(eventRef(op.at("clip").get<Str>(), name, to));
+}
+void deleteEventKey(EditResult& r, const Json& op) {
+  Json& c = clip(r.data, reqStr(op, "clip"));
+  const Str name = reqStr(op, "name");
+  const int64_t t = ms(op, "timeMs");
+  auto& events = arr(c, "events");
+  events.erase(events.begin() + eventAt(c, t, name));
+  if (events.empty()) c.erase("events");
+  r.affected.push_back(eventRef(op.at("clip").get<Str>(), name, t));
+}
+
+/** Selected event keys (plugin 1.8.0): indices into the clip's `events`, each once. */
+using PickedEvents = std::set<size_t>;
+std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op, PickedEvents* events = nullptr) {
   if (!has(op, "keys") || !op.at("keys").is_array() || op.at("keys").empty() || op.at("keys").size() > MAX_KEYS)
     throw EditError("keys는 1.." + std::to_string(MAX_KEYS) + "개의 [{target, property, timeMs}] 배열입니다.");
   std::vector<Picked> out;
   for (const auto& k : op.at("keys")) {
     if (!k.is_object()) throw EditError("keys 항목은 {target, property, timeMs} 객체입니다.");
+    if (isEventRef(k)) {
+      if (!events) throw EditError("이 명령은 이벤트 키를 다루지 않습니다.");
+      events->insert(size_t(eventAt(c, ms(k, "timeMs"), reqStr(k, "property"))));
+      continue;
+    }
     target(d, k);
     const Str tg = k.at("target").get<Str>(), prop = k.at("property").get<Str>(), attachment = prop == "deform" ? optStr(k, "attachment") : Str();
     const int64_t t = ms(k, "timeMs");
@@ -763,8 +1196,14 @@ std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op) {
   }
   return out;
 }
+/** Earliest / latest time of a selection (tracks and event keys). */
+void selectionSpan(Json& c, const std::vector<Picked>& picked, const PickedEvents& events, int64_t& lo, int64_t& hi) {
+  lo = INT64_MAX; hi = INT64_MIN;
+  for (const auto& p : picked) { lo = std::min(lo, *p.times.begin()); hi = std::max(hi, *p.times.rbegin()); }
+  for (size_t i : events) { const int64_t t = c["events"][i].value("timeMs", int64_t(0)); lo = std::min(lo, t); hi = std::max(hi, t); }
+}
 /** Re-time the picked keys with `map`; refuses out-of-range, merged and colliding keys before changing anything. */
-void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& picked, const std::function<int64_t(int64_t)>& map) {
+void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& picked, const std::function<int64_t(int64_t)>& map, const PickedEvents& events = {}) {
   const int64_t duration = c.value("durationMs", int64_t(0));
   for (const auto& p : picked) {
     std::set<int64_t> mapped;
@@ -777,6 +1216,20 @@ void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& 
       const int64_t t = k.value("timeMs", int64_t(-1));
       if (!p.times.count(t) && mapped.count(t)) throw EditError("같은 시간에 이미 키가 있습니다: " + p.target + " " + p.property + " " + std::to_string(t) + "ms");
     }
+  }
+  // Event keys collide only with keys of the same name (different events may share a time).
+  if (!events.empty()) {
+    std::set<std::pair<int64_t, Str>> mapped;
+    auto& list = arr(c, "events");
+    for (size_t i : events) {
+      const int64_t to = map(list[i].value("timeMs", int64_t(0)));
+      const Str name = list[i].value("name", Str());
+      if (to < 0 || to > duration) throw EditError("옮긴 이벤트가 클립 범위(0.." + std::to_string(duration) + "ms) 밖으로 나갑니다: " + std::to_string(to) + "ms");
+      if (!mapped.insert({to, name}).second) throw EditError("간격이 너무 좁아져 이벤트가 같은 시간에 겹칩니다: " + name + " " + std::to_string(to) + "ms");
+    }
+    for (size_t i = 0; i < list.size(); i++)
+      if (!events.count(i) && mapped.count({list[i].value("timeMs", int64_t(-1)), list[i].value("name", Str())}))
+        throw EditError("같은 시간에 이미 그 이벤트 키가 있습니다: " + list[i].value("name", Str()) + " " + std::to_string(list[i].value("timeMs", int64_t(-1))) + "ms");
   }
   Json moved = Json::array();
   for (auto& p : picked) {
@@ -793,40 +1246,53 @@ void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& 
     // Normalized curves ride along with their key: segment shapes stay, only their timing changes.
     sortKeys(*p.track);
   }
+  if (!events.empty()) {
+    auto& list = arr(c, "events");
+    for (size_t i : events) {
+      const int64_t to = map(list[i].value("timeMs", int64_t(0)));
+      list[i]["timeMs"] = to;
+      moved.push_back(refJson(EVENT_TARGET, list[i].value("name", Str()), to));
+      r.affected.push_back(eventRef(clipId, list[i].value("name", Str()), to));
+    }
+    sortEvents(c);
+  }
   r.extra["keys"] = moved;
 }
 void moveKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str clipId = reqStr(op, "clip");
   Json& c = clip(d, clipId);
-  auto picked = pickKeys(d, c, op);
+  PickedEvents events;
+  auto picked = pickKeys(d, c, op, &events);
   int64_t delta = ms(op, "deltaMs");
-  int64_t lo = INT64_MAX, hi = INT64_MIN;
-  for (const auto& p : picked) { lo = std::min(lo, *p.times.begin()); hi = std::max(hi, *p.times.rbegin()); }
+  int64_t lo, hi;
+  selectionSpan(c, picked, events, lo, hi);
   // clamp: a drag past the clip edge stops the whole group there and keeps its spacing.
   if (op.value("clamp", false)) delta = std::clamp<int64_t>(delta, -lo, std::max<int64_t>(-lo, c.value("durationMs", int64_t(0)) - hi));
   r.extra["deltaMs"] = delta;
   if (delta == 0) { r.extra["keys"] = Json::array(); return; }
-  retimeKeys(r, c, clipId, picked, [delta](int64_t t) { return t + delta; });
+  retimeKeys(r, c, clipId, picked, [delta](int64_t t) { return t + delta; }, events);
 }
 void scaleKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str clipId = reqStr(op, "clip");
   Json& c = clip(d, clipId);
-  auto picked = pickKeys(d, c, op);
+  PickedEvents events;
+  auto picked = pickKeys(d, c, op, &events);
   const double factor = num(op, "factor", 1);
   if (!(factor > 0) || factor > 1000) throw EditError("factor(시간 배율)는 0보다 크고 1000 이하여야 합니다.");
-  int64_t pivot = INT64_MAX;
-  for (const auto& p : picked) pivot = std::min(pivot, *p.times.begin());
+  int64_t pivot, hi;
+  selectionSpan(c, picked, events, pivot, hi);
   if (has(op, "pivotMs")) pivot = ms(op, "pivotMs");
   if (factor == 1) { r.extra["keys"] = Json::array(); return; }
-  retimeKeys(r, c, clipId, picked, [pivot, factor](int64_t t) { return pivot + int64_t(std::llround(double(t - pivot) * factor)); });
+  retimeKeys(r, c, clipId, picked, [pivot, factor](int64_t t) { return pivot + int64_t(std::llround(double(t - pivot) * factor)); }, events);
 }
 void deleteKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str clipId = reqStr(op, "clip");
   Json& c = clip(d, clipId);
-  auto picked = pickKeys(d, c, op);
+  PickedEvents events;
+  auto picked = pickKeys(d, c, op, &events);
   for (auto& p : picked) {
     auto& keys = arr(*p.track, "keys");
     keys.erase(std::remove_if(keys.begin(), keys.end(), [&](const Json& k) { return p.times.count(k.value("timeMs", int64_t(-1))) > 0; }), keys.end());
@@ -834,18 +1300,28 @@ void deleteKeys(EditResult& r, const Json& op) {
   }
   auto& tracks = arr(c, "tracks");
   tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [](const Json& t) { return !t.contains("keys") || !t.at("keys").is_array() || t.at("keys").empty(); }), tracks.end());
+  if (!events.empty()) {
+    auto& list = arr(c, "events");
+    for (auto it = events.rbegin(); it != events.rend(); ++it) {
+      r.affected.push_back(eventRef(clipId, list[*it].value("name", Str()), list[*it].value("timeMs", int64_t(0))));
+      list.erase(list.begin() + int64_t(*it));
+    }
+    if (list.empty()) c.erase("events");
+  }
 }
 /**
  * Clipboard of keys (no data change): extra.clipboard = {keys: [{target, property, offsetMs,
  * value, interp?, curve?}], fromMs} with offsets from the earliest copied key, so it can be
  * pasted at any time of any clip. Numeric keys always carry their interp; attachment keys never do.
+ * Event keys copy as {target: "event", property: <name>, offsetMs, int?, float?, string?}.
  */
 void copyKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   Json& c = clip(d, reqStr(op, "clip"));
-  const auto picked = pickKeys(d, c, op);
-  int64_t lo = INT64_MAX;
-  for (const auto& p : picked) lo = std::min(lo, *p.times.begin());
+  PickedEvents events;
+  const auto picked = pickKeys(d, c, op, &events);
+  int64_t lo, hi;
+  selectionSpan(c, picked, events, lo, hi);
   Json keys = Json::array();
   for (const auto& p : picked)
     for (const auto& k : p.track->at("keys")) {
@@ -859,12 +1335,19 @@ void copyKeys(EditResult& r, const Json& op) {
       }
       keys.push_back(e);
     }
+  for (size_t i : events) {
+    const Json& k = c["events"][i];
+    Json e{{"target", EVENT_TARGET}, {"property", k.value("name", Str())}, {"offsetMs", k.value("timeMs", int64_t(0)) - lo}};
+    for (const char* f : EVENT_PAYLOAD) if (k.contains(f)) e[f] = k.at(f);
+    keys.push_back(e);
+  }
   r.extra["clipboard"] = {{"keys", keys}, {"fromMs", lo}};
 }
 /**
  * Paste a clipboard at `timeMs` of `clip`. Same-time keys are overwritten (value and, when
  * the entry has one, interpolation). `target` re-targets a clipboard that holds one target
- * only (copy a row, paste onto another bone). Out-of-range offsets refuse the whole paste.
+ * only (copy a row, paste onto another bone); event entries always keep their event.
+ * Out-of-range offsets refuse the whole paste.
  */
 void pasteKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -878,7 +1361,7 @@ void pasteKeys(EditResult& r, const Json& op) {
   size_t outside = 0;
   for (const auto& e : op.at("keys")) {
     if (!e.is_object()) throw EditError("붙여넣을 키는 {target, property, offsetMs, value} 객체입니다.");
-    targets.insert(reqStr(e, "target"));
+    if (reqStr(e, "target") != EVENT_TARGET) targets.insert(reqStr(e, "target"));
     const int64_t offset = ms(e, "offsetMs");
     if (offset < 0) throw EditError("offsetMs는 0 이상이어야 합니다.");
     outside += at + offset > duration;
@@ -888,8 +1371,18 @@ void pasteKeys(EditResult& r, const Json& op) {
   if (outside) throw EditError("붙여넣을 키 " + std::to_string(outside) + "개가 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다. 재생 헤드를 앞으로 옮기세요.");
   Json pasted = Json::array();
   for (const auto& e : op.at("keys")) {
-    const Str tg = retarget.empty() ? e.at("target").get<Str>() : retarget, prop = optStr(e, "property");
     const int64_t t = at + ms(e, "offsetMs");
+    if (e.at("target") == EVENT_TARGET) {
+      // An event key at the same time and name is replaced, payload included.
+      const Str name = reqStr(e, "property");
+      if (const int i = findEvent(c, t, name); i >= 0) for (const char* f : EVENT_PAYLOAD) c["events"][size_t(i)].erase(f);
+      Json set{{"clip", clipId}, {"timeMs", t}, {"name", name}};
+      for (const char* f : EVENT_PAYLOAD) if (has(e, f)) set[f] = e.at(f);
+      setEventKey(r, set);
+      pasted.push_back(refJson(EVENT_TARGET, name, t));
+      continue;
+    }
+    const Str tg = retarget.empty() ? e.at("target").get<Str>() : retarget, prop = optStr(e, "property");
     Json set{{"clip", clipId}, {"target", tg}, {"property", prop}, {"timeMs", t}};
     if (e.contains("value")) set["value"] = e.at("value");
     for (const char* k : {"interp", "curve", "attachment", "offsets"}) if (has(e, k)) set[k] = e.at(k);
@@ -1489,6 +1982,248 @@ bool naturalAimAxis(const Rig& rig, int bone, double& degrees, double& reach) {
   reach = far > 1 ? far : dist;
   return true;
 }
+// ---- Bone length and orientation (plugin 1.5.0) ----
+/** The listed `bones` (validated), or every bone in array order when absent. */
+std::vector<Str> boneList(Json& d, const Json& op) {
+  std::vector<Str> ids;
+  if (has(op, "bones")) {
+    if (!op.at("bones").is_array()) throw EditError("bones는 본 ID 배열입니다.");
+    for (const auto& v : op.at("bones")) { ids.push_back(v.is_string() ? v.get<Str>() : Str()); bone(d, ids.back()); }
+  } else for (const auto& b : arr(d, "bones")) ids.push_back(b.value("id", Str()));
+  return ids;
+}
+/**
+ * fitBoneLengths {bones?} ("자동 길이"): each bone's length becomes the distance (in its own
+ * space) to its first child bone (array order). Bones without a child keep theirs. A lower bone of
+ * a two-bone chain keeps its effector (the child is pinned as `tip`). extra.lengths {id: length}.
+ */
+void fitBoneLengths(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Json lengths = Json::object();
+  for (const Str& id : boneList(d, op)) {
+    const Json* child = nullptr;
+    for (const auto& c : arr(d, "bones")) if (parentOf(c) == id) { child = &c; break; }
+    if (!child) { if (has(op, "bones")) warn(r, "ANIM_BONE_NO_CHILD", "", "본 「" + id + "」에는 자식 본이 없어 길이를 그대로 둡니다."); continue; }
+    const Transform t = readT(*child);
+    const double len = clean(std::hypot(t.x, t.y));
+    Json& b = bone(d, id);
+    if (len == boneLength(b)) continue;
+    const bool had = boneLength(b) > 0;
+    writeLook(b, {{"length", len}});
+    if (!had && len > 0) pinLimbTips(r, id);
+    lengths[id] = len;
+    r.affected.push_back("bone:" + id);
+  }
+  if (lengths.empty()) throw EditError("길이를 바꿀 본이 없습니다(자식 본이 없거나 길이가 이미 맞습니다).");
+  r.extra["lengths"] = lengths;
+}
+/** Uniform scale (scaleX = scaleY at every time): only then does L · R(δ) stay a T·R·S transform
+ *  with rotation + δ, so a bone frame can turn without changing what is drawn. */
+bool uniformScale(Json& d, const Str& id) {
+  const Transform t = readT(bone(d, id));
+  if (std::fabs(t.scaleX - t.scaleY) > 1e-12) return false;
+  const Str target = "bone:" + id;
+  auto keyed = [](const Json* tr) { return tr && tr->contains("keys") && tr->at("keys").is_array() && !tr->at("keys").empty(); };
+  for (auto& c : arr(d, "clips")) {
+    const Json* sx = findTrack(c, target, "scaleX");
+    const Json* sy = findTrack(c, target, "scaleY");
+    if (keyed(sx) && keyed(sy)) { if (sx->at("keys") != sy->at("keys")) return false; continue; }
+    if (const Json* one = keyed(sx) ? sx : keyed(sy) ? sy : nullptr)
+      for (const auto& k : one->at("keys")) if (!k.contains("value") || !k.at("value").is_number() || k.at("value").get<double>() != t.scaleX) return false;
+  }
+  for (const auto& e : listOr(d, "expressions"))
+    if (e.contains("bones") && e.at("bones").is_object() && e.at("bones").contains(id)) {
+      const Json& o = e.at("bones").at(id);
+      if (o.contains("scaleX") != o.contains("scaleY") || (o.contains("scaleX") && o.at("scaleX") != o.at("scaleY"))) return false;
+    }
+  return true;
+}
+/**
+ * The x/y keys of a child bone are a vector in its parent's frame: turning that frame rotates the
+ * pair, which needs both channels at the same key times with the same interpolation (a linear map
+ * commutes with any shared easing). A source (clip or expression) keying one channel alone is
+ * fine only while no source keys the other one: that channel is then always its setup value.
+ * Returns "" when the child can be rotated, else the reason.
+ */
+Str pairProblem(Json& d, const Str& child) {
+  const Str target = "bone:" + child;
+  bool onlyX = false, onlyY = false, anyX = false, anyY = false;
+  auto keyed = [](const Json* tr) { return tr && tr->contains("keys") && tr->at("keys").is_array() && !tr->at("keys").empty(); };
+  for (auto& c : arr(d, "clips")) {
+    const Json* tx = findTrack(c, target, "x");
+    const Json* ty = findTrack(c, target, "y");
+    const bool kx = keyed(tx), ky = keyed(ty);
+    anyX = anyX || kx; anyY = anyY || ky;
+    onlyX = onlyX || (kx && !ky); onlyY = onlyY || (ky && !kx);
+    if (kx && ky) {
+      const Json& a = tx->at("keys");
+      const Json& b = ty->at("keys");
+      if (a.size() != b.size()) return "자식 본 「" + child + "」의 x·y 키 시간이 서로 다릅니다";
+      for (size_t i = 0; i < a.size(); i++)
+        if (a[i].value("timeMs", -1.0) != b[i].value("timeMs", -1.0) || a[i].value("interp", Str("linear")) != b[i].value("interp", Str("linear")) ||
+            (a[i].value("interp", Str()) == "bezier" && a[i].value("curve", Json()) != b[i].value("curve", Json())))
+          return "자식 본 「" + child + "」의 x·y 키 시간이나 보간이 서로 다릅니다";
+    }
+  }
+  for (const auto& e : listOr(d, "expressions"))
+    if (e.contains("bones") && e.at("bones").is_object() && e.at("bones").contains(child)) {
+      const Json& o = e.at("bones").at(child);
+      anyX = anyX || o.contains("x"); anyY = anyY || o.contains("y");
+      onlyX = onlyX || (o.contains("x") && !o.contains("y")); onlyY = onlyY || (o.contains("y") && !o.contains("x"));
+    }
+  if ((onlyX && anyY) || (onlyY && anyX)) return "자식 본 「" + child + "」의 x와 y를 따로 키한 클립·표정이 있습니다";
+  return "";
+}
+/** (x, y) seen from a frame turned by `deg`: R(-deg) · (x, y). */
+void unturn(double deg, double& x, double& y) {
+  const double a = deg * PI / 180, c = std::cos(a), s = std::sin(a), x0 = x;
+  x = c * x0 + s * y;
+  y = -s * x0 + c * y;
+}
+/** Turn bone `id`'s frame by `delta` degrees (L' = L · R(δ)) and express everything that lives in
+ *  it (child bones and their keys/expressions, attachments in every skin, aim axes) in the new
+ *  frame, so every pose draws exactly as before (the caller checked uniform scale and pairs). */
+void turnFrame(EditResult& r, const Str& id, double delta) {
+  Json& d = r.data;
+  const Str self = "bone:" + id;
+  auto shift = [&](Json& v, double by) { if (v.is_number()) v = fine(v.get<double>() + by); };
+  // The bone itself: rotation + δ (setup, keys, expression overrides).
+  { Json& b = bone(d, id); Transform t = readT(b); t.rotation += delta; writeT(b, t, fine); }
+  for (auto& c : arr(d, "clips"))
+    if (Json* tr = findTrack(c, self, "rotation")) for (auto& k : arr(*tr, "keys")) if (k.contains("value")) shift(k["value"], delta);
+  if (d.contains("expressions") && d["expressions"].is_array())
+    for (auto& e : d["expressions"])
+      if (e.contains("bones") && e["bones"].is_object() && e["bones"].contains(id) && e["bones"][id].contains("rotation")) shift(e["bones"][id]["rotation"], delta);
+  // Aim axes are bone-local directions: the same direction is δ less in the turned frame.
+  if (d.contains("ik") && d["ik"].is_array())
+    for (auto& k : d["ik"])
+      if (k.is_object() && k.contains("bones") && k["bones"] == Json::array({id})) {
+        double axis = std::fmod(k.value("aimAxis", 0.0) - delta, 360.0);
+        if (axis > 180) axis -= 360;
+        else if (axis <= -180) axis += 360;
+        const double rounded = fine(axis);
+        if (rounded == 0) k.erase("aimAxis"); else k["aimAxis"] = rounded;
+        r.affected.push_back("ik:" + optStr(k, "id"));
+      }
+  // Children: position R(-δ)·p, rotation - δ; key pairs rotate together (missing partner = setup).
+  for (auto& cb : arr(d, "bones")) {
+    if (parentOf(cb) != id) continue;
+    const Str child = cb.value("id", Str()), target = "bone:" + child;
+    const Transform setup = readT(cb);
+    Transform t = setup;
+    unturn(delta, t.x, t.y);
+    t.rotation -= delta;
+    writeT(cb, t, fine);
+    for (auto& c : arr(d, "clips")) {
+      Json* tx = findTrack(c, target, "x");
+      Json* ty = findTrack(c, target, "y");
+      const bool kx = tx && !arr(*tx, "keys").empty(), ky = ty && !arr(*ty, "keys").empty();
+      if (kx != ky) {  // the partner channel is constant (pairProblem): key it at the same times
+        Json made = kx ? *tx : *ty;
+        made["property"] = kx ? "y" : "x";
+        for (auto& k : made["keys"]) k["value"] = kx ? setup.y : setup.x;
+        if (Json* empty = kx ? ty : tx) *empty = made; else arr(c, "tracks").push_back(made);
+        tx = findTrack(c, target, "x");
+        ty = findTrack(c, target, "y");
+      }
+      if (kx || ky)
+        for (size_t i = 0; i < (*tx)["keys"].size(); i++) {
+          Json& a = (*tx)["keys"][i];
+          Json& b = (*ty)["keys"][i];
+          double x = a.value("value", setup.x), y = b.value("value", setup.y);
+          unturn(delta, x, y);
+          a["value"] = fine(x);
+          b["value"] = fine(y);
+        }
+      if (Json* tr = findTrack(c, target, "rotation")) for (auto& k : arr(*tr, "keys")) if (k.contains("value")) shift(k["value"], -delta);
+    }
+    if (d.contains("expressions") && d["expressions"].is_array())
+      for (auto& e : d["expressions"]) {
+        if (!e.contains("bones") || !e["bones"].is_object() || !e["bones"].contains(child)) continue;
+        Json& o = e["bones"][child];
+        if (o.contains("x") || o.contains("y")) {
+          double x = o.value("x", setup.x), y = o.value("y", setup.y);
+          unturn(delta, x, y);
+          o["x"] = fine(x);
+          o["y"] = fine(y);
+        }
+        if (o.contains("rotation")) shift(o["rotation"], -delta);
+      }
+    r.affected.push_back(target);
+  }
+  // Attachments of its slots, default and every skin: placement R(-δ)·offset.
+  std::set<Str> slotsOn;
+  for (const auto& sl : arr(d, "slots")) if (sl.value("bone", Str()) == id) slotsOn.insert(sl.value("id", Str()));
+  auto place = [&](Json& list) {
+    for (auto& a : list) {
+      if (!a.is_object() || !slotsOn.count(a.value("slot", Str()))) continue;
+      double x = a.value("x", 0.0), y = a.value("y", 0.0);
+      unturn(delta, x, y);
+      a["x"] = fine(x);
+      a["y"] = fine(y);
+      const double rot = fine(a.value("rotation", 0.0) - delta);
+      if (rot == 0) a.erase("rotation"); else a["rotation"] = rot;
+    }
+  };
+  place(arr(d, "attachments"));
+  if (d.contains("skins") && d["skins"].is_array()) for (auto& sk : d["skins"]) if (sk.is_object() && sk.contains("attachments")) place(sk["attachments"]);
+  for (const auto& sl : slotsOn) r.affected.push_back("slot:" + sl);
+  r.affected.push_back(self);
+}
+/**
+ * orientBones {bones?, fitLength? = true} ("본 방향 맞추기", migration of point-bone rigs): turns
+ * each bone's frame so +x points along its natural direction (first child bone, else its images:
+ * naturalAimAxis) and, with fitLength, sets its length to that reach, while every pose draws
+ * exactly as before (turnFrame). A bone is skipped (extra.skipped {id: reason}, warning
+ * ANIM_ORIENT_SKIPPED when listed) when it already has a length, has nothing to point at, has a
+ * non-uniform or mirrored scale anywhere, or a child whose x/y keys cannot rotate as pairs. Aim
+ * axes shrink by the turn (an arm aimed with aimAxis 90 ends at +x: no axis). The lower bone of a
+ * two-bone chain only gets a length when it keeps its effector (a child, pinned as `tip`).
+ * extra.oriented {id: degrees turned}.
+ */
+void orientBones(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const bool fitLength = !has(op, "fitLength") || op.at("fitLength") == true;
+  const std::vector<Str> ids = boneList(d, op);
+  Json oriented = Json::object(), skipped = Json::object();
+  for (const Str& id : ids) {
+    auto skip = [&](const Str& why) {
+      skipped[id] = why;
+      if (has(op, "bones")) warn(r, "ANIM_ORIENT_SKIPPED", "", "본 「" + id + "」: " + why);
+    };
+    if (boneLength(bone(d, id)) > 0) { skip("이미 길이가 있어 방향이 정해져 있습니다"); continue; }
+    Rig rig;
+    try { rig = parseRig("orient", d); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+    double degrees = 0, reach = 0;
+    if (!naturalAimAxis(rig, rig.boneIndex(id), degrees, reach)) { skip("가리킬 자식 본이나 그림이 없습니다"); continue; }
+    if (!uniformScale(d, id)) { skip("크기가 가로·세로 달라(또는 뒤집혀) 방향만 돌릴 수 없습니다"); continue; }
+    Str problem;
+    for (const auto& c : arr(d, "bones")) if (problem.empty() && parentOf(c) == id) problem = pairProblem(d, c.value("id", Str()));
+    if (!problem.empty()) { skip(problem); continue; }
+    // A lower bone without a child would switch its effector from its origin to the new tip.
+    bool lowerWithoutChild = false;
+    for (const auto& k : listOr(d, "ik"))
+      if (!k.contains("tip") && k.contains("bones") && k.at("bones").is_array() && k.at("bones").size() == 2 && k.at("bones")[1] == id) {
+        bool child = false;
+        for (const auto& c : arr(d, "bones")) child = child || parentOf(c) == id;
+        lowerWithoutChild = lowerWithoutChild || !child;
+      }
+    const double delta = clean(degrees);
+    const bool lengthen = fitLength && clean(reach) > 0 && !lowerWithoutChild;
+    if (fitLength && clean(reach) > 0 && lowerWithoutChild) warn(r, "ANIM_ORIENT_SKIPPED", "", "본 「" + id + "」: 두 본 IK의 끝점이 바뀌지 않도록 길이는 넣지 않았습니다.");
+    if (delta == 0 && !lengthen) continue;  // already pointing there: nothing to change
+    if (delta != 0) turnFrame(r, id, delta);
+    if (lengthen) {
+      writeLook(bone(d, id), {{"length", reach}});
+      pinLimbTips(r, id);
+    }
+    oriented[id] = delta;
+    r.affected.push_back("bone:" + id);
+  }
+  if (oriented.empty()) throw EditError(skipped.empty() ? Str("방향을 맞출 본이 없습니다.") : "방향을 맞출 수 있는 본이 없습니다: " + skipped.begin().value().get<Str>());
+  r.extra["oriented"] = oriented;
+  r.extra["skipped"] = skipped;
+}
 /**
  * addIk {id?, name?, bones: [parent?, child], target? | createTarget: true (+ targetId?,
  * targetParent?), mix?, bendPositive?, order?, aimAxis?}. createTarget adds a bone at the chain
@@ -1518,7 +2253,10 @@ void addIk(EditResult& r, const Json& op) {
     tip = rig.boneIndex(reqStr(op, "tip"));
     if (rig.bones[size_t(tip)].parentIndex != end) throw EditError("끝점(tip)은 아래 본 「" + chain.back() + "」의 직접 자식이어야 합니다: " + reqStr(op, "tip"));
   }
-  for (size_t i = 0; i < rig.bones.size() && tip < 0; i++) if (rig.bones[i].parentIndex == end) tip = int(i);
+  // A lower bone with a length (plugin 1.5.0) reaches with its own tip: no child is picked then.
+  const double endLength = rig.bones[size_t(end)].length;
+  const bool lengthTip = chain.size() == 2 && tip < 0 && endLength > 0;
+  for (size_t i = 0; i < rig.bones.size() && tip < 0 && !lengthTip; i++) if (rig.bones[i].parentIndex == end) tip = int(i);
   Json k{{"id", id}, {"name", displayName(op, id)}, {"bones", chain}};
   // A known end becomes the explicit effector: adding a sibling bone later never changes the limb.
   if (chain.size() == 2 && tip >= 0) k["tip"] = rig.bones[size_t(tip)].id;
@@ -1528,9 +2266,18 @@ void addIk(EditResult& r, const Json& op) {
     if (chain.size() != 1) throw EditError("조준 축(aimAxis)은 조준 IK(본 1개)에만 지정합니다.");
     axis = aimAxisOf(op);
     double natural = 0;
-    naturalAimAxis(rig, end, natural, reach);
+    if (endLength > 0) reach = endLength;
+    else naturalAimAxis(rig, end, natural, reach);
     hasAxis = true;
+  } else if (chain.size() == 1 && endLength > 0) {
+    hasAxis = true;  // a bone with a length points along +x (Spine): that is its natural aim
+    reach = endLength;
   } else if (chain.size() == 1) hasAxis = naturalAimAxis(rig, end, axis, reach);
+  // The two-bone effector as shown now (rig space); `effector` false = none (the origin aims).
+  double ex = 0, ey = 0;
+  const bool effector = chain.size() == 2 && (tip >= 0 || lengthTip);
+  if (tip >= 0) { ex = pose.world[size_t(tip)].e; ey = pose.world[size_t(tip)].f; }
+  else if (lengthTip) pose.world[size_t(end)].apply(endLength, 0, ex, ey);
   if (chain.size() == 1) putAimAxis(k, axis);
   Str target = optStr(op, "target");
   if (target.empty()) {
@@ -1538,7 +2285,7 @@ void addIk(EditResult& r, const Json& op) {
     // Where the chain end is shown now: the solve then starts from the current pose.
     const Affine& w = pose.world[size_t(end)];
     double wx = w.e, wy = w.f;
-    if (chain.size() == 2 && tip >= 0) { wx = pose.world[size_t(tip)].e; wy = pose.world[size_t(tip)].f; }
+    if (effector) { wx = ex; wy = ey; }
     else if (chain.size() == 1 && hasAxis) {
       // On the aim axis at the bone's own length (child or image end): solving changes nothing.
       const double cx = std::cos(axis * PI / 180), cy = std::sin(axis * PI / 180);
@@ -1574,13 +2321,12 @@ void addIk(EditResult& r, const Json& op) {
   if (has(op, "bendPositive")) {
     if (!op.at("bendPositive").is_boolean()) throw EditError("bendPositive는 true 또는 false입니다.");
     bend = op.at("bendPositive").get<bool>();
-  } else if (chain.size() == 2 && tip >= 0) {
+  } else if (effector) {
     // Keep the side the limb bends to now (the angle between its two links, on screen).
     const int up = rig.boneIndex(chain[0]);
     const Affine& u = pose.world[size_t(up)];
     const Affine& l = pose.world[size_t(end)];
-    const Affine& e = pose.world[size_t(tip)];
-    const double cross = (l.e - u.e) * (e.f - l.f) - (l.f - u.f) * (e.e - l.e);
+    const double cross = (l.e - u.e) * (ey - l.f) - (l.f - u.f) * (ex - l.e);
     bend = cross >= 0;
   }
   k["bendPositive"] = bend;
@@ -2066,6 +2812,438 @@ void unbindMesh(EditResult& r, const Json& op) {
   r.affected.push_back("slot:" + slotId);
 }
 
+// ---- Freeform meshes (plugin 1.6.0): outlines, vertex / edge edits, re-triangulation ----
+/** Where a vertex of the edited mesh comes from: an old vertex (`from`), or a point inside the
+ *  old setup mesh (its triangle and barycentric shares), so uvs, weights and deform offsets of new
+ *  vertices blend their neighbours' and the picture does not move. */
+struct Origin { int from = -1; int v[3] = {-1, -1, -1}; double w[3] = {0, 0, 0}; };
+Origin locateIn(const std::vector<double>& xy, const std::vector<int>& tris, double px, double py) {
+  Origin best;
+  double bestD = std::numeric_limits<double>::infinity();
+  auto X = [&](int i) { return xy[2 * size_t(i)]; };
+  auto Y = [&](int i) { return xy[2 * size_t(i) + 1]; };
+  for (size_t t = 0; t + 2 < tris.size(); t += 3) {
+    const int a = tris[t], b = tris[t + 1], c = tris[t + 2];
+    const double det = (X(b) - X(a)) * (Y(c) - Y(a)) - (Y(b) - Y(a)) * (X(c) - X(a));
+    if (std::fabs(det) < 1e-12) continue;
+    double l[3] = {((X(b) - px) * (Y(c) - py) - (Y(b) - py) * (X(c) - px)) / det, ((X(c) - px) * (Y(a) - py) - (Y(c) - py) * (X(a) - px)) / det, 0};
+    l[2] = 1 - l[0] - l[1];
+    double dist = 0;
+    if (std::min({l[0], l[1], l[2]}) < -1e-9) {
+      // Outside: the clamped shares give a point on the triangle; the nearest such triangle wins.
+      double sum = 0;
+      for (double& x : l) { x = std::max(0.0, x); sum += x; }
+      for (double& x : l) x /= sum;
+      const double qx = l[0] * X(a) + l[1] * X(b) + l[2] * X(c), qy = l[0] * Y(a) + l[1] * Y(b) + l[2] * Y(c);
+      dist = std::sqrt((qx - px) * (qx - px) + (qy - py) * (qy - py));
+    }
+    if (dist < bestD) {
+      bestD = dist;
+      best.v[0] = a; best.v[1] = b; best.v[2] = c;
+      for (int k = 0; k < 3; k++) best.w[k] = std::clamp(l[k], 0.0, 1.0);
+      if (dist == 0) break;
+    }
+  }
+  return best;
+}
+/** The editable parts of a mesh entry; `pinned` = internal edges listed in `edges` (the outline
+ *  edges there are derived again from the triangles on write). */
+struct MeshShape {
+  std::vector<double> xy, uvs;
+  std::vector<int> tris, pinned;
+  size_t hull = 0;
+  size_t count() const { return xy.size() / 2; }
+};
+std::vector<int> intsOf(const Json& a, const char* k) {
+  std::vector<int> out;
+  for (const auto& v : listOr(a, k)) out.push_back(v.is_number_integer() ? v.get<int>() : -1);
+  return out;
+}
+MeshShape readShape(const Json& a) {
+  MeshShape m;
+  m.xy = numbersOf(a, "vertices");
+  m.uvs = numbersOf(a, "uvs");
+  m.tris = intsOf(a, "triangles");
+  const int n = int(m.count());
+  if (a.contains("hull") && a.at("hull").is_number_integer() && a.at("hull").get<int64_t>() >= 3 && a.at("hull").get<int64_t>() <= n) m.hull = size_t(a.at("hull").get<int64_t>());
+  std::set<std::pair<int, int>> outline, seen;
+  const std::vector<int> b = boundaryEdges(m.tris);
+  for (size_t i = 0; i + 1 < b.size(); i += 2) outline.insert({b[i], b[i + 1]});
+  const std::vector<int> e = intsOf(a, "edges");
+  for (size_t i = 0; i + 1 < e.size(); i += 2) {
+    const std::pair<int, int> k{std::min(e[i], e[i + 1]), std::max(e[i], e[i + 1])};
+    if (k.first < 0 || k.second >= n || k.first == k.second || outline.count(k) || !seen.insert(k).second) continue;
+    m.pinned.push_back(k.first);
+    m.pinned.push_back(k.second);
+  }
+  return m;
+}
+/** Outline-based constrained Delaunay triangulation of the shape (it must have a hull). */
+void rebuild(MeshShape& m) {
+  const PlanarMesh pm = PlanarMesh::fromOutline(m.xy, m.hull, m.pinned);
+  m.tris = pm.triangles();
+  m.pinned = pm.constraints();
+}
+void writeShape(EditResult& r, Json& a, const MeshShape& m) {
+  if (m.count() < 3 || m.count() > MAX_MESH_VERTICES) throw EditError("메시 정점은 3.." + std::to_string(MAX_MESH_VERTICES) + "개입니다.");
+  if (m.tris.size() / 3 > MAX_MESH_TRIANGLES) throw EditError("삼각형이 너무 많습니다(최대 " + std::to_string(MAX_MESH_TRIANGLES) + "개). 정점을 줄이세요.");
+  a["type"] = "mesh";
+  a["vertices"] = numbersJson(m.xy);
+  a["uvs"] = numbersJson(m.uvs);
+  a["triangles"] = m.tris;
+  if (m.hull >= 3) a["hull"] = m.hull; else a.erase("hull");
+  // Spine's convention: the outline edges (derived from the triangles) plus the pinned ones.
+  std::set<std::pair<int, int>> all;
+  const std::vector<int> b = boundaryEdges(m.tris);
+  for (size_t i = 0; i + 1 < b.size(); i += 2) all.insert({b[i], b[i + 1]});
+  for (size_t i = 0; i + 1 < m.pinned.size(); i += 2) all.insert({std::min(m.pinned[i], m.pinned[i + 1]), std::max(m.pinned[i], m.pinned[i + 1])});
+  Json edges = Json::array();
+  for (const auto& [x, y] : all) { edges.push_back(x); edges.push_back(y); }
+  a["edges"] = edges;
+  r.extra["vertices"] = m.count();
+  r.extra["triangles"] = m.tris.size() / 3;
+  r.extra["hull"] = m.hull;
+  r.extra["pinnedEdges"] = m.pinned.size() / 2;
+}
+/** uv of a vertex: kept, blended from the old mesh where it lies on it, else position / image size. */
+void blendUv(const MeshShape& old, const Origin& o, double px, double py, double w, double h, double& u, double& v) {
+  if (o.from >= 0) { u = old.uvs[2 * size_t(o.from)]; v = old.uvs[2 * size_t(o.from) + 1]; return; }
+  if (o.v[0] >= 0) {
+    u = v = 0;
+    for (int k = 0; k < 3; k++) { u += o.w[k] * old.uvs[2 * size_t(o.v[k])]; v += o.w[k] * old.uvs[2 * size_t(o.v[k]) + 1]; }
+  } else { u = px / w; v = py / h; }
+  u = std::clamp(u, 0.0, 1.0);
+  v = std::clamp(v, 0.0, 1.0);
+}
+/**
+ * Weights and this attachment's deform keys follow a vertex change: kept vertices keep theirs,
+ * new ones blend their old triangle's (barycentric). Keys with another vertex count belong to a
+ * same-named mesh of another skin and are left alone; keys of the old count are rewritten.
+ */
+void remapVertexData(EditResult& r, Json& a, const Str& slotId, const Str& name, size_t oldN, const std::vector<Origin>& origins) {
+  bool identity = origins.size() == oldN;
+  for (size_t i = 0; i < origins.size() && identity; i++) identity = origins[i].from == int(i);
+  if (identity) return;
+  if (a.contains("weights")) {
+    const Weights old = weightsOf(r.data, a, oldN);
+    Weights next(origins.size());
+    const Str slotBone = optStr(slot(r.data, slotId), "bone");
+    for (size_t i = 0; i < origins.size(); i++) {
+      const Origin& o = origins[i];
+      if (o.from >= 0) { next[i] = old[size_t(o.from)]; continue; }
+      std::vector<std::pair<Str, double>> mix;
+      for (int k = 0; k < 3; k++) {
+        if (o.v[k] < 0) continue;
+        for (const auto& [bone, w] : old[size_t(o.v[k])]) {
+          auto it = std::find_if(mix.begin(), mix.end(), [&](const auto& x) { return x.first == bone; });
+          if (it == mix.end()) mix.push_back({bone, w * o.w[k]}); else it->second += w * o.w[k];
+        }
+      }
+      if (mix.empty()) mix.push_back({slotBone, 1});
+      normalizeWeights(mix);
+      next[i] = mix;
+    }
+    writeWeights(a, next);
+  }
+  size_t remapped = 0;
+  for (auto& c : arr(r.data, "clips"))
+    for (auto& t : arr(c, "tracks")) {
+      if (t.value("target", Str()) != "slot:" + slotId || t.value("property", Str()) != "deform" || optStr(t, "attachment") != name) continue;
+      for (auto& k : arr(t, "keys")) {
+        const std::vector<double> off = numbersOf(k, "offsets");
+        if (off.size() != 2 * oldN) continue;
+        std::vector<double> next(2 * origins.size(), 0.0);
+        for (size_t i = 0; i < origins.size(); i++)
+          for (size_t c2 = 0; c2 < 2; c2++) {
+            const Origin& o = origins[i];
+            if (o.from >= 0) next[2 * i + c2] = off[2 * size_t(o.from) + c2];
+            else for (int m = 0; m < 3; m++) if (o.v[m] >= 0) next[2 * i + c2] += o.w[m] * off[2 * size_t(o.v[m]) + c2];
+          }
+        k["offsets"] = numbersJson(next);
+        remapped++;
+      }
+    }
+  if (remapped) warn(r, "ANIM_MESH_DEFORM_REMAPPED", "", "메시 정점이 바뀌어 변형 키 " + std::to_string(remapped) + "개의 오프셋을 새 정점에 맞췄습니다(새 정점은 주변 정점의 값을 섞음).");
+  r.extra["remappedKeys"] = remapped;
+}
+/** x, y pairs of op[k]: finite, |v| <= 1e5, rounded like stored vertices (triangulation sees the saved values). */
+std::vector<double> pointList(const Json& op, const char* k) {
+  if (!has(op, k) || !op.at(k).is_array() || op.at(k).size() % 2) throw EditError(Str(k) + "는 x, y 숫자 쌍의 배열입니다.");
+  std::vector<double> out;
+  for (const auto& v : op.at(k)) {
+    if (!v.is_number() || !std::isfinite(v.get<double>()) || std::fabs(v.get<double>()) > 1e5) throw EditError(Str(k) + " 값은 유한한 숫자여야 합니다.");
+    out.push_back(clean(v.get<double>()));
+  }
+  return out;
+}
+std::pair<int, int> edgeOf(const Json& op, size_t n) {
+  if (!has(op, "edge") || !op.at("edge").is_array() || op.at("edge").size() != 2) throw EditError("edge는 정점 번호 두 개 [a, b]입니다.");
+  int e[2];
+  for (size_t i = 0; i < 2; i++) {
+    const Json& v = op.at("edge")[i];
+    if (!v.is_number_integer() || v.get<int64_t>() < 0 || v.get<int64_t>() >= int64_t(n)) throw EditError("정점 번호가 범위(0.." + std::to_string(n - 1) + ") 밖입니다: " + v.dump());
+    e[i] = int(v.get<int64_t>());
+  }
+  if (e[0] == e[1]) throw EditError("가장자리는 서로 다른 두 정점을 잇습니다.");
+  return {std::min(e[0], e[1]), std::max(e[0], e[1])};
+}
+/**
+ * createMeshFromOutline / autoOutline: the attachment (region or mesh) becomes the constrained
+ * Delaunay mesh of `hull` (image px, either direction, simple) plus `points` (interior) and a grid
+ * every `spacing` px inside, with pinned `edges` (index pairs into hull + points). uvs = position
+ * / image size. Re-outlining a mesh resamples its weights and deform keys at the new vertices.
+ */
+void outlineMesh(EditResult& r, const Json& op, const std::vector<double>& hull) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = attachmentEntry(d, op, slotId, name);
+  const double w = num(a, "width", 0), h = num(a, "height", 0);
+  if (!(w > 0 && h > 0)) throw EditError("그림 크기(width, height)가 없는 첨부입니다.");
+  MeshShape m;
+  m.xy = hull;
+  m.hull = hull.size() / 2;
+  if (m.hull < 3) throw EditError("윤곽에는 점이 3개 이상 필요합니다.");
+  if (has(op, "points")) { const auto p = pointList(op, "points"); m.xy.insert(m.xy.end(), p.begin(), p.end()); }
+  if (has(op, "spacing")) {
+    const double spacing = num(op, "spacing", 0);
+    if (spacing != 0 && (spacing < 2 || spacing > 1e4)) throw EditError("spacing(안쪽 정점 간격)은 0(없음) 또는 2..10000 px입니다.");
+    for (double v : interiorGrid(hull, spacing)) m.xy.push_back(clean(v));
+  }
+  if (m.count() > MAX_MESH_VERTICES) throw EditError("정점이 너무 많습니다(최대 " + std::to_string(MAX_MESH_VERTICES) + "개). 간격을 넓히세요.");
+  if (has(op, "edges")) {
+    if (!op.at("edges").is_array() || op.at("edges").size() % 2) throw EditError("edges는 정점 번호 쌍의 배열입니다.");
+    for (const auto& v : op.at("edges")) {
+      if (!v.is_number_integer() || v.get<int64_t>() < 0 || v.get<int64_t>() >= int64_t(m.count())) throw EditError("edges의 정점 번호가 범위를 벗어났습니다: " + v.dump());
+      m.pinned.push_back(int(v.get<int64_t>()));
+    }
+  }
+  rebuild(m);
+  const bool wasMesh = isMesh(a);
+  const MeshShape old = wasMesh ? readShape(a) : MeshShape();
+  std::vector<Origin> origins(m.count());
+  for (size_t i = 0; i < m.count(); i++) {
+    const double px = m.xy[2 * i], py = m.xy[2 * i + 1];
+    for (size_t j = 0; j < old.count() && origins[i].from < 0; j++)
+      if (std::fabs(old.xy[2 * j] - px) < 1e-6 && std::fabs(old.xy[2 * j + 1] - py) < 1e-6) origins[i].from = int(j);
+    if (origins[i].from < 0 && wasMesh) origins[i] = locateIn(old.xy, old.tris, px, py);
+    m.uvs.push_back(std::clamp(px / w, 0.0, 1.0));
+    m.uvs.push_back(std::clamp(py / h, 0.0, 1.0));
+  }
+  if (wasMesh) remapVertexData(r, a, slotId, name, old.count(), origins);
+  else a.erase("weights");
+  writeShape(r, a, m);
+  r.extra["keys"] = purgeDeform(r);
+  r.affected.push_back("slot:" + slotId);
+}
+void createMeshFromOutline(EditResult& r, const Json& op) { outlineMesh(r, op, pointList(op, "hull")); }
+
+std::vector<uint8_t> decodeBase64(const Str& s) {
+  static const Str table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::vector<uint8_t> out;
+  out.reserve(s.size() * 3 / 4);
+  uint32_t acc = 0;
+  int bits = 0;
+  for (char ch : s) {
+    if (ch == '=' || ch == '\n' || ch == '\r' || ch == ' ') continue;
+    const size_t v = table.find(ch);
+    if (v == Str::npos) throw EditError("mask.alpha는 base64 문자열입니다.");
+    acc = ((acc << 6) | uint32_t(v)) & 0xffffff;
+    bits += 6;
+    if (bits >= 8) { bits -= 8; out.push_back(uint8_t((acc >> bits) & 0xff)); }
+  }
+  return out;
+}
+/**
+ * autoOutline {slot, name?, skin?, mask: {width, height, alpha: base64 bytes, one per pixel},
+ * alphaThreshold? = 0.05, detail? = 0.5, spacing?, points?, edges?}: the outline of the largest
+ * opaque region of the mask (traceAlphaOutline), scaled from mask to image pixels, meshed like
+ * createMeshFromOutline. The core decodes no PNG: Qt passes the decoded image's alpha, the node
+ * service fills `mask` from `imagePath` (PNG) before calling the core.
+ */
+void autoOutline(EditResult& r, const Json& op) {
+  if (!has(op, "mask") || !op.at("mask").is_object()) throw EditError("mask(그림의 알파 값: width, height, alpha)가 필요합니다. 서비스에서는 imagePath(PNG)로 채울 수 있습니다.");
+  const Json& mask = op.at("mask");
+  const double mw = num(mask, "width", 0), mh = num(mask, "height", 0);
+  if (mw < 1 || mh < 1 || mw > 8192 || mh > 8192 || mw != std::floor(mw) || mh != std::floor(mh)) throw EditError("mask 크기는 1..8192 정수입니다.");
+  const std::vector<uint8_t> alpha = decodeBase64(optStr(mask, "alpha"));
+  if (alpha.size() != size_t(mw) * size_t(mh)) throw EditError("mask.alpha 길이(" + std::to_string(alpha.size()) + ")가 width × height와 다릅니다.");
+  const double threshold = num(op, "alphaThreshold", 0.05), detail = num(op, "detail", 0.5);
+  if (threshold < 0 || threshold > 1 || detail < 0 || detail > 1) throw EditError("alphaThreshold와 detail은 0..1입니다.");
+  Str slotId, name;
+  const Json& a = attachmentEntry(r.data, op, slotId, name);
+  const double sx = num(a, "width", mw) / mw, sy = num(a, "height", mh) / mh;
+  std::vector<double> hull = traceAlphaOutline(alpha, int(mw), int(mh), threshold, detail);
+  for (size_t i = 0; i < hull.size(); i += 2) { hull[i] = clean(hull[i] * sx); hull[i + 1] = clean(hull[i + 1] * sy); }
+  outlineMesh(r, op, hull);
+  r.extra["outline"] = numbersJson(hull);
+}
+bool hasOutline(const MeshShape& m) { return m.hull >= 3; }
+Str outlineHint() { return " (윤곽(hull)이 없는 메시입니다. 「윤곽 그리기」·「자동 윤곽」으로 다시 만들면 자유롭게 고칠 수 있습니다.)"; }
+/**
+ * addMeshVertex {slot, name?, skin?, position: [x, y]} (image px). With an outline (`hull`): a point
+ * inside becomes an interior vertex (appended), a point on an outline edge an outline vertex
+ * (inserted after that edge's first vertex; later vertices shift by one), then the whole mesh is
+ * re-triangulated (constrained Delaunay, outline and pinned edges kept). Without one (alpha-trimmed
+ * grids): the triangle under the point is split locally. Weights, uvs and deform offsets of the new
+ * vertex are interpolated from the triangle it lands in; extra.vertex = its index.
+ */
+void addMeshVertex(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const std::vector<double> pos = pointList(op, "position");
+  if (pos.size() != 2) throw EditError("position은 [x, y]입니다.");
+  const MeshShape old = readShape(a);
+  const size_t n = old.count();
+  MeshShape m = old;
+  std::vector<Origin> origins(n);
+  for (size_t i = 0; i < n; i++) origins[i].from = int(i);
+  const Origin here = locateIn(old.xy, old.tris, pos[0], pos[1]);
+  int index = int(n);
+  if (hasOutline(old)) {
+    const std::vector<double> outline(old.xy.begin(), old.xy.begin() + std::ptrdiff_t(2 * old.hull));
+    double scale = 1;
+    for (double v : outline) scale = std::max(scale, std::fabs(v));
+    const double onTol = 1e-6 * scale;
+    int edgeAt = -1;
+    for (size_t i = 0; i < old.hull && edgeAt < 0; i++) {
+      const size_t j = (i + 1) % old.hull;
+      if (segmentDistance(pos[0], pos[1], old.xy[2 * i], old.xy[2 * i + 1], old.xy[2 * j], old.xy[2 * j + 1]) <= onTol) edgeAt = int(i);
+    }
+    if (edgeAt < 0 && !insidePolygon(outline, pos[0], pos[1])) throw EditError("윤곽 밖입니다. 정점은 메시 안쪽이나 윤곽 위에 추가하세요.");
+    if (edgeAt >= 0) {
+      // A new outline vertex keeps the outline-first order: it goes right after the edge's start.
+      index = edgeAt + 1;
+      m.xy.insert(m.xy.begin() + 2 * index, pos.begin(), pos.end());
+      origins.insert(origins.begin() + index, here);
+      m.hull++;
+      for (int& v : m.pinned) if (v >= index) v++;
+    } else {
+      m.xy.insert(m.xy.end(), pos.begin(), pos.end());
+      origins.push_back(here);
+    }
+    rebuild(m);
+  } else {
+    PlanarMesh pm(old.xy, old.tris, old.pinned);
+    pm.addPoint(pos[0], pos[1], true);
+    m.xy = pm.points();
+    m.tris = pm.triangles();
+    m.pinned = pm.constraints();
+    origins.push_back(here);
+  }
+  m.uvs.clear();
+  for (size_t i = 0; i < m.count(); i++) {
+    double u, v;
+    blendUv(old, origins[i], m.xy[2 * i], m.xy[2 * i + 1], num(a, "width", 1), num(a, "height", 1), u, v);
+    m.uvs.push_back(u);
+    m.uvs.push_back(v);
+  }
+  remapVertexData(r, a, slotId, name, n, origins);
+  writeShape(r, a, m);
+  r.extra["vertex"] = index;
+  r.affected.push_back("slot:" + slotId);
+}
+/**
+ * removeMeshVertex {slot, name?, skin?, vertices}: the listed vertices go, later ones shift down.
+ * With an outline, outline vertices may go while >= 3 stay and the outline stays simple with every
+ * interior vertex inside; then the mesh is re-triangulated. Without one only interior vertices can
+ * go (their neighbourhood is re-triangulated). Pinned edges touching them are dropped; weights,
+ * uvs and deform offsets of the other vertices are kept.
+ */
+void removeMeshVertex(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const MeshShape old = readShape(a);
+  const size_t n = old.count();
+  const std::vector<size_t> list = vertexList(op, n, true);
+  if (n - list.size() < 3) throw EditError("메시에는 정점이 3개 이상 남아야 합니다.");
+  std::vector<int> renumber(n, -1);
+  std::vector<bool> gone(n, false);
+  for (size_t v : list) gone[v] = true;
+  MeshShape m;
+  std::vector<Origin> origins;
+  for (size_t i = 0; i < n; i++) {
+    if (gone[i]) continue;
+    renumber[i] = int(m.count());
+    m.xy.push_back(old.xy[2 * i]);
+    m.xy.push_back(old.xy[2 * i + 1]);
+    m.uvs.push_back(old.uvs[2 * i]);
+    m.uvs.push_back(old.uvs[2 * i + 1]);
+    Origin o;
+    o.from = int(i);
+    origins.push_back(o);
+    if (i < old.hull) m.hull++;
+  }
+  for (size_t i = 0; i + 1 < old.pinned.size(); i += 2) {
+    const int x = renumber[size_t(old.pinned[i])], y = renumber[size_t(old.pinned[i + 1])];
+    if (x >= 0 && y >= 0) { m.pinned.push_back(x); m.pinned.push_back(y); }
+  }
+  if (hasOutline(old)) {
+    if (m.hull < 3) throw EditError("윤곽에는 정점이 3개 이상 남아야 합니다.");
+    rebuild(m);
+  } else {
+    PlanarMesh pm(old.xy, old.tris, old.pinned);
+    for (size_t v : list) {
+      if (pm.outlineVertex(int(v))) throw EditError("가장자리 정점(" + std::to_string(v) + ")은 지울 수 없습니다." + outlineHint());
+      pm.removeVertex(int(v));
+    }
+    for (int v : pm.triangles()) m.tris.push_back(renumber[size_t(v)]);
+    m.pinned.clear();
+    for (int v : pm.constraints()) m.pinned.push_back(renumber[size_t(v)]);
+    m.hull = 0;
+  }
+  remapVertexData(r, a, slotId, name, n, origins);
+  writeShape(r, a, m);
+  r.extra["removed"] = list.size();
+  r.affected.push_back("slot:" + slotId);
+}
+/** addMeshEdge / removeMeshEdge {slot, name?, skin?, edge: [a, b]}: pin (or unpin) an internal
+ *  edge so re-triangulation keeps it (a crease the mesh folds along); outline edges stay. */
+void meshEdge(EditResult& r, const Json& op, bool add) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  MeshShape m = readShape(a);
+  const auto [x, y] = edgeOf(op, m.count());
+  const std::vector<int> b = boundaryEdges(m.tris);
+  for (size_t i = 0; i + 1 < b.size(); i += 2)
+    if (b[i] == x && b[i + 1] == y) throw EditError(add ? "이미 있는 윤곽 가장자리입니다." : "윤곽 가장자리는 지울 수 없습니다(정점을 지우거나 윤곽을 다시 그리세요).");
+  size_t at = m.pinned.size();
+  for (size_t i = 0; i + 1 < m.pinned.size(); i += 2) if (std::min(m.pinned[i], m.pinned[i + 1]) == x && std::max(m.pinned[i], m.pinned[i + 1]) == y) at = i;
+  if (add && at < m.pinned.size()) throw EditError("이미 고정된 가장자리입니다.");
+  if (!add && at == m.pinned.size()) throw EditError("고정된 안쪽 가장자리가 아닙니다: " + std::to_string(x) + "-" + std::to_string(y));
+  if (hasOutline(m)) {
+    if (add) { m.pinned.push_back(x); m.pinned.push_back(y); }
+    else m.pinned.erase(m.pinned.begin() + std::ptrdiff_t(at), m.pinned.begin() + std::ptrdiff_t(at + 2));
+    rebuild(m);
+  } else {
+    PlanarMesh pm(m.xy, m.tris, m.pinned);
+    if (add) pm.addConstraint(x, y); else pm.removeConstraint(x, y);
+    m.tris = pm.triangles();
+    m.pinned = pm.constraints();
+  }
+  writeShape(r, a, m);
+  r.affected.push_back("slot:" + slotId);
+}
+/** retriangulate {slot, name?, skin?}: constrained Delaunay triangulation of the current vertices
+ *  (from the outline when the mesh has one, else by flipping the existing triangles). */
+void retriangulate(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  MeshShape m = readShape(a);
+  if (hasOutline(m)) rebuild(m);
+  else {
+    PlanarMesh pm(m.xy, m.tris, m.pinned);
+    pm.delaunay();
+    m.tris = pm.triangles();
+    m.pinned = pm.constraints();
+  }
+  writeShape(r, a, m);
+  r.affected.push_back("slot:" + slotId);
+}
+
 void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth) {
   if (!op.is_object()) throw EditError("편집 명령은 객체여야 합니다.");
   const Str name = reqStr(op, "op");
@@ -2083,19 +3261,25 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     return;
   }
   static const std::map<Str, void (*)(EditResult&, const Json&)> simple = {
-    {"addBone", addBone}, {"setBone", setBone}, {"reparentBone", reparentBone}, {"setPivot", setPivot}, {"deleteBone", deleteBone},
+    {"addBone", addBone}, {"setBone", setBone}, {"transformBones", transformBones}, {"reparentBone", reparentBone}, {"setPivot", setPivot}, {"deleteBone", deleteBone},
     {"addPart", addPart}, {"setSlot", setSlot}, {"setAttachment", setAttachment}, {"deleteSlot", deleteSlot}, {"moveSlot", moveSlot},
     {"setKey", setKey}, {"deleteKey", deleteKey}, {"moveKey", moveKey}, {"setInterp", setInterp}, {"setCurve", setCurve},
     {"moveKeys", moveKeys}, {"scaleKeys", scaleKeys}, {"deleteKeys", deleteKeys}, {"copyKeys", copyKeys}, {"pasteKeys", pasteKeys},
     {"copyPose", copyPose}, {"pastePose", pastePose},
+    {"addEventDef", addEventDef}, {"setEventDef", setEventDef}, {"renameEventDef", renameEventDef}, {"deleteEventDef", deleteEventDef},
+    {"setEventKey", setEventKey}, {"moveEventKey", moveEventKey}, {"deleteEventKey", deleteEventKey},
     {"addClip", addClip}, {"duplicateClip", duplicateClip}, {"setClip", setClip}, {"setMix", setMix}, {"setCanvas", setCanvas},
     {"applySetupDeltaToKeys", applySetupDeltaToKeys},
     {"addSkin", addSkin}, {"duplicateSkin", duplicateSkin}, {"setSkinAttachment", setSkinAttachment}, {"removeSkinAttachment", removeSkinAttachment},
     {"addExpression", addExpression}, {"setExpressionSlot", setExpressionSlot}, {"setExpressionBone", setExpressionBone}, {"captureExpression", captureExpression},
-    {"addIk", addIk}, {"setIk", setIk}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
+    {"addIk", addIk}, {"setIk", setIk}, {"fitBoneLengths", fitBoneLengths}, {"orientBones", orientBones}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
     {"convertToMesh", convertToMesh}, {"convertToRegion", convertToRegion}, {"setMeshVertices", setMeshVertices}, {"setWeights", setWeights},
     {"unbindMesh", unbindMesh}, {"autoWeights", [](EditResult& r, const Json& op) { autoWeights(r, op, false); }},
     {"bindMesh", [](EditResult& r, const Json& op) { autoWeights(r, op, true); }},
+    {"createMeshFromOutline", createMeshFromOutline}, {"autoOutline", autoOutline}, {"addMeshVertex", addMeshVertex},
+    {"removeMeshVertex", removeMeshVertex}, {"retriangulate", retriangulate},
+    {"addMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, true); }},
+    {"removeMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, false); }},
   };
   if (auto it = simple.find(name); it != simple.end()) return it->second(r, op);
   if (name == "renameClip") return renameClip(r, op, controllers);
@@ -2155,6 +3339,57 @@ Transform decompose(const Affine& m, double* skew) {
     *skew = std::fabs(m.c + std::sin(r) * t.scaleY) + std::fabs(m.d - std::cos(r) * t.scaleY);
   }
   return t;
+}
+
+std::optional<Axes> parseAxes(const std::string& name) {
+  if (name == "local") return Axes::Local;
+  if (name == "parent") return Axes::Parent;
+  if (name == "world") return Axes::World;
+  return std::nullopt;
+}
+namespace {
+/** Bring `deg` within ±180 of `near` (rotation fields interpolate numerically: no 360 jumps). */
+double unwrapNear(double deg, double near) {
+  while (deg - near > 180) deg -= 360;
+  while (deg - near < -180) deg += 360;
+  return deg;
+}
+double parentAngle(const Affine& p) { return std::atan2(p.b, p.a) * 180 / PI; }
+double parentSign(const Affine& p) { return p.a * p.d - p.b * p.c < 0 ? -1 : 1; }
+}  // namespace
+Transform toAxes(const Transform& t, const Affine& parent, Axes axes) {
+  if (axes == Axes::Local) return t;
+  Transform out = t;
+  double wx, wy;
+  parent.apply(t.x, t.y, wx, wy);
+  // The bone's +x axis (before its own scale) on screen: the world rotation a user sees.
+  const double r = t.rotation * PI / 180, dx = parent.a * std::cos(r) + parent.c * std::sin(r), dy = parent.b * std::cos(r) + parent.d * std::sin(r);
+  const double pa = parentAngle(parent), world = unwrapNear(std::atan2(dy, dx) * 180 / PI, pa + parentSign(parent) * t.rotation);
+  if (axes == Axes::World) { out.x = wx; out.y = wy; out.rotation = world; return out; }
+  // Parent: offset from the parent origin along the parent's (unscaled) axes, angle from its +x.
+  const double ox = wx - parent.e, oy = wy - parent.f, c = std::cos(pa * PI / 180), s = std::sin(pa * PI / 180);
+  out.x = c * ox + s * oy;
+  out.y = -s * ox + c * oy;
+  out.rotation = world - pa;
+  return out;
+}
+std::optional<Transform> fromAxes(const Transform& shown, const Affine& parent, Axes axes, const Transform& hint) {
+  if (axes == Axes::Local) return shown;
+  const auto inv = parent.inverse();
+  if (!inv) return std::nullopt;
+  double wx = shown.x, wy = shown.y, world = shown.rotation;
+  if (axes == Axes::Parent) {
+    const double pa = parentAngle(parent), c = std::cos(pa * PI / 180), s = std::sin(pa * PI / 180);
+    wx = parent.e + c * shown.x - s * shown.y;
+    wy = parent.f + s * shown.x + c * shown.y;
+    world = shown.rotation + pa;
+  }
+  Transform out = shown;
+  inv->apply(wx, wy, out.x, out.y);
+  // The local direction that the parent maps onto the shown world direction.
+  const double r = world * PI / 180, dx = inv->a * std::cos(r) + inv->c * std::sin(r), dy = inv->b * std::cos(r) + inv->d * std::sin(r);
+  out.rotation = unwrapNear(std::atan2(dy, dx) * 180 / PI, hint.rotation);
+  return out;
 }
 
 std::map<std::string, Affine> setupWorld(const Json& rig) {

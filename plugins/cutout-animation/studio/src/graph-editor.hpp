@@ -26,13 +26,24 @@ class GraphEditor : public QWidget {
   explicit GraphEditor(QWidget* parent = nullptr);
   void setTimeView(TimeView* view);
   TimeView* timeView() const { return view_; }
-  /** Replace the shown curves and refit the value range (the shared selection is kept). */
+  /** Replace the shown curves and refit the value range (the shared selection is kept). A value
+   *  zoom/pan of the user is kept while the same channels come back (edits, undo). */
   void setChannels(const QVector<Channel>& channels, int durationMs);
   void setPlayhead(int ms) { view_->setPlayhead(ms); }
   void setMessage(const QString& text) { message_ = text; update(); }
   /** Each channel fitted to its own range (shapes of small and large values side by side). */
   void setNormalized(bool on);
   bool normalized() const { return normalized_; }
+  // ---- Value axis (plugin 1.8.0, editor-only view state; the time axis stays the shared TimeView)
+  /** Zoom the value axis keeping the value under `y` in place (factor > 1 = closer); every
+   *  channel's range scales the same way, so normalized channels stay aligned. */
+  void zoomValues(double y, double factor);
+  /** Scroll the value axis by `dy` pixels: content follows the cursor (middle-drag). */
+  void panValues(double dy);
+  /** 값 맞춤: refit the value range to the visible channels and drop the manual zoom. */
+  void fitValues();
+  bool valuesZoomed() const { return valueManual_; }
+  std::pair<double, double> valueRange(int channel) const { return ranges_.value(channel, {0.0, 1.0}); }
   const QVector<Channel>& channels() const { return channels_; }
   QVector<KeyRef> selectedKeys() const { return view_->selection(); }
   void setSelectedKeys(const QVector<KeyRef>& keys) { view_->setSelection(keys); }
@@ -80,7 +91,8 @@ class GraphEditor : public QWidget {
   QVector<Channel> channels_;
   QSet<QString> hidden_;  // legend toggles, editor-only
   QVector<std::pair<double, double>> ranges_;
-  bool normalized_ = false;
+  bool normalized_ = false, valueManual_ = false;  // valueManual_: ranges_ come from zoomValues/panValues
+  QStringList rangeIds_;                           // channel ids the (manual) ranges_ belong to
   QString message_;
   Drag drag_ = Drag::None;
   int dragChannel_ = -1, dragKey_ = -1;

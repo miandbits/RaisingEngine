@@ -17,7 +17,7 @@ struct EditResult {
 };
 
 /**
- * Apply one operation {op, ...}. Ops: addBone setBone reparentBone setPivot deleteBone
+ * Apply one operation {op, ...}. Ops: addBone setBone transformBones reparentBone setPivot deleteBone
  * addPart setSlot setAttachment deleteSlot moveSlot setKey deleteKey moveKey setInterp
  * setCurve moveKeys scaleKeys deleteKeys copyKeys pasteKeys copyPose pastePose addClip
  * duplicateClip renameClip setClip deleteClip setMix setCanvas setName applySetupDeltaToKeys batch.
@@ -55,10 +55,54 @@ struct EditResult {
  * autoWeights} setWeights {vertices, bone, weight, strength? | weights} unbindMesh; deform keys:
  * setKey/deleteKey {target: "slot:<id>", property: "deform", attachment, offsets?} (refs of the
  * multi-key ops carry `attachment` too). deleteBone moves mesh weights off the deleted bone.
+ * Bone length (plugin 1.5.0): addBone/setBone take `length` (px >= 0, null/0 = point bone) and
+ * `color` ("#rrggbb[aa]", editor display only; null/"" = default); setting a length on the lower
+ * bone of a two-bone chain pins its first child as `tip` so the limb keeps its effector.
+ * fitBoneLengths {bones?} ("자동 길이": length = distance to the first child, extra.lengths)
+ * orientBones {bones?, fitLength?} ("본 방향 맞추기": turns point-bone frames toward their child /
+ * images, compensating children, keys, attachments and aim axes so nothing draws differently;
+ * extra.oriented / extra.skipped). addIk prefers a bone's length direction (+x) for aim chains
+ * and the lower bone's length tip as two-bone effector.
+ * Freeform meshes (plugin 1.6.0; points in image px): createMeshFromOutline {hull, points?, spacing?,
+ * edges?} (constrained Delaunay of the outline polygon; self-intersections refused) autoOutline
+ * {mask: {width, height, alpha (base64 bytes)}, alphaThreshold?, detail?, spacing?} (traceAlphaOutline,
+ * then as createMeshFromOutline; the service fills `mask` from `imagePath`) addMeshVertex {position}
+ * removeMeshVertex {vertices} addMeshEdge / removeMeshEdge {edge: [a, b]} (pinned internal edges, kept
+ * in `edges`) retriangulate. Meshes with a `hull` re-triangulate from it, others are edited locally;
+ * uvs, weights and deform keys follow (new vertices blend barycentrically, ANIM_MESH_DEFORM_REMAPPED).
+ * Selections (plugin 1.7.0): transformBones {bones, delta: {x?, y?, rotation?, scaleX?, scaleY?}, space?
+ * (world | parent), pivot? (origin | centroid | {x, y}), clip? + timeMs? (= keys), compensateBones?,
+ * compensateImages?} moves the topmost selected bones and turns/scales every selected bone about its
+ * own origin, or the topmost ones as a group about the pivot (one canvas gesture = one op).
+ * setBone also takes `axes` (local | parent | world, see toAxes) and the compensation flags:
+ * unselected children / the bone's images keep their setup world pose (setup only: Spine semantics).
+ * Events (plugin 1.8.0): definitions addEventDef {name, int?, float?, string?, audio?, volume?, balance?}
+ * (the first one also defines every name keys already use: extra.defined) setEventDef {event, ...same,
+ * null removes} renameEventDef {event, name} (every key follows) deleteEventDef {event, force?} (keys
+ * using it refuse without force); keys setEventKey {clip, timeMs, name, newName?, int?, float?, string?}
+ * (creates or edits; null drops an override) moveEventKey {clip, name, fromMs, toMs} deleteEventKey
+ * {clip, name, timeMs}. The multi-key ops (moveKeys scaleKeys deleteKeys copyKeys pasteKeys) take event
+ * keys as refs {target: "event", property: <name>, timeMs}; event keys collide only with a key of the
+ * same name at the same time.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */
 EditResult applyEdit(const Json& rig, const Json& operation, const Json& controllers = Json::array());
+
+/**
+ * Axis display spaces of a bone's x/y/rotation (plugin 1.7.0, editor fields and setBone `axes`);
+ * values are always stored local. Local = as stored (x/y in the parent's space, rotation relative
+ * to the parent). World = the origin in rig px and the on-screen angle of the bone's +x axis.
+ * Parent = the origin's offset from the parent origin along the parent's unscaled axes (px) and the
+ * angle from the parent's +x axis (equal to Local under an unscaled parent). Scale stays local.
+ */
+enum class Axes { Local, Parent, World };
+std::optional<Axes> parseAxes(const std::string& name);  // "local" | "parent" | "world"
+/** `local` shown in `axes` given the parent's world matrix (identity for a root). */
+Transform toAxes(const Transform& local, const Affine& parentWorld, Axes axes);
+/** Inverse of toAxes; the rotation stays within ±180° of `hint` (the current local value).
+ *  nullopt when the parent matrix is singular. */
+std::optional<Transform> fromAxes(const Transform& shown, const Affine& parentWorld, Axes axes, const Transform& hint);
 
 /** Decompose into x,y,rotation,scaleX,scaleY. Skew (non-uniform parent scale) is dropped; *skew gets its size. */
 Transform decompose(const Affine& m, double* skew = nullptr);

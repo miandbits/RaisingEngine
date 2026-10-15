@@ -24,6 +24,14 @@ export interface PluginService {
   /** Player capabilities (`visualFeatures`) an exported game with these documents needs beyond
    *  `plugin-elements-v1` (CONTRACT.md §7); exportBundle collects them, exportGame enforces them. */
   requiredHostFeatures?(documents: { type: string; id: string; data: unknown }[]): string[] | Promise<string[]>;
+  /**
+   * Export hook (CONTRACT.md §10, plugin api 1, optional): the plugin's documents as they will be
+   * exported, the project's assets and `readAsset(id)` (bytes of a snapshot asset, hash-checked).
+   * Returns the documents to export instead (same types), PNG assets to add to the export and the
+   * project assets they replace (see PreparedExtensions). Must not write project files.
+   */
+  prepareExport?(input: { target: 'windows' | 'web'; documents: { type: string; id: string; data: unknown }[]; assets: { id: string; kind: string; path: string }[];
+    readAsset(id: string): Promise<Uint8Array>; hostFeatures?: string[] }): unknown;
 }
 export interface LoadablePlugin { directory: string; manifest: PluginManifest }
 const services = new Map<string, Promise<PluginService | null>>();

@@ -56,6 +56,28 @@ export function png(width, height) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
+/** RGBA PNG whose alpha is alphaAt(x, y) (0..255), white: shapes for alpha tracing (plugin 1.6.0). */
+export function shapePng(width, height, alphaAt) {
+  const chunk = (type, data) => { const body = Buffer.concat([Buffer.from(type, 'ascii'), data]); const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0); body.copy(out, 4); out.writeUInt32BE(crc32(body) >>> 0, 8 + data.length); return out; };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const stride = width * 4, raw = Buffer.alloc((stride + 1) * height);
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(stride), at = y * (stride + 1);
+    for (let x = 0; x < width; x++) row.set([255, 255, 255, alphaAt(x, y)], x * 4);
+    // Odd rows are Paeth-filtered (filter 4) so the service's decoder runs a real predictor.
+    raw[at] = y % 2 ? 4 : 0;
+    for (let i = 0; i < stride; i++) {
+      const a = i >= 4 ? row[i - 4] : 0, b = prev[i], c = i >= 4 ? prev[i - 4] : 0;
+      const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+      raw[at + 1 + i] = y % 2 ? (row[i] - (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 255 : row[i];
+    }
+    prev = row;
+  }
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
 export const rigData = (overrides = {}) => ({
   schemaVersion: 1, canvas: { width: 200, height: 300, originX: 100, originY: 280 },
   bones: [{ id: 'root', parent: null }, { id: 'body', parent: 'root', y: -100 }],

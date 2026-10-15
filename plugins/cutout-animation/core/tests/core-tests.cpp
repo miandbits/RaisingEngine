@@ -1,10 +1,15 @@
 // Core tests: validation, evaluation, playback, multi-instance, persistence, signals.
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <map>
+#include <set>
 #include "cutout/host.hpp"
+#include "cutout/mesh.hpp"
 #include "cutout/signals.hpp"
 #include "cutout/templates.hpp"
+#include "bench.hpp"
 
 using namespace cutout;
 namespace {
@@ -134,6 +139,34 @@ Json lookScript() {
     {{"op", "update"}, {"dtMs", 300}}, frame,
     {{"op", "setSkin"}, {"instance", "a"}, {"skin", ""}}, frame,
   });
+}
+/** rigData() + event definitions with payloads (plugin 1.8.0): `step` has an int, string and audio
+ *  default, `hit` a float; the walk clip keys both (one key overrides the int) and loops. */
+Json eventRig() {
+  Json d = rigData();
+  d["events"] = Json::parse(R"([
+    {"name": "step", "int": 1, "string": "left", "audio": "sfx-step", "volume": 0.5, "balance": -0.25},
+    {"name": "hit", "float": 2.5},
+    {"name": "breath"}, {"name": "peak"}, {"name": "done"}
+  ])");
+  d["clips"].push_back(Json::parse(R"({"id": "walk", "durationMs": 400, "loop": true, "tracks": [],
+    "events": [{"timeMs": 0, "name": "step"}, {"timeMs": 100, "name": "hit", "string": "fist"}, {"timeMs": 200, "name": "step", "int": 2, "string": "right"}]})"));
+  return d;
+}
+/** Host op script of the native/Wasm event parity check (tests/plugins/cutout-event-parity.test.mjs):
+ *  loops of the walk clip at uneven frame steps, a one-shot with events at its end, payloads. */
+Json eventScript() {
+  const Json controller = Json::parse(R"({"schemaVersion": 1, "rig": "hero", "defaultClip": "walk", "layers": [], "bindings": [
+    {"id": "cheer", "signal": "actionResult", "match": {"outcome": "success"}, "clip": "joy", "then": "default"}]})");
+  const Json element = {{"type", "character"}, {"ref", "walker"}, {"width", 200}, {"height", 300}, {"props", Json::object()}};
+  Json script = Json::array({
+    {{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "hero"}, {"data", eventRig()}}, {{"type", "controller"}, {"id", "walker"}, {"data", controller}}})}},
+    {{"op", "mount"}, {"instance", "a"}, {"element", element}},
+  });
+  for (double dt : {16.0, 84.0, 0.5, 99.5, 250.0, 950.0}) script.push_back({{"op", "update"}, {"dtMs", dt}});
+  script.push_back({{"op", "signal"}, {"instance", "a"}, {"name", "actionResult"}, {"params", {{"outcome", "success"}}}});
+  for (double dt : {150.0, 50.0, 200.0, 33.0}) script.push_back({{"op", "update"}, {"dtMs", dt}});
+  return script;
 }
 /**
  * Two-bone arm for IK (plugin 1.3.0): root -> upper (shoulder) -> lower (elbow, 50 px) -> hand
@@ -275,9 +308,209 @@ std::vector<std::string> kinds(const std::vector<Notification>& ns) {
   for (const auto& n : ns) out.push_back(n.kind + ":" + n.clip + (n.kind == "event" ? ":" + n.name : ""));
   return out;
 }
+bool hasErrors(const std::vector<Diagnostic>& ds) {
+  for (const auto& d : ds) if (d.severity == "error") return true;
+  return false;
+}
+/** One 100x100 image part on a root + two child bones (freeform mesh tests, plugin 1.6.0). */
+Json outlineRig() {
+  return Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 300, "height": 300, "originX": 150, "originY": 250},
+    "bones": [{"id": "root", "parent": null, "x": 100, "y": 100}, {"id": "left", "parent": "root", "x": 0, "y": 50}, {"id": "right", "parent": "root", "x": 100, "y": 50}],
+    "slots": [{"id": "cape", "bone": "root", "attachment": "cape"}],
+    "attachments": [{"slot": "cape", "name": "cape", "imageAssetId": "img-cape", "width": 100, "height": 100, "pivotX": 0, "pivotY": 0}],
+    "clips": []})");
+}
+std::string base64(const std::vector<uint8_t>& bytes) {
+  static const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  for (size_t i = 0; i < bytes.size(); i += 3) {
+    const uint32_t v = uint32_t(bytes[i]) << 16 | (i + 1 < bytes.size() ? uint32_t(bytes[i + 1]) << 8 : 0) | (i + 2 < bytes.size() ? bytes[i + 2] : 0);
+    out += t[(v >> 18) & 63];
+    out += t[(v >> 12) & 63];
+    out += i + 1 < bytes.size() ? t[(v >> 6) & 63] : '=';
+    out += i + 2 < bytes.size() ? t[v & 63] : '=';
+  }
+  return out;
+}
+/** Alpha mask w x h: an opaque disc (centre cx, cy, radius r) plus a small square blob. */
+Json discMask(int w, int h, double cx, double cy, double r) {
+  std::vector<uint8_t> a(size_t(w) * size_t(h), 0);
+  for (int y = 0; y < h; y++)
+    for (int x = 0; x < w; x++) {
+      const double dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+      if (dx * dx + dy * dy <= r * r) a[size_t(y) * size_t(w) + size_t(x)] = 255;
+      if (x >= w - 4 && y < 3) a[size_t(y) * size_t(w) + size_t(x)] = 200;  // a far-away speck: not the largest region
+    }
+  return {{"width", w}, {"height", h}, {"alpha", base64(a)}};
+}
+const Json* meshEntryOf(const Json& d, const char* slot) {
+  for (const auto& a : d["attachments"]) if (a["slot"] == slot) return &a;
+  return nullptr;
+}
+std::vector<double> numbers(const Json& list) { std::vector<double> v; for (const auto& x : list) v.push_back(x.get<double>()); return v; }
+/**
+ * Why the mesh's triangles are not a valid tiling of its outline ("" = valid): every triangle
+ * positive and non-degenerate, inside the outline, no edge used by more than two triangles, the
+ * once-used edges exactly the outline cycle, every vertex used, total area = outline area.
+ */
+std::string tilingProblem(const Json& a, double expectArea = -1) {
+  const std::vector<double> xy = numbers(a["vertices"]);
+  std::vector<int> tris;
+  for (const auto& v : a["triangles"]) tris.push_back(v.get<int>());
+  const size_t n = xy.size() / 2, hull = a.value("hull", size_t(0));
+  const std::vector<double> outline(xy.begin(), xy.begin() + std::ptrdiff_t(2 * hull));
+  double sum = 0;
+  std::map<std::pair<int, int>, int> uses;
+  std::vector<bool> used(n, false);
+  for (size_t t = 0; t + 2 < tris.size(); t += 3) {
+    const int i = tris[t], j = tris[t + 1], k = tris[t + 2];
+    const double area = ((xy[2 * j] - xy[2 * i]) * (xy[2 * k + 1] - xy[2 * i + 1]) - (xy[2 * j + 1] - xy[2 * i + 1]) * (xy[2 * k] - xy[2 * i])) / 2;
+    if (!(area > 1e-9)) return "triangle " + std::to_string(t / 3) + " not positive (" + std::to_string(area) + ")";
+    sum += area;
+    for (int v : {i, j, k}) used[size_t(v)] = true;
+    for (const auto& [x, y] : {std::pair<int, int>{i, j}, {j, k}, {k, i}}) uses[{std::min(x, y), std::max(x, y)}]++;
+    const double cx = (xy[2 * i] + xy[2 * j] + xy[2 * k]) / 3, cy = (xy[2 * i + 1] + xy[2 * j + 1] + xy[2 * k + 1]) / 3;
+    if (hull >= 3 && !insidePolygon(outline, cx, cy)) return "triangle " + std::to_string(t / 3) + " outside the outline";
+  }
+  std::set<std::pair<int, int>> once;
+  for (const auto& [e, c] : uses) {
+    if (c > 2) return "edge used " + std::to_string(c) + " times";
+    if (c == 1) once.insert(e);
+  }
+  for (size_t v = 0; v < n; v++) if (!used[v]) return "vertex " + std::to_string(v) + " unused";
+  if (hull >= 3) {
+    std::set<std::pair<int, int>> cycle;
+    for (size_t i = 0; i < hull; i++) cycle.insert({int(std::min(i, (i + 1) % hull)), int(std::max(i, (i + 1) % hull))});
+    if (cycle != once) return "outline edges differ from the hull cycle";
+    if (expectArea < 0) expectArea = std::fabs(polygonArea(outline, hull));
+  }
+  if (expectArea >= 0 && std::fabs(sum - expectArea) > 1e-6 * std::max(1.0, expectArea)) return "area " + std::to_string(sum) + " != " + std::to_string(expectArea);
+  return "";
+}
+/** Unpinned interior edges whose opposite vertex lies inside the neighbour's circumcircle. */
+int delaunayViolations(const Json& a) {
+  const std::vector<double> xy = numbers(a["vertices"]);
+  std::vector<int> tris;
+  for (const auto& v : a["triangles"]) tris.push_back(v.get<int>());
+  std::set<std::pair<int, int>> pinned;
+  for (size_t i = 0; i + 1 < a.value("edges", Json::array()).size(); i += 2) pinned.insert({a["edges"][i].get<int>(), a["edges"][i + 1].get<int>()});
+  std::map<std::pair<int, int>, int> opposite;  // directed edge -> third vertex
+  for (size_t t = 0; t + 2 < tris.size(); t += 3)
+    for (int e = 0; e < 3; e++) opposite[{tris[t + size_t(e)], tris[t + size_t((e + 1) % 3)]}] = tris[t + size_t((e + 2) % 3)];
+  int bad = 0;
+  for (const auto& [e, c] : opposite) {
+    auto it = opposite.find({e.second, e.first});
+    if (it == opposite.end() || pinned.count({std::min(e.first, e.second), std::max(e.first, e.second)})) continue;
+    const int A = e.first, B = e.second, C = c, D = it->second;
+    const double adx = xy[2 * A] - xy[2 * D], ady = xy[2 * A + 1] - xy[2 * D + 1], bdx = xy[2 * B] - xy[2 * D], bdy = xy[2 * B + 1] - xy[2 * D + 1], cdx = xy[2 * C] - xy[2 * D], cdy = xy[2 * C + 1] - xy[2 * D + 1];
+    const double det = (adx * adx + ady * ady) * (bdx * cdy - cdx * bdy) + (bdx * bdx + bdy * bdy) * (cdx * ady - adx * cdy) + (cdx * cdx + cdy * cdy) * (adx * bdy - bdx * ady);
+    const double s = std::max({std::fabs(adx), std::fabs(ady), std::fabs(bdx), std::fabs(bdy), std::fabs(cdx), std::fabs(cdy)});
+    bad += det > 1e-6 * s * s * s * s;
+  }
+  return bad;
+}
+bool hasEdge(const Json& a, int x, int y) {
+  for (size_t t = 0; t + 2 < a["triangles"].size(); t += 3)
+    for (int e = 0; e < 3; e++) {
+      const int p = a["triangles"][t + size_t(e)].get<int>(), q = a["triangles"][t + size_t((e + 1) % 3)].get<int>();
+      if ((p == x && q == y) || (p == y && q == x)) return true;
+    }
+  return false;
+}
+/** Outline parity fixture (plugin 1.6.0): a concave outline with an interior grid, an alpha-traced
+ *  skin mesh, a vertex added / removed, a pinned edge, weights by bone and a deform key; the script
+ *  replays the edit ops (identical rig JSON expected) and then plays the result. */
+Json outlineParityScript() {
+  Json d = outlineRig();
+  d["skins"] = Json::array({{{"id", "alt"}, {"attachments", Json::array({d["attachments"][0]})}}});
+  const Json concave = {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 45, 55, 45, 55, 100, 0, 100}}, {"spacing", 12.5}};
+  const Json traced = {{"op", "autoOutline"}, {"slot", "cape"}, {"skin", "alt"}, {"mask", discMask(50, 50, 25, 25, 18)}, {"detail", 0.7}};
+  Json script = Json::array();
+  Host host;
+  auto edit = [&](const Json& op) {
+    const Json step = {{"op", "edit"}, {"rig", d}, {"operation", op}};
+    script.push_back(step);
+    d = host.handle(step)["rig"];
+  };
+  edit(concave);
+  edit(traced);
+  edit({{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {20.25, 70.5}}});
+  edit({{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {77.5, 0}}});
+  edit({{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {9}}});
+  edit({{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {0, 3}}});
+  Json weights = Json::array(), vertices = Json::array();
+  const Json& v = d["attachments"][0]["vertices"];
+  for (size_t i = 0; i < v.size() / 2; i++) {
+    const double x = v[2 * i].get<double>() / 100;
+    vertices.push_back(i);
+    weights.push_back(Json::array({{{"bone", "left"}, {"weight", 1 - x}}, {{"bone", "right"}, {"weight", x}}}));
+  }
+  edit({{"op", "setWeights"}, {"slot", "cape"}, {"vertices", vertices}, {"weights", weights}});
+  edit({{"op", "retriangulate"}, {"slot", "cape"}, {"skin", "alt"}});
+  const size_t n = d["attachments"][0]["vertices"].size() / 2;
+  std::vector<double> wave(2 * n);
+  for (size_t i = 0; i < n; i++) wave[2 * i + 1] = 4 * std::sin(double(i));
+  d["clips"] = Json::array({{{"id", "sway"}, {"durationMs", 800}, {"loop", true}, {"tracks", Json::array({
+    {{"target", "bone:right"}, {"property", "rotation"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 0}}, {{"timeMs", 400}, {"value", 30}}, {{"timeMs", 800}, {"value", 0}}})}},
+    {{"target", "slot:cape"}, {"property", "deform"}, {"attachment", "cape"}, {"keys", Json::array({{{"timeMs", 0}, {"offsets", std::vector<double>(2 * n, 0.0)}}, {{"timeMs", 400}, {"offsets", wave}}})}}})}}});
+  const Json controller = {{"schemaVersion", 1}, {"rig", "cape"}, {"defaultClip", "sway"}};
+  script.push_back({{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "cape"}, {"data", d}}, {{"type", "controller"}, {"id", "cape-main"}, {"data", controller}}})}});
+  script.push_back({{"op", "mount"}, {"instance", "a"}, {"element", {{"type", "character"}, {"ref", "cape-main"}, {"width", 300}, {"height", 300}, {"props", Json::object()}}}});
+  for (double dt : {0.0, 133.0, 250.5, 199.0}) {
+    if (dt > 0) script.push_back({{"op", "update"}, {"dtMs", dt}});
+    script.push_back({{"op", "frame"}, {"instance", "a"}});
+  }
+  script.push_back({{"op", "setSkin"}, {"instance", "a"}, {"skin", "alt"}});
+  script.push_back({{"op", "frame"}, {"instance", "a"}});
+  return script;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--stress-rig") {
+    // The generated large character for the node/player/service benchmarks (plugin 1.9.0).
+    const Json rig = cutout_stress::rig();
+    std::cout << Json({{"rig", rig}, {"controller", cutout_stress::controller()}, {"images", cutout_stress::imageIds(rig)}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--frame-parity") {
+    // Native reference for compact frames (plugin 1.9.0) through the ABI string path: deltas, the
+    // mesh table, skins/expressions, mirrored placement (tests/plugins/cutout-frame-parity.test.mjs).
+    const Json rig = cutout_stress::rig();
+    Json script = Json::array({{{"op", "init"}, {"frameFormats", {2}}, {"documents", {{{"type", "rig"}, {"id", "stress"}, {"data", rig}}, {{"type", "controller"}, {"id", "c"}, {"data", cutout_stress::controller()}}}}}});
+    for (int i = 0; i < 3; i++)
+      script.push_back({{"op", "mount"}, {"instance", "i" + std::to_string(i)}, {"element", {{"type", "character"}, {"ref", "c"}, {"width", 200 + 100 * i}, {"height", 300}, {"props", {{"flipX", i == 2}, {"scale", 1 + 0.25 * i}}}}}});
+    const double steps[] = {0, 0, 16.7, 33.4, 250, 1200};
+    for (double dt : steps) {
+      script.push_back({{"op", "update"}, {"dtMs", dt}});
+      for (int i = 0; i < 3; i++) script.push_back({{"op", "frame"}, {"instance", "i" + std::to_string(i)}, {"format", 2}, {"since", "?"}});
+    }
+    script.push_back({{"op", "setSkin"}, {"instance", "i1"}, {"skin", "skin-2"}});
+    script.push_back({{"op", "setExpression"}, {"instance", "i1"}, {"expression", "face-3"}});
+    script.push_back({{"op", "frame"}, {"instance", "i1"}, {"format", 2}, {"since", "?"}});
+    script.push_back({{"op", "meshes"}, {"ids", {0, 7, 39}}});
+    // "?" = the frame number of that instance's previous reply (what a host sends back).
+    Host host;
+    std::map<std::string, Json> last;
+    Json replies = Json::array();
+    for (auto& op : script) {
+      if (op.contains("since")) op["since"] = last.count(op["instance"]) ? last[op["instance"]] : Json(0);
+      const Json reply = Json::parse(host.requestText(op.dump()));
+      if (op["op"] == "frame") last[op["instance"]] = reply["frame"];
+      replies.push_back(reply);
+    }
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && (std::string(argv[1]) == "--bench" || std::string(argv[1]) == "--perf")) {
+    // Large-rig medians; --perf also checks the regression budgets (exit 1 when one is exceeded).
+    const Json result = cutout_bench::run();
+    std::cout << result.dump() << "\n";
+    if (std::string(argv[1]) == "--bench") return 0;
+    const auto failed = cutout_bench::checkBudgets(result);
+    for (const auto& f : failed) std::cerr << "PERF BUDGET " << f << "\n";
+    return failed.empty() ? 0 : 1;
+  }
   if (argc > 1 && std::string(argv[1]) == "--bezier-parity") {
     // Native reference samples for tests/plugins/cutout-bezier-parity.test.mjs (Wasm `sample`).
     Host host;
@@ -301,6 +534,23 @@ int main(int argc, char** argv) {
     Json replies = Json::array();
     for (const auto& op : meshParityScript()) replies.push_back(host.handle(op));
     std::cout << Json({{"script", meshParityScript()}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--outline-parity") {
+    // Native reference for freeform mesh edits (outline, alpha trace, vertex/edge ops) and their draw items.
+    Host host;
+    Json replies = Json::array();
+    const Json script = outlineParityScript();
+    for (const auto& op : script) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--event-parity") {
+    // Native reference for event notifications with payloads (replayed through the Wasm runtime).
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : eventScript()) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", eventScript()}, {"replies", replies}}).dump() << "\n";
     return 0;
   }
   if (argc > 1 && std::string(argv[1]) == "--look-parity") {
@@ -1955,6 +2205,933 @@ int main(int argc, char** argv) {
     check(near(items[0]["mesh"]["positions"][0].get<double>(), 2 * pos[0], 1e-9) && near(items[0]["mesh"]["positions"][1].get<double>(), 2 * pos[1], 1e-9), "placement applied to positions");
     const Json sample = host.handle({{"op", "sample"}, {"rig", meshParityRig()}, {"clip", "wave"}, {"timeMs", 550}});
     check(sample["pose"]["deform"]["flag/flag"].size() == 18 && !host.handle({{"op", "sample"}, {"rig", rigData()}, {"timeMs", 0}})["pose"].contains("deform"), "sample reports deform only when keyed");
+  });
+
+  // ---- Bone length, drawn bones, orientation (plugin 1.5.0) ----
+  // Largest difference between the draw lists of `a` and `b` (matrices and mesh positions) over the
+  // setup pose, every clip alone at many times, pairs of clips layered (track 0 + 1), cross-fades,
+  // and every skin x expression: the "nothing moves" check of orientBones.
+  auto drawDiff = [](const Json& a, const Json& b) {
+    const auto ra = std::make_shared<const Rig>(parseRig("a", a)), rb = std::make_shared<const Rig>(parseRig("b", b));
+    double worst = 0;
+    auto compare = [&](const std::function<void(Instance&)>& setup) {
+      Instance ia(ra), ib(rb);
+      setup(ia);
+      setup(ib);
+      const auto da = ia.drawList(), db = ib.drawList();
+      if (da.size() != db.size()) { worst = 1e9; return; }
+      for (size_t i = 0; i < da.size(); i++) {
+        const Affine& x = da[i].matrix;
+        const Affine& y = db[i].matrix;
+        for (double dv : {x.a - y.a, x.b - y.b, x.c - y.c, x.d - y.d, x.e - y.e, x.f - y.f}) worst = std::max(worst, std::fabs(dv));
+        if (da[i].positions.size() != db[i].positions.size() || da[i].imageAssetId != db[i].imageAssetId || da[i].alpha != db[i].alpha) { worst = 1e9; return; }
+        for (size_t k = 0; k < da[i].positions.size(); k++) worst = std::max(worst, std::fabs(da[i].positions[k] - db[i].positions[k]));
+      }
+    };
+    std::vector<std::string> skins{""}, expressions{""};
+    for (const auto& s : ra->skins) skins.push_back(s.id);
+    for (const auto& e : ra->expressions) expressions.push_back(e.id);
+    for (const auto& skin : skins)
+      for (const auto& expression : expressions) {
+        auto look = [&](Instance& inst) {
+          inst.setSkin(skin);
+          inst.setExpression(expression.empty() ? std::nullopt : std::optional<std::string>(expression));
+        };
+        compare(look);
+        for (const auto& c : ra->clips)
+          for (int step = 0; step <= 24; step++) {
+            const double t = double(c.durationMs) * step / 24.0 + (step % 5) * 0.37;
+            compare([&](Instance& inst) { look(inst); inst.play(0, c.id, false); inst.seek(0, t); });
+            for (const auto& layer : ra->clips)
+              if (layer.id != c.id && step % 6 == 0)
+                compare([&](Instance& inst) { look(inst); inst.play(0, c.id, false); inst.seek(0, t); inst.play(1, layer.id, false); inst.seek(1, t * 0.7); });
+          }
+        for (size_t i = 0; i + 1 < ra->clips.size(); i++)
+          compare([&](Instance& inst) { look(inst); inst.play(0, ra->clips[i].id); inst.seek(0, 130); inst.play(0, ra->clips[i + 1].id, std::nullopt, 1, Then::Default, 240); inst.update(90); });
+      }
+    return worst;
+  };
+  auto boneJson = [](const Json& d, const std::string& id) { for (const auto& b : d["bones"]) if (b["id"] == id) return b; return Json(); };
+  auto ikJson = [](const Json& d, const std::string& id) { for (const auto& k : d["ik"]) if (k["id"] == id) return k; return Json(); };
+  auto tipOf = [](const Rig& r, const Pose& p, const std::string& bone, double len) {
+    double x, y;
+    p.world[size_t(r.boneIndex(bone))].apply(len, 0, x, y);
+    return std::make_pair(x, y);
+  };
+
+  test("bone length and color: validation, parse, old documents unchanged", [&] {
+    Json d = rigData();
+    check(validateRig(d).empty() && parseRig("r", d).bones[1].length == 0 && parseRig("r", d).bones[1].color.empty(), "1.4 documents: point bones");
+    for (const Json& bad : {Json(-1), Json("10"), Json(100001), Json(nullptr)}) {
+      Json x = rigData();
+      x["bones"][1]["length"] = bad;
+      check(hasCode(validateRig(x), "ANIM_BONE_LENGTH"), "length " + bad.dump() + " refused");
+    }
+    for (const char* bad : {"#12", "red", "#12345g", "#1234567"}) {
+      Json x = rigData();
+      x["bones"][1]["color"] = bad;
+      check(hasCode(validateRig(x), "ANIM_BONE_COLOR"), std::string("color ") + bad + " refused");
+    }
+    d["bones"][1]["length"] = 96.5;
+    d["bones"][1]["color"] = "#a1B2c3";
+    d["bones"][2]["color"] = "#a1b2c3ff";
+    check(validateRig(d).empty(), "length + colors valid");
+    const Rig r = parseRig("r", d);
+    check(r.bones[1].length == 96.5 && r.bones[1].color == "#a1B2c3" && r.bones[2].color == "#a1b2c3ff", "parsed");
+    check(drawDiff(rigData(), d) == 0, "length is not a transform: identical draw lists");
+    EditResult e = applyEdit(rigData(), {{"op", "addBone"}, {"id", "tail"}, {"parent", "body"}, {"x", 10}, {"rotation", 30}, {"length", 40.25}, {"color", "#ff8800"}});
+    const Json tail = boneJson(e.data, "tail");
+    check(tail["length"] == 40.25 && tail["color"] == "#ff8800" && tail["rotation"] == 30, "addBone length/color");
+    e = applyEdit(e.data, {{"op", "setBone"}, {"bone", "tail"}, {"length", nullptr}, {"color", nullptr}});
+    check(!boneJson(e.data, "tail").contains("length") && !boneJson(e.data, "tail").contains("color"), "null clears (documents keep the 1.4 shape)");
+    bool refused = false;
+    try { applyEdit(rigData(), {{"op", "setBone"}, {"bone", "body"}, {"length", -3}}); } catch (const EditError&) { refused = true; }
+    check(refused, "negative length refused");
+    refused = false;
+    try { applyEdit(rigData(), {{"op", "setBone"}, {"bone", "body"}, {"color", "blue"}}); } catch (const EditError&) { refused = true; }
+    check(refused, "malformed color refused");
+  });
+
+  test("ik effector precedence: tip bone > lower length tip > first child > origin", [&] {
+    // Target 80 px from the shoulder: reachable by upper 50 + forearm length 30 or hand 50.
+    Json d = armRig(64, 48);
+    {
+      const Rig r = parseRig("arm", d);
+      const auto hand = tipOf(r, samplePose(r, -1, 0), "hand", 0);
+      check(near(hand.first, 64) && near(hand.second, 48) && r.ik[0].tip == r.boneIndex("hand") && r.ik[0].tipLength == 0, "no length: first child (1.4 rule)");
+    }
+    d["bones"][2]["length"] = 30;
+    {
+      const Rig r = parseRig("arm", d);
+      const auto end = tipOf(r, samplePose(r, -1, 0), "lower", 30);
+      check(r.ik[0].tip < 0 && r.ik[0].tipLength == 30 && near(end.first, 64) && near(end.second, 48), "lower length tip beats the first child");
+    }
+    d["ik"][0]["tip"] = "hand";
+    {
+      const Rig r = parseRig("arm", d);
+      const auto hand = tipOf(r, samplePose(r, -1, 0), "hand", 0);
+      check(r.ik[0].tipLength == 0 && near(hand.first, 64) && near(hand.second, 48), "explicit tip beats the length");
+    }
+    Json bare = armRig(64, 48);
+    bare["bones"].erase(3);  // no hand: the lower origin aims at the target
+    bare["slots"].erase(1);
+    bare["attachments"].erase(1);
+    {
+      const Rig r = parseRig("arm", bare);
+      const Pose p = samplePose(r, -1, 0);
+      const auto low = tipOf(r, p, "lower", 0);
+      check(r.ik[0].tip < 0 && std::fabs(low.first * 48 - low.second * 64) < 1e-6 && low.first > 0, "no child, no length: the origin aims (1.4 rule)");
+    }
+    // Aim: a bone with a length aims its tip (+x · length) at the target, aimAxis unchanged.
+    Json aim = hangingArm();
+    aim["bones"][1]["length"] = 100;
+    aim["ik"] = Json::array({{{"id", "aim"}, {"bones", {"arm"}}, {"target", "t"}}});
+    const Rig r = parseRig("arm", aim);
+    const Pose p = samplePose(r, -1, 0);
+    const auto o = tipOf(r, p, "arm", 0), end = tipOf(r, p, "arm", 100);
+    const double tx = p.world[size_t(r.boneIndex("t"))].e, ty = p.world[size_t(r.boneIndex("t"))].f;
+    check(std::fabs((end.first - o.first) * (ty - o.second) - (end.second - o.second) * (tx - o.first)) < 1e-6 && (end.first - o.first) * (tx - o.first) > 0, "aim: the tip lies on the line to the target");
+  });
+
+  test("ik with lengths: addIk prefers the length, setBone keeps the effector", [&] {
+    // Aim chain on a bone with a length: no aimAxis (its +x), target created at its tip.
+    Json aim = hangingArm();
+    aim["bones"][1]["length"] = 100;
+    EditResult e = applyEdit(aim, {{"op", "addIk"}, {"bones", {"arm"}}, {"createTarget", true}});
+    const Json k = ikJson(e.data, e.extra["ik"]);
+    const auto w = setupWorld(e.data);
+    check(!k.contains("aimAxis") && near(w.at(e.extra["target"].get<std::string>()).e, 330) && near(w.at(e.extra["target"].get<std::string>()).f, 100), "aim: +x at the length, no axis");
+    check(drawDiff(aim, e.data) < 1e-6, "creating the aim constraint moves nothing");
+    // Two-bone chain whose lower bone has a length (and a child): the length tip is the effector.
+    Json arm = armRig(64, 48);
+    arm.erase("ik");
+    arm["bones"][2]["length"] = 40;
+    e = applyEdit(arm, {{"op", "addIk"}, {"bones", {"upper", "lower"}}, {"createTarget", true}});
+    const Json limb = ikJson(e.data, e.extra["ik"]);
+    const Json target = boneJson(e.data, e.extra["target"]);
+    check(!limb.contains("tip") && near(target["x"].get<double>(), 90) && near(target["y"].get<double>(), 0), "two-bone: no tip, target at the lower tip");
+    check(drawDiff(arm, e.data) < 1e-6, "creating the limb constraint moves nothing");
+    // setBone length on a lower bone that used its first child: the child is pinned as tip.
+    const Json before = armRig(64, 48);
+    e = applyEdit(before, {{"op", "setBone"}, {"bone", "lower"}, {"length", 30}});
+    check(e.data["ik"][0]["tip"] == "hand" && hasCode(validateRig(e.data), "ANIM_IK_TIP") == false, "first child pinned as tip");
+    check(drawDiff(before, e.data) < 1e-9, "the limb does not move");
+    check(std::find(e.affected.begin(), e.affected.end(), "ik:arm") != e.affected.end(), "ik reported as affected");
+  });
+
+  test("fitBoneLengths: distance to the first child", [&] {
+    const Json before = armRig(64, 48);
+    EditResult e = applyEdit(before, {{"op", "fitBoneLengths"}});
+    check(boneJson(e.data, "upper")["length"] == 50 && boneJson(e.data, "lower")["length"] == 50 && !boneJson(e.data, "hand").contains("length") && !boneJson(e.data, "root").contains("length"), "upper/lower get 50, childless and zero-distance bones none");
+    check(e.extra["lengths"] == Json({{"lower", 50}, {"upper", 50}}) && e.data["ik"][0]["tip"] == "hand", "extra.lengths, tip pinned");
+    check(drawDiff(before, e.data) < 1e-9, "nothing moves");
+    Json tilted = before;
+    tilted["bones"][3]["x"] = 30; tilted["bones"][3]["y"] = 40;
+    check(applyEdit(tilted, {{"op", "fitBoneLengths"}, {"bones", {"lower"}}}).data["bones"][2]["length"] == 50, "an off-axis child: its distance");
+    bool refused = false;
+    try { applyEdit(before, {{"op", "fitBoneLengths"}, {"bones", {"hand"}}}); } catch (const EditError&) { refused = true; }
+    check(refused, "nothing to fit: refused");
+    refused = false;
+    try { applyEdit(before, {{"op", "fitBoneLengths"}, {"bones", {"nope"}}}); } catch (const EditError&) { refused = true; }
+    check(refused, "unknown bone refused");
+  });
+
+  test("orientBones: hanging arm becomes a Spine bone, aimAxis 90 disappears", [&] {
+    Json d = hangingArm();
+    d["ik"] = Json::array({{{"id", "aim"}, {"bones", {"arm"}}, {"target", "t"}, {"aimAxis", 90}}});
+    EditResult e = applyEdit(d, {{"op", "orientBones"}, {"bones", {"arm"}}});
+    const Json arm = boneJson(e.data, "arm");
+    check(arm["rotation"] == 90 && arm["length"] == 100 && !e.data["ik"][0].contains("aimAxis"), "rotation 90, length 100, no aim axis");
+    check(e.extra["oriented"] == Json({{"arm", 90}}), "extra.oriented");
+    check(drawDiff(d, e.data) < 1e-6, "draws identically (IK solved)");
+    check(validateRig(e.data).empty(), "valid");
+    // Already has a length -> skipped (listed: warning); nothing at all -> refused.
+    bool refused = false;
+    try { applyEdit(e.data, {{"op", "orientBones"}, {"bones", {"arm"}}}); } catch (const EditError&) { refused = true; }
+    check(refused, "an oriented bone is not turned again");
+    e = applyEdit(d, {{"op", "orientBones"}, {"fitLength", false}});
+    check(!boneJson(e.data, "arm").contains("length") && e.extra["skipped"].contains("t") && !e.extra["oriented"].contains("root") && !hasCode(e.diagnostics, "ANIM_ORIENT_SKIPPED"), "fitLength false; unlisted skips are silent");
+  });
+
+  test("orientBones keeps animation identical (demo-like rig, IK, meshes, skins, expressions)", [&] {
+    // The demo character's shape: arms hang down (image along +y), a breathing body (non-uniform
+    // scale: kept), head/arm keys, an aim arm with aimAxis, a hand keyed on x only, a skin and an
+    // expression that override the arm and head.
+    Json demo = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 512, "height": 768, "originX": 256, "originY": 720},
+      "bones": [
+        {"id": "root", "parent": null, "x": 256, "y": 720},
+        {"id": "body", "parent": "root", "x": 0, "y": -80},
+        {"id": "head", "parent": "body", "x": 0, "y": -170},
+        {"id": "arm-left", "parent": "body", "x": -42.825279, "y": -148.936803},
+        {"id": "arm-right", "parent": "body", "x": 42.825279, "y": -151.360595, "rotation": 4, "scaleX": 1.1, "scaleY": 1.1},
+        {"id": "hand", "parent": "arm-right", "x": 2, "y": 104, "rotation": -7},
+        {"id": "t", "parent": "root", "x": -120, "y": -150}],
+      "slots": [
+        {"id": "arm-left", "bone": "arm-left", "attachment": "arm-left"}, {"id": "arm-right", "bone": "arm-right", "attachment": "arm-right"},
+        {"id": "body", "bone": "body", "attachment": "body"}, {"id": "hand", "bone": "hand", "attachment": "hand"},
+        {"id": "head", "bone": "head", "attachment": "head"}, {"id": "eyes", "bone": "head", "attachment": "open"}],
+      "attachments": [
+        {"slot": "body", "name": "body", "imageAssetId": "img-body", "width": 130, "height": 170, "pivotX": 0.5, "pivotY": 1},
+        {"slot": "arm-left", "name": "arm-left", "imageAssetId": "img-arm", "x": 0.825279, "y": 53.936803, "width": 40, "height": 120},
+        {"slot": "arm-right", "name": "arm-right", "imageAssetId": "img-arm", "width": 40, "height": 120, "pivotY": 0.08, "rotation": 3},
+        {"slot": "hand", "name": "hand", "imageAssetId": "img-hand", "width": 30, "height": 30, "y": 12},
+        {"slot": "head", "name": "head", "imageAssetId": "img-head", "y": -70, "width": 150, "height": 150},
+        {"slot": "eyes", "name": "open", "imageAssetId": "img-eyes-open", "y": -65, "width": 90, "height": 30},
+        {"slot": "eyes", "name": "closed", "imageAssetId": "img-eyes-closed", "y": -65, "width": 90, "height": 30}],
+      "skins": [{"id": "winter", "attachments": [
+        {"slot": "arm-left", "name": "arm-left", "imageAssetId": "img-arm-winter", "x": 2, "y": 50, "rotation": -6, "scaleX": 1.2, "width": 44, "height": 124}]}],
+      "expressions": [{"id": "wave", "slots": {"eyes": "closed"}, "bones": {"head": {"rotation": 8}, "arm-right": {"rotation": -40}, "hand": {"rotation": 15}}}],
+      "ik": [{"id": "look", "bones": ["arm-left"], "target": "t", "aimAxis": 90, "mix": 0.7}],
+      "clips": [
+        {"id": "idle", "durationMs": 2400, "loop": true, "tracks": [
+          {"target": "bone:body", "property": "scaleY", "keys": [{"timeMs": 0, "value": 1}, {"timeMs": 1200, "value": 1.03, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 2400, "value": 1}]},
+          {"target": "bone:head", "property": "rotation", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 1200, "value": 3}, {"timeMs": 2400, "value": 0}]},
+          {"target": "bone:t", "property": "y", "keys": [{"timeMs": 0, "value": -150}, {"timeMs": 1200, "value": -60}, {"timeMs": 2400, "value": -150}]}]},
+        {"id": "joy", "durationMs": 900, "loop": false, "tracks": [
+          {"target": "bone:head", "property": "x", "keys": [{"timeMs": 0, "value": 0}]},
+          {"target": "bone:head", "property": "y", "keys": [{"timeMs": 0, "value": -170}]},
+          {"target": "bone:head", "property": "rotation", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 300, "value": -8}, {"timeMs": 600, "value": 6, "interp": "step"}, {"timeMs": 900, "value": 0}]},
+          {"target": "bone:head", "property": "scaleX", "keys": [{"timeMs": 0, "value": 1}]},
+          {"target": "bone:head", "property": "scaleY", "keys": [{"timeMs": 0, "value": 1}]},
+          {"target": "bone:arm-left", "property": "x", "keys": [{"timeMs": 0, "value": -42.825279}]},
+          {"target": "bone:arm-left", "property": "y", "keys": [{"timeMs": 0, "value": -148.936803}]},
+          {"target": "bone:arm-left", "property": "rotation", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 450, "value": 35, "interp": "bezier", "curve": [0.3, 0, 0.2, 1]}, {"timeMs": 900, "value": 0}]},
+          {"target": "bone:arm-right", "property": "rotation", "keys": [{"timeMs": 0, "value": 4}, {"timeMs": 450, "value": -60}, {"timeMs": 900, "value": 4}]},
+          {"target": "bone:arm-right", "property": "scaleX", "keys": [{"timeMs": 0, "value": 1.1}, {"timeMs": 450, "value": 1.25, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 900, "value": 1.1}]},
+          {"target": "bone:arm-right", "property": "scaleY", "keys": [{"timeMs": 0, "value": 1.1}, {"timeMs": 450, "value": 1.25, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 900, "value": 1.1}]},
+          {"target": "bone:hand", "property": "x", "keys": [{"timeMs": 0, "value": 2}, {"timeMs": 450, "value": 14, "interp": "bezier", "curve": [0.42, 0, 0.58, 1]}, {"timeMs": 900, "value": 2}]},
+          {"target": "slot:eyes", "property": "attachment", "keys": [{"timeMs": 0, "value": "open"}, {"timeMs": 500, "value": "closed"}]}]}]})");
+    check(validateRig(demo).empty(), "fixture valid");
+    EditResult e = applyEdit(demo, {{"op", "orientBones"}});
+    const double diff = drawDiff(demo, e.data);
+    check(diff < 1e-6, "draw lists identical (max diff " + std::to_string(diff) + ")");
+    check(validateRig(e.data).empty(), "result valid");
+    const Json& o = e.extra["oriented"];
+    check(o.contains("root") && o.contains("head") && o.contains("arm-left") && o.contains("arm-right") && o.contains("hand"), "root, head, arms, hand turned: " + o.dump());
+    check(e.extra["skipped"].contains("body") && e.extra["skipped"].contains("t"), "breathing body (non-uniform scale) and target skipped: " + e.extra["skipped"].dump());
+    check(!ikJson(e.data, "look").contains("aimAxis") || std::fabs(ikJson(e.data, "look")["aimAxis"].get<double>()) < 15, "aim axis absorbed by the turn");
+    check(near(o["arm-left"].get<double>(), 90, 1.0) && boneJson(e.data, "arm-right")["length"].get<double>() > 100, "arms point down with a length");
+    // hand.x keyed alone: its y track is made at the same times (y is never keyed elsewhere).
+    bool handY = false;
+    for (const auto& c : e.data["clips"]) for (const auto& t : c["tracks"]) handY = handY || (t["target"] == "bone:hand" && t["property"] == "y" && t["keys"].size() == 3);
+    check(handY, "hand y track made for the pair");
+    // A child keyed on x in one clip and on y in another cannot turn: its parent is skipped.
+    Json split = demo;
+    split["clips"][0]["tracks"].push_back({{"target", "bone:hand"}, {"property", "y"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 104}}, {{"timeMs", 900}, {"value", 90}}})}});
+    e = applyEdit(split, {{"op", "orientBones"}});
+    check(e.extra["skipped"].contains("arm-right") && drawDiff(split, e.data) < 1e-6, "split x/y keys: parent skipped, still identical");
+    // Fixtures with two-bone IK (rotated/scaled parents, mix/bend keys) and weighted meshes.
+    Json ik = ikParityRig();
+    ik["bones"][2]["x"] = 35; ik["bones"][2]["y"] = 35;  // lower off the upper's +x: upper turns 45°
+    e = applyEdit(ik, {{"op", "orientBones"}});
+    check(e.extra["oriented"].contains("upper") && e.extra["skipped"].contains("head") && drawDiff(ik, e.data) < 1e-6, "two-bone IK fixture identical, mirrored head skipped");
+    Json mesh = meshParityRig();
+    mesh["bones"][2]["x"] = 70.710678; mesh["bones"][2]["y"] = 70.710678;  // a weighted arm whose frame turns
+    e = applyEdit(mesh, {{"op", "orientBones"}});
+    check(e.extra["oriented"].contains("upper") && e.extra["oriented"].contains("hand") && drawDiff(mesh, e.data) < 1e-6, "weighted mesh + deform + skin fixture identical");
+  });
+
+  // ---- Freeform meshes: outlines, vertex / edge edits, alpha tracing (plugin 1.6.0) ----
+  test("outline mesh: concave polygon is tiled exactly (constrained Delaunay)", [&] {
+    const std::vector<double> L = {0, 0, 100, 0, 100, 40, 40, 40, 40, 100, 0, 100};
+    auto r = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", L}});
+    const Json& a = r.data["attachments"][0];
+    check(validateRig(r.data).empty() && a["type"] == "mesh" && a["hull"] == 6 && a["vertices"].size() == 12, "region -> 6-vertex outline mesh");
+    check(tilingProblem(a, 6400).empty(), "L shape: " + tilingProblem(a, 6400));
+    check(a["triangles"].size() == 12 && r.extra["triangles"] == 4, "n - 2 triangles");
+    check(a["uvs"][2] == 1 && a["uvs"][3] == 0 && a["uvs"][6] == 0.4, "uvs = position / image size");
+    check(a["edges"] == Json::array({0, 1, 0, 5, 1, 2, 2, 3, 3, 4, 4, 5}), "edges = the outline cycle (sorted pairs)");
+    // Interior grid: denser, still an exact tiling, Delaunay away from the outline, every point used.
+    auto dense = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", L}, {"spacing", 10}});
+    const Json& b = dense.data["attachments"][0];
+    check(b["vertices"].size() / 2 > 40 && tilingProblem(b, 6400).empty() && delaunayViolations(b) == 0, "spacing grid: " + tilingProblem(b, 6400));
+    // Drawn the other way round: kept as drawn (index 0 = the first click), same area.
+    std::vector<double> back;
+    for (size_t i = 0; i < 6; i++) { const size_t k = (6 - i) % 6; back.push_back(L[2 * k]); back.push_back(L[2 * k + 1]); }
+    auto cw = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", back}, {"points", {20, 20, 20, 80}}});
+    const Json& c = cw.data["attachments"][0];
+    check(c["vertices"][2] == 0 && c["vertices"][3] == 100 && tilingProblem(c, 6400).empty() && c["vertices"].size() == 16, "either direction, interior points appended");
+    // Collinear outline points (a rectangle with points on its sides) and a comb (deeply concave).
+    auto rect = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 50, 0, 100, 0, 100, 50, 100, 100, 50, 100, 0, 100, 0, 50}}, {"points", {50, 50}}});
+    check(tilingProblem(rect.data["attachments"][0], 10000).empty(), "collinear outline points: " + tilingProblem(rect.data["attachments"][0], 10000));
+    std::vector<double> comb = {0, 100, 0, 0};
+    for (int t = 0; t < 5; t++) { const double x = t * 20.0; comb.insert(comb.end(), {x + 5, 0, x + 10, 90, x + 15, 0, x + 20, 0}); }
+    comb.resize(comb.size() - 2);
+    comb.insert(comb.end(), {100, 0, 100, 100});
+    auto combed = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", comb}});
+    check(tilingProblem(combed.data["attachments"][0]).empty(), "comb outline: " + tilingProblem(combed.data["attachments"][0]));
+    // Refusals with a clear reason: self-intersection, doubled point, flat, too few, interior point outside.
+    auto reason = [&](const Json& op) { try { applyEdit(outlineRig(), op); } catch (const EditError& e) { return std::string(e.what()); } return std::string(); };
+    const Json base = {{"op", "createMeshFromOutline"}, {"slot", "cape"}};
+    Json bow = base; bow["hull"] = {0, 0, 100, 100, 100, 0, 0, 100};
+    check(reason(bow).find("교차") != std::string::npos, "bow tie refused: " + reason(bow));
+    Json dup = base; dup["hull"] = {0, 0, 100, 0, 100, 100, 100, 0, 0, 100};
+    check(!reason(dup).empty(), "doubled point refused");
+    Json flat = base; flat["hull"] = {0, 0, 50, 0, 100, 0};
+    check(!reason(flat).empty(), "flat outline refused");
+    Json two = base; two["hull"] = {0, 0, 10, 10};
+    Json out = base; out["hull"] = L; out["points"] = {80, 80};
+    check(!reason(two).empty() && reason(out).find("윤곽 밖") != std::string::npos, "two points / interior point outside refused");
+    Json bad = base; bad["hull"] = L; bad["edges"] = {0, 9};
+    check(!reason(bad).empty(), "edge index out of range refused");
+    Host host;
+    const Json op = {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", L}, {"spacing", 15}};
+    check(host.handle({{"op", "edit"}, {"rig", outlineRig()}, {"operation", op}})["rig"] == applyEdit(outlineRig(), op).data, "host edit = core edit");
+    // A large mesh stays within the limits and is fast enough for an editor gesture.
+    const auto start = std::chrono::steady_clock::now();
+    Json big = outlineRig();
+    big["attachments"][0]["width"] = 1024; big["attachments"][0]["height"] = 1024;
+    auto large = applyEdit(big, {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 1024, 0, 1024, 1024, 0, 1024}}, {"spacing", 25}});
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    std::cout << "outline mesh " << large.data["attachments"][0]["vertices"].size() / 2 << " vertices / " << large.extra["triangles"] << " triangles in " << ms << " ms\n";
+    check(tilingProblem(large.data["attachments"][0], 1024.0 * 1024).empty() && large.extra["triangles"].get<int>() > 3000 && ms < 3000, "1600+ vertices triangulated");
+  });
+
+  test("mesh vertex add/remove interpolates weights, uvs and deform keys", [&] {
+    Json d = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 100, 0, 100}}}).data;
+    // Weights by x: left at x = 0, right at x = 100 (linear in x on any triangulation of the square).
+    d = applyEdit(d, {{"op", "setWeights"}, {"slot", "cape"}, {"vertices", {0, 1, 2, 3}}, {"weights", Json::array({
+      Json::array({{{"bone", "left"}, {"weight", 1}}}), Json::array({{{"bone", "right"}, {"weight", 1}}}),
+      Json::array({{{"bone", "right"}, {"weight", 1}}}), Json::array({{{"bone", "left"}, {"weight", 1}}})})}}).data;
+    // A skin's same-named mesh with another vertex count keeps its own deform keys.
+    d["skins"] = Json::array({{{"id", "alt"}, {"attachments", Json::array({d["attachments"][0]})}}});
+    d = applyEdit(d, {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"skin", "alt"}, {"hull", {0, 0, 50, 0, 100, 0, 100, 100, 0, 100, 0, 50}}}).data;
+    const std::vector<double> four = {0, 0, 10, 0, 10, 0, 0, 0}, six(12, 3.0);
+    d["clips"] = Json::array({{{"id", "c"}, {"durationMs", 1000}, {"tracks", Json::array({{{"target", "slot:cape"}, {"property", "deform"}, {"attachment", "cape"},
+      {"keys", Json::array({{{"timeMs", 0}, {"offsets", four}}, {{"timeMs", 500}, {"offsets", six}}})}}})}}});
+    check(validateRig(d).size() == 1 && hasCode(validateRig(d), "ANIM_MESH_DEFORM_SKIN"), "fixture: two same-named meshes, keys for both");
+    auto r = applyEdit(d, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {25, 50}}});
+    const Json& a = r.data["attachments"][0];
+    check(r.extra["vertex"] == 4 && a["vertices"].size() == 10 && a["hull"] == 4 && tilingProblem(a, 10000).empty(), "interior vertex appended, re-triangulated");
+    check(a["weights"][4] == Json::array({{{"bone", "left"}, {"weight", 0.75}}, {{"bone", "right"}, {"weight", 0.25}}}), "weights interpolated barycentrically: " + a["weights"][4].dump());
+    check(a["uvs"][8] == 0.25 && a["uvs"][9] == 0.5, "uv interpolated (image stays put)");
+    const Json keys = r.data["clips"][0]["tracks"][0]["keys"];
+    check(keys[0]["offsets"].size() == 10 && near(keys[0]["offsets"][8].get<double>(), 2.5) && keys[0]["offsets"][2] == 10 && keys[1]["offsets"] == Json(six), "deform: kept vertices keep, new blends; the skin mesh's key untouched");
+    check(hasCode(r.diagnostics, "ANIM_MESH_DEFORM_REMAPPED") && r.extra["remappedKeys"] == 1 && !hasErrors(validateRig(r.data)), "remap reported, rig valid");
+    check(r.data["skins"][0]["attachments"][0]["vertices"].size() == 12, "skin mesh unchanged");
+    // On an outline edge: a new outline vertex right after the edge's start; later indices shift.
+    auto e = applyEdit(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {100, 30}}});
+    const Json& b = e.data["attachments"][0];
+    check(e.extra["vertex"] == 2 && b["hull"] == 5 && b["vertices"][4] == 100 && b["vertices"][5] == 30 && tilingProblem(b, 10000).empty(), "outline vertex inserted at 2");
+    check(b["weights"][2] == Json::array({{{"bone", "right"}, {"weight", 1}}}) && b["weights"][5] == a["weights"][4], "weights follow the renumbering");
+    check(e.data["clips"][0]["tracks"][0]["keys"][0]["offsets"][4] == 10 && e.data["clips"][0]["tracks"][0]["keys"][0]["offsets"][10] == 2.5, "deform follows the renumbering");
+    check(refused(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {150, 50}}}) && refused(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {25, 50}}}) &&
+          refused(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {1}}}), "outside / on a vertex / bad position refused");
+    // Remove: the interior vertex goes back to the original data exactly.
+    auto back = applyEdit(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {4}}});
+    const Json& c = back.data["attachments"][0];
+    check(c["vertices"] == d["attachments"][0]["vertices"] && c["weights"] == d["attachments"][0]["weights"] && back.data["clips"][0]["tracks"][0]["keys"][0]["offsets"] == Json(four), "remove restores vertices, weights, deform");
+    // Outline vertices: removable while the outline stays valid and holds every interior vertex.
+    auto pent = applyEdit(e.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {2}}});
+    check(pent.data["attachments"][0]["hull"] == 4 && tilingProblem(pent.data["attachments"][0], 10000).empty(), "outline vertex removed");
+    auto tri = applyEdit(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {1}}});
+    check(tri.data["attachments"][0]["hull"] == 3 && tilingProblem(tri.data["attachments"][0], 5000).empty(), "square -> triangle, the interior vertex still inside");
+    check(refused(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {0}}}), "interior vertex left outside refused");
+    check(refused(tri.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {0}}}) && refused(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {0, 1}}}), "fewer than 3 outline vertices refused");
+    // Meshes without an outline (alpha-trimmed grids): local edits only, outline vertices stay.
+    Json grid = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 3}, {"cols", 3}, {"cells", "111111110"}}).data;
+    const Json& g = grid["attachments"][0];
+    int centre = -1;
+    for (size_t i = 0; i < g["vertices"].size() / 2; i++) if (near(g["vertices"][2 * i].get<double>(), 200.0 / 3, 1e-4) && near(g["vertices"][2 * i + 1].get<double>(), 40.0 / 3, 1e-4)) centre = int(i);
+    const double gridArea = 200.0 * 40 * 8 / 9;
+    auto split = applyEdit(grid, {{"op", "addMeshVertex"}, {"slot", "arm"}, {"position", {40, 20}}});
+    check(split.extra["vertex"] == 15 && tilingProblem(split.data["attachments"][0], gridArea).empty() && !split.data["attachments"][0].contains("hull"), "no outline: local split");
+    auto gone = applyEdit(grid, {{"op", "removeMeshVertex"}, {"slot", "arm"}, {"vertices", {centre}}});
+    check(centre >= 0 && gone.data["attachments"][0]["vertices"].size() == 28 && tilingProblem(gone.data["attachments"][0], gridArea).empty(), "no outline: interior vertex removed");
+    auto reason = [&](const Json& data, const Json& op) { try { applyEdit(data, op); } catch (const EditError& x) { return std::string(x.what()); } return std::string(); };
+    check(reason(grid, {{"op", "removeMeshVertex"}, {"slot", "arm"}, {"vertices", {0}}}).find("윤곽 그리기") != std::string::npos, "no outline: outline vertex refused with a hint");
+    check(refused(grid, {{"op", "addMeshVertex"}, {"slot", "arm"}, {"position", {190, 35}}}), "no outline: a point in the trimmed cell is outside");
+  });
+
+  test("mesh edges: pin, keep through re-triangulation, refuse crossings", [&] {
+    Json d = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 100, 0, 100}}, {"points", {30, 30, 70, 30, 70, 70, 30, 70, 50, 50}}}).data;
+    check(!hasEdge(d["attachments"][0], 0, 5), "fixture: 0-5 is not a Delaunay edge");
+    auto r = applyEdit(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {5, 0}}});
+    const Json& a = r.data["attachments"][0];
+    bool listed = false;
+    for (size_t i = 0; i + 1 < a["edges"].size(); i += 2) listed = listed || (a["edges"][i] == 0 && a["edges"][i + 1] == 5);
+    check(hasEdge(a, 0, 5) && listed && r.extra["pinnedEdges"] == 1 && tilingProblem(a, 10000).empty() && delaunayViolations(a) == 0, "pinned edge forced in, rest Delaunay");
+    auto again = applyEdit(r.data, {{"op", "retriangulate"}, {"slot", "cape"}});
+    check(hasEdge(again.data["attachments"][0], 0, 5) && again.data["attachments"][0]["edges"] == a["edges"], "re-triangulation keeps the pinned edge");
+    auto moved = applyEdit(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {10, 80}}});
+    check(hasEdge(moved.data["attachments"][0], 0, 5), "vertex edits keep pinned edges");
+    auto reason = [&](const Json& data, const Json& op) { try { applyEdit(data, op); } catch (const EditError& x) { return std::string(x.what()); } return std::string(); };
+    check(reason(r.data, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {1, 4}}}).find("교차") != std::string::npos, "crossing a pinned edge refused");
+    check(reason(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {4, 6}}}).find("지납니다") != std::string::npos, "through another vertex refused");
+    check(refused(r.data, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {0, 5}}}) && refused(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {0, 1}}}) &&
+          refused(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {2, 2}}}), "already pinned / outline edge / same vertex refused");
+    Json concave = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 40, 40, 40, 40, 100, 0, 100}}}).data;
+    check(reason(concave, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {2, 4}}}).find("밖") != std::string::npos, "an edge across the notch (outside) refused");
+    auto unpinned = applyEdit(r.data, {{"op", "removeMeshEdge"}, {"slot", "cape"}, {"edge", {0, 5}}});
+    check(unpinned.data["attachments"][0]["edges"] == d["attachments"][0]["edges"] && unpinned.data["attachments"][0]["triangles"] == d["attachments"][0]["triangles"], "unpinned: back to the Delaunay mesh");
+    check(refused(d, {{"op", "removeMeshEdge"}, {"slot", "cape"}, {"edge", {0, 1}}}) && refused(d, {{"op", "removeMeshEdge"}, {"slot", "cape"}, {"edge", {4, 8}}}), "outline / unpinned edges cannot be removed");
+    // Without an outline the edge is forced in by flips (Sloan).
+    Json grid = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 2}, {"cols", 4}, {"cells", "11111110"}}).data;
+    const Json& g = grid["attachments"][0];
+    int p = -1, q = -1;
+    for (size_t i = 0; i < g["vertices"].size() / 2; i++) {
+      if (g["vertices"][2 * i] == 50 && g["vertices"][2 * i + 1] == 0) p = int(i);
+      if (g["vertices"][2 * i] == 100 && g["vertices"][2 * i + 1] == 40) q = int(i);
+    }
+    check(p >= 0 && q >= 0 && !hasEdge(g, p, q), "grid fixture");
+    auto pinned = applyEdit(grid, {{"op", "addMeshEdge"}, {"slot", "arm"}, {"edge", {p, q}}});
+    check(hasEdge(pinned.data["attachments"][0], p, q) && tilingProblem(pinned.data["attachments"][0], 200.0 * 40 * 7 / 8).empty(), "no outline: edge flipped in");
+    auto flat = applyEdit(pinned.data, {{"op", "retriangulate"}, {"slot", "arm"}});
+    check(hasEdge(flat.data["attachments"][0], p, q) && delaunayViolations(flat.data["attachments"][0]) == 0 && tilingProblem(flat.data["attachments"][0], 200.0 * 40 * 7 / 8).empty(), "no outline: retriangulate keeps it");
+  });
+
+  test("retriangulate repairs a folded mesh; validation of outline data", [&] {
+    Json d = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 100, 0, 100}}, {"spacing", 20}}).data;
+    const size_t n = d["attachments"][0]["vertices"].size() / 2;
+    // Drag an interior vertex across its neighbours: triangles fold over (still inside the outline).
+    auto folded = applyEdit(d, {{"op", "setMeshVertices"}, {"slot", "cape"}, {"vertices", {4}}, {"positions", {85, 85}}});
+    check(!tilingProblem(folded.data["attachments"][0], 10000).empty(), "fixture folds");
+    auto fixed = applyEdit(folded.data, {{"op", "retriangulate"}, {"slot", "cape"}});
+    check(tilingProblem(fixed.data["attachments"][0], 10000).empty() && fixed.data["attachments"][0]["vertices"].size() / 2 == n && delaunayViolations(fixed.data["attachments"][0]) == 0, "re-triangulated from the outline");
+    check(fixed.data["attachments"][0]["vertices"] == folded.data["attachments"][0]["vertices"] && fixed.data["attachments"][0]["uvs"] == folded.data["attachments"][0]["uvs"], "vertices and uvs untouched");
+    // Outline crossing itself: a warning (drawing is unaffected), and re-triangulation explains why it cannot.
+    auto twisted = applyEdit(d, {{"op", "setMeshVertices"}, {"slot", "cape"}, {"vertices", {1}}, {"positions", {-20, 100}}});
+    check(hasCode(twisted.diagnostics, "ANIM_MESH_HULL_SELF") && !hasErrors(twisted.diagnostics), "self-crossing outline warned");
+    check(refused(twisted.data, {{"op", "retriangulate"}, {"slot", "cape"}}), "retriangulate refused on a crossing outline");
+    Json e = d;
+    e["attachments"][0]["edges"].push_back(3);
+    e["attachments"][0]["edges"].push_back(3);
+    check(hasCode(validateRig(e), "ANIM_MESH_EDGES") && !hasErrors(validateRig(e)), "self-loop edge warned");
+    e = d;
+    e["attachments"][0]["hull"] = 2;
+    check(hasCode(validateRig(e), "ANIM_MESH_HULL") && !hasErrors(validateRig(e)), "hull of 2 warned");
+    // Grid meshes of plugin 1.4.0 keep loading and can be re-triangulated (outline = the grid hull).
+    Json grid = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 2}, {"cols", 4}}).data;
+    auto g = applyEdit(grid, {{"op", "retriangulate"}, {"slot", "arm"}});
+    check(tilingProblem(g.data["attachments"][0], 8000).empty() && g.data["attachments"][0]["vertices"] == grid["attachments"][0]["vertices"], "grid re-triangulated in place");
+  });
+
+  test("autoOutline traces the largest opaque region of an alpha mask", [&] {
+    Json d = outlineRig();
+    d["attachments"][0]["width"] = 128; d["attachments"][0]["height"] = 96;
+    // 64x48 mask (half the image size): a disc of radius 20 at (30, 24) -> 40 px in image space.
+    const Json mask = discMask(64, 48, 30, 24, 20);
+    auto r = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}});
+    const Json& a = r.data["attachments"][0];
+    const std::vector<double> outline = numbers(r.extra["outline"]);
+    const size_t hull = outline.size() / 2;
+    check(validateRig(r.data).empty() && a["hull"] == hull && hull >= 6 && hull <= 256 && polygonProblem(outline).empty() && tilingProblem(a).empty(), "simple outline, tiled: " + std::to_string(hull) + " points");
+    bool covered = true, bounded = true;
+    for (int k = 0; k < 64; k++) {
+      const double t = k * 2 * 3.14159265358979 / 64;
+      covered = covered && insidePolygon(outline, 60 + 39 * std::cos(t), 48 + 39 * std::sin(t));  // just inside the disc's edge
+    }
+    for (size_t i = 0; i < hull; i++) bounded = bounded && outline[2 * i] >= 0 && outline[2 * i] <= 128 && outline[2 * i + 1] >= 0 && outline[2 * i + 1] <= 96;
+    const double area = std::fabs(polygonArea(outline, hull)), disc = 3.14159265358979 * 40 * 40;
+    check(covered && bounded && area > disc && area < disc * 1.6, "covers the disc, stays in the image, not much bigger (area " + std::to_string(area) + ")");
+    check(!insidePolygon(outline, 125, 2), "the far speck is left out");
+    auto fine = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"detail", 1}});
+    auto coarse = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"detail", 0}});
+    check(fine.extra["hull"].get<int>() > r.extra["hull"].get<int>() && coarse.extra["hull"].get<int>() < r.extra["hull"].get<int>(), "detail controls the point count");
+    auto threshold = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"alphaThreshold", 0.9}});
+    check(insidePolygon(numbers(threshold.extra["outline"]), 60, 48), "threshold above the speck's alpha still finds the disc");
+    auto withGrid = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"spacing", 12}});
+    check(withGrid.data["attachments"][0]["vertices"].size() / 2 > hull + 10 && tilingProblem(withGrid.data["attachments"][0]).empty(), "interior grid inside the traced outline");
+    Json empty = mask;
+    empty["alpha"] = base64(std::vector<uint8_t>(64 * 48, 0));
+    Json shortMask = mask;
+    shortMask["alpha"] = base64(std::vector<uint8_t>(10, 255));
+    check(refused(d, {{"op", "autoOutline"}, {"slot", "cape"}}) && refused(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", empty}}) &&
+          refused(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", shortMask}}) && refused(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"detail", 2}}), "missing / empty / wrong-size mask, bad detail refused");
+    // Tracing is the exported core function (Qt previews with it before the edit).
+    std::vector<uint8_t> raw(64 * 48, 0);
+    for (int y = 10; y < 30; y++) for (int x = 5; x < 50; x++) raw[size_t(y) * 64 + size_t(x)] = 255;
+    const std::vector<double> box = traceAlphaOutline(raw, 64, 48, 0.5, 1);
+    check(polygonProblem(box).empty() && insidePolygon(box, 5.5, 10.5) && insidePolygon(box, 49.5, 29.5) && std::fabs(polygonArea(box, box.size() / 2)) < 46.0 * 21 + 50, "rectangle traced around its pixels");
+  });
+
+  // ---- Multi-bone selection: transformBones, compensation, axis spaces (plugin 1.7.0) ----
+  auto chainRig = [] {
+    return Json::parse(R"({
+      "schemaVersion": 1,
+      "canvas": {"width": 400, "height": 400, "originX": 200, "originY": 380},
+      "bones": [
+        {"id": "root", "parent": null, "x": 200, "y": 300},
+        {"id": "arm", "parent": "root", "x": 20, "y": -100, "rotation": 30, "length": 40},
+        {"id": "fore", "parent": "arm", "x": 40, "y": 0, "rotation": 20, "length": 30},
+        {"id": "hand", "parent": "fore", "x": 30, "y": 0},
+        {"id": "leg", "parent": "root", "x": -30, "y": 20, "rotation": 90}
+      ],
+      "slots": [{"id": "sleeve", "bone": "arm", "attachment": "sleeve"}, {"id": "glove", "bone": "hand", "attachment": "glove"}],
+      "attachments": [
+        {"slot": "sleeve", "name": "sleeve", "imageAssetId": "img-sleeve", "width": 40, "height": 20, "x": 10, "y": 3, "rotation": 5},
+        {"slot": "glove", "name": "glove", "imageAssetId": "img-glove", "width": 10, "height": 10}
+      ],
+      "skins": [{"id": "armor", "attachments": [{"slot": "sleeve", "name": "sleeve", "imageAssetId": "img-plate", "width": 40, "height": 20, "x": -4, "y": 1, "scaleX": 1.2, "scaleY": 1.2}]}],
+      "clips": [{"id": "wave", "durationMs": 1000, "loop": true, "tracks": [
+        {"target": "bone:fore", "property": "rotation", "keys": [{"timeMs": 0, "value": 20}, {"timeMs": 1000, "value": 60}]}]}]
+    })");
+  };
+  auto angleOf = [](const Affine& m) { return std::atan2(m.b, m.a) * 180 / 3.14159265358979323846; };
+  auto sameWorld = [](const Affine& a, const Affine& b, double eps) {
+    return near(a.a, b.a, eps) && near(a.b, b.b, eps) && near(a.c, b.c, eps) && near(a.d, b.d, eps) && near(a.e, b.e, eps) && near(a.f, b.f, eps);
+  };
+  // World placement of attachment (slot, skin) in the setup pose: bone world * offset.
+  auto placed = [](const Json& d, const std::string& slot, const std::string& skin) {
+    const Json* list = &d["attachments"];
+    if (!skin.empty()) for (const auto& s : d["skins"]) if (s["id"] == skin) list = &s["attachments"];
+    std::string boneId;
+    for (const auto& s : d["slots"]) if (s["id"] == slot) boneId = s["bone"];
+    for (const auto& a : *list)
+      if (a["slot"] == slot)
+        return setupWorld(d).at(boneId) * Affine::compose(a.value("x", 0.0), a.value("y", 0.0), a.value("rotation", 0.0), a.value("scaleX", 1.0), a.value("scaleY", 1.0));
+    return Affine{};
+  };
+
+  test("transformBones: translation moves only the topmost selected bones, in world px", [&] {
+    const Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"fore", "arm"}}, {"delta", {{"x", 10}, {"y", -5}}}});
+    const auto w0 = setupWorld(d), w1 = setupWorld(r.data);
+    check(near(w1.at("arm").e - w0.at("arm").e, 10) && near(w1.at("arm").f - w0.at("arm").f, -5), "arm origin moved by the world delta");
+    check(near(w1.at("fore").e - w0.at("fore").e, 10) && near(w1.at("fore").f - w0.at("fore").f, -5) && r.data["bones"][2] == d["bones"][2], "fore follows its parent, its own data untouched");
+    check(r.extra["bones"] == Json::array({"arm"}) && r.affected == std::vector<std::string>{"bone:arm"}, "only arm changed");
+    auto p = applyEdit(d, {{"op", "transformBones"}, {"bones", {"fore"}}, {"delta", {{"x", 3}}}, {"space", "parent"}});
+    check(near(p.data["bones"][2]["x"].get<double>(), 43) && near(p.data["bones"][2]["y"].get<double>(), 0), "space parent adds to the local x/y");
+    check(validateRig(r.data).empty(), "valid");
+  });
+
+  test("transformBones: rotation about each origin curls a selected chain (mirrors flip the sign)", [&] {
+    Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "fore"}}, {"delta", {{"rotation", 15}}}});
+    check(near(r.data["bones"][1]["rotation"].get<double>(), 45) && near(r.data["bones"][2]["rotation"].get<double>(), 35), "both +15 (local)");
+    const auto w0 = setupWorld(d), w1 = setupWorld(r.data);
+    check(near(w1.at("arm").e, w0.at("arm").e) && near(w1.at("arm").f, w0.at("arm").f), "arm turns about its own origin");
+    check(near(angleOf(w1.at("fore")) - angleOf(w0.at("fore")), 30), "fore turned twice on screen (curl)");
+    d["bones"][0]["scaleX"] = -1;  // mirrored root: the on-screen turn still follows the delta
+    auto m = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 15}}}});
+    check(near(m.data["bones"][1]["rotation"].get<double>(), 15), "mirrored parent: local -15");
+    const auto m0 = setupWorld(d), m1 = setupWorld(m.data);
+    double turn = angleOf(m1.at("arm")) - angleOf(m0.at("arm"));
+    while (turn > 180) turn -= 360;
+    while (turn < -180) turn += 360;
+    check(near(turn, 15, 1e-5), "mirrored parent: +15 on screen (" + std::to_string(turn) + ")");
+    auto s = applyEdit(chainRig(), {{"op", "transformBones"}, {"bones", {"arm", "leg"}}, {"delta", {{"scaleX", 2}, {"scaleY", 0.5}}}});
+    check(near(s.data["bones"][1]["scaleX"].get<double>(), 2) && near(s.data["bones"][4]["scaleY"].get<double>(), 0.5) && s.data["bones"][1]["x"] == 20, "scale about each origin: local factors, origins stay");
+  });
+
+  test("transformBones: centroid / point pivot turns the topmost bones as a group", [&] {
+    const Json d = chainRig();
+    const auto w0 = setupWorld(d);
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "leg", "hand"}}, {"delta", {{"rotation", 30}}}, {"pivot", "centroid"}});
+    const auto w1 = setupWorld(r.data);
+    const double cx = (w0.at("arm").e + w0.at("leg").e + w0.at("hand").e) / 3, cy = (w0.at("arm").f + w0.at("leg").f + w0.at("hand").f) / 3;
+    auto turned = [&](const std::string& id) {
+      const double c = std::cos(3.14159265358979323846 / 6), s = std::sin(3.14159265358979323846 / 6), x = w0.at(id).e - cx, y = w0.at(id).f - cy;
+      return near(w1.at(id).e, cx + c * x - s * y, 1e-5) && near(w1.at(id).f, cy + s * x + c * y, 1e-5) && near(angleOf(w1.at(id)) - angleOf(w0.at(id)), 30, 1e-5);
+    };
+    check(turned("arm") && turned("leg") && turned("hand"), "every selected bone turned rigidly about the centroid");
+    check(r.data["bones"][3] == d["bones"][3] && r.extra["bones"] == Json::array({"arm", "leg"}), "hand (under selected arm) follows, not edited");
+    auto p = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 90}, {"scaleX", 2}, {"scaleY", 2}}}, {"pivot", {{"x", 200}, {"y", 300}}}});
+    const auto wp = setupWorld(p.data);
+    // arm origin (220, 200) relative to (200, 300) = (20, -100); scaled 2 and turned 90 deg clockwise -> (200, 40).
+    check(near(wp.at("arm").e, 400, 1e-5) && near(wp.at("arm").f, 340, 1e-5) && near(p.data["bones"][1]["scaleX"].get<double>(), 2), "explicit pivot with scale");
+  });
+
+  test("transformBones in a clip keys the changed channel groups, setup untouched", [&] {
+    const Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"fore"}}, {"delta", {{"rotation", 10}}}, {"clip", "wave"}, {"timeMs", 500}});
+    const Json& tracks = r.data["clips"][0]["tracks"];
+    check(tracks.size() == 1 && tracks[0]["keys"].size() == 3 && near(tracks[0]["keys"][1]["value"].get<double>(), 50), "rotation key = sampled 40 + 10");
+    check(r.data["bones"] == d["bones"], "setup pose unchanged");
+    auto g = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "leg"}}, {"delta", {{"rotation", 20}}}, {"pivot", "centroid"}, {"clip", "wave"}, {"timeMs", 0},
+                           {"compensateBones", true}});
+    size_t keys = 0;
+    for (const auto& t : g.data["clips"][0]["tracks"]) keys += t["target"] != "bone:fore";
+    check(keys == 6 && hasCode(g.diagnostics, "ANIM_COMPENSATE_SETUP_ONLY") && g.data["bones"] == d["bones"], "group turn keys x, y, rotation of both bones; compensation ignored with a warning");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"fore"}}, {"delta", {{"x", 1}}}, {"clip", "wave"}, {"timeMs", 2000}}), "time out of range refused");
+  });
+
+  test("compensation keeps children and images in place (setBone and transformBones)", [&] {
+    const Json d = chainRig();
+    const auto w0 = setupWorld(d);
+    auto b = applyEdit(d, {{"op", "setBone"}, {"bone", "arm"}, {"rotation", 75}, {"x", 5}, {"compensateBones", true}});
+    auto w1 = setupWorld(b.data);
+    check(sameWorld(w1.at("fore"), w0.at("fore"), 1e-6) && sameWorld(w1.at("hand"), w0.at("hand"), 1e-6) && !sameWorld(w1.at("arm"), w0.at("arm"), 1e-3), "setBone: children stay, the bone moved");
+    check(!sameWorld(placed(b.data, "sleeve", ""), placed(d, "sleeve", ""), 1e-3), "images follow without compensateImages");
+    auto i = applyEdit(d, {{"op", "setBone"}, {"bone", "arm"}, {"rotation", 75}, {"scaleX", 1.5}, {"scaleY", 1.5}, {"compensateImages", true}});
+    check(sameWorld(placed(i.data, "sleeve", ""), placed(d, "sleeve", ""), 1e-6) && sameWorld(placed(i.data, "sleeve", "armor"), placed(d, "sleeve", "armor"), 1e-6), "compensateImages: default and skin attachments stay");
+    check(!sameWorld(setupWorld(i.data).at("fore"), w0.at("fore"), 1e-3), "children follow without compensateBones");
+    // A group turn + scale of arm and leg with both flags: every unselected child and image stays.
+    auto t = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "leg"}}, {"delta", {{"rotation", -40}, {"scaleX", 1.25}, {"scaleY", 1.25}, {"x", 12}}}, {"pivot", "centroid"},
+                           {"compensateBones", true}, {"compensateImages", true}});
+    const auto w2 = setupWorld(t.data);
+    check(!sameWorld(w2.at("arm"), w0.at("arm"), 1e-3) && sameWorld(w2.at("fore"), w0.at("fore"), 1e-6) && sameWorld(w2.at("hand"), w0.at("hand"), 1e-6) &&
+          sameWorld(placed(t.data, "sleeve", ""), placed(d, "sleeve", ""), 1e-6) && sameWorld(placed(t.data, "sleeve", "armor"), placed(d, "sleeve", "armor"), 1e-6) &&
+          sameWorld(placed(t.data, "glove", ""), placed(d, "glove", ""), 1e-6), "transformBones: world pose of children and images unchanged within 1e-6");
+    check(validateRig(t.data).empty() && !hasCode(t.diagnostics, "ANIM_COMPENSATE_SKEW"), "valid, no skew (uniform scale)");
+    // A selected child is moved on purpose: it is not compensated.
+    auto s = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "fore"}}, {"delta", {{"rotation", 10}}}, {"compensateBones", true}});
+    check(!sameWorld(setupWorld(s.data).at("fore"), w0.at("fore"), 1e-3) && sameWorld(setupWorld(s.data).at("hand"), w0.at("hand"), 1e-6), "selected fore turns, its unselected child hand stays");
+    // Keys of a compensated child are absolute values of the old frame: warned.
+    auto k = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 10}}}, {"compensateBones", true}});
+    check(hasCode(k.diagnostics, "ANIM_COMPENSATE_KEYS"), "fore has rotation keys: warning");
+    auto n = applyEdit(d, {{"op", "setBone"}, {"bone", "arm"}, {"scaleX", 2}, {"compensateBones", true}});
+    check(hasCode(n.diagnostics, "ANIM_COMPENSATE_SKEW"), "non-uniform scale under a turned child: skew warning");
+  });
+
+  test("axis spaces: world/parent values round-trip and setBone axes", [&] {
+    const std::vector<Affine> parents = {Affine{}, Affine::compose(30, -12, 37, 1, 1), Affine::compose(-5, 8, -110, 2.5, 0.4), Affine::compose(10, 10, 200, -1, 1),
+                                         Affine::compose(1, 2, 15, -0.7, -1.9)};
+    const std::vector<Transform> locals = {{0, 0, 0, 1, 1}, {12, -7, 45, 1, 1}, {-40, 3, 395, 1.5, -2}, {0.5, 100, -170, 0.2, 0.2}};
+    bool roundTrip = true, worldOk = true, parentOk = true;
+    for (const auto& p : parents)
+      for (const auto& t : locals)
+        for (Axes a : {Axes::Local, Axes::Parent, Axes::World}) {
+          const Transform shown = toAxes(t, p, a);
+          const auto back = fromAxes(shown, p, a, t);
+          roundTrip = roundTrip && back && near(back->x, t.x, 1e-9) && near(back->y, t.y, 1e-9) && near(back->rotation, t.rotation, 1e-9) && back->scaleX == t.scaleX && back->scaleY == t.scaleY;
+          if (a == Axes::World) {
+            const Affine w = p * Affine::compose(t.x, t.y, t.rotation, 1, 1);
+            const double turn = std::fmod(std::fabs(shown.rotation - angleOf(w)), 360.0);
+            worldOk = worldOk && near(shown.x, w.e, 1e-9) && near(shown.y, w.f, 1e-9) && (near(turn, 0, 1e-9) || near(turn, 360, 1e-9));
+          }
+          if (a == Axes::Parent && std::fabs(std::hypot(p.a, p.b) - 1) < 1e-12 && std::fabs(std::hypot(p.c, p.d) - 1) < 1e-12 && p.a * p.d - p.b * p.c > 0)
+            parentOk = parentOk && near(shown.x, t.x, 1e-9) && near(shown.y, t.y, 1e-9) && near(shown.rotation, t.rotation, 1e-9);
+        }
+    check(roundTrip, "fromAxes(toAxes(t)) == t (local, parent, world; rotated, scaled, mirrored parents)");
+    check(worldOk, "world = rig-space origin and on-screen angle");
+    check(parentOk, "parent = local under an unscaled parent");
+    check(!fromAxes({1, 2, 3, 1, 1}, Affine{0, 0, 0, 0, 0, 0}, Axes::World, {}).has_value(), "singular parent");
+    check(parseAxes("world") == Axes::World && !parseAxes("screen"), "parseAxes");
+    const Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "setBone"}, {"bone", "fore"}, {"axes", "world"}, {"x", 150}, {"y", 120}, {"rotation", 0}});
+    const Affine w = setupWorld(r.data).at("fore");
+    check(near(w.e, 150, 1e-5) && near(w.f, 120, 1e-5) && near(angleOf(w), 0, 1e-5), "setBone axes world: origin and angle land in rig space");
+    auto px = applyEdit(d, {{"op", "setBone"}, {"bone", "fore"}, {"axes", "parent"}, {"x", 50}});
+    check(near(px.data["bones"][2]["x"].get<double>(), 50) && near(px.data["bones"][2]["y"].get<double>(), 0), "setBone axes parent (unscaled parent) = local");
+    check(refused(d, {{"op", "setBone"}, {"bone", "fore"}, {"axes", "screen"}, {"x", 1}}), "bad axes refused");
+  });
+
+  test("transformBones refusals", [&] {
+    const Json d = chainRig();
+    check(refused(d, {{"op", "transformBones"}, {"delta", {{"x", 1}}}}) && refused(d, {{"op", "transformBones"}, {"bones", Json::array()}, {"delta", {{"x", 1}}}}), "bones required");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"nope"}}, {"delta", {{"x", 1}}}}), "unknown bone");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"scaleX", 0}}}}), "zero scale");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 1}}}, {"pivot", "middle"}}), "bad pivot");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"x", 1}}}, {"space", "local"}}), "bad space");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", Json::object()}}), "empty delta");
+    auto b = applyEdit(d, {{"op", "batch"}, {"operations", {{{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"x", 1}}}}, {{"op", "transformBones"}, {"bones", {"leg"}}, {"delta", {{"x", 1}}}}}}});
+    check(b.extra["bones"] == Json::array({"leg"}) && b.affected.size() == 2, "batchable");
+  });
+
+  // ---- Clip events (plugin 1.8.0) ----
+  test("event definitions validate names, payload types and key names", [] {
+    check(validateRig(eventRig()).empty(), "event fixture validates");
+    check(validateRig(rigData()).empty(), "keys without definitions stay valid (any name)");
+    auto with = [](const std::function<void(Json&)>& edit) { Json d = eventRig(); edit(d); return validateRig(d); };
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][0]["name"] = "jump"; }), "ANIM_EVENT_UNKNOWN"), "undefined key name once definitions exist");
+    check(hasCode(with([](Json& d) { d["events"][0]["int"] = 1.5; }), "ANIM_EVENT_PAYLOAD"), "int must be an integer");
+    check(hasCode(with([](Json& d) { d["events"][0]["int"] = int64_t(1) << 40; }), "ANIM_EVENT_PAYLOAD"), "int is 32-bit");
+    check(hasCode(with([](Json& d) { d["events"][1]["float"] = "2"; }), "ANIM_EVENT_PAYLOAD"), "float must be a number");
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][1]["string"] = 3; }), "ANIM_EVENT_PAYLOAD"), "key string override must be a string");
+    check(hasCode(with([](Json& d) { d["events"][0]["audio"] = ""; }), "ANIM_EVENT_AUDIO"), "audio is an asset id");
+    check(hasCode(with([](Json& d) { d["events"][0]["volume"] = 1.5; }), "ANIM_EVENT_PAYLOAD"), "volume 0..1");
+    check(hasCode(with([](Json& d) { d["events"][0]["balance"] = -2; }), "ANIM_EVENT_PAYLOAD"), "balance -1..1");
+    check(hasCode(with([](Json& d) { d["events"][1]["volume"] = 0.2; }), "ANIM_EVENT_AUDIO_UNUSED"), "volume without audio warns");
+    check(hasCode(with([](Json& d) { d["events"][1]["name"] = "step"; }), "ANIM_DUP_ID"), "duplicate definition");
+    check(hasCode(with([](Json& d) { d["events"][1]["name"] = "a b"; }), "ANIM_EVENT_NAME"), "definition name format");
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][1]["timeMs"] = 401; }), "ANIM_EVENT_TIME"), "key past the clip end");
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][1]["timeMs"] = 1.5; }), "ANIM_EVENT_TIME"), "fractional key time");
+    const auto dup = with([](Json& d) { d["clips"][3]["events"].push_back({{"timeMs", 0}, {"name", "step"}}); });
+    check(hasCode(dup, "ANIM_EVENT_DUPLICATE") && !hasCode(dup, "ANIM_EVENT_UNKNOWN"), "same key twice only warns");
+  });
+
+  test("event payload: definition defaults, key overrides, notification JSON", [] {
+    const Rig r = parseRig("hero", eventRig());
+    const auto& walk = r.clips[size_t(r.clipIndex("walk"))];
+    check(walk.events[0].payload == Json({{"int", 1}, {"string", "left"}, {"audio", "sfx-step"}, {"volume", 0.5}, {"balance", -0.25}}), "defaults of the definition");
+    check(walk.events[1].payload == Json({{"float", 2.5}, {"string", "fist"}}), "key string added to a float definition");
+    check(walk.events[2].payload["int"] == 2 && walk.events[2].payload["string"] == "right" && walk.events[2].payload["audio"] == "sfx-step", "key overrides int/string, audio stays");
+    Instance inst(std::make_shared<const Rig>(r));
+    inst.play(0, "walk");
+    inst.takeNotifications();
+    inst.update(250);
+    std::vector<Json> events;
+    for (const auto& n : inst.takeNotifications()) if (n.kind == "event") events.push_back(n.toJson());
+    check(events.size() == 3, "0, 100 and 200 ms fire once each");
+    check(events.size() == 3 && events[0] == Json({{"kind", "event"}, {"track", 0}, {"clip", "walk"}, {"serial", 1}, {"name", "step"}, {"int", 1}, {"string", "left"},
+                                                   {"audio", "sfx-step"}, {"volume", 0.5}, {"balance", -0.25}}), "notification carries the payload");
+    check(events.size() == 3 && events[2]["int"] == 2 && events[2]["string"] == "right", "override reaches the notification");
+    // Without definitions/payloads the plugin 1.7 notification shape is unchanged.
+    Instance old(rig());
+    old.play(0, "idle");
+    old.takeNotifications();
+    old.update(1);
+    const auto n = old.takeNotifications();
+    check(n.size() == 1 && n[0].toJson() == Json({{"kind", "event"}, {"track", 0}, {"clip", "idle"}, {"serial", 1}, {"name", "breath"}}), "backward compatible JSON");
+    // Scrubbing (seek) never fires events.
+    Instance scrub(std::make_shared<const Rig>(r));
+    scrub.play(0, "walk");
+    scrub.takeNotifications();
+    scrub.seek(0, 350);
+    check(scrub.takeNotifications().empty(), "seek fires nothing");
+  });
+
+  test("event notifications are deterministic across frame pacing", [] {
+    auto run = [](const std::vector<double>& pattern) {
+      Instance inst(std::make_shared<const Rig>(parseRig("hero", eventRig())));
+      inst.play(0, "walk");
+      std::vector<std::string> log;
+      double t = 0; size_t i = 0;
+      while (t < 2000) {
+        const double step = pattern[i++ % pattern.size()];
+        inst.update(step); t += step;
+        for (const auto& n : inst.takeNotifications()) log.push_back(n.toJson().dump());
+      }
+      return log;
+    };
+    const auto a = run({31.25}), b = run({7.8125}), c = run({7.8125, 23.4375, 15.625, 15.625});
+    check(a == b && b == c, "same payload notifications at 32/128 fps and uneven frames");
+    size_t steps = 0;
+    for (const auto& line : a) steps += line.find("\"name\":\"step\"") != std::string::npos;
+    check(steps == 10, "2 steps per 400 ms loop over 2000 ms");
+  });
+
+  test("edit event definitions: add, set, rename (keys follow), delete", [&] {
+    // The first definition also defines the names keys already use: the rig stays valid.
+    auto a = applyEdit(rigData(), {{"op", "addEventDef"}, {"name", "step"}, {"int", 3}, {"audio", "sfx-step"}, {"volume", 0.8}});
+    check(a.extra["defined"] == Json::array({"breath", "peak", "done"}), "used names defined");
+    check(a.data["events"].size() == 4 && a.data["events"][3] == Json({{"name", "step"}, {"int", 3}, {"audio", "sfx-step"}, {"volume", 0.8}}), "definition stored");
+    check(!hasErrors(a.diagnostics), "valid after the first definition");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "step"}}), "duplicate refused");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "bad name"}}), "name format refused");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "x"}, {"int", 1.5}}), "int payload type refused");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "x"}, {"volume", 2}}), "volume range refused");
+    auto s = applyEdit(a.data, {{"op", "setEventDef"}, {"event", "step"}, {"int", nullptr}, {"string", "L"}, {"volume", 1}, {"balance", 0.5}});
+    check(s.data["events"][3] == Json({{"name", "step"}, {"string", "L"}, {"audio", "sfx-step"}, {"balance", 0.5}}), "null removes, volume 1 is the default");
+    auto keyed = applyEdit(s.data, {{"op", "setEventKey"}, {"clip", "idle"}, {"timeMs", 500}, {"name", "step"}});
+    keyed = applyEdit(keyed.data, {{"op", "setEventKey"}, {"clip", "joy"}, {"timeMs", 100}, {"name", "step"}, {"int", 7}});
+    auto rn = applyEdit(keyed.data, {{"op", "renameEventDef"}, {"event", "step"}, {"name", "foot"}});
+    check(rn.extra["renamedKeys"] == 2 && rn.data["events"][3]["name"] == "foot", "renamed with its keys");
+    check(rn.data["clips"][0]["events"][1] == Json({{"timeMs", 500}, {"name", "foot"}}) && rn.data["clips"][2]["events"][0] == Json({{"timeMs", 100}, {"name", "foot"}, {"int", 7}}),
+          "keys in every clip follow, payload kept");
+    check(refused(rn.data, {{"op", "renameEventDef"}, {"event", "foot"}, {"name", "peak"}}), "rename onto another definition refused");
+    check(refused(rn.data, {{"op", "deleteEventDef"}, {"event", "foot"}}), "delete refused while keys use it");
+    auto del = applyEdit(rn.data, {{"op", "deleteEventDef"}, {"event", "foot"}, {"force", true}});
+    check(del.extra["removedKeys"] == 2 && del.data["clips"][0]["events"].size() == 1 && del.data["clips"][2]["events"].size() == 2, "force removes its keys");
+    auto empty = applyEdit(rigData(), {{"op", "addEventDef"}, {"name", "solo"}});
+    for (const char* n : {"breath", "peak", "done"}) empty = applyEdit(empty.data, {{"op", "deleteEventDef"}, {"event", n}, {"force", true}});
+    empty = applyEdit(empty.data, {{"op", "deleteEventDef"}, {"event", "solo"}});
+    check(!empty.data.contains("events") && !empty.data["clips"][0].contains("events"), "last definition removes the list (keys free again)");
+  });
+
+  test("edit event keys: set, override, rename, move, delete", [&] {
+    const Json d = eventRig();
+    auto add = applyEdit(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 300}, {"name", "hit"}, {"float", 4}});
+    const Json& ev = add.data["clips"][3]["events"];
+    check(ev.size() == 4 && ev[3] == Json({{"timeMs", 300}, {"name", "hit"}, {"float", 4}}), "new key sorted by time with its override");
+    check(add.extra["keys"] == Json::array({{{"target", "event"}, {"property", "hit"}, {"timeMs", 300}}}), "extra.keys ref");
+    check(refused(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 50}, {"name", "jump"}}), "undefined name refused");
+    check(refused(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 401}, {"name", "hit"}}), "time range refused");
+    auto edit = applyEdit(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 200}, {"name", "step"}, {"int", nullptr}, {"string", "R"}});
+    check(edit.data["clips"][3]["events"][2] == Json({{"timeMs", 200}, {"name", "step"}, {"string", "R"}}), "null drops the int override");
+    auto renamed = applyEdit(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 100}, {"name", "hit"}, {"newName", "step"}});
+    check(renamed.data["clips"][3]["events"][1]["name"] == "step" && renamed.data["clips"][3]["events"][1]["string"] == "fist", "one key renamed, payload kept");
+    check(refused(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 100}, {"name", "hit"}, {"newName", "jump"}}), "rename to an undefined name refused");
+    auto mv = applyEdit(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "step"}, {"fromMs", 200}, {"toMs", 50}});
+    check(mv.data["clips"][3]["events"][1] == Json({{"timeMs", 50}, {"name", "step"}, {"int", 2}, {"string", "right"}}), "moved and re-sorted");
+    check(refused(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "step"}, {"fromMs", 200}, {"toMs", 0}}), "same-name collision refused");
+    auto shared = applyEdit(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "hit"}, {"fromMs", 100}, {"toMs", 200}});
+    check(shared.data["clips"][3]["events"].size() == 3, "different events may share a time");
+    check(refused(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "hit"}, {"fromMs", 150}, {"toMs", 200}}), "missing key refused");
+    auto rm = applyEdit(d, {{"op", "deleteEventKey"}, {"clip", "walk"}, {"name", "hit"}, {"timeMs", 100}});
+    check(rm.data["clips"][3]["events"].size() == 2, "deleted");
+    auto last = applyEdit(rigData(), {{"op", "deleteEventKey"}, {"clip", "idle"}, {"name", "breath"}, {"timeMs", 0}});
+    check(!last.data["clips"][0].contains("events"), "empty events list removed");
+    check(applyEdit(rigData(), {{"op", "setEventKey"}, {"clip", "idle"}, {"timeMs", 300}, {"name", "anything"}}).data["clips"][0]["events"].size() == 2, "no definitions: any valid name");
+  });
+
+  test("multi-key ops take event refs with track keys", [&] {
+    Json d = eventRig();
+    d["clips"][3]["tracks"] = Json::parse(R"([{"target": "bone:body", "property": "x", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 200, "value": 5}]}])");
+    const Json mixed = Json::array({{{"target", "bone:body"}, {"property", "x"}, {"timeMs", 0}}, {{"target", "event"}, {"property", "step"}, {"timeMs", 0}},
+                                    {{"target", "event"}, {"property", "hit"}, {"timeMs", 100}}});
+    auto mv = applyEdit(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", mixed}, {"deltaMs", 50}});
+    const Json& ev = mv.data["clips"][3]["events"];
+    check(ev[0] == Json({{"timeMs", 50}, {"name", "step"}}) && ev[1]["timeMs"] == 150 && ev[2]["timeMs"] == 200, "events moved with the bone key, sorted");
+    check(mv.data["clips"][3]["tracks"][0]["keys"][0]["timeMs"] == 50 && mv.extra["keys"].size() == 3, "bone key moved too, refs reported");
+    check(refused(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", mixed}, {"deltaMs", 200}}), "step 0 -> 200 hits the other step key");
+    check(refused(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", mixed}, {"deltaMs", -1}}), "range refused");
+    auto clamp = applyEdit(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", Json::array({mixed[2]})}, {"deltaMs", 900}, {"clamp", true}});
+    check(clamp.extra["deltaMs"] == 300 && clamp.data["clips"][3]["events"][2]["timeMs"] == 400, "clamp stops at the clip end");
+    const Json steps = Json::array({{{"target", "event"}, {"property", "step"}, {"timeMs", 0}}, {{"target", "event"}, {"property", "step"}, {"timeMs", 200}}});
+    auto sc = applyEdit(d, {{"op", "scaleKeys"}, {"clip", "walk"}, {"keys", steps}, {"factor", 1.5}});
+    check(sc.data["clips"][3]["events"][2] == Json({{"timeMs", 300}, {"name", "step"}, {"int", 2}, {"string", "right"}}), "scaled about the first key");
+    auto del = applyEdit(d, {{"op", "deleteKeys"}, {"clip", "walk"}, {"keys", mixed}});
+    check(del.data["clips"][3]["events"].size() == 1 && del.data["clips"][3]["tracks"][0]["keys"].size() == 1, "mixed delete");
+    auto board = applyEdit(d, {{"op", "copyKeys"}, {"clip", "walk"}, {"keys", Json::array({mixed[2], steps[1]})}}).extra["clipboard"];
+    check(board["fromMs"] == 100 && board["keys"].size() == 2 && board["keys"][1] == Json({{"target", "event"}, {"property", "step"}, {"offsetMs", 100}, {"int", 2}, {"string", "right"}}),
+          "clipboard carries event payload overrides");
+    auto pasted = applyEdit(d, {{"op", "pasteKeys"}, {"clip", "idle"}, {"timeMs", 600}, {"keys", board["keys"]}});
+    check(pasted.data["clips"][0]["events"].size() == 3 && pasted.data["clips"][0]["events"][2] == Json({{"timeMs", 700}, {"name", "step"}, {"int", 2}, {"string", "right"}}), "pasted into another clip");
+    // Pasting over the same key replaces its payload.
+    auto over = applyEdit(d, {{"op", "pasteKeys"}, {"clip", "walk"}, {"timeMs", 0}, {"keys", Json::array({{{"target", "event"}, {"property", "step"}, {"offsetMs", 0}, {"float", 1}}})}});
+    check(over.data["clips"][3]["events"].size() == 3 && over.data["clips"][3]["events"][0] == Json({{"timeMs", 0}, {"name", "step"}, {"float", 1}}), "same key overwritten");
+    check(refused(d, {{"op", "setInterp"}, {"clip", "walk"}, {"target", "event"}, {"property", "step"}, {"timeMs", 0}, {"interp", "step"}}), "event keys have no interpolation");
+    // Batch of event ops = one edit (LLM/MCP path), undo is the host's.
+    auto b = applyEdit(rigData(), {{"op", "batch"}, {"operations", {{{"op", "addEventDef"}, {"name", "cue"}, {"string", "x"}},
+                                                                     {{"op", "setEventKey"}, {"clip", "joy"}, {"timeMs", 300}, {"name", "cue"}}}}});
+    check(b.data["clips"][2]["events"].size() == 3 && !hasErrors(b.diagnostics), "batchable");
+    check(applyEdit(rigData(), {{"op", "setClip"}, {"clip", "joy"}, {"durationMs", 300}, {"trim", true}}).data["clips"][2]["events"].size() == 1, "clip trim drops later events");
+  });
+
+  test("host op: update notifications carry the event payload", [] {
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : eventScript()) replies.push_back(host.handle(op));
+    size_t events = 0, audio = 0;
+    for (const auto& r : replies)
+      if (r.contains("notifications") && r["notifications"].contains("a"))
+        for (const auto& n : r["notifications"]["a"]) if (n["kind"] == "event") { events++; audio += n.contains("audio"); }
+    check(events == 14 && audio == 8, "walk loops + joy events through the generic update op");
+  });
+
+  // ---- Large rigs (plugin 1.9.0): the benchmark character, compact frames, batched validation.
+  test("stress rig validates cleanly; parseValidatedRig builds the same rig", [] {
+    const Json data = cutout_stress::rig();
+    check(validateRig(data).empty(), "no diagnostics at all");
+    const auto a = std::make_shared<const Rig>(parseRig("s", data)), b = std::make_shared<const Rig>(parseValidatedRig("s", data));
+    check(validateController(cutout_stress::controller(), a.get()).empty(), "controller fits");
+    check(a->bones.size() == 200 && a->slots.size() == 150 && a->clips.size() == 30 && a->skins.size() == 4 && a->ik.size() == 6, "counts");
+    Instance x(a, parseController("c", cutout_stress::controller())), y(b, parseController("c", cutout_stress::controller()));
+    x.update(333); y.update(333);
+    const auto p = x.drawList(), q = y.drawList();
+    bool same = p.size() == q.size() && p.size() > 140;
+    for (size_t i = 0; same && i < p.size(); i++) same = p[i].imageAssetId == q[i].imageAssetId && p[i].positions == q[i].positions && near(p[i].matrix.e, q[i].matrix.e, 0);
+    check(same, "identical draw lists");
+  });
+
+  test("appendFixed: compact frame numbers", [] {
+    auto f = [](double v, int d) { std::string s; appendFixed(s, v, d); return s; };
+    check(f(0, 3) == "0" && f(-0.0, 3) == "0" && f(-0.0004, 3) == "0" && f(-0.0006, 3) == "-0.001", "zero and sign");
+    check(f(1.5, 3) == "1.5" && f(84.00000001, 3) == "84" && f(123.4567, 3) == "123.457" && f(0.1, 6) == "0.1" && f(-2.0000006, 6) == "-2.000001", "rounding, trailing zeros");
+    check(f(std::nan(""), 3) == "0" && f(1e300, 3) == "1000000000000", "non-finite and clamped");
+    check(f(0.001, 3) == "0.001" && f(10.25, 1) == "10.3" && f(7, 0) == "7", "leading zeros, few decimals");
+  });
+
+  test("host op: compact frames (format 2) carry the documented items, deltas and the mesh table", [] {
+    Host host;
+    const Json rig = cutout_stress::rig();
+    Json init = host.handle({{"op", "init"}, {"frameFormats", {2}}, {"documents", {{{"type", "rig"}, {"id", "stress"}, {"data", rig}}, {{"type", "controller"}, {"id", "c"}, {"data", cutout_stress::controller()}}}}});
+    check(init["ok"] == true && init["frameFormat"] == 2 && init["meshes"].size() == 40, "negotiated with the topology of every mesh");
+    check(!host.handle({{"op", "init"}, {"documents", Json::array()}}).contains("frameFormat"), "a host that does not ask keeps the documented format");
+    init = host.handle({{"op", "init"}, {"frameFormats", {1, 2}}, {"documents", {{{"type", "rig"}, {"id", "stress"}, {"data", rig}}, {{"type", "controller"}, {"id", "c"}, {"data", cutout_stress::controller()}}}}});
+    check(host.handle({{"op", "mount"}, {"instance", "a"}, {"element", {{"type", "character"}, {"ref", "c"}, {"width", 400}, {"height", 300}, {"props", Json::object()}}}})["ok"] == true, "mounted");
+    host.handle({{"op", "update"}, {"dtMs", 250}});
+    const Json full = Json::parse(host.requestText(Json({{"op", "frame"}, {"instance", "a"}, {"format", 2}}).dump()));
+    const Json documented = host.handle({{"op", "frame"}, {"instance", "a"}});
+    check(full["format"] == 2 && full["items"].size() == documented["items"].size(), "same item count");
+    bool same = true;
+    size_t meshes = 0;
+    for (size_t k = 0; k < full["items"].size(); k++) {
+      const Json& e = full["items"][k];
+      const Json& d = documented["items"][k];
+      same = same && e[0] == d["imageAssetId"] && near(e[7].get<double>(), d["width"].get<double>(), 6e-4) && near(e[9].get<double>(), d["alpha"].get<double>(), 6e-5);
+      for (int i = 0; i < 6; i++) same = same && near(e[1 + i].get<double>(), d["matrix"][i].get<double>(), i < 4 ? 6e-7 : 6e-4);
+      if (!d.contains("mesh")) { same = same && e.size() == 10; continue; }
+      meshes++;
+      const Json& t = init["meshes"][e[11].get<size_t>()];
+      same = same && e.size() == 13 && e[10].is_null() && t["indices"] == d["mesh"]["indices"] && t["uvs"] == d["mesh"]["uvs"] && e[12].size() == d["mesh"]["positions"].size();
+      for (size_t v = 0; same && v < e[12].size(); v++) same = near(e[12][v].get<double>(), d["mesh"]["positions"][v].get<double>(), 6e-4);
+    }
+    check(same && meshes == 40, "every compact item matches its documented item (1/1000 px)");
+    // Nothing advanced: every item is "0" against that frame; another `since` gets everything again.
+    const uint64_t serial = full["frame"].get<uint64_t>();
+    const Json still = Json::parse(host.requestText(Json({{"op", "frame"}, {"instance", "a"}, {"format", 2}, {"since", serial}}).dump()));
+    bool zeros = still["items"].size() == full["items"].size();
+    for (const auto& e : still["items"]) zeros = zeros && e == 0;
+    check(zeros && still["frame"].get<uint64_t>() > serial, "unchanged items are 0");
+    const Json stale = host.handle({{"op", "frame"}, {"instance", "a"}, {"format", 2}, {"since", serial}});
+    check(stale["items"][0].is_array(), "a since that is not the last frame gets every item");
+    host.handle({{"op", "update"}, {"dtMs", 40}});
+    const Json moved = host.handle({{"op", "frame"}, {"instance", "a"}, {"format", 2}, {"since", stale["frame"]}});
+    size_t changed = 0;
+    for (const auto& e : moved["items"]) changed += e.is_array();
+    check(changed > 0 && changed <= moved["items"].size(), "an advanced pose sends the changed items");
+    const Json table = host.handle({{"op", "meshes"}, {"ids", {3, 999}}});
+    check(table["meshes"].size() == 1 && table["meshes"][0]["id"] == 3 && table["meshEpoch"] == init["meshEpoch"], "meshes op: known ids only");
+    host.handle({{"op", "loadRig"}, {"id", "other"}, {"data", rigData()}});
+    check(host.handle({{"op", "meshes"}})["meshEpoch"] != init["meshEpoch"], "loading a rig starts a new mesh epoch");
+  });
+
+  test("atlas regions (plugin 1.9.0): validation and draw items naming the page sub-image", [] {
+    Json d = rigData();
+    d["attachments"][0]["atlas"] = {{"page", "cutout-atlas-1"}, {"x", 10}, {"y", 20}, {"width", 60}, {"height", 100}, {"trim", {{"x", 10}, {"y", 15}, {"width", 60}, {"height", 100}}}};
+    d["attachments"][1]["atlas"] = {{"page", "cutout-atlas-1"}, {"x", 80}, {"y", 20}, {"width", 60}, {"height", 60}};
+    check(validateRig(d).empty(), "valid regions");
+    auto bad = d;
+    bad["attachments"][0]["atlas"]["trim"]["width"] = 75;  // 10 + 75 > 80
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "trim outside the picture");
+    bad = d; bad["attachments"][1]["atlas"].erase("page");
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "page required");
+    bad = d; bad["attachments"][1]["atlas"]["width"] = 0;
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "positive size");
+    bad = meshParityRig(); bad["attachments"][0]["atlas"] = {{"page", "p"}, {"x", 0}, {"y", 0}, {"width", 10}, {"height", 10}, {"trim", {{"x", 0}, {"y", 0}, {"width", 5}, {"height", 5}}}};
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "meshes keep their whole picture");
+    Instance plain(std::make_shared<const Rig>(parseRig("a", rigData()))), packed(std::make_shared<const Rig>(parseRig("a", d)));
+    const auto a = plain.drawList(), b = packed.drawList();
+    check(b[0].imageAssetId == "cutout-atlas-1" && b[0].hasRegion && b[0].region[0] == 10 && b[0].region[3] == 100 && b[0].width == 60 && b[0].height == 100, "page + region, trimmed size");
+    double ax, ay, bx, by;
+    a[0].matrix.apply(10, 15, ax, ay);
+    b[0].matrix.apply(0, 0, bx, by);
+    check(near(ax, bx) && near(ay, by), "the kept rectangle stays where it was");
+    check(b[1].hasRegion && b[1].width == a[1].width && near(b[1].matrix.e, a[1].matrix.e) && b[2].imageAssetId == a[2].imageAssetId && !b[2].hasRegion, "untrimmed region keeps its rectangle; unpacked parts unchanged");
+    const Json j = drawItemJson(b[0]);
+    check(j["region"] == Json::array({10, 20, 60, 100}) && !drawItemJson(a[0]).contains("region"), "documented items gain region only when packed");
+  });
+
+  test("host op: validate checks every controller of a rig in one request", [] {
+    Host host;
+    Json bad = controllerData();
+    bad["defaultClip"] = "nope";
+    const Json r = host.handle({{"op", "validate"}, {"rig", rigData()}, {"rigPointer", "/data"}, {"controllers", {{{"data", controllerData()}, {"pointer", "/data"}}, {{"data", bad}, {"pointer", "/data"}}}}});
+    check(r["ok"] == true && r["diagnostics"].empty() && r["controllerDiagnostics"].size() == 2, "rig once, one list per controller");
+    check(r["controllerDiagnostics"][0].empty() && r["controllerDiagnostics"][1][0]["code"] == "ANIM_CLIP_UNKNOWN" && r["controllerDiagnostics"][1][0]["pointer"] == "/data/defaultClip", "clip names checked against the rig");
   });
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";

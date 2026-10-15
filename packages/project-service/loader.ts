@@ -4,6 +4,14 @@ import { parseDocument } from './json-document.js';
 import { sortDiagnostics, type Diagnostic, type DocumentKind, type LoadedProject } from '../validation/model.js';
 
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
+/**
+ * Plugin documents (kind `extension`) may be larger: a big animation rig (200 bones, 40 meshes,
+ * 9000 keys) is ~0.8 MiB compact but ~2.7 MiB in the editor's indented form. Shared by the loader
+ * and the editor's edit checks so a rig that can be edited can always be saved and reloaded.
+ */
+export const MAX_EXTENSION_DOCUMENT_BYTES = 8 * 1024 * 1024;
+export function maxDocumentBytes(kind: DocumentKind | string | null | undefined): number { return kind === 'extension' ? MAX_EXTENSION_DOCUMENT_BYTES : MAX_DOCUMENT_BYTES; }
+export function documentSizeMessage(kind: DocumentKind | string | null | undefined): string { return `JSON 문서는 ${maxDocumentBytes(kind) / (1024 * 1024)} MiB 이하이어야 합니다.`; }
 const MAX_DOCUMENTS = 10000;
 export function isWithin(root: string, target: string): boolean {
   const relative = path.relative(root, target);
@@ -41,13 +49,13 @@ export async function loadProject(inputPath: string): Promise<LoadedProject> {
         result.diagnostics.push(ioDiagnostic(file, 'DOCUMENT_NOT_FILE', 'JSON 문서 경로가 일반 파일이 아닙니다.'));
         return;
       }
-      if (info.size > MAX_DOCUMENT_BYTES) {
-        result.diagnostics.push(ioDiagnostic(file, 'DOCUMENT_SIZE_LIMIT', 'JSON 문서는 2 MiB 이하이어야 합니다.'));
+      if (info.size > maxDocumentBytes(kind)) {
+        result.diagnostics.push(ioDiagnostic(file, 'DOCUMENT_SIZE_LIMIT', documentSizeMessage(kind)));
         return;
       }
       const bytes = await handle.readFile();
-      if (bytes.length > MAX_DOCUMENT_BYTES) {
-        result.diagnostics.push(ioDiagnostic(file, 'DOCUMENT_SIZE_LIMIT', 'JSON 문서는 2 MiB 이하이어야 합니다.'));
+      if (bytes.length > maxDocumentBytes(kind)) {
+        result.diagnostics.push(ioDiagnostic(file, 'DOCUMENT_SIZE_LIMIT', documentSizeMessage(kind)));
         return;
       }
       let source: string;

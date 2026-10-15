@@ -86,6 +86,13 @@ test('cutout service diagnostics surface with plugin file and /data pointers', a
   assert.ok(codes(editor).includes(`warning:ANIM_IMAGE_SIZE_MISMATCH:${RIG}/data/attachments/0/width`));
   assert.equal(codes(editor).some(c => c.startsWith(`error:ANIM_IMAGE_MISSING:${RIG}`)), false);
 
+  // Event sounds (plugin 1.8.0): a definition's audio must be an audio asset (here an image).
+  const sound = structuredClone(fixed); sound.data.events = [{ name: 'step', audio: 'hero-torso', volume: 0.5 }];
+  sound.data.clips[0].events = [{ timeMs: 0, name: 'step', int: 2 }];
+  editor.edit({ type: 'replace', file: RIG, data: sound }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`error:ANIM_EVENT_AUDIO:${RIG}/data/events/0/audio`), codes(editor).join(' | '));
+  assert.equal(codes(editor).some(c => c.includes('SCHEMA_INVALID')), false, 'events and key payloads are schema-valid');
+
   // Plugin JSON schema failures are structural: reported under /data and they block save.
   const invalid = structuredClone(fixed); invalid.data.unexpected = true;
   editor.edit({ type: 'replace', file: RIG, data: invalid }, editor.revision); await editor.validate(editor.revision);
@@ -228,6 +235,22 @@ test('mesh attachments (plugin 1.4.0): schema-valid weighted mesh + deform track
   assert.ok(all.includes(`error:ANIM_MESH_BONE_MISSING:${RIG}/data/attachments/0/weights/2/0/bone`), all.join('\n'));
   // The broken mesh no longer counts as a mesh, so its deform track is reported too.
   assert.ok(all.some(c => c.startsWith(`error:ANIM_MESH_DEFORM:${RIG}/data/clips/0/tracks/1/attachment`)), all.join('\n'));
+});
+
+test('bone length and color (plugin 1.5.0): schema-valid optional fields, malformed ones are schema errors', async () => {
+  const root = await newProject();
+  const rig = rigData({ bones: [{ id: 'root', parent: null, length: 0 }, { id: 'body', parent: 'root', y: -100, rotation: -90, length: 96.5, color: '#ff8800' }, { id: 'head', parent: 'body', x: 96.5, color: '#3366ffcc' }] });
+  await addCutout(root, { rig });
+  const editor = await open(root, await store());
+  let all = codes(editor);
+  assert.equal(all.some(c => c.includes('SCHEMA_INVALID') || c.includes('ANIM_')), false, all.join('\n'));
+  const bad = structuredClone(doc(editor, RIG).data);
+  bad.data.bones[1].length = -4;
+  bad.data.bones[2].color = 'blue';
+  editor.edit({ type: 'replace', file: RIG, data: bad }, editor.revision); await editor.validate(editor.revision);
+  all = codes(editor);
+  assert.ok(all.some(c => c.startsWith('error:') && c.endsWith(`${RIG}/data/bones/1/length`)), all.join('\n'));
+  assert.ok(all.some(c => c.startsWith('error:') && c.endsWith(`${RIG}/data/bones/2/color`)), all.join('\n'));
 });
 
 test('host-reserved posterAssetId must name an image asset, also without the plugin, and the cutout service ignores it', async () => {

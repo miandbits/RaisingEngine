@@ -30,11 +30,28 @@ struct Affine {
 
 struct Transform { double x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1; };
 
-struct Bone { std::string id; std::string parent; Transform setup; int parentIndex = -1; };
+/** `length` (plugin 1.5.0, px >= 0, default 0 = point bone): the bone reaches from its origin to
+ *  (length, 0) in its own space (+x, Spine convention). Not a transform: it never moves anything
+ *  except the two-bone IK effector (IkConstraint::tipLength). `color` is an editor-only display
+ *  hint ("#rrggbb" / "#rrggbbaa", "" = default); runtimes ignore it. */
+struct Bone { std::string id; std::string parent; Transform setup; int parentIndex = -1; double length = 0; std::string color; };
 struct Slot { std::string id; std::string bone; std::optional<std::string> attachment; double alpha = 1; int boneIndex = -1; };
 /** One bone's share of a weighted mesh vertex; `bind` indexes Attachment::binds. */
 struct Influence { int bind = -1; double weight = 0; };
 constexpr size_t MAX_MESH_VERTICES = 2048, MAX_MESH_TRIANGLES = 4096, MAX_INFLUENCES = 4;
+/**
+ * Atlas region (plugin 1.9.0, written by the export packer, never by authoring): the attachment's
+ * picture is the sub-image (x, y, width, height) of the image asset `page` (page pixels). `trim`
+ * (optional, regions only) is the rectangle of the attachment image (its own units) that sub-image
+ * shows; without it the sub-image is the whole picture. Draw items then name the page and carry
+ * the region; transparent pixels trimmed away are simply not drawn, so nothing renders differently.
+ */
+struct AtlasRegion {
+  std::string page;
+  double x = 0, y = 0, width = 0, height = 0;
+  bool trimmed = false;
+  double trimX = 0, trimY = 0, trimWidth = 0, trimHeight = 0;
+};
 struct Attachment {
   std::string slot, name, imageAssetId;
   Transform offset;       // placement of the image pivot in bone space
@@ -54,6 +71,12 @@ struct Attachment {
   std::vector<int> triangles;
   std::vector<std::vector<Influence>> weights;  // empty = unweighted; else one list per vertex (sum 1)
   std::vector<std::pair<int, Affine>> binds;
+  /** Editor-only outline data, never used for drawing: the first `hull` vertices are the outline
+   *  polygon in order (0 = none), `edges` index pairs of the outline and of internal edges the
+   *  author pinned (plugin 1.6.0 mesh edits keep pinned edges through re-triangulation). */
+  size_t hull = 0;
+  std::vector<int> edges;
+  std::optional<AtlasRegion> atlas;  // export-time atlas packing (plugin 1.9.0)
   size_t vertexCount() const { return vertices.size() / 2; }
 };
 
@@ -69,7 +92,23 @@ struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> na
  *  bone=false + ik=true: an IK constraint track (target = constraint id, targetIndex = Rig::ik index;
  *  bendPositive keys carry value 1/0). Deform tracks are slot tracks naming `attachment`. */
 struct Track { bool bone = true; bool rig = false; bool ik = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; std::string attachment; };
-struct ClipEvent { int64_t timeMs = 0; std::string name; };
+/**
+ * Rig-level event definition (plugin 1.8.0, Spine-like): optional default payload of every key
+ * of that name. `audio` names an audio asset the host MAY play when the event fires (with
+ * `volume` 0..1 and `balance` -1..1); players stay free to ignore it. Presentation only: clip
+ * events never reach controller bindings or game rules.
+ */
+struct EventDef {
+  std::string name;
+  std::optional<int64_t> intValue;
+  std::optional<double> floatValue;
+  std::optional<std::string> stringValue, audio;
+  double volume = 1, balance = 0;
+};
+/** A clip event key. `payload` is resolved at parse time (definition defaults, then the key's own
+ *  int/float/string overrides; audio/volume/balance from the definition): only the fields that are
+ *  set appear, so rigs without payloads keep the plugin 1.7 notification shape. */
+struct ClipEvent { int64_t timeMs = 0; std::string name; Json payload = Json::object(); };
 struct Clip { std::string id, name; int64_t durationMs = 1000; bool loop = true; std::vector<Track> tracks; std::vector<ClipEvent> events; };
 struct MixPair { std::string from, to; int64_t durationMs = 0; };
 /** Outfit/variant set: provides or overrides attachments by (slot, name); clips keep keying names. */
@@ -85,15 +124,18 @@ struct Expression {
 
 /**
  * IK constraint (plugin 1.3.0). `bones` = 1 (aim: the bone-local direction `aimAxis` (plugin 1.4.1,
- * degrees, default 0 = +x) points at the target) or 2 (parent, direct child: two-bone limb whose effector is the origin of `tip`: the explicit
- * `tip` bone (plugin 1.4.0, a direct child of the lower bone), else the lower bone's first child
- * bone in array order). Solved after expressions on world transforms, in `Rig::ikOrder`.
+ * degrees, default 0 = +x, the direction a bone length points) points at the target) or 2 (parent,
+ * direct child: two-bone limb). Two-bone effector precedence: the explicit `tip` bone's origin
+ * (plugin 1.4.0, a direct child of the lower bone) > the lower bone's own tip (length, 0) when its
+ * length > 0 (plugin 1.5.0) > its first child bone in array order > its origin. Solved after
+ * expressions on world transforms, in `Rig::ikOrder`.
  */
 struct IkConstraint {
   std::string id, name;
   std::vector<int> bones;     // chain, parent first
   int target = -1;
-  int tip = -1;               // two-bone effector bone (-1 = none: the child origin aims at the target)
+  int tip = -1;               // two-bone effector bone (-1 = none: tipLength, else the child origin aims at the target)
+  double tipLength = 0;       // two-bone, tip < 0: effector (tipLength, 0) in the lower bone (its length, plugin 1.5.0)
   bool explicitTip = false;   // `tip` named in the data (else the implicit first-child rule)
   double mix = 1;
   double aimAxis = 0;         // aim: bone-local direction (degrees, before the bone's scale) aimed at the target
@@ -118,6 +160,7 @@ struct Rig {
   std::vector<Expression> expressions;
   std::vector<IkConstraint> ik;
   std::vector<int> ikOrder;         // evaluation order: (order, array index) ascending
+  std::vector<EventDef> events;     // event definitions (plugin 1.8.0); empty = any key name
 
   int boneIndex(const std::string& id) const;
   int slotIndex(const std::string& id) const;
@@ -125,6 +168,7 @@ struct Rig {
   int skinIndex(const std::string& id) const;        // -1 = unknown / "" (default attachments only)
   int expressionIndex(const std::string& id) const;  // -1 = unknown / none
   int ikIndex(const std::string& id) const;
+  int eventIndex(const std::string& name) const;     // -1 = not defined
   /** Lookup order: skin `skin` (when >= 0) first, then the rig's default attachments. */
   const Attachment* attachment(const std::string& slot, const std::string& name, int skin = -1) const;
   int64_t mixDuration(const std::string& from, const std::string& to) const;
@@ -139,6 +183,9 @@ struct Diagnostic {
 std::vector<Diagnostic> validateRig(const Json& data);
 /** Parse validated data. Throws std::runtime_error when validateRig reports errors. */
 Rig parseRig(const std::string& id, const Json& data);
+/** parseRig for data the caller has just validated (validateRig reported no error): skips the
+ *  second validation pass, which costs as much as the parse on large rigs (plugin 1.9.0). */
+Rig parseValidatedRig(const std::string& id, const Json& data);
 
 const char* propertyName(Property p);
 std::optional<Property> parseProperty(const std::string& name);

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising.local/plugins/cutout-animation/settings.schema.json",
+  "title": "Cutout plugin settings (schemaVersion 1)",
+  "description": "Envelope `data` of the project's one settings document, plugins/cutout-animation/settings/project.json (plugin 1.9.0). Absent document = the defaults. Semantics in docs/contract.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "export": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "atlas": {
+          "description": "Pack every PNG the exported rigs draw into atlas pages (fewer files, one texture per page). Pixels never change.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "description": "Default true.", "type": "boolean" },
+            "maxPageSize": { "description": "Largest page edge in pixels (default 2048); bigger pictures stay separate files.", "enum": [512, 1024, 2048, 4096] },
+            "padding": { "description": "Duplicated edge pixels around every picture (default 2), so filtering never reaches a neighbour.", "type": "integer", "minimum": 0, "maximum": 8 },
+            "trim": { "description": "Leave out transparent borders of pictures drawn at their own size (default true; a 1 px transparent ring is kept).", "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

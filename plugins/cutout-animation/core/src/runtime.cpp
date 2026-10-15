@@ -28,7 +28,10 @@ const Json& arrayOr(const Json& obj, const char* key) {
 Json Notification::toJson() const {
   Json j{{"kind", kind}, {"track", track}, {"clip", clip}, {"serial", serial}};
   if (kind == "complete") j["loop"] = loop;
-  if (kind == "event") j["name"] = name;
+  if (kind == "event") {
+    j["name"] = name;
+    for (auto it = payload.begin(); it != payload.end(); ++it) j[it.key()] = it.value();
+  }
   return j;
 }
 
@@ -185,8 +188,8 @@ static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double t
 /**
  * Two-bone limb (law of cosines) in the upper bone's parent space, where its local rotation acts
  * rigidly: exact for any ancestor transform. Links: upper origin -> child origin (l1, through the
- * upper bone's scale) and child origin -> effector (l2, the tip bone's origin through the child's
- * scale). A mirrored upper bone (one negative scale) reverses the child's rotation sense; an
+ * upper bone's scale) and child origin -> effector (l2, the tip bone's origin or the lower bone's
+ * own length tip, through the child's scale). A mirrored upper bone (one negative scale) reverses the child's rotation sense; an
  * upper bone with non-uniform scale uses the geometric mean for l2 (approximate, like Spine).
  * Unreachable targets clamp the cosine: the limb points straight at it (too far) or folds (too
  * close). bendPositive picks the side on screen: a mirrored parent space flips it back.
@@ -205,7 +208,8 @@ static bool solveTwoBone(const Rig& rig, Pose& pose, const IkConstraint& k, doub
   const double fx = tu.scaleX < 0 ? -1 : 1, fy = tu.scaleY < 0 ? -1 : 1, sense = fx * fy;
   const double mean = std::sqrt(std::fabs(tu.scaleX * tu.scaleY));
   const double c1x = tu.scaleX * tl.x, c1y = tu.scaleY * tl.y;
-  const double ex = k.tip >= 0 ? pose.applied[size_t(k.tip)].x : 0, ey = k.tip >= 0 ? pose.applied[size_t(k.tip)].y : 0;
+  // Effector in the lower bone's space: the tip bone's origin, else its own tip (length; 0 = origin).
+  const double ex = k.tip >= 0 ? pose.applied[size_t(k.tip)].x : k.tipLength, ey = k.tip >= 0 ? pose.applied[size_t(k.tip)].y : 0;
   const double c2x = mean * fx * tl.scaleX * ex, c2y = mean * fy * tl.scaleY * ey;
   const double l1 = std::hypot(c1x, c1y), l2 = std::hypot(c2x, c2y);
   const double th1 = std::atan2(c1y, c1x), th2 = std::atan2(c2y, c2x), aim = std::atan2(dy, dx);
@@ -465,14 +469,14 @@ void Instance::advance(int track, TrackState& state, double dt) {
     for (int64_t k = first; k <= last && k - first <= MAX_COMPLETES_PER_UPDATE; k++)
       for (const auto& e : clip.events) {
         const double occ = double(k) * d + double(e.timeMs);
-        if (e.timeMs < clip.durationMs && occ >= prev && occ < cur) pending_.push_back({"event", track, clip.id, e.name, serial});
+        if (e.timeMs < clip.durationMs && occ >= prev && occ < cur) pending_.push_back({"event", track, clip.id, e.name, serial, 0, e.payload});
       }
     for (int64_t k = first + 1; k <= last && k - first <= MAX_COMPLETES_PER_UPDATE; k++) pending_.push_back({"complete", track, clip.id, "", serial, k - 1});
     entry.loops = last;
   } else {
     for (const auto& e : clip.events) {
       const double occ = double(e.timeMs);
-      if (occ >= prev && (occ < cur || (cur >= d && occ == d && prev < d))) pending_.push_back({"event", track, clip.id, e.name, serial});
+      if (occ >= prev && (occ < cur || (cur >= d && occ == d && prev < d))) pending_.push_back({"event", track, clip.id, e.name, serial, 0, e.payload});
     }
     if (prev < d && cur >= d) { pending_.push_back({"complete", track, clip.id, "", serial, 0}); finish(track, state); }
   }
@@ -613,8 +617,21 @@ std::vector<DrawItem> Instance::drawList() const {
     if (!att) continue;
     const Affine m = origin * pose.world[slot.boneIndex] * attachmentPlacement(*att);
     out.push_back({slot.id, att->imageAssetId, m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)});
-    if (!att->mesh) continue;
     DrawItem& item = out.back();
+    item.source = att;
+    if (att->atlas) {
+      // Packed picture: the page's sub-image; a trimmed region draws only the kept rectangle,
+      // placed where it was in the original image (the rest was fully transparent).
+      const AtlasRegion& r = *att->atlas;
+      item.imageAssetId = r.page;
+      item.hasRegion = true;
+      item.region[0] = r.x; item.region[1] = r.y; item.region[2] = r.width; item.region[3] = r.height;
+      if (r.trimmed && !att->mesh) {
+        item.matrix = m * Affine::compose(r.trimX, r.trimY, 0, 1, 1);
+        item.width = r.trimWidth; item.height = r.trimHeight;
+      }
+    }
+    if (!att->mesh) continue;
     item.positions = meshPositions(*rig_, pose, int(i), *att);
     for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig_->originX; item.positions[v + 1] -= rig_->originY; }  // = origin
     item.uvs = att->uvs;

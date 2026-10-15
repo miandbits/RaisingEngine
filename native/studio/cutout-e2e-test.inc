@@ -1178,6 +1178,17 @@ void StudioTests::cutoutEndToEnd() {
     QCOMPARE(int(plugins.size()), 1);
     QCOMPARE(plugins[0].toObject().value("id").toString(), QString("cutout-animation"));
     QVERIFY(QFileInfo::exists(exported[target] + "/" + plugins[0].toObject().value("entry").toString()));
+    // Atlas packing (plugin 1.9.0, on by default for these players): the rig names page regions.
+    int regions = 0;
+    for (const auto &doc : plugins[0].toObject().value("documents").toArray())
+      if (doc.toObject().value("type") == "rig")
+        for (const auto &a : doc.toObject().value("data").toObject().value("attachments").toArray()) {
+          const auto atlas = a.toObject().value("atlas").toObject();
+          if (atlas.isEmpty()) continue;
+          regions++;
+          QVERIFY2(QFileInfo::exists(exported[target] + "/assets/" + atlas.value("page").toString() + ".png"), qPrintable(atlas.value("page").toString()));
+        }
+    QVERIFY2(regions >= 8, qPrintable(QString("%1 atlas regions in the %2 export").arg(regions).arg(target)));
   }
 
   // Hand-off for the browser / exported-player checks and the reusable demo copy.

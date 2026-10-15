@@ -58,6 +58,7 @@ const QVector<SignalInfo>& signalVocabulary();
 class CutoutPanel : public QWidget {
   Q_OBJECT
  public:
+  using JsonPtr = std::shared_ptr<const cutout::Json>;
   enum class Mode { Setup, Animate };
   struct PartChoice { QString assetId, importFile, slot, name, bone; };
   /** 스킨 그림 지정: `slot` is always an existing slot; the image never changes slot or name. */
@@ -76,7 +77,30 @@ class CutoutPanel : public QWidget {
   // ---- Navigation (openEditor, diagnostics click, automation) ----
   void selectRig(const QString& id);
   void selectController(const QString& id);
-  void selectItem(const QString& ref);  // "bone:<id>" | "slot:<id>" | ""
+  void selectItem(const QString& ref);  // "bone:<id>" | "slot:<id>" | "" (a single selection)
+  // ---- Multi-selection (plugin 1.7.0, editor-only state shared by canvas, tree, properties and the
+  // dopesheet rows): selection() is the primary item (last picked: gizmo, slot fields, graph),
+  // selectedItems() every selected bone/part in pick order.
+  void setSelection(const QStringList& refs, const QString& primary = QString());
+  void toggleSelected(const QString& ref);         // Ctrl/Shift+click on canvas or tree
+  void addToSelection(const QStringList& refs);
+  QStringList selectedItems() const;
+  /** Selected bone ids (rig order); Animate: a selected part counts as its bone (it is moved through it). */
+  QStringList selectedBones(bool partsAsBones = false) const;
+  bool selectChildren();  // 자식 본까지 선택 (menu; Ctrl+Shift+A in the hierarchy): every descendant bone added
+  bool selectAllBones();  // 모든 본 선택 (menu; Ctrl+A on canvas / hierarchy)
+  /** Transform options (editor-only): pivot of multi-bone rotate/scale, axis space of the numeric
+   *  fields, relative field input and setup-pose compensation (core flags compensateBones/Images). */
+  enum class Pivot { Origin = 0, Centroid = 1 };
+  void setPivotMode(Pivot pivot);
+  Pivot pivotMode() const { return pivot_; }
+  void setAxes(cutout::Axes axes);
+  cutout::Axes axes() const { return axes_; }
+  void setRelativeEdit(bool on);
+  bool relativeEdit() const { return relative_; }
+  void setCompensation(bool bones, bool images);
+  bool compensateBones() const { return compensateBones_; }
+  bool compensateImages() const { return compensateImages_; }
   void selectClip(const QString& id);
   void setMode(Mode mode);
   void setPlayhead(int ms);
@@ -90,6 +114,10 @@ class CutoutPanel : public QWidget {
   bool renameCharacter();
   bool deleteCharacter();
   bool addBone();
+  /** 자동 길이 (plugin 1.5.0): the selected bone's (none = every bone's) length = distance to its first child. */
+  bool fitBoneLengths();
+  /** 본 방향 맞추기: core orientBones on the selected bone (none = every bone); nothing moves on screen. */
+  bool orientBones();
   bool addPartInteractive();
   bool addPart(const QString& assetId, const QString& slot, const QString& name, const QString& bone);
   /** importImage (asset gesture) then addPart (edit gesture) once the asset exists. */
@@ -130,7 +158,7 @@ class CutoutPanel : public QWidget {
    *  one target goes onto the selected bone/part when that is another target of the same kind. */
   bool pasteKeys();
   bool duplicateKeys();  // selection copied to the playhead (clipboard untouched)
-  /** Pose of the selected bone and its children (all bones when none is selected) at the playhead. */
+  /** Pose of the selected bones (all bones when none is selected) at the playhead. */
   bool copyPose();
   bool pastePose();      // copied pose as keys at the playhead of the current clip
   void stepPlayhead(int steps);  // by the step field (10 ms default)
@@ -215,6 +243,22 @@ class CutoutPanel : public QWidget {
   void setBrush(const QString& bone, double weight, double strength, double radius);
   bool keyDeform();          // deform key of the shown offsets at the playhead
   bool deleteDeformKey();    // the deform key at the playhead
+  // ---- Freeform meshes (plugin 1.6.0, setup mode, selected part): every finished gesture is one
+  // core edit (createMeshFromOutline, autoOutline, addMeshVertex, removeMeshVertex, add/removeMeshEdge,
+  // retriangulate), so the MCP/LLM `edit` op makes exactly the same meshes.
+  bool beginOutline();                                 // 윤곽 그리기: canvas clicks place the outline (region or mesh)
+  bool outlineFromCanvas(const QPolygonF& rigPoints);  // the closed outline -> createMeshFromOutline
+  bool autoOutline();                                  // 자동 윤곽 from the image alpha (threshold/detail/spacing fields)
+  /** Rig-space outline 자동 윤곽 would make now (empty = no part / image / opaque pixels). */
+  QPolygonF autoOutlinePreview();
+  void setAutoOutlineParams(double threshold, double detail, double spacing, bool preview);
+  void setMeshTool(int tool);                          // RigCanvas::MeshTool; a shape tool turns 정점 편집 on
+  int meshTool() const { return meshTool_; }
+  bool addVertexAt(const QPointF& rigPoint);           // 정점 추가 (snaps onto an outline edge within 6 px)
+  bool deleteVertices();                               // 정점 삭제: the selected vertices
+  bool addMeshEdge(int a, int b);                      // 가장자리 추가: pin an inside edge
+  bool removeMeshEdge();                               // 가장자리 삭제: the pinned edge between the 2 selected vertices
+  bool retriangulateMesh();                            // 다시 삼각분할
   // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
   struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
   const OnionSettings& onionSettings() const { return onion_; }
@@ -228,6 +272,34 @@ class CutoutPanel : public QWidget {
   const QPolygonF& trailPoints() const { return trailPoints_; }
   const QPolygonF& trailKeyPoints() const { return trailKeys_; }
   const QVector<int>& trailKeyTimes() const { return trailKeyTimes_; }
+  // ---- Clip events (plugin 1.8.0). Definitions live in the rig (`events`), keys in the clips; every
+  // change is one core edit (addEventDef, renameEventDef, setEventKey, moveKeys...).
+  /** The event key dialog's fields: name plus the key's own payload (nullopt = the definition's value). */
+  struct EventKeyChoice { QString name; std::optional<qint64> intValue; std::optional<double> floatValue; std::optional<QString> stringValue; };
+  std::function<bool(EventKeyChoice&)> askEventKey;  // injectable; the default runs runEventKeyDialog
+  bool runEventKeyDialog(EventKeyChoice& choice);
+  QString eventId() const { return eventId_; }        // definition shown in the 이벤트 page
+  bool selectEvent(const QString& name);
+  bool newEvent();     // 새 이벤트 (asks a name)
+  bool renameEvent();  // keys of every clip follow
+  bool deleteEvent();  // asks first when keys use it (then they go too)
+  /** Default payload of the shown definition: field int | float | string | audio | volume | balance;
+   *  a null value (or 0 / "" / no sound) removes the field. */
+  bool setEventField(const QString& field, const cutout::Json& value);
+  /** 이벤트 키: a key of `name` (default: the shown definition; none and no definitions: asks a
+   *  name) at `ms` (-1 = the playhead) of the current clip. */
+  bool addEventKey(int ms = -1, const QString& name = QString());
+  /** Rename / override one key's payload (setEventKey with newName): one edit. */
+  bool editEventKey(const KeyRef& key, const EventKeyChoice& choice);
+  bool editEventKeyInteractive(const KeyRef& key = KeyRef());  // empty: the first selected event key
+  /** Preview event log (editor only): one line per event fired by preview playback (each pass
+   *  once; scrubbing never fires) and by the game-connection preview instance. */
+  QStringList eventLog() const { return eventLog_; }
+  void clearEventLog();
+  /** Advance preview playback by dtMs (the timer's tick does this with wall-clock time). */
+  void advancePlayback(double dtMs);
+  /** Automation: the timer stops advancing playback; advancePlayback drives it. */
+  void setManualClock(bool on) { manualClock_ = on; }
   /** Fire a signal into the local preview instance (never the game). Returns matched binding ids. */
   QStringList previewSignal(const QString& name, const QMap<QString, QString>& params);
   // ---- Layout (editor-only presentation: QSettings plugins/cutout-animation/layout, never an edit)
@@ -241,6 +313,15 @@ class CutoutPanel : public QWidget {
   /** Current pose drawn contain-fit into `size` (dock launcher mini preview). */
   QImage thumbnail(const QSize& size);
 
+  // ---- Export settings (plugin 1.9.0): the project's settings document
+  // plugins/cutout-animation/settings/project.json (absent = defaults: atlas on, 2048 px pages,
+  // 2 px padding, trimming on). Each change is one edit: create the document, or replace it.
+  /** Atlas packing on export: enabled, largest page edge (512..4096), padding (0..8), trim. */
+  bool setAtlasSettings(bool enabled, int maxPageSize, int padding, bool trim);
+  /** The effective export.atlas settings (document over defaults). */
+  cutout::Json atlasSettings() const;
+  bool hasSettingsDocument() const { return settings_.has_value(); }
+
   // ---- State (automation / tests) ----
   QString rigId() const { return rigId_; }
   QString controllerId() const { return controllerId_; }
@@ -248,7 +329,7 @@ class CutoutPanel : public QWidget {
   QString clipId() const { return clipId_; }
   Mode mode() const { return mode_; }
   int playhead() const { return playheadMs_; }
-  bool hasPending() const { return working_.has_value(); }
+  bool hasPending() const { return working_ != nullptr; }
   QString keyState() const;
   QString status() const;
   RigCanvas* canvas() const { return canvas_; }
@@ -259,6 +340,14 @@ class CutoutPanel : public QWidget {
   TimeView* timeView() const { return timeView_; }
   /** Rig data currently shown (pending/drag preview included). */
   const cutout::Json& displayData() const;
+  /** The display data's owner: hold it while working with displayData() across calls that may
+   *  replace the pending/committed data (cheap: no copy). */
+  JsonPtr displayShared() const;
+  JsonPtr committedShared() const;
+  JsonPtr controllerShared() const;
+  /** Light refresh after a view whose documents are what is already shown (counts for tests). */
+  int lightRefreshes() const { return lightRefreshes_; }
+  int fullRefreshes() const { return fullRefreshes_; }
   const cutout::Json& committedRig() const;
   const cutout::Json& committedController() const;
 
@@ -275,7 +364,10 @@ class CutoutPanel : public QWidget {
   bool eventFilter(QObject* watched, QEvent* event) override;
 
  private:
-  struct Doc { QString file; QJsonObject envelope; cutout::Json data; };
+  /** `data` is shared and immutable: refresh, the display snapshot and the in-flight edit hand the
+   *  same parsed document around instead of copying ~1 MB of JSON per use (plugin 1.9.0). `stamp`
+   *  identifies the parsed value: an unchanged document keeps it across views. */
+  struct Doc { QString file; QJsonObject envelope; JsonPtr data; quint64 stamp = 0; };
   raising::StudioHost* host_;
   ImageCache images_;
   QMap<QString, Doc> rigs_, controllers_;
@@ -283,13 +375,31 @@ class CutoutPanel : public QWidget {
   QString rigId_, controllerId_, selection_, clipId_, status_;
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)
+  QString eventId_;                           // event definition shown in the 이벤트 page (editor state)
+  QStringList eventLog_;                      // preview event log (editor only)
+  bool manualClock_ = false;
+  QStringList selected_;                      // multi-selection; only meaningful while it holds selection_
+  Pivot pivot_ = Pivot::Origin;
+  cutout::Axes axes_ = cutout::Axes::Local;
+  bool relative_ = false, compensateBones_ = false, compensateImages_ = false;
   Mode mode_ = Mode::Setup;
   int playheadMs_ = 0, lastRevision_ = -1;
   double playheadExact_ = 0;
   bool filling_ = false, inSubmit_ = false, refreshQueued_ = false, autoKey_ = false, dragActive_ = false;
-  std::optional<cutout::Json> working_;      // uncommitted animate-mode changes (auto-key off): shown, not saved
-  std::optional<cutout::Json> inflight_;     // sent, waiting for the host reply (avoids flicker)
-  std::optional<cutout::Json> dragPreview_;  // live drag preview, never sent until release
+  JsonPtr working_;      // uncommitted animate-mode changes (auto-key off): shown, not saved
+  JsonPtr inflight_;     // sent, waiting for the host reply (avoids flicker); adopted as the doc when it arrives
+  JsonPtr dragPreview_;  // live drag preview, never sent until release
+  quint64 inflightStamp_ = 0, stampCounter_ = 0;
+  // What the last rebuildDisplay showed (rig/controller stamps, 0 = pending data): a view whose
+  // documents keep these stamps only refreshes diagnostics instead of every widget.
+  quint64 shownRigStamp_ = 0, shownControllerStamp_ = 0;
+  int lightRefreshes_ = 0, fullRefreshes_ = 0;
+  QString inflightRig_, shownSignature_, parsedRig_;
+  quint64 parsedStamp_ = 0;
+  bool inflightValid_ = false;
+  QJsonArray shownAssets_;
+  QString displaySignature() const;
+  QStringList shownControllers_;
   cutout::Json dragBase_;                    // data/pose at drag start: deltas are relative to it
   std::shared_ptr<const cutout::Rig> dragRig_;
   cutout::Pose dragPose_;
@@ -330,7 +440,17 @@ class CutoutPanel : public QWidget {
   BoneTree* tree_ = nullptr;
   QListWidget* drawOrder_ = nullptr;
   RigCanvas* canvas_ = nullptr;
-  QToolButton* toolButtons_[4] = {};
+  QToolButton* toolButtons_[RigCanvas::TOOL_COUNT] = {};
+  QComboBox *pivotCombo_ = nullptr, *axesCombo_ = nullptr;
+  QToolButton *compensateBonesButton_ = nullptr, *compensateImagesButton_ = nullptr, *selectMenuButton_ = nullptr;
+  QCheckBox* relativeCheck_ = nullptr;
+  QCheckBox* atlasEnabled_ = nullptr;
+  QCheckBox* atlasTrim_ = nullptr;
+  QComboBox* atlasPageSize_ = nullptr;
+  QSpinBox* atlasPadding_ = nullptr;
+  QLabel* atlasSummary_ = nullptr;
+  std::optional<Doc> settings_;  // the settings document when the project has one
+  QString createId_;  // id of the bone the create tool is drawing (stable across its previews)
   QMap<QString, QDoubleSpinBox*> props_;
   QComboBox* attachmentCombo_ = nullptr;
   QPushButton *keyButton_ = nullptr, *discardButton_ = nullptr, *deltaButton_ = nullptr;
@@ -371,6 +491,16 @@ class CutoutPanel : public QWidget {
   QSpinBox* ikOrder_ = nullptr;
   QDoubleSpinBox* ikAimAxis_ = nullptr;
   QLabel* ikInfo_ = nullptr;
+  // events (plugin 1.8.0)
+  QListWidget *eventList_ = nullptr, *eventLogList_ = nullptr;
+  QSpinBox* eventInt_ = nullptr;
+  QDoubleSpinBox *eventFloat_ = nullptr, *eventVolume_ = nullptr, *eventBalance_ = nullptr;
+  QLineEdit* eventString_ = nullptr;
+  QComboBox* eventAudio_ = nullptr;
+  QLabel *eventInfo_ = nullptr, *eventFlash_ = nullptr;
+  QWidget* eventKeyTools_ = nullptr;
+  QVector<QWidget*> eventEditors_;
+  QPushButton* graphFitValues_ = nullptr;
   QVector<QWidget*> ikEditors_, ikAnimateTools_, ikAimTools_;
   // meshes (editor state: mode, vertex selection and brush never reach documents)
   MeshEdit meshEdit_ = MeshEdit::Off;
@@ -385,6 +515,18 @@ class CutoutPanel : public QWidget {
   QLabel* meshInfo_ = nullptr;
   QVector<QWidget*> meshTools_, meshSetupTools_, meshAnimateTools_;
   QVector<QWidget*> meshModeRows_;  // button rows shown in one mode only (property cutoutModeRow)
+  // freeform mesh tools (plugin 1.6.0, editor state)
+  int meshTool_ = 0;          // RigCanvas::MeshTool
+  QString outlineSlot_;       // part whose outline is being drawn ("" = not drawing)
+  QToolButton *meshSelectTool_ = nullptr, *meshAddVertexTool_ = nullptr, *meshAddEdgeTool_ = nullptr;
+  QDoubleSpinBox *outlineThreshold_ = nullptr, *outlineDetail_ = nullptr, *outlineSpacing_ = nullptr;
+  QCheckBox* outlinePreview_ = nullptr;
+  struct AlphaMask { QString key; int width = 0, height = 0; std::vector<uint8_t> alpha; };
+  AlphaMask alphaMask_;                                  // last decoded image alpha (자동 윤곽, preview)
+  QString outlinePreviewKey_;
+  std::vector<double> previewOutline_;                   // image px, for outlinePreviewKey_
+  const AlphaMask* alphaMaskOf(const cutout::Attachment& attachment);
+  void refreshOutlinePreview();
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;
@@ -402,6 +544,12 @@ class CutoutPanel : public QWidget {
   void refreshLooks();
   QWidget* buildIk();
   void refreshIk();
+  QWidget* buildEvents();
+  void refreshEvents();
+  const cutout::Json* currentEvent() const;  // eventId_ in displayData()
+  /** Log the clip events with times in [from, to) (`toInclusive`: also at `to`, a non-looping end). */
+  void firePlaybackEvents(double from, double to, bool toInclusive);
+  void logEvent(const QString& source, const QString& clip, double timeMs, const QString& name, const cutout::Json& payload);
   QWidget* buildMesh();
   void refreshMesh();
   /** The edited mesh: slot index, attachment, and op fields {slot, name, skin?} (false = none). */
@@ -416,6 +564,9 @@ class CutoutPanel : public QWidget {
   QWidget* section(const QString& title, const char* name, QWidget* body);
   QWidget* buildAnimateTab();
   QWidget* buildControllerTab();
+  QWidget* buildExportTab();
+  void refreshExportSettings();
+  void commitExportSettings();
   QFrame* buildOnionSettings();
   void syncOnionUi();
   void onionFromUi();
@@ -443,7 +594,7 @@ class CutoutPanel : public QWidget {
   void keyCommand(const QString& command);
   void updateTimeUi(int duration);
   void syncTimeScroll();
-  bool commitRig(const cutout::EditResult& result);
+  bool commitRig(cutout::EditResult result);
   bool commitController(const cutout::Json& data);
   bool captureExpressionAs(const QString& id, bool replace);
   bool busy();
@@ -469,6 +620,11 @@ class CutoutPanel : public QWidget {
   int boneIndex(const QString& id) const;
   QString selectedBone() const;  // bone of the selection (slot -> its bone)
   QPointF manipulationOrigin(const QString& ref) const;
+  QStringList dragBones(const QString& ref) const;  // the bones a drag of `ref` transforms
+  /** Shown x/y/rotation/scale of bone `index` in axes_ (setup: FK setup world; Animate: the pose). */
+  cutout::Transform shownBone(int index, const cutout::Pose& pose, const std::map<std::string, cutout::Affine>& setupWorld) const;
+  void commitBoneProperty(const QString& property, double value);
+  void syncSelectionWidgets();  // tree / draw order / canvas / dopesheet marks from selected_
   std::vector<cutout::Json> dragOps(const RigCanvas::Drag& drag) const;
   void onCanvasDrag(const RigCanvas::Drag& drag, bool finished);
   void commitProperty(const QString& property, double value);

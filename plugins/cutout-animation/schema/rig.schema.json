@@ -27,7 +27,9 @@
           "parent": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
           "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" },
           "rotation": { "$ref": "#/$defs/angle" },
-          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" }
+          "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
+          "length": { "description": "Bone length in px along its local +x (plugin 1.5.0; 0/absent = point bone). Drawn by the editor; the two-bone IK effector when the lower bone has no explicit tip.", "type": "number", "minimum": 0, "maximum": 100000 },
+          "color": { "description": "Editor-only display colour (#rrggbb or #rrggbbaa). Ignored by runtimes.", "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" }
         }
       }
     },
@@ -108,6 +110,22 @@
         }
       }
     },
+    "events": {
+      "description": "Event definitions (plugin 1.8.0, Spine-like). Optional; once present every clip event key must name one. int/float/string are the default payload of its keys; audio names an audio asset a host may play when the event fires. Presentation only: never a controller binding signal.",
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name"],
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "int": { "type": "integer", "minimum": -2147483647, "maximum": 2147483647 },
+          "float": { "type": "number", "minimum": -1000000, "maximum": 1000000 },
+          "string": { "type": "string", "maxLength": 1000 },
+          "audio": { "description": "Audio asset id (kind audio, checked by the service).", "type": "string", "minLength": 1, "maxLength": 64 },
+          "volume": { "description": "0..1, default 1 (with audio).", "type": "number", "minimum": 0, "maximum": 1 },
+          "balance": { "description": "-1 (left) .. 1 (right), default 0 (with audio).", "type": "number", "minimum": -1, "maximum": 1 }
+        }
+      }
+    },
     "clips": {
       "type": "array", "maxItems": 256,
       "items": {
@@ -152,7 +170,12 @@
             "type": "array", "maxItems": 256,
             "items": {
               "type": "object", "additionalProperties": false, "required": ["timeMs", "name"],
-              "properties": { "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 }, "name": { "$ref": "#/$defs/name" } }
+              "properties": {
+                "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 }, "name": { "$ref": "#/$defs/name" },
+                "int": { "description": "Overrides the definition's int (plugin 1.8.0).", "type": "integer", "minimum": -2147483647, "maximum": 2147483647 },
+                "float": { "description": "Overrides the definition's float.", "type": "number", "minimum": -1000000, "maximum": 1000000 },
+                "string": { "description": "Overrides the definition's string.", "type": "string", "maxLength": 1000 }
+              }
             }
           }
         }
@@ -172,7 +195,7 @@
       }
     },
     "editor": {
-      "description": "Non-essential authoring metadata (view, bone colors). Ignored by runtimes.",
+      "description": "Non-essential authoring metadata (view). Ignored by runtimes. Bone display colours live on the bones (`color`, plugin 1.5.0).",
       "type": "object"
     }
   },
@@ -194,8 +217,19 @@
         "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices).", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
         "uvs": { "description": "Mesh: texture coordinates 0..1, u, v per vertex.", "type": "array", "maxItems": 4096, "items": { "type": "number", "minimum": 0, "maximum": 1 } },
         "triangles": { "description": "Mesh: vertex index triples (1..4096 triangles).", "type": "array", "maxItems": 12288, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
-        "hull": { "description": "Mesh, editor only: the first `hull` vertices are the outline.", "type": "integer", "minimum": 0, "maximum": 2048 },
-        "edges": { "description": "Mesh, editor only: outline/edge index pairs.", "type": "array", "maxItems": 16384, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
+        "hull": { "description": "Mesh, editor only: the first `hull` vertices are the outline polygon in order (re-triangulation source, plugin 1.6.0).", "type": "integer", "minimum": 0, "maximum": 2048 },
+        "edges": { "description": "Mesh, editor only: index pairs of the outline edges and of internal edges the author pinned (kept by re-triangulation, plugin 1.6.0).", "type": "array", "maxItems": 16384, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
+        "atlas": {
+          "description": "Written by the export packer (plugin 1.9.0), never by authoring: the picture is the sub-image (x, y, width, height; page pixels) of image asset `page`. `trim` (regions only): the rectangle of the attachment image that sub-image shows (the rest was transparent). Semantics in docs/contract.md.",
+          "type": "object", "additionalProperties": false, "required": ["page", "x", "y", "width", "height"],
+          "properties": {
+            "page": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "x": { "type": "number", "minimum": 0 }, "y": { "type": "number", "minimum": 0 },
+            "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 },
+            "trim": { "type": "object", "additionalProperties": false, "required": ["x", "y", "width", "height"],
+              "properties": { "x": { "type": "number", "minimum": 0 }, "y": { "type": "number", "minimum": 0 }, "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 } } }
+          }
+        },
         "weights": {
           "description": "Weighted mesh: per vertex 1..4 bone shares (normalized to sum 1); the bind pose is the setup pose. Absent = the mesh follows the slot bone.",
           "type": "array", "maxItems": 2048,

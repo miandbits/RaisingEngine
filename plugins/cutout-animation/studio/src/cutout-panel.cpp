@@ -5,6 +5,7 @@
 #include <set>
 #include <tuple>
 #include "cutout/host.hpp"
+#include "cutout/mesh.hpp"
 #include "cutout/templates.hpp"
 #include "dopesheet.hpp"
 #include "graph-editor.hpp"
@@ -12,7 +13,7 @@
 namespace cutout_studio {
 using cutout::Json;
 namespace {
-const char* PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "alpha"};
+const char* PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "alpha", "length"};
 QString refKind(const QString& ref) { return ref.section(':', 0, 0); }
 QString refId(const QString& ref) { return ref.section(':', 1); }
 const Json* findIn(const Json& data, const char* list, const std::string& id) {
@@ -347,6 +348,7 @@ CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(p
   };
   askPart = [this](PartChoice& choice) { return runPartDialog(choice); };
   askSkinImage = [this](SkinImageChoice& choice) { return runSkinImageDialog(choice); };
+  askEventKey = [this](EventKeyChoice& choice) { return runEventKeyDialog(choice); };
   timer_ = new QTimer(this);
   timer_->setInterval(16);
   connect(timer_, &QTimer::timeout, this, [this] { tick(); });
@@ -355,7 +357,8 @@ CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(p
 CutoutPanel::~CutoutPanel() = default;
 bool CutoutPanel::runPartDialog(PartChoice& choice) {
   QStringList bones, slots;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   for (const auto& b : listOf(data, "bones")) bones << qs(b.value("id", std::string()));
   for (const auto& s : listOf(data, "slots")) slots << qs(s.value("id", std::string()));
   PartDialog dialog(this, images_, bones, slots, choice);
@@ -480,6 +483,7 @@ void CutoutPanel::buildUi() {
   bottomTabs_->setObjectName("cutoutBottomTabs");
   bottomTabs_->addTab(buildAnimateTab(), "애니메이션");
   bottomTabs_->addTab(buildControllerTab(), "게임 연결");
+  bottomTabs_->addTab(buildExportTab(), "내보내기");
   connect(bottomTabs_, &QTabWidget::currentChanged, this, [this](int index) {
     if (index == 1) ensurePreview();
     if (index == 1 || playing_) { lastTick_ = QDateTime::currentMSecsSinceEpoch(); timer_->start(); }
@@ -519,6 +523,7 @@ void CutoutPanel::buildUi() {
   shortcut(Qt::Key_R, "cutoutShortcutRotate", [this] { setTool(RigCanvas::Rotate); });
   shortcut(Qt::Key_S, "cutoutShortcutScale", [this] { setTool(RigCanvas::Scale); });
   shortcut(Qt::Key_P, "cutoutShortcutPivot", [this] { setTool(RigCanvas::Pivot); });
+  shortcut(Qt::Key_C, "cutoutShortcutCreate", [this] { setTool(RigCanvas::Create); });
   shortcut(Qt::Key_K, "cutoutShortcutKey", [this] { keySelected(); });
   shortcut(Qt::Key_O, "cutoutShortcutOnion", [this] { setOnionSkin(!onion_.enabled); });
   shortcut(Qt::Key_Space, "cutoutShortcutPlay", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
@@ -603,6 +608,17 @@ bool CutoutPanel::eventFilter(QObject* watched, QEvent* event) {
       auto* drop = static_cast<QDropEvent*>(event);
       drop->acceptProposedAction();
       dropImages(drop->mimeData(), QString());
+      return true;
+    }
+  }
+  if (watched == tree_ && (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)) {
+    // The focused hierarchy owns Ctrl+A / Ctrl+Shift+A (bones, not its own select-all of parts;
+    // there the selection command wins over the host's workspace toggle, which the canvas keeps)
+    // and not the host's workspace toggle).
+    auto* key = static_cast<QKeyEvent*>(event);
+    if (key->key() == Qt::Key_A && (key->modifiers() & Qt::ControlModifier) && !(key->modifiers() & Qt::AltModifier)) {
+      event->accept();
+      if (event->type() == QEvent::KeyPress) { if (key->modifiers() & Qt::ShiftModifier) selectChildren(); else selectAllBones(); }
       return true;
     }
   }
@@ -744,7 +760,8 @@ QWidget* CutoutPanel::buildLooks() {
   // IK and meshes share the section as more pages: one more section would not fit the 1280x720 minimum.
   lookTabs_->addTab(buildIk(), "IK");
   lookTabs_->addTab(buildMesh(), "메시");
-  return section("스킨 · 표정 · IK · 메시", "cutoutSectionLooks", lookTabs_);
+  lookTabs_->addTab(buildEvents(), "이벤트");
+  return section("스킨 · 표정 · IK · 메시 · 이벤트", "cutoutSectionLooks", lookTabs_);
 }
 QWidget* CutoutPanel::lookPage(const char* name) {
   auto* page = new QWidget;
@@ -814,6 +831,10 @@ QWidget* CutoutPanel::buildMesh() {
   convertTools->setProperty("cutoutModeRow", "setup");
   QPushButton* convert = button(convertTools, "메시로 변환", "cutoutConvertMesh", "조립 모드: 고른 조각의 그림을 격자 메시로 바꿉니다(격자 크기는 아래). 모양은 그대로이고, 정점을 옮기거나 본 웨이트를 주면 휘어집니다.",
                                 [this] { return convertToMesh(meshRows_->value(), meshCols_->value(), meshTrim_->isChecked()); });
+  QPushButton* drawOutline = button(convertTools, "윤곽 그리기", "cutoutMeshDrawOutline", "조립 모드: 캔버스에서 그림 둘레를 차례로 클릭해 윤곽을 그립니다. 첫 점 클릭·더블클릭·Enter로 닫으면 그 안을 삼각형으로 나눈 메시가 됩니다(오목해도 됨). Backspace = 마지막 점 지우기, Esc = 취소.",
+                                    [this] { return beginOutline(); });
+  QPushButton* autoOutlineButton = button(convertTools, "자동 윤곽", "cutoutMeshAutoOutline", "조립 모드: 그림의 불투명한 부분(알파 기준 이상)을 따라 윤곽을 자동으로 찾아 메시로 만듭니다. 기준·디테일·안쪽 간격은 아래 칸, 「미리보기」를 켜면 캔버스에 점선으로 보입니다.",
+                                          [this] { return autoOutline(); });
   QPushButton* revert = button(convertTools, "이미지로 되돌리기", "cutoutConvertRegion", "메시를 지우고 보통 그림(사각형)으로 되돌립니다. 이 메시의 변형 키도 지워집니다.", [this] { return convertToRegion(); });
   QWidget* modeRow = buttonRow("cutoutMeshModes");
   auto mode = [&](const QString& text, const char* name, const QString& tip, MeshEdit m) {
@@ -832,8 +853,29 @@ QWidget* CutoutPanel::buildMesh() {
   meshBones_->setObjectName("cutoutMeshBones");
   meshBones_->setMinimumHeight(LIST_MIN_HEIGHT);
   meshBones_->setToolTip("자동 웨이트에 쓸 본 · 체크한 본들 가운데 가까운 1~4개가 정점을 움직입니다.");
+  // Shape tools (plugin 1.6.0): shown in setup mode while 정점 편집 is on, in place of the weight row.
+  QWidget* shapeTools = buttonRow("cutoutMeshShapeTools");
+  shapeTools->setProperty("cutoutModeRow", "setup-vertices");
+  auto shapeTool = [&](const QString& text, const char* name, const QString& tip, int t) {
+    auto* b = new QToolButton;
+    b->setObjectName(name);
+    b->setText(text);
+    b->setToolTip(tip);
+    b->setCheckable(true);
+    connect(b, &QToolButton::clicked, this, [this, t] { setMeshTool(t); });
+    addToRow(shapeTools, b);
+    return b;
+  };
+  meshSelectTool_ = shapeTool("선택·이동", "cutoutMeshToolSelect", "정점을 클릭·상자로 골라 끌어 옮깁니다.", RigCanvas::MeshSelect);
+  meshAddVertexTool_ = shapeTool("정점 추가", "cutoutMeshToolAddVertex", "메시 안을 클릭하면 안쪽 정점, 윤곽 가까이를 클릭하면 윤곽 정점이 생깁니다. 웨이트·변형은 주변 정점 값을 섞어 받고, 메시는 다시 삼각분할됩니다.", RigCanvas::MeshAddVertex);
+  meshAddEdgeTool_ = shapeTool("가장자리 추가", "cutoutMeshToolAddEdge", "정점에서 다른 정점으로 끌면 그 사이 가장자리를 고정합니다(하늘색). 다시 삼각분할해도 남아, 메시가 그 선을 따라 접힙니다.", RigCanvas::MeshAddEdge);
+  QWidget* shapeActions = buttonRow("cutoutMeshShapeActions");
+  shapeActions->setProperty("cutoutModeRow", "setup-vertices");
+  QPushButton* deleteVertex = button(shapeActions, "정점 삭제", "cutoutMeshDeleteVertices", "고른 정점을 지웁니다(Delete). 윤곽 정점은 윤곽이 3개 이상 남고 안쪽 정점이 모두 그 안에 있을 때만 지울 수 있습니다.", [this] { return deleteVertices(); });
+  QPushButton* removeEdge = button(shapeActions, "가장자리 삭제", "cutoutMeshRemoveEdge", "고른 두 정점 사이의 고정 가장자리(하늘색)를 풉니다.", [this] { return removeMeshEdge(); });
+  QPushButton* retriangulate = button(shapeActions, "다시 삼각분할", "cutoutMeshRetriangulate", "지금 정점으로 삼각형을 다시 나눕니다(들로네, 윤곽·고정 가장자리 유지). 정점을 많이 옮겨 삼각형이 뒤집혔을 때 씁니다.", [this] { return retriangulateMesh(); });
   QWidget* weightTools = buttonRow("cutoutMeshWeightTools");
-  weightTools->setProperty("cutoutModeRow", "setup");
+  weightTools->setProperty("cutoutModeRow", "setup-weights");
   QPushButton* autoButton = button(weightTools, "자동 웨이트", "cutoutMeshAutoWeights", "아래 목록에서 체크한 본(없으면 조각의 본과 그 부모·자식)까지의 거리로 웨이트를 자동으로 줍니다. 부드럽게 이어지고 합은 1입니다.", [this] { return autoWeights(); });
   QPushButton* unbind = button(weightTools, "웨이트 해제", "cutoutMeshUnbind", "웨이트를 지웁니다. 메시는 다시 조각의 본만 따라갑니다(모양은 그대로).", [this] { return unbindMesh(); });
   auto* form = new QFormLayout;
@@ -865,21 +907,167 @@ QWidget* CutoutPanel::buildMesh() {
   deformTools->setProperty("cutoutModeRow", "animate");
   QPushButton* deformKey = button(deformTools, "변형 키", "cutoutMeshDeformKey", "애니메이션 모드: 지금 보이는 메시 변형을 이 시간의 키로 넣습니다(K와 같음).", [this] { return keyDeform(); });
   QPushButton* deformDelete = button(deformTools, "변형 키 삭제", "cutoutMeshDeleteDeform", "애니메이션 모드: 이 시간의 변형 키를 지웁니다.", [this] { return deleteDeformKey(); });
+  // 자동 윤곽 settings (plugin 1.6.0): editor state, the op carries them.
+  auto* outlineForm = new QFormLayout;
+  outlineForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  auto outlineSpin = [&](const char* name, double lo, double hi, double step, double value, int decimals, const QString& tip) {
+    auto* sp = new QDoubleSpinBox;
+    sp->setObjectName(name);
+    sp->setRange(lo, hi);
+    sp->setSingleStep(step);
+    sp->setDecimals(decimals);
+    sp->setValue(value);
+    sp->setToolTip(tip);
+    connect(sp, &QDoubleSpinBox::valueChanged, this, [this] { refreshOutlinePreview(); });
+    return sp;
+  };
+  outlineThreshold_ = outlineSpin("cutoutMeshOutlineThreshold", 0, 0.95, 0.05, 0.05, 2, "자동 윤곽: 이 값보다 불투명한 픽셀을 그림으로 봅니다(0 = 조금이라도 보이면).");
+  outlineDetail_ = outlineSpin("cutoutMeshOutlineDetail", 0, 1, 0.1, 0.5, 2, "자동 윤곽: 1에 가까울수록 윤곽 점이 많아 그림을 꼭 맞게 따라갑니다.");
+  outlineSpacing_ = outlineSpin("cutoutMeshOutlineSpacing", 0, 500, 5, 0, 0, "윤곽 그리기·자동 윤곽: 안쪽에 이 간격(그림 px)으로 정점을 채웁니다. 0 = 윤곽 정점만.");
+  outlineSpacing_->setSpecialValueText("없음");
+  outlinePreview_ = new QCheckBox("자동 윤곽 미리보기");
+  outlinePreview_->setObjectName("cutoutMeshOutlinePreview");
+  outlinePreview_->setToolTip("자동 윤곽이 만들 윤곽을 캔버스에 점선(분홍)으로 보여 줍니다.");
+  connect(outlinePreview_, &QCheckBox::toggled, this, [this] { refreshOutlinePreview(); });
+  outlineForm->addRow("알파 기준", outlineThreshold_);
+  outlineForm->addRow("윤곽 디테일", outlineDetail_);
+  outlineForm->addRow("안쪽 간격", outlineSpacing_);
+  outlineForm->addRow(outlinePreview_);
   // Fixed: the mode's action rows and the bone list. Scrolling: state text, grid size, brush.
   layout->addWidget(convertTools);
   layout->addWidget(modeRow);
+  layout->addWidget(shapeTools);
+  layout->addWidget(shapeActions);
   layout->addWidget(weightTools);
   layout->addWidget(deformTools);
   layout->addWidget(meshBones_, 2);
   formLayout->addWidget(meshInfo_);
   formLayout->addWidget(convertRow);
+  formLayout->addLayout(outlineForm);
   formLayout->addLayout(form);
   formLayout->addStretch();
   layout->addWidget(formScroll("cutoutMeshFormScroll", inner), 3);
-  meshModeRows_ = {convertTools, weightTools, deformTools};
-  meshSetupTools_ = {meshRows_, meshCols_, meshTrim_, convert};
-  meshTools_ = {revert, meshVerticesButton_, meshWeightsButton_, meshBones_, autoButton, unbind, brushBone_, brushWeight_, brushStrength_, brushRadius_};
+  meshModeRows_ = {convertTools, shapeTools, shapeActions, weightTools, deformTools};
+  meshSetupTools_ = {meshRows_, meshCols_, meshTrim_, convert, drawOutline, autoOutlineButton, outlineThreshold_, outlineDetail_, outlineSpacing_, outlinePreview_};
+  meshTools_ = {revert, meshVerticesButton_, meshWeightsButton_, meshBones_, autoButton, unbind, brushBone_, brushWeight_, brushStrength_, brushRadius_,
+                meshSelectTool_, meshAddVertexTool_, meshAddEdgeTool_, deleteVertex, removeEdge, retriangulate};
   meshAnimateTools_ = {deformKey, deformDelete};
+  return page;
+}
+
+// Clip events (plugin 1.8.0): the rig's event definitions (default payload, optional sound), the
+// key tools of the dopesheet's 이벤트 row and the preview log, as the "이벤트" page of the look section.
+// Events are presentation only: controller bindings react to game signals, never to clip events.
+QWidget* CutoutPanel::buildEvents() {
+  QWidget* page = lookPage("cutoutEventPage");
+  auto* layout = static_cast<QVBoxLayout*>(page->layout());
+  auto* inner = new QWidget;
+  auto* formLayout = new QVBoxLayout(inner);
+  formLayout->setContentsMargins(0, 0, 0, 0);
+  formLayout->setSpacing(2);
+  auto button = [this](QWidget* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
+    auto* b = new QPushButton(text);
+    b->setObjectName(name);
+    b->setToolTip(tip);
+    connect(b, &QPushButton::clicked, this, [fn] { fn(); });
+    addToRow(row, b);
+    return b;
+  };
+  eventList_ = new QListWidget;
+  eventList_->setObjectName("cutoutEventList");
+  eventList_->setMinimumHeight(LIST_MIN_HEIGHT);
+  eventList_->setToolTip("이벤트 정의 · 키의 기본 값(int·float·string)과 소리를 정합니다. 정의가 하나라도 있으면 키는 정의된 이름만 쓸 수 있습니다.\n"
+                         "이벤트는 표시 전용입니다: 게임 연결 규칙은 게임 신호에만 반응하고 이벤트를 받지 않습니다.");
+  connect(eventList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
+    if (!filling_ && item) selectEvent(item->data(Qt::UserRole).toString());
+  });
+  QWidget* tools = buttonRow("cutoutEventTools");
+  button(tools, "새 이벤트", "cutoutNewEvent", "이벤트 정의를 만듭니다(발소리, 효과, 타격 판정 표시 등). 첫 정의는 키가 이미 쓰는 이름도 함께 정의합니다.", [this] { return newEvent(); });
+  button(tools, "이름 변경", "cutoutRenameEvent", "이벤트 이름을 바꿉니다. 모든 클립의 그 이벤트 키도 함께 바뀝니다.", [this] { return renameEvent(); });
+  button(tools, "삭제", "cutoutDeleteEvent", "이벤트 정의를 삭제합니다(그 이벤트 키도 함께, 먼저 묻습니다).", [this] { return deleteEvent(); });
+  eventKeyTools_ = buttonRow("cutoutEventKeyTools");
+  eventKeyTools_->setProperty("cutoutModeRow", "animate");
+  button(eventKeyTools_, "이벤트 키", "cutoutEventKeyAdd", "고른 이벤트를 재생 헤드 시간에 키로 넣습니다(도프시트 「이벤트」 행: 오른쪽 클릭 · 빈 곳 더블클릭도 됩니다).", [this] { return addEventKey(); });
+  button(eventKeyTools_, "키 편집…", "cutoutEventKeyEdit", "도프시트에서 고른 이벤트 키의 이름과 값(int·float·string 덮어쓰기)을 바꿉니다(이벤트 키 더블클릭).", [this] { return editEventKeyInteractive(); });
+  auto* form = new QFormLayout;
+  form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  eventInt_ = new QSpinBox;
+  eventInt_->setObjectName("cutoutEventInt");
+  eventInt_->setRange(-2147483647, 2147483647);
+  eventInt_->setKeyboardTracking(false);
+  connect(eventInt_, &QSpinBox::editingFinished, this, [this] {
+    if (!filling_ && eventInt_->value() != eventInt_->property("shown").toInt()) setEventField("int", eventInt_->value());
+  });
+  eventFloat_ = new QDoubleSpinBox;
+  eventFloat_->setObjectName("cutoutEventFloat");
+  eventFloat_->setRange(-1e6, 1e6);
+  eventFloat_->setDecimals(4);
+  eventFloat_->setKeyboardTracking(false);
+  connect(eventFloat_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (!filling_ && std::fabs(eventFloat_->value() - eventFloat_->property("shown").toDouble()) > 5e-5) setEventField("float", eventFloat_->value());
+  });
+  eventString_ = new QLineEdit;
+  eventString_->setObjectName("cutoutEventString");
+  eventString_->setMaxLength(1000);
+  connect(eventString_, &QLineEdit::editingFinished, this, [this] {
+    if (!filling_ && eventString_->text() != eventString_->property("shown").toString()) setEventField("string", ss(eventString_->text()));
+  });
+  eventAudio_ = new QComboBox;
+  eventAudio_->setObjectName("cutoutEventAudio");
+  eventAudio_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  eventAudio_->setMinimumContentsLength(6);
+  eventAudio_->setToolTip("이벤트가 일어날 때 플레이어가 재생할 수 있는 소리(프로젝트 오디오 에셋). 재생은 플레이어(호스트)의 몫입니다.");
+  connect(eventAudio_, &QComboBox::activated, this, [this] { if (!filling_) setEventField("audio", ss(eventAudio_->currentData().toString())); });
+  eventVolume_ = new QDoubleSpinBox;
+  eventVolume_->setObjectName("cutoutEventVolume");
+  eventVolume_->setRange(0, 1);
+  eventVolume_->setDecimals(2);
+  eventVolume_->setSingleStep(0.05);
+  eventVolume_->setKeyboardTracking(false);
+  connect(eventVolume_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (!filling_ && std::fabs(eventVolume_->value() - eventVolume_->property("shown").toDouble()) > 5e-3) setEventField("volume", eventVolume_->value());
+  });
+  eventBalance_ = new QDoubleSpinBox;
+  eventBalance_->setObjectName("cutoutEventBalance");
+  eventBalance_->setRange(-1, 1);
+  eventBalance_->setDecimals(2);
+  eventBalance_->setSingleStep(0.1);
+  eventBalance_->setKeyboardTracking(false);
+  eventBalance_->setToolTip("-1 = 왼쪽, 0 = 가운데, 1 = 오른쪽");
+  connect(eventBalance_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (!filling_ && std::fabs(eventBalance_->value() - eventBalance_->property("shown").toDouble()) > 5e-3) setEventField("balance", eventBalance_->value());
+  });
+  form->addRow("int", eventInt_);
+  form->addRow("float", eventFloat_);
+  form->addRow("string", eventString_);
+  form->addRow("소리", eventAudio_);
+  form->addRow("음량", eventVolume_);
+  form->addRow("좌우", eventBalance_);
+  eventInfo_ = new QLabel;
+  eventInfo_->setObjectName("cutoutEventInfo");
+  eventInfo_->setWordWrap(true);
+  eventInfo_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  eventInfo_->setStyleSheet("color:#a7b4c2;");
+  QWidget* logTools = buttonRow("cutoutEventLogTools");
+  auto* logLabel = new QLabel("미리 보기 로그");
+  logLabel->setToolTip("재생(▶)과 게임 연결 미리 보기에서 일어난 이벤트 · 시간 이동(스크럽)은 이벤트를 일으키지 않습니다.");
+  addToRow(logTools, logLabel);
+  button(logTools, "지우기", "cutoutEventLogClear", "미리 보기 로그를 비웁니다.", [this] { clearEventLog(); return true; });
+  eventLogList_ = new QListWidget;
+  eventLogList_->setObjectName("cutoutEventLog");
+  eventLogList_->setMinimumHeight(LIST_MIN_HEIGHT);
+  eventLogList_->setToolTip(logLabel->toolTip());
+  // Fixed: definition tools above the list, key tools and the log below; the values scroll.
+  layout->addWidget(tools);
+  layout->addWidget(eventList_, 2);
+  layout->addWidget(eventKeyTools_);
+  formLayout->addLayout(form);
+  formLayout->addWidget(eventInfo_);
+  formLayout->addStretch();
+  layout->addWidget(formScroll("cutoutEventFormScroll", inner), 2);
+  layout->addWidget(logTools);
+  layout->addWidget(eventLogList_, 1);
+  eventEditors_ = {eventInt_, eventFloat_, eventString_, eventAudio_, eventVolume_, eventBalance_};
   return page;
 }
 
@@ -1010,8 +1198,16 @@ QWidget* CutoutPanel::buildWorkspace() {
     if (refKind(dragged) == "bone") requestReparent(refId(dragged), bone);
     else if (refKind(dragged) == "slot" && !bone.isEmpty()) requestSlotBone(refId(dragged), bone);
   };
-  connect(tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* item) {
-    if (!filling_ && item) selectItem(item->data(0, Qt::UserRole).toString());
+  // Ctrl/Shift+click selects several bones/parts (plugin 1.7.0): the tree's selection is the
+  // panel's multi-selection, its current item the primary one.
+  tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+  tree_->installEventFilter(this);  // Ctrl+A = all bones, Ctrl+Shift+A = children (not the workspace toggle)
+  connect(tree_, &QTreeWidget::itemSelectionChanged, this, [this] {
+    if (filling_) return;
+    QStringList refs;
+    for (auto* item : tree_->selectedItems()) refs << item->data(0, Qt::UserRole).toString();
+    QTreeWidgetItem* current = tree_->currentItem();
+    setSelection(refs, current && current->isSelected() ? current->data(0, Qt::UserRole).toString() : QString());
   });
   connect(tree_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* item, int column) {
     if (filling_ || column != 1) return;
@@ -1041,6 +1237,19 @@ QWidget* CutoutPanel::buildWorkspace() {
   treeButtons->addWidget(addBoneButton);
   treeButtons->addWidget(addPartButton);
   treeButtons->addWidget(deleteButton);
+  // Bone length helpers (plugin 1.5.0): the selected bone, or every bone when none is selected.
+  // Same row as 본 추가 (no extra height: the hierarchy keeps its minimum; » takes the overflow).
+  auto* fitLengths = new QPushButton("자동 길이");
+  fitLengths->setObjectName("cutoutFitBoneLengths");
+  fitLengths->setToolTip("고른 본(없으면 모든 본)의 길이를 첫 자식 본까지의 거리로 맞춥니다. 화면의 그림은 움직이지 않습니다.");
+  auto* orient = new QPushButton("본 방향 맞추기");
+  orient->setObjectName("cutoutOrientBones");
+  orient->setToolTip("점 본(길이 0)의 방향을 자식 본이나 그림 쪽으로 돌리고 길이를 넣습니다(Spine 식 본).\n"
+                     "자식·그림·키·조준 축을 함께 보정하므로 애니메이션은 그대로입니다. 고른 본(없으면 모든 본)에 적용합니다.");
+  connect(fitLengths, &QPushButton::clicked, this, [this] { fitBoneLengths(); });
+  connect(orient, &QPushButton::clicked, this, [this] { orientBones(); });
+  treeButtons->addWidget(fitLengths);
+  treeButtons->addWidget(orient);
   treeLayout->addWidget(tree_, 1);
   treeLayout->addWidget(treeButtons);
   auto* orderBody = new QWidget;
@@ -1082,10 +1291,10 @@ QWidget* CutoutPanel::buildWorkspace() {
   middleLayout->setContentsMargins(0, 0, 0, 0);
   middleLayout->setSpacing(2);
   auto* tools = toolRow("cutoutCanvasTools");
-  const char* toolNames[] = {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot"};
-  const char* toolLabels[] = {"선택/이동 (V)", "회전 (R)", "크기 (S)", "회전 중심 (P)"};
+  const char* toolNames[] = {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot", "cutoutToolCreate"};
+  const char* toolLabels[] = {"선택/이동 (V)", "회전 (R)", "크기 (S)", "회전 중심 (P)", "본 만들기 (C)"};
   auto* toolGroup = new QButtonGroup(this);
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < RigCanvas::TOOL_COUNT; i++) {
     auto* b = new QToolButton;
     b->setObjectName(toolNames[i]);
     b->setText(toolLabels[i]);
@@ -1095,6 +1304,7 @@ QWidget* CutoutPanel::buildWorkspace() {
     tools->addWidget(b);
     toolButtons_[i] = b;
   }
+  toolButtons_[RigCanvas::Create]->setToolTip("끌어서 본을 그립니다: 고른 본(없으면 루트)의 자식, 누른 곳이 원점, 끈 방향·거리가 회전·길이 · 클릭 = 길이 0 · Shift 15° · 본 원점 클릭 = 부모 고르기 (조립 모드)");
   toolButtons_[0]->setChecked(true);
   auto* fit = new QToolButton;
   fit->setObjectName("cutoutFitView");
@@ -1143,6 +1353,11 @@ QWidget* CutoutPanel::buildWorkspace() {
   canvas_->onDropImage = [this](const QMimeData* mime, const QString& slot) { dropImages(mime, slot); };
   canvas_->onMeshSelect = [this](const QVector<int>& vertices, bool add) { selectVertices(vertices, add); };
   canvas_->onMeshDrag = [this](const QPointF& delta, bool finished) { onMeshDrag(delta, finished); };
+  canvas_->onMeshOutline = [this](const QPolygonF& points) { outlineFromCanvas(points); };
+  canvas_->onOutlineCancel = [this] { outlineSlot_.clear(); setStatus("윤곽 그리기를 취소했습니다."); refreshMesh(); };
+  canvas_->onMeshAddVertex = [this](const QPointF& at) { addVertexAt(at); };
+  canvas_->onMeshAddEdge = [this](int a, int b) { addMeshEdge(a, b); };
+  canvas_->onMeshDelete = [this] { deleteVertices(); };
   canvas_->onMeshPaint = [this](const QVector<int>& vertices, bool finished) {
     if (finished) { dragPreview_.reset(); paintWeights(vertices); return; }
     // Live heat map while the stroke goes on; the stroke is ONE edit on release.
@@ -1152,11 +1367,78 @@ QWidget* CutoutPanel::buildWorkspace() {
     if (!meshTarget(si, att, op) || brushBone_->currentData().toString().isEmpty()) return;
     op.update({{"op", "setWeights"}, {"vertices", std::vector<int>(vertices.begin(), vertices.end())}, {"bone", ss(brushBone_->currentData().toString())},
                {"weight", brushWeight_->value()}, {"strength", brushStrength_->value()}});
-    try { dragPreview_ = cutout::applyEdit(working_ ? *working_ : committedRig(), op).data; } catch (const std::exception&) { return; }
+    try { dragPreview_ = std::make_shared<const Json>(cutout::applyEdit(working_ ? *working_ : committedRig(), op).data); } catch (const std::exception&) { return; }
     rebuildDisplay(false);
   };
+  canvas_->onToggleSelect = [this](const QString& ref) { toggleSelected(ref); };
+  canvas_->onBoxSelect = [this](const QStringList& refs, bool add) {
+    if (add) addToSelection(refs);
+    else setSelection(refs);
+    setStatus(refs.isEmpty() ? QString("상자 안에 본이 없습니다.") : QString("상자 선택: 본 %1개 (선택 %2개)").arg(refs.size()).arg(selectedItems().size()));
+  };
+  canvas_->onSelectAll = [this] { selectAllBones(); };
   connect(fit, &QToolButton::clicked, canvas_, &RigCanvas::fitToCanvas);
+  // Second row (plugin 1.7.0, editor-only options): selection commands, the pivot of a
+  // multi-bone rotate/scale, setup-pose compensation and the axis space of the numeric fields.
+  auto* transformTools = toolRow("cutoutTransformTools");
+  selectMenuButton_ = new QToolButton;
+  selectMenuButton_->setObjectName("cutoutSelectMenu");
+  selectMenuButton_->setText("선택 ▾");
+  selectMenuButton_->setPopupMode(QToolButton::InstantPopup);
+  selectMenuButton_->setToolTip("Ctrl/Shift+클릭 = 여러 개 고르기 · 이동 도구로 빈 곳을 끌면 상자 선택(Ctrl/Shift = 더하기)\n"
+                                "캔버스·계층에서 Ctrl+A = 모든 본 · 계층에서 Ctrl+Shift+A = 고른 본의 자식 본까지\n"
+                                "(캔버스의 Ctrl+Shift+A는 작업 공간 전환 그대로)");
+  auto* selectMenu = new QMenu(selectMenuButton_);
+  auto menuAction = [&](const char* name, const QString& text, std::function<void()> fn) {
+    QAction* a = selectMenu->addAction(text);
+    a->setObjectName(name);
+    connect(a, &QAction::triggered, this, std::move(fn));
+  };
+  menuAction("cutoutSelectChildren", "자식 본까지 선택 (계층: Ctrl+Shift+A)", [this] { selectChildren(); });
+  menuAction("cutoutSelectAllBones", "모든 본 선택\tCtrl+A", [this] { selectAllBones(); });
+  menuAction("cutoutSelectNone", "선택 해제", [this] { selectItem(QString()); });
+  selectMenuButton_->setMenu(selectMenu);
+  transformTools->addWidget(selectMenuButton_);
+  transformTools->addSeparator();
+  transformTools->addWidget(new QLabel("중심 "));
+  pivotCombo_ = new QComboBox;
+  pivotCombo_->setObjectName("cutoutPivotMode");
+  pivotCombo_->addItem("각자 원점", int(Pivot::Origin));
+  pivotCombo_->addItem("선택 중심", int(Pivot::Centroid));
+  pivotCombo_->setToolTip("여러 본을 돌리거나 크기를 바꿀 때의 중심: 각 본이 자기 원점을 중심으로(연결된 본은 함께 휘어짐) /\n"
+                          "고른 본 원점들의 가운데를 중심으로 한 덩어리처럼. 이동은 언제나 맨 위의 고른 본만 옮깁니다.");
+  connect(pivotCombo_, &QComboBox::activated, this, [this] { setPivotMode(Pivot(pivotCombo_->currentData().toInt())); });
+  transformTools->addWidget(pivotCombo_);
+  auto toggle = [&](const char* name, const QString& text, const QString& tip, bool images) {
+    auto* b = new QToolButton;
+    b->setObjectName(name);
+    b->setText(text);
+    b->setCheckable(true);
+    b->setToolTip(tip);
+    connect(b, &QToolButton::toggled, this, [this, images](bool on) {
+      setCompensation(images ? compensateBones_ : on, images ? on : compensateImages_);
+    });
+    transformTools->addWidget(b);
+    return b;
+  };
+  compensateBonesButton_ = toggle("cutoutCompensateBones", "본 보정", "켜면 조립 모드에서 본을 옮기거나 돌려도 고르지 않은 자식 본은 화면의 자리에 그대로 있습니다(Spine 본 보정).\n"
+                                  "기본 자세만 바꿉니다: 애니메이션 모드의 키에는 적용되지 않습니다.", false);
+  compensateImagesButton_ = toggle("cutoutCompensateImages", "이미지 보정", "켜면 조립 모드에서 본을 옮기거나 돌려도 그 본에 붙은 그림(모든 스킨)은 화면의 자리에 그대로 있습니다(Spine 이미지 보정).\n"
+                                   "기본 자세만 바꿉니다.", true);
+  transformTools->addWidget(spacer());
+  transformTools->addWidget(new QLabel("숫자 축 "));
+  axesCombo_ = new QComboBox;
+  axesCombo_->setObjectName("cutoutAxesMode");
+  axesCombo_->addItem("로컬", int(cutout::Axes::Local));
+  axesCombo_->addItem("부모", int(cutout::Axes::Parent));
+  axesCombo_->addItem("월드", int(cutout::Axes::World));
+  axesCombo_->setToolTip("속성 칸의 X·Y·회전을 보여 주고 입력받는 공간 (저장은 언제나 로컬):\n"
+                         "로컬 = 저장된 값(부모 기준) · 부모 = 부모 원점에서 부모 축 방향 px와 부모 축에서 잰 각도 · 월드 = 캐릭터 화면 좌표와 화면 각도.\n"
+                         "크기는 언제나 로컬입니다.");
+  connect(axesCombo_, &QComboBox::activated, this, [this] { setAxes(cutout::Axes(axesCombo_->currentData().toInt())); });
+  transformTools->addWidget(axesCombo_);
   middleLayout->addWidget(tools);
+  middleLayout->addWidget(transformTools);
   middleLayout->addWidget(canvas_, 1);
   middle->setMinimumWidth(240);
 
@@ -1170,8 +1452,8 @@ QWidget* CutoutPanel::buildWorkspace() {
   selectionLabel_->setWordWrap(true);
   auto* form = new QFormLayout;
   form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-  const char* labels[] = {"X", "Y", "회전°", "크기 X", "크기 Y", "이미지 기준점 X", "이미지 기준점 Y", "투명도"};
-  for (int i = 0; i < 8; i++) {
+  const char* labels[] = {"X", "Y", "회전°", "크기 X", "크기 Y", "이미지 기준점 X", "이미지 기준점 Y", "투명도", "본 길이"};
+  for (int i = 0; i < 9; i++) {
     const QString key = PROPS[i];
     auto* s = new QDoubleSpinBox;
     s->setObjectName("cutoutProp" + capital(key));
@@ -1180,6 +1462,10 @@ QWidget* CutoutPanel::buildWorkspace() {
     else if (key == "rotation") { s->setRange(-36000, 36000); s->setDecimals(2); }
     else if (key.startsWith("scale")) { s->setRange(-100, 100); s->setDecimals(3); s->setSingleStep(0.01); }
     else if (key.startsWith("pivot")) { s->setRange(-4, 4); s->setDecimals(3); s->setSingleStep(0.05); }
+    else if (key == "length") {
+      s->setRange(0, 100000); s->setDecimals(2);
+      s->setToolTip("본이 원점에서 +x 방향으로 뻗는 길이(px, 0 = 점 본) · 캔버스에 본 모양으로 그려지고, 두 본 IK의 끝점이 됩니다. 조립 모드 전용.");
+    }
     else { s->setRange(0, 1); s->setDecimals(3); s->setSingleStep(0.05); }
     connect(s, &QDoubleSpinBox::editingFinished, this, [this, key, s] { commitProperty(key, s->value()); });
     props_[key] = s;
@@ -1208,7 +1494,13 @@ QWidget* CutoutPanel::buildWorkspace() {
   deltaButton_->setToolTip("조립 모드에서 바꾼 기본 자세 변화량을 이 본의 기존 키에 더합니다.");
   deltaButton_->hide();
   connect(deltaButton_, &QPushButton::clicked, this, [this] { applySetupDeltaToKeys(); });
+  relativeCheck_ = new QCheckBox("상대값 입력");
+  relativeCheck_->setObjectName("cutoutPropRelative");
+  relativeCheck_->setToolTip("켜면 본 칸에 입력한 값을 고른 본마다 지금 값에 더합니다(여러 본을 같은 만큼 옮기기·돌리기).\n"
+                             "끄면 입력한 값이 고른 모든 본의 값이 됩니다. 값이 서로 다르면 칸에 —가 보입니다.");
+  connect(relativeCheck_, &QCheckBox::toggled, this, [this](bool on) { setRelativeEdit(on); });
   rightLayout->addWidget(selectionLabel_);
+  rightLayout->addWidget(relativeCheck_);
   rightLayout->addLayout(form);
   rightLayout->addWidget(keyButton_);
   auto* keyRow = new QHBoxLayout;
@@ -1336,6 +1628,11 @@ QWidget* CutoutPanel::buildAnimateTab() {
   transport->addWidget(new QLabel("속도"));
   transport->addWidget(speedCombo_);
   QAction* transportStretch = transport->addWidget(spacer());  // the view buttons go before it
+  eventFlash_ = new QLabel;
+  eventFlash_->setObjectName("cutoutEventFlash");
+  eventFlash_->setStyleSheet("color:#f472b6;font-weight:bold;");
+  eventFlash_->setToolTip("재생 중 마지막으로 일어난 이벤트 (전체 로그: 「이벤트」 페이지)");
+  transport->addWidget(eventFlash_);
   transport->addWidget(timeLabel_);
   // One time view for both views: zoom, scroll, playhead, loop range and key selection.
   timeView_ = new TimeView(this);
@@ -1401,11 +1698,12 @@ QWidget* CutoutPanel::buildAnimateTab() {
   keyRow->addSeparator();
   auto* copyPoseButton = new QPushButton("포즈 복사");
   copyPoseButton->setObjectName("cutoutCopyPose");
-  copyPoseButton->setToolTip("고른 본과 그 자식 본(없으면 모든 본)의 현재 자세를 복사합니다.");
+  copyPoseButton->setToolTip("고른 본들(조각은 그 본, 없으면 모든 본)의 현재 자세를 복사합니다. 팔·다리 전체는 「선택 ▾ › 자식 본까지 선택」 뒤에 복사하세요.");
   connect(copyPoseButton, &QPushButton::clicked, this, [this] { copyPose(); });
   keyRow->addWidget(copyPoseButton);
   keyRow->addWidget(toolButton("포즈 붙여넣기", "cutoutPastePose", "복사한 자세를 재생 헤드 시간에 키로 넣습니다(다른 클립에도 됩니다).", [this] { pastePose(); }));
   keyRow->addSeparator();
+  keyRow->addWidget(toolButton("이벤트 키", "cutoutAddEventKey", "「이벤트」 페이지에서 고른 이벤트를 재생 헤드 시간에 키로 넣습니다(정의가 없으면 이름을 묻습니다).\n도프시트 「이벤트」 행: 오른쪽 클릭 · 빈 곳 더블클릭으로도 넣고, 끌어서 옮기고, Delete로 지웁니다.", [this] { addEventKey(); }));
   keyRow->addWidget(toolButton("표정 키", "cutoutKeyExpression", "「스킨 · 표정」에서 고른 표정(없으면 표정 없음)을 재생 헤드 시간에 키로 넣습니다(계단 전환).\n도프시트의 「표정」 행에 보입니다.", [this] { keyExpression(); }));
 
   dopesheet_ = new Dopesheet;
@@ -1417,8 +1715,12 @@ QWidget* CutoutPanel::buildAnimateTab() {
   dopesheet_->onPreset = [this](const QString& preset) { applyPreset(preset); };
   dopesheet_->onCommand = [this](const QString& command) { keyCommand(command); };
   dopesheet_->onStep = [this](int steps) { stepPlayhead(steps); };
-  dopesheet_->onRowSelected = [this](int row) {
+  dopesheet_->onAddEvent = [this](int ms) { addEventKey(ms); };
+  dopesheet_->onEditEvent = [this](const KeyRef& key) { editEventKeyInteractive(key); };
+  dopesheet_->onRowSelected = [this](int row, bool add) {
     if (row < 0 || row >= dopesheet_->rows().size()) return;
+    // The event row has no canvas item either: its definitions are the 이벤트 page.
+    if (dopesheet_->rows()[row].events) { if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutEventPage")); return; }
     // The rig expression row has no canvas item: show the expression list instead.
     if (dopesheet_->rows()[row].target == "rig") { if (lookTabs_) lookTabs_->setCurrentIndex(1); return; }
     // An IK row: its constraint in the IK page; no canvas selection, so the graph shows its mix curve.
@@ -1428,7 +1730,10 @@ QWidget* CutoutPanel::buildAnimateTab() {
       selectItem(QString());
       return;
     }
-    selectItem(dopesheet_->rows()[row].target);
+    // Ctrl/Shift on a row adds its bone/part to the canvas selection (shared editor selection).
+    const QString target = dopesheet_->rows()[row].target;
+    if (add && !selection_.isEmpty()) { if (!selectedItems().contains(target)) addToSelection({target}); }
+    else selectItem(target);
   };
   auto* scroll = new QScrollArea;
   scroll->setObjectName("cutoutDopesheetScroll");
@@ -1457,11 +1762,16 @@ QWidget* CutoutPanel::buildAnimateTab() {
   graphNormalize_->setObjectName("cutoutGraphNormalize");
   graphNormalize_->setToolTip("값 범위가 다른 채널(회전 각도와 크기 등)을 각자 높이에 맞춰 모양을 비교합니다.");
   presetRow->addWidget(graphNormalize_);
+  graphFitValues_ = new QPushButton("값 맞춤");
+  graphFitValues_->setObjectName("cutoutGraphFitValues");
+  graphFitValues_->setToolTip("보이는 채널의 값이 모두 들어오도록 세로(값) 축을 맞춥니다(값 확대·이동을 되돌림). 시간 축은 그대로입니다.");
+  presetRow->addWidget(graphFitValues_);
   graph_ = new GraphEditor;
   graph_->setTimeView(timeView_);
   graph_->setToolTip("키 드래그: 위아래 = 값, 좌우 = 시간(Alt: 둘 다, Shift: 1ms) · 고른 키의 손잡이를 끌어 곡선 조절\n"
                      "Ctrl+클릭: 토글 · Shift+클릭: 추가 · 빈 곳 드래그: 상자 선택 · Ctrl+A: 모두 · 빈 곳 클릭: 시간 이동\n"
-                     "Ctrl+휠: 시간 확대 · 휠/가운데 버튼 드래그: 시간 이동 · 오른쪽 클릭: 프리셋 · 범례 클릭: 채널 숨김");
+                     "Ctrl+휠: 시간 확대 · Ctrl+Shift+휠 또는 Alt+휠: 값 확대(커서 기준) · 휠: 시간 이동 · 가운데 버튼 드래그: 시간·값 이동\n"
+                     "「값 맞춤」: 값 축 되돌리기 · 오른쪽 클릭: 프리셋 · 범례 클릭: 채널 숨김");
   graph_->onScrub = [this](int ms) { setPlayhead(ms); };
   graph_->onMoveKey = [this](const GraphEditor::KeyRef& k, int to, double value) { return moveGraphKey(k.target, k.property, k.timeMs, to, value); };
   graph_->onMoveKeys = [this](const QVector<KeyRef>& keys, int delta, const QHash<KeyRef, double>& values) { return moveKeys(keys, delta, values); };
@@ -1471,6 +1781,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   graph_->onCommand = [this](const QString& command) { keyCommand(command); };
   graph_->onStep = [this](int steps) { stepPlayhead(steps); };
   connect(graphNormalize_, &QCheckBox::toggled, graph_, &GraphEditor::setNormalized);
+  connect(graphFitValues_, &QPushButton::clicked, graph_, &GraphEditor::fitValues);
   graphLayout->addWidget(presetRow);
   graphLayout->addWidget(graph_, 1);
   // Short timeline areas: show the dopesheet, the graph, or both stacked (same time axis).
@@ -1563,6 +1874,93 @@ QWidget* CutoutPanel::buildAnimateTab() {
   timelineAreaSplit_->setSizes({190, 1000, 260});
   layout->addWidget(timelineAreaSplit_);
   return tab;
+}
+
+// ---------------------------------------------------------------- export settings (plugin 1.9.0)
+static const char* SETTINGS_FILE = "plugins/cutout-animation/settings/project.json";
+QWidget* CutoutPanel::buildExportTab() {
+  auto* tab = new QWidget;
+  tab->setObjectName("cutoutExportTab");
+  auto* form = new QFormLayout(tab);
+  atlasEnabled_ = new QCheckBox("내보낼 때 캐릭터 그림을 아틀라스로 묶기");
+  atlasEnabled_->setObjectName("cutoutAtlasEnabled");
+  atlasEnabled_->setToolTip("게임으로 내보낼 때 리그가 그리는 PNG를 큰 페이지 이미지 몇 장으로 합칩니다. 파일 수와 텍스처 전환이 줄고, 그려지는 픽셀은 같습니다.");
+  atlasPageSize_ = new QComboBox;
+  atlasPageSize_->setObjectName("cutoutAtlasPageSize");
+  for (int size : {512, 1024, 2048, 4096}) atlasPageSize_->addItem(QString("%1 × %1 px").arg(size), size);
+  atlasPageSize_->setToolTip("페이지 한 변의 최대 크기. 이보다 큰 그림은 따로 내보냅니다.");
+  atlasPadding_ = new QSpinBox;
+  atlasPadding_->setObjectName("cutoutAtlasPadding");
+  atlasPadding_->setRange(0, 8);
+  atlasPadding_->setSuffix(" px");
+  atlasPadding_->setToolTip("그림마다 둘레에 가장자리 픽셀을 반복해 넣는 폭. 축소·필터링 때 이웃 그림이 비치지 않게 합니다.");
+  atlasTrim_ = new QCheckBox("투명한 여백 잘라내기 (원래 크기로 그리는 조각)");
+  atlasTrim_->setObjectName("cutoutAtlasTrim");
+  atlasTrim_->setToolTip("완전히 투명한 테두리는 페이지에 넣지 않습니다. 위치는 그대로 유지되고 1 px 투명 테두리는 남깁니다. 메시와 크기를 바꿔 그리는 조각은 자르지 않습니다.");
+  atlasSummary_ = new QLabel;
+  atlasSummary_->setObjectName("cutoutAtlasSummary");
+  atlasSummary_->setWordWrap(true);
+  form->addRow(atlasEnabled_);
+  form->addRow("페이지 크기", atlasPageSize_);
+  form->addRow("여백", atlasPadding_);
+  form->addRow(atlasTrim_);
+  form->addRow(atlasSummary_);
+  for (auto* c : {atlasEnabled_, atlasTrim_}) connect(c, &QCheckBox::toggled, this, [this] { if (!filling_) commitExportSettings(); });
+  connect(atlasPageSize_, &QComboBox::activated, this, [this] { if (!filling_) commitExportSettings(); });
+  connect(atlasPadding_, &QSpinBox::editingFinished, this, [this] { if (!filling_) commitExportSettings(); });
+  return tab;
+}
+Json CutoutPanel::atlasSettings() const {
+  Json out = {{"enabled", true}, {"maxPageSize", 2048}, {"padding", 2}, {"trim", true}};
+  const Json stored = settings_ && settings_->data ? settings_->data->value("export", Json::object()).value("atlas", Json::object()) : Json::object();
+  if (stored.is_object()) for (auto it = stored.begin(); it != stored.end(); ++it) out[it.key()] = it.value();
+  return out;
+}
+void CutoutPanel::refreshExportSettings() {
+  if (!atlasEnabled_) return;
+  const Json s = atlasSettings();
+  const bool keep = filling_;
+  filling_ = true;
+  {
+    QSignalBlocker a(atlasEnabled_), b(atlasTrim_), c(atlasPageSize_), d(atlasPadding_);
+    atlasEnabled_->setChecked(s.value("enabled", true));
+    atlasTrim_->setChecked(s.value("trim", true));
+    atlasPageSize_->setCurrentIndex(std::max(0, atlasPageSize_->findData(s.value("maxPageSize", 2048))));
+    atlasPadding_->setValue(s.value("padding", 2));
+    for (QWidget* w : std::initializer_list<QWidget*>{atlasTrim_, atlasPageSize_, atlasPadding_}) w->setEnabled(s.value("enabled", true));
+  }
+  QSet<QString> seen;  // images the rigs draw (default attachments and skins): what packing would read
+  auto add = [&](const Json& list) { for (const auto& a : list) if (a.is_object() && !a.value("imageAssetId", std::string()).empty()) seen.insert(qs(a.value("imageAssetId", std::string()))); };
+  for (const auto& rig : rigs_) {
+    add(rig.data->value("attachments", Json::array()));
+    for (const auto& skin : rig.data->value("skins", Json::array())) if (skin.is_object()) add(skin.value("attachments", Json::array()));
+  }
+  const int images = int(seen.size());
+  atlasSummary_->setText(QString("리그가 그리는 그림 %1장이 대상입니다 (쓰이지 않는 그림은 묶지 않습니다). 설정은 %2에 저장되며, 문서가 없으면 기본값(켜짐, 2048 px, 여백 2 px, 잘라내기)을 씁니다.%3")
+                             .arg(images).arg(SETTINGS_FILE).arg(settings_ ? "" : " · 아직 설정 문서가 없습니다."));
+  filling_ = keep;
+}
+void CutoutPanel::commitExportSettings() {
+  if (!host_) return;
+  setAtlasSettings(atlasEnabled_->isChecked(), atlasPageSize_->currentData().toInt(), atlasPadding_->value(), atlasTrim_->isChecked());
+}
+bool CutoutPanel::setAtlasSettings(bool enabled, int maxPageSize, int padding, bool trim) {
+  if (!host_) return false;
+  if (!(maxPageSize == 512 || maxPageSize == 1024 || maxPageSize == 2048 || maxPageSize == 4096) || padding < 0 || padding > 8) {
+    setStatus("아틀라스 페이지 크기는 512·1024·2048·4096, 여백은 0..8 px입니다.", true);
+    refreshExportSettings();
+    return false;
+  }
+  Json data = settings_ && settings_->data ? *settings_->data : Json{{"schemaVersion", 1}};
+  data["export"]["atlas"] = {{"enabled", enabled}, {"maxPageSize", maxPageSize}, {"padding", padding}, {"trim", trim}};
+  if (settings_ && settings_->data && data == *settings_->data) return false;
+  QJsonObject edit;
+  if (settings_) edit = replaceEdit(*settings_, toQtObject(data));
+  else edit = {{"type", "create"}, {"file", SETTINGS_FILE},
+               {"data", QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", PLUGIN_ID}, {"type", "settings"}, {"id", "project"}, {"data", toQtObject(data)}}}};
+  if (!submit({edit})) { refreshExportSettings(); return false; }
+  setStatus(enabled ? QString("내보낼 때 그림을 %1 px 아틀라스 페이지로 묶습니다. 되돌리기: Ctrl+Z").arg(maxPageSize) : QString("내보낼 때 그림을 묶지 않습니다(개별 파일). 되돌리기: Ctrl+Z"));
+  return true;
 }
 
 QWidget* CutoutPanel::buildControllerTab() {
@@ -1687,18 +2085,29 @@ const CutoutPanel::Doc* CutoutPanel::controllerDoc() const { auto it = controlle
 // References (never temporaries): callers iterate listOf(displayData(), ...) directly, and an
 // empty object (never null) when absent because nlohmann value() throws on null.
 static const Json& emptyObject() { static const Json e = Json::object(); return e; }
-const Json& CutoutPanel::committedRig() const { const Doc* d = rigDoc(); return d ? d->data : emptyObject(); }
-const Json& CutoutPanel::committedController() const { const Doc* d = controllerDoc(); return d ? d->data : emptyObject(); }
-const Json& CutoutPanel::displayData() const {
-  if (dragPreview_) return *dragPreview_;
-  if (inflight_) return *inflight_;
-  if (working_) return *working_;
-  return committedRig();
+const Json& CutoutPanel::committedRig() const { const Doc* d = rigDoc(); return d && d->data ? *d->data : emptyObject(); }
+const Json& CutoutPanel::committedController() const { const Doc* d = controllerDoc(); return d && d->data ? *d->data : emptyObject(); }
+CutoutPanel::JsonPtr CutoutPanel::displayShared() const {
+  static const JsonPtr empty = std::make_shared<const Json>(Json::object());
+  if (dragPreview_) return dragPreview_;
+  if (inflight_) return inflight_;
+  if (working_) return working_;
+  const Doc* d = rigDoc();
+  return d && d->data ? d->data : empty;
+}
+const Json& CutoutPanel::displayData() const { return *displayShared(); }
+CutoutPanel::JsonPtr CutoutPanel::committedShared() const {
+  const Doc* d = rigDoc();
+  return d && d->data ? d->data : std::make_shared<const Json>(Json::object());
+}
+CutoutPanel::JsonPtr CutoutPanel::controllerShared() const {
+  const Doc* d = controllerDoc();
+  return d && d->data ? d->data : std::make_shared<const Json>(Json::object());
 }
 Json CutoutPanel::controllersFor(const QString& rig) const {
   Json out = Json::array();
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-    if (qs(it->data.value("rig", std::string())) == rig) out.push_back({{"id", ss(it.key())}, {"data", it->data}});
+    if (qs(it->data->value("rig", std::string())) == rig) out.push_back({{"id", ss(it.key())}, {"data", *it->data}});
   return out;
 }
 QStringList CutoutPanel::clipIds() const {
@@ -1707,7 +2116,8 @@ QStringList CutoutPanel::clipIds() const {
   return out;
 }
 QString CutoutPanel::uniqueBoneId(const QString& base) const {
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   QString id = base;
   for (int n = 2; findIn(data, "bones", ss(id)); n++) id = QString("%1-%2").arg(base).arg(n);
   return id;
@@ -1752,10 +2162,10 @@ bool CutoutPanel::submit(const QJsonArray& edits) {
   inSubmit_ = false;
   return true;
 }
-bool CutoutPanel::commitRig(const cutout::EditResult& result) {
+bool CutoutPanel::commitRig(cutout::EditResult result) {
   const Doc* doc = rigDoc();
   if (!doc) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
-  if (result.data == doc->data && !result.extra.contains("controllers")) { working_.reset(); setStatus("바뀐 것이 없습니다."); rebuildDisplay(); return false; }
+  if (result.data == *doc->data && !result.extra.contains("controllers")) { working_.reset(); setStatus("바뀐 것이 없습니다."); rebuildDisplay(); return false; }
   QJsonArray edits{replaceEdit(*doc, toQtObject(result.data))};
   if (result.extra.contains("controllers"))
     for (const auto& c : result.extra.at("controllers")) {
@@ -1766,7 +2176,14 @@ bool CutoutPanel::commitRig(const cutout::EditResult& result) {
   for (const auto& d : result.diagnostics) if (d.severity == "warning" && d.code.rfind("ANIM_REPARENT", 0) == 0) warnings << qs(d.message);
   if (!submit(edits)) { rebuildDisplay(false); return false; }
   working_.reset();
-  inflight_ = result.data;
+  // The sent data itself (moved, not copied): shown now, and adopted as the document when the
+  // host's view reports the accepted edit (no reconversion of the large Qt JSON reply).
+  bool valid = true;
+  for (const auto& d : result.diagnostics) valid = valid && d.severity != "error";
+  inflight_ = std::make_shared<const Json>(std::move(result.data));
+  inflightStamp_ = ++stampCounter_;
+  inflightRig_ = rigId_;
+  inflightValid_ = valid;  // applyEdit just validated it: the display parse can skip that pass
   setStatus(warnings.isEmpty() ? QString("변경을 적용했습니다. 되돌리기: Ctrl+Z") : warnings.join(" "), !warnings.isEmpty());
   rebuildDisplay();
   return true;
@@ -1784,24 +2201,24 @@ bool CutoutPanel::runOps(const std::vector<Json>& ops, bool keyGesture, const st
   }
   if (keyGesture && mode_ == Mode::Animate && !autoKey_) {
     // Auto-key off: show the change but keep it local until K commits it as one edit.
-    working_ = result.data;
+    working_ = std::make_shared<const Json>(std::move(result.data));
     setStatus("변경됨 · K(키 추가)를 누르면 이 시간에 키로 저장됩니다. 시간을 옮기면 버려집니다.");
     rebuildDisplay();
     return true;
   }
   if (accepted) accepted(result);
-  return commitRig(result);
+  return commitRig(std::move(result));
 }
 bool CutoutPanel::commitController(const Json& data) {
   const Doc* doc = controllerDoc();
   if (!doc) { setStatus("이 캐릭터에 게임 연결 문서가 없습니다.", true); return false; }
-  if (data == doc->data) return false;
+  if (data == *doc->data) return false;
   auto hasError = [&](const Json& d) {
     for (const auto& x : cutout::validateController(d, rig_.get())) if (x.severity == "error") return qs(x.message + " (" + x.pointer + ")");
     return QString();
   };
   const QString error = hasError(data);
-  if (!error.isEmpty() && hasError(doc->data).isEmpty()) {
+  if (!error.isEmpty() && hasError(*doc->data).isEmpty()) {
     setStatus("게임 연결을 적용하지 않았습니다: " + error, true);
     refreshController();
     return false;
@@ -1823,7 +2240,14 @@ void CutoutPanel::refreshFromView() {
   if (!host_) return;
   const QJsonObject view = host_->view();
   const int revision = view.value("revision").toInt();
-  images_.setAssets(host_->assets());
+  const QJsonArray assets = host_->assets();
+  images_.setAssets(assets);
+  // Documents whose envelope is unchanged keep their parsed data and stamp (converting a large rig
+  // from Qt JSON costs tens of ms); the accepted reply to our own edit is the data we sent.
+  const QMap<QString, Doc> oldRigs = rigs_, oldControllers = controllers_;
+  const QJsonArray oldCharacters = characters_;
+  settings_.reset();
+  const bool ownEdit = inflight_ && revision == lastRevision_ + 1;
   rigs_.clear();
   controllers_.clear();
   characters_ = {};
@@ -1833,35 +2257,77 @@ void CutoutPanel::refreshFromView() {
     if (doc.value("kind") == "character") { characters_.append(data); continue; }
     if (doc.value("kind") != "extension" || data.value("plugin") != PLUGIN_ID) continue;
     const QString type = data.value("type").toString(), id = data.value("id").toString();
-    Doc d{doc.value("file").toString(), data, toJson(data.value("data").toObject())};
-    if (type == "rig") rigs_.insert(id, d);
-    else if (type == "controller") controllers_.insert(id, d);
+    if (type == "settings") {
+      // The one settings document (plugin 1.9.0); other ids are reported by the service and ignored.
+      if (id == "project") settings_ = Doc{doc.value("file").toString(), data, std::make_shared<const Json>(toJson(data.value("data").toObject())), 0};
+      continue;
+    }
+    if (type != "rig" && type != "controller") continue;
+    Doc d{doc.value("file").toString(), data, nullptr, 0};
+    const QMap<QString, Doc>& old = type == "rig" ? oldRigs : oldControllers;
+    const auto previous = old.find(id);
+    if (previous != old.end() && previous->file == d.file && previous->envelope == data) { d.data = previous->data; d.stamp = previous->stamp; }
+    else if (type == "rig" && ownEdit && id == inflightRig_) { d.data = inflight_; d.stamp = inflightStamp_; }
+    else { d.data = std::make_shared<const Json>(toJson(data.value("data").toObject())); d.stamp = ++stampCounter_; }
+    (type == "rig" ? rigs_ : controllers_).insert(id, d);
   }
   if (inflight_) inflight_.reset();
   else if (revision != lastRevision_ && working_) { working_.reset(); setStatus("문서가 바뀌어 키로 저장하지 않은 변경을 버렸습니다."); }
   lastRevision_ = revision;
+  const bool dragged = dragPreview_ != nullptr;
   dragPreview_.reset();
   if (!rigs_.contains(rigId_)) rigId_ = rigs_.isEmpty() ? QString() : rigs_.firstKey();
-  auto controllerFits = [&](const QString& id) { return controllers_.contains(id) && qs(controllers_[id].data.value("rig", std::string())) == rigId_; };
+  auto controllerFits = [&](const QString& id) { return controllers_.contains(id) && qs(controllers_[id].data->value("rig", std::string())) == rigId_; };
   if (!controllerFits(controllerId_)) {
     controllerId_.clear();
     for (auto it = controllers_.begin(); it != controllers_.end(); ++it) if (controllerFits(it.key())) { controllerId_ = it.key(); break; }
   }
+  // Incremental refresh: the shown documents (and the lists built from them) are unchanged, as for
+  // the reply to our own edit, which was already displayed from inflight_: only the host-side state
+  // (diagnostics) changed. Anything else rebuilds every widget as before.
+  refreshExportSettings();
+  if (!dragged && !working_ && characters_ == oldCharacters && assets == shownAssets_ && displaySignature() == shownSignature_) {
+    lightRefreshes_++;
+    refreshDiagnostics();
+    return;
+  }
   rebuildDisplay();
 }
 
+QString CutoutPanel::displaySignature() const {
+  // Stamp of the data on screen (0 = pending/drag data) + every document's identity and stamp.
+  const quint64 shown = dragPreview_ || working_ ? 0 : inflight_ ? inflightStamp_ : rigDoc() ? rigDoc()->stamp : 0;
+  QString s = QString("%1|%2|%3|%4").arg(rigId_, controllerId_).arg(shown).arg(controllerDoc() ? controllerDoc()->stamp : 0);
+  for (auto it = rigs_.begin(); it != rigs_.end(); ++it) s += QString("|r:%1:%2").arg(it.key()).arg(it->stamp);
+  for (auto it = controllers_.begin(); it != controllers_.end(); ++it) s += QString("|c:%1:%2").arg(it.key()).arg(it->stamp);
+  return s;
+}
+
 void CutoutPanel::rebuildDisplay(bool full) {
-  const Json data = displayData();
-  rig_.reset();
-  rigError_.clear();
-  if (rigDoc() && data.is_object()) {
-    try {
-      cutout::Rig r = cutout::parseRig(ss(rigId_), data);
-      // The editor samples clip time itself (scrubbing to the very end must show the end pose).
-      for (auto& c : r.clips) c.loop = false;
-      rig_ = std::make_shared<const cutout::Rig>(std::move(r));
-    } catch (const std::exception& e) { rigError_ = qs(e.what()); }
+  const JsonPtr held = displayShared();  // kept alive for this call (no 1 MB copy)
+  const Json& data = *held;
+  fullRefreshes_ += full;
+  // The parse is reused while the same data is shown (selection, clip or mode changes rebuild the
+  // widgets but not the rig); pending and drag data (stamp 0) are always parsed again.
+  const quint64 stamp = dragPreview_ || working_ ? 0 : inflight_ ? inflightStamp_ : rigDoc() ? rigDoc()->stamp : 0;
+  if (!stamp || stamp != parsedStamp_ || parsedRig_ != rigId_) {
+    rig_.reset();
+    rigError_.clear();
+    parsedStamp_ = stamp;
+    parsedRig_ = rigId_;
+    if (rigDoc() && data.is_object()) {
+      try {
+        cutout::Rig r = inflight_ && inflightValid_ && stamp == inflightStamp_ ? cutout::parseValidatedRig(ss(rigId_), data) : cutout::parseRig(ss(rigId_), data);
+        // The editor samples clip time itself (scrubbing to the very end must show the end pose).
+        for (auto& c : r.clips) c.loop = false;
+        rig_ = std::make_shared<const cutout::Rig>(std::move(r));
+      } catch (const std::exception& e) { rigError_ = qs(e.what()); }
+    }
   }
+  if (!rigDoc()) { rig_.reset(); rigError_.clear(); parsedStamp_ = 0; }
+  const QString signature = displaySignature();
+  shownSignature_ = full || signature == shownSignature_ ? signature : QString();
+  if (full && host_) shownAssets_ = host_->assets();
   displayGeneration_++;  // every rebuild may change the data (or the preview look): ghost poses are resampled
   // The preview look follows the data: a deleted (or undone) skin/expression stops being previewed.
   if (!previewSkin_.isEmpty() && !findIn(data, "skins", ss(previewSkin_))) previewSkin_.clear();
@@ -1874,6 +2340,11 @@ void CutoutPanel::rebuildDisplay(bool full) {
     }
     const QString kind = refKind(selection_), id = refId(selection_);
     if (!selection_.isEmpty() && !findIn(data, kind == "bone" ? "bones" : "slots", ss(id))) selection_.clear();
+    // Deleted (or undone) items leave the multi-selection; the primary falls back to the last one left.
+    selected_.erase(std::remove_if(selected_.begin(), selected_.end(), [&](const QString& r) {
+      return !findIn(data, refKind(r) == "bone" ? "bones" : "slots", ss(refId(r)));
+    }), selected_.end());
+    if (selection_.isEmpty() && !selected_.isEmpty()) selection_ = selected_.last();
     refreshCharacters();
     refreshDiagnostics();
     refreshTree();
@@ -1884,6 +2355,7 @@ void CutoutPanel::rebuildDisplay(bool full) {
     refreshMix();
     refreshController();
     refreshLooks();
+    refreshEvents();
     refreshModeUi();
   }
   refreshProperties();
@@ -1895,12 +2367,12 @@ void CutoutPanel::refreshCharacters() {
   filling_ = true;
   characterList_->clear();
   for (auto it = rigs_.begin(); it != rigs_.end(); ++it) {
-    const QString name = qs(it->data.value("name", std::string()));
+    const QString name = qs(it->data->value("name", std::string()));
     auto* item = new QTreeWidgetItem(characterList_, {name.isEmpty() || name == it.key() ? it.key() : QString("%1 (%2)").arg(name, it.key())});
     item->setData(0, Qt::UserRole, "rig:" + it.key());
     if (it.key() == rigId_) characterList_->setCurrentItem(item);
     for (auto c = controllers_.begin(); c != controllers_.end(); ++c) {
-      if (qs(c->data.value("rig", std::string())) != it.key()) continue;
+      if (qs(c->data->value("rig", std::string())) != it.key()) continue;
       auto* child = new QTreeWidgetItem(item, {"게임 연결: " + c.key()});
       child->setData(0, Qt::UserRole, "controller:" + c.key());
     }
@@ -1931,7 +2403,8 @@ void CutoutPanel::refreshTree() {
   QSignalBlocker block(tree_);
   filling_ = true;
   tree_->clear();
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   std::map<std::string, QTreeWidgetItem*> items;
   std::map<std::string, std::vector<std::string>> children;
   std::vector<std::string> roots;
@@ -1968,9 +2441,8 @@ void CutoutPanel::refreshTree() {
   };
   for (int i = 0; i < tree_->topLevelItemCount(); i++) visible(tree_->topLevelItem(i));
   tree_->expandAll();
-  QTreeWidgetItemIterator it(tree_);
-  for (; *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == selection_) { tree_->setCurrentItem(*it); break; }
   filling_ = false;
+  syncSelectionWidgets();
 }
 
 void CutoutPanel::refreshDrawOrder() {
@@ -2022,7 +2494,8 @@ cutout::Pose CutoutPanel::currentPose(bool expressions) const {
 void CutoutPanel::refreshProperties() {
   filling_ = true;
   const QString kind = refKind(selection_), id = refId(selection_);
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const cutout::Pose pose = currentPose(false);  // keyable values (a previewed expression only overlays the canvas)
   const bool animate = mode_ == Mode::Animate;
   QMap<QString, double> values;
@@ -2032,14 +2505,31 @@ void CutoutPanel::refreshProperties() {
   attachmentCombo_->clear();
   attachmentCombo_->setEnabled(false);
   QString label = "선택 없음 · 캔버스나 트리에서 본(◉) 또는 조각(▣)을 고르세요.";
-  if (kind == "bone" && rig_) {
-    const int i = rig_->boneIndex(ss(id));
-    if (i >= 0) {
-      const cutout::Transform t = animate && size_t(i) < pose.bones.size() ? pose.bones[size_t(i)] : rig_->bones[size_t(i)].setup;
-      values = {{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}};
-      for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) enabled[p] = true;
-      label = QString("본 %1%2").arg(id, animate ? QString(" · %1ms 자세").arg(playheadMs_) : QString(" · 기본 자세"));
+  // Bone fields edit every selected bone (plugin 1.7.0): shared values in the chosen axes, "—"
+  // where they differ (absolute input), 0 in relative input mode.
+  const QStringList bones = selectedBones();
+  const bool boneFields = rig_ && !bones.isEmpty() && (kind == "bone" || bones.size() > 1);
+  QSet<QString> mixed;
+  if (boneFields) {
+    const auto setupWorld = animate ? std::map<std::string, cutout::Affine>() : cutout::setupWorld(data);
+    QMap<QString, QVector<double>> all;
+    for (const QString& b : bones) {
+      const int i = rig_->boneIndex(ss(b));
+      if (i < 0) continue;
+      const cutout::Transform t = shownBone(i, pose, setupWorld);
+      for (auto [p, v] : {std::pair{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}, {"length", rig_->bones[size_t(i)].length}}) all[p] << v;
     }
+    for (auto it = all.begin(); it != all.end(); ++it) {
+      values[it.key()] = it.value().value(0);
+      const double tolerance = 0.5 * std::pow(10.0, -props_.value(it.key())->decimals());
+      for (double v : it.value()) if (std::fabs(v - it.value().value(0)) >= tolerance) mixed.insert(it.key());
+    }
+    for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) enabled[p] = true;
+    enabled["length"] = !animate;  // setup data, never keyed
+    const QString when = animate ? QString(" · %1ms 자세").arg(playheadMs_) : QString(" · 기본 자세");
+    label = bones.size() == 1 ? QString("본 %1%2").arg(bones[0], when) : QString("본 %1개 · %2%3").arg(bones.size()).arg(bones.join(", "), when);
+    if (axes_ != cutout::Axes::Local) label += axes_ == cutout::Axes::World ? " · 월드 축" : " · 부모 축";
+    if (relative_) label += " · 상대값 입력";
   } else if (kind == "slot" && rig_) {
     const int i = rig_->slotIndex(ss(id));
     if (i >= 0) {
@@ -2065,9 +2555,16 @@ void CutoutPanel::refreshProperties() {
   }
   for (auto it = props_.begin(); it != props_.end(); ++it) {
     QSignalBlocker block(it.value());
-    it.value()->setValue(values.value(it.key(), 0));
-    it.value()->setProperty("shown", it.value()->value());
-    it.value()->setEnabled(enabled.value(it.key()));
+    QDoubleSpinBox* spin = it.value();
+    const bool relative = relative_ && boneFields, isMixed = boneFields && !relative && mixed.contains(it.key());
+    // Relative input shows the delta (0); a negative length delta must be typeable.
+    if (it.key() == "length") spin->setMinimum(relative ? -100000 : 0);
+    // Mixed values: the spin box shows its special text "—" at its minimum value.
+    spin->setSpecialValueText(isMixed ? QString("—") : QString());
+    spin->setValue(relative ? 0 : isMixed ? spin->minimum() : values.value(it.key(), 0));
+    spin->setProperty("shown", spin->value());
+    spin->setProperty("mixed", isMixed);
+    spin->setEnabled(enabled.value(it.key()));
   }
   selectionLabel_->setText(label);
   (void)data;
@@ -2075,9 +2572,10 @@ void CutoutPanel::refreshProperties() {
   const QString state = keyState();
   keyButton_->setProperty("keyState", state);
   keyButton_->setEnabled(animate && (!selection_.isEmpty() || working_));
+  keyButton_->setToolTip(selectedItems().size() > 1 ? QString("고른 %1개(본: 위치·회전·크기, 조각: 그림)를 이 시간에 모두 키로 넣습니다.").arg(selectedItems().size()) : QString());
   keyButton_->setText(state == "modified" ? "◆ 변경됨 · 키 추가 (K)" : state == "keyed" ? "◆ 키 있음 · 다시 키 (K)" : "◇ 키 추가 (K)");
   keyButton_->setStyleSheet(state == "modified" ? "background:#f59e0b;color:#111;font-weight:bold;" : state == "keyed" ? "background:#16a34a;color:white;" : "");
-  discardButton_->setEnabled(working_.has_value());
+  discardButton_->setEnabled(working_ != nullptr);
   filling_ = false;
   refreshIk();  // mix/bend shown at the playhead follow every pose change
   refreshMesh();
@@ -2100,7 +2598,8 @@ void CutoutPanel::refreshClips() {
   QSignalBlocker block(clipList_);
   filling_ = true;
   clipList_->clear();
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json* current = nullptr;
   for (const auto& c : listOf(data, "clips")) {
     const QString id = qs(c.value("id", std::string())), name = qs(c.value("name", std::string()));
@@ -2141,6 +2640,17 @@ void CutoutPanel::refreshDopesheet() {
       }
       rows << row;
     }
+    // Clip events (plugin 1.8.0): one row, always there so keys can be added on it. Sorted by
+    // time (older documents may not be); the event name is each key's ref property.
+    Dopesheet::Row events;
+    events.target = "event";
+    events.label = "이벤트";
+    events.events = true;
+    QVector<std::pair<int, QString>> keys;
+    for (const auto& e : listOf(*clip, "events")) keys.push_back({int(e.value("timeMs", int64_t(0))), qs(e.value("name", std::string()))});
+    std::stable_sort(keys.begin(), keys.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [t, name] : keys) { events.times << t; events.names << name; events.step << true; events.interps << "step"; events.curves << cutout::LINEAR_CURVE; }
+    rows << events;
   }
   // Another clip (or character): its own fitted zoom and remembered preview loop range.
   const QString viewClip = rigId_ + "/" + clipId_;
@@ -2157,6 +2667,8 @@ void CutoutPanel::refreshDopesheet() {
     timeView_->setLoop(loop.first, loop.second);
   }
   dopesheet_->setRows(rows, duration);
+  const QStringList selectedRefs = selectedItems();
+  dopesheet_->setHighlightTargets(QSet<QString>(selectedRefs.begin(), selectedRefs.end()));
   playheadMs_ = std::clamp(playheadMs_, 0, duration);
   playheadExact_ = std::clamp(playheadExact_, 0.0, double(duration));
   timeView_->setPlayhead(playheadMs_);
@@ -2181,7 +2693,7 @@ void CutoutPanel::syncTimeScroll() {
 QString CutoutPanel::graphTarget() const {
   if (!selection_.isEmpty()) return selection_;
   const int row = dopesheet_->selectedRow();
-  return row >= 0 && row < dopesheet_->rows().size() ? dopesheet_->rows()[row].target : QString();
+  return row >= 0 && row < dopesheet_->rows().size() && !dopesheet_->rows()[row].events ? dopesheet_->rows()[row].target : QString();
 }
 void CutoutPanel::refreshGraph() {
   // Numeric tracks of the selected bone/slot in the current clip, one colored channel each.
@@ -2211,7 +2723,8 @@ void CutoutPanel::refreshGraph() {
 
 void CutoutPanel::refreshMix() {
   filling_ = true;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json mix = data.is_object() && data.contains("mix") && data.at("mix").is_object() ? data.at("mix") : Json::object();
   {
     QSignalBlocker block(mixDefault_);
@@ -2247,7 +2760,8 @@ void CutoutPanel::refreshMix() {
 
 void CutoutPanel::refreshController() {
   filling_ = true;
-  const Json c = committedController();
+  const JsonPtr heldController = controllerShared();
+  const Json& c = *heldController;
   const QStringList clips = clipIds(), skins = idsOf(displayData(), "skins"), expressions = idsOf(displayData(), "expressions");
   for (auto [combo, key, none, ids] : {std::tuple{defaultSkinCombo_, "defaultSkin", "(기본 첨부)", &skins}, std::tuple{defaultExpressionCombo_, "defaultExpression", "(없음)", &expressions}}) {
     QSignalBlocker b(combo);
@@ -2262,7 +2776,7 @@ void CutoutPanel::refreshController() {
     QSignalBlocker b(controllerCombo_);
     controllerCombo_->clear();
     for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-      if (qs(it->data.value("rig", std::string())) == rigId_) controllerCombo_->addItem(it.key(), it.key());
+      if (qs(it->data->value("rig", std::string())) == rigId_) controllerCombo_->addItem(it.key(), it.key());
     controllerCombo_->setCurrentIndex(controllerCombo_->findData(controllerId_));
   }
   {
@@ -2401,9 +2915,11 @@ void CutoutPanel::refreshModeUi() {
   }
   banner_->setProperty("mode", animate ? "animate" : "setup");
   toolButtons_[RigCanvas::Pivot]->setEnabled(!animate);
+  toolButtons_[RigCanvas::Create]->setEnabled(!animate);
   for (QWidget* w : {static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(playButton_), static_cast<QWidget*>(graph_)}) w->setEnabled(animate);
   for (QPushButton* b : presetButtons_) b->setEnabled(animate);
   for (QWidget* w : timelineTools_) w->setEnabled(animate);
+  if (eventKeyTools_) eventKeyTools_->setVisible(animate);  // event keys live in clips (Animate)
   autoKeyCheck_->setEnabled(animate);
   if (canvas_) canvas_->setAnimateMode(animate);
   bool keyed = false;
@@ -2417,6 +2933,8 @@ void CutoutPanel::updateCanvas() {
   if (!canvas_) return;
   canvas_->setHiddenSlots(hidden_);
   canvas_->setSelection(selection_);
+  const QStringList refs = selectedItems();
+  canvas_->setMultiSelection(QSet<QString>(refs.begin(), refs.end()));
   canvas_->setMessage(rigId_.isEmpty() ? "캐릭터가 없습니다. 「새 캐릭터」를 눌러 시작하세요."
                                        : !rigError_.isEmpty() ? "리그 데이터 오류: " + rigError_ : QString());
   canvas_->setScene(rig_, currentPose());
@@ -2680,20 +3198,128 @@ void CutoutPanel::selectRig(const QString& id) {
   previewExpression_.clear();
   lastSetupDelta_.reset();
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-    if (qs(it->data.value("rig", std::string())) == id) { controllerId_ = it.key(); break; }
+    if (qs(it->data->value("rig", std::string())) == id) { controllerId_ = it.key(); break; }
   previewKey_.clear();
   rebuildDisplay();
   canvas_->fitToCanvas();
 }
 void CutoutPanel::selectController(const QString& id) {
   if (!controllers_.contains(id)) return;
-  const QString rig = qs(controllers_[id].data.value("rig", std::string()));
+  const QString rig = qs(controllers_[id].data->value("rig", std::string()));
   if (rig != rigId_ && rigs_.contains(rig)) selectRig(rig);
   controllerId_ = id;
   previewKey_.clear();
   rebuildDisplay();
 }
 void CutoutPanel::selectItem(const QString& ref) {
+  selected_.clear();
+  setSelection(ref.isEmpty() ? QStringList() : QStringList{ref}, ref);
+}
+QStringList CutoutPanel::selectedItems() const {
+  // selected_ only counts while it holds the primary item: code that assigns selection_ directly
+  // (a new bone, a refused gesture restoring the old one) gets a plain single selection.
+  if (selection_.isEmpty()) return {};
+  return selected_.contains(selection_) ? selected_ : QStringList{selection_};
+}
+QStringList CutoutPanel::selectedBones(bool partsAsBones) const {
+  const Json& data = displayData();
+  QSet<QString> ids;
+  for (const QString& ref : selectedItems()) {
+    if (refKind(ref) == "bone") ids.insert(refId(ref));
+    else if (partsAsBones && refKind(ref) == "slot")
+      if (const Json* s = findIn(data, "slots", ss(refId(ref)))) ids.insert(qs(s->value("bone", std::string())));
+  }
+  QStringList out;  // rig (array) order
+  for (const auto& b : listOf(data, "bones")) if (ids.contains(qs(b.value("id", std::string())))) out << qs(b.value("id", std::string()));
+  return out;
+}
+void CutoutPanel::toggleSelected(const QString& ref) {
+  QStringList refs = selectedItems();
+  if (refs.contains(ref)) {
+    refs.removeAll(ref);
+    setSelection(refs, selection_ == ref ? refs.value(refs.size() - 1) : selection_);
+  } else {
+    refs << ref;
+    setSelection(refs, ref);
+  }
+}
+void CutoutPanel::addToSelection(const QStringList& add) {
+  setSelection(selectedItems() + add, selection_.isEmpty() ? add.value(0) : selection_);
+}
+bool CutoutPanel::selectChildren() {
+  const QStringList roots = selectedBones();
+  if (roots.isEmpty()) { setStatus("자식 본을 고를 본을 먼저 선택하세요.", true); return false; }
+  QStringList bones = roots;
+  for (int i = 0; i < bones.size(); i++)
+    for (const auto& b : listOf(displayData(), "bones"))
+      if (b.contains("parent") && b.at("parent").is_string() && qs(b.at("parent").get<std::string>()) == bones[i] && !bones.contains(qs(b.value("id", std::string()))))
+        bones << qs(b.value("id", std::string()));
+  QStringList refs = selectedItems();
+  int added = 0;
+  for (const QString& b : bones) if (!refs.contains("bone:" + b)) { refs << "bone:" + b; added++; }
+  setSelection(refs, selection_);
+  setStatus(added ? QString("자식 본 %1개를 선택에 더했습니다 (본 %2개).").arg(added).arg(selectedBones().size()) : QString("고른 본에 더할 자식 본이 없습니다."));
+  return added > 0;
+}
+bool CutoutPanel::selectAllBones() {
+  QStringList refs;
+  for (const auto& b : listOf(displayData(), "bones")) refs << "bone:" + qs(b.value("id", std::string()));
+  if (refs.isEmpty()) return false;
+  selected_.clear();
+  setSelection(refs, refs.contains(selection_) ? selection_ : refs.first());
+  setStatus(QString("모든 본 %1개를 선택했습니다.").arg(refs.size()));
+  return true;
+}
+void CutoutPanel::setPivotMode(Pivot pivot) {
+  pivot_ = pivot;
+  if (pivotCombo_) { QSignalBlocker block(pivotCombo_); pivotCombo_->setCurrentIndex(pivotCombo_->findData(int(pivot))); }
+}
+void CutoutPanel::setAxes(cutout::Axes axes) {
+  axes_ = axes;
+  if (axesCombo_) { QSignalBlocker block(axesCombo_); axesCombo_->setCurrentIndex(axesCombo_->findData(int(axes))); }
+  refreshProperties();
+}
+void CutoutPanel::setRelativeEdit(bool on) {
+  relative_ = on;
+  if (relativeCheck_) { QSignalBlocker block(relativeCheck_); relativeCheck_->setChecked(on); }
+  refreshProperties();
+}
+void CutoutPanel::setCompensation(bool bones, bool images) {
+  compensateBones_ = bones;
+  compensateImages_ = images;
+  for (auto [button, on] : {std::pair{compensateBonesButton_, bones}, std::pair{compensateImagesButton_, images}})
+    if (button) { QSignalBlocker block(button); button->setChecked(on); }
+}
+void CutoutPanel::syncSelectionWidgets() {
+  const QStringList refs = selectedItems();
+  const QSet<QString> set(refs.begin(), refs.end());
+  const bool wasFilling = filling_;
+  filling_ = true;
+  {
+    QSignalBlocker b1(tree_), b2(drawOrder_);
+    tree_->clearSelection();
+    QTreeWidgetItem* current = nullptr;
+    for (QTreeWidgetItemIterator it(tree_); *it; ++it) {
+      const QString ref = (*it)->data(0, Qt::UserRole).toString();
+      if (ref == selection_) current = *it;
+      if (set.contains(ref)) (*it)->setSelected(true);
+    }
+    if (current) tree_->setCurrentItem(current, 0, QItemSelectionModel::NoUpdate);
+    else tree_->selectionModel()->setCurrentIndex(QModelIndex(), QItemSelectionModel::NoUpdate);
+    tree_->viewport()->update();
+    drawOrder_->setCurrentItem(nullptr);
+    for (int i = 0; i < drawOrder_->count(); i++) if ("slot:" + drawOrder_->item(i)->data(Qt::UserRole).toString() == selection_) drawOrder_->setCurrentRow(i);
+  }
+  filling_ = wasFilling;
+  if (canvas_) canvas_->setMultiSelection(set);
+  if (dopesheet_) dopesheet_->setHighlightTargets(set);
+}
+void CutoutPanel::setSelection(const QStringList& refsIn, const QString& primaryIn) {
+  QStringList refs;
+  for (const QString& r : selected_) if (refsIn.contains(r) && !refs.contains(r)) refs << r;  // keep the pick order
+  for (const QString& r : refsIn) if (!r.isEmpty() && !refs.contains(r)) refs << r;
+  const QString ref = refs.contains(primaryIn) ? primaryIn : refs.value(refs.size() - 1);
+  selected_ = refs;
   selection_ = ref;
   // Picking a chain or target bone shows its IK (the current one when it already uses the bone).
   if (refKind(ref) == "bone") {
@@ -2706,16 +3332,7 @@ void CutoutPanel::selectItem(const QString& ref) {
     if (!current || !uses(*current))
       for (const auto& k : listOf(displayData(), "ik")) if (uses(k)) { ikId_ = qs(k.value("id", std::string())); break; }
   }
-  {
-    QSignalBlocker b1(tree_), b2(drawOrder_);
-    filling_ = true;
-    QTreeWidgetItemIterator it(tree_);
-    tree_->setCurrentItem(nullptr);
-    for (; *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == ref) { tree_->setCurrentItem(*it); break; }
-    drawOrder_->setCurrentItem(nullptr);
-    for (int i = 0; i < drawOrder_->count(); i++) if ("slot:" + drawOrder_->item(i)->data(Qt::UserRole).toString() == ref) drawOrder_->setCurrentRow(i);
-    filling_ = false;
-  }
+  syncSelectionWidgets();
   refreshProperties();
   refreshGraph();
   updateCanvas();
@@ -2735,15 +3352,16 @@ void CutoutPanel::setMode(Mode mode) {
   mode_ = mode;
   if (mode == Mode::Animate) {
     bottomTabs_->setCurrentIndex(0);
-    if (tool() == RigCanvas::Pivot) setTool(RigCanvas::Move);
+    if (tool() == RigCanvas::Pivot || tool() == RigCanvas::Create) setTool(RigCanvas::Move);
   }
   rebuildDisplay();
 }
 int CutoutPanel::tool() const { return canvas_->tool(); }
 void CutoutPanel::setTool(int t) {
   if (t == RigCanvas::Pivot && mode_ == Mode::Animate) { setStatus("회전 중심은 조립 모드에서만 바꿀 수 있습니다.", true); return; }
+  if (t == RigCanvas::Create && mode_ == Mode::Animate) { setStatus("본은 조립 모드에서만 만들 수 있습니다.", true); return; }
   canvas_->setTool(t);
-  for (int i = 0; i < 4; i++) toolButtons_[i]->setChecked(i == t);
+  for (int i = 0; i < RigCanvas::TOOL_COUNT; i++) toolButtons_[i]->setChecked(i == t);
 }
 void CutoutPanel::showControllerTab() { bottomTabs_->setCurrentIndex(1); }
 void CutoutPanel::setAutoKey(bool on) { autoKeyCheck_->setChecked(on); }
@@ -2769,7 +3387,8 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   static const QRegularExpression re("/(bones|slots|clips|attachments|skins|expressions|ik)/(\\d+)");
   const auto m = re.match(pointer);
   if (!m.hasMatch()) return;
-  const Json data = committedRig();
+  const JsonPtr heldRig = committedShared();
+  const Json& data = *heldRig;
   const size_t index = m.captured(2).toUInt();
   const Json& list = listOf(data, ss(m.captured(1)).c_str());
   if (index >= list.size()) return;
@@ -2834,7 +3453,7 @@ bool CutoutPanel::deleteCharacter() {
   QJsonArray edits{QJsonObject{{"type", "delete"}, {"file", doc->file}}};
   QStringList names;
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-    if (qs(it->data.value("rig", std::string())) == rigId_) { edits.append(QJsonObject{{"type", "delete"}, {"file", it->file}}); names << it.key(); }
+    if (qs(it->data->value("rig", std::string())) == rigId_) { edits.append(QJsonObject{{"type", "delete"}, {"file", it->file}}); names << it.key(); }
   if (!askConfirm("캐릭터 삭제", QString("「%1」 리그%2를 삭제할까요? 되돌리기(Ctrl+Z)로 복구할 수 있습니다.")
                                     .arg(rigId_, names.isEmpty() ? QString() : " 와 게임 연결 " + names.join(", "))))
     return false;
@@ -2859,6 +3478,31 @@ bool CutoutPanel::addBone() {
   if (runOps({op}, false)) return true;
   selection_ = before;
   return false;
+}
+bool CutoutPanel::fitBoneLengths() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  if (mode_ == Mode::Animate) { setStatus("본 길이는 조립 모드에서 바꿉니다.", true); return false; }
+  Json op = {{"op", "fitBoneLengths"}};
+  if (refKind(selection_) == "bone") op["bones"] = Json::array({ss(refId(selection_))});
+  size_t count = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { count = r.extra.value("lengths", Json::object()).size(); })) return false;
+  setStatus(QString("본 %1개의 길이를 첫 자식 본까지 맞췄습니다. 되돌리기: Ctrl+Z").arg(count));
+  return true;
+}
+bool CutoutPanel::orientBones() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  if (mode_ == Mode::Animate) { setStatus("본 방향은 조립 모드에서 맞춥니다.", true); return false; }
+  Json op = {{"op", "orientBones"}};
+  if (refKind(selection_) == "bone") op["bones"] = Json::array({ss(refId(selection_))});
+  size_t done = 0, skipped = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) {
+        done = r.extra.value("oriented", Json::object()).size();
+        skipped = r.extra.value("skipped", Json::object()).size();
+      }))
+    return false;
+  setStatus(QString("본 %1개의 방향과 길이를 맞췄습니다%2. 애니메이션은 그대로입니다. 되돌리기: Ctrl+Z")
+                .arg(done).arg(skipped ? QString(" (%1개는 그대로: 크기가 비균일하거나 가리킬 것이 없음)").arg(skipped) : QString()));
+  return true;
 }
 bool CutoutPanel::addPartInteractive() {
   if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
@@ -2956,7 +3600,19 @@ QPointF CutoutPanel::manipulationOrigin(const QString& ref) const {
   }
   const int bi = rig_->boneIndex(ss(bone));
   if (bi < 0 || size_t(bi) >= pose.world.size()) return {};
+  // A group turn (선택 중심) measures its angle around the selected bones' centroid.
+  if (const QStringList bones = dragBones("bone:" + bone); pivot_ == Pivot::Centroid && bones.size() > 1 && (kind == "bone" || mode_ == Mode::Animate)) {
+    QPointF c;
+    for (const QString& b : bones) if (const int i = rig_->boneIndex(ss(b)); i >= 0) c += QPointF(pose.world[size_t(i)].e, pose.world[size_t(i)].f) / double(bones.size());
+    return c;
+  }
   return {pose.world[size_t(bi)].e, pose.world[size_t(bi)].f};
+}
+QStringList CutoutPanel::dragBones(const QString& ref) const {
+  // Dragging a selected bone transforms the whole (bone) selection; anything else drags alone.
+  const QString bone = refId(ref);
+  const QStringList bones = selectedBones(mode_ == Mode::Animate);
+  return bones.contains(bone) ? bones : QStringList{bone};
 }
 
 std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
@@ -2969,6 +3625,31 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   auto snap = [&](double r) { return d.shift ? std::round(r / 15) * 15 : r; };
   const double ratio = d.shift ? 1 + (d.ratio - 1) * 0.25 : d.ratio;
   QString kind = refKind(d.ref), id = refId(d.ref);
+  if (d.tool == RigCanvas::Create) {
+    // A child of the selected bone (a part: its bone), else of the root (first top-level bone):
+    // origin at the press, rotation/length from the drag vector in the parent's space, so the
+    // tip lands exactly under the cursor whatever the parent's transform.
+    if (animate || createId_.isEmpty()) return {};
+    QString parent = kind == "bone" ? id : QString();
+    if (kind == "slot") { const int si = rig.slotIndex(ss(id)); if (si >= 0) parent = qs(rig.slots[size_t(si)].bone); }
+    if (rig.boneIndex(ss(parent)) < 0) {
+      parent.clear();
+      for (const auto& b : rig.bones) if (b.parentIndex < 0) { parent = qs(b.id); break; }
+    }
+    const int pi = rig.boneIndex(ss(parent));
+    const auto inv = (pi >= 0 ? pose.world[size_t(pi)] : cutout::Affine{}).inverse();
+    if (!inv) return {};
+    const QPointF end = d.moved ? RigCanvas::createEnd(d) : d.start;
+    double sx, sy, ex, ey;
+    inv->apply(d.start.x(), d.start.y(), sx, sy);
+    inv->apply(end.x(), end.y(), ex, ey);
+    Json op = {{"op", "addBone"}, {"id", ss(createId_)}, {"parent", parent.isEmpty() ? Json(nullptr) : Json(ss(parent))}, {"x", sx}, {"y", sy}};
+    if (const double len = std::hypot(ex - sx, ey - sy); len >= 0.01) {
+      op["rotation"] = std::atan2(ey - sy, ex - sx) * 180 / 3.14159265358979323846;
+      op["length"] = len;
+    }
+    return {op};
+  }
   if (d.tool == RigCanvas::Pivot) {
     if (animate) return {};
     QString bone = kind == "bone" ? id : QString();
@@ -3009,32 +3690,39 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   }
   const int bi = rig.boneIndex(ss(id));
   if (bi < 0) return {};
+  // One core transformBones per gesture (plugin 1.7.0), for one bone or the whole selection, so
+  // the LLM `edit` op does exactly what a canvas drag does.
+  const QStringList bones = dragBones("bone:" + id);
+  const bool group = pivot_ == Pivot::Centroid && bones.size() > 1;
   const cutout::Transform cur = pose.bones[size_t(bi)];
   const int parent = rig.bones[size_t(bi)].parentIndex;
   const cutout::Affine pw = parent >= 0 ? pose.world[size_t(parent)] : cutout::Affine{};
-  QMap<QString, double> values;
+  Json change = Json::object();
   if (d.tool == RigCanvas::Move) {
-    const auto inv = pw.inverse();
-    if (!inv) return {};
-    double lx, ly;
-    inv->apply(pose.world[size_t(bi)].e + delta.x(), pose.world[size_t(bi)].f + delta.y(), lx, ly);
-    values = {{"x", lx}, {"y", ly}};
+    if (delta.isNull()) return {};
+    change = {{"x", delta.x()}, {"y", delta.y()}};
   } else if (d.tool == RigCanvas::Rotate) {
-    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1;
-    values = {{"rotation", snap(cur.rotation + sign * d.angle)}};
+    // Shift snaps the grabbed bone's own rotation to 15° (a group: the turn itself).
+    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1, turn = group ? snap(d.angle) : sign * (snap(cur.rotation + sign * d.angle) - cur.rotation);
+    if (std::fabs(turn) < 1e-9) return {};
+    change = {{"rotation", turn}};
   } else {
-    values = {{"scaleX", cur.scaleX * ratio}, {"scaleY", cur.scaleY * ratio}};
+    if (std::fabs(ratio - 1) < 1e-12 || std::fabs(ratio) < 1e-9) return {};
+    change = {{"scaleX", ratio}, {"scaleY", ratio}};
   }
-  std::vector<Json> ops;
-  if (!animate) {
-    Json op = {{"op", "setBone"}, {"bone", ss(id)}};
-    for (auto it = values.begin(); it != values.end(); ++it) op[ss(it.key())] = it.value();
-    ops.push_back(op);
+  std::vector<std::string> ids;
+  for (const QString& b : bones) ids.push_back(ss(b));
+  Json op = {{"op", "transformBones"}, {"bones", ids}, {"delta", change}};
+  if (group) op["pivot"] = "centroid";
+  if (animate) {
+    op["clip"] = ss(clipId_);
+    op["timeMs"] = playheadMs_;
   } else {
-    for (auto it = values.begin(); it != values.end(); ++it)
-      ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", "bone:" + ss(id)}, {"property", ss(it.key())}, {"timeMs", playheadMs_}, {"value", it.value()}});
+    // Compensation is a setup-pose operation (Spine): the Animate drag never sends it.
+    if (compensateBones_) op["compensateBones"] = true;
+    if (compensateImages_) op["compensateImages"] = true;
   }
-  return ops;
+  return {op};
 }
 
 void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
@@ -3046,24 +3734,46 @@ void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
   }
   if (mode_ == Mode::Animate && clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); if (finished) dragActive_ = false; return; }
   if (d.tool == RigCanvas::Pivot && mode_ == Mode::Animate) { setStatus("회전 중심은 조립 모드에서만 바꿀 수 있습니다.", true); if (finished) dragActive_ = false; return; }
+  if (d.tool == RigCanvas::Create && mode_ == Mode::Animate) { setStatus("본은 조립 모드에서만 만들 수 있습니다.", true); if (finished) dragActive_ = false; return; }
+  if (d.tool == RigCanvas::Create && createId_.isEmpty()) {
+    // One id for the whole gesture (its previews and the commit), unique in the data at the press.
+    QString id = "bone";
+    for (int n = 2; findIn(dragBase_, "bones", ss(id)); n++) id = QString("bone-%1").arg(n);
+    createId_ = id;
+  }
   const std::vector<Json> ops = dragOps(d);
   if (!finished) {
     if (ops.empty()) return;
-    try { dragPreview_ = cutout::applyEdit(dragBase_, batch(ops)).data; } catch (const std::exception&) { return; }
+    try { dragPreview_ = std::make_shared<const Json>(cutout::applyEdit(dragBase_, batch(ops)).data); } catch (const std::exception&) { return; }
     rebuildDisplay(false);
     return;
   }
   dragActive_ = false;
   dragPreview_.reset();
+  const QString created = d.tool == RigCanvas::Create ? createId_ : QString();
+  createId_.clear();
   if (ops.empty()) { rebuildDisplay(false); return; }
-  // Remember setup deltas of keyed bones so the user can rebase existing keys explicitly.
-  if (mode_ == Mode::Setup && ops[0].value("op", std::string()) == "setBone") {
-    const std::string bone = ops[0].value("bone", std::string());
+  if (!created.isEmpty()) {
+    // The new bone becomes the selection: the next drag (from its tip) draws its child.
+    const QString before = selection_;
+    selection_ = "bone:" + created;
+    if (runOps(ops, false)) setStatus(QString("본 「%1」을 만들었습니다. 이어서 끌면 그 자식 본이 됩니다. 되돌리기: Ctrl+Z").arg(created));
+    else selection_ = before;
+    return;
+  }
+  // Remember setup deltas of a dragged (single) keyed bone so the user can rebase its keys explicitly.
+  if (mode_ == Mode::Setup && ops[0].value("op", std::string()) == "transformBones" && ops[0].at("bones").size() == 1) {
+    const std::string bone = ops[0].at("bones")[0].get<std::string>();
     const Json* before = findIn(dragBase_, "bones", bone);
     Json delta = Json::object();
-    for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"})
-      if (ops[0].contains(p) && before) delta[p] = ops[0].at(p).get<double>() - before->value(p, std::string(p).rfind("scale", 0) == 0 ? 1.0 : 0.0);
-    if (runOps(ops, false)) { lastSetupDelta_ = SetupDelta{qs(bone), delta}; refreshModeUi(); }
+    const bool ok = runOps(ops, false, [&](const cutout::EditResult& r) {
+      const Json* after = findIn(r.data, "bones", bone);
+      for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) {
+        const double def = std::string(p).rfind("scale", 0) == 0 ? 1.0 : 0.0;
+        if (after && before && std::fabs(after->value(p, def) - before->value(p, def)) > 1e-9) delta[p] = after->value(p, def) - before->value(p, def);
+      }
+    });
+    if (ok && !delta.empty()) { lastSetupDelta_ = SetupDelta{qs(bone), delta}; refreshModeUi(); }
     return;
   }
   runOps(ops, mode_ == Mode::Animate);
@@ -3076,15 +3786,11 @@ void CutoutPanel::commitProperty(const QString& property, double value) {
   if (spin && std::fabs(value - shown) < 0.5 * std::pow(10.0, -spin->decimals())) return;  // focus-out without change
   const QString kind = refKind(selection_), id = refId(selection_);
   const bool animate = mode_ == Mode::Animate;
-  if (kind == "bone") {
-    if (animate) {
-      if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return; }
-      runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", ss(property)}, {"timeMs", playheadMs_}, {"value", value}}}, true);
-    } else if (runOps({{{"op", "setBone"}, {"bone", ss(id)}, {ss(property), value}}}, false)) {
-      lastSetupDelta_ = SetupDelta{id, Json{{ss(property), value - shown}}};
-      refreshModeUi();
-    }
-  } else if (kind == "slot") {
+  if (property != "alpha" && property != "pivotX" && property != "pivotY" && !selectedBones().isEmpty() && (kind == "bone" || selectedBones().size() > 1)) {
+    commitBoneProperty(property, value);
+    return;
+  }
+  if (kind == "slot") {
     if (property == "alpha") {
       if (animate) runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", "alpha"}, {"timeMs", playheadMs_}, {"value", value}}}, true);
       else runOps({{{"op", "setSlot"}, {"slot", ss(id)}, {"alpha", value}}}, false);
@@ -3096,6 +3802,103 @@ void CutoutPanel::commitProperty(const QString& property, double value) {
       runOps({{{"op", "setSkinAttachment"}, {"skin", ss(skin)}, {"slot", ss(id)}, {"name", ss(name)}, {ss(property), value}}}, false);
     else runOps({{{"op", "setAttachment"}, {"slot", ss(id)}, {"name", ss(name)}, {ss(property), value}}}, false);
   }
+}
+cutout::Transform CutoutPanel::shownBone(int i, const cutout::Pose& pose, const std::map<std::string, cutout::Affine>& setupWorld) const {
+  const auto& b = rig_->bones[size_t(i)];
+  const bool animate = mode_ == Mode::Animate;
+  const cutout::Transform local = animate && size_t(i) < pose.bones.size() ? pose.bones[size_t(i)] : b.setup;
+  cutout::Affine parent;
+  if (b.parentIndex >= 0) {
+    // Setup: the stored FK setup world (what setBone `axes` converts with); Animate: the pose shown.
+    if (animate) { if (size_t(b.parentIndex) < pose.world.size()) parent = pose.world[size_t(b.parentIndex)]; }
+    else if (auto it = setupWorld.find(rig_->bones[size_t(b.parentIndex)].id); it != setupWorld.end()) parent = it->second;
+  }
+  return cutout::toAxes(local, parent, axes_);
+}
+/**
+ * A bone field typed for the selected bones (one edit). Setup: setBone per bone, parents first, in
+ * axes_ (core converts with the current setup world, so a moved parent is taken into account) and
+ * with the compensation flags. Animate: setKey per bone and channel; world/parent values convert
+ * through the parent's world as it will be after the parents' own new values.
+ */
+void CutoutPanel::commitBoneProperty(const QString& property, double value) {
+  const bool animate = mode_ == Mode::Animate;
+  QStringList bones = selectedBones();
+  if (!rig_ || bones.isEmpty()) return;
+  // Parents first (evaluation order).
+  QHash<QString, int> rank;
+  for (size_t k = 0; k < rig_->evalOrder.size(); k++) rank[qs(rig_->bones[size_t(rig_->evalOrder[k])].id)] = int(k);
+  std::sort(bones.begin(), bones.end(), [&](const QString& a, const QString& b) { return rank.value(a) < rank.value(b); });
+  const QString single = bones.size() == 1 ? bones[0] : QString();
+  std::vector<Json> ops;
+  if (property == "length") {
+    if (animate) { setStatus("본 길이는 조립 모드에서 바꿉니다(키가 아닙니다).", true); refreshProperties(); return; }
+    for (const QString& b : bones)
+      ops.push_back({{"op", "setBone"}, {"bone", ss(b)}, {"length", std::max(0.0, relative_ ? rig_->bones[size_t(rig_->boneIndex(ss(b)))].length + value : value)}});
+    runOps(ops, false);
+    return;
+  }
+  if (animate && clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return; }
+  auto field = [&](cutout::Transform& t) -> double& {
+    return property == "x" ? t.x : property == "y" ? t.y : property == "rotation" ? t.rotation : property == "scaleX" ? t.scaleX : t.scaleY;
+  };
+  const bool spatial = axes_ != cutout::Axes::Local && (property == "x" || property == "y" || property == "rotation");
+  const cutout::Pose pose = currentPose(false);
+  const std::string axesName = axes_ == cutout::Axes::World ? "world" : axes_ == cutout::Axes::Parent ? "parent" : "local";
+  if (!animate) {
+    const auto setupWorld = cutout::setupWorld(displayData());
+    for (const QString& b : bones) {
+      cutout::Transform shown = shownBone(rig_->boneIndex(ss(b)), pose, setupWorld);
+      Json op = {{"op", "setBone"}, {"bone", ss(b)}, {ss(property), relative_ ? field(shown) + value : value}};
+      if (spatial) op["axes"] = axesName;
+      if (compensateBones_) op["compensateBones"] = true;
+      if (compensateImages_) op["compensateImages"] = true;
+      ops.push_back(op);
+    }
+    const Json before = single.isEmpty() ? Json() : *findIn(displayData(), "bones", ss(single));
+    std::optional<Json> after;
+    if (runOps(ops, false, [&](const cutout::EditResult& r) { if (const Json* b = findIn(r.data, "bones", ss(single))) after = *b; }) && after) {
+      // Remember the setup change of one bone so its existing keys can be rebased explicitly.
+      Json delta = Json::object();
+      for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) {
+        const double def = std::string(p).rfind("scale", 0) == 0 ? 1.0 : 0.0, d = after->value(p, def) - before.value(p, def);
+        if (std::fabs(d) > 1e-9) delta[p] = d;
+      }
+      if (!delta.empty()) { lastSetupDelta_ = SetupDelta{single, delta}; refreshModeUi(); }
+    }
+    return;
+  }
+  // Animate: walk parents first; a changed bone's subtree gets its new world matrices so the
+  // conversion of a selected descendant sees where its parent will be.
+  std::vector<cutout::Affine> world = pose.world;
+  std::vector<char> dirty(rig_->bones.size(), 0);
+  QSet<int> chosen;
+  for (const QString& b : bones) chosen.insert(rig_->boneIndex(ss(b)));
+  for (int i : rig_->evalOrder) {
+    const int p = rig_->bones[size_t(i)].parentIndex;
+    const cutout::Affine pw = p >= 0 ? world[size_t(p)] : cutout::Affine{};
+    if (chosen.contains(i)) {
+      const cutout::Transform local = pose.bones[size_t(i)];
+      cutout::Transform before = cutout::toAxes(local, p >= 0 ? pose.world[size_t(p)] : cutout::Affine{}, axes_), shown = cutout::toAxes(local, pw, axes_);
+      field(shown) = relative_ ? field(before) + value : value;
+      const auto back = cutout::fromAxes(shown, pw, axes_, local);
+      if (!back) { setStatus("부모 본의 크기가 0이라 이 축으로 바꿀 수 없습니다.", true); refreshProperties(); return; }
+      const std::string target = "bone:" + rig_->bones[size_t(i)].id;
+      auto key = [&](const char* prop, double v) {
+        ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", target}, {"property", prop}, {"timeMs", playheadMs_}, {"value", v}});
+      };
+      if (spatial && property != "rotation") { key("x", back->x); key("y", back->y); }
+      else if (spatial) key("rotation", back->rotation);
+      else { cutout::Transform next = *back; key(property.toUtf8().constData(), field(next)); }
+      world[size_t(i)] = pw * cutout::Affine::compose(back->x, back->y, back->rotation, back->scaleX, back->scaleY);
+      dirty[size_t(i)] = 1;
+    } else if (p >= 0 && dirty[size_t(p)]) {
+      const cutout::Transform& t = pose.local(size_t(i));
+      world[size_t(i)] = pw * cutout::Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+      dirty[size_t(i)] = 1;
+    }
+  }
+  runOps(ops, true);
 }
 void CutoutPanel::commitAttachmentChoice() {
   if (filling_ || refKind(selection_) != "slot") return;
@@ -3120,21 +3923,25 @@ bool CutoutPanel::keySelected() {
   if (!rig_ || selection_.isEmpty() || refKind(selection_) == "rig") { setStatus("키를 넣을 본이나 조각을 선택하세요(표정은 「표정 키」).", true); return false; }
   if (meshEdit_ != MeshEdit::Off && !meshSlot().isEmpty()) return keyDeform();  // editing a mesh: K keys its shape
   const cutout::Pose pose = currentPose(false);
-  const QString kind = refKind(selection_), id = refId(selection_);
   std::vector<Json> ops;
-  auto key = [&](const char* prop, const Json& v) {
-    ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", prop}, {"timeMs", playheadMs_}, {"value", v}});
-  };
-  if (kind == "bone") {
-    const int i = rig_->boneIndex(ss(id));
-    if (i < 0) return false;
-    const auto& t = pose.bones[size_t(i)];
-    key("x", t.x); key("y", t.y); key("rotation", t.rotation); key("scaleX", t.scaleX); key("scaleY", t.scaleY);
-  } else {
-    const int i = rig_->slotIndex(ss(id));
-    if (i < 0) return false;
-    key("attachment", pose.attachments[size_t(i)] ? Json(*pose.attachments[size_t(i)]) : Json(nullptr));
+  // Every selected item (plugin 1.7.0): bones key their 5 channels, parts their shown image. One edit.
+  for (const QString& ref : selectedItems()) {
+    const QString kind = refKind(ref), id = refId(ref);
+    auto key = [&](const char* prop, const Json& v) {
+      ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(ref)}, {"property", prop}, {"timeMs", playheadMs_}, {"value", v}});
+    };
+    if (kind == "bone") {
+      const int i = rig_->boneIndex(ss(id));
+      if (i < 0) continue;
+      const auto& t = pose.bones[size_t(i)];
+      key("x", t.x); key("y", t.y); key("rotation", t.rotation); key("scaleX", t.scaleX); key("scaleY", t.scaleY);
+    } else if (kind == "slot") {
+      const int i = rig_->slotIndex(ss(id));
+      if (i < 0) continue;
+      key("attachment", pose.attachments[size_t(i)] ? Json(*pose.attachments[size_t(i)]) : Json(nullptr));
+    }
   }
+  if (ops.empty()) return false;
   return runOps(ops, false);
 }
 bool CutoutPanel::discardPending() {
@@ -3325,7 +4132,7 @@ bool CutoutPanel::applyPreset(const QString& preset) {
   const QVector<KeyRef> keys = timeView_->selection();  // shared by dopesheet and graph
   std::vector<Json> ops;
   for (const auto& k : keys)
-    if (k.property != "attachment" && k.property != "expression" && k.property != "bendPositive") {
+    if (k.target != "event" && k.property != "attachment" && k.property != "expression" && k.property != "bendPositive") {
       Json op = {{"op", "setInterp"}, {"clip", ss(clipId_)}, {"target", ss(k.target)}, {"timeMs", k.timeMs}, {"interp", ss(preset)}};
       putProperty(op, k.property);
       ops.push_back(op);
@@ -3461,17 +4268,10 @@ bool CutoutPanel::duplicateKeys() {
 }
 bool CutoutPanel::copyPose() {
   if (!rigDoc()) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
-  // The selected bone with all of its children (a whole limb), or the whole skeleton.
+  // Exactly the selected bones (a part counts as its bone; 자식 본까지 선택 adds a whole limb), or
+  // the whole skeleton when nothing is selected.
   std::vector<std::string> bones;
-  if (const QString root = selectedBone(); !root.isEmpty()) {
-    bones.push_back(ss(root));
-    for (size_t i = 0; i < bones.size(); i++)
-      for (const auto& b : listOf(displayData(), "bones")) {
-        const std::string id = b.value("id", std::string());
-        if (b.contains("parent") && b.at("parent").is_string() && b.at("parent").get<std::string>() == bones[i] && std::find(bones.begin(), bones.end(), id) == bones.end())
-          bones.push_back(id);
-      }
-  }
+  for (const QString& b : selectedBones(true)) bones.push_back(ss(b));
   Json op = {{"op", "copyPose"}};
   if (!bones.empty()) op["bones"] = bones;
   const bool animated = mode_ == Mode::Animate && !clipId_.isEmpty();
@@ -3509,14 +4309,16 @@ void CutoutPanel::commitMixTable() {
     auto* ms = qobject_cast<QSpinBox*>(mixTable_->cellWidget(r, 2));
     if (from && to && ms) pairs.push_back({{"from", ss(from->currentText())}, {"to", ss(to->currentText())}, {"durationMs", ms->value()}});
   }
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json mix = data.contains("mix") && data.at("mix").is_object() ? data.at("mix") : Json::object();
   if (mix.value("defaultMs", int64_t(0)) == mixDefault_->value() && mix.value("pairs", Json::array()) == pairs) return;
   if (!runOps({{{"op", "setMix"}, {"defaultMs", mixDefault_->value()}, {"pairs", pairs}}}, false)) refreshMix();
 }
 bool CutoutPanel::addMixPair() {
   const QStringList clips = clipIds();
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json mix = data.contains("mix") && data.at("mix").is_object() ? data.at("mix") : Json::object();
   Json pairs = mix.value("pairs", Json::array());
   for (const QString& a : clips) for (const QString& b : clips) {
@@ -3533,7 +4335,8 @@ bool CutoutPanel::addMixPair() {
 bool CutoutPanel::removeMixPair() {
   const int row = mixTable_->currentRow() >= 0 ? mixTable_->currentRow() : mixTable_->rowCount() - 1;
   if (row < 0) return false;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   Json pairs = data.contains("mix") && data.at("mix").is_object() ? data.at("mix").value("pairs", Json::array()) : Json::array();
   if (size_t(row) >= pairs.size()) return false;
   pairs.erase(pairs.begin() + row);
@@ -3645,8 +4448,8 @@ void CutoutPanel::ensurePreview() {
   if (!rig || !controller) return;
   try {
     // Real loop flags here: the preview behaves exactly like the game runtime.
-    auto parsed = std::make_shared<const cutout::Rig>(cutout::parseRig(ss(rigId_), rig->data));
-    preview_ = std::make_unique<cutout::Instance>(parsed, cutout::parseController(ss(controllerId_), controller->data));
+    auto parsed = std::make_shared<const cutout::Rig>(cutout::parseRig(ss(rigId_), *rig->data));
+    preview_ = std::make_unique<cutout::Instance>(parsed, cutout::parseController(ss(controllerId_), *controller->data));
   } catch (const std::exception& e) {
     previewResult_->setText("미리 보기를 만들 수 없습니다: " + qs(e.what()));
   }
@@ -3671,7 +4474,8 @@ QStringList CutoutPanel::previewSignal(const QString& name, const QMap<QString, 
 void CutoutPanel::refreshLooks() {
   if (!skinList_) return;
   filling_ = true;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   {
     QSignalBlocker block(skinList_);
     skinList_->clear();
@@ -3870,7 +4674,8 @@ bool CutoutPanel::assignSkinImageInteractive() {
 }
 QVector<CutoutPanel::SkinSlotInfo> CutoutPanel::skinSlots() const {
   QVector<SkinSlotInfo> out;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const cutout::Pose pose = currentPose(false);
   const Json* skin = findIn(data, "skins", ss(previewSkin_));
   for (const auto& s : listOf(data, "slots")) {
@@ -4010,7 +4815,8 @@ void CutoutPanel::refreshIk() {
   if (!ikList_) return;
   const bool wasFilling = filling_;
   filling_ = true;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json& list = listOf(data, "ik");
   if (!ikId_.isEmpty() && !findIn(data, "ik", ss(ikId_))) ikId_.clear();
   if (ikId_.isEmpty() && !list.empty()) ikId_ = qs(list[0].value("id", std::string()));
@@ -4065,6 +4871,7 @@ void CutoutPanel::refreshIk() {
   if (k && index >= 0) {
     const auto& c = rig_->ik[size_t(index)];
     const QString tip = c.bones.size() == 1 ? QString("조준 축 %1°가 대상을 향함").arg(c.aimAxis, 0, 'g', 6) : c.tip >= 0 ? QString("끝점: %1의 원점").arg(qs(rig_->bones[size_t(c.tip)].id))
+                      : c.tipLength > 0 ? QString("끝점: %1의 끝(길이 %2)").arg(qs(rig_->bones[size_t(c.bones.back())].id)).arg(c.tipLength, 0, 'g', 6)
                                                                                       : QString("끝점 본 없음 · %1의 원점이 대상을 향함").arg(qs(rig_->bones[size_t(c.bones.back())].id));
     info = tip + (animate ? " · 애니메이션 모드: 혼합·굽힘을 바꾸면 이 시간의 키가 되고, ✛를 끌면 대상 본 위치가 바뀝니다(K로 키)."
                           : " · 조립 모드: 값은 IK의 기본값입니다. ✛를 끌면 대상 본의 기본 자세가 바뀝니다.");
@@ -4231,6 +5038,8 @@ void CutoutPanel::refreshMesh() {
   if (key != meshSelectionKey_) { meshSelection_.clear(); meshSelectionKey_ = key; }
   if (mesh) for (auto it = meshSelection_.begin(); it != meshSelection_.end();) it = *it >= int(att->vertexCount()) ? meshSelection_.erase(it) : std::next(it);
   if (!mesh || (animate && meshEdit_ == MeshEdit::Weights)) meshEdit_ = MeshEdit::Off;
+  // Outline drawing belongs to one part in setup mode: another selection or Animate ends it.
+  if (!outlineSlot_.isEmpty() && (animate || !part || refId(selection_) != outlineSlot_)) outlineSlot_.clear();
   // Bone lists: rebuilt for another part (checks are editor state of this part's next auto weights).
   if (meshBones_->property("key").toString() != key || meshBones_->count() != int(rig_ ? rig_->bones.size() : 0)) {
     QSignalBlocker block(meshBones_);
@@ -4255,7 +5064,15 @@ void CutoutPanel::refreshMesh() {
     brushBone_->setCurrentIndex(std::max(0, at));
   }
   for (QWidget* w : meshSetupTools_) w->setEnabled(part && !animate);
-  for (QWidget* row : meshModeRows_) row->setVisible(row->property("cutoutModeRow").toString() == (animate ? "animate" : "setup"));
+  // Setup rows: the shape tools replace the weight row while 정점 편집 is on (plugin 1.6.0).
+  const bool shaping = !animate && mesh && meshEdit_ == MeshEdit::Vertices;
+  for (QWidget* row : meshModeRows_) {
+    const QString kind = row->property("cutoutModeRow").toString();
+    row->setVisible(animate ? kind == "animate" : kind == "setup" || (kind == "setup-vertices" ? shaping : kind == "setup-weights" && !shaping));
+  }
+  meshSelectTool_->setChecked(meshTool_ == RigCanvas::MeshSelect);
+  meshAddVertexTool_->setChecked(meshTool_ == RigCanvas::MeshAddVertex);
+  meshAddEdgeTool_->setChecked(meshTool_ == RigCanvas::MeshAddEdge);
   for (QWidget* w : meshTools_) w->setEnabled(mesh && (!animate || w == meshVerticesButton_));
   for (QWidget* w : meshAnimateTools_) w->setEnabled(mesh && animate);
   meshVerticesButton_->setChecked(meshEdit_ == MeshEdit::Vertices);
@@ -4269,12 +5086,26 @@ void CutoutPanel::refreshMesh() {
                .arg(qs(att->name)).arg(att->vertexCount()).arg(att->triangles.size() / 3)
                .arg(bones.isEmpty() ? QString("웨이트 없음(본 「%1」을 따라감)").arg(qs(rig_->slots[size_t(si)].bone)) : "웨이트: " + bones.join(", "))
                .arg(meshSelection_.size());
+    int pinned = 0;
+    std::set<std::pair<int, int>> outline;
+    for (const auto& e : meshOutline(att->triangles)) outline.insert({e.first, e.second});
+    for (size_t k = 0; k + 1 < att->edges.size(); k += 2)
+      pinned += att->edges[k] != att->edges[k + 1] && !outline.count({std::min(att->edges[k], att->edges[k + 1]), std::max(att->edges[k], att->edges[k + 1])});
+    info += att->hull >= 3 ? QString(" · 윤곽 정점 %1").arg(att->hull) : QString(" · 윤곽 없음(격자)");
+    if (pinned) info += QString(" · 고정 가장자리 %1").arg(pinned);
     if (animate) info += " · 애니메이션 모드: 정점을 끌면 이 시간의 변형이 됩니다(K로 키).";
   }
+  if (!outlineSlot_.isEmpty()) info = QString("윤곽 그리기 중: 「%1」 둘레를 클릭하세요. 첫 점 클릭·더블클릭·Enter = 메시 만들기, Esc = 취소.").arg(outlineSlot_);
   meshInfo_->setText(info);
-  if (canvas_)
+  if (canvas_) {
     canvas_->setMeshEdit(int(meshEdit_), mesh ? refId(selection_) : QString(), meshSelection_,
                          rig_ ? rig_->boneIndex(ss(brushBone_->currentData().toString())) : -1, brushRadius_->value());
+    // Only on change: both reset the canvas gesture (a refresh can run in the middle of a drag).
+    const int tool = shaping ? meshTool_ : int(RigCanvas::MeshSelect);
+    if (canvas_->meshTool() != tool) canvas_->setMeshTool(tool);
+    if (canvas_->outlineDrawing() != !outlineSlot_.isEmpty()) canvas_->setOutlineDrawing(outlineSlot_);
+  }
+  refreshOutlinePreview();
   filling_ = wasFilling;
 }
 bool CutoutPanel::convertToMesh(int rows, int cols, bool trim) {
@@ -4387,7 +5218,7 @@ void CutoutPanel::onMeshDrag(const QPointF& delta, bool finished) {
   const std::vector<Json> ops = meshMoveOps(delta);
   if (!finished) {
     if (ops.empty()) return;
-    try { dragPreview_ = cutout::applyEdit(dragBase_, batch(ops)).data; } catch (const std::exception&) { return; }
+    try { dragPreview_ = std::make_shared<const Json>(cutout::applyEdit(dragBase_, batch(ops)).data); } catch (const std::exception&) { return; }
     rebuildDisplay(false);
     return;
   }
@@ -4450,7 +5281,7 @@ bool CutoutPanel::unbindMesh() {
 }
 bool CutoutPanel::keyDeform() {
   if (mode_ != Mode::Animate || clipId_.isEmpty()) { setStatus("변형 키는 애니메이션 모드에서 클립에 넣습니다.", true); return false; }
-  if (working_) { cutout::EditResult r; r.data = *working_; return commitRig(r); }
+  if (working_) { cutout::EditResult r; r.data = *working_; return commitRig(std::move(r)); }
   int si;
   const cutout::Attachment* att;
   Json fields;
@@ -4468,6 +5299,506 @@ bool CutoutPanel::deleteDeformKey() {
   Json fields;
   if (!meshTarget(si, att, fields) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
   return runOps({{{"op", "deleteKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", "deform"}, {"attachment", att->name}, {"timeMs", playheadMs_}}}, false);
+}
+
+// ---------------------------------------------------------------- freeform meshes (plugin 1.6.0)
+// Gestures turn canvas points into image pixels of the shown attachment and run ONE core op; the
+// core triangulates (constrained Delaunay) and keeps weights / deform keys consistent.
+const CutoutPanel::AlphaMask* CutoutPanel::alphaMaskOf(const cutout::Attachment& att) {
+  const QImage img = images_.image(qs(att.imageAssetId));
+  if (img.isNull()) return nullptr;
+  const QString key = qs(att.imageAssetId) + "#" + QString::number(img.cacheKey());
+  if (alphaMask_.key != key) {
+    alphaMask_ = {key, img.width(), img.height(), std::vector<uint8_t>(size_t(img.width()) * size_t(img.height()))};
+    const QImage argb = img.convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < argb.height(); y++) {
+      const QRgb* line = reinterpret_cast<const QRgb*>(argb.constScanLine(y));
+      for (int x = 0; x < argb.width(); x++) alphaMask_.alpha[size_t(y) * size_t(argb.width()) + size_t(x)] = uint8_t(qAlpha(line[x]));
+    }
+  }
+  return &alphaMask_;
+}
+QPolygonF CutoutPanel::autoOutlinePreview() {
+  int si;
+  const cutout::Attachment* att;
+  Json fields;
+  if (!outlinePreview_ || !outlinePreview_->isChecked() || mode_ != Mode::Setup || !meshTarget(si, att, fields)) return {};
+  const AlphaMask* mask = alphaMaskOf(*att);
+  if (!mask) return {};
+  // The trace (the slow part) is cached per image and settings; the placement is cheap.
+  const QString key = mask->key + QString("|%1|%2").arg(outlineThreshold_->value()).arg(outlineDetail_->value());
+  if (key != outlinePreviewKey_) {
+    outlinePreviewKey_ = key;
+    try { previewOutline_ = cutout::traceAlphaOutline(mask->alpha, mask->width, mask->height, outlineThreshold_->value(), outlineDetail_->value()); }
+    catch (const std::exception&) { previewOutline_.clear(); }
+  }
+  const cutout::Attachment* shown = nullptr;
+  const cutout::Affine m = attachmentMatrix(*rig_, currentPose(false), si, &shown);
+  QPolygonF out;
+  const double sx = att->width / mask->width, sy = att->height / mask->height;
+  for (size_t i = 0; i + 1 < previewOutline_.size(); i += 2) {
+    double x, y;
+    m.apply(previewOutline_[i] * sx, previewOutline_[i + 1] * sy, x, y);
+    out << QPointF(x, y);
+  }
+  return out;
+}
+void CutoutPanel::refreshOutlinePreview() { if (canvas_) canvas_->setOutlinePreview(autoOutlinePreview()); }
+void CutoutPanel::setAutoOutlineParams(double threshold, double detail, double spacing, bool preview) {
+  outlineThreshold_->setValue(threshold);
+  outlineDetail_->setValue(detail);
+  outlineSpacing_->setValue(spacing);
+  outlinePreview_->setChecked(preview);
+  refreshOutlinePreview();
+}
+bool CutoutPanel::beginOutline() {
+  if (mode_ != Mode::Setup) { setStatus("윤곽 그리기는 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json fields;
+  if (!meshTarget(si, att, fields)) { setStatus("윤곽을 그릴 조각(▣)을 먼저 고르세요.", true); return false; }
+  outlineSlot_ = refId(selection_);
+  meshEdit_ = MeshEdit::Off;  // the new outline replaces the shape: vertex handles would only get in the way
+  refreshMesh();
+  if (canvas_) canvas_->setFocus(Qt::OtherFocusReason);
+  setStatus(QString("윤곽 그리기: 「%1」 그림 둘레를 차례로 클릭하세요. 첫 점 클릭·더블클릭·Enter로 닫으면 메시가 됩니다. Esc = 취소").arg(outlineSlot_));
+  return true;
+}
+bool CutoutPanel::outlineFromCanvas(const QPolygonF& rigPoints) {
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (mode_ != Mode::Setup || !meshTarget(si, att, op)) { outlineSlot_.clear(); refreshMesh(); return false; }
+  const cutout::Attachment* shown = nullptr;
+  const auto inverse = attachmentMatrix(*rig_, currentPose(false), si, &shown).inverse();
+  if (!inverse) { setStatus("크기가 0인 조각에는 윤곽을 그릴 수 없습니다.", true); return false; }
+  std::vector<double> hull;
+  for (const QPointF& p : rigPoints) {
+    double x, y;
+    inverse->apply(p.x(), p.y(), x, y);
+    hull.push_back(x);
+    hull.push_back(y);
+  }
+  op["op"] = "createMeshFromOutline";
+  op["hull"] = hull;
+  if (outlineSpacing_->value() > 0) op["spacing"] = outlineSpacing_->value();
+  int vertices = 0, triangles = 0;
+  // A refused outline (crossing itself...) keeps the tool on so the author can draw again.
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { vertices = r.extra.value("vertices", 0); triangles = r.extra.value("triangles", 0); })) return false;
+  outlineSlot_.clear();
+  meshEdit_ = MeshEdit::Vertices;
+  meshTool_ = RigCanvas::MeshSelect;
+  refreshMesh();
+  setStatus(QString("윤곽으로 메시를 만들었습니다(정점 %1 · 삼각형 %2). 「정점 추가」로 안쪽 정점을 더하고 「자동 웨이트」로 본에 묶으세요. 되돌리기: Ctrl+Z").arg(vertices).arg(triangles));
+  return true;
+}
+bool CutoutPanel::autoOutline() {
+  if (mode_ != Mode::Setup) { setStatus("자동 윤곽은 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op)) { setStatus("윤곽을 찾을 조각(▣)을 먼저 고르세요.", true); return false; }
+  const AlphaMask* mask = alphaMaskOf(*att);
+  if (!mask) { setStatus("이 조각의 그림을 읽을 수 없습니다(이미지 에셋을 확인하세요).", true); return false; }
+  // The decoded alpha travels with the op: the core traces it (it has no PNG decoder), the same
+  // op the service builds from imagePath for MCP.
+  const QByteArray bytes(reinterpret_cast<const char*>(mask->alpha.data()), qsizetype(mask->alpha.size()));
+  op.update({{"op", "autoOutline"}, {"mask", {{"width", mask->width}, {"height", mask->height}, {"alpha", bytes.toBase64().toStdString()}}},
+             {"alphaThreshold", outlineThreshold_->value()}, {"detail", outlineDetail_->value()}});
+  if (outlineSpacing_->value() > 0) op["spacing"] = outlineSpacing_->value();
+  int hull = 0, vertices = 0, triangles = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { hull = r.extra.value("hull", 0); vertices = r.extra.value("vertices", 0); triangles = r.extra.value("triangles", 0); })) return false;
+  outlineSlot_.clear();
+  meshEdit_ = MeshEdit::Vertices;
+  refreshMesh();
+  setStatus(QString("자동 윤곽으로 메시를 만들었습니다(윤곽 점 %1 · 정점 %2 · 삼각형 %3). 되돌리기: Ctrl+Z").arg(hull).arg(vertices).arg(triangles));
+  return true;
+}
+void CutoutPanel::setMeshTool(int tool) {
+  meshTool_ = std::clamp(tool, int(RigCanvas::MeshSelect), int(RigCanvas::MeshAddEdge));
+  if (meshEdit_ != MeshEdit::Vertices && !meshSlot().isEmpty() && mode_ == Mode::Setup) meshEdit_ = MeshEdit::Vertices;
+  refreshMesh();
+}
+bool CutoutPanel::addVertexAt(const QPointF& rigPoint) {
+  if (mode_ != Mode::Setup) { setStatus("정점 추가는 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  const QVector<QPointF> pts = meshPoints(*rig_, currentPose(false), si);
+  if (pts.size() != int(att->vertexCount())) return false;
+  auto image = [&](int v) { return QPointF(att->vertices[2 * size_t(v)], att->vertices[2 * size_t(v) + 1]); };
+  std::optional<QPointF> at;
+  // Near the outline (6 widget px): onto that edge, so the core adds an outline vertex there.
+  double best = 6;
+  const QPointF w = canvas_->rigToWidget(rigPoint);
+  for (const auto& [a, b] : meshOutline(att->triangles)) {
+    const QPointF wa = canvas_->rigToWidget(pts[a]), wb = canvas_->rigToWidget(pts[b]), ab = wb - wa;
+    const double len2 = QPointF::dotProduct(ab, ab);
+    const double t = len2 > 1e-12 ? std::clamp(QPointF::dotProduct(w - wa, ab) / len2, 0.0, 1.0) : 0.0;
+    const double d = QLineF(w, wa + ab * t).length();
+    if (d < best && t > 0.02 && t < 0.98) { best = d; at = image(a) + (image(b) - image(a)) * t; }
+  }
+  // Inside: the shown triangle under the click, mapped barycentrically onto the setup shape (exact
+  // whatever bones or deform do to the drawn mesh).
+  for (size_t t = 0; !at && t + 2 < att->triangles.size(); t += 3) {
+    const int i = att->triangles[t], j = att->triangles[t + 1], k = att->triangles[t + 2];
+    const QPointF a = pts[i], b = pts[j], c = pts[k];
+    const double det = (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x());
+    if (std::fabs(det) < 1e-12) continue;
+    const double l1 = ((rigPoint.x() - a.x()) * (c.y() - a.y()) - (rigPoint.y() - a.y()) * (c.x() - a.x())) / det;
+    const double l2 = ((b.x() - a.x()) * (rigPoint.y() - a.y()) - (b.y() - a.y()) * (rigPoint.x() - a.x())) / det;
+    if (l1 < 0 || l2 < 0 || l1 + l2 > 1) continue;
+    at = image(i) + (image(j) - image(i)) * l1 + (image(k) - image(i)) * l2;
+  }
+  if (!at) { setStatus("메시 밖입니다. 메시 안이나 윤곽 가까이를 클릭하세요.", true); return false; }
+  op.update({{"op", "addMeshVertex"}, {"position", {at->x(), at->y()}}});
+  int vertex = -1;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { vertex = r.extra.value("vertex", -1); })) return false;
+  meshSelection_ = {vertex};
+  refreshMesh();
+  setStatus(QString("정점 %1을 추가했습니다(웨이트·변형은 주변에서 섞음). 되돌리기: Ctrl+Z").arg(vertex));
+  return true;
+}
+bool CutoutPanel::deleteVertices() {
+  if (mode_ != Mode::Setup) { setStatus("정점 삭제는 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  if (meshSelection_.isEmpty()) { setStatus("지울 정점을 먼저 고르세요.", true); return false; }
+  const QVector<int> list = selectedVertices();
+  op.update({{"op", "removeMeshVertex"}, {"vertices", std::vector<int>(list.begin(), list.end())}});
+  if (!runOps({op}, false)) return false;
+  meshSelection_.clear();
+  refreshMesh();
+  setStatus(QString("정점 %1개를 지웠습니다. 되돌리기: Ctrl+Z").arg(list.size()));
+  return true;
+}
+bool CutoutPanel::addMeshEdge(int a, int b) {
+  if (mode_ != Mode::Setup) { setStatus("가장자리는 조립 모드에서 고정합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  op.update({{"op", "addMeshEdge"}, {"edge", {a, b}}});
+  if (!runOps({op}, false)) return false;
+  setStatus(QString("가장자리 %1-%2를 고정했습니다(하늘색). 되돌리기: Ctrl+Z").arg(a).arg(b));
+  return true;
+}
+bool CutoutPanel::removeMeshEdge() {
+  if (mode_ != Mode::Setup) { setStatus("가장자리는 조립 모드에서 풉니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  const QVector<int> list = selectedVertices();
+  if (list.size() != 2) { setStatus("풀 가장자리의 두 정점을 고르세요(Shift+클릭).", true); return false; }
+  op.update({{"op", "removeMeshEdge"}, {"edge", {list[0], list[1]}}});
+  if (!runOps({op}, false)) return false;
+  setStatus(QString("가장자리 %1-%2 고정을 풀었습니다. 되돌리기: Ctrl+Z").arg(list[0]).arg(list[1]));
+  return true;
+}
+bool CutoutPanel::retriangulateMesh() {
+  if (mode_ != Mode::Setup) { setStatus("삼각분할은 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  op["op"] = "retriangulate";
+  int triangles = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { triangles = r.extra.value("triangles", 0); })) return false;
+  setStatus(QString("삼각형 %1개로 다시 나눴습니다. 되돌리기: Ctrl+Z").arg(triangles));
+  return true;
+}
+
+// ---------------------------------------------------------------- clip events (plugin 1.8.0)
+namespace {
+/** "int 3 · float 2.5 · "left" · 🔊 sfx-step" of a definition, key or notification payload. */
+QString payloadText(const Json& p) {
+  QStringList parts;
+  if (p.contains("int") && p.at("int").is_number()) parts << QString("int %1").arg(p.at("int").get<qint64>());
+  if (p.contains("float") && p.at("float").is_number()) parts << QString("float %1").arg(p.at("float").get<double>());
+  if (p.contains("string") && p.at("string").is_string()) parts << QString("\"%1\"").arg(qs(p.at("string").get<std::string>()));
+  if (p.contains("audio") && p.at("audio").is_string()) parts << "🔊 " + qs(p.at("audio").get<std::string>());
+  return parts.join(" · ");
+}
+}  // namespace
+
+const Json* CutoutPanel::currentEvent() const {
+  for (const auto& e : listOf(displayData(), "events")) if (qs(e.value("name", std::string())) == eventId_) return &e;
+  return nullptr;
+}
+void CutoutPanel::refreshEvents() {
+  if (!eventList_) return;
+  filling_ = true;
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
+  const Json& defs = listOf(data, "events");
+  if (!currentEvent()) eventId_ = defs.empty() ? QString() : qs(defs.front().value("name", std::string()));
+  {
+    QSignalBlocker block(eventList_);
+    eventList_->clear();
+    for (const auto& e : defs) {
+      const QString name = qs(e.value("name", std::string())), payload = payloadText(e);
+      auto* item = new QListWidgetItem(payload.isEmpty() ? name : name + " · " + payload, eventList_);
+      item->setData(Qt::UserRole, name);
+      if (name == eventId_) eventList_->setCurrentItem(item);
+    }
+  }
+  const Json* def = currentEvent();
+  auto number = [&](const char* k, double fallback) { return def && def->contains(k) && def->at(k).is_number() ? def->at(k).get<double>() : fallback; };
+  eventInt_->setValue(int(number("int", 0)));
+  eventInt_->setProperty("shown", eventInt_->value());
+  eventFloat_->setValue(number("float", 0));
+  eventFloat_->setProperty("shown", eventFloat_->value());
+  eventString_->setText(def ? qs(def->value("string", std::string())) : QString());
+  eventString_->setProperty("shown", eventString_->text());
+  eventVolume_->setValue(number("volume", 1));
+  eventVolume_->setProperty("shown", eventVolume_->value());
+  eventBalance_->setValue(number("balance", 0));
+  eventBalance_->setProperty("shown", eventBalance_->value());
+  {
+    // Project audio assets; a sound id the project no longer has stays visible (and diagnosed).
+    QSignalBlocker block(eventAudio_);
+    eventAudio_->clear();
+    eventAudio_->addItem("(소리 없음)", QString());
+    const QString audio = def ? qs(def->value("audio", std::string())) : QString();
+    if (host_)
+      for (const auto& v : host_->assets()) {
+        const QJsonObject a = v.toObject();
+        if (a.value("kind").toString() == "audio") eventAudio_->addItem(a.value("id").toString(), a.value("id").toString());
+      }
+    if (!audio.isEmpty() && eventAudio_->findData(audio) < 0) eventAudio_->addItem(audio + " (없는 에셋)", audio);
+    eventAudio_->setCurrentIndex(std::max(0, eventAudio_->findData(audio)));
+  }
+  const bool sound = def && def->contains("audio");
+  for (QWidget* w : eventEditors_) w->setEnabled(def && ((w != eventVolume_ && w != eventBalance_) || sound));
+  int keys = 0, inClip = 0;
+  for (const auto& c : listOf(data, "clips"))
+    for (const auto& k : listOf(c, "events")) {
+      const bool hit = def ? qs(k.value("name", std::string())) == eventId_ : true;
+      keys += hit;
+      inClip += hit && qs(c.value("id", std::string())) == clipId_;
+    }
+  eventInfo_->setText(defs.empty()
+      ? QString("정의 없음: 키는 아무 이름이나 쓸 수 있습니다(지금 키 %1개). 「새 이벤트」로 정의를 만들면 값과 소리를 정할 수 있습니다.").arg(keys)
+      : QString("「%1」 키 %2개 (이 클립 %3개) · 0 / 빈 값은 저장하지 않습니다(키가 덮어쓰지 않으면 0, \"\"로 전달).").arg(eventId_).arg(keys).arg(inClip));
+  eventKeyTools_->setVisible(mode_ == Mode::Animate);
+  {
+    QSignalBlocker block(eventLogList_);
+    if (eventLogList_->count() != eventLog_.size()) {
+      eventLogList_->clear();
+      eventLogList_->addItems(eventLog_);
+      eventLogList_->scrollToBottom();
+    }
+  }
+  filling_ = false;
+}
+bool CutoutPanel::selectEvent(const QString& name) {
+  bool found = false;
+  for (const auto& e : listOf(displayData(), "events")) found |= qs(e.value("name", std::string())) == name;
+  if (!found) { setStatus("없는 이벤트입니다: " + name, true); return false; }
+  eventId_ = name;
+  refreshEvents();
+  return true;
+}
+bool CutoutPanel::newEvent() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  QStringList names;
+  for (const auto& e : listOf(displayData(), "events")) names << qs(e.value("name", std::string()));
+  QString suggestion = "event";
+  for (int n = 2; names.contains(suggestion); n++) suggestion = QString("event%1").arg(n);
+  const QString name = askText("새 이벤트", "이벤트 이름 (영문·숫자·_·-, 예: footstep, hit)", suggestion);
+  if (name.isEmpty()) return false;
+  QString defined;
+  if (!runOps({{{"op", "addEventDef"}, {"name", ss(name)}}}, false, [&](const cutout::EditResult& r) {
+        eventId_ = name;
+        QStringList also;
+        for (const auto& n : r.extra.value("defined", Json::array())) also << qs(n.get<std::string>());
+        defined = also.join(", ");
+      }))
+    return false;
+  setStatus(QString("이벤트 「%1」를 만들었습니다%2. 애니메이션 모드에서 「이벤트 키」로 클립에 넣으세요.").arg(name, defined.isEmpty() ? QString() : " (키가 쓰던 " + defined + "도 정의)"));
+  return true;
+}
+bool CutoutPanel::renameEvent() {
+  if (!currentEvent()) { setStatus("이름을 바꿀 이벤트를 고르세요.", true); return false; }
+  const QString name = askText("이벤트 이름 변경", "새 이름 (모든 클립의 이 이벤트 키도 함께 바뀝니다)", eventId_);
+  if (name.isEmpty() || name == eventId_) return false;
+  qint64 renamed = 0;
+  if (!runOps({{{"op", "renameEventDef"}, {"event", ss(eventId_)}, {"name", ss(name)}}}, false, [&](const cutout::EditResult& r) {
+        eventId_ = name;
+        renamed = r.extra.value("renamedKeys", 0);
+      }))
+    return false;
+  setStatus(QString("이벤트 이름을 「%1」로 바꿨습니다(키 %2개 함께). 되돌리기: Ctrl+Z").arg(name).arg(renamed));
+  return true;
+}
+bool CutoutPanel::deleteEvent() {
+  if (!currentEvent()) { setStatus("삭제할 이벤트를 고르세요.", true); return false; }
+  int used = 0;
+  for (const auto& c : listOf(displayData(), "clips")) for (const auto& k : listOf(c, "events")) used += qs(k.value("name", std::string())) == eventId_;
+  if (used && !askConfirm("이벤트 삭제", QString("이벤트 「%1」를 쓰는 키가 %2개 있습니다. 키까지 함께 삭제할까요?").arg(eventId_).arg(used))) return false;
+  const QString name = eventId_;
+  if (!runOps({{{"op", "deleteEventDef"}, {"event", ss(name)}, {"force", used > 0}}}, false, [&](const cutout::EditResult&) { eventId_.clear(); })) return false;
+  setStatus(QString("이벤트 「%1」%2를 삭제했습니다. 되돌리기: Ctrl+Z").arg(name, used ? QString("와 키 %1개").arg(used) : QString()));
+  return true;
+}
+bool CutoutPanel::setEventField(const QString& field, const Json& value) {
+  if (!currentEvent()) { setStatus("값을 정할 이벤트를 고르세요.", true); refreshEvents(); return false; }
+  // Spine-like defaults are not stored: 0, "" and "no sound" remove the field.
+  const bool empty = value.is_null() || (value.is_number() && (field == "int" || field == "float") && value.get<double>() == 0) ||
+                     (value.is_string() && value.get<std::string>().empty());
+  const bool ok = runOps({{{"op", "setEventDef"}, {"event", ss(eventId_)}, {ss(field), empty ? Json(nullptr) : value}}}, false);
+  if (!ok) refreshEvents();
+  return ok;
+}
+bool CutoutPanel::addEventKey(int ms, const QString& nameIn) {
+  if (refusePending()) return false;
+  if (mode_ != Mode::Animate || clipId_.isEmpty()) { setStatus("이벤트 키는 애니메이션 모드에서 클립에 넣습니다.", true); return false; }
+  const int at = ms < 0 ? playheadMs_ : ms;
+  QString name = nameIn.isEmpty() ? eventId_ : nameIn;
+  if (name.isEmpty()) {
+    // No definitions: any name (the first 「새 이벤트」 later defines it).
+    name = askText("이벤트 키", "이벤트 이름 (영문·숫자·_·-)", "event");
+    if (name.isEmpty()) return false;
+  }
+  if (const Json* clip = findIn(displayData(), "clips", ss(clipId_)))
+    for (const auto& k : listOf(*clip, "events"))
+      if (k.value("timeMs", int64_t(-1)) == at && qs(k.value("name", std::string())) == name) {
+        setStatus(QString("%1ms에 이미 「%2」 이벤트 키가 있습니다.").arg(at).arg(name), true);
+        return false;
+      }
+  if (!runOps({{{"op", "setEventKey"}, {"clip", ss(clipId_)}, {"timeMs", at}, {"name", ss(name)}}}, false,
+              [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); }))
+    return false;
+  setStatus(QString("이벤트 「%1」 키를 %2ms에 넣었습니다(끌어서 이동, 더블클릭으로 값 편집). 되돌리기: Ctrl+Z").arg(name).arg(at));
+  return true;
+}
+bool CutoutPanel::editEventKey(const KeyRef& key, const EventKeyChoice& choice) {
+  if (refusePending()) return false;
+  if (key.target != "event" || clipId_.isEmpty()) { setStatus("편집할 이벤트 키를 고르세요.", true); return false; }
+  const QString name = choice.name.trimmed().isEmpty() ? key.property : choice.name.trimmed();
+  Json op = {{"op", "setEventKey"}, {"clip", ss(clipId_)}, {"timeMs", key.timeMs}, {"name", ss(key.property)}, {"newName", ss(name)},
+             {"int", choice.intValue ? Json(*choice.intValue) : Json(nullptr)}, {"float", choice.floatValue ? Json(*choice.floatValue) : Json(nullptr)},
+             {"string", choice.stringValue ? Json(ss(*choice.stringValue)) : Json(nullptr)}};
+  if (!runOps({op}, false, [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); })) return false;
+  setStatus(QString("이벤트 키 %1ms를 「%2」(%3)로 바꿨습니다. 되돌리기: Ctrl+Z").arg(key.timeMs).arg(name, choice.intValue || choice.floatValue || choice.stringValue ? "값 덮어쓰기" : "정의의 값"));
+  return true;
+}
+bool CutoutPanel::editEventKeyInteractive(const KeyRef& keyIn) {
+  KeyRef key = keyIn;
+  if (key.target.isEmpty())
+    for (const auto& k : timeView_->selection()) if (k.target == "event") { key = k; break; }
+  if (key.target != "event") { setStatus("도프시트 「이벤트」 행에서 편집할 이벤트 키를 고르세요.", true); return false; }
+  const Json* clip = findIn(displayData(), "clips", ss(clipId_));
+  const Json* found = nullptr;
+  if (clip) for (const auto& k : listOf(*clip, "events")) if (!found && k.value("timeMs", int64_t(-1)) == key.timeMs && qs(k.value("name", std::string())) == key.property) found = &k;
+  if (!found) { setStatus("그 시간에 이벤트 키가 없습니다.", true); return false; }
+  EventKeyChoice choice;
+  choice.name = key.property;
+  if (found->contains("int") && found->at("int").is_number()) choice.intValue = found->at("int").get<qint64>();
+  if (found->contains("float") && found->at("float").is_number()) choice.floatValue = found->at("float").get<double>();
+  if (found->contains("string") && found->at("string").is_string()) choice.stringValue = qs(found->at("string").get<std::string>());
+  timeView_->setSelection({key});
+  if (!askEventKey || !askEventKey(choice)) return false;
+  return editEventKey(key, choice);
+}
+bool CutoutPanel::runEventKeyDialog(EventKeyChoice& choice) {
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
+  const Json& defs = listOf(data, "events");
+  QDialog dialog(this);
+  dialog.setObjectName("cutoutEventKeyDialog");
+  dialog.setWindowTitle("이벤트 키");
+  auto* form = new QFormLayout(&dialog);
+  auto* name = new QComboBox;
+  name->setObjectName("cutoutEventKeyName");
+  for (const auto& e : defs) name->addItem(qs(e.value("name", std::string())));
+  name->setEditable(defs.empty());  // without definitions any name works
+  if (name->findText(choice.name) < 0) name->addItem(choice.name);
+  name->setCurrentText(choice.name);
+  form->addRow("이벤트", name);
+  auto* intOn = new QCheckBox("int");
+  intOn->setObjectName("cutoutEventKeyIntOn");
+  auto* intValue = new QSpinBox;
+  intValue->setObjectName("cutoutEventKeyInt");
+  intValue->setRange(-2147483647, 2147483647);
+  auto* floatOn = new QCheckBox("float");
+  floatOn->setObjectName("cutoutEventKeyFloatOn");
+  auto* floatValue = new QDoubleSpinBox;
+  floatValue->setObjectName("cutoutEventKeyFloat");
+  floatValue->setRange(-1e6, 1e6);
+  floatValue->setDecimals(4);
+  auto* stringOn = new QCheckBox("string");
+  stringOn->setObjectName("cutoutEventKeyStringOn");
+  auto* stringValue = new QLineEdit;
+  stringValue->setObjectName("cutoutEventKeyString");
+  stringValue->setMaxLength(1000);
+  auto* defaults = new QLabel;
+  defaults->setObjectName("cutoutEventKeyDefaults");
+  defaults->setStyleSheet("color:#a7b4c2;");
+  // Unchecked fields show (and send) the definition's value: only checked ones are the key's own.
+  auto showDefaults = [&defs, defaults, name] {
+    Json def = Json::object();
+    for (const auto& e : defs) if (qs(e.value("name", std::string())) == name->currentText()) def = e;
+    const QString text = payloadText(def);
+    defaults->setText("정의의 값: " + (text.isEmpty() ? QString("없음 (0, 0, \"\")") : text));
+  };
+  showDefaults();
+  connect(name, &QComboBox::currentTextChanged, &dialog, [showDefaults] { showDefaults(); });
+  intOn->setChecked(choice.intValue.has_value());
+  intValue->setValue(int(choice.intValue.value_or(0)));
+  floatOn->setChecked(choice.floatValue.has_value());
+  floatValue->setValue(choice.floatValue.value_or(0));
+  stringOn->setChecked(choice.stringValue.has_value());
+  stringValue->setText(choice.stringValue.value_or(QString()));
+  for (auto [on, field] : {std::pair<QCheckBox*, QWidget*>{intOn, intValue}, {floatOn, floatValue}, {stringOn, stringValue}}) {
+    field->setEnabled(on->isChecked());
+    connect(on, &QCheckBox::toggled, field, &QWidget::setEnabled);
+    form->addRow(on, field);
+  }
+  form->addRow(defaults);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+  connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  form->addRow(buttons);
+  if (dialog.exec() != QDialog::Accepted) return false;
+  choice.name = name->currentText().trimmed();
+  choice.intValue = intOn->isChecked() ? std::optional<qint64>(intValue->value()) : std::nullopt;
+  choice.floatValue = floatOn->isChecked() ? std::optional<double>(floatValue->value()) : std::nullopt;
+  choice.stringValue = stringOn->isChecked() ? std::optional<QString>(stringValue->text()) : std::nullopt;
+  return true;
+}
+void CutoutPanel::logEvent(const QString& source, const QString& clip, double timeMs, const QString& name, const Json& payload) {
+  const QString payloadPart = payloadText(payload);
+  const QString at = timeMs >= 0 ? QString(" %1ms").arg(int(std::floor(timeMs))) : QString();
+  const QString line = QString("%1 · %2%3 · %4%5").arg(source, clip, at, name, payloadPart.isEmpty() ? QString() : " (" + payloadPart + ")");
+  eventLog_ << line;
+  while (eventLog_.size() > 200) eventLog_.removeFirst();
+  if (eventFlash_) eventFlash_->setText("◆ " + name);
+  if (eventLogList_) {
+    QSignalBlocker block(eventLogList_);
+    eventLogList_->addItem(line);
+    while (eventLogList_->count() > eventLog_.size()) delete eventLogList_->takeItem(0);
+    eventLogList_->scrollToBottom();
+  }
+}
+void CutoutPanel::clearEventLog() {
+  eventLog_.clear();
+  if (eventLogList_) eventLogList_->clear();
+  if (eventFlash_) eventFlash_->clear();
+}
+void CutoutPanel::firePlaybackEvents(double from, double to, bool toInclusive) {
+  if (!rig_) return;
+  const int ci = rig_->clipIndex(ss(clipId_));
+  if (ci < 0) return;
+  // Same half-open rule as the runtime: an event at t fires once when playback crosses [t, t+dt).
+  for (const auto& e : rig_->clips[size_t(ci)].events) {
+    const double t = double(e.timeMs);
+    if (t >= from && (t < to || (toInclusive && t == to))) logEvent("재생", clipId_, t, qs(e.name), e.payload);
+  }
 }
 
 // ---------------------------------------------------------------- playback
@@ -4489,17 +5820,26 @@ void CutoutPanel::tick() {
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   const double dt = std::clamp(double(now - lastTick_), 0.0, 250.0);
   lastTick_ = now;
+  advancePlayback(manualClock_ ? 0 : dt);
+}
+void CutoutPanel::advancePlayback(double dt) {
+  dt = std::clamp(dt, 0.0, 250.0);
   if (playing_ && rig_) {
     const int ci = rig_->clipIndex(ss(clipId_));
     if (ci >= 0) {
       const double d = double(rig_->clips[size_t(ci)].durationMs);
       // The editor-only loop range narrows playback to [in, out] (whole clip by default).
       const double lo = timeView_->loopActive() ? timeView_->loopIn() : 0, hi = timeView_->loopActive() ? std::min<double>(timeView_->loopOut(), d) : d;
+      const double from = playheadExact_;
       playheadExact_ += dt * speedCombo_->currentData().toDouble();
+      // Events fire once per pass over their time (the preview log); scrubbing never gets here.
       if (playheadExact_ > hi) {
-        if (loopPreview_->isChecked() && hi > lo) playheadExact_ = lo + std::fmod(playheadExact_ - lo, hi - lo);
-        else { playheadExact_ = hi; playButton_->setChecked(false); }
-      }
+        if (loopPreview_->isChecked() && hi > lo) {
+          playheadExact_ = lo + std::fmod(playheadExact_ - lo, hi - lo);
+          firePlaybackEvents(from, hi, false);
+          firePlaybackEvents(lo, playheadExact_, false);
+        } else { firePlaybackEvents(from, hi, true); playheadExact_ = hi; playButton_->setChecked(false); }
+      } else if (dt > 0) firePlaybackEvents(from, playheadExact_, false);
       playheadMs_ = int(playheadExact_);
       timeView_->setPlayhead(playheadMs_);
       timeView_->reveal(playheadMs_);
@@ -4508,7 +5848,9 @@ void CutoutPanel::tick() {
   }
   if (bottomTabs_->currentIndex() == 1 && preview_) {
     preview_->update(dt);
-    preview_->takeNotifications();  // presentation only; nothing reaches the game
+    // Presentation only; nothing reaches the game. Clip events go to the preview log.
+    for (const auto& n : preview_->takeNotifications())
+      if (n.kind == "event") logEvent("게임 연결", qs(n.clip), -1, qs(n.name), n.payload);
   }
   updateCanvas();
 }

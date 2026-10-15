@@ -7,7 +7,7 @@ set(RAISING_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." CACHE PATH "Engine r
 
 # Qt/SDL independent evaluation and playback core.
 add_library(cutout_core STATIC core/src/rig.cpp core/src/runtime.cpp core/src/host.cpp core/src/signals.cpp
-  core/src/editing.cpp core/src/templates.cpp core/src/curve.cpp)
+  core/src/editing.cpp core/src/templates.cpp core/src/curve.cpp core/src/mesh.cpp)
 target_include_directories(cutout_core PUBLIC core/include "${RAISING_ENGINE_ROOT}/native/vendor")
 set_target_properties(cutout_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MINGW)
@@ -22,7 +22,9 @@ if(EMSCRIPTEN)
   target_link_libraries(cutout-runtime PRIVATE cutout_core)
   set_target_properties(cutout-runtime PROPERTIES SUFFIX ".mjs")
   target_link_options(cutout-runtime PRIVATE -fexceptions -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,node -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1MB
-    -sEXPORTED_FUNCTIONS=_raising_extension_request,_raising_extension_api_version,_malloc,_free -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORT_NAME=createCutoutRuntime)
+    -sEXPORTED_FUNCTIONS=_raising_extension_request,_raising_extension_api_version,_malloc,_free -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,stringToUTF8,lengthBytesUTF8,UTF8ToString -sEXPORT_NAME=createCutoutRuntime)
+  # stringToUTF8 & co. (plugin 1.9.0): hosts pass large requests (a big rig in `init` / `validate`)
+  # through _malloc'd heap memory; cwrap 'string' arguments are copied onto the 1 MB stack and overflow it.
   return()
 endif()
 
