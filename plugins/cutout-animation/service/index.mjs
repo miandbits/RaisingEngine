@@ -6,6 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { ATLAS_DEFAULTS, attachmentsOf, buildAtlas, decodePng } from './atlas.mjs';
+import { importLayers } from './layer-import.mjs';
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RIG_SENTINEL = '#rig';
@@ -236,12 +237,22 @@ export async function createService({ pluginDir, manifest }) {
 
   /**
    * Pass-through to the core JSON ops (validate, sample, template, edit, …). Never writes project
-   * files; the only read is the PNG an `edit` → `autoOutline` names by `imagePath` (decoded here
-   * into the op's `mask`, plugin 1.6.0).
+   * files; the only reads are the PNG an `edit` → `autoOutline` names by `imagePath` (decoded here
+   * into the op's `mask`, plugin 1.6.0) and the layered file of `importLayers` (plugin 1.11.0).
    */
   async function call(op, payload = {}) {
     if (typeof op !== 'string' || !/^[a-zA-Z][a-zA-Z0-9]{0,63}$/.test(op)) throw new Error('잘못된 플러그인 명령입니다.');
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('플러그인 명령 인자는 객체여야 합니다.');
+    // Layer import preview (plugin 1.11.0) without the project: `target: {id, rig}` re-imports onto
+    // that rig data; `includeImages` also encodes the PNGs (base64). Applying it with its images is
+    // the host's job (Qt pluginImport / MCP plugin_import, which run prepareImport below).
+    if (op === 'importLayers') {
+      const { target, includeImages, ...rest } = payload;
+      if (target !== undefined && !(target && typeof target === 'object' && typeof target.id === 'string' && target.rig && typeof target.rig === 'object')) throw new Error('target은 {id, rig}입니다.');
+      const result = await importLayers({ payload: target ? { ...rest, rig: target.id } : rest, documents: target ? [{ type: 'rig', id: target.id, data: target.rig }] : [],
+        dryRun: includeImages !== true, validateRig: rigDiagnostics });
+      return { ok: true, ...result.report, documents: result.documents, images: result.images.map(i => ({ id: i.id, png: Buffer.from(i.bytes).toString('base64') })) };
+    }
     const body = { ...payload, op };
     if (op === 'edit' && body.operation && typeof body.operation === 'object') {
       body.operation = structuredClone(body.operation);
@@ -299,5 +310,22 @@ export async function createService({ pluginDir, manifest }) {
       report: { atlas: true, pages: atlas.pages.map(p => ({ id: pageId(p.index), width: p.width, height: p.height, bytes: p.png.length })), packed: atlas.packed, skipped: atlas.skipped },
     };
   }
-  return { validate, call, requiredHostFeatures, prepareExport };
+  /** Core diagnostics of one rig (no controllers): what the layer import checks before returning. */
+  function rigDiagnostics(data) {
+    const reply = validateRig(data, []);
+    if (!reply.ok) return [{ severity: 'error', pointer: '', code: 'ANIM_CORE', message: String(reply.error) }];
+    return (reply.diagnostics ?? []).map(d => ({ ...d, pointer: String(d.pointer).replace(/^\/data/, '') }));
+  }
+  /**
+   * Import hook (packages/plugin-host CONTRACT.md §11, plugin 1.11.0): op `importLayers` — a
+   * layered PSD/PSB or a PNG folder into a new character (rig + controller) or onto an existing
+   * rig (`payload.rig`). Reads only the named source file(s); the host publishes the images and
+   * applies the documents as one edit.
+   */
+  async function prepareImport({ op, payload, dryRun, documents }) {
+    if (op !== 'importLayers') throw new Error(`알 수 없는 가져오기 명령입니다: ${op}`);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('가져오기 인자는 객체여야 합니다.');
+    return importLayers({ payload, documents: (documents ?? []).filter(d => d?.type === 'rig' || d?.type === 'controller'), dryRun: dryRun === true, validateRig: rigDiagnostics });
+  }
+  return { validate, call, requiredHostFeatures, prepareExport, prepareImport };
 }

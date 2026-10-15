@@ -258,6 +258,59 @@ QJsonObject trackOf(const QJsonObject &instance, int track) {
     if (v.toObject().value("track").toInt() == track) return v.toObject();
   return {};
 }
+/**
+ * Minimal layered PSD (8-bit RGB, raw channels) for the PSD import step (plugin 1.11.0): a body,
+ * a "head" group (section dividers) with a face and two eye variants, the closed one hidden.
+ * Record layout as in Adobe's file format spec; the service's reader is tested far more widely
+ * in tests/plugins/cutout-layer-import.test.mjs.
+ */
+QByteArray layeredPsd(int width, int height) {
+  struct Layer { QString name; QRect rect; QColor color; bool hidden; int section; };  // section: 0 layer, 3 divider, 1 folder
+  const QList<Layer> layers{{"body", QRect(60, 140, 80, 160), QColor(200, 60, 40), false, 0},
+                            {"</Layer group>", QRect(), QColor(), false, 3},
+                            {"face", QRect(70, 40, 60, 70), QColor(240, 200, 160), false, 0},
+                            {"eyes/closed", QRect(80, 72, 40, 6), QColor(10, 10, 10), true, 0},
+                            {"eyes/open", QRect(80, 66, 40, 12), QColor(30, 30, 200), false, 0},
+                            {"head", QRect(), QColor(), false, 1}};
+  QByteArray records, channels;
+  QDataStream r(&records, QIODevice::WriteOnly), c(&channels, QIODevice::WriteOnly);
+  for (const auto &l : layers) {
+    const int w = l.rect.width(), h = l.rect.height();
+    r << qint32(l.rect.top()) << qint32(l.rect.left()) << qint32(l.rect.top() + h) << qint32(l.rect.left() + w) << quint16(4);
+    for (qint16 id : {qint16(-1), qint16(0), qint16(1), qint16(2)}) r << id << quint32(2 + w * h);
+    r.writeRawData("8BIM", 4);
+    r.writeRawData(l.section == 1 ? "pass" : "norm", 4);
+    r << quint8(255) << quint8(0) << quint8(l.hidden ? 2 : 0) << quint8(0);
+    QByteArray name = l.name.toLatin1(), extra;
+    QDataStream e(&extra, QIODevice::WriteOnly);
+    e << quint32(0) << quint32(0) << quint8(name.size());
+    e.writeRawData(name.constData(), int(name.size()));
+    for (int pad = (4 - (1 + int(name.size())) % 4) % 4; pad > 0; pad--) e << quint8(0);
+    if (l.section) { e.writeRawData("8BIM", 4); e.writeRawData("lsct", 4); e << quint32(4) << quint32(l.section); }
+    r << quint32(extra.size());
+    r.writeRawData(extra.constData(), int(extra.size()));
+    for (int channel : {3, 0, 1, 2}) {
+      c << quint16(0);
+      const int value = channel == 3 ? 255 : channel == 0 ? l.color.red() : channel == 1 ? l.color.green() : l.color.blue();
+      for (int i = 0; i < w * h; i++) c << quint8(value);
+    }
+  }
+  QByteArray info;
+  QDataStream i(&info, QIODevice::WriteOnly);
+  i << qint16(-int(layers.size()));
+  i.writeRawData(records.constData(), int(records.size()));
+  i.writeRawData(channels.constData(), int(channels.size()));
+  if (info.size() % 2) i << quint8(0);
+  QByteArray out;
+  QDataStream o(&out, QIODevice::WriteOnly);
+  o.writeRawData("8BPS", 4);
+  o << quint16(1) << quint32(0) << quint16(0) << quint16(3) << quint32(height) << quint32(width) << quint16(8) << quint16(3) << quint32(0) << quint32(0);
+  o << quint32(4 + info.size() + 4) << quint32(info.size());
+  o.writeRawData(info.constData(), int(info.size()));
+  o << quint32(0) << quint16(0);  // no global mask info; raw merged image (unused by the import)
+  for (int k = 0; k < 3 * width * height; k++) o << quint8(255);
+  return out;
+}
 bool copyTree(const QString &from, const QString &to) {
   QDir source(from);
   if (!QDir().mkpath(to)) return false;
@@ -1209,6 +1262,61 @@ void StudioTests::cutoutEndToEnd() {
           QVERIFY2(QFileInfo::exists(exported[target] + "/assets/" + atlas.value("page").toString() + ".png"), qPrintable(atlas.value("page").toString()));
         }
     QVERIFY2(regions >= 8, qPrintable(QString("%1 atlas regions in the %2 export").arg(regions).arg(target)));
+  }
+
+  // ---- 11. PSD 가져오기 (plugin 1.11.0): layered art -> a new character in ONE edit ---------
+  step("11 psd import");
+  {
+    if (w->currentWorkspace() != WORKSPACE) w->findChild<QAction *>("studioWorkspace-cutout-animation-character")->trigger();
+    QVERIFY(waitFor([&] { return w->currentWorkspace() == WORKSPACE; }, 3000));
+    const QString psdFile = work + "/art-" + stamp + "/psd-hero.psd", psdRig = "plugins/cutout-animation/rig/psd-hero.json";
+    QVERIFY(QDir().mkpath(QFileInfo(psdFile).path()));
+    {
+      QFile f(psdFile);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write(layeredPsd(200, 320));
+    }
+    const int revision = w->currentView().value("revision").toInt();
+    bool previewed = false;
+    onModal(&pollers, &errors, "psd file dialog", isFileDialog, [&](QWidget *f) { chooseFile(f, psdFile, &hooks); });
+    onModal(&pollers, &errors, "layer import dialog", [](QWidget *m) { return m->objectName() == "cutoutLayerImportDialog"; }, [&](QWidget *d) {
+      auto layersTree = d->findChild<QTreeWidget *>("cutoutLayerImportTree");
+      auto id = d->findChild<QLineEdit *>("cutoutLayerImportId");
+      int rows = 0;
+      for (QTreeWidgetItemIterator it(layersTree); *it; ++it) rows++;
+      previewed = rows == 5 && id && id->text() == "psd-hero" && layersTree->topLevelItem(0)->text(0) == "head" &&
+                  d->findChild<QLabel *>("cutoutLayerImportSummary")->text().contains(QString::fromUtf8("첨부 4(숨김 1)"));
+      if (!previewed) errors << "layer import preview: rows " + QString::number(rows) + " / " + d->findChild<QLabel *>("cutoutLayerImportSummary")->text();
+      d->grab().save(evidence + "/09-layer-import-dialog.png");
+      QTest::mouseClick(d->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok), Qt::LeftButton);
+    });
+    click("cutoutImportLayers");
+    QVERIFY2(waitFor([&] { return !w->busy() && !pluginData(w->currentView(), psdRig).isEmpty(); }, 40000), qPrintable(w->lastError + noErrors()));
+    QVERIFY(settle());
+    QVERIFY2(previewed && errors.isEmpty(), qPrintable(noErrors()));
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);  // the preview changed nothing, the import is one edit
+    const auto imported = pluginData(w->currentView(), psdRig);
+    QCOMPARE(slotOrder(imported), QStringList({"body", "face", "eyes"}));
+    QCOMPARE(byId(imported.value("slots").toArray(), "eyes").value("attachment").toString(), QString("open"));
+    QVERIFY(!attachment(imported, "eyes", "closed").isEmpty());
+    QCOMPARE(byId(imported.value("bones").toArray(), "head").value("parent").toString(), QString("root"));
+    QCOMPARE(attachment(imported, "body", "body").value("width").toInt(), 82);  // trimmed + 1 px ring
+    for (auto a : imported.value("attachments").toArray())
+      QVERIFY2(QFileInfo::exists(projectRoot + "/assets/" + a.toObject().value("imageAssetId").toString() + ".png"), qPrintable(a.toObject().value("imageAssetId").toString()));
+    QVERIFY(!pluginData(w->currentView(), "plugins/cutout-animation/controller/psd-hero.json").isEmpty());
+    QVERIFY2(status->text().contains(QString::fromUtf8("가져옴")), qPrintable(status->text()));
+    QVERIFY(waitFor([&] { return panel->findChild<QTreeWidget *>("cutoutCharacterList")->topLevelItemCount() == 2; }, 3000));
+    for (auto d : w->currentView().value("diagnostics").toArray())
+      QVERIFY2(!(d.toObject().value("severity") == "error" && d.toObject().value("file").toString().contains("psd-hero")), qPrintable(d.toObject().value("message").toString()));
+    QVERIFY(shot("10-psd-imported.png"));
+    // One 되돌리기 removes the character (rig, controller, asset entries); 다시 실행 brings it back.
+    menuClick(w->findChild<QAction *>("undoEdit"), &hooks, "되돌리기");
+    QVERIFY(waitFor([&] { return !w->busy() && pluginData(w->currentView(), psdRig).isEmpty(); }));
+    QVERIFY(settle());
+    menuClick(w->findChild<QAction *>("redoEdit"), &hooks, "다시 실행");
+    QVERIFY(waitFor([&] { return !w->busy() && pluginData(w->currentView(), psdRig) == imported; }));
+    QVERIFY(settle());
+    QVERIFY2(saveProject(), qPrintable(w->lastError));
   }
 
   // Hand-off for the browser / exported-player checks and the reusable demo copy.

@@ -26,6 +26,10 @@ class MockHost : public raising::StudioHost {
   QMap<QString, QMenu*> menus;
   raising::StudioPlugin* plugin = nullptr;
   QString root;
+  /** `pluginImport` (plugin 1.11.0 layer import): the test plays the service op; members of its
+   *  result go into the reply. Every request's params are kept. */
+  std::function<QJsonObject(const QJsonObject&)> pluginImport;
+  QList<QJsonObject> pluginImports;
 
   QJsonObject view() const override {
     // Diagnostics are recomputed only when the documents change (a real host caches its view too),
@@ -73,6 +77,10 @@ class MockHost : public raising::StudioHost {
       const QString id = "img-" + QFileInfo(file).completeBaseName().toLower();
       assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", "assets/" + QFileInfo(file).fileName()}, {"absolutePath", file}});
       reply["importedAssetId"] = id;
+    } else if (method == "pluginImport") {
+      pluginImports << params;
+      const QJsonObject result = pluginImport ? pluginImport(params) : QJsonObject{{"error", "no import"}};
+      for (auto it = result.begin(); it != result.end(); ++it) reply[it.key()] = it.value();
     }
     reply["view"] = view();
     if (plugin) plugin->viewChanged();
@@ -3802,6 +3810,196 @@ class StudioTests : public QObject {
     redo();
     QVERIFY(panel->hasSettingsDocument() && !enabled->isChecked());
     undo();
+  }
+
+  /**
+   * PSD 가져오기 (plugin 1.11.0): button and palette command, file -> preview request (dryRun) ->
+   * LayerImportDialog (layer tree with include boxes, mapping columns, warnings, options, 미리 보기
+   * 갱신) -> ONE import request = one host edit; undo/redo; re-import of the same file defaults to
+   * updating that character; cancel and refused files change nothing. The mock host plays the
+   * service op (its real mapping is tested in tests/plugins/cutout-layer-import.test.mjs).
+   */
+  void layerImportDialog() {
+    const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
+    const auto keepHistory = host.history, keepFuture = host.future;
+    const QString keepRig = panel->rigId(), keepClip = panel->clipId();
+    const auto keepMode = panel->mode();
+    auto restore = qScopeGuard([&] {
+      host.documents = keepDocuments; host.assetList = keepAssets; host.history = keepHistory; host.future = keepFuture; host.revision++;
+      host.pluginImport = nullptr;
+      panel->askLayerFile = nullptr;
+      plugin.viewChanged();
+      panel->selectRig(keepRig);
+      panel->selectClip(keepClip);
+      panel->setMode(keepMode);
+      pump();
+    });
+    const QString psd = dir.filePath("psdhero.psd");
+    const QString bodyPng = png("psd-body", QSize(40, 60), Qt::red), facePng = png("psd-face", QSize(30, 30), Qt::yellow), eyesPng = png("psd-eyes", QSize(16, 6), Qt::blue);
+    // The "PSD": body, a head group with face and two eye variants (closed hidden). Keys like the service's.
+    auto layer = [](const QString& key, const QString& name, const QString& role, const QString& bone, const QString& slot, const QString& att, bool visible, bool setup) {
+      return QJsonObject{{"key", key}, {"name", name}, {"kind", "layer"}, {"visible", visible}, {"opacity", 1}, {"include", true}, {"role", role}, {"bone", bone},
+                         {"slot", slot}, {"attachment", att}, {"setup", setup}, {"status", "add"}, {"warnings", QJsonArray()},
+                         {"bounds", QJsonObject{{"x", 10}, {"y", 10}, {"width", 20}, {"height", 20}}}};
+    };
+    auto report = [&](const QJsonObject& payload, bool update) {
+      QSet<QString> out;
+      for (const auto& k : payload.value("exclude").toArray()) out << k.toString();
+      QJsonObject head{{"key", "1"}, {"name", "Head"}, {"kind", "group"}, {"visible", true}, {"include", !out.contains("1")}, {"role", out.contains("1") ? "excluded" : "bone"}, {"bone", "head"}, {"warnings", QJsonArray()}};
+      head["children"] = QJsonArray{layer("1.0", "face", "image", "head", "face", "face", true, true),
+                                    layer("1.1", "eyes/closed", out.contains("1.1") ? "excluded" : "image", "head", "eyes", "closed", false, false),
+                                    layer("1.2", "eyes/open", "image", "head", "eyes", "open", true, true)};
+      const int attachments = 4 - out.contains("1.1");
+      return QJsonObject{{"mode", update ? "update" : "create"}, {"rigId", update ? payload.value("rig").toString() : payload.value("id").toString()},
+                         {"source", QJsonObject{{"format", "psd"}, {"file", "psdhero.psd"}, {"width", 200}, {"height", 300}}},
+                         {"layers", QJsonArray{layer("0", "body", "image", "root", "body", "body", true, true), head}},
+                         {"warnings", QJsonArray{QJsonObject{{"code", "ANIM_IMPORT_MASK"}, {"message", "'body': 레이어 마스크는 무시됩니다."}, {"layer", "0"}}}},
+                         {"summary", QJsonObject{{"bones", 1}, {"slots", 3}, {"attachments", attachments}, {"hidden", attachments - 3}, {"added", update ? 1 : attachments}, {"updated", update ? 1 : 0}, {"unchanged", update ? 2 : 0}}},
+                         {"changes", QJsonObject{{"attachments", QJsonObject{{"missing", QJsonArray()}}}}}};
+    };
+    auto envelope = [](const char* type, const QString& id, const QJsonObject& data) {
+      return QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", "cutout-animation"}, {"type", type}, {"id", id}, {"data", data}};
+    };
+    host.pluginImport = [&](const QJsonObject& params) -> QJsonObject {
+      const QJsonObject payload = params.value("payload").toObject();
+      if (payload.value("file").toString().endsWith("deep.psd")) return {{"error", "16비트 PSD는 지원하지 않습니다. 8비트로 바꿔 저장하세요."}};
+      const bool update = payload.contains("rig");
+      if (params.value("dryRun").toBool()) return {{"pluginImport", QJsonObject{{"dryRun", true}, {"changed", false}, {"report", report(payload, update)}}}};
+      // The import: pictures + rig (+ controller) as ONE batch edit, like importPluginContent.
+      for (const auto& [id, file] : {std::pair{"image-psd-body", bodyPng}, {"image-psd-face", facePng}, {"image-psd-eyes", eyesPng}})
+        if (std::none_of(host.assetList.begin(), host.assetList.end(), [&](const QJsonValue& a) { return a.toObject().value("id") == id; }))
+          host.assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", QString("assets/%1.png").arg(id)}, {"absolutePath", file}});
+      const QString id = update ? payload.value("rig").toString() : payload.value("id").toString();
+      QJsonArray attachments{QJsonObject{{"slot", "body"}, {"name", "body"}, {"imageAssetId", "image-psd-body"}, {"width", 40}, {"height", 60}, {"x", 0}, {"y", -30}},
+                             QJsonObject{{"slot", "face"}, {"name", "face"}, {"imageAssetId", "image-psd-face"}, {"width", 30}, {"height", 30}},
+                             QJsonObject{{"slot", "eyes"}, {"name", "open"}, {"imageAssetId", "image-psd-eyes"}, {"width", 16}, {"height", 6}}};
+      bool excludedClosed = false;
+      for (const auto& k : payload.value("exclude").toArray()) excludedClosed |= k.toString() == "1.1";
+      if (!excludedClosed || update) attachments.append(QJsonObject{{"slot", "eyes"}, {"name", "closed"}, {"imageAssetId", "image-psd-eyes"}, {"width", 16}, {"height", 6}});
+      QJsonObject rig{{"schemaVersion", 1}, {"name", id}, {"canvas", QJsonObject{{"width", 200}, {"height", 300}, {"originX", 100}, {"originY", 300}}},
+                      {"bones", QJsonArray{QJsonObject{{"id", "root"}, {"parent", QJsonValue()}, {"x", 100}, {"y", 300}}, QJsonObject{{"id", "head"}, {"parent", "root"}, {"y", -90}}}},
+                      {"slots", QJsonArray{QJsonObject{{"id", "body"}, {"bone", "root"}, {"attachment", "body"}}, QJsonObject{{"id", "face"}, {"bone", "head"}, {"attachment", "face"}},
+                                           QJsonObject{{"id", "eyes"}, {"bone", "head"}, {"attachment", "open"}}}},
+                      {"attachments", attachments}, {"clips", QJsonArray{QJsonObject{{"id", "idle"}, {"durationMs", 1000}, {"loop", true}, {"tracks", QJsonArray()}}}},
+                      {"editor", QJsonObject{{"layerImport", QJsonObject{{"source", "psdhero.psd"}, {"format", "psd"}, {"layers", QJsonObject()}}}}}};
+      QJsonArray edits;
+      const QString rigFile = QString("plugins/cutout-animation/rig/%1.json").arg(id);
+      if (update) {
+        QJsonObject current;
+        for (const auto& d : host.documents) if (d.toObject().value("file") == rigFile) current = d.toObject().value("data").toObject().value("data").toObject();
+        rig["bones"] = current.value("bones");  // re-import keeps bones (and keys)
+        rig["clips"] = current.value("clips");
+        edits.append(QJsonObject{{"type", "replace"}, {"file", rigFile}, {"data", envelope("rig", id, rig)}});
+      } else {
+        edits.append(QJsonObject{{"type", "create"}, {"file", rigFile}, {"data", envelope("rig", id, rig)}});
+        edits.append(QJsonObject{{"type", "create"}, {"file", QString("plugins/cutout-animation/controller/%1.json").arg(id)},
+                                 {"data", envelope("controller", id, QJsonObject{{"schemaVersion", 1}, {"rig", id}, {"defaultClip", "idle"}, {"layers", QJsonArray()}, {"bindings", QJsonArray()}})}});
+      }
+      const QJsonObject batch{{"type", "batch"}, {"edits", edits}};
+      host.edits++; host.lastEdit = batch;
+      host.lastError = host.apply(batch);
+      if (!host.lastError.isEmpty()) return {{"error", host.lastError}};
+      return {{"pluginImport", QJsonObject{{"dryRun", false}, {"changed", true}, {"report", report(payload, update)}, {"files", QJsonArray{rigFile}}}}};
+    };
+
+    // Button + palette command + plugin menu entry.
+    QVERIFY(find<QPushButton>("cutoutImportLayers"));
+    QVERIFY(host.mainWindow.findChild<QAction*>("cutoutImportLayersAction"));
+    QVERIFY(!panel->findCommands("PSD 가져오기").isEmpty() && panel->findCommands("PSD 가져오기").first().id == "cutoutImportLayers");
+    // Cancelled file dialog: nothing is asked of the host.
+    panel->askLayerFile = [] { return QString(); };
+    QVERIFY(gesture("psd import: no file", 0, [&] { click("cutoutImportLayers"); }));
+    QVERIFY(host.pluginImports.isEmpty());
+
+    // New character: the dialog shows the tree, mapping, warnings; leave out the closed eyes, refresh, import.
+    panel->askLayerFile = [&] { return psd; };
+    bool shown = false;
+    onDialog("cutoutLayerImportDialog", [&](QDialog* d) {
+      auto* tree = d->findChild<QTreeWidget*>("cutoutLayerImportTree");
+      auto* id = d->findChild<QLineEdit*>("cutoutLayerImportId");
+      auto* target = d->findChild<QComboBox*>("cutoutLayerImportTarget");
+      auto* warnings = d->findChild<QListWidget*>("cutoutLayerImportWarnings");
+      if (!tree || !id || !target || !warnings || !d->findChild<QComboBox*>("cutoutLayerImportOrigin") || !d->findChild<QCheckBox*>("cutoutLayerImportTrim") ||
+          !d->findChild<QDoubleSpinBox*>("cutoutLayerImportScale") || !d->findChild<QLabel*>("cutoutLayerImportSummary")) return false;
+      shown = id->text() == "psdhero" && target->currentData().toString().isEmpty() && warnings->count() == 1 && warnings->item(0)->text().contains("마스크");
+      // Photoshop order: front first, so Head (key 1) is the first row and body (key 0) the second.
+      QTreeWidgetItem* head = tree->topLevelItem(0);
+      shown = shown && tree->topLevelItemCount() == 2 && head->text(0) == "Head" && head->text(1) == "본" && head->childCount() == 3;
+      QTreeWidgetItem* closed = nullptr;
+      for (int i = 0; head && i < head->childCount(); i++) if (head->child(i)->text(0).startsWith("eyes/closed")) closed = head->child(i);
+      shown = shown && closed && closed->text(0).contains("(숨김)") && closed->text(3) == "eyes" && closed->text(4) == "closed" && closed->checkState(0) == Qt::Checked;
+      if (closed) closed->setCheckState(0, Qt::Unchecked);
+      d->findChild<QPushButton*>("cutoutLayerImportRefresh")->click();  // second preview with the exclusion
+      for (int i = 0; i < tree->topLevelItem(0)->childCount(); i++)
+        if (tree->topLevelItem(0)->child(i)->text(0).startsWith("eyes/closed")) shown = shown && tree->topLevelItem(0)->child(i)->text(1) == "빼기";
+      shown = shown && d->findChild<QLabel*>("cutoutLayerImportSummary")->text().contains("첨부 3");
+      return true;
+    });
+    QVERIFY(gesture("psd import: new character", 1, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(shown);
+    QCOMPARE(host.pluginImports.size(), 3);
+    QVERIFY(host.pluginImports[0].value("dryRun").toBool() && host.pluginImports[1].value("dryRun").toBool() && !host.pluginImports[2].value("dryRun").toBool());
+    const QJsonObject sent = host.pluginImports[2].value("payload").toObject();
+    QCOMPARE(host.pluginImports[2].value("plugin").toString(), QString("cutout-animation"));
+    QCOMPARE(host.pluginImports[2].value("op").toString(), QString("importLayers"));
+    QCOMPARE(sent.value("file").toString(), psd);
+    QCOMPARE(sent.value("id").toString(), QString("psdhero"));
+    QCOMPARE(sent.value("exclude").toArray(), QJsonArray{"1.1"});
+    QCOMPARE(sent.value("origin").toString(), QString("bottom-center"));
+    QVERIFY(sent.value("trim").toBool() && sent.value("scale").toDouble() == 1 && !sent.contains("rig"));
+    QCOMPARE(panel->rigId(), QString("psdhero"));
+    QVERIFY2(panel->status().contains("가져옴") && panel->status().contains("Ctrl+Z"), qPrintable(panel->status()));
+    { const Json r = host.data("rig", "psdhero"); QCOMPARE(int(r["attachments"].size()), 3); QVERIFY(!host.data("controller", "psdhero").is_null()); }
+    QCOMPARE(panel->lastLayerImport().value("changed").toBool(), true);
+    // One undo removes the whole import; redo restores it.
+    undo();
+    QVERIFY(host.data("rig", "psdhero").is_null() && host.data("controller", "psdhero").is_null());
+    redo();
+    QVERIFY(!host.data("rig", "psdhero").is_null());
+    pump();
+
+    // Re-import of the same file with that character selected: the dialog defaults to updating it.
+    panel->selectRig("psdhero");
+    pump();
+    QCOMPARE(panel->layerImportDefaults(psd).target, QString("psdhero"));
+    QCOMPARE(panel->layerImportDefaults(psd).id, QString("psdhero-2"));
+    { Json r = host.data("rig", "psdhero"); QVERIFY(r["bones"].size() == 2); }
+    bool update = false;
+    onDialog("cutoutLayerImportDialog", [&](QDialog* d) {
+      auto* target = d->findChild<QComboBox*>("cutoutLayerImportTarget");
+      update = target && target->currentData().toString() == "psdhero" && !d->findChild<QLineEdit*>("cutoutLayerImportId")->isEnabled() &&
+               d->findChild<QLabel*>("cutoutLayerImportSummary")->text().contains("교체 1");
+      return true;
+    });
+    host.pluginImports.clear();
+    QVERIFY(gesture("psd re-import", 1, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(update);
+    QCOMPARE(host.pluginImports.size(), 2);
+    QCOMPARE(host.pluginImports[1].value("payload").toObject().value("rig").toString(), QString("psdhero"));
+    QVERIFY(!host.pluginImports[1].value("payload").toObject().contains("id"));
+    QCOMPARE(host.lastEdit.value("edits").toArray().size(), 1);
+    QVERIFY2(panel->status().contains("갱신"), qPrintable(panel->status()));
+    { const Json r = host.data("rig", "psdhero"); QCOMPARE(int(r["attachments"].size()), 4); }
+
+    // Cancel in the dialog and a refused file: no edit.
+    onDialog("cutoutLayerImportDialog", [](QDialog*) { return false; });
+    QVERIFY(gesture("psd import cancelled", 0, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(panel->status().contains("취소"));
+    panel->askLayerFile = [&] { return dir.filePath("deep.psd"); };
+    QVERIFY(gesture("16-bit psd refused", 0, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY2(panel->status().contains("16비트"), qPrintable(panel->status()));
+    // An invalid id keeps the dialog open (then cancel).
+    panel->askLayerFile = [&] { return psd; };
+    bool kept = false;
+    onDialog("cutoutLayerImportDialog", [&](QDialog* d) {
+      d->findChild<QComboBox*>("cutoutLayerImportTarget")->setCurrentIndex(0);
+      d->findChild<QLineEdit*>("cutoutLayerImportId")->setText("Bad Id");
+      d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok)->click();
+      kept = d->isVisible() && d->findChild<QLabel*>("cutoutLayerImportSummary")->text().contains("캐릭터 ID");
+      return false;
+    });
+    QVERIFY(gesture("bad id refused", 0, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(kept);
   }
 
   /**

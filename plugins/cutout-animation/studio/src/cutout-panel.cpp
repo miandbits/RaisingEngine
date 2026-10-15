@@ -369,6 +369,16 @@ bool CutoutPanel::runSkinImageDialog(SkinImageChoice& choice) {
                          [this](const QString& slot, const QString& name, const QString& asset, const QSize& size) { return skinImagePreview(slot, name, asset, size); });
   return dialog.exec() == QDialog::Accepted;
 }
+bool CutoutPanel::runLayerImportDialog(LayerImportChoice& choice, const QJsonObject& report) {
+  QPointer<CutoutPanel> self(this);
+  LayerImportDialog dialog(this, choice, rigs_.keys(), report, [self](const LayerImportChoice& c, std::function<void(const QJsonObject&, const QString&)> done) {
+    if (!self || !self->host_) return;
+    self->requestLayerImport(c, true, [done](const QJsonObject& reply) {
+      done(reply.value("pluginImport").toObject().value("report").toObject(), reply.value("error").toString());
+    });
+  });
+  return dialog.exec() == QDialog::Accepted;
+}
 void CutoutPanel::detachHost() {
   timer_->stop();
   playing_ = false;
@@ -1283,6 +1293,8 @@ QWidget* CutoutPanel::buildCharacters() {
   };
   buttons->setProperty("cutoutGroup", "캐릭터");
   button("새 캐릭터", "cutoutNewCharacter", [this] { return newCharacter(); })->setToolTip("리그와 게임 연결 문서를 함께 만듭니다(편집 한 번).");
+  button("PSD 가져오기…", "cutoutImportLayers", [this] { return importLayersInteractive(); })
+      ->setToolTip("Photoshop PSD·PSB(또는 PNG 폴더)의 레이어로 캐릭터를 만들거나 고른 캐릭터의 그림을 갱신합니다. 미리 보기 후 편집 한 번.");
   button("이름 변경", "cutoutRenameCharacter", [this] { return renameCharacter(); })->setToolTip("고른 캐릭터의 이름(표시 이름)을 바꿉니다.");
   button("삭제", "cutoutDeleteCharacter", [this] { return deleteCharacter(); })->setToolTip("고른 캐릭터의 리그와 연결 문서를 삭제합니다(먼저 묻습니다).");
   layout->addWidget(characterList_, 1);
@@ -4139,6 +4151,80 @@ bool CutoutPanel::newCharacter() {
   clipId_ = "idle";
   setMode(Mode::Setup);
   setStatus("캐릭터 「" + id + "」를 만들었습니다. 「이미지 조각 추가…」로 몸 조각을 붙이세요.");
+  return true;
+}
+// ---------------------------------------------------------------- layered-art import (plugin 1.11.0)
+LayerImportChoice CutoutPanel::layerImportDefaults(const QString& file) const {
+  LayerImportChoice choice;
+  choice.file = file;
+  const QFileInfo info(file);
+  // A PNG of a folder stands for the folder (the service reads every PNG / its layout.json).
+  const bool png = info.suffix().compare("png", Qt::CaseInsensitive) == 0;
+  const QString source = png ? info.dir().dirName() : info.fileName();
+  const QString base = info.isDir() || png ? source : info.completeBaseName();
+  if (auto it = rigs_.find(rigId_); it != rigs_.end() && it->data) {
+    const Json& data = *it->data;
+    const Json* record = data.contains("editor") && data["editor"].is_object() && data["editor"].contains("layerImport") ? &data["editor"]["layerImport"] : nullptr;
+    // Re-import: the selected character came from that file (its import record names it).
+    if (record && record->is_object() && qs(record->value("source", std::string())) == source) choice.target = rigId_;
+  }
+  const QString stem = qs(cutout::slugId(ss(base), "character"));
+  QString id = stem;
+  for (int n = 2; rigs_.contains(id) || controllers_.contains(id); n++) id = QString("%1-%2").arg(stem).arg(n);
+  choice.id = id;
+  return choice;
+}
+void CutoutPanel::requestLayerImport(const LayerImportChoice& choice, bool dryRun, std::function<void(const QJsonObject&)> done) {
+  inSubmit_ = true;  // a synchronous host answers (and calls viewChanged) inside request()
+  host_->request("pluginImport", {{"plugin", PLUGIN_ID}, {"op", "importLayers"}, {"payload", choice.payload()}, {"dryRun", dryRun}},
+                 [done](QJsonObject reply) { if (done) done(reply); });
+  inSubmit_ = false;
+}
+bool CutoutPanel::importLayersInteractive() {
+  if (!host_ || busy()) return false;
+  const QString file = askLayerFile ? askLayerFile()
+                                    : QFileDialog::getOpenFileName(this, "레이어 그림 가져오기", host_->projectRoot(),
+                                                                   "레이어 그림 (*.psd *.psb *.png *.json);;Photoshop (*.psd *.psb);;PNG 폴더의 그림 또는 layout.json (*.png *.json)");
+  if (file.isEmpty()) return false;
+  const LayerImportChoice choice = layerImportDefaults(file);
+  QPointer<CutoutPanel> self(this);
+  setStatus("레이어를 읽는 중…");
+  requestLayerImport(choice, true, [self, choice](const QJsonObject& reply) {
+    if (!self) return;
+    const QString error = reply.value("error").toString();
+    if (!error.isEmpty()) { self->setStatus("레이어 그림을 가져올 수 없습니다: " + error, true); return; }
+    const QJsonObject report = reply.value("pluginImport").toObject().value("report").toObject();
+    // Next turn of the event loop: the dialog's own requests must not nest inside this reply.
+    QTimer::singleShot(0, self, [self, choice, report] {
+      if (!self) return;
+      LayerImportChoice chosen = choice;
+      if (!self->runLayerImportDialog(chosen, report)) { if (self) self->setStatus("레이어 가져오기를 취소했습니다."); return; }
+      if (self) self->importLayers(chosen);
+    });
+  });
+  return true;
+}
+bool CutoutPanel::importLayers(const LayerImportChoice& choice) {
+  if (!host_ || busy()) return false;
+  QPointer<CutoutPanel> self(this);
+  const QString target = choice.target.isEmpty() ? choice.id : choice.target;
+  requestLayerImport(choice, false, [self, target](const QJsonObject& reply) {
+    if (!self) return;
+    const QString error = reply.value("error").toString();
+    if (!error.isEmpty()) { self->setStatus("레이어 그림을 가져오지 못했습니다: " + error, true); return; }
+    self->lastLayerImport_ = reply.value("pluginImport").toObject();
+    QTimer::singleShot(0, self, [self, target] {
+      if (!self || !self->host_) return;
+      const QJsonObject report = self->lastLayerImport_.value("report").toObject();
+      self->images_.setAssets(self->host_->assets());  // the new pictures
+      self->selectRig(target);
+      self->setMode(Mode::Setup);
+      const bool update = report.value("mode").toString() == "update";
+      const int warnings = report.value("warnings").toArray().size();
+      self->setStatus(QString("「%1」 %2: %3%4. 되돌리기: Ctrl+Z").arg(target, update ? "갱신" : "가져옴", layerImportSummary(report),
+                                                              warnings ? QString(" · 주의 %1개").arg(warnings) : QString()));
+    });
+  });
   return true;
 }
 bool CutoutPanel::renameCharacter() {

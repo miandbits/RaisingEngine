@@ -29,6 +29,8 @@ void CutoutStudioPlugin::activate(raising::StudioHost* host) {
     };
     add("캐릭터 애니메이션 창 열기", "cutoutOpenPanelAction", [this] { showDock(); });
     add("새 캐릭터…", "cutoutNewCharacterAction", [this] { showDock(); panel_->newCharacter(); });
+    // Plugin 1.11.0: layered art (PSD/PSB or a PNG folder) -> a new character or an update.
+    add("PSD 가져오기…", "cutoutImportLayersAction", [this] { showDock(); panel_->importLayersInteractive(); });
     add("조립 모드", "cutoutSetupModeAction", [this] { showDock(); panel_->setMode(CutoutPanel::Mode::Setup); });
     add("애니메이션 모드", "cutoutAnimateModeAction", [this] { showDock(); panel_->setMode(CutoutPanel::Mode::Animate); });
     add("게임 연결 편집", "cutoutControllerAction", [this] { showDock(); panel_->showControllerTab(); });

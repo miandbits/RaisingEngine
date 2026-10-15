@@ -3,7 +3,7 @@ import path from 'node:path';
 import { apiCompatible, ENGINE_PLUGIN_API, findModule, type PluginManifest } from './manifest.js';
 import { satisfies } from './semver.js';
 import { listInstalled, pluginStorePath, type InstalledPlugin } from './store.js';
-import { loadService } from './service.js';
+import { loadService, type PluginService } from './service.js';
 import { PluginError } from './zip.js';
 
 export interface LockEntry { id: string; version: string; enabled: boolean }
@@ -110,10 +110,14 @@ export async function pluginStatus(storeOption: string | null | undefined, lock:
  * the project has locked, enabled and resolved can be called; ops never write project files.
  */
 export async function callProjectPlugin(storeOption: string | null | undefined, lock: unknown, pluginId: string, op: string, payload: unknown): Promise<unknown> {
+  const { service } = await projectPluginService(storeOption, lock, pluginId);
+  if (!service?.call) throw new PluginError('PLUGIN_SERVICE', `플러그인 '${pluginId}'에는 서비스 명령이 없습니다.`);
+  return await service.call(op, structuredClone(payload ?? {}));
+}
+/** The active (locked, enabled, resolved) plugin and its loaded node service (null = none). */
+export async function projectPluginService(storeOption: string | null | undefined, lock: unknown, pluginId: string): Promise<{ plugin: ResolvedPlugin; service: PluginService | null }> {
   const plugin = (await resolveProjectPlugins(pluginStorePath(storeOption), lock)).find(p => p.id === pluginId);
   if (!plugin) throw new PluginError('PLUGIN_NOT_LOCKED', `플러그인 '${pluginId}'가 이 프로젝트의 잠금 파일에 없습니다.`);
   if (plugin.state !== 'active') throw new PluginError(plugin.diagnostics[0]?.code ?? 'PLUGIN_UNAVAILABLE', plugin.diagnostics[0]?.message ?? `플러그인 '${pluginId}'를 사용할 수 없습니다.`);
-  const service = await loadService({ directory: plugin.directory!, manifest: plugin.manifest! });
-  if (!service?.call) throw new PluginError('PLUGIN_SERVICE', `플러그인 '${pluginId}'에는 서비스 명령이 없습니다.`);
-  return await service.call(op, structuredClone(payload ?? {}));
+  return { plugin, service: await loadService({ directory: plugin.directory!, manifest: plugin.manifest! }) };
 }

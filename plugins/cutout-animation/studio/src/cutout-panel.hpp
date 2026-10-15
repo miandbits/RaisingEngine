@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include "cutout/editing.hpp"
+#include "layer-import.hpp"
 #include "onion-skin.hpp"
 #include "plugin-api.hpp"
 #include "rig-canvas.hpp"
@@ -113,6 +114,17 @@ class CutoutPanel : public QWidget {
 
   // ---- Gestures (each sends at most one edit request; false = refused, see status()) ----
   bool newCharacter();
+  // ---- Layered-art import (plugin 1.11.0, "PSD 가져오기…"): the service op importLayers through the
+  // host's pluginImport request. Preview = dryRun (nothing changes); import = ONE edit (pictures as
+  // content-hashed assets + rig/controller), undone by one Ctrl+Z.
+  /** File (askLayerFile) -> preview -> LayerImportDialog -> import. False when nothing was started. */
+  bool importLayersInteractive();
+  /** Import without the dialog (one host request); the result arrives with the host's reply. */
+  bool importLayers(const LayerImportChoice& choice);
+  /** Defaults for `file`: update the selected character when it was imported from that file, else a new id. */
+  LayerImportChoice layerImportDefaults(const QString& file) const;
+  /** Result of the last finished import (`pluginImport` member of the reply: report, assetIds, files). */
+  QJsonObject lastLayerImport() const { return lastLayerImport_; }
   bool renameCharacter();
   bool deleteCharacter();
   bool addBone();
@@ -392,9 +404,12 @@ class CutoutPanel : public QWidget {
   std::function<bool(const QString& title, const QString& text)> askConfirm;
   std::function<bool(PartChoice&)> askPart;
   std::function<bool(SkinImageChoice&)> askSkinImage;
+  std::function<QString()> askLayerFile;  // PSD/PSB, a PNG of a folder, or a layout.json ("" = cancel)
   // The real dialogs behind askPart / askSkinImage (modal; tests drive them with timers).
   bool runPartDialog(PartChoice& choice);
   bool runSkinImageDialog(SkinImageChoice& choice);
+  /** The modal preview dialog (tests drive it with timers); accepted = import `choice`. */
+  bool runLayerImportDialog(LayerImportChoice& choice, const QJsonObject& report);
 
  protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -410,6 +425,8 @@ class CutoutPanel : public QWidget {
   ImageCache images_;
   QMap<QString, Doc> rigs_, controllers_;
   QJsonArray characters_;  // project characters (kind "character") for characterId
+  QJsonObject lastLayerImport_;
+  void requestLayerImport(const LayerImportChoice& choice, bool dryRun, std::function<void(const QJsonObject&)> done);
   QString rigId_, controllerId_, selection_, clipId_, status_;
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)

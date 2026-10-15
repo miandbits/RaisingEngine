@@ -757,3 +757,82 @@ pictures larger than a page. Packing is deterministic (skyline, tallest first).
   unless the content names them elsewhere (fewer files: the test fixture's 8 rig images become one
   page). Screenshots with and without atlas differ by a mean of 0.0013/255 (native) and 0.004/255
   (web) (`tests/plugins/cutout-atlas.test.mjs`).
+
+## Layer import (plugin 1.11.0)
+
+Layered art becomes a rig whose setup pose looks exactly like the document. One implementation
+(`service/psd.mjs` reader + `service/layer-import.mjs` mapping) serves every path: the service
+import hook `prepareImport` (engine CONTRACT.md §11; Qt `pluginImport`, MCP `plugin_import`) and
+the read-only op `importLayers` (`plugin_call`). No document format change: everything it writes
+is ordinary schemaVersion 1 data plus editor metadata.
+
+* **Sources** (`payload.file`, absolute): a `.psd` (version 1) or `.psb` (version 2); a folder of
+  PNGs, a PNG inside it (= the folder) or its `layout.json`
+  `{width?, height?, layers: [{file, name?, x?, y?, visible?, opacity?, group?: "body/head"}]}`
+  (first = back; without a layout every PNG at 0,0, sub-folders = groups, natural name order, a
+  leading number `01-` only sorts). PSD: 8-bit RGB only — 16/32-bit, CMYK, indexed, grayscale,
+  Lab, … are refused with a message saying how to re-save; raw and PackBits channels (ZIP channels
+  refused); Unicode names (`luni`); section dividers (`lsct`/`lsdk`) = groups; a document without
+  layer records imports its merged image as one layer. Canvas ≤ 8192 px, ≤ 64 Mpx of layers.
+* **Payload**: `file`, `id` (new character, default from the file name; an existing rig or
+  controller id is refused) **or** `rig` (re-import onto that rig), `name?`, `origin?`
+  (`bottom-center` default, `center`, `top-center`, `top-left`, `{x, y}` in document px),
+  `trim?` (default true), `scale?` (0.05..4, default 1), `exclude?` (report layer keys).
+* **Mapping** (new character): canvas = document size × scale, root bone `root` at the origin;
+  a top-level `[pivot]` layer's centre overrides the origin.
+  * group → bone (id from the name, nested groups = child bones, local = world − parent); origin =
+    the centre of a `[pivot]` / `[bone]` / `#pivot` marker layer inside it (not imported as a
+    picture), else the centre of its content. A group without pictures makes no bone.
+  * layer → region attachment, picture trimmed to its pixels (alpha > 0) plus a 1 px transparent
+    ring (linear filtering at the edge blends to transparency like the document), placed with
+    pivot 0.5 at its centre in the bone's space; `scale` ≠ 1 sets the attachment scale (the
+    pictures keep their resolution). `trim: false` keeps the whole layer rectangle.
+  * names: `slot/attachment` or `slot@attachment` → one slot (`eyes/open`, `eyes/closed`); the
+    layers of a `[slot]` group are attachments of the slot named after the group; every plain
+    layer is its own slot (attachment named like the slot). Ids are lowercase kebab-case from
+    the name (accents dropped); names without Latin letters fall back to `part-N` / `bone-N`; a
+    slot name used under two bones becomes `<bone>-<slot>`, later duplicates `-2`.
+  * draw order = layer order (a slot sits where its shown layer is); the topmost visible layer of a
+    slot is its setup attachment, hidden layers (or layers of hidden groups) are attachments that
+    are not shown (expression / key swaps); a slot with only hidden layers has `attachment: null`.
+    Layer opacity × group opacities → slot `alpha` (overlapping children of a translucent group can
+    differ slightly from Photoshop's isolated group).
+  * `[ignore]` / `[skip]` drop a layer or a whole group; `exclude` keys likewise.
+  * Warnings (report): blend modes other than normal/pass-through (`ANIM_IMPORT_BLEND`, drawn
+    normal), clipping masks (`ANIM_IMPORT_CLIPPING`), layer masks (`ANIM_IMPORT_MASK`, not applied),
+    translucent groups, two visible layers in one slot, empty layers/groups, more than one marker.
+  * New rig: `idle` clip, mix 150 ms; new controller `{rig: id, defaultClip: "idle"}`.
+* **Provenance**: `editor.layerImport = {source, format, width, height, scale, layers: {"slot/name":
+  {x, y, width, height, pixels}}}` (picture rectangle in document px and a pixel hash). Runtimes
+  ignore `editor`.
+* **Re-import** (`rig`): bones, slots, keys, skins, expressions, IK and every placement stay.
+  Matching is by id: groups map to bones of the same id (kept, never moved; new groups become new
+  bones placed through the current setup pose), `slot/name` to existing attachments.
+  * Unchanged picture (same rectangle and pixel hash): untouched (`unchanged`).
+  * Changed region attachment: new image and size; the placement (x, y, rotation, scale) is kept
+    and the pivot moves so the same picture content stays under (x, y):
+    `pivot' · size' = pivot · size − d`, `d` = how far the picture's corner moved since the last
+    import (no provenance: placement kept, warning `ANIM_IMPORT_PLACEMENT`). An untouched rig
+    re-imported from a changed document therefore draws the new document exactly.
+  * Mesh attachments only get a new image when its size and position are unchanged
+    (`ANIM_IMPORT_MESH` otherwise).
+  * New layers: new attachments / slots (inserted after the nearest earlier imported slot).
+    Attachments imported before but absent now are reported (`missing`) and kept. The canvas
+    stays (`ANIM_IMPORT_CANVAS` when the document size differs); the first import's scale is used.
+* **Result**: `{documents: [{type: "rig", id, data}, {type: "controller", …}?], images: [{id, bytes}],
+  report}`; image ids are `image-<sha256 of the PNG, 24 hex>` (the same as `importImage`), so an
+  unchanged picture is the same asset. `report`: `mode` (`create`/`update`), `rigId`, `source`,
+  `options`, `canvas`, `layers` (tree, back → front: `key`, `name`, `kind`, `visible`, `opacity`,
+  `blend`, `bounds`, `include`, `role` = image/bone/pivot/slot-group/ignored/excluded/empty/…,
+  `bone`, `slot`, `attachment`, `setup`, `status` = add/update/same/skip/kept, `warnings`),
+  `warnings`, `changes` (bones added/kept, slots added/kept, attachments added/updated/unchanged/
+  skipped/missing) and `summary`. The rig passes core validation before it is returned. A preview
+  (`dryRun`) has no images and empty `imageAssetId`s.
+* `plugin_call` op `importLayers`: the same with `target: {id, rig}` for a re-import preview of rig
+  data and `includeImages: true` for base64 PNGs; it never writes anything.
+* Editor: `PSD 가져오기…` (character row `cutoutImportLayers`, plugin menu
+  `cutoutImportLayersAction`, command palette) → file → preview → dialog
+  `cutoutLayerImportDialog` (`cutoutLayerImportSource`, `…Target` new / update, `…Id`, `…Origin`,
+  `…Scale`, `…Trim`, layer tree `…Tree` with include boxes and bone/slot/attachment/status columns,
+  `…Warnings`, `…Summary`, `…Refresh` = preview again) → `가져오기` = one edit (one Ctrl+Z). The
+  file the selected character was imported from defaults to updating it.
