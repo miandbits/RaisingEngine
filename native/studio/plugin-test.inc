@@ -59,7 +59,7 @@ QStringList workspaceLayoutProblems(QWidget *page, QWidget *panel) {
 /**
  * The cutout panel's 스킨 · 표정 · IK · 메시 pages, in both modes: every action button and list of
  * each tab is shown, unsqueezed and inside the page (and inside the viewport of any scroll area
- * on the way) without scrolling; rows the other mode uses (property cutoutModeRow) are skipped.
+ * on the way) without scrolling; rows the other mode uses (property cutoutModeRow) and hidden conditional rows (cutoutConditionalRow) are skipped.
  */
 QStringList lookPageProblems(QWidget *panel) {
   QStringList problems;
@@ -78,7 +78,7 @@ QStringList lookPageProblems(QWidget *panel) {
       for (auto b : page->findChildren<QAbstractButton *>()) {
         if (!b->objectName().startsWith("cutout") || !(qobject_cast<QPushButton *>(b) || qobject_cast<QToolButton *>(b))) continue;
         bool otherMode = false;
-        for (QWidget *p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || (p->property("cutoutModeRow").isValid() && p->isHidden());
+        for (QWidget *p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || ((p->property("cutoutModeRow").isValid() || p->property("cutoutConditionalRow").isValid()) && p->isHidden());
         if (!otherMode) widgets << b;
       }
       for (auto v : page->findChildren<QAbstractItemView *>())
