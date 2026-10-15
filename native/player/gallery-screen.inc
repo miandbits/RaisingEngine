@@ -1,6 +1,7 @@
   std::string gallery_entry;
   size_t gallery_record=0,gallery_frame=0,gallery_page=0;
   std::string gallery_category;
+  bool gallery_music_playing=false;
   std::string gallery_overlay() {
     if(!game.content.at("project").contains("gallery")||!preview_screen.empty())return "";
     const auto config=display_content.at("project").at("gallery");
@@ -18,13 +19,13 @@
       std::vector<std::string> categories={""};for(const auto& e:entries){auto c=e.value("category","");if(std::find(categories.begin(),categories.end(),c)==categories.end())categories.push_back(c);}
       if(std::find(categories.begin(),categories.end(),gallery_category)==categories.end())gallery_category="";
       out+=control("gallery-filter",gallery_category.empty()?"분류: 전체":"분류: "+gallery_category,{{"type","galleryCategory"}},22,92,250);
-      Json filtered=Json::array();for(const auto& e:entries)if(gallery_category.empty()||e.value("category","")==gallery_category)filtered.push_back(e);
+      Json filtered=Json::array();for(const auto& e:entries)if((gallery_category.empty()||e.value("category","")==gallery_category)&&(e.value("lockedDisplay","hint")!="hidden"||!game.gallery.records(e).empty()))filtered.push_back(e);
       const size_t pageSize=6,pages=std::max<size_t>(1,(filtered.size()+pageSize-1)/pageSize);gallery_page=std::min(gallery_page,pages-1);
       const int cw=(w-66)/3,ch=(h-230)/2;
       for(size_t i=gallery_page*pageSize;i<std::min(filtered.size(),(gallery_page+1)*pageSize);i++){
         const auto& e=filtered[i];const auto records=game.gallery.records(e);bool seen=!records.empty();const int x=22+int(i%3)*(cw+11),y=148+int((i%6)/3)*(ch+10);
         out+="<div style=\"position:absolute;left:"+number(x)+"px;top:"+number(y)+"px;width:"+number(cw)+"px;height:"+number(ch)+"px;background-color:#293943;overflow:hidden;\">";
-        if(seen&&e.contains("thumbnailAssetId"))out+="<div style=\"position:absolute;left:8px;top:8px;width:82px;height:82px;\">"+image({{"imageAssetId",e.at("thumbnailAssetId")},{"fit","contain"}})+"</div>";
+        if(seen&&(e.contains("thumbnailAssetId")||e.at("kind")=="cg"))out+="<div style=\"position:absolute;left:8px;top:8px;width:82px;height:82px;\">"+image({{"imageAssetId",e.value("thumbnailAssetId",e.at("sourceId"))},{"fit","contain"}})+"</div>";
         const auto label=seen?e.value("title",""):"???";
         out+="<div style=\"position:absolute;left:100px;right:8px;top:12px;\">"+escape(label)+"<br/>"+escape(e.value("category",""))+"<br/>"+escape(seen?"기록 "+std::to_string(records.size())+"개":e.value("hint","아직 보지 못한 이야기"))+"</div>";
         out+=control("gallery-entry-"+e.value("id",""),seen?"기록 보기":"미해금",{{"type","gallerySelect"},{"entryId",e.at("id")}},8,ch-50,cw-16,seen)+"</div>";
@@ -39,6 +40,14 @@
         gallery_record=std::min(gallery_record,records.size()-1);const auto& r=records[gallery_record];const auto& frames=r.at("frames");gallery_frame=std::min(gallery_frame,frames.size());
         const int panelHeight=h-210;
         out+="<div id=\"gallery-record-title\" style=\"position:absolute;left:22px;top:84px;font-size:22px;\">"+escape(r.value("title",""))+" · "+escape(r.value("unlockedAt",""))+"</div>";
+        if(entry.at("kind")=="cg"||entry.at("kind")=="music"){
+          if(entry.at("kind")=="cg")out+="<div id=\"gallery-cg\" style=\"position:absolute;left:22px;top:130px;width:"+number(w-44)+"px;height:"+number(panelHeight)+"px;overflow:hidden;\">"+image({{"imageAssetId",entry.at("sourceId")},{"fit",entry.value("fit","contain")}})+"</div>";
+          else {out+="<div style=\"position:absolute;left:22px;top:150px;font-size:28px;\">♪ "+escape(entry.value("title",""))+"<br/>"+(gallery_music_playing?"재생 중":"정지 / 일시정지")+"</div>";
+            out+=control("gallery-music-play",gallery_music_playing?"일시정지":"재생",{{"type","galleryMusicToggle"}},22,260,180);
+            out+=control("gallery-music-stop","처음으로 정지",{{"type","galleryMusicStop"}},218,260,180);}
+          out+=control("gallery-back","목록",{{"type","galleryBack"}},22,h-58,120);return out+"</div>";
+        }
+        if(r.contains("replayFrames")&&!r.at("replayFrames").empty())out+=control("gallery-replay","원본 연출 회상",{{"type","galleryReplay"}},w-244,78,220);
         std::string body;
         if(gallery_frame<frames.size()){
           const auto& f=frames[gallery_frame];body=f.value("speaker","")+"\n\n"+f.value("text","");if(f.contains("choice"))body+="\n\n선택: "+f.at("choice").get<std::string>();

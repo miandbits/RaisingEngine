@@ -20,13 +20,41 @@
 #include <optional>
 
 #include "route-recording.hpp"
+#include "recollection.hpp"
 
 class PlayerApplication : public Rml::EventListener {
 public:
   ExtensionHost extensions;
   GameSession game;
   ScreenMarkup markup;
-  GameAudio audio;
+  GameAudio audio,gallery_audio;
+  Json gallery_bundle;
+  std::unique_ptr<GalleryRecollection> recollection;
+  bool recalling() const {return recollection&&recollection->active;}
+  ScreenMarkup& active_markup(){return recalling()?recollection->markup:markup;}
+  fs::path recollection_file() const {return save_file.parent_path()/("recollection-"+game.content.at("project").value("gameId","game")+".json");}
+  void recollection_sound(){
+    gallery_audio.suspend(false);gallery_audio.sync_music(recollection->markup.asset(recollection->game.state.at("presentation").value("musicAssetId",Json())),muted);
+    for(const auto& id:recollection->record.at("replayFrames").at(recollection->cursor).at("sounds"))gallery_audio.effect(recollection->markup.asset(id),muted);
+  }
+  void recollection_action(const std::string& type){
+    auto& r=*recollection;
+    if(type=="recollectionClose"||type=="uiBack"||(type=="recollectionNext"&&r.cursor+1==r.record.at("replayFrames").size())){r.active=false;gallery_audio.sync_music("",muted);gallery_audio.suspend(true);ExtensionElement::host=&extensions;}
+    else if(type=="recollectionNext"||type=="recollectionPrev"){r.seek(type=="recollectionNext"?r.cursor+1:(r.cursor>0?r.cursor-1:0));recollection_sound();}
+    else if(type=="save"){
+      Json value={{"version",1},{"gameId",game.content.at("project").at("gameId")},{"kind",r.record.at("kind")},{"sourceId",r.record.at("sourceId")},{"unlockedAt",r.record.at("unlockedAt")},{"contentFingerprint",r.record.at("contentFingerprint")},{"frames",r.record.at("frames")},{"cursor",r.cursor},{"extensions",r.extensions.save()},{"musicCursor",gallery_audio.cursor()}};
+      const auto file=recollection_file(),temp=fs::path(file.u8string()+".tmp"),backup=fs::path(file.u8string()+".bak");fs::create_directories(file.parent_path());
+      {std::ofstream out(temp,std::ios::binary|std::ios::trunc);out<<value.dump(2);out.flush();if(!out)throw std::runtime_error("회상 저장에 실패했습니다.");}
+      if(fs::exists(file)){std::error_code ec;fs::remove(backup,ec);fs::rename(file,backup);}try{fs::rename(temp,file);}catch(...){if(fs::exists(backup)&&!fs::exists(file))fs::rename(backup,file);throw;}
+      r.notice="회상 저장 완료";
+    } else if(type=="load"){
+      const auto value=read_json(recollection_file());
+      if(value.value("frames",Json())!=r.record.at("frames"))throw std::runtime_error("다른 선택 경로의 회상 저장입니다.");
+      if(value.value("version",0)!=1||value.value("gameId",Json())!=game.content.at("project").at("gameId")||value.value("kind",Json())!=r.record.at("kind")||value.value("sourceId",Json())!=r.record.at("sourceId")||value.value("unlockedAt",Json())!=r.record.at("unlockedAt")||value.value("contentFingerprint",Json())!=r.record.at("contentFingerprint")||!value.value("cursor",Json()).is_number_unsigned()||value.at("cursor").get<size_t>()>=r.record.at("replayFrames").size()||!value.value("musicCursor",Json()).is_number_unsigned()||!(value.value("extensions",Json()).is_null()||value.at("extensions").is_object()))throw std::runtime_error("이 회상과 호환되는 저장 위치가 아닙니다.");
+      r.seek(value.at("cursor").get<size_t>());r.extensions.pending_restore=value.value("extensions",Json());recollection_sound();gallery_audio.seek(value.at("musicCursor").get<uint64_t>());r.notice="회상 불러오기 완료";
+    }
+    dirty=true;
+  }
   SDL_Window* window;
   SDL_Renderer* renderer;
   Rml::Context* context=nullptr;
@@ -87,12 +115,13 @@ public:
   }
   /** One presentation update per frame, then one frame request per mounted instance. */
   void update_extensions() {
+    if(recalling()){auto& r=*recollection;r.extensions.update(extension_dt);extension_dt=0;for(const auto& sound:r.extensions.take_sounds())gallery_audio.effect(r.markup.asset(Json(sound.asset)),muted,float(sound.volume),float(sound.balance));r.extensions.frame();return;}
     if(!extensions.active())return;
     const double dt=preview()?0:extension_dt*extension_playback_rate();extension_dt=0;
     extensions.update(dt);play_extension_sounds();extensions.frame();
   }
   double extension_playback_rate() const {if(game.gallery.active)return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
-  void advance_extensions(double delta){if(!extensions.active())return;extensions.update(delta*extension_playback_rate());play_extension_sounds();extensions.frame();}
+  void advance_extensions(double delta){if(recalling()){recollection->extensions.update(delta);recollection->extensions.frame();return;}if(!extensions.active())return;extensions.update(delta*extension_playback_rate());play_extension_sounds();extensions.frame();}
   /** Event sounds of plugin notifications (presentation only): a missing file never stops the game. */
   uint64_t extension_sounds_played=0,extension_sound_errors=0,extension_sound_missing=0;
   void play_extension_sounds() {
@@ -123,6 +152,7 @@ public:
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
   PlayerApplication(Json bundle, fs::path root, SDL_Window* window, SDL_Renderer* renderer, fs::path save_file)
     :markup(game,bundle.at("assets"),std::move(root)),window(window),renderer(renderer),save_file(std::move(save_file)) {
+    gallery_bundle=bundle;game.gallery_manifest=bundle.value("extensions",Json());
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
     markup.extensions=&extensions;
@@ -173,7 +203,7 @@ public:
       active_finger.reset();pending.clear();
       if(!preview()&&!game.state.is_null())try{game.save(autosave_file());lifecycle_saves++;}catch(const std::exception& error){game.message=error.what();}
     }
-    backgrounded=paused;audio.suspend(paused);dirty=true;
+    backgrounded=paused;audio.suspend(paused||game.gallery.active);gallery_audio.suspend(paused);dirty=true;
   }
   void update_tooltip(){
     if(!document)return;auto* tip=document->GetElementById("ui-tooltip");if(!tip)return;
@@ -186,7 +216,9 @@ public:
   }
   void ProcessEvent(Rml::Event& event) override {
     if(preview())return;
+    auto& markup=active_markup();
     const auto eventType=event.GetType();
+    if(recalling()&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
     if(event.GetType()=="change"||event.GetType()=="input") {
@@ -223,11 +255,13 @@ public:
     }
   }
   void rebuild() {
+    auto& markup=active_markup();auto& game=recalling()?recollection->game:this->game;
+    ExtensionElement::host=recalling()?&recollection->extensions:&extensions;
     ++document_generation;
     if(document)for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll"))
       if(auto* element=document->GetElementById("node-"+entry.value("id","")))collection_scroll[markup.screen_id+"/"+entry.value("id","")]=element->GetScrollTop();
     SDL_GetWindowSizeInPixels(window,&markup.viewport_width,&markup.viewport_height);
-    const auto source=markup.document();
+    const auto source=recalling()?recollection->document():markup.document();
     if(!context)context=Rml::CreateContext("game",{markup.width,markup.height});
     if(!context)throw std::runtime_error("렌더링 컨텍스트를 만들지 못했습니다.");
     context->SetDimensions({markup.width,markup.height});
@@ -242,6 +276,7 @@ public:
     }
     const std::string active_modal=!markup.pending_purchase.is_null()?"ui-confirmation":!markup.ui_modal.empty()?"ui-modal":"";
     if(!active_modal.empty()){Rml::ElementList all;document->QuerySelectorAll(all,"button,select,input");for(auto* e:all){bool inside=false;for(auto* p=e;p;p=p->GetParentNode())if(p->GetId()==active_modal)inside=true;if(!inside)e->SetAttribute("disabled","disabled");}}
+    if(recalling()){Rml::ElementList controls;document->QuerySelectorAll(controls,"button,select,input");for(auto* control:controls)if(!markup.actions.count(control->GetId()))control->SetAttribute("disabled","disabled");}
     apply_preview();context->Update();if(!active_modal.empty())if(auto* modal=document->GetElementById(active_modal))if(auto* first=modal->QuerySelector("button:not([disabled])"))first->Focus();
     for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll")) {
       const auto found=collection_scroll.find(markup.screen_id+"/"+entry.value("id",""));
@@ -262,19 +297,31 @@ public:
       }
     }
     presentation_key=key;dirty=false;
-    try{recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
+    try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
     if(editor_events){std::cout<<Json({{"event","editor-view"},{"command",editor_command},{"view",ui_state()}}).dump()<<std::endl;editor_command=Json::object();}
   }
   void execute(const Json& incoming) {
     if(preview())return;
     editor_command=incoming;
     try {
+      if(recalling()){recollection_action(incoming.value("type",""));return;}
       const auto action=markup.selection_action(incoming);
       game.message.clear();const std::string type=action.value("type","");
-      if(type=="galleryOpen"){if(!game.content.at("project").contains("gallery"))return;game.gallery.reload();game.flush_gallery();game.gallery.active=true;markup.gallery_entry.clear();dirty=true;return;}
+      if(type=="galleryOpen"){if(!game.content.at("project").contains("gallery"))return;game.gallery.reload();game.flush_gallery();game.gallery.active=true;audio.suspend(true);gallery_audio.suspend(false);markup.gallery_entry.clear();dirty=true;return;}
       if(game.gallery.active){
-        if(type=="galleryClose"){game.gallery.active=false;auto_elapsed=0;}
-        else if(type=="galleryBack")markup.gallery_entry.clear();
+        if(type=="galleryClose"){game.gallery.active=false;auto_elapsed=0;gallery_audio.sync_music("",muted);gallery_audio.suspend(true);audio.suspend(backgrounded);markup.gallery_music_playing=false;}
+        else if(type=="galleryReplay"){
+          for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==markup.gallery_entry){const auto records=game.gallery.records(e);if(markup.gallery_record>=records.size())throw std::runtime_error("회상 기록이 없습니다.");
+            auto next=std::make_unique<GalleryRecollection>(gallery_bundle,markup.bundle,records.at(markup.gallery_record),markup.locale);
+            recollection=std::move(next);recollection_sound();}
+        }
+        else if(type=="galleryMusicToggle"||type=="galleryMusicStop"){
+          for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==markup.gallery_entry&&e.at("kind")=="music"&&!game.gallery.records(e).empty()){
+            if(type=="galleryMusicStop"){gallery_audio.sync_music("",muted);markup.gallery_music_playing=false;}
+            else {markup.gallery_music_playing=!markup.gallery_music_playing;if(markup.gallery_music_playing)gallery_audio.sync_music(markup.asset(e.at("sourceId")),muted);gallery_audio.suspend(!markup.gallery_music_playing);}
+          }
+        }
+        else if(type=="galleryBack"){markup.gallery_entry.clear();gallery_audio.sync_music("",muted);markup.gallery_music_playing=false;}
         else if(type=="gallerySelect"){for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==action.value("entryId",Json())&&!game.gallery.records(e).empty()){markup.gallery_entry=e.at("id");markup.gallery_record=0;markup.gallery_frame=0;}}
         else if(type=="galleryFrame"){if(action.value("delta",0)>0)++markup.gallery_frame;else if(markup.gallery_frame>0)--markup.gallery_frame;}
         else if(type=="galleryVariant"){for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==markup.gallery_entry){const auto records=game.gallery.records(e);if(!records.empty())markup.gallery_record=(markup.gallery_record+1)%records.size();}markup.gallery_frame=0;}
@@ -369,7 +416,7 @@ public:
       audio.sync_music(markup.asset(presentation.value("musicAssetId",Json())),muted);
       for(const auto& cue:game.sound_cues)audio.effect(markup.asset(cue),muted);
       game.sound_cues.clear();
-    } catch(const std::exception& error) {game.message=error.what();game.sound_cues.clear();}
+    } catch(const std::exception& error) {game.message=error.what();if(recalling())recollection->notice=error.what();else if(game.gallery.active)game.gallery.error=error.what();game.sound_cues.clear();}
     dirty=true;
   }
   void event(SDL_Event& event) {
@@ -431,6 +478,7 @@ public:
     if(!ok)throw std::runtime_error(SDL_GetError());
   }
   Json ui_state() {
+    auto& markup=active_markup();
     SDL_FRect presentation{};SDL_GetRenderLogicalPresentationRect(renderer,&presentation);int pixel_width=0,pixel_height=0;SDL_GetRenderOutputSize(renderer,&pixel_width,&pixel_height);
     Json elements=Json::array();
     for(const auto& [id,label]:markup.labels)if(auto* element=document->GetElementById(id)) {
@@ -487,11 +535,11 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"gallery",{{"active",game.gallery.active},{"entryId",markup.gallery_entry},{"frameIndex",markup.gallery_frame},{"recordIndex",markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource","initial"},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
-      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
+      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"musicCursor",audio.cursor()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
   }
   Rml::Element* find_element(const std::string& id) {
     if(auto* element=document->GetElementById(id))return element;

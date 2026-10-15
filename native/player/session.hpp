@@ -26,8 +26,27 @@ public:
   GalleryCapture gallery_capture;
   Json gallery_pending=Json::array();
   std::function<Json()> gallery_content;
+  bool gallery_recording=true;
+  Json gallery_manifest=nullptr;
+  void queue_gallery(Json record) {
+    if(!gallery_recording||record.is_null()||!content.at("project").contains("gallery"))return;
+    Json ids=Json::array();
+    for(const auto& e:content.at("project").at("gallery").at("entries"))if(e.at("kind")==record.at("kind")&&e.at("sourceId")==record.at("sourceId")){
+      bool allowed=true;if(e.contains("unlockCondition"))allowed=call({{"operation","evaluate"},{"state",state},{"condition",e.at("unlockCondition")}}).value("value",false);
+      if(allowed)ids.push_back(e.at("id"));
+    }
+    if(!ids.empty()){if(record.contains("content"))record["extensionManifest"]=gallery_manifest;record["_entryIds"]=ids;gallery_pending.push_back(record);}
+  }
+  void collect_gallery_media() {
+    if(!gallery_recording||state.is_null()||!content.at("project").contains("gallery"))return;
+    for(const auto& e:content.at("project").at("gallery").at("entries"))if((e.at("kind")=="cg"||e.at("kind")=="music")&&gallery.records(e).empty()){
+      bool queued=false;for(const auto& p:gallery_pending)if(p.at("kind")==e.at("kind")&&p.at("sourceId")==e.at("sourceId"))queued=true;
+      if(!queued)queue_gallery({{"kind",e.at("kind")},{"sourceId",e.at("sourceId")},{"frames",Json::array()},{"contentFingerprint",content.at("contentFingerprint")},{"attributes",state.at("attributes")},{"attributeLabels",Json::object()},{"relationships",state.value("relationships",Json::object())},{"presentation",state.value("presentation",Json::object())},{"periodIndex",state.value("periodIndex",0)}});
+    }
+    flush_gallery();
+  }
   void flush_gallery() {
-    if(!content.at("project").contains("gallery"))return;
+    if(!gallery_recording||!content.at("project").contains("gallery"))return;
     while(!gallery_pending.empty()){
       try{gallery.unlock(content.at("project").at("gallery"),gallery_pending.front());gallery_pending.erase(gallery_pending.begin());}
       catch(const std::exception& e){gallery.error=e.what();message=std::string("컬렉션 저장 실패: ")+e.what();return;}
@@ -104,12 +123,14 @@ public:
     commands = Json::array(); message.clear(); sound_cues.clear(); battle_selection=nullptr;refresh(); sync_timeline();
     origin = {{"seed",seed},{"mode","full"},{"initialOverrides",{{"attributes",Json::object()},{"flags",Json::object()},{"relationships",Json::object()}}}};
     if(!content.at("project").value("userFields",Json::array()).empty())origin["userValues"]=userValues;
+    collect_gallery_media();
   }
   Json send(const Json& command) {
     if (state.is_null()) throw std::runtime_error("먼저 새 게임을 시작해 주세요.");
     // Single choke point for submitted commands: extensions observe each reply exactly once.
     const Json before=observer?Json{{"state",state},{"narrative",projection.value("narrative",Json())}}:Json();
-    const bool collect=content.at("project").contains("gallery")&&!state.value("activeNarrative",Json()).is_null()&&(command.value("type","")=="advanceNarrative"||command.value("type","")=="choose");
+    const bool collect=gallery_recording&&content.at("project").contains("gallery")&&!state.value("activeNarrative",Json()).is_null()&&(command.value("type","")=="advanceNarrative"||command.value("type","")=="choose");
+    const auto gallery_extensions=collect&&extension_state?extension_state():Json();
     const auto gallery_before=collect?state:Json();
     const auto capture_content=collect?(gallery_content?gallery_content():content):Json();
     Json capture_narrative=nullptr;
@@ -120,7 +141,8 @@ public:
     state = result.at("state"); commands.push_back(command);
     for(const auto& cue:result.at("transition").value("soundCues",Json::array()))sound_cues.push_back(cue.get<std::string>());
     refresh(); sync_timeline();sync_battle_selection();
-    if(collect){const auto record=gallery_capture.observe(capture_content,gallery_before,state,command,capture_narrative);if(!record.is_null()){gallery_pending.push_back(record);flush_gallery();}}
+    if(collect)queue_gallery(gallery_capture.observe(capture_content,gallery_before,state,command,capture_narrative,gallery_extensions));
+    collect_gallery_media();
     if(observer)observer(before,{{"state",state},{"narrative",projection.value("narrative",Json())}},command,"");
     return result.at("transition");
   }
@@ -146,6 +168,10 @@ public:
     if(schedule_speed!=1||timeline_active()||!battle_selection.is_null()||!extensions.is_null()||!direction_cursor.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;if(!extensions.is_null())envelope["playerPresentation"]["extensions"]=extensions;}
     if(!direction_cursor.is_null())envelope["playerPresentation"]["direction"]=direction_cursor;
     if(schedule_speed!=1)envelope["playerPresentation"]["scheduleSpeed"]=schedule_speed;
+    if(!gallery_capture.pending.is_null()){
+      if(!envelope.contains("playerPresentation"))envelope["playerPresentation"]={{"version",1},{"timeline",nullptr}};
+      envelope["playerPresentation"]["galleryCapture"]=gallery_capture.pending;
+    }
     fs::create_directories(file.parent_path());
     auto temp = file; temp += ".tmp";
     { std::ofstream out(temp, std::ios::binary | std::ios::trunc); if (!out) throw std::runtime_error("저장 파일을 열 수 없습니다."); out << envelope.dump(2); out.flush(); if (!out) throw std::runtime_error("저장 파일 쓰기에 실패했습니다."); }
@@ -185,7 +211,7 @@ public:
     if(saved.contains("playerPresentation")) {
       const auto presentation=saved.at("playerPresentation");
       if(!presentation.is_object()||!presentation.contains("version")||presentation.at("version")!=1||!presentation.contains("timeline"))throw std::runtime_error("Invalid player presentation save");
-      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction"&&it.key()!="scheduleSpeed")throw std::runtime_error("Invalid player presentation save");
+      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction"&&it.key()!="scheduleSpeed"&&it.key()!="galleryCapture")throw std::runtime_error("Invalid player presentation save");
       if(presentation.contains("scheduleSpeed")){const auto speed=presentation.at("scheduleSpeed");if(!speed.is_number_integer()||(speed!=1&&speed!=4))throw std::runtime_error("Invalid schedule speed");restored_speed=speed.get<int>();}
       // Opaque plugin states; a missing plugin later ignores (and preserves) its entry.
       if(presentation.contains("extensions")){if(!presentation.at("extensions").is_object())throw std::runtime_error("Invalid player presentation save");restored_extensions=presentation.at("extensions");}
@@ -199,8 +225,16 @@ public:
       }
     }
     if(!restored_plan.is_null()&&restored_plan.contains("resultPlayback")){const int speed=restored_cursor.at("speed");if(saved.contains("playerPresentation")&&saved.at("playerPresentation").contains("scheduleSpeed")&&speed!=restored_speed)throw std::runtime_error("Inconsistent schedule speed");restored_speed=speed;}
+    if(saved.contains("playerPresentation")&&saved.at("playerPresentation").contains("galleryCapture")){
+      auto capture=saved.at("playerPresentation").at("galleryCapture"),expected=restored_capture.pending;
+      if(!capture.is_object()||!expected.is_object()||capture.value("frames",Json())!=expected.value("frames",Json())||capture.value("replayFrames",Json()).size()!=expected.value("replayFrames",Json()).size())throw std::runtime_error("회상 진행 기록이 명령 재현과 다릅니다.");
+      for(size_t i=0;i<capture.at("replayFrames").size();i++)if(capture.at("replayFrames").at(i).at("state")!=expected.at("replayFrames").at(i).at("state"))throw std::runtime_error("회상 상태가 명령 재현과 다릅니다.");
+      // Keep only opaque presentation state; content and game snapshots come from verified replay.
+      for(size_t i=0;i<capture.at("replayFrames").size();i++)restored_capture.pending["replayFrames"][i]["extensions"]=capture.at("replayFrames").at(i).value("extensions",Json());
+    }
     gallery_capture=std::move(restored_capture);
     schedule_speed=restored_speed;state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
+    collect_gallery_media();
     message = "저장한 지점에서 이어갑니다.";
   }
 };

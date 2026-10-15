@@ -36,7 +36,11 @@ function route(content,ending){
 test('gallery: actual UI, both endings, immutable recollection, old saves, restart and corrupt profile', {timeout:240000}, async()=>{
   const runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
   const project=resolve(process.env.RAISING_GALLERY_PROJECT??'examples/last-grandson-polished');
-  const loaded=await loadProject(project),snapshot=await buildSnapshot(loaded);assert.equal(snapshot.ok,true,JSON.stringify(snapshot.diagnostics));const content=snapshot.snapshot;
+  const loaded=await loadProject(project);
+  // Retain the original narrative-only contract as a compatibility fixture even
+  // when the public sample grows CG/music definitions.
+  loaded.documents.find(d=>d.kind==='project').data.gallery.entries=loaded.documents.find(d=>d.kind==='project').data.gallery.entries.filter(e=>e.kind==='event'||e.kind==='ending');
+  const snapshot=await buildSnapshot(loaded);assert.equal(snapshot.ok,true,JSON.stringify(snapshot.diagnostics));const content=snapshot.snapshot;
   assert.equal(content.project.gallery.entries.length,3);
   const root=await mkdtemp(resolve('.cache/gallery-native-')),game=resolve(root,'game'),evidence=resolve('.cache/gallery');await mkdir(evidence,{recursive:true});
   const capabilities=JSON.parse(await readFile(resolve(runtime,'capabilities.json'),'utf8'));

@@ -1,41 +1,176 @@
 {
-  "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "$id":"https://raising-engine.example/schemas/0.1.0/gallery-profile.schema.json",
-  "title":"Cross-run gallery profile v1",
-  "type":"object", "additionalProperties":false,
-  "required":["version","gameId","entries"],
-  "properties":{
-    "version":{"const":1},
-    "gameId":{"$ref":"common.schema.json#/$defs/id"},
-    "entries":{
-      "type":"object",
-      "additionalProperties":{
-        "type":"object", "additionalProperties":false, "required":["records"],
-        "properties":{"records":{"type":"array","maxItems":32,"items":{"$ref":"#/$defs/record"}}}
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/gallery-profile.schema.json",
+  "title": "Cross-run gallery profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "gameId",
+    "entries"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "gameId": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "entries": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "records"
+        ],
+        "properties": {
+          "records": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/$defs/record"
+            }
+          }
+        }
       }
     }
   },
-  "$defs":{
-    "record":{
-      "type":"object","additionalProperties":false,
-      "required":["kind","sourceId","title","unlockedAt","contentFingerprint","frames","attributes","attributeLabels","relationships","presentation","periodIndex"],
-      "properties":{
-        "kind":{"enum":["event","ending"]},
-        "sourceId":{"type":"string"},"title":{"type":"string"},
-        "unlockedAt":{"type":"string"},"contentFingerprint":{"type":"string"},
-        "periodIndex":{"type":"integer","minimum":0},
-        "attributes":{"type":"object","additionalProperties":{"type":"number"}},
-        "attributeLabels":{"type":"object","additionalProperties":{"type":"string"}},
-        "relationships":{"type":"object"},"presentation":{"type":"object"},
-        "frames":{
-          "type":"array","maxItems":10000,
-          "items":{
-            "type":"object","additionalProperties":false,"required":["nodeId","text","speaker","scene"],
-            "properties":{
-              "nodeId":{"type":"string"},"text":{"type":"string"},"speaker":{"type":"string"},
-              "scene":{"type":"object"},"choiceId":{"type":"string"},"choice":{"type":"string"}
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceId",
+        "title",
+        "unlockedAt",
+        "contentFingerprint",
+        "frames",
+        "attributes",
+        "attributeLabels",
+        "relationships",
+        "presentation",
+        "periodIndex"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "event",
+            "ending",
+            "cg",
+            "music"
+          ]
+        },
+        "sourceId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "unlockedAt": {
+          "type": "string"
+        },
+        "contentFingerprint": {
+          "type": "string"
+        },
+        "periodIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "attributeLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "relationships": {
+          "type": "object"
+        },
+        "presentation": {
+          "type": "object"
+        },
+        "frames": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "nodeId",
+              "text",
+              "speaker",
+              "scene"
+            ],
+            "properties": {
+              "nodeId": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "speaker": {
+                "type": "string"
+              },
+              "scene": {
+                "type": "object"
+              },
+              "choiceId": {
+                "type": "string"
+              },
+              "choice": {
+                "type": "string"
+              }
             }
           }
+        },
+        "content": {
+          "type": "object"
+        },
+        "replayFrames": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "required": [
+              "state",
+              "extensions",
+              "sounds"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "object"
+              },
+              "extensions": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "sounds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "choiceId": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "extensionManifest": {
+          "type": [
+            "object",
+            "null"
+          ]
         }
       }
     }

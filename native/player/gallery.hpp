@@ -18,22 +18,27 @@ inline std::string gallery_timestamp() {
 
 struct GalleryCapture {
   Json pending=nullptr;
-  Json observe(const Json& content,const Json& before,const Json& after,const Json& command,const Json& narrative) {
+  Json observe(const Json& content,const Json& before,const Json& after,const Json& command,const Json& narrative,const Json& extensions=nullptr) {
     const auto cursor=before.value("activeNarrative",Json());
     if(cursor.is_null()||narrative.is_null())return nullptr;
     const auto type=command.value("type","");if(type!="advanceNarrative"&&type!="choose")return nullptr;
     const auto kind=cursor.value("kind",""),id=cursor.value("id","");
     if(pending.is_null()||pending.at("kind")!=kind||pending.at("sourceId")!=id)
-      pending={{"kind",kind},{"sourceId",id},{"frames",Json::array()},{"contentFingerprint",content.at("contentFingerprint")}};
+      pending={{"kind",kind},{"sourceId",id},{"frames",Json::array()},{"contentFingerprint",content.at("contentFingerprint")},{"content",content},{"replayFrames",Json::array()},{"_sounds",Json::array()}};
     const auto& node=narrative.at("node");const auto nodeType=node.value("type","");
+    if(nodeType=="scene"){
+      if(node.contains("scene")&&node.at("scene").contains("soundAssetId"))pending["_sounds"].push_back(node.at("scene").at("soundAssetId"));
+      pending["_terminalScene"]={{"state",after},{"extensions",extensions},{"sounds",pending.at("_sounds")}};
+    }
     if(nodeType=="dialogue"||nodeType=="choice") {
       Json frame={{"nodeId",cursor.at("nodeId")},{"text",node.value("text",node.value("prompt",""))},{"speaker",""},{"scene",before.value("presentation",Json::object())}};
       for(const auto& character:content.at("characters"))if(character.at("id")==node.value("speakerId",Json()))frame["speaker"]=character.value("name","");
       if(nodeType=="choice")for(const auto& choice:node.at("choices"))if(choice.at("id")==command.value("choiceId",Json())){frame["choiceId"]=choice.at("id");frame["choice"]=choice.value("text",choice.value("label",""));}
-      if(pending["frames"].size()<10000)pending["frames"].push_back(frame);
+      if(pending["frames"].size()<10000){pending["frames"].push_back(frame);Json replayFrame={{"state",before},{"extensions",extensions},{"sounds",pending.at("_sounds")}};if(frame.contains("choiceId"))replayFrame["choiceId"]=frame.at("choiceId");pending["replayFrames"].push_back(replayFrame);pending["_sounds"]=Json::array();pending.erase("_terminalScene");}
     }
     if(nodeType!="end")return nullptr;
-    auto result=pending;pending=nullptr;
+    if(pending.contains("_terminalScene")&&pending["replayFrames"].size()<10000){pending["_terminalScene"]["extensions"]=extensions;pending["replayFrames"].push_back(pending.at("_terminalScene"));}
+    auto result=pending;result.erase("_sounds");result.erase("_terminalScene");pending=nullptr;
     result["attributes"]=after.value("attributes",Json::object());result["relationships"]=after.value("relationships",Json::object());
     result["presentation"]=after.value("presentation",Json::object());result["periodIndex"]=after.value("periodIndex",0);
     result["attributeLabels"]=Json::object();for(const auto& attribute:content.at("attributes"))result["attributeLabels"][attribute.at("id").get<std::string>()]=attribute.value("label",attribute.at("id").get<std::string>());
@@ -76,15 +81,16 @@ public:
   }
   void unlock(const Json& config,Json record) {
     if(record.is_null()||config.is_null())return;
+    const auto entryIds=record.value("_entryIds",Json());record.erase("_entryIds");
     // Read-merge-write under a cross-process lock. Failed/corrupt files are never reset.
     fs::create_directories(path.parent_path());const auto lock=fs::path(path.u8string()+".lock");bool locked=false;
     for(int i=0;i<20&&!locked;i++){locked=fs::create_directory(lock);if(!locked)std::this_thread::sleep_for(std::chrono::milliseconds(10));}
     if(!locked)throw std::runtime_error("다른 실행에서 컬렉션을 저장 중입니다. 도감을 다시 열어 저장을 재시도하세요.");
     struct Unlock {fs::path path;~Unlock(){std::error_code ec;fs::remove(path,ec);}} unlock{lock};
     auto merged=read();bool changed=false;
-    for(const auto& entry:config.at("entries"))if(entry.at("kind")==record.at("kind")&&entry.at("sourceId")==record.at("sourceId")) {
+    for(const auto& entry:config.at("entries"))if(entry.at("kind")==record.at("kind")&&entry.at("sourceId")==record.at("sourceId")&&(entryIds.is_null()||std::find(entryIds.begin(),entryIds.end(),entry.at("id"))!=entryIds.end())) {
       const auto id=entry.at("id").get<std::string>();auto& item=merged["entries"][id];if(item.is_null())item={{"records",Json::array()}};
-      bool duplicate=false;for(const auto& old:item.at("records"))if(old.value("kind","")==record.at("kind")&&old.value("sourceId","")==record.at("sourceId")&&old.at("frames")==record.at("frames"))duplicate=true;
+      bool duplicate=false;for(auto& old:item.at("records"))if(old.value("kind","")==record.at("kind")&&old.value("sourceId","")==record.at("sourceId")&&old.at("frames")==record.at("frames")){duplicate=true;if(!old.contains("replayFrames")&&record.contains("replayFrames")){old["replayFrames"]=record.at("replayFrames");old["content"]=record.at("content");changed=true;}}
       if(!duplicate){if(item["records"].size()>=32)throw std::runtime_error("한 항목의 회상 기록 한도(32개)에 도달했습니다. 기존 기록을 보존했습니다.");record["title"]=entry.at("title");record["unlockedAt"]=gallery_timestamp();item["records"].push_back(record);changed=true;}
     }
     if(changed){

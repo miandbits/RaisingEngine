@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "logic-editor.hpp"
 #include <QStandardPaths>
 #include <QTableWidget>
 #include <QHeaderView>

@@ -29,6 +29,8 @@ class GameAudio {
   }
 public:
   ~GameAudio(){for(auto& [_,s]:sounds)ma_sound_uninit(s.get());if(initialized)ma_engine_uninit(&engine);}
+  uint64_t cursor() const {ma_uint64 value=0;if(music)ma_sound_get_cursor_in_pcm_frames(music,&value);return value;}
+  void seek(uint64_t value){if(music&&ma_sound_seek_to_pcm_frame(music,value)!=MA_SUCCESS)throw std::runtime_error("음악 재생 위치를 복원할 수 없습니다.");}
   bool ready() const{return initialized;}
   bool playing() const{return music&&ma_sound_is_playing(music);}
   size_t loaded_count() const{return sounds.size();}

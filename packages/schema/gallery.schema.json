@@ -4,22 +4,76 @@
   "title": "Cross-run narrative gallery",
   "type": "object",
   "additionalProperties": false,
-  "required": ["title", "entries"],
+  "required": [
+    "title",
+    "entries"
+  ],
   "properties": {
-    "title": {"type":"string", "minLength":1, "maxLength":120},
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
     "entries": {
-      "type":"array", "maxItems":2000,
+      "type": "array",
+      "maxItems": 2000,
       "items": {
-        "type":"object", "additionalProperties":false,
-        "required":["id","kind","sourceId","title","category","hint"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "sourceId",
+          "title",
+          "category",
+          "hint"
+        ],
         "properties": {
-          "id":{"$ref":"common.schema.json#/$defs/id"},
-          "kind":{"enum":["event","ending"]},
-          "sourceId":{"$ref":"common.schema.json#/$defs/id"},
-          "title":{"type":"string","minLength":1,"maxLength":120},
-          "category":{"type":"string","maxLength":80},
-          "hint":{"type":"string","maxLength":500},
-          "thumbnailAssetId":{"$ref":"common.schema.json#/$defs/id"}
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "kind": {
+            "enum": [
+              "event",
+              "ending",
+              "cg",
+              "music"
+            ]
+          },
+          "sourceId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "hint": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "thumbnailAssetId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "unlockCondition": {
+            "$ref": "common.schema.json#/$defs/condition"
+          },
+          "lockedDisplay": {
+            "enum": [
+              "hint",
+              "hidden"
+            ]
+          },
+          "fit": {
+            "enum": [
+              "contain",
+              "cover"
+            ]
+          }
         }
       }
     }

@@ -43,8 +43,8 @@
 
 ## 회상과 엔딩 도감
 
-화면의 **설이의 추억과 결말** 버튼에서 약방 노인의 제안과 두 결말을 확인합니다. 이야기를 끝까지 보면 해금되며, 당시 대사·선택·최종 능력치를 다시 볼 수 있습니다. 새 게임이나 과거 저장 불러오기로 도감은 지워지지 않습니다. 다른 선택의 대사는 별도 기록으로 남습니다.
+화면의 **설이의 추억 · 제작 확인** 버튼에서 약방 노인의 제안과 두 결말을 확인합니다. 기예 12 이상이면 CG **약속이 피는 뜰**, 노인의 신뢰 1 이상이면 음악 **잔설의 선율**이 해금됩니다. 사건·엔딩은 끝까지 보면 해금되며 당시 대사·선택·최종 능력치와 원본 연출을 다시 볼 수 있습니다. 새 게임이나 과거 저장 불러오기로 도감은 지워지지 않습니다.
 
-Qt **프로젝트 설정 → 회상 · 엔딩 도감**에서 항목과 힌트·썸네일·순서를 바꿉니다. 이 샘플의 도감 항목은 실제 Qt 편집기로 제작·저장했습니다. 현재 도감은 Windows 네이티브 플레이어에서 지원합니다. 미지원 웹 내보내기는 명시적으로 거부합니다. 도감을 제거한 기존 샘플 구성은 종전 웹 기능을 유지합니다.
+Qt **프로젝트 설정 → 회상 · CG · 음악 도감**에서 항목, 해금 조건, 잠금 표시, CG 맞춤, 힌트·썸네일·순서를 바꿉니다. 이 설정은 실제 Qt 편집기로 제작·저장했습니다. 회상 저장/불러오기는 본편 슬롯과 분리됩니다. 현재 Windows 네이티브 플레이어에서 지원하며 미지원 웹 내보내기는 거부합니다.
 
-최신 빌드를 지정한 검증: `RAISING_NATIVE_PLAYER_RUNTIME=dist/native-player-gallery node --test tests/native-player/gallery.test.mjs` (PowerShell에서는 먼저 `$env:RAISING_NATIVE_PLAYER_RUNTIME='dist/native-player-gallery'` 설정). 범위와 저장 규칙은 [도감 문서](../../docs/gallery-and-recollection.md)를 참고하세요.
+검증: PowerShell에서 `$env:RAISING_NATIVE_PLAYER_RUNTIME='dist/native-player-gallery-media'` 설정 후 `node --test tests/native-player/gallery.test.mjs tests/native-player/gallery-media.test.mjs`. 범위와 저장 규칙은 [CG·음악·회상 문서](../../docs/gallery-media-and-recollection.md)를 참고하세요. `Edit-Gallery-Media-Lab.cmd`로 해당 편집기와 런타임을 사용합니다.

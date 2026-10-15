@@ -170,9 +170,13 @@ public:
   ExtensionTiming timing;
   static constexpr size_t MAX_MESH_VERTICES=2048,MAX_MESH_INDICES=3*4096;
   ExtensionHost()=default;
+  // Some ABI v1 plugins keep global state. A private module copy gives recollection
+  // its own plugin globals without resetting the live game's animation instances.
+  bool isolated_modules=false;
+  std::vector<fs::path> module_copies;
   ExtensionHost(const ExtensionHost&)=delete;
   ExtensionHost& operator=(const ExtensionHost&)=delete;
-  ~ExtensionHost(){for(auto& p:plugins)if(p.module)SDL_UnloadObject(p.module);}
+  ~ExtensionHost(){for(auto& p:plugins)if(p.module)SDL_UnloadObject(p.module);for(const auto& file:module_copies){std::error_code ec;fs::remove(file,ec);}}
   bool active() const {return !plugins.empty();}
   ExtensionPlugin* plugin(const std::string& id){for(auto& p:plugins)if(p.id==id)return &p;return nullptr;}
   const ExtensionMount* find(const std::string& instance) const {auto it=mounts.find(instance);return it==mounts.end()?nullptr:&it->second;}
@@ -407,7 +411,12 @@ private:
     const auto within=file.lexically_relative(base);
     if(ec||within.empty()||*within.begin()==".."||!fs::is_regular_file(file,ec))return fail("확장 모듈 파일이 없습니다: "+p.entry);
     if(file.extension()!=".dll"&&file.extension()!=".so")return fail("이 플레이어용 확장 모듈이 아닙니다: "+p.entry);
-    p.module=SDL_LoadObject(file.u8string().c_str());
+    auto module_file=file;
+    if(isolated_modules){
+      module_file=fs::temp_directory_path()/("raising-recollection-"+std::to_string(SDL_GetTicksNS())+"-"+file.filename().u8string());
+      fs::copy_file(file,module_file);module_copies.push_back(module_file);
+    }
+    p.module=SDL_LoadObject(module_file.u8string().c_str());
     if(!p.module)return fail(std::string("확장 모듈을 불러오지 못했습니다: ")+SDL_GetError());
     auto version=reinterpret_cast<int(*)(void)>(SDL_LoadFunction(p.module,"raising_extension_api_version"));
     p.request=reinterpret_cast<const char*(*)(const char*)>(SDL_LoadFunction(p.module,"raising_extension_request"));

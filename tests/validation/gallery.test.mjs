@@ -15,4 +15,8 @@ test('gallery contract: legacy projects, stable IDs, missing targets and thumbna
   doc.data.gallery.entries=[{...entry,sourceId:'missing'}];r=await validateProject(loaded);assert.ok(r.diagnostics.some(d=>d.pointer==='/gallery/entries/0/sourceId'));
   doc.data.gallery.entries=[{...entry,thumbnailAssetId:'winter-motif'}];r=await validateProject(loaded);assert.ok(r.diagnostics.some(d=>d.code==='ASSET_TYPE'));
   doc.data.gallery.entries=[{...entry,kind:'unknown'}];assert.equal((await validateProject(loaded)).valid,false);
+  const media={...entry,kind:'cg',sourceId:'winter-courtyard',lockedDisplay:'hidden',fit:'cover',unlockCondition:{op:'compare',comparator:'gte',left:{op:'read',target:{kind:'attribute',attributeId:'skill'}},right:{op:'literal',value:12}}};
+  doc.data.gallery.entries=[media,{...entry,id:'music',kind:'music',sourceId:'winter-motif'}];assert.equal((await validateProject(loaded)).valid,true);
+  doc.data.gallery.entries=[{...media,sourceId:'winter-motif'}];r=await validateProject(loaded);assert.ok(r.diagnostics.some(d=>d.code==='ASSET_TYPE'&&d.pointer.endsWith('/sourceId')));
+  doc.data.gallery.entries=[{...media,unlockCondition:{op:'compare',comparator:'gte',left:{op:'read',target:{kind:'attribute',attributeId:'missing'}},right:{op:'literal',value:1}}}];r=await validateProject(loaded);assert.ok(r.diagnostics.some(d=>d.pointer.includes('unlockCondition')));
 });

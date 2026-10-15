@@ -1075,8 +1075,57 @@
         "sourceId": "ordinary",
         "thumbnailAssetId": "seol-rest",
         "title": "조용한 작별"
+      },
+      {
+        "category": "CG",
+        "fit": "cover",
+        "hint": "기예 12 이상",
+        "id": "courtyard-cg",
+        "kind": "cg",
+        "sourceId": "winter-courtyard",
+        "title": "약속이 피는 뜰",
+        "unlockCondition": {
+          "comparator": "gte",
+          "left": {
+            "op": "read",
+            "target": {
+              "attributeId": "skill",
+              "kind": "attribute"
+            }
+          },
+          "op": "compare",
+          "right": {
+            "op": "literal",
+            "value": 12
+          }
+        }
+      },
+      {
+        "category": "음악",
+        "hint": "노인의 신뢰 1 이상",
+        "id": "winter-music",
+        "kind": "music",
+        "lockedDisplay": "hidden",
+        "sourceId": "winter-motif",
+        "title": "잔설의 선율",
+        "unlockCondition": {
+          "comparator": "gte",
+          "left": {
+            "op": "read",
+            "target": {
+              "characterId": "mentor",
+              "kind": "relationship",
+              "relationshipId": "trust"
+            }
+          },
+          "op": "compare",
+          "right": {
+            "op": "literal",
+            "value": 1
+          }
+        }
       }
     ],
-    "title": "설이의 추억과 결말"
+    "title": "설이의 추억 · 제작 확인"
   }
 }

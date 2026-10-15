@@ -13,7 +13,7 @@ export interface CrossRunGalleryProfileV1 {
   };
 }
 export interface Record {
-  kind: "event" | "ending";
+  kind: "event" | "ending" | "cg" | "music";
   sourceId: string;
   title: string;
   unlockedAt: string;
@@ -38,4 +38,15 @@ export interface Record {
     choiceId?: string;
     choice?: string;
   }[];
+  content?: {};
+  /**
+   * @maxItems 10000
+   */
+  replayFrames?: {
+    state: {};
+    extensions: {} | null;
+    sounds: string[];
+    choiceId?: string;
+  }[];
+  extensionManifest?: {} | null;
 }

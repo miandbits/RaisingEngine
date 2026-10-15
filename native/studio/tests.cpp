@@ -44,6 +44,7 @@ private slots:
   void unifiedTimePlay();
   void shortPolishAuthoring();
   void galleryAuthoring();
+  void galleryMediaAuthoring();
   void authoringWorkspaceRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();
