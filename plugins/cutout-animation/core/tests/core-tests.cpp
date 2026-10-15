@@ -467,8 +467,24 @@ Json outlineParityScript() {
 }  // namespace
 
 #include "clip-sequence-tests.hpp"
+#include "ik-golden.hpp"
+#include "ik-physics-tests.hpp"
 
 int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--physics-parity") {
+    // Native reference for IK chains + physics frames at two pacings (plugin 1.13.0).
+    Host host;
+    Json replies = Json::array();
+    const Json script = ikphys::parityScript();
+    for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--ik-golden") {
+    // Bit patterns of the one/two-bone IK poses (ik-golden.json was written by the 1.12.0 build).
+    std::cout << ikgolden::dump().dump() << "\n";
+    return 0;
+  }
   if (argc > 1 && std::string(argv[1]) == "--clip-parity") {
     // Native reference for clipping + sequence draw lists, compact frames and samples (plugin 1.12.0).
     Host host;
@@ -1589,7 +1605,8 @@ int main(int argc, char** argv) {
     check(bad([](Json& d) { d["ik"][0]["bones"] = {"upper", "hand"}; }, "ANIM_IK_CHAIN"), "non-adjacent chain");
     check(bad([](Json& d) { d["ik"][0]["bones"] = {"lower", "upper"}; }, "ANIM_IK_CHAIN"), "child first");
     check(bad([](Json& d) { d["ik"][0]["bones"] = Json::array(); }, "ANIM_IK_CHAIN"), "empty chain");
-    check(bad([](Json& d) { d["ik"][0]["bones"] = {"root", "upper", "lower"}; }, "ANIM_IK_CHAIN"), "three bones");
+    check(!bad([](Json& d) { d["ik"][0]["bones"] = {"root", "upper", "lower"}; }, "ANIM_IK_CHAIN"), "three bones: a chain (plugin 1.13.0)");
+    check(bad([](Json& d) { d["ik"][0]["bones"] = {"root", "upper", "hand"}; }, "ANIM_IK_CHAIN"), "three bones with a gap");
     check(bad([](Json& d) { d["ik"][0]["target"] = "lower"; }, "ANIM_IK_TARGET"), "target in the chain");
     check(bad([](Json& d) { d["ik"][0]["target"] = "hand"; }, "ANIM_IK_TARGET"), "target below the chain end");
     check(bad([](Json& d) { d["ik"][0]["mix"] = 1.5; }, "ANIM_IK_MIX"), "mix range");
@@ -1598,7 +1615,8 @@ int main(int argc, char** argv) {
       Json s = armRig(60, 40);
       s["ik"][0]["stretch"] = true;
       const auto ds = validateRig(s);
-      check(ds.size() == 1 && ds[0].code == "ANIM_IK_STRETCH" && ds[0].severity == "warning", "stretch: accepted, warned, ignored");
+      // Plugin 1.13.0: stretch works along bone lengths; the arm fixture has none, so it warns.
+      check(ds.size() == 1 && ds[0].code == "ANIM_IK_STRETCH_LENGTH" && ds[0].severity == "warning", "stretch without bone lengths: warned, no-op");
     }
     // Cycle: `a` aims upper at a bone under head, `b` aims head at a bone under upper.
     check(bad([](Json& d) {
@@ -3146,6 +3164,8 @@ int main(int argc, char** argv) {
   });
 
   clipseq::run();
+  ikgolden::run();
+  ikphys::run();
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;

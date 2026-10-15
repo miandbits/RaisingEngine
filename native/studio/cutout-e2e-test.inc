@@ -1444,6 +1444,81 @@ void StudioTests::cutoutEndToEnd() {
     QVERIFY2(saveProject(), qPrintable(w->lastError));
   }
 
+  // ---- 13. 사슬 IK · 늘이기 · 물리 (plugin 1.13.0) on the imported character: one edit per gesture ----
+  step("13 chain IK and physics");
+  {
+    const QString psdRig = "plugins/cutout-animation/rig/psd-hero.json";
+    auto psd = [&] { return pluginData(w->currentView(), psdRig); };
+    auto tabs = panel->findChild<QTabWidget *>("cutoutLookTabs");
+    auto showPage = [&](const char *name) {
+      QWidget *page = panel->findChild<QWidget *>(name);
+      const QRect r = tabs->tabBar()->tabRect(tabs->indexOf(page));
+      if (tabs->tabBar()->rect().contains(r)) QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier, r.center());
+      if (tabs->currentWidget() != page) { hooks << QString("look tab %1 chosen with setCurrentWidget() (scrolled out of the tab bar)").arg(name); tabs->setCurrentWidget(page); }
+      return waitFor([&] { return page->isVisible(); }, 2000);
+    };
+    click("cutoutModeSetup");
+    QVERIFY(settle());
+    QVERIFY(showPage("cutoutIkPage"));
+    // root + Ctrl+click head in the hierarchy: the run becomes a chain (two bones = 팔·다리 solve).
+    QVERIFY(select("bone:root"));
+    auto head = treeItem("bone:head");
+    QVERIFY(head);
+    tree->scrollToItem(head);
+    const QRect hr = tree->visualItemRect(head);
+    QTest::mouseClick(tree->viewport(), Qt::LeftButton, Qt::ControlModifier, QPoint(hr.left() + 16, hr.center().y()));
+    QTest::qWait(60);
+    int revision = w->currentView().value("revision").toInt();
+    click("cutoutNewChainIk");
+    QVERIFY2(waitFor([&] { return !w->busy() && w->currentView().value("revision").toInt() == revision + 1; }, 10000), qPrintable(status->text() + noErrors()));
+    QVERIFY(settle());
+    const QJsonArray ik = psd().value("ik").toArray();
+    QVERIFY2(!ik.isEmpty() && ik.last().toObject().value("bones").toArray() == QJsonArray({"root", "head"}), qPrintable(QJsonDocument(psd().value("ik").toArray()).toJson()));
+    const QString ikId = ik.last().toObject().value("id").toString();
+    auto ikOf = [&] { for (auto k : psd().value("ik").toArray()) if (k.toObject().value("id").toString() == ikId) return k.toObject(); return QJsonObject(); };
+    revision = w->currentView().value("revision").toInt();
+    click("cutoutIkStretch");
+    QVERIFY2(waitFor([&] { return !w->busy() && ikOf().value("stretch").toBool(); }, 10000), qPrintable(status->text()));
+    QVERIFY(settle());
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);
+    // 물리 추가 on the head with the 장식 흔들림 preset, then one field.
+    QVERIFY(showPage("cutoutPhysicsPage"));
+    QVERIFY(select("bone:head"));
+    QVERIFY(choose(panel->findChild<QComboBox *>("cutoutPhysicsPreset"), "accessory"));
+    revision = w->currentView().value("revision").toInt();
+    click("cutoutAddPhysics");
+    QVERIFY2(waitFor([&] { return !w->busy() && psd().value("physics").toArray().size() == 1; }, 10000), qPrintable(status->text() + noErrors()));
+    QVERIFY(settle());
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);
+    auto physics = [&] { return psd().value("physics").toArray().first().toObject(); };
+    QCOMPARE(physics().value("bone").toString(), QString("head"));
+    QCOMPARE(physics().value("damping").toDouble(), 0.92);
+    typeSpin(panel->findChild<QDoubleSpinBox *>("cutoutPhysicsStrength"), "80");
+    QVERIFY2(waitFor([&] { return !w->busy() && physics().value("strength").toDouble() == 80; }, 10000), qPrintable(status->text()));
+    QVERIFY(settle());
+    // Preview playback simulates (the info line reports the steps); stopping goes back to the clip pose.
+    click("cutoutModeAnimate");
+    QVERIFY(settle());
+    click("cutoutPlay");
+    auto info = panel->findChild<QLabel *>("cutoutPhysicsInfo");
+    QVERIFY2(waitFor([&] { return info->text().contains(QString::fromUtf8("미리 보기")); }, 5000), qPrintable(info->text()));
+    QTest::qWait(300);
+    canvas->grab().save(evidence + "/12-physics-canvas.png");
+    click("cutoutPlay");
+    QVERIFY(waitFor([&] { return !info->text().contains(QString::fromUtf8("미리 보기")); }, 5000));
+    menuClick(w->findChild<QAction *>("undoEdit"), &hooks, "되돌리기");
+    QVERIFY(waitFor([&] { return !w->busy() && physics().value("strength").toDouble() != 80; }));
+    QVERIFY(settle());
+    menuClick(w->findChild<QAction *>("redoEdit"), &hooks, "다시 실행");
+    QVERIFY(waitFor([&] { return !w->busy() && physics().value("strength").toDouble() == 80; }));
+    QVERIFY(settle());
+    for (auto d : w->currentView().value("diagnostics").toArray())
+      QVERIFY2(!(d.toObject().value("severity") == "error" && d.toObject().value("file").toString().contains("psd-hero")), qPrintable(d.toObject().value("message").toString()));
+    click("cutoutModeSetup");
+    QVERIFY(settle());
+    QVERIFY2(saveProject(), qPrintable(w->lastError));
+  }
+
   // Hand-off for the browser / exported-player checks and the reusable demo copy.
   QJsonObject manifest{{"projectRoot", projectRoot}, {"windows", exported["windows"]}, {"web", exported["web"]}, {"buttonId", buttonId},
                        {"actionId", actionId}, {"instance", instanceId}, {"characterElement", characterId}, {"evidence", evidence},

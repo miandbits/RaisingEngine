@@ -287,12 +287,14 @@ size_t checkSequence(Checker& c, const Json& a, const std::string& p) {
 
 /**
  * IK constraints (plugin 1.3.0): ids, chain shape, target placement, mix and dependencies.
+ * Chains of 3+ bones (plugin 1.13.0) follow the two-bone rules: each bone the direct child of the
+ * previous one, an explicit tip a direct child of the last; stretch needs bone lengths (warning).
  * A constraint moves every strict descendant of its chain bones; B depends on A when A moves
  * B's target or B's chain base. A dependency cycle can never be satisfied by any order
  * (ANIM_IK_CYCLE); an `order` that solves B before A is only a warning (ANIM_IK_ORDER).
  * Returns the ids `ik:<id>` tracks may use.
  */
-std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string, std::string>& parentOf) {
+std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string, std::string>& parentOf, const std::map<std::string, double>& lengthOf) {
   std::set<std::string> ids;
   if (data.contains("ik") && !data.at("ik").is_array()) c.error("/ik", "ANIM_STRUCTURE", "ik는 배열입니다.");
   const auto& list = arrayOr(data, "ik");
@@ -313,23 +315,27 @@ std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string
     else if (!ids.insert(id).second) c.error(at(p, "id"), "ANIM_IK_DUP_ID", "중복된 IK 제약 ID: " + id);
     bool ok = true;
     const Json bones = k.contains("bones") ? k.at("bones") : Json();
-    if (!bones.is_array() || bones.empty() || bones.size() > 2) { c.error(at(p, "bones"), "ANIM_IK_CHAIN", "IK 사슬은 본 1개(조준) 또는 2개(부모 → 자식 팔·다리)입니다."); ok = false; }
+    if (!bones.is_array() || bones.empty() || bones.size() > MAX_IK_CHAIN) {
+      c.error(at(p, "bones"), "ANIM_IK_CHAIN", "IK 사슬은 본 1개(조준), 2개(팔·다리) 또는 3.." + std::to_string(MAX_IK_CHAIN) + "개(부모 → 자식이 이어진 사슬)입니다.");
+      ok = false;
+    }
     else
       for (size_t b = 0; b < bones.size(); b++) {
         const std::string bone = bones[b].is_string() ? bones[b].get<std::string>() : "";
         if (!parentOf.count(bone)) { c.error(at(at(p, "bones"), b), "ANIM_IK_BONE_MISSING", "IK 사슬이 없는 본을 가리킵니다: " + bone); ok = false; }
         info[i].chain.push_back(bone);
       }
-    if (ok && info[i].chain.size() == 2 && parentOf[info[i].chain[1]] != info[i].chain[0]) {
-      c.error(at(p, "bones"), "ANIM_IK_CHAIN", "두 본 IK 사슬은 직접 부모 → 자식이어야 합니다: " + info[i].chain[0] + " → " + info[i].chain[1]);
-      ok = false;
-    }
+    for (size_t b = 1; ok && b < info[i].chain.size(); b++)
+      if (parentOf[info[i].chain[b]] != info[i].chain[b - 1]) {
+        c.error(at(p, "bones"), "ANIM_IK_CHAIN", std::string(info[i].chain.size() == 2 ? "두 본 IK 사슬은" : "IK 사슬의 본은 앞 본의") + " 직접 부모 → 자식이어야 합니다: " + info[i].chain[b - 1] + " → " + info[i].chain[b]);
+        ok = false;
+      }
     // Explicit effector (plugin 1.4.0): picks the hand among several children of the forearm.
     if (k.contains("tip")) {
       const std::string tip = text(k, "tip");
       if (!k.at("tip").is_string() || !parentOf.count(tip)) { c.error(at(p, "tip"), "ANIM_IK_TIP", "IK 끝점(tip) 본이 없습니다: " + tip); ok = false; }
-      else if (ok && info[i].chain.size() != 2) { c.error(at(p, "tip"), "ANIM_IK_TIP", "끝점(tip)은 두 본 IK에만 씁니다(조준 IK는 x축이 대상을 향합니다)."); ok = false; }
-      else if (ok && parentOf[tip] != info[i].chain[1]) { c.error(at(p, "tip"), "ANIM_IK_TIP", "끝점(tip)은 아래 본 「" + info[i].chain[1] + "」의 직접 자식이어야 합니다: " + tip); ok = false; }
+      else if (ok && info[i].chain.size() < 2) { c.error(at(p, "tip"), "ANIM_IK_TIP", "끝점(tip)은 본 2개 이상의 IK에만 씁니다(조준 IK는 x축이 대상을 향합니다)."); ok = false; }
+      else if (ok && parentOf[tip] != info[i].chain.back()) { c.error(at(p, "tip"), "ANIM_IK_TIP", "끝점(tip)은 마지막 본 「" + info[i].chain.back() + "」의 직접 자식이어야 합니다: " + tip); ok = false; }
     }
     info[i].target = text(k, "target");
     if (!parentOf.count(info[i].target)) { c.error(at(p, "target"), "ANIM_IK_BONE_MISSING", "IK 대상 본이 없습니다: " + info[i].target); ok = false; }
@@ -355,9 +361,21 @@ std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string
         ok = false;
       }
     }
-    for (const char* flag : {"bendPositive", "stretch"})
+    for (const char* flag : {"bendPositive", "stretch", "compress", "uniform"})
       if (k.contains(flag) && !k.at(flag).is_boolean()) c.error(at(p, flag), "ANIM_STRUCTURE", std::string(flag) + "는 true 또는 false입니다.");
-    if (k.contains("stretch") && k.at("stretch") == true) c.warn(at(p, "stretch"), "ANIM_IK_STRETCH", "늘이기(stretch)는 아직 지원하지 않아 무시됩니다.");
+    // Stretch (plugin 1.13.0): the chain scales along its bones' length axes, so it needs lengths.
+    const bool stretch = k.value("stretch", false) == true, compress = k.value("compress", false) == true;
+    if (ok && compress && info[i].chain.size() != 1) c.warn(at(p, "compress"), "ANIM_IK_COMPRESS", "줄이기(compress)는 조준 IK(본 1개)에만 쓰입니다. 무시됩니다.");
+    if (ok && (stretch || compress)) {
+      std::string pointless;
+      for (const auto& bone : info[i].chain)
+        if (!(lengthOf.count(bone) && lengthOf.at(bone) > 0)) { pointless = bone; break; }
+      if (!pointless.empty())
+        c.warn(at(p, stretch ? "stretch" : "compress"), "ANIM_IK_STRETCH_LENGTH", "늘이기는 사슬 본의 길이(length) 방향으로 늘이므로 모든 본에 길이가 필요합니다. 길이 없는 본 「" + pointless + "」 때문에 늘이지 않습니다.");
+      else if (info[i].chain.size() == 1 && k.contains("aimAxis") && k.at("aimAxis").is_number() && k.at("aimAxis").get<double>() != 0)
+        c.warn(at(p, stretch ? "stretch" : "compress"), "ANIM_IK_STRETCH_AXIS", "늘이기는 본 길이 방향(+x)으로 조준할 때만 쓰입니다. 조준 축(aimAxis)이 0이 아니어서 늘이지 않습니다.");
+    }
+    if (k.value("uniform", false) == true && !stretch && !compress) c.warn(at(p, "uniform"), "ANIM_IK_UNIFORM", "uniform은 늘이기(stretch)·줄이기(compress)와 함께 쓰입니다.");
     if (k.contains("order") && (!k.at("order").is_number_integer() || std::llabs(k.at("order").get<int64_t>()) > 1000))
       c.error(at(p, "order"), "ANIM_STRUCTURE", "IK 순서(order)는 -1000..1000 정수입니다.");
     else info[i].order = k.value("order", int64_t(0));
@@ -393,6 +411,56 @@ std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string
     for (size_t a : dep[b])
       if (!cyclic.count(b) && solvedBefore(b, a))
         c.warn(at(at("/ik", b), "order"), "ANIM_IK_ORDER", "IK 「" + text(list[a], "id") + "」가 이 제약의 대상·사슬을 움직입니다. 「" + text(list[b], "id") + "」의 order를 더 크게 하세요.");
+  return ids;
+}
+
+/**
+ * Physics constraints (plugin 1.13.0): ids, bone, channel mixes and the simulation parameters.
+ * Everything a runtime could not integrate safely (a zero mass, a step outside 1/240..1/10 s,
+ * non-finite numbers) is an error; constraints that cannot do anything are warnings.
+ * Returns the ids `physics:<id>` tracks may use.
+ */
+std::set<std::string> checkPhysics(Checker& c, const Json& data, const std::map<std::string, std::string>& parentOf, const std::map<std::string, double>& lengthOf) {
+  std::set<std::string> ids;
+  if (data.contains("physics") && !data.at("physics").is_array()) c.error("/physics", "ANIM_STRUCTURE", "physics는 배열입니다.");
+  const auto& list = arrayOr(data, "physics");
+  std::map<std::string, std::string> boneUsed;
+  for (size_t i = 0; i < list.size(); i++) {
+    const Json& k = list[i];
+    const std::string p = at("/physics", i), id = text(k, "id"), bone = text(k, "bone");
+    if (!k.is_object()) { c.error(p, "ANIM_STRUCTURE", "물리 제약은 객체입니다."); continue; }
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "물리 제약 ID가 필요합니다.");
+    else if (!ids.insert(id).second) c.error(at(p, "id"), "ANIM_PHYSICS_DUP_ID", "중복된 물리 제약 ID: " + id);
+    if (!parentOf.count(bone)) c.error(at(p, "bone"), "ANIM_PHYSICS_BONE", "물리 제약이 없는 본을 가리킵니다: " + bone);
+    else if (boneUsed.count(bone)) c.warn(at(p, "bone"), "ANIM_PHYSICS_SAME_BONE", "본 「" + bone + "」에 물리 제약 「" + boneUsed[bone] + "」가 이미 있어 흔들림이 겹칩니다.");
+    else boneUsed[bone] = id;
+    double channels = 0;
+    for (const char* key : {"x", "y", "rotate", "scaleX"}) {
+      const double v = number(c, k, p, key, 0);
+      if (v < 0 || v > 1) c.error(at(p, key), "ANIM_PHYSICS_RANGE", std::string(key) + " (채널 혼합)은 0..1입니다.");
+      channels += v;
+    }
+    if (k.contains("shearX")) c.warn(at(p, "shearX"), "ANIM_PHYSICS_UNUSED", "shearX는 지원하지 않습니다(x, y, rotate, scaleX만 흔듭니다).");
+    for (const char* key : {"inertia", "damping", "mix"}) {
+      const double v = number(c, k, p, key, 1);
+      if (v < 0 || v > 1) c.error(at(p, key), key == std::string("mix") ? "ANIM_PHYSICS_MIX" : "ANIM_PHYSICS_RANGE", std::string(key) + " 값은 0..1입니다.");
+    }
+    const double strength = number(c, k, p, "strength", 100), mass = number(c, k, p, "mass", 1);
+    if (strength < 0 || strength > 10000) c.error(at(p, "strength"), "ANIM_PHYSICS_RANGE", "strength(복원력)는 0..10000입니다.");
+    if (!(mass >= 0.01) || mass > 1000) c.error(at(p, "mass"), "ANIM_PHYSICS_MASS", "mass(질량)는 0.01..1000입니다.");
+    for (const char* key : {"wind", "gravity"})
+      if (std::fabs(number(c, k, p, key, 0)) > 100000) c.error(at(p, key), "ANIM_PHYSICS_RANGE", std::string(key) + " 값은 -100000..100000(px/s²)입니다.");
+    const double limit = number(c, k, p, "limit", 5000), teleport = number(c, k, p, "teleport", 300);
+    if (!(limit > 0)) c.error(at(p, "limit"), "ANIM_PHYSICS_RANGE", "limit(전달 속도 한계, px/s)은 0보다 커야 합니다.");
+    if (!(teleport > 0)) c.error(at(p, "teleport"), "ANIM_PHYSICS_RANGE", "teleport(순간 이동 거리, px)는 0보다 커야 합니다.");
+    // A fixed step outside 1/240..1/10 s: too costly per frame, or too coarse to stay stable.
+    const double step = number(c, k, p, "step", 1.0 / 60);
+    if (!(step >= 1.0 / 240 - 1e-12) || step > 0.1 + 1e-12) c.error(at(p, "step"), "ANIM_PHYSICS_STEP", "step(고정 시간 간격)은 1/240..1/10초입니다.");
+    if (k.contains("resetOnStart") && !k.at("resetOnStart").is_boolean()) c.error(at(p, "resetOnStart"), "ANIM_STRUCTURE", "resetOnStart는 true 또는 false입니다.");
+    if (channels == 0) c.warn(p, "ANIM_PHYSICS_CHANNELS", "흔들 채널(x, y, rotate, scaleX)이 하나도 켜져 있지 않아 아무것도 하지 않습니다: " + id);
+    else if ((number(c, k, p, "rotate", 0) > 0 || number(c, k, p, "scaleX", 0) > 0) && parentOf.count(bone) && !(lengthOf.count(bone) && lengthOf.at(bone) > 0))
+      c.warn(at(p, "bone"), "ANIM_PHYSICS_LENGTH", "회전·늘이기 흔들림은 본 길이를 지렛대로 씁니다. 길이 없는 본 「" + bone + "」은 50px로 계산합니다.");
+  }
   return ids;
 }
 }  // namespace
@@ -444,6 +512,7 @@ int Rig::clipIndex(const std::string& id) const { for (size_t i = 0; i < clips.s
 int Rig::skinIndex(const std::string& id) const { for (size_t i = 0; i < skins.size(); i++) if (skins[i].id == id) return int(i); return -1; }
 int Rig::expressionIndex(const std::string& id) const { for (size_t i = 0; i < expressions.size(); i++) if (expressions[i].id == id) return int(i); return -1; }
 int Rig::ikIndex(const std::string& id) const { for (size_t i = 0; i < ik.size(); i++) if (ik[i].id == id) return int(i); return -1; }
+int Rig::physicsIndex(const std::string& id) const { for (size_t i = 0; i < physics.size(); i++) if (physics[i].id == id) return int(i); return -1; }
 int Rig::eventIndex(const std::string& name) const { for (size_t i = 0; i < events.size(); i++) if (events[i].name == name) return int(i); return -1; }
 const Attachment* Rig::attachment(const std::string& slot, const std::string& name, int skin) const {
   if (skin >= 0 && skin < int(skins.size()))
@@ -471,6 +540,7 @@ std::vector<Diagnostic> validateRig(const Json& data) {
   const auto& bones = arrayOr(data, "bones");
   std::map<std::string, std::string> parentOf;
   std::map<std::string, size_t> boneAt;
+  std::map<std::string, double> lengthOf;  // valid lengths only (IK stretch, physics levers)
   for (size_t i = 0; i < bones.size(); i++) {
     const std::string p = at("/bones", i), id = text(bones[i], "id");
     if (id.empty()) { c.error(at(p, "id"), "ANIM_ID_MISSING", "본 ID가 필요합니다."); continue; }
@@ -483,6 +553,7 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       const Json& v = bones[i].at("length");
       if (!v.is_number() || !std::isfinite(v.get<double>()) || v.get<double>() < 0 || v.get<double>() > 100000)
         c.error(at(p, "length"), "ANIM_BONE_LENGTH", "본 길이(length)는 0..100000 사이의 숫자(px)입니다.");
+      else lengthOf[id] = v.get<double>();
     }
     if (bones[i].contains("color") && !validColor(bones[i].at("color")))
       c.error(at(p, "color"), "ANIM_BONE_COLOR", "본 색(color)은 \"#rrggbb\" 또는 \"#rrggbbaa\" 형식입니다.");
@@ -498,7 +569,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     }
   }
 
-  const std::set<std::string> ikIds = checkIk(c, data, parentOf);
+  const std::set<std::string> ikIds = checkIk(c, data, parentOf, lengthOf);
+  const std::set<std::string> physicsIds = checkPhysics(c, data, parentOf, lengthOf);
 
   // Slots and attachments.
   const auto& slots = arrayOr(data, "slots");
@@ -637,7 +709,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       const std::string tp = at(at(p, "tracks"), ti), target = text(track, "target"), propertyText = text(track, "property");
       const auto property = parseProperty(propertyText);
       const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0, isRig = target == "rig", isIk = target.rfind("ik:", 0) == 0;
-      const std::string targetId = isIk ? target.substr(3) : target.size() > 5 ? target.substr(5) : "";
+      const bool isPhysics = target.rfind("physics:", 0) == 0;
+      const std::string targetId = isIk ? target.substr(3) : isPhysics ? target.substr(8) : target.size() > 5 ? target.substr(5) : "";
       if (!property) { c.error(at(tp, "property"), "ANIM_PROPERTY", "알 수 없는 트랙 속성: " + propertyText); continue; }
       const bool deform = *property == Property::Deform, sequence = *property == Property::Sequence;
       const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment || deform || sequence;
@@ -645,6 +718,11 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       if (isRig != (*property == Property::Expression))
         c.error(at(tp, "property"), "ANIM_PROPERTY", isRig ? "rig 트랙의 속성은 expression뿐입니다." : "expression 속성은 rig 트랙에만 씁니다.");
       else if (isRig) {}
+      else if (isPhysics) {
+        // Physics tracks (plugin 1.13.0) key the constraint's mix only.
+        if (*property != Property::Mix) c.error(at(tp, "property"), "ANIM_PROPERTY", "물리 트랙의 속성은 mix뿐입니다.");
+        else if (!physicsIds.count(targetId)) c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙이 없는 물리 제약을 가리킵니다: " + target);
+      }
       else if (isIk != ikProperty)
         c.error(at(tp, "property"), "ANIM_PROPERTY", isIk ? "IK 트랙의 속성은 mix, bendPositive입니다." : "mix·bendPositive 속성은 IK 트랙(ik:<id>)에만 씁니다.");
       else if (isIk) { if (!ikIds.count(targetId)) c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙이 없는 IK 제약을 가리킵니다: " + target); }
@@ -719,7 +797,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
           else if (key.at("value").is_string()) referenced.insert({targetId, key.at("value").get<std::string>()});
         } else if (!key.contains("value") || !finiteNumber(key.at("value"))) c.error(at(kp(), "value"), "ANIM_NONFINITE", "키 값은 유한한 숫자여야 합니다.");
         else if (*property == Property::Alpha && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp(), "value"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
-        else if (*property == Property::Mix && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp(), "value"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
+        else if (*property == Property::Mix && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1))
+          c.error(at(kp(), "value"), isPhysics ? "ANIM_PHYSICS_MIX" : "ANIM_IK_MIX", isPhysics ? "물리 혼합(mix)은 0..1이어야 합니다." : "IK 혼합(mix)은 0..1이어야 합니다.");
       }
     }
     const auto& events = arrayOr(clip, "events");
@@ -888,13 +967,18 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
     for (const auto& b : k.at("bones")) x.bones.push_back(rig.boneIndex(b.get<std::string>()));
     x.target = rig.boneIndex(k.at("target").get<std::string>());
     x.mix = k.value("mix", 1.0); x.aimAxis = k.value("aimAxis", 0.0); x.bendPositive = k.value("bendPositive", true); x.stretch = k.value("stretch", false); x.order = k.value("order", 0);
-    // The effector of a two-bone chain: the explicit `tip` (plugin 1.4.0), else the end bone's own
+    x.compress = x.bones.size() == 1 && k.value("compress", false);
+    x.uniform = k.value("uniform", false);
+    x.stretchable = x.bones.size() > 1 || x.aimAxis == 0;
+    for (int b : x.bones) x.stretchable = x.stretchable && rig.bones[size_t(b)].length > 0;
+    // The effector of a chain of 2+: the explicit `tip` (plugin 1.4.0), else the end bone's own
     // tip when it has a length (plugin 1.5.0), else its first child (array order).
     x.explicitTip = k.contains("tip");
+    const int end = x.bones.back();
     if (x.explicitTip) x.tip = rig.boneIndex(k.at("tip").get<std::string>());
-    else if (x.bones.size() == 2 && rig.bones[size_t(x.bones[1])].length > 0) x.tipLength = rig.bones[size_t(x.bones[1])].length;
-    else if (x.bones.size() == 2)
-      for (size_t i = 0; i < rig.bones.size() && x.tip < 0; i++) if (rig.bones[i].parentIndex == x.bones[1]) x.tip = int(i);
+    else if (x.bones.size() >= 2 && rig.bones[size_t(end)].length > 0) x.tipLength = rig.bones[size_t(end)].length;
+    else if (x.bones.size() >= 2)
+      for (size_t i = 0; i < rig.bones.size() && x.tip < 0; i++) if (rig.bones[i].parentIndex == end) x.tip = int(i);
     std::vector<char> inside(rig.bones.size(), 0);
     for (int i : rig.evalOrder) {
       const int p = rig.bones[size_t(i)].parentIndex;
@@ -905,6 +989,31 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
   }
   for (size_t i = 0; i < rig.ik.size(); i++) rig.ikOrder.push_back(int(i));
   std::stable_sort(rig.ikOrder.begin(), rig.ikOrder.end(), [&](int a, int b) { return rig.ik[size_t(a)].order < rig.ik[size_t(b)].order; });
+  std::vector<size_t> depth(rig.bones.size(), 0);  // place in evalOrder: parents before children
+  for (size_t i = 0; i < rig.evalOrder.size(); i++) depth[size_t(rig.evalOrder[i])] = i;
+  for (const auto& k : arrayOr(data, "physics")) {
+    PhysicsConstraint x; x.id = k.at("id"); x.name = k.value("name", x.id);
+    x.bone = rig.boneIndex(k.at("bone").get<std::string>());
+    x.x = k.value("x", 0.0); x.y = k.value("y", 0.0); x.rotate = k.value("rotate", 0.0); x.scaleX = k.value("scaleX", 0.0);
+    x.inertia = k.value("inertia", 1.0); x.strength = k.value("strength", 100.0); x.damping = k.value("damping", 0.85);
+    x.mass = k.value("mass", 1.0); x.wind = k.value("wind", 0.0); x.gravity = k.value("gravity", 0.0); x.mix = k.value("mix", 1.0);
+    x.limit = k.value("limit", 5000.0); x.step = k.value("step", 1.0 / 60); x.teleport = k.value("teleport", 300.0);
+    x.resetOnStart = k.value("resetOnStart", false);
+    x.stepMs = x.step * 1000;
+    // Once at load (pow is libm): every step then multiplies by the same number in this runtime.
+    x.decay = std::pow(x.damping, 60 * x.step);
+    if (rig.bones[size_t(x.bone)].length > 0) x.lever = rig.bones[size_t(x.bone)].length;
+    std::vector<char> inside(rig.bones.size(), 0);
+    for (int i : rig.evalOrder) {
+      const int p = rig.bones[size_t(i)].parentIndex;
+      inside[size_t(i)] = i == x.bone || (p >= 0 && inside[size_t(p)]);
+      if (inside[size_t(i)]) x.affected.push_back(i);
+    }
+    rig.physics.push_back(x);
+  }
+  // Parents first: a hair tip on a swinging hair root sees the root's motion of the same step.
+  for (size_t i = 0; i < rig.physics.size(); i++) rig.physicsOrder.push_back(int(i));
+  std::stable_sort(rig.physicsOrder.begin(), rig.physicsOrder.end(), [&](int a, int b) { return depth[size_t(rig.physics[size_t(a)].bone)] < depth[size_t(rig.physics[size_t(b)].bone)]; });
   for (const auto& e : arrayOr(data, "events")) {
     EventDef d; d.name = e.at("name");
     if (e.contains("int")) d.intValue = e.at("int").get<int64_t>();
@@ -920,8 +1029,9 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
       Track track; const std::string target = t.at("target");
       track.rig = target == "rig";
       track.ik = target.rfind("ik:", 0) == 0;
-      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(track.ik ? 3 : 5);
-      track.targetIndex = track.rig ? -1 : track.ik ? rig.ikIndex(track.target) : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
+      track.physics = target.rfind("physics:", 0) == 0;
+      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(track.ik ? 3 : track.physics ? 8 : 5);
+      track.targetIndex = track.rig ? -1 : track.ik ? rig.ikIndex(track.target) : track.physics ? rig.physicsIndex(track.target) : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
       track.property = *parseProperty(t.at("property"));
       if (track.property == Property::Deform) track.attachment = t.at("attachment").get<std::string>();
       for (const auto& k : arrayOr(t, "keys")) {

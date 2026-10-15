@@ -42,6 +42,7 @@ class RigCanvas : public QWidget {
   explicit RigCanvas(QWidget* parent = nullptr);
 
   void setScene(std::shared_ptr<const cutout::Rig> rig, const cutout::Pose& pose);
+  const cutout::Pose& pose() const { return pose_; }  // what the canvas draws (tests, overlays)
   void setImages(ImageCache* images) { images_ = images; }
   void setHiddenSlots(const QSet<QString>& hidden) { hidden_ = hidden; refreshHover(); update(); }
   void setSelection(const QString& ref) { selection_ = ref; refreshHover(); update(); }
@@ -68,6 +69,11 @@ class RigCanvas : public QWidget {
   void setSelectedIk(const QString& id) { selectedIk_ = id; update(); }
   bool isIkTarget(int bone) const;
   static QColor ikColor();
+  /** Physics (plugin 1.13.0): physics bones get a teal spring mark at their tip, `selected` thicker;
+   *  `rest` (bone index -> rig point) = the unsimulated tips while preview playback simulates. */
+  void setPhysicsView(const QString& selected, const QHash<int, QPointF>& rest) { selectedPhysics_ = selected; physicsRest_ = rest; update(); }
+  const QHash<int, QPointF>& physicsRest() const { return physicsRest_; }
+  static QColor physicsColor();
   /** Workspace UI scale (plugin 1.10.0, editor-only): handles, gizmos, pick radii and the hint
    *  line grow with it, so a large-text workspace also gets larger targets. */
   void setUiScale(double scale) { ui_ = scale; refreshHover(); update(); }
@@ -211,6 +217,8 @@ class RigCanvas : public QWidget {
   int ghostRenders_ = 0;
   QPolygonF trail_, trailKeys_;
   QString selectedIk_;
+  QString selectedPhysics_;
+  QHash<int, QPointF> physicsRest_;
   // hover: what a click at the cursor would pick (Alt held = the cycled pick)
   QString hoverRef_;
   QPointF hoverAt_;
@@ -242,6 +250,7 @@ class RigCanvas : public QWidget {
   void paintMesh(QPainter& p);
   void paintGhosts(QPainter& p);
   void paintIk(QPainter& p);
+  void paintPhysics(QPainter& p);
   bool showClips_ = true;
   void paintClips(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;

@@ -12,6 +12,7 @@ namespace cutout_studio {
 namespace {
 constexpr double PI = 3.14159265358979323846;
 const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d"), TRAIL_COLOR("#38bdf8"), IK_COLOR("#f97316");
+const QColor PHYSICS_COLOR("#2dd4bf");  // physics bones (plugin 1.13.0): teal, apart from IK orange and trail blue
 // Mesh edit (plugin 1.6.0): outline edges, pinned inside edges, outline being drawn / previewed.
 const QColor OUTLINE_COLOR("#f59e0b"), PINNED_COLOR("#22d3ee"), DRAFT_COLOR("#e879f9");
 double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 * PI; return a; }
@@ -335,6 +336,7 @@ void RigCanvas::paintMesh(QPainter& p) {
 }
 
 QColor RigCanvas::ikColor() { return IK_COLOR; }
+QColor RigCanvas::physicsColor() { return PHYSICS_COLOR; }
 bool RigCanvas::isIkTarget(int bone) const {
   if (!rig_) return false;
   for (const auto& k : rig_->ik) if (k.target == bone) return true;
@@ -370,10 +372,42 @@ void RigCanvas::paintIk(QPainter& p) {
       p.drawLine(to, to - dir * 8 * ui_ + side * 4 * ui_);
       p.drawLine(to, to - dir * 8 * ui_ - side * 4 * ui_);
     }
-    // From the effector: the tip bone, the lower bone's length tip, else the chain end.
-    const QPointF from = k.tip >= 0 ? origin(k.tip) : k.bones.size() == 2 && k.tipLength > 0 ? rigToWidget(boneTip(k.bones.back())) : origin(k.bones.back());
+    // From the effector: the tip bone, the last bone's length tip, else the chain end.
+    const QPointF from = k.tip >= 0 ? origin(k.tip) : k.bones.size() >= 2 && k.tipLength > 0 ? rigToWidget(boneTip(k.bones.back())) : origin(k.bones.back());
     p.setPen(QPen(line, 1.5, Qt::DashLine));
     p.drawLine(from, origin(k.target));
+  }
+}
+
+// Physics overlay (plugin 1.13.0): a teal spring ring (a "~" in a circle) at the tip of every
+// physics bone, the selected constraint's drawn thicker; while preview playback simulates, a dashed
+// tether runs from where the animation alone would put the tip (the rest point) to where it swings.
+void RigCanvas::paintPhysics(QPainter& p) {
+  if (!rig_ || rig_->physics.empty() || pose_.world.size() != rig_->bones.size()) return;
+  for (const auto& k : rig_->physics) {
+    if (k.bone < 0 || size_t(k.bone) >= rig_->bones.size()) continue;
+    const bool selected = qs(k.id) == selectedPhysics_;
+    QColor c = PHYSICS_COLOR;
+    c.setAlpha(selected ? 255 : 170);
+    const auto& w = pose_.world[size_t(k.bone)];
+    const QPointF tip = rigToWidget(rig_->bones[size_t(k.bone)].length > 0 ? boneTip(k.bone) : QPointF(w.e, w.f));
+    if (auto rest = physicsRest_.find(k.bone); rest != physicsRest_.end()) {
+      const QPointF from = rigToWidget(rest.value());
+      p.setPen(QPen(c, 1.25 * ui_, Qt::DashLine));
+      p.setBrush(Qt::NoBrush);
+      p.drawLine(from, tip);
+      p.drawEllipse(from, 2.5 * ui_, 2.5 * ui_);
+    }
+    const double r = (selected ? 7 : 5) * ui_;
+    p.setPen(QPen(c, (selected ? 2.5 : 1.5) * ui_));
+    p.setBrush(QColor(11, 18, 32, 140));
+    p.drawEllipse(tip, r, r);
+    QPainterPath wave;
+    wave.moveTo(tip + QPointF(-r * 0.6, 0));
+    wave.cubicTo(tip + QPointF(-r * 0.3, -r * 0.55), tip + QPointF(0, -r * 0.1), tip);
+    wave.cubicTo(tip + QPointF(0, r * 0.1), tip + QPointF(r * 0.3, r * 0.55), tip + QPointF(r * 0.6, 0));
+    p.setBrush(Qt::NoBrush);
+    p.drawPath(wave);
   }
 }
 
@@ -657,6 +691,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
       for (size_t i = 0; i < rig_->slots.size(); i++) if (isSelected("slot:" + qs(rig_->slots[i].id))) outlineSlot(p, int(i));
       paintIk(p);
       paintBones(p);
+      paintPhysics(p);
     }
     if (pose_.world.size() == rig_->bones.size()) paintHover(p);
     paintMesh(p);

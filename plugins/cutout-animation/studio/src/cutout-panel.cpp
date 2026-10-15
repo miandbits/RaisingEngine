@@ -1393,7 +1393,8 @@ QWidget* CutoutPanel::buildLooks() {
   // Clipping and sequences (plugin 1.12.0): pages of the same section, like IK and meshes.
   lookTabs_->addTab(buildClipping(), "클리핑");
   lookTabs_->addTab(buildSequence(), "시퀀스");
-  return section("스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스", "cutoutSectionLooks", lookTabs_);
+  lookTabs_->addTab(buildPhysics(), "물리");  // plugin 1.13.0
+  return section("스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스 · 물리", "cutoutSectionLooks", lookTabs_);
 }
 QWidget* CutoutPanel::lookPage(const char* name) {
   auto* page = new QWidget;
@@ -1733,6 +1734,7 @@ QWidget* CutoutPanel::buildIk() {
   QWidget* tools = buttonRow("cutoutIkTools");
   button(tools, "팔·다리 IK", "cutoutNewIk", "선택한 본(아래팔·정강이처럼 사슬의 끝)과 그 부모로 두 본 IK를 만들고, 손·발 자리에 대상 본(✛)을 만듭니다.\n끝점은 선택한 본의 첫 자식 본(손·발)입니다.", [this] { return newIk(false); });
   button(tools, "조준 IK", "cutoutNewAimIk", "선택한 본이 대상 본을 향하게 하는 한 본 IK를 만듭니다(눈·머리·무기·팔 조준).\n조준 축은 본이 뻗은 방향(자식 본, 없으면 붙은 그림)에서 시작하므로 만들 때 본이 돌지 않습니다.", [this] { return newIk(true); });
+  button(tools, "사슬 IK", "cutoutNewChainIk", "고른 본들(Ctrl/Shift+클릭 또는 「자식 본까지 선택」, 부모 → 자식으로 한 줄)로 사슬 IK를 만듭니다.\n본 2개 = 팔·다리, 3개 이상 = 꼬리·촉수·머리채처럼 FABRIK으로 풉니다. 끝점에 대상 본(✛)이 생깁니다.", [this] { return newChainIk(); });
   button(tools, "이름 변경", "cutoutRenameIk", "IK ID를 바꿉니다. 이 IK의 키(혼합·굽힘)도 함께 바뀝니다.", [this] { return renameIk(); });
   button(tools, "삭제", "cutoutDeleteIk", "고른 IK와 그 키를 삭제합니다(다른 곳에서 쓰지 않는 대상 본도 함께).", [this] { return deleteIk(); });
   auto* form = new QFormLayout;
@@ -1770,6 +1772,24 @@ QWidget* CutoutPanel::buildIk() {
   form->addRow("혼합 (mix)", ikMix_);
   form->addRow("굽힘", ikBend_);
   form->addRow("순서", ikOrder_);
+  // Stretch (plugin 1.13.0): setup flags, never keys.
+  auto flag = [this](const QString& text, const char* name, const QString& key, const QString& tip) {
+    auto* c = new QCheckBox(text);
+    c->setObjectName(name);
+    c->setToolTip(tip);
+    connect(c, &QCheckBox::clicked, this, [this, key](bool on) { if (!filling_) setIkStretch(key, on); });
+    return c;
+  };
+  ikStretch_ = flag("늘이기", "cutoutIkStretch", "stretch", "대상이 닿지 않는 곳에 있으면 사슬을 본 길이 방향으로 늘여 닿게 합니다(사슬의 모든 본에 길이가 필요).");
+  ikCompress_ = flag("줄이기", "cutoutIkCompress", "compress", "조준 IK: 대상이 본 길이보다 가까우면 본을 줄여 대상에 맞춥니다.");
+  ikUniform_ = flag("균일", "cutoutIkUniform", "uniform", "늘이기·줄이기에서 두께(y)도 같은 비율로 바꿉니다.");
+  auto* stretchRow = new QHBoxLayout;
+  stretchRow->setSpacing(6);
+  stretchRow->addWidget(ikStretch_);
+  stretchRow->addWidget(ikCompress_);
+  stretchRow->addWidget(ikUniform_);
+  stretchRow->addStretch();
+  form->addRow("늘이기", stretchRow);
   // Aim axis (plugin 1.4.1): a fixed row, the fit button stays reachable with the list.
   QWidget* aimTools = buttonRow("cutoutIkAimTools");
   auto* aimLabel = new QLabel("조준 축(°)");
@@ -1807,7 +1827,7 @@ QWidget* CutoutPanel::buildIk() {
   formLayout->addWidget(ikInfo_);
   formLayout->addStretch();
   layout->addWidget(formScroll("cutoutIkFormScroll", inner), 3);
-  ikEditors_ = {ikTarget_, ikMix_, ikBend_, ikOrder_};
+  ikEditors_ = {ikTarget_, ikMix_, ikBend_, ikOrder_, ikStretch_, ikUniform_};
   ikAnimateTools_ = {key, bake};
   ikAimTools_ = {aimLabel, ikAimAxis_, fit};
   return page;
@@ -2430,6 +2450,13 @@ QWidget* CutoutPanel::buildAnimateTab() {
       if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutSequencePage"));
       return;
     }
+    // A physics row (plugin 1.13.0): its constraint in the 물리 page, like an IK row.
+    if (refKind(dopesheet_->rows()[row].target) == "physics") {
+      if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutPhysicsPage"));
+      selectPhysics(refId(dopesheet_->rows()[row].target));
+      selectItem(QString());
+      return;
+    }
     // An IK row: its constraint in the IK page; no canvas selection, so the graph shows its mix curve.
     if (refKind(dopesheet_->rows()[row].target) == "ik") {
       if (lookTabs_) lookTabs_->setCurrentIndex(2);
@@ -3033,6 +3060,7 @@ void CutoutPanel::rebuildDisplay(bool full) {
   const quint64 stamp = dragPreview_ || working_ ? 0 : inflight_ ? inflightStamp_ : rigDoc() ? rigDoc()->stamp : 0;
   if (!stamp || stamp != parsedStamp_ || parsedRig_ != rigId_) {
     rig_.reset();
+    physicsRunning_ = false;  // its bodies index the old parse; playback restarts it settled
     rigError_.clear();
     parsedStamp_ = stamp;
     parsedRig_ = rigId_;
@@ -3208,7 +3236,15 @@ cutout::Pose CutoutPanel::currentPose(bool expressions) const {
   if (showingPreview()) return preview_->pose();
   cutout::Look look = lookFor(*rig_);
   look.expressions = expressions;
-  if (mode_ == Mode::Animate) return cutout::samplePose(*rig_, rig_->clipIndex(ss(clipId_)), playheadExact_, look);
+  if (mode_ == Mode::Animate) {
+    // Physics (plugin 1.13.0) only while preview playback simulates: scrubbing shows the clip pose.
+    if (physicsRunning_ && playing_ && physicsPreview_) {
+      cutout::Pose pose = cutout::samplePose(*rig_, rig_->clipIndex(ss(clipId_)), cutout::snapMs(playheadExact_), look);
+      editorPhysics_.apply(*rig_, pose);
+      return pose;
+    }
+    return cutout::samplePose(*rig_, rig_->clipIndex(ss(clipId_)), playheadExact_, look);
+  }
   return cutout::samplePose(*rig_, -1, 0, look);
 }
 
@@ -3303,6 +3339,7 @@ void CutoutPanel::refreshProperties() {
   refreshMesh();
   refreshClipping();
   refreshSequence();
+  refreshPhysics();
 }
 
 QString CutoutPanel::keyState() const {
@@ -3354,6 +3391,7 @@ void CutoutPanel::refreshDopesheet() {
       row.attachment = row.property == "attachment" || row.property == "expression" || row.property == "bendPositive" || row.property == "sequence";  // all switch (step)
       row.label = row.target == "rig" ? QString("표정 (리그)")
                   : refKind(row.target) == "ik" ? QString("IK %1 %2").arg(refId(row.target), propertyLabel(row.property))
+                  : refKind(row.target) == "physics" ? QString("물리 %1 %2").arg(refId(row.target), propertyLabel(row.property))
                   : row.property.startsWith("deform:") ? QString("%1 변형 (%2)").arg(refId(row.target), row.property.mid(7))
                                                         : QString("%1 %2").arg(refId(row.target), propertyLabel(row.property));
       for (const auto& k : listOf(t, "keys")) {
@@ -3663,6 +3701,17 @@ void CutoutPanel::updateCanvas() {
   canvas_->setMessage(rigId_.isEmpty() ? "캐릭터가 없습니다. 「새 캐릭터」를 눌러 시작하세요."
                                        : !rigError_.isEmpty() ? "리그 데이터 오류: " + rigError_ : QString());
   canvas_->setScene(rig_, currentPose());
+  // Physics marks + the tether to the unsimulated tips while preview playback simulates.
+  QHash<int, QPointF> rest;
+  if (rig_ && physicsRunning_ && playing_ && mode_ == Mode::Animate && !showingPreview()) {
+    const cutout::Pose plain = cutout::samplePose(*rig_, rig_->clipIndex(ss(clipId_)), cutout::snapMs(playheadExact_), lookFor(*rig_));
+    for (const auto& k : rig_->physics) {
+      double x = plain.world[size_t(k.bone)].e, y = plain.world[size_t(k.bone)].f;
+      if (rig_->bones[size_t(k.bone)].length > 0) plain.world[size_t(k.bone)].apply(rig_->bones[size_t(k.bone)].length, 0, x, y);
+      rest.insert(k.bone, QPointF(x, y));
+    }
+  }
+  canvas_->setPhysicsView(physicsId_, rest);
   updateOnion();
 }
 
@@ -4097,6 +4146,7 @@ void CutoutPanel::setPlayhead(int ms) {
   if (ms != playheadMs_ && working_) { working_.reset(); setStatus("시간을 옮겨 키로 저장하지 않은 변경을 버렸습니다."); rebuildDisplay(); }
   playheadMs_ = ms;
   playheadExact_ = ms;
+  if (physicsRunning_) startPhysicsPreview();  // a jump is not a motion: settle at the new time
   timeView_->setPlayhead(ms);
   timeView_->reveal(ms);
   updateTimeUi(duration);
@@ -4109,7 +4159,7 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   const QString name = QFileInfo(file).completeBaseName();
   if (file.startsWith(RIG_DIR)) selectRig(name);
   else if (file.startsWith(CONTROLLER_DIR)) { selectController(name); showControllerTab(); return; }
-  static const QRegularExpression re("/(bones|slots|clips|attachments|skins|expressions|ik)/(\\d+)");
+  static const QRegularExpression re("/(bones|slots|clips|attachments|skins|expressions|ik|physics)/(\\d+)");
   const auto m = re.match(pointer);
   if (!m.hasMatch()) return;
   const JsonPtr heldRig = committedShared();
@@ -4121,6 +4171,11 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   if (kind == "ik") {
     lookTabs_->setCurrentIndex(2);
     selectIk(qs(list[index].value("id", std::string())));
+    return;
+  }
+  if (kind == "physics") {
+    lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutPhysicsPage"));
+    selectPhysics(qs(list[index].value("id", std::string())));
     return;
   }
   if (kind == "skins" || kind == "expressions") {
@@ -5249,6 +5304,8 @@ void CutoutPanel::ensurePreview() {
     // Real loop flags here: the preview behaves exactly like the game runtime.
     auto parsed = std::make_shared<const cutout::Rig>(cutout::parseRig(ss(rigId_), *rig->data));
     preview_ = std::make_unique<cutout::Instance>(parsed, cutout::parseController(ss(controllerId_), *controller->data));
+    preview_->setPhysicsEnvironment(physicsWind_, physicsGravity_);
+    preview_->resetPhysics();
   } catch (const std::exception& e) {
     previewResult_->setText("미리 보기를 만들 수 없습니다: " + qs(e.what()));
   }
@@ -5627,7 +5684,7 @@ void CutoutPanel::refreshIk() {
       QStringList chain;
       for (const auto& b : listOf(k, "bones")) chain << qs(b.is_string() ? b.get<std::string>() : std::string());
       auto* item = new QListWidgetItem(QString("%1%2 · %3 %4 ✛ %5").arg(id, name.isEmpty() || name == id ? QString() : " (" + name + ")",
-                                                                       chain.size() == 1 ? QString("조준") : QString("팔·다리"), chain.join(" → "),
+                                                                       chain.size() == 1 ? QString("조준") : chain.size() == 2 ? QString("팔·다리") : QString("사슬 %1").arg(chain.size()), chain.join(" → "),
                                                                        qs(k.value("target", std::string()))), ikList_);
       item->setData(Qt::UserRole, id);
       if (id == ikId_) ikList_->setCurrentItem(item);
@@ -5661,10 +5718,16 @@ void CutoutPanel::refreshIk() {
     QSignalBlocker b5(ikAimAxis_);
     ikAimAxis_->setValue(k ? k->value("aimAxis", 0.0) : 0);
     ikAimAxis_->setProperty("shown", ikAimAxis_->value());
+    QSignalBlocker b6(ikStretch_), b7(ikCompress_), b8(ikUniform_);
+    ikStretch_->setChecked(k && k->value("stretch", false));
+    ikCompress_->setChecked(k && k->value("compress", false));
+    ikUniform_->setChecked(k && k->value("uniform", false));
   }
   for (QWidget* w : ikEditors_) w->setEnabled(k);
   const bool aim = k && listOf(*k, "bones").size() == 1;
   for (QWidget* w : ikAimTools_) w->setEnabled(aim);
+  ikCompress_->setEnabled(aim);
+  ikBend_->setEnabled(k && listOf(*k, "bones").size() == 2);
   for (QWidget* w : ikAnimateTools_) w->setEnabled(k && animate);
   QString info = "본을 고른 뒤 「팔·다리 IK」(아래팔·정강이) 또는 「조준 IK」(머리·눈)를 누르세요. 캔버스의 ✛ 대상 본을 끌면 사슬이 따라옵니다.";
   if (k && index >= 0) {
@@ -5672,8 +5735,17 @@ void CutoutPanel::refreshIk() {
     const QString tip = c.bones.size() == 1 ? QString("조준 축 %1°가 대상을 향함").arg(c.aimAxis, 0, 'g', 6) : c.tip >= 0 ? QString("끝점: %1의 원점").arg(qs(rig_->bones[size_t(c.tip)].id))
                       : c.tipLength > 0 ? QString("끝점: %1의 끝(길이 %2)").arg(qs(rig_->bones[size_t(c.bones.back())].id)).arg(c.tipLength, 0, 'g', 6)
                                                                                       : QString("끝점 본 없음 · %1의 원점이 대상을 향함").arg(qs(rig_->bones[size_t(c.bones.back())].id));
-    info = tip + (animate ? " · 애니메이션 모드: 혼합·굽힘을 바꾸면 이 시간의 키가 되고, ✛를 끌면 대상 본 위치가 바뀝니다(K로 키)."
-                          : " · 조립 모드: 값은 IK의 기본값입니다. ✛를 끌면 대상 본의 기본 자세가 바뀝니다.");
+    // Chains (plugin 1.13.0): what the solve did at the shown pose (FABRIK passes, gap, stretch).
+    const cutout::Pose shown = currentPose(false);
+    const cutout::IkSolve solve = size_t(index) < shown.ikSolve.size() ? shown.ikSolve[size_t(index)] : cutout::IkSolve{};
+    QString solved;
+    if (c.bones.size() > 2)
+      solved = QString(" · FABRIK %1회 반복(최대 %2회, 허용 오차 %3px) · 끝점 오차 %4px").arg(solve.iterations).arg(cutout::IK_CHAIN_ITERATIONS).arg(cutout::IK_CHAIN_TOLERANCE).arg(solve.error, 0, 'f', 3);
+    if (c.stretch || c.compress) {
+      solved += !c.stretchable ? QString(" · 늘이기: 길이 없는 본이 있어 쓰이지 않음") : solve.stretch != 1 ? QString(" · 늘이기 ×%1").arg(solve.stretch, 0, 'f', 3) : QString(" · 늘이기 대기(닿는 거리)");
+    }
+    info = tip + solved + (animate ? " · 애니메이션 모드: 혼합·굽힘을 바꾸면 이 시간의 키가 되고, ✛를 끌면 대상 본 위치가 바뀝니다(K로 키)."
+                                   : " · 조립 모드: 값은 IK의 기본값입니다. ✛를 끌면 대상 본의 기본 자세가 바뀝니다.");
   }
   ikInfo_->setText(info);
   if (canvas_) canvas_->setSelectedIk(ikId_);
@@ -6615,8 +6687,10 @@ void CutoutPanel::togglePlay(bool on) {
     timeView_->setPlayhead(playheadMs_);
   }
   lastTick_ = QDateTime::currentMSecsSinceEpoch();
+  // Physics preview (plugin 1.13.0): starts settled with playback, stops with it (scrub = no simulation).
+  if (playing_) startPhysicsPreview(); else physicsRunning_ = false;
   if (playing_ || bottomTabs_->currentIndex() == 1) timer_->start(); else timer_->stop();
-  if (!playing_) { refreshProperties(); refreshModeUi(); }
+  if (!playing_) { refreshProperties(); refreshModeUi(); updateCanvas(); }
 }
 void CutoutPanel::tick() {
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -6632,16 +6706,30 @@ void CutoutPanel::advancePlayback(double dt) {
       const double d = double(rig_->clips[size_t(ci)].durationMs);
       // The editor-only loop range narrows playback to [in, out] (whole clip by default).
       const double lo = timeView_->loopActive() ? timeView_->loopIn() : 0, hi = timeView_->loopActive() ? std::min<double>(timeView_->loopOut(), d) : d;
-      const double from = playheadExact_;
-      playheadExact_ += dt * speedCombo_->currentData().toDouble();
-      // Events fire once per pass over their time (the preview log); scrubbing never gets here.
-      if (playheadExact_ > hi) {
-        if (loopPreview_->isChecked() && hi > lo) {
-          playheadExact_ = lo + std::fmod(playheadExact_ - lo, hi - lo);
-          firePlaybackEvents(from, hi, false);
-          firePlaybackEvents(lo, playheadExact_, false);
-        } else { firePlaybackEvents(from, hi, true); playheadExact_ = hi; playButton_->setChecked(false); }
-      } else if (dt > 0) firePlaybackEvents(from, playheadExact_, false);
+      bool ended = false;
+      // One piece of clip time (the whole frame, or the pieces between physics steps).
+      auto advanceClip = [&](double ms) {
+        if (ended || !(ms > 0)) return;
+        const double from = playheadExact_;
+        playheadExact_ += ms;
+        // Events fire once per pass over their time (the preview log); scrubbing never gets here.
+        if (playheadExact_ > hi) {
+          if (loopPreview_->isChecked() && hi > lo) {
+            playheadExact_ = lo + std::fmod(playheadExact_ - lo, hi - lo);
+            firePlaybackEvents(from, hi, false);
+            firePlaybackEvents(lo, playheadExact_, false);
+          } else { firePlaybackEvents(from, hi, true); playheadExact_ = hi; ended = true; }
+        } else firePlaybackEvents(from, playheadExact_, false);
+      };
+      const double clipDt = dt * speedCombo_->currentData().toDouble();
+      // Physics preview (plugin 1.13.0): fixed steps in clip time, each at its own playhead time.
+      if (physicsPreview_ && !rig_->physics.empty()) {
+        if (!physicsRunning_) startPhysicsPreview();
+        const cutout::Look look = lookFor(*rig_);
+        cutout::runPhysics(editorPhysics_, *rig_, clipDt, advanceClip, [&] { return cutout::samplePose(*rig_, ci, cutout::snapMs(playheadExact_), look); });
+      } else advanceClip(clipDt);
+      if (physicsRunning_) refreshPhysicsInfo();
+      if (ended) playButton_->setChecked(false);
       playheadMs_ = int(playheadExact_);
       timeView_->setPlayhead(playheadMs_);
       timeView_->reveal(playheadMs_);

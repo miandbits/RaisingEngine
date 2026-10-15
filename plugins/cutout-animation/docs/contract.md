@@ -184,7 +184,7 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 ## IK constraints (plugin 1.3.0)
 
-* `ik: [{id, name?, bones, target, tip?, mix?, aimAxis?, bendPositive?, stretch?, order?}]` (optional;
+* `ik: [{id, name?, bones, target, tip?, mix?, aimAxis?, bendPositive?, stretch?, compress?, uniform?, order?}]` (optional;
   absent = no constraints). `bones` is the chain, parent first:
   * **1 bone = aim**: the bone is rotated so its bone-local direction **`aimAxis`** (plugin
     1.4.1; degrees, −360..360, default **0 = +x**, 90 = +y, i.e. down a y-down screen) points at
@@ -210,9 +210,11 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   * `bendPositive` (default true): the side a two-bone limb bends to **on screen** —
     `cross(lower − upper, effector − lower) > 0`, i.e. the lower link turns clockwise from the
     upper link on a y-down screen. A mirrored parent space keeps the on-screen side.
+  * **3..32 bones = chain** (plugin 1.13.0), each a direct child of the previous one: see "IK
+    chains and stretch" below.
   * `order` integer −1000..1000 (default 0): constraints are solved in ascending `order`, ties
-    in array order. `stretch` is accepted and **not applied** in 1.3.0 (warning
-    `ANIM_IK_STRETCH`).
+    in array order. `stretch` / `compress` / `uniform`: plugin 1.13.0, below (1.3.0..1.12.0
+    accepted `stretch` and ignored it with warning `ANIM_IK_STRETCH`, no longer emitted).
 * **Order of operations** (all runtimes, `samplePose`, onion skin, trail and drawing): tracks
   0..15 (with the expression layer between track 0 and 1) → world transforms → **IK
   constraints in order**, each reading the current world of its target and chain parent and
@@ -274,6 +276,135 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   * Deleting the last constraint removes the `ik` list (documents keep the 1.2 shape).
 * Editor-only: the constraint shown in the IK page, the target crosshair and the highlighted
   chain on the canvas never reach documents.
+
+### IK chains and stretch (plugin 1.13.0)
+
+* **Compatibility**: one- and two-bone constraints without `stretch` run exactly the 1.12 code
+  path: their poses are identical bit for bit (core test `ik golden`, which compares every IK
+  scenario of the earlier tests against bit patterns recorded by the 1.12.0 build).
+* **Chains** (`bones` 3..32, each the direct child of the previous; `ANIM_IK_CHAIN` otherwise).
+  Effector: the explicit `tip` (a direct child of the **last** bone), else the last bone's
+  length tip, else its first child bone, else its origin (then the last link is the one before
+  it). Solving runs **FABRIK** on the joints in rig space (bone origins, then the effector) with
+  the link lengths of the pose being solved: at most `IK_CHAIN_ITERATIONS` = 32 backward/forward
+  passes, stopping as soon as the effector is within `IK_CHAIN_TOLERANCE` = 0.01 rig px of the
+  target. A target at or beyond the chain's reach lays it straight at the target (0 passes).
+  Each bone then turns in **its parent's space** so its next joint lies on the solved
+  direction (exact under any ancestor transform; parents first), blended by `mix` like the
+  other chains. A chain keeps the bend side its animated pose gives it; only a straight chain
+  (all joints within 1e-6 · length of the line) is first bent 1 % of its length to the
+  `bendPositive` side (the two-bone convention: positive = clockwise on screen) so FABRIK does
+  not fold it onto itself. Fixed passes and no randomness: the same input gives the same bits,
+  and native and Wasm run the same arithmetic (parity to libm last-ulp noise).
+* **Stretch** (`stretch: true`, Spine-like): when the target is farther than the chain reaches,
+  the chain scales along its bones' length axis — aim: the bone's `scaleX` becomes
+  `scaleX · (1 + (dist / reach − 1) · mix)` with reach = `length · |scaleX|` in the parent
+  space (exact under any parent transform); two bones and chains: the **first** bone's `scaleX`
+  by `1 + (dist / total − 1) · mix` (total = the link lengths), which stretches the straight
+  chain exactly when each child sits on its parent's +x axis (bones drawn with a length;
+  otherwise approximate, as in Spine). `compress: true` (aim chains only; elsewhere warning
+  `ANIM_IK_COMPRESS`) also shrinks the bone when the target is closer than its length.
+  `uniform: true` scales `scaleY` by the same factor (without stretch/compress: warning
+  `ANIM_IK_UNIFORM`). Stretch needs **every chain bone to have a length > 0**: otherwise it is a
+  no-op with warning `ANIM_IK_STRETCH_LENGTH`; an aim chain with `aimAxis` ≠ 0 does not stretch
+  (warning `ANIM_IK_STRETCH_AXIS`). The scale lands in `Pose.applied` (the animated `scaleX`
+  stays the keyable value).
+* `Pose.ikSolve[i]` = `{iterations, error, stretch, solved}` of the last solve; the `sample`
+  reply adds `iterations` and `error` to `ik.<id>` for chains of 3+, `stretch` when a constraint
+  stretched, and `appliedScaleX` for chain bones whose solved scale differs (other replies keep
+  their shape).
+* Editing ops: `addIk` takes `bones` of up to 32 (adjacent run; `createTarget` puts the target
+  at the effector, so nothing moves; chains of 3+ write no `bendPositive`) and `stretch`,
+  `compress`, `uniform`; `setIk` takes the three flags (booleans, `false` drops the key).
+  Setting a length on a chain's last bone pins its first child as `tip` (as for two bones).
+* Editor: `사슬 IK` (`cutoutNewChainIk`) turns the multi-selected bone run (any pick order) into
+  a chain, refusing gaps and forks; the IK page has `늘이기` / `줄이기` / `균일`
+  (`cutoutIkStretch`, `cutoutIkCompress`, `cutoutIkUniform`, setup values in both modes) and its
+  info line (`cutoutIkInfo`) reports the FABRIK passes, the effector error and the stretch factor
+  of the shown pose.
+
+## Physics (plugin 1.13.0)
+
+Spine 4.2-like physics constraints: a bone (hair, skirt, accessories) trails its animated pose
+through a damped spring. **Presentation only**: never in saves, never a signal, never a game rule.
+
+* `physics: [{id, name?, bone, x?, y?, rotate?, scaleX?, inertia?, strength?, damping?, mass?,
+  wind?, gravity?, mix?, limit?, step?, teleport?, resetOnStart?}]` (optional). Channels `x`,
+  `y` (world offset of the bone's origin), `rotate` (turn about the origin) and `scaleX`
+  (stretch along the bone's x axis) are mixes 0..1 (default 0; none = warning
+  `ANIM_PHYSICS_CHANNELS`; `shearX` is not supported: warning `ANIM_PHYSICS_UNUSED`).
+  `inertia` 0..1 (default 1), `strength` 0..10000 (1/s², default 100), `damping` 0..1 = velocity
+  kept per 1/60 s (default 0.85; 1 = none), `mass` 0.01..1000 (default 1), `wind` (+x) and
+  `gravity` (+y, down the screen) px/s² (default 0), `mix` 0..1 (default 1), `limit` px/s
+  (> 0, default 5000), `step` seconds 1/240..1/10 (default 1/60), `teleport` px (> 0, default
+  300), `resetOnStart` bool. The lever of `rotate`/`scaleX` is the bone's length (a point bone
+  uses 50 px: warning `ANIM_PHYSICS_LENGTH`). Errors: `ANIM_PHYSICS_DUP_ID`,
+  `ANIM_PHYSICS_BONE`, `ANIM_PHYSICS_RANGE`, `ANIM_PHYSICS_MASS`, `ANIM_PHYSICS_STEP`,
+  `ANIM_PHYSICS_MIX`; two constraints on one bone are allowed (warning `ANIM_PHYSICS_SAME_BONE`).
+* **Order**: tracks → expression → world → IK → **physics**, constraints parents first (the
+  bone's place in the evaluation order, then array order), each seeing the ones before it
+  applied, each rewriting its bone's world and recomputing its descendants (`Pose.applied`
+  stays the IK result). Meshes skin on the result.
+* **Integrator** (`core/src/physics.cpp`), per step of h = `step` s with the bone's input world
+  W (origin P, x-axis angle α, lever L = length · |W x axis|): the input origin's motion since
+  the last step, capped per axis at `limit · h`, pushes the body by `inertia` — translation
+  `o −= Δ·inertia`, rotation turns toward where the simulated tip was seen from the moved
+  origin, scale shrinks/grows by the motion along the axis / L. Then semi-implicit Euler with
+  m = h / mass: `v += (wind − o·strength)·m` (x), `v += (gravity − o·strength)·m` (y), angular
+  `v += ((gravity·cos θ − wind·sin θ) / L − r·strength)·m` (θ = α + r), scale
+  `v += ((wind·cos θ + gravity·sin θ) / L − s·strength)·m`; `o += v·h`; `v *= damping^(60h)`
+  (computed once at load). Output: the bone's world gets `+o·mix·x/y`, a turn of `r·mix·rotate`
+  about its origin and `1 + s·mix·scaleX` along its x axis.
+* **Determinism (frame-rate independence)**: steps sit on an **absolute grid of the instance
+  clock** — constraint c steps at `k · stepMs_c` — and `update(dt)` advances the tracks
+  piecewise to every due step, so each step sees the pose at its own time. Physics rigs sample
+  clip times (and mix progress) on a 1/1024 ms grid (`snapMs`), both for the step inputs and the
+  shown pose: sums of the same time in different pieces (16.6 + 16.7 vs 33.3) differ only in the
+  last bits, which the grid removes, and step boundaries compare against the snapped clock. So
+  any partition of the same time — 30, 60, 144 Hz, irregular dts, 0-length updates — produces
+  **identical bits** (core test `physics: frame-rate independence`, Wasm and both players
+  likewise). The only exceptions are a clip switch inside an update (where a one-shot ends is
+  already frame-quantized) and a hitch: more than `PHYSICS_MAX_STEPS_PER_UPDATE` = 240 due steps
+  in one update skip the simulation and settle at the end. Rigs without physics keep the
+  previous code path (no snapping), bit for bit.
+* **Settled state**: the bodies rest in the integrator's own equilibrium at the current input —
+  translation `o = (wind, gravity) / strength`, rotation the root of
+  `(gravity·cos θ − wind·sin θ) / L = strength·r` on [−π, π] (64 bisection halvings; a spring
+  too weak to have one hangs the bone along the force), scale likewise, velocities 0 — so a
+  start never jumps or sags visibly.
+* **Reset rules**: a new instance starts settled; **restore** never restores physics (state is
+  not saved) and starts settled; **`resetOnStart`** constraints settle whenever a clip starts on
+  track 0 (layer tracks never reset); a **teleport** — the input origin moving more than
+  `teleport` px within one step (a root jump, a clip switch without mix) — settles that body
+  instead of flinging it (`describe().physics.teleports`); **seek** (editor scrubbing) settles
+  every body: no simulation while scrubbing. Host op `resetPhysics {instance}` settles on
+  demand (players never need it), `setPhysicsEnvironment {instance?, wind, gravity}` adds
+  px/s² to every constraint (editor preview controls). `describe` adds
+  `physics: {clockMs, steps, settles, teleports, wind, gravity}` for physics rigs.
+* Keys: track `{"target": "physics:<id>", "property": "mix"}` (numeric 0..1, any interp; only
+  `mix`: `ANIM_PROPERTY`; unknown id `ANIM_TARGET_MISSING`); mixes cross-fade like IK mix.
+  `sample` (stateless) adds `physics: {<id>: {mix}}` and applies no simulation.
+* Editing ops: `addPhysics {bone | bones, preset?, id?, name?, ...fields}` (one constraint per
+  bone, ids `<bone>-physics`, no channel given = `rotate: 1`; `extra.physics`), `setPhysics
+  {physics, preset?, bone?, name?, ...fields}` (`null` = back to the default, the key goes; a
+  preset replaces the motion fields, keeps `mix`/`step`), `renamePhysics {physics, id?, name?}`
+  (renames `physics:<id>` tracks), `deletePhysics {physics}` (and its tracks; `extra.keys`);
+  `deleteBone` drops the bone's physics (warning `ANIM_PHYSICS_REMOVED`). Presets
+  (`physicsPresets()`): `hair` 머리카락 {rotate 1, inertia 0.7, strength 60, damping 0.8,
+  gravity 400}, `skirt` 치마 {rotate 1, inertia 0.5, strength 140, damping 0.7, mass 1.5,
+  gravity 200}, `accessory` 장식 흔들림 {rotate 1, x 0.4, y 0.4, inertia 0.9, strength 50,
+  damping 0.92, mass 0.8, gravity 300}.
+* Editor: the `물리` page (`cutoutPhysicsPage`): `cutoutPhysicsPreset`, `cutoutAddPhysics` (every
+  selected bone), `cutoutApplyPhysicsPreset`, `cutoutDeletePhysics`, `cutoutPhysicsList`, the
+  fields `cutoutPhysicsRotate|X|Y|ScaleX|Inertia|Strength|Damping|Mass|WindField|GravityField|
+  Mix|Limit|Teleport|StepHz` and `cutoutPhysicsResetOnStart` (one edit each; Animate mode keys
+  the mix, K commits), `cutoutPhysicsKey` (혼합 키), `cutoutRenamePhysics`,
+  `cutoutPhysicsSelectBone`, and the editor-only preview controls `cutoutPhysicsPreview` (재생 중
+  물리), `cutoutPhysicsWind`, `cutoutPhysicsGravity`, `cutoutPhysicsReset` (다시 놓기),
+  `cutoutPhysicsInfo`. Preview playback simulates with the same `runPhysics` (fixed steps in
+  clip time, settled at the start, restarted on a playhead jump); scrubbing shows the plain clip
+  pose. The canvas marks physics bones with a teal spring ring at their tip and, while
+  simulating, a dashed tether from the unsimulated tip.
 
 ## Mesh attachments and weights (plugin 1.4.0)
 
@@ -629,6 +760,8 @@ in 1.7):
 * One-shot `then`: `default` (track 0 → controller default clip; other tracks stop),
   `hold` (stay on the last frame), `stop` (mix out to lower tracks/setup).
 * `update(dt)` clamps dt to 0..10 s; a long pause completes loops instead of replaying them.
+* Physics rigs (plugin 1.13.0) advance in pieces cut at the physics step boundaries (same events
+  and completions) and sample clip times on the 1/1024 ms grid; see "Physics".
 
 ## Controller bindings and game signals
 
@@ -683,7 +816,8 @@ so it cannot duplicate a game effect.
 `playerPresentation.extensions["cutout-animation"]` stores per mounted instance:
 controller ref, active clip per track, binding, `then`, `stopOn`, speed, and (plugin 1.2.0)
 `skin` and `expression`. IK and meshes add no state: constraint values, weights and deform
-offsets come from the rig and the clips.
+offsets come from the rig and the clips. Physics (plugin 1.13.0) is not saved either: a
+restored instance starts settled at its restored pose.
 
 * Policy: skin and expression are both restored. An id removed since the save falls back to
   the controller default; saves without these fields (1.x) keep the current look.

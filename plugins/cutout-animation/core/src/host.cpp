@@ -179,6 +179,21 @@ Json poseJson(const Rig& rig, const Pose& pose) {
       ik[rig.ik[i].id] = {{"mix", i < pose.ikMix.size() ? pose.ikMix[i] : rig.ik[i].mix}, {"bendPositive", i < pose.ikBend.size() ? pose.ikBend[i] != 0 : rig.ik[i].bendPositive}};
     out["ik"] = ik;
     for (size_t i = 0; i < rig.bones.size(); i++) out["bones"][rig.bones[i].id]["appliedRotation"] = pose.local(i).rotation;
+    // Chains and stretch (plugin 1.13.0): only where a constraint stretched or ran FABRIK, so
+    // replies of 1.12 rigs keep their shape.
+    for (size_t i = 0; i < rig.ik.size() && i < pose.ikSolve.size(); i++) {
+      const IkSolve& s = pose.ikSolve[i];
+      if (rig.ik[i].bones.size() > 2) ik[rig.ik[i].id]["iterations"] = s.iterations, ik[rig.ik[i].id]["error"] = s.error;
+      if (s.stretch != 1) ik[rig.ik[i].id]["stretch"] = s.stretch;
+      for (int b : rig.ik[i].bones) if (pose.local(size_t(b)).scaleX != pose.bones[size_t(b)].scaleX) out["bones"][rig.bones[size_t(b)].id]["appliedScaleX"] = pose.local(size_t(b)).scaleX;
+    }
+    out["ik"] = ik;
+  }
+  // Physics (plugin 1.13.0): the sampled mixes. A sampled pose has no simulation (stateless).
+  if (!rig.physics.empty()) {
+    Json physics = Json::object();
+    for (size_t i = 0; i < rig.physics.size(); i++) physics[rig.physics[i].id] = {{"mix", i < pose.physicsMix.size() ? pose.physicsMix[i] : rig.physics[i].mix}};
+    out["physics"] = physics;
   }
   // Deform (plugin 1.4.0): sampled mesh offsets as "<slot>/<attachment>" -> [dx, dy, ...]; absent without deform keys.
   if (!pose.deform.empty()) {
@@ -396,6 +411,15 @@ Json Host::handle(const Json& r) {
     return {{"ok", true}};
   }
   if (op == "setPaused") { need("instance").setPaused(r.value("paused", true)); return {{"ok", true}}; }
+  // Physics (plugin 1.13.0, optional for hosts): preview wind/gravity, and a reset a host may send
+  // when it moves an instance far (players never need either; the core detects bone jumps itself).
+  if (op == "setPhysicsEnvironment") {
+    const double wind = r.value("wind", 0.0), gravity = r.value("gravity", 0.0);
+    if (!std::isfinite(wind) || !std::isfinite(gravity)) throw std::runtime_error("wind/gravity must be finite");
+    for (auto& [id, inst] : instances_) if (!r.contains("instance") || r.at("instance") == id) inst->setPhysicsEnvironment(wind, gravity);
+    return {{"ok", true}};
+  }
+  if (op == "resetPhysics") { need("instance").resetPhysics(); return {{"ok", true}}; }
   if (op == "setTimeScale") { need("instance").setTimeScale(r.value("timeScale", 1.0)); return {{"ok", true}}; }
   if (op == "update") {
     const double dt = r.value("dtMs", 0.0);

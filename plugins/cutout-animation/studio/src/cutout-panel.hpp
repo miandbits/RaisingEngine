@@ -238,6 +238,35 @@ class CutoutPanel : public QWidget {
   bool deleteIk();        // also its target bone when nothing else uses it
   bool keyIk();           // IK 키: mix + bend of the selected constraint at the playhead
   bool bakeIk();          // IK 결과를 키로 굽기: solved rotations as keys, mix 0 there
+  /** 사슬 IK (plugin 1.13.0): the selected bones (2+, multi-selection) must form one parent -> child
+   *  run; they become the chain (2 = two-bone, 3+ = FABRIK) with a target bone at its effector. */
+  bool newChainIk();
+  /** stretch / compress / uniform of the selected constraint (setup values, also in Animate mode). */
+  bool setIkStretch(const QString& flag, bool on);
+  // ---- Physics constraints (plugin 1.13.0; the 물리 page). Setup mode edits the constraint
+  // (addPhysics / setPhysics); Animate mode keys its mix (physics:<id>). Preview playback simulates
+  // (editor-only PhysicsSim: scrubbing never does), with editor-only wind/gravity on top.
+  bool addPhysics(const QString& preset = "hair");     // one constraint per selected bone
+  bool selectPhysics(const QString& id);
+  QString physicsId() const { return physicsId_; }
+  bool applyPhysicsPreset(const QString& preset);       // the selected constraint's motion = the preset
+  /** One parameter (x y rotate scaleX inertia strength damping mass wind gravity mix limit step teleport);
+   *  Animate mode: `mix` becomes a key at the playhead, the others stay setup values. */
+  bool setPhysicsField(const QString& field, double value);
+  bool setPhysicsResetOnStart(bool on);
+  bool renamePhysics();
+  bool deletePhysics();
+  bool keyPhysicsMix();                                 // 혼합 키: the sampled mix at the playhead
+  bool selectPhysicsBone();
+  void setPhysicsPreview(bool on);                      // 재생 중 물리 (editor-only, QSettings-free)
+  bool physicsPreview() const { return physicsPreview_; }
+  void setPhysicsEnvironment(double wind, double gravity);  // preview wind / gravity (px/s^2)
+  double previewWind() const { return physicsWind_; }
+  double previewGravity() const { return physicsGravity_; }
+  void resetPhysicsPreview();                           // 다시 놓기: the bodies settle at the shown pose
+  /** The preview simulation (empty bodies while not playing); `running` = it drives the canvas. */
+  const cutout::PhysicsSim& physicsSim() const { return editorPhysics_; }
+  bool physicsRunning() const { return physicsRunning_; }
   // ---- Meshes (plugin 1.4.0) on the selected part's shown attachment (the preview skin's own when
   // it provides it). Setup mode edits the mesh (vertices, weights); Animate mode makes deform keys.
   enum class MeshEdit { Off = 0, Vertices = 1, Weights = 2 };
@@ -466,6 +495,11 @@ class CutoutPanel : public QWidget {
   QString rigId_, controllerId_, selection_, clipId_, status_;
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)
+  QString physicsId_;                         // physics constraint shown in the 물리 page (editor state)
+  cutout::PhysicsSim editorPhysics_;          // preview playback simulation (editor-only)
+  bool physicsPreview_ = true, physicsRunning_ = false;
+  double physicsWind_ = 0, physicsGravity_ = 0;
+  void startPhysicsPreview();                 // init + settle at the shown pose
   QString eventId_;                           // event definition shown in the 이벤트 page (editor state)
   QStringList eventLog_;                      // preview event log (editor only)
   bool manualClock_ = false;
@@ -611,6 +645,20 @@ class CutoutPanel : public QWidget {
   QSpinBox* ikOrder_ = nullptr;
   QDoubleSpinBox* ikAimAxis_ = nullptr;
   QLabel* ikInfo_ = nullptr;
+  QCheckBox *ikStretch_ = nullptr, *ikCompress_ = nullptr, *ikUniform_ = nullptr;
+  // physics (plugin 1.13.0)
+  QListWidget* physicsList_ = nullptr;
+  QComboBox* physicsPreset_ = nullptr;
+  QMap<QString, QDoubleSpinBox*> physicsFields_;
+  QCheckBox* physicsResetOnStart_ = nullptr;
+  QToolButton* physicsPreviewButton_ = nullptr;
+  QDoubleSpinBox *physicsWindSpin_ = nullptr, *physicsGravitySpin_ = nullptr;
+  QLabel* physicsInfo_ = nullptr;
+  QVector<QWidget*> physicsEditors_, physicsAnimateTools_;
+  QWidget* buildPhysics();
+  void refreshPhysics();
+  void refreshPhysicsInfo();
+  const cutout::Json* currentPhysics() const;
   // events (plugin 1.8.0)
   QListWidget *eventList_ = nullptr, *eventLogList_ = nullptr;
   QSpinBox* eventInt_ = nullptr;

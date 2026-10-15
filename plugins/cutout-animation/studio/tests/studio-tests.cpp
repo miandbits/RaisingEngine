@@ -3,6 +3,7 @@
 // Every gesture must issue exactly one edit and leave documents valid for the core.
 #include <QtTest>
 #include <QtWidgets>
+#include <cstring>
 #include <functional>
 #include <set>
 #include "cutout-plugin.hpp"
@@ -4220,6 +4221,195 @@ class StudioTests : public QObject {
     QVERIFY(gesture("delete clipping", 1, [&] { click("cutoutClippingDelete"); }));
     QVERIFY(!slotIds().contains("card-clip"));
     QVERIFY(qAlpha(render().pixel(276, 720)) > 200);
+    for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
+    panel->selectRig(keepRig);
+    pump();
+  }
+
+  // Plugin 1.13.0: 사슬 IK from a multi-selected bone run, the stretch toggles and chain info, and
+  // the 물리 page: presets on several bones, parameter fields, the mix key, the preview simulation
+  // (playback simulates, scrubbing never does, pacing does not matter) and its wind/gravity.
+  void ikChainsAndPhysics() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "swing"); };
+    answers = {"swing"};
+    QVERIFY(gesture("new swing character", 1, [&] { click("cutoutNewCharacter"); }));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->selectItem("bone:root");
+    for (const char* id : {"c0", "c1", "c2", "c3"}) {
+      answers = {id};
+      QVERIFY(gesture("add chain bone", 1, [&] { click("cutoutAddBone"); }));
+      QVERIFY(gesture("chain bone length", 1, [&] { setSpin("cutoutPropLength", 40); }));
+    }
+    panel->selectItem("bone:c1");
+    QVERIFY(gesture("bend c1", 1, [&] { setSpin("cutoutPropRotation", 25); }));
+    auto worlds = [&](const Json& d) { const cutout::Rig r = cutout::parseRig("swing", d); return std::make_pair(r, cutout::samplePose(r, -1, 0)); };
+    const auto [before, beforePose] = worlds(data());
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutIkPage"));
+    // A gap (c0 + c2) or a single bone is refused without an edit.
+    panel->setSelection({"bone:c0", "bone:c2"});
+    QVERIFY(gesture("chain with a gap: refused", 0, [&] { click("cutoutNewChainIk"); }));
+    QVERIFY(panel->status().contains("사슬"));
+    panel->setSelection({"bone:c3", "bone:c1", "bone:c0", "bone:c2"}, "bone:c3");  // pick order does not matter
+    QVERIFY(gesture("사슬 IK from the run", 1, [&] { click("cutoutNewChainIk"); }));
+    Json k = data()["ik"][0];
+    QVERIFY2(k["bones"] == Json::array({"c0", "c1", "c2", "c3"}) && !k.contains("bendPositive"), k.dump().c_str());
+    QCOMPARE(panel->selection(), QString("bone:") + qs(k["target"].get<std::string>()));
+    {
+      const auto [after, afterPose] = worlds(data());
+      for (const char* b : {"c0", "c1", "c2", "c3"}) {
+        const auto& x = beforePose.world[size_t(before.boneIndex(b))];
+        const auto& y = afterPose.world[size_t(after.boneIndex(b))];
+        QVERIFY2(std::hypot(x.e - y.e, x.f - y.f) < 1e-6, b);  // the target sits on the effector: nothing jumps
+      }
+      QVERIFY(afterPose.ikSolve[0].solved && afterPose.ikSolve[0].iterations == 0);
+    }
+    QVERIFY(find<QListWidget>("cutoutIkList")->item(0)->text().contains("사슬 4"));
+    QVERIFY(find<QLabel>("cutoutIkInfo")->text().contains("FABRIK"));
+    QVERIFY(!find<QWidget>("cutoutIkCompress")->isEnabled() && !find<QWidget>("cutoutIkBend")->isEnabled());  // aim-only / two-bone-only
+    // Stretch toggle: one setup edit (also in Animate mode), undoable.
+    QVERIFY(gesture("stretch on", 1, [&] { click("cutoutIkStretch"); }));
+    QVERIFY(data()["ik"][0]["stretch"] == true && find<QCheckBox>("cutoutIkStretch")->isChecked());
+    undo();
+    QVERIFY(!data()["ik"][0].contains("stretch"));
+    redo();
+    QVERIFY(data()["ik"][0]["stretch"] == true);
+    // Dragging the target far away: the info reports the stretch.
+    const std::string target = data()["ik"][0]["target"].get<std::string>();
+    panel->selectItem(qs("bone:" + target));
+    QVERIFY(gesture("target far (setup x)", 1, [&] { setSpin("cutoutPropX", 400); }));
+    QVERIFY2(find<QLabel>("cutoutIkInfo")->text().contains("늘이기 ×"), qPrintable(find<QLabel>("cutoutIkInfo")->text()));
+    undo();
+    // ---- physics: two hair bones with the hair preset (one edit), then a preset and a field.
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutPhysicsPage"));
+    pump();
+    QVERIFY(!find<QWidget>("cutoutPhysicsStrength")->isEnabled());  // nothing to edit yet
+    panel->setSelection({"bone:c2", "bone:c3"});
+    auto* preset = find<QComboBox>("cutoutPhysicsPreset");
+    QVERIFY(preset && preset->count() == 3 && preset->itemText(0) == "머리카락" && preset->itemText(1) == "치마" && preset->itemText(2) == "장식 흔들림");
+    preset->setCurrentIndex(0);
+    QVERIFY(gesture("물리 추가 (hair, two bones)", 1, [&] { click("cutoutAddPhysics"); }));
+    QCOMPARE(data()["physics"].size(), size_t(2));
+    QVERIFY(data()["physics"][0]["bone"] == "c2" && data()["physics"][0]["gravity"] == 400 && data()["physics"][1]["bone"] == "c3");
+    QCOMPARE(find<QListWidget>("cutoutPhysicsList")->count(), 2);
+    QCOMPARE(panel->physicsId(), QString("c3-physics"));
+    QVERIFY(find<QWidget>("cutoutPhysicsStrength")->isEnabled() && !find<QWidget>("cutoutPhysicsKey")->isEnabled());
+    QCOMPARE(find<QDoubleSpinBox>("cutoutPhysicsStrength")->value(), 60.0);
+    preset->setCurrentIndex(1);
+    QVERIFY(gesture("프리셋 적용 (skirt)", 1, [&] { click("cutoutApplyPhysicsPreset"); }));
+    QVERIFY(data()["physics"][1]["damping"] == 0.7 && data()["physics"][1]["strength"] == 140);
+    QVERIFY(gesture("strength field", 1, [&] { setSpin("cutoutPhysicsStrength", 90); }));
+    QVERIFY(data()["physics"][1]["strength"] == 90);
+    QVERIFY(gesture("step 120 Hz", 1, [&] { setSpin("cutoutPhysicsStepHz", 120); }));
+    QVERIFY(std::fabs(data()["physics"][1]["step"].get<double>() - 1.0 / 120) < 1e-15);
+    QVERIFY(gesture("reset on start", 1, [&] { click("cutoutPhysicsResetOnStart"); }));
+    QVERIFY(data()["physics"][1]["resetOnStart"] == true);
+    QVERIFY(gesture("select physics c2", 0, [&] { panel->selectPhysics("c2-physics"); }));
+    QCOMPARE(find<QDoubleSpinBox>("cutoutPhysicsStrength")->value(), 60.0);
+    undo();
+    QVERIFY(!data()["physics"][1].contains("resetOnStart"));
+    redo();
+    // The canvas marks both physics bones (teal rings at their tips).
+    panel->selectItem("");
+    pump();
+    {
+      const cutout::Rig r = cutout::parseRig("swing", data());
+      const auto& w = panel->canvas()->pose().world[size_t(r.boneIndex("c3"))];
+      double tx, ty;
+      w.apply(40, 0, tx, ty);
+      const QPointF at = panel->canvas()->rigToWidget(QPointF(tx, ty));
+      const QImage shot = panel->canvas()->grab().toImage();
+      const qreal dpr = shot.devicePixelRatio();
+      int teal = 0;
+      for (int dx = -7; dx <= 7; dx++)
+        for (int dy = -7; dy <= 7; dy++) {
+          const QColor c = shot.pixelColor(int((at.x() + dx) * dpr), int((at.y() + dy) * dpr));
+          teal += c.green() > 150 && c.blue() > 130 && c.red() < 120;
+        }
+      QVERIFY2(teal > 4, "teal physics mark at the c3 tip");
+    }
+    // ---- Animate: a clip that swings the chain root, the mix key, then the preview simulation.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    answers = {"wave"};
+    QVERIFY(gesture("new wave clip", 1, [&] { click("cutoutNewClip"); }));
+    panel->setAutoKey(true);
+    panel->selectItem("bone:c0");
+    for (const auto& [ms, deg] : std::vector<std::pair<int, double>>{{0, -30}, {250, 30}, {500, -30}, {750, 30}, {1000, -30}}) {
+      panel->setPlayhead(ms);
+      QVERIFY(gesture("swing key", 1, [&] { setSpin("cutoutPropRotation", deg); }));
+    }
+    panel->setAutoKey(false);
+    panel->selectPhysics("c3-physics");
+    panel->setPlayhead(600);
+    QVERIFY(find<QWidget>("cutoutPhysicsKey")->isEnabled());
+    QVERIFY(gesture("mix 0.5 at 600 (pending)", 0, [&] { setSpin("cutoutPhysicsMix", 0.5); }));
+    QVERIFY(panel->hasPending());
+    QVERIFY(gesture("K commits the mix key", 1, [&] { click("cutoutKeyButton"); }));
+    QVERIFY(keyOfRig(data(), "wave", "physics:c3-physics", "mix", 600)["value"] == 0.5);
+    QVERIFY(gesture("혼합 키 at 900", 1, [&] { panel->setPlayhead(900); click("cutoutPhysicsKey"); }));
+    QCOMPARE(timesOfRig(data(), "wave", "physics:c3-physics", "mix"), QVector<int>({600, 900}));
+    QVERIFY(rowOf("physics:c3-physics", "mix") >= 0);
+    // Scrubbing never simulates: the canvas shows the clip pose, nothing runs.
+    panel->setManualClock(true);
+    panel->setPlayhead(300);
+    pump();
+    QVERIFY(!panel->physicsRunning() && panel->canvas()->physicsRest().isEmpty());
+    const cutout::Rig parsed = cutout::parseRig("swing", data());
+    auto plainAt = [&](double ms) { cutout::Rig r = parsed; for (auto& c : r.clips) c.loop = false; return cutout::samplePose(r, r.clipIndex("wave"), ms); };
+    auto c3 = [&](const cutout::Pose& p) { const auto& w = p.world[size_t(parsed.boneIndex("c3"))]; return QPointF(w.e, w.f); };
+    QVERIFY(std::hypot(c3(panel->canvas()->pose()).x() - c3(plainAt(300)).x(), c3(panel->canvas()->pose()).y() - c3(plainAt(300)).y()) < 1e-9);
+    // Preview playback simulates (fixed steps), the hair trails the swing and the tethers show it.
+    auto playFor = [&](double totalMs, const std::function<double(int)>& dtAt) {
+      panel->setPlayhead(0);
+      click("cutoutPlay");
+      QVERIFY(panel->physicsRunning());
+      double done = 0;
+      for (int i = 0; done < totalMs - 1e-9; i++) { const double dt = std::min(dtAt(i), totalMs - done); panel->advancePlayback(dt); done += dt; }
+    };
+    std::vector<cutout::PhysicsBody> at60, irregular;
+    playFor(400, [](int) { return 1000.0 / 60; });
+    QVERIFY(panel->physicsSim().steps > 40);
+    at60 = panel->physicsSim().bodies;
+    QCOMPARE(panel->canvas()->physicsRest().size(), 2);
+    {
+      const QPointF moved = c3(panel->canvas()->pose()), still = c3(plainAt(400));
+      QVERIFY2(std::hypot(moved.x() - still.x(), moved.y() - still.y()) > 0.5, "the physics bone trails its animated pose");
+    }
+    QVERIFY(find<QLabel>("cutoutPhysicsInfo")->text().contains("미리 보기"));
+    click("cutoutPlay");  // stop
+    QVERIFY(!panel->physicsRunning());
+    const double irregularDts[] = {7.3, 11.1, 3.9, 20.0, 0.25, 33.0, 5.45, 19.0};
+    playFor(400, [&](int i) { return irregularDts[i % 8]; });
+    irregular = panel->physicsSim().bodies;
+    QCOMPARE(irregular.size(), at60.size());
+    for (size_t i = 0; i < at60.size(); i++)
+      QVERIFY2(std::memcmp(&irregular[i].r, &at60[i].r, sizeof(double)) == 0 && irregular[i].steps == at60[i].steps, "preview pacing does not change the simulation");
+    // Wind / gravity of the preview: editor-only, no edit.
+    QVERIFY(gesture("preview wind", 0, [&] { setSpin("cutoutPhysicsWind", 300); setSpin("cutoutPhysicsGravity", -100); }));
+    QCOMPARE(panel->previewWind(), 300.0);
+    QCOMPARE(panel->physicsSim().gravity, -100.0);
+    QVERIFY(gesture("다시 놓기", 0, [&] { click("cutoutPhysicsReset"); }));
+    QVERIFY(panel->physicsSim().settles >= 2);
+    click("cutoutPlay");  // stop
+    QVERIFY(gesture("preview off", 0, [&] { click("cutoutPhysicsPreview"); }));
+    QVERIFY(!panel->physicsPreview());
+    click("cutoutPlay");
+    panel->advancePlayback(100);
+    QVERIFY(!panel->physicsRunning());
+    click("cutoutPlay");
+    click("cutoutPhysicsPreview");
+    QVERIFY(gesture("preview environment back", 0, [&] { setSpin("cutoutPhysicsWind", 0); setSpin("cutoutPhysicsGravity", 0); }));
+    panel->setManualClock(false);
+    // Rename / delete (one edit each); deleting drops its mix keys.
+    panel->setMode(CutoutPanel::Mode::Setup);
+    answers = {"tip-sway"};
+    QVERIFY(gesture("rename physics", 1, [&] { panel->selectPhysics("c3-physics"); click("cutoutRenamePhysics"); }));
+    QVERIFY(data()["physics"][1]["id"] == "tip-sway" && timesOfRig(data(), "wave", "physics:tip-sway", "mix").size() == 2);
+    QVERIFY(gesture("delete physics", 1, [&] { click("cutoutDeletePhysics"); }));
+    QCOMPARE(data()["physics"].size(), size_t(1));
+    QVERIFY(timesOfRig(data(), "wave", "physics:tip-sway", "mix").isEmpty());
     for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
     panel->selectRig(keepRig);
     pump();

@@ -2,6 +2,7 @@
 // Presentation only: nothing here may feed back into game rules, costs or RNG.
 #pragma once
 #include <deque>
+#include <functional>
 #include <memory>
 #include "rig.hpp"
 
@@ -84,7 +85,11 @@ int sequenceFrame(const SequenceState& state, size_t count, int setupIndex);
  * has no IK: then it equals `bones`). ikMix/ikBend are the sampled constraint settings.
  * Deform (plugin 1.4.0): keyed vertex offsets per (slot index, mesh attachment name); a mesh
  * uses them only when their size is 2 × its vertex count.
+ * IK chains (plugin 1.13.0): ikSolve reports per constraint what the last solve did (FABRIK
+ * passes, effector distance, stretch factor). Physics (plugin 1.13.0): physicsMix holds the
+ * sampled constraint mixes; the physics offsets are in `world` only (applied stays the IK result).
  */
+struct IkSolve { int iterations = 0; double error = 0, stretch = 1; bool solved = false; };
 struct Pose {
   std::vector<Transform> bones; std::vector<Affine> world; std::vector<std::optional<std::string>> attachments; std::vector<double> alpha;
   int skin = -1, expression = -1;
@@ -92,11 +97,63 @@ struct Pose {
   std::vector<Transform> applied;
   std::map<std::pair<int, std::string>, std::vector<double>> deform;
   std::vector<SequenceState> sequence;  // per slot (plugin 1.12.0)
+  std::vector<IkSolve> ikSolve;          // per IK constraint (plugin 1.13.0)
+  std::vector<double> physicsMix;        // per physics constraint (plugin 1.13.0)
   const Transform& local(size_t bone) const { return applied.size() > bone ? applied[bone] : bones[bone]; }
 };
 /** Skin/expression for samplePose. expressions=false skips every expression (raw clip values);
  *  ik=false skips the IK constraints (world = plain forward kinematics of the animated values). */
 struct Look { int skin = -1; int expression = -1; bool expressions = true; bool ik = true; };
+
+/** One physics constraint's simulation state (rig space px, radians). Never saved: a restored
+ *  instance starts settled (docs/contract.md "Physics"). */
+struct PhysicsBody {
+  bool ready = false;      // false = settle at the next input before simulating
+  int64_t steps = 0;       // steps taken on the clock grid: the next one is due at (steps + 1) · stepMs
+  double ox = 0, oy = 0, vx = 0, vy = 0;  // translation offset / velocity
+  double r = 0, vr = 0;    // rotation offset (rad) / angular velocity
+  double s = 0, vs = 0;    // relative scaleX offset / velocity
+  double px = 0, py = 0;   // the bone's input origin at the last step
+  double tipX = 0, tipY = 0;  // the simulated tip at the last step (rotation inertia)
+};
+/**
+ * Fixed-step physics of one rig instance (plugin 1.13.0). Steps sit on an absolute grid of the
+ * instance clock (k · stepMs per constraint), so any partition of the same time takes the same
+ * steps with the same inputs (runPhysics). Editors drive one too (preview playback).
+ */
+class PhysicsSim {
+ public:
+  /** Size the bodies for `rig`; every body unsettled. The clock and step grid restart at 0. */
+  void init(const Rig& rig);
+  /** Settle the bodies (all, or those `only` marks) at `input`: at rest in the integrator's own
+   *  equilibrium (the spring balancing wind/gravity), so the sag is already there and nothing jumps. */
+  void settle(const Rig& rig, const Pose& input, const std::vector<char>* only = nullptr);
+  /** Clock time of the next due step (infinity without constraints). */
+  double nextBoundary(const Rig& rig) const;
+  /** Step every constraint due at `boundary` (from nextBoundary) with `input`: the pose at that
+   *  time after IK, without physics. Constraints see the ones before them (physicsOrder) applied. */
+  void step(const Rig& rig, Pose input, double boundary);
+  /** Write the current offsets into `pose.world` (bones and their descendants). */
+  void apply(const Rig& rig, Pose& pose) const;
+  /** Jump the step grid to `clockMs` without simulating (a long hitch; settle after it). */
+  void skipTo(const Rig& rig, double clockMs);
+  double clock = 0;             // instance ms since init
+  double wind = 0, gravity = 0;  // environment added to every constraint (editor preview controls)
+  std::vector<PhysicsBody> bodies;
+  int64_t steps = 0, settles = 0, teleports = 0;  // counters (describe, tests)
+};
+constexpr int PHYSICS_SETTLE_STEPS = 64;  // bisection halvings of the settled rotation
+constexpr int PHYSICS_MAX_STEPS_PER_UPDATE = 240;
+/** Physics inputs sample clip times on a 1/1024 ms grid: sums of the same time in different
+ *  pieces (16.6 + 16.7 vs 33.3) differ in the last bits, the grid makes them equal. */
+double snapMs(double ms);
+/**
+ * Advance `sim` by dtMs. `advance(ms)` moves the animation forward (called with the pieces between
+ * step boundaries, summing to dtMs), `sample()` returns the physics input at the current time.
+ * More than PHYSICS_MAX_STEPS_PER_UPDATE due steps (a hitch of seconds) are skipped: the bodies
+ * settle at the end instead.
+ */
+void runPhysics(PhysicsSim& sim, const Rig& rig, double dtMs, const std::function<void(double)>& advance, const std::function<Pose()>& sample);
 
 class Instance {
  public:
@@ -115,8 +172,13 @@ class Instance {
   void setTimeScale(double scale) { timeScale_ = scale < 0 ? 0 : scale; }
   void setPaused(bool paused) { paused_ = paused; }
   bool paused() const { return paused_; }
-  /** Editor scrubbing: set track time without emitting events. */
+  /** Editor scrubbing: set track time without emitting events (physics settles: no simulation). */
   void seek(int track, double timeMs);
+  /** Physics (plugin 1.13.0): extra wind/gravity (px/s^2) on every constraint (preview controls). */
+  void setPhysicsEnvironment(double wind, double gravity) { physics_.wind = wind; physics_.gravity = gravity; }
+  /** Forget the simulation: every body settles at the current pose (a teleport the host knows of). */
+  void resetPhysics();
+  const PhysicsSim& physics() const { return physics_; }
   /** "" = default attachments only. Unknown ids are refused (false) and change nothing. */
   bool setSkin(const std::string& skin);
   /** nullopt = no expression. Clip expression keys still override it while they play. */
@@ -151,12 +213,16 @@ class Instance {
   double timeScale_ = 1;
   bool paused_ = false;
   int skin_ = -1, expression_ = -1;  // instance look (controller defaults, bindings, setSkin/setExpression)
+  PhysicsSim physics_;              // plugin 1.13.0 (empty without constraints)
 
   void advance(int track, TrackState& state, double dtMs);
+  void advanceTracks(double dtMs);
+  /** The pose before physics; `snap` samples clip times on the snapMs grid (physics rigs). */
+  Pose basePose(bool snap) const;
   void finish(int track, TrackState& state);
   void startDefaults();
-  void sampleClip(const Entry& entry, Pose& pose, std::vector<char>* touched, double weight, bool attachments) const;
-  int activeExpression() const;
+  void sampleClip(const Entry& entry, Pose& pose, std::vector<char>* touched, double weight, bool attachments, bool snap = false) const;
+  int activeExpression(bool snap = false) const;
 };
 
 /** Sample one clip at a time without an instance (editor/test helper). The clip plays as the
@@ -167,7 +233,9 @@ void applyExpression(const Rig& rig, int index, Pose& pose);
 /**
  * Solve the rig's IK constraints on a pose whose world matrices are computed (Rig::ikOrder; each
  * rotates its chain so the effector reaches the target's world origin, blended by mix) and
- * recompute the world of every bone they move. Fills pose.applied. No-op without constraints.
+ * recompute the world of every bone they move. Fills pose.applied and pose.ikSolve. One and two
+ * bones are analytic (bit for bit the 1.12 results without stretch); chains of 3+ run FABRIK in
+ * rig space (IK_CHAIN_ITERATIONS / IK_CHAIN_TOLERANCE). No-op without constraints.
  */
 void applyIk(const Rig& rig, Pose& pose);
 /** Unit rig-space direction of aim constraint `ik`'s axis (`aimAxis` on its bone) in `pose`: after

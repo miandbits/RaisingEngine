@@ -99,14 +99,43 @@
         "properties": {
           "id": { "$ref": "#/$defs/id" },
           "name": { "type": "string", "maxLength": 80 },
-          "bones": { "description": "1 bone = aim (local +x axis at the target); 2 = two-bone limb, parent then its direct child (effector = `tip`, else the child's first child bone).", "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/$defs/id" } },
+          "bones": { "description": "1 bone = aim (local +x axis at the target); 2 = two-bone limb, parent then its direct child (effector = `tip`, else the child's length tip, else its first child bone); 3..32 (plugin 1.13.0) = a chain, each bone the direct child of the previous one, solved by FABRIK (same effector rule on the last bone).", "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/id" } },
           "target": { "description": "Bone whose world origin the chain reaches; never in the chain or below it.", "$ref": "#/$defs/id" },
-          "tip": { "description": "Explicit two-bone effector (plugin 1.4.0): a direct child of the lower bone. Absent = the lower bone's first child.", "$ref": "#/$defs/id" },
+          "tip": { "description": "Explicit effector of chains of 2+ (plugin 1.4.0): a direct child of the last bone. Absent = the last bone's length tip, else its first child.", "$ref": "#/$defs/id" },
           "mix": { "type": "number", "minimum": 0, "maximum": 1 },
           "aimAxis": { "description": "Aim chains (plugin 1.4.1): the bone-local direction, in degrees (0 = +x, 90 = +y / down the screen), that points at the target. Absent = 0. Two-bone chains: ANIM_IK_AIM_AXIS.", "type": "number", "minimum": -360, "maximum": 360 },
           "bendPositive": { "type": "boolean" },
-          "stretch": { "description": "Accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH).", "type": "boolean" },
+          "stretch": { "description": "Plugin 1.13.0: an unreachable target scales the chain along its bones' length axis (aim: the bone's scaleX; 2+ bones: the first bone's scaleX), blended by mix. Needs every chain bone to have a length (else ANIM_IK_STRETCH_LENGTH, no-op); aim chains only with aimAxis 0.", "type": "boolean" },
+          "compress": { "description": "Plugin 1.13.0, aim chains: a target closer than the bone's length shrinks it onto the target.", "type": "boolean" },
+          "uniform": { "description": "Plugin 1.13.0: stretch/compress scale y as well.", "type": "boolean" },
           "order": { "type": "integer", "minimum": -1000, "maximum": 1000 }
+        }
+      }
+    },
+    "physics": {
+      "description": "Physics constraints (plugin 1.13.0, Spine 4.2-like, presentation only): a bone trails its animated pose (after IK) through a fixed-step spring-damper. Semantics, determinism and reset rules in docs/contract.md.",
+      "type": "array", "maxItems": 128,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "bone"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "bone": { "$ref": "#/$defs/id" },
+          "x": { "description": "Channel mix 0..1: world x offset of the origin.", "type": "number", "minimum": 0, "maximum": 1 },
+          "y": { "description": "Channel mix 0..1: world y offset of the origin.", "type": "number", "minimum": 0, "maximum": 1 },
+          "rotate": { "description": "Channel mix 0..1: turn about the origin (lever = the bone length, 50 px for point bones).", "type": "number", "minimum": 0, "maximum": 1 },
+          "scaleX": { "description": "Channel mix 0..1: stretch along the bone's x axis.", "type": "number", "minimum": 0, "maximum": 1 },
+          "inertia": { "description": "0..1 (default 1): how much of the parents' motion the bone lags behind.", "type": "number", "minimum": 0, "maximum": 1 },
+          "strength": { "description": "Spring toward the animated pose, 1/s² per unit mass (default 100).", "type": "number", "minimum": 0, "maximum": 10000 },
+          "damping": { "description": "Velocity kept per 1/60 s, 0..1 (default 0.85; 1 = undamped).", "type": "number", "minimum": 0, "maximum": 1 },
+          "mass": { "description": "Divides every force (default 1).", "type": "number", "minimum": 0.01, "maximum": 1000 },
+          "wind": { "description": "px/s² along +x (default 0).", "type": "number", "minimum": -100000, "maximum": 100000 },
+          "gravity": { "description": "px/s² along +y, down the screen (default 0).", "type": "number", "minimum": -100000, "maximum": 100000 },
+          "mix": { "description": "0..1 (default 1); keyable as physics:<id> mix tracks.", "type": "number", "minimum": 0, "maximum": 1 },
+          "limit": { "description": "px/s: motion faster than this pushes the bone no harder (default 5000).", "type": "number", "exclusiveMinimum": 0 },
+          "step": { "description": "Fixed simulation step in seconds, 1/240..1/10 (default 1/60).", "type": "number", "minimum": 0.004166666666666666, "maximum": 0.1 },
+          "teleport": { "description": "px: an input origin jump larger than this within one step settles the bone instead of flinging it (default 300).", "type": "number", "exclusiveMinimum": 0 },
+          "resetOnStart": { "description": "Settle when a clip starts on the base track (track 0).", "type": "boolean" }
         }
       }
     },
@@ -140,7 +169,7 @@
             "items": {
               "type": "object", "additionalProperties": false, "required": ["target", "property", "keys"],
               "properties": {
-                "target": { "description": "bone:<id>, slot:<id>, rig (property expression, step keys of expression ids / null) or ik:<id> (mix 0..1, bendPositive step bool).", "type": "string", "pattern": "^(?:(bone|slot|ik):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
+                "target": { "description": "bone:<id>, slot:<id>, rig (property expression, step keys of expression ids / null), ik:<id> (mix 0..1, bendPositive step bool) or physics:<id> (plugin 1.13.0, mix 0..1).", "type": "string", "pattern": "^(?:(bone|slot|ik|physics):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
                 "property": { "description": "sequence (plugin 1.12.0): slot tracks picking frames of the slot's sequence attachment (step keys {mode, index, delay}).", "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive", "deform", "sequence"] },
                 "attachment": { "description": "Deform tracks (plugin 1.4.0): the slot's mesh attachment whose vertices the keys offset.", "$ref": "#/$defs/name" },
                 "keys": {
