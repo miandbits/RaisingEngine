@@ -1,4 +1,5 @@
 import { createProgression, guardProgression, startTimedAction, progressSession } from './progression.js';
+import { startCalendar } from './unified-time.js';
 import { resolveUserValues } from './user-fields.js';
 import { createRoster, assignActivities, executeRoster, beginActorAction } from './roster.js';
 import type { Overrides } from '../schema/generated/project.js';
@@ -113,6 +114,8 @@ function parseCommand(input: unknown, periods: number): Command {
       'INVALID_COMMAND', `${input.type}에는 ${field}가 필요합니다.`, `/command/${field}`);
   } else if (input.type === 'selectPolicy') {
     requireCore(Object.keys(input).length === 3 && typeof input.groupId === 'string' && input.groupId.length > 0 && (input.optionId === null || typeof input.optionId === 'string' && input.optionId.length > 0), 'INVALID_COMMAND', '정책 그룹 ID와 선택 ID 또는 null이 필요합니다.', '/command');
+  } else if (input.type === 'cancelActorSession') {
+    requireCore(Object.keys(input).length===2&&typeof input.actorId==='string'&&input.actorId.length>0,'INVALID_COMMAND','취소할 실행자가 필요합니다.','/command/actorId');
   } else if (input.type === 'waitTime') {
     requireCore(Object.keys(input).length===2 && typeof input.ticks==='number' && Number.isInteger(input.ticks) && input.ticks>0 && input.ticks<=1000000,'INVALID_COMMAND','대기 시간은 1..1000000 정수입니다.','/command/ticks');
   } else if (input.type === 'executeActorAction') {
@@ -216,8 +219,14 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     let narrative: NarrativeStep | null = null;
     let eventDecisions: EventDecision[] = [];
     const soundCues: string[] = [];
+    const settleActivity=()=>{
+      activity=executeActivity(content,draft,draft);
+      const definition=content.activities.find(a=>a.id===activity!.activityId)!;
+      if(definition.presentation)applyScene(draft,definition.presentation,soundCues);
+      if(definition.expeditionId)startExpedition(content,draft,definition.expeditionId,soundCues);
+    };
     switch (command.type) {
-      case 'advanceSession': case 'cancelSession': case 'waitTime': progressSession(content,draft,command,soundCues); break;
+      case 'advanceSession': case 'cancelSession': case 'cancelActorSession': case 'waitTime': progressSession(content,draft,command,soundCues,settleActivity); break;
       case 'assignActivities': assignActivities(content, state, draft, command.assignments); break;
       case 'executeActorAction':
         if(startTimedAction(content,draft,command))break;
@@ -249,6 +258,7 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
         break;
       }
       case 'executeActivity': {
+        if(startCalendar(content,draft))break;
         activity = executeActivity(content, state, draft);
         const presentation = content.activities.find(a => a.id === activity!.activityId)!.presentation;
         if (presentation) applyScene(draft, presentation, soundCues);

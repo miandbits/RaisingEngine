@@ -1291,6 +1291,22 @@
             "unitId",
             "slot"
           ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "actorId"
+          ],
+          "properties": {
+            "type": {
+              "const": "cancelActorSession"
+            },
+            "actorId": {
+              "$ref": "#/$defs/id"
+            }
+          }
         }
       ]
     },

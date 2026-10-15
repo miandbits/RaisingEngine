@@ -40,6 +40,8 @@ private slots:
   void characterStateAuthoringRoundtrip();
   void characterStatePlayIntegration();
   void timeSessionAuthoringRoundtrip();
+  void unifiedTimeAuthoring();
+  void unifiedTimePlay();
   void authoringWorkspaceRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();
@@ -964,5 +966,6 @@ private slots:
 #include "cutout-e2e-test.inc"
 #include "project-manager-test.inc"
 #include "designer-pilot-test.inc"
+#include "unified-time-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"

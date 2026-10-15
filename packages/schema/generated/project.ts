@@ -2704,6 +2704,27 @@ export type ProjectDefinition = Header & {
       eventId: string;
       atTick: number;
       actorId?: string;
+      repeatEvery?: number;
+      repeatCount?: number;
+    }[];
+    model?: "unified-v2";
+    ticksPerPeriod?: number;
+    parallel?: boolean;
+    /**
+     * @maxItems 32
+     */
+    actorPools?: {
+      actorId: string;
+      max: number;
+      initial: number;
+      recoveryPerTick: number;
+    }[];
+    /**
+     * @maxItems 512
+     */
+    activities?: {
+      activityId: string;
+      actionPointCost: number;
     }[];
   };
 };

@@ -51,6 +51,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if((content.project.visual as any)?.direction)requiredFeatures.push('direction-sequences-v1');
   if(content.project.systems?.tactics||content.project.systems?.expeditions.some(e=>e.nodes.some(n=>n.requirements||n.encounterId))||content.project.systems?.quests.some(q=>q.encounterId))requiredFeatures.push('party-tactics-v1');
   if(content.project.progression)requiredFeatures.push('progression-sessions-v1');
+  if(content.project.progression?.model==='unified-v2')requiredFeatures.push('unified-time-v2');
   const ui=content.project.visual;
   if(ui&&(ui.screens.some(s=>s.modal)||[...ui.screens.flatMap(s=>s.elements),...(ui.components??[]).flatMap(c=>c.elements)].some(e=>e.flowLayout||e.overflow||e.sort||e.selectionKey||e.tooltip||['selectRow','openModal','closeModal'].includes(e.action??''))||(ui.components??[]).some(c=>c.elements.some(e=>e.kind==='component'))))requiredFeatures.push('ui-composition-v1');
   if(content.project.roster?.stateModel==='character-v1')requiredFeatures.push('character-scoped-rules-v1');

@@ -189,6 +189,10 @@ export type ScenarioSpecification = Header & {
                 type: "tacticsUnequip";
                 unitId: string;
                 slot: "weapon" | "armor" | "accessory";
+              }
+            | {
+                type: "cancelActorSession";
+                actorId: string;
               };
         }
     ),
@@ -372,6 +376,10 @@ export type ScenarioSpecification = Header & {
                 type: "tacticsUnequip";
                 unitId: string;
                 slot: "weapon" | "armor" | "accessory";
+              }
+            | {
+                type: "cancelActorSession";
+                actorId: string;
               };
         }
     )[]

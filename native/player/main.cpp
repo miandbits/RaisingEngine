@@ -322,6 +322,7 @@ public:
         if(game.state.is_null())throw std::runtime_error("새 게임을 시작해 주세요.");
         const auto phase=game.state.value("phase","");
         if(phase=="planning"||phase=="ready") {
+          if(game.state.contains("progression")&&game.state.at("progression").contains("sessions")&&!game.state.at("progression").at("pending").is_null()){game.send({{"type","advanceSession"}});game.settle();dirty=true;return;}
           if(game.content.at("project").contains("roster")) {
             if(phase=="planning")game.send({{"type","assignActivities"},{"assignments",markup.roster_draft}});
             else game.send({{"type","executeActivity"}});

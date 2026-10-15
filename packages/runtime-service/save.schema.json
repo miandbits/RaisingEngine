@@ -726,7 +726,7 @@
             },
             "handled": {
               "type": "array",
-              "maxItems": 128,
+              "maxItems": 4096,
               "items": {
                 "type": "object",
                 "additionalProperties": false,
@@ -743,6 +743,16 @@
                       "fired",
                       "skipped"
                     ]
+                  },
+                  "occurrence": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 999
+                  },
+                  "atTick": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   }
                 }
               }
@@ -800,6 +810,92 @@
                   }
                 }
               ]
+            },
+            "actors": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "elapsed",
+                  "actionPoints"
+                ],
+                "properties": {
+                  "elapsed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "actionPoints": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  }
+                }
+              }
+            },
+            "sessions": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "kind",
+                  "remaining",
+                  "command"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "action",
+                      "calendar",
+                      "wait"
+                    ]
+                  },
+                  "remaining": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "command": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "type",
+                          "actionId",
+                          "quantity"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "executeAction"
+                          },
+                          "actionId": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 2147483647
+                          },
+                          "actorId": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
             }
           }
         }

@@ -20,6 +20,11 @@ export function commandAttempts(content: ContentSnapshot,state: RunState,random?
   const pending:Command[][]=[];const attempt=(commands:Command[])=>pending.push(commands);
   if (state.progression?.pending && (state.phase==='planning'||state.phase==='ready')) {
     attempt([{type:'advanceSession'}]);attempt([{type:'cancelSession'}]);
+    if(state.progression.sessions){
+      for(const session of state.progression.sessions)if(session.command?.actorId)attempt([{type:'cancelActorSession',actorId:session.command.actorId}]);
+      if(content.project.progression?.parallel)for(const member of content.project.roster?.members??[])for(const actionId of member.actionIds??[])
+        if(content.project.progression.actions.some(a=>a.actionId===actionId))attempt([{type:'executeActorAction',actorId:member.characterId,actionId,quantity:1}]);
+    }
   } else if (state.phase === 'planning' || state.phase === 'ready') {
     if(content.project.progression)attempt([{type:'waitTime',ticks:1}]);
     const systems = content.project.systems;

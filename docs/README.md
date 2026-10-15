@@ -13,7 +13,7 @@ Start with the [root README](../README.md). Older documents retain the implement
 | Shared data contracts | [Data format](data-format/contract.md), [interfaces](interfaces.md) |
 | General rules and visual logic | [Rules](generic-rules.md), [logic/debugging](visual-logic-and-debugging.md) |
 | Integrated authoring and references | [Authoring workspace](authoring-workspace.md) |
-| Characters and time | [Character-scoped rules](character-scoped-rules.md), [time sessions](time-progression-sessions.md) |
+| Characters and time | [Character-scoped rules](character-scoped-rules.md), [time sessions](time-progression-sessions.md), [unified calendar and parallel sessions](unified-time.md) |
 | Reusable UI and data binding | [UI composition](ui-composition.md), [data binding](data-ui-binding.md) |
 | Adventure, battle and direction | [Party tactics](party-tactics.md), [direction sequences](direction-sequences.md) |
 | Shared human/LLM editing | [MCP](mcp.md) |

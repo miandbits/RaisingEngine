@@ -219,7 +219,16 @@ public:
       if(game.state.contains("progression")){
         const auto &p=game.state.at("progression");const auto &cfg=display_content.at("project").at("progression");const auto prefix="progress__"+e.value("id","")+"__";
         out+="<p>게임 시간 "+std::to_string(p.value("tick",0))+" "+escape(cfg.value("unitLabel",""))+" · 행동력 "+std::to_string(p.value("actionPoints",0))+" / "+std::to_string(cfg.at("actionPoints").value("max",0))+"</p>";
-        if(!p.at("pending").is_null()){
+        if(p.contains("sessions")){
+          out+="<p>현재 일정 칸 남은 시간: "+std::to_string((game.state.value("periodIndex",0)+1)*cfg.value("ticksPerPeriod",1)-p.value("tick",0))+" · 월 일정으로 이 칸을 마칩니다.</p>";
+          for(const auto &session:p.at("sessions")){
+            const auto id=session.value("id","");std::string name=id;if(session.value("kind","")=="calendar")name="월 일정";else if(session.value("kind","")=="wait")name="대기";else {for(const auto &c:display_content.at("characters"))if(c.at("id")==id)name=c.value("name",id);auto actionName=session.at("command").value("actionId","");for(const auto &a:display_content.at("project").at("gameplay").at("actions"))if(a.at("id")==actionName){actionName=a.value("name",actionName);break;}name+=" · "+actionName;if(p.at("actors").contains(id))name+=" · 행동력 "+std::to_string(p.at("actors").at(id).value("actionPoints",0));}
+            out+="<p>"+escape(name)+" · 남은 시간 "+std::to_string(session.value("remaining",0))+"</p>";
+            if(!session.at("command").is_null()&&session.at("command").contains("actorId")){Json cancel={{"type","cancelActorSession"},{"actorId",id}};out+=button(prefix+"cancel__"+id,"이 캐릭터 진행 취소",cancel,game.available(cancel));}
+          }
+          if(!p.at("sessions").empty()){Json advance={{"type","advanceSession"}},cancel={{"type","cancelSession"}};std::string reason;const bool available=game.available(advance,&reason);out+=button(prefix+"advance","다음 시점까지 진행",advance,available,reason)+button(prefix+"cancel","전체 진행 취소",cancel,game.available(cancel));}
+          else {Json wait={{"type","waitTime"},{"ticks",1}};out+=button(prefix+"wait","1 "+cfg.value("unitLabel","")+" 대기",wait,game.available(wait));}
+        }else if(!p.at("pending").is_null()){
           const auto &pending=p.at("pending");std::string current="대기";
           if(!pending.at("command").is_null()){const auto &cmd=pending.at("command");current=cmd.value("actionId","");for(const auto &a:display_content.at("project").at("gameplay").at("actions"))if(a.at("id")==cmd.at("actionId"))current=a.value("name",current);if(cmd.contains("actorId"))for(const auto &actor:display_content.at("characters"))if(actor.at("id")==cmd.at("actorId"))current=actor.value("name","")+" · "+current;}
           out+="<p>진행 중: "+escape(current)+"</p>";out+="<p>남은 시간: "+std::to_string(pending.value("remaining",0))+" "+escape(cfg.value("unitLabel",""))+"</p>";
@@ -232,6 +241,7 @@ public:
         for(const auto& member:display_content.at("project").at("roster").at("members")){
           const auto actor=member.value("characterId","");std::string name=actor;for(const auto& c:display_content.at("characters"))if(c.at("id")==actor)name=c.value("name",actor);
           out+="<div style=\"display:inline-block;width:46%;margin:1%;vertical-align:top;\"><b>"+escape(name)+"</b>";
+          if(game.state.contains("progression")&&game.state.at("progression").contains("actors")){const auto account=game.state.at("progression").at("actors").at(actor);out+="<p>개인 행동력 "+std::to_string(account.value("actionPoints",0))+" · 사용 시간 "+std::to_string(account.value("elapsed",0))+"</p>";}
           for(const auto& id:member.value("actionIds",Json::array()))for(const auto& definition:definitions)if(definition.at("id")==id&&included("actionIds",id)){
             const auto key="actor-action__"+e.value("id","")+"__"+actor+"__"+id.get<std::string>();const auto controls=quantity_controls(key,definition.value("maxQuantity",1));
             Json command={{"type","executeActorAction"},{"actorId",actor},{"actionId",id},{"quantity",quantities[key]}};std::string reason;const bool enabled=game.available(command,&reason);
@@ -609,7 +619,7 @@ public:
         enabled=raw_phase!="title"&&raw_phase!="finished"&&raw_phase!="battle"&&raw_phase!="expedition"&&phase()!="choice";
         if(!e.value("autoLabel",true)){label=e.value("text","");if(raw_phase=="planning"&&plan_month>=0&&plan_selected!=((1<<game.periods())-1))enabled=false;}
       }
-      if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){enabled=false;label="행동 진행 중";}
+      if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){if(game.state.at("progression").contains("sessions")){enabled=game.available({{"type","advanceSession"}});label="다음 시점까지 진행";}else {enabled=false;label="행동 진행 중";}}
       if(type=="save")enabled=!game.state.is_null();
       if(type=="executeActorAction"||type=="navigate"||type=="visit"||type=="buy"||type=="sell"||type=="useService"||type=="setDiet"||type=="executeAction"||type=="selectPolicy"||type=="interact") {
         enabled=raw_phase=="planning"||raw_phase=="ready";

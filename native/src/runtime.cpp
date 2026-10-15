@@ -420,6 +420,11 @@ J create(const J &c, const J &seed, const J &options) {
   }
   createCharacterState(c,s);
   if(c["project"].contains("progression"))s["progression"]={{"tick",0},{"actionPoints",c["project"]["progression"]["actionPoints"]["initial"]},{"handled",J::array()},{"pending",nullptr}};
+  if(c["project"].value("progression",J::object()).value("model","")=="unified-v2"){
+    const auto &cfg=c["project"]["progression"];auto &p=s["progression"];p["sessions"]=J::array();p["actors"]=J::object();
+    auto members=c["project"].contains("roster")?c["project"]["roster"]["members"]:J::array({J{{"characterId",c["project"]["protagonistId"]}}});
+    for(const auto &m:members){const auto id=str(m,"characterId");auto initial=cfg["actionPoints"]["initial"];for(const auto &pool:cfg.value("actorPools",J::array()))if(pool["actorId"]==id)initial=pool["initial"];p["actors"][id]={{"elapsed",0},{"actionPoints",initial}};}
+  }
   return {{"ok", true}, {"state", s}};
 }
 void scene(J &s, const J &v, J &sounds) {
@@ -565,8 +570,8 @@ J step(const J &c, J &s, const J &choice, J &sounds) {
       s["activeNarrative"]["nodeId"] = n["next"];
     } else if (type == "end") {
       if (cursor["kind"] == "event") {
-        if(cursor.contains("actorId"))s["roster"]["completedEvents"][str(cursor,"actorId")].push_back(cursor["id"]);
-        else s["completedEvents"].push_back(cursor["id"]);
+        auto &completed=cursor.contains("actorId")?s["roster"]["completedEvents"][str(cursor,"actorId")]:s["completedEvents"];
+        if(std::find(completed.begin(),completed.end(),cursor["id"])==completed.end())completed.push_back(cursor["id"]);
         if (cursor.contains("returnPhase")) {
           s["activeNarrative"] = nullptr;
           s["phase"] = cursor["returnPhase"];
@@ -694,6 +699,8 @@ void parseCommand(const J &cmd, int count) {
          !cmd["groupId"].get<std::string>().empty() && cmd.contains("optionId") &&
          (cmd["optionId"].is_null() || (cmd["optionId"].is_string() && !cmd["optionId"].get<std::string>().empty())),
          "INVALID_COMMAND", "정책 그룹과 선택지 또는 null이 필요합니다.", "/command");
+  } else if(type=="cancelActorSession") {
+    need(cmd.size()==2&&cmd.contains("actorId")&&cmd["actorId"].is_string()&&!cmd["actorId"].get<std::string>().empty(),"INVALID_COMMAND","취소할 실행자가 필요합니다.","/command/actorId");
   } else if(type=="waitTime") {
     need(cmd.size()==2&&cmd.contains("ticks")&&integer(cmd["ticks"])&&number(cmd["ticks"])>0&&number(cmd["ticks"])<=1000000,"INVALID_COMMAND","대기 시간은 1..1000000 정수입니다.","/command/ticks");
   } else if (type == "executeActorAction") {
@@ -761,7 +768,9 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
   activeRules->relationships = old["relationships"];
   J s = old, activity = nullptr, narrative = nullptr, decisions = J::array(), sounds = J::array();
   auto type = str(cmd, "type");
-  if(type=="advanceSession"||type=="cancelSession"||type=="waitTime")progressSession(c,s,cmd,sounds);
+  if(type=="advanceSession"||type=="cancelSession"||type=="cancelActorSession"||type=="waitTime"){
+    if(progressSession(c,s,cmd,sounds)){const auto before=s;activity=execute(c,before,s);auto a=find(c["activities"],activity["activityId"]);if(a->contains("presentation"))scene(s,(*a)["presentation"],sounds);}
+  }
   else if((type=="executeAction"||type=="executeActorAction")&&startTimedAction(c,s,cmd)){}
   else if (type == "tacticsUnequip" || type == "tacticsAction" || type == "tacticsFlee" || type == "tacticsEquip" || type == "acceptQuest" || type == "claimQuest" || type == "equip" || type == "unequip" || type == "moveExpedition" || type == "returnFromExpedition" || type == "battleAction")
     systems(c, s, cmd, sounds);
@@ -799,11 +808,13 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
     s["schedule"] = cmd["activityIds"];
     s["phase"] = "ready";
   } else if (type == "executeActivity") {
+    if(!startTimedCalendar(c,s)){
     activity = execute(c, old, s);
     auto a = find(c["activities"], activity["activityId"]);
     if (a->contains("presentation"))
       scene(s, (*a)["presentation"], sounds);
     if (a->contains("expeditionId")) startExpedition(c, s, (*a)["expeditionId"], sounds);
+    }
   } else if (type == "acknowledgeResult") {
     need(old["phase"] == "activity-result", "WRONG_PHASE", "확인할 활동 결과가 없습니다.",
          "/phase");

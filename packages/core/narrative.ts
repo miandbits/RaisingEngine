@@ -126,8 +126,8 @@ export function stepNarrative(content: ContentSnapshot, draft: RunData, choiceId
       case 'effect': applyEffects(content, draft, node.effects, `${source}/effects`, step.changes); draft.activeNarrative!.nodeId = node.next; break;
       case 'end':
         if (cursor.kind === 'event') {
-          if(cursor.actorId)draft.roster!.completedEvents![cursor.actorId]!.push(cursor.id);
-          else draft.completedEvents.push(cursor.id);
+          const completed=cursor.actorId?draft.roster!.completedEvents![cursor.actorId]!:draft.completedEvents;
+          if(!completed.includes(cursor.id))completed.push(cursor.id);
           if (cursor.returnPhase) {
             draft.activeNarrative = null; draft.phase = cursor.returnPhase;
             if (cursor.returnPresentation) draft.presentation = structuredClone(cursor.returnPresentation);

@@ -379,6 +379,83 @@
               },
               "actorId": {
                 "$ref": "common.schema.json#/$defs/id"
+              },
+              "repeatEvery": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "repeatCount": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 1000
+              }
+            }
+          }
+        },
+        "model": {
+          "const": "unified-v2"
+        },
+        "ticksPerPeriod": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "parallel": {
+          "type": "boolean"
+        },
+        "actorPools": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "actorId",
+              "max",
+              "initial",
+              "recoveryPerTick"
+            ],
+            "properties": {
+              "actorId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "max": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "initial": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "recoveryPerTick": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              }
+            }
+          }
+        },
+        "activities": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "activityId",
+              "actionPointCost"
+            ],
+            "properties": {
+              "activityId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "actionPointCost": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
               }
             }
           }

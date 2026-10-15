@@ -91,6 +91,7 @@ export interface RunData extends Values {
 export type RunState = DeepReadonly<RunData>;
 export type Command = GameplayCommand | SystemsCommand
   | { type: 'advanceSession' | 'cancelSession' }
+  | { type: 'cancelActorSession'; actorId: string }
   | { type: 'waitTime'; ticks: number }
   | { type: 'assignActivities'; assignments: Record<string, string> }
   | { type: 'executeActorAction'; actorId: string; actionId: string; quantity: number }

@@ -35,6 +35,7 @@ public:
   std::string schedule_step() const {
     if(!continuous()||state.is_null()||state.at("schedule").is_null())return "";
     const auto phase=state.value("phase","");
+    if((phase=="ready"||phase=="planning")&&state.contains("progression")&&state["progression"].contains("sessions")&&!state["progression"]["pending"].is_null())return "advanceSession";
     if(phase=="ready")return "executeActivity";
     if(phase=="activity-result"&&(!timeline_active()||timeline_cursor.value("completed",false)))return "acknowledgeResult";
     return "";
