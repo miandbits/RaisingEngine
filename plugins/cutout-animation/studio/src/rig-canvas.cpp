@@ -12,6 +12,7 @@ namespace cutout_studio {
 namespace {
 constexpr double PI = 3.14159265358979323846;
 const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d"), TRAIL_COLOR("#38bdf8"), IK_COLOR("#f97316");
+const QColor PHYSICS_COLOR("#2dd4bf");  // physics bones (plugin 1.13.0): teal, apart from IK orange and trail blue
 // Mesh edit (plugin 1.6.0): outline edges, pinned inside edges, outline being drawn / previewed.
 const QColor OUTLINE_COLOR("#f59e0b"), PINNED_COLOR("#22d3ee"), DRAFT_COLOR("#e879f9");
 double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 * PI; return a; }
@@ -230,7 +231,7 @@ bool RigCanvas::outlinePress(QMouseEvent* e) {
   const QPointF w = e->position();
   // A click on the first point closes the outline (Spine-like); a second click on the last point is
   // the first half of a double-click, not a new point.
-  if (outline_.size() >= 3 && QLineF(rigToWidget(outline_[0]), w).length() <= VERTEX_RADIUS) { finishOutline(); return true; }
+  if (outline_.size() >= 3 && QLineF(rigToWidget(outline_[0]), w).length() <= VERTEX_RADIUS * ui_) { finishOutline(); return true; }
   if (!outline_.isEmpty() && QLineF(rigToWidget(outline_.back()), w).length() <= 2) return true;
   outline_ << widgetToRig(w);
   update();
@@ -253,7 +254,7 @@ void RigCanvas::paintOutline(QPainter& p) {
     p.drawPolygon(poly);
     p.setBrush(DRAFT_COLOR);
     p.setPen(Qt::NoPen);
-    for (const QPointF& q : poly) p.drawEllipse(q, 2.5, 2.5);
+    for (const QPointF& q : poly) p.drawEllipse(q, 2.5 * ui_, 2.5 * ui_);
     p.setBrush(Qt::NoBrush);
   }
   if (!outlineDrawing()) return;
@@ -269,7 +270,7 @@ void RigCanvas::paintOutline(QPainter& p) {
   p.setPen(QPen(QColor("#0b1220"), 1));
   for (int i = 0; i < line.size(); i++) {
     p.setBrush(i == 0 ? SELECT_COLOR : DRAFT_COLOR);
-    p.drawEllipse(line[i], i == 0 ? 5.0 : 3.5, i == 0 ? 5.0 : 3.5);
+    p.drawEllipse(line[i], (i == 0 ? 5.0 : 3.5) * ui_, (i == 0 ? 5.0 : 3.5) * ui_);
   }
   p.setBrush(Qt::NoBrush);
 }
@@ -321,7 +322,7 @@ void RigCanvas::paintMesh(QPainter& p) {
     const bool picked = meshSelected_.contains(i) || (meshGesture_ == MeshGesture::Paint && meshStroke_.contains(i));
     p.setPen(QPen(meshMode_ == MeshVertices && size_t(i) < att->hull ? OUTLINE_COLOR.darker(160) : QColor("#0b1220"), 1));
     p.setBrush(meshMode_ == MeshWeights ? heat(weight[i], 255) : picked ? SELECT_COLOR : QColor("#f8fafc"));
-    p.drawEllipse(o, picked ? 4.5 : 3.0, picked ? 4.5 : 3.0);
+    p.drawEllipse(o, (picked ? 4.5 : 3.0) * ui_, (picked ? 4.5 : 3.0) * ui_);
   }
   p.setBrush(Qt::NoBrush);
   if (meshGesture_ == MeshGesture::Band && meshMoved_) {
@@ -335,6 +336,7 @@ void RigCanvas::paintMesh(QPainter& p) {
 }
 
 QColor RigCanvas::ikColor() { return IK_COLOR; }
+QColor RigCanvas::physicsColor() { return PHYSICS_COLOR; }
 bool RigCanvas::isIkTarget(int bone) const {
   if (!rig_) return false;
   for (const auto& k : rig_->ik) if (k.target == bone) return true;
@@ -363,17 +365,49 @@ void RigCanvas::paintIk(QPainter& p) {
     if (k.bones.size() == 1 && cutout::ikAimDirection(*rig_, pose_, int(&k - rig_->ik.data()), dx, dy)) {
       // Screen length: the target's distance, kept readable (16..60 px).
       const QPointF from = origin(k.bones[0]), aimAt = origin(k.target);
-      const double len = std::clamp(std::hypot(aimAt.x() - from.x(), aimAt.y() - from.y()), 16.0, 60.0);
+      const double len = std::clamp(std::hypot(aimAt.x() - from.x(), aimAt.y() - from.y()), 16.0 * ui_, 60.0 * ui_);
       const QPointF dir(dx, dy), side(-dy, dx), to = from + dir * len;
       p.setPen(QPen(line, selected ? 3 : 2, Qt::SolidLine, Qt::RoundCap));
       p.drawLine(from, to);
-      p.drawLine(to, to - dir * 8 + side * 4);
-      p.drawLine(to, to - dir * 8 - side * 4);
+      p.drawLine(to, to - dir * 8 * ui_ + side * 4 * ui_);
+      p.drawLine(to, to - dir * 8 * ui_ - side * 4 * ui_);
     }
-    // From the effector: the tip bone, the lower bone's length tip, else the chain end.
-    const QPointF from = k.tip >= 0 ? origin(k.tip) : k.bones.size() == 2 && k.tipLength > 0 ? rigToWidget(boneTip(k.bones.back())) : origin(k.bones.back());
+    // From the effector: the tip bone, the last bone's length tip, else the chain end.
+    const QPointF from = k.tip >= 0 ? origin(k.tip) : k.bones.size() >= 2 && k.tipLength > 0 ? rigToWidget(boneTip(k.bones.back())) : origin(k.bones.back());
     p.setPen(QPen(line, 1.5, Qt::DashLine));
     p.drawLine(from, origin(k.target));
+  }
+}
+
+// Physics overlay (plugin 1.13.0): a teal spring ring (a "~" in a circle) at the tip of every
+// physics bone, the selected constraint's drawn thicker; while preview playback simulates, a dashed
+// tether runs from where the animation alone would put the tip (the rest point) to where it swings.
+void RigCanvas::paintPhysics(QPainter& p) {
+  if (!rig_ || rig_->physics.empty() || pose_.world.size() != rig_->bones.size()) return;
+  for (const auto& k : rig_->physics) {
+    if (k.bone < 0 || size_t(k.bone) >= rig_->bones.size()) continue;
+    const bool selected = qs(k.id) == selectedPhysics_;
+    QColor c = PHYSICS_COLOR;
+    c.setAlpha(selected ? 255 : 170);
+    const auto& w = pose_.world[size_t(k.bone)];
+    const QPointF tip = rigToWidget(rig_->bones[size_t(k.bone)].length > 0 ? boneTip(k.bone) : QPointF(w.e, w.f));
+    if (auto rest = physicsRest_.find(k.bone); rest != physicsRest_.end()) {
+      const QPointF from = rigToWidget(rest.value());
+      p.setPen(QPen(c, 1.25 * ui_, Qt::DashLine));
+      p.setBrush(Qt::NoBrush);
+      p.drawLine(from, tip);
+      p.drawEllipse(from, 2.5 * ui_, 2.5 * ui_);
+    }
+    const double r = (selected ? 7 : 5) * ui_;
+    p.setPen(QPen(c, (selected ? 2.5 : 1.5) * ui_));
+    p.setBrush(QColor(11, 18, 32, 140));
+    p.drawEllipse(tip, r, r);
+    QPainterPath wave;
+    wave.moveTo(tip + QPointF(-r * 0.6, 0));
+    wave.cubicTo(tip + QPointF(-r * 0.3, -r * 0.55), tip + QPointF(0, -r * 0.1), tip);
+    wave.cubicTo(tip + QPointF(0, r * 0.1), tip + QPointF(r * 0.3, r * 0.55), tip + QPointF(r * 0.6, 0));
+    p.setBrush(Qt::NoBrush);
+    p.drawPath(wave);
   }
 }
 
@@ -400,7 +434,7 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
   if (handles && meshMode_ == MeshVertices) {
     const QVector<QPointF> pts = meshVertices();
     for (int i = 0; i < pts.size(); i++)
-      if (const double d = dist(rigToWidget(pts[i])); d <= VERTEX_RADIUS) out.push_back({"slot:" + meshSlot_, i, HitVertex, d});
+      if (const double d = dist(rigToWidget(pts[i])); d <= VERTEX_RADIUS * ui_) out.push_back({"slot:" + meshSlot_, i, HitVertex, d});
   }
   // Bones back to front so equally near handles keep the later (drawn on top) bone first.
   for (size_t i = handles ? rig_->bones.size() : 0; i-- > 0;) {
@@ -409,7 +443,7 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
     const QPointF at = rigToWidget(QPointF(m.e, m.f));
     const double d = dist(at);
     if (isIkTarget(int(i))) {
-      if (d <= IK_RADIUS) out.push_back({ref, -1, HitIkTarget, d});
+      if (d <= IK_RADIUS * ui_) out.push_back({ref, -1, HitIkTarget, d});
       continue;  // only its origin matters: no body
     }
     const QPolygonF shape = boneShape(int(i));
@@ -417,16 +451,16 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
       // The selected bone's own gizmo: its origin and (point bones) its drawn x axis grab it;
       // the axis is its "body": dragging it turns the bone.
       const double len = std::hypot(m.a, m.b);
-      const QPointF axis = len > 1e-9 ? QPointF(m.a / len, m.b / len) * AXIS_LENGTH : QPointF(AXIS_LENGTH, 0);
+      const QPointF axis = len > 1e-9 ? QPointF(m.a / len, m.b / len) * AXIS_LENGTH * ui_ : QPointF(AXIS_LENGTH * ui_, 0);
       const double onAxis = shape.isEmpty() ? segmentDistance(w, at, at + axis) : 1e9;
-      if (d <= SELECTED_RADIUS || onAxis <= AXIS_RADIUS) out.push_back({ref, -1, HitSelectedBone, std::min(d, onAxis), d > SELECTED_RADIUS});
-    } else if (d <= BONE_RADIUS) {
+      if (d <= SELECTED_RADIUS * ui_ || onAxis <= AXIS_RADIUS * ui_) out.push_back({ref, -1, HitSelectedBone, std::min(d, onAxis), d > SELECTED_RADIUS * ui_});
+    } else if (d <= BONE_RADIUS * ui_) {
       out.push_back({ref, -1, HitBone, d});
     }
     // Bone bodies rank after every handle and before images (Spine: the bone over its image).
     if (!shape.isEmpty()) {
       const double line = segmentDistance(w, at, rigToWidget(boneTip(int(i))));
-      if (line <= BODY_RADIUS || shape.containsPoint(w, Qt::OddEvenFill)) out.push_back({ref, -1, HitBoneBody, line, true});
+      if (line <= BODY_RADIUS * ui_ || shape.containsPoint(w, Qt::OddEvenFill)) out.push_back({ref, -1, HitBoneBody, line, true});
     }
   }
   const QTransform view = viewTransform();
@@ -490,10 +524,10 @@ QPolygonF RigCanvas::boneShape(int bone) const {
   const auto& m = pose_.world[size_t(bone)];
   const QPointF o = rigToWidget(QPointF(m.e, m.f)), t = rigToWidget(boneTip(bone)), v = t - o;
   const double len = std::hypot(v.x(), v.y());
-  if (len < MIN_BODY) return {};
+  if (len < MIN_BODY * ui_) return {};
   // Spine-like: widest a little after the origin, tapering to a point at the tip.
   const QPointF dir = v / len, side(-dir.y(), dir.x());
-  const double half = std::clamp(len * 0.1, 2.5, 8.0), knee = std::min(len * 0.2, half * 2.5);
+  const double half = std::clamp(len * 0.1, 2.5 * ui_, 8.0 * ui_), knee = std::min(len * 0.2, half * 2.5);
   return QPolygonF({o, o + dir * knee + side * half, t, o + dir * knee - side * half});
 }
 QPointF RigCanvas::createEnd(const Drag& d) {
@@ -532,12 +566,26 @@ void RigCanvas::outlineSlot(QPainter& p, int si) const {
   const cutout::Attachment* att = nullptr;
   const auto m = attachmentMatrix(*rig_, pose_, si, &att);
   if (!att) return;
+  if (att->clipping) { p.drawPolygon(viewTransform().map(clipPolygon(*rig_, pose_, si))); return; }
   if (att->mesh) {
     const QVector<QPointF> pts = meshPoints(*rig_, pose_, si);
     for (const auto& [a, b] : meshOutline(att->triangles)) if (a < pts.size() && b < pts.size()) p.drawLine(rigToWidget(pts[a]), rigToWidget(pts[b]));
     return;
   }
   p.drawPolygon((qtTransform(m) * viewTransform()).map(QPolygonF(QRectF(0, 0, att->width, att->height))));
+}
+/** Clip polygons of the shown clipping slots (plugin 1.12.0): magenta dashes, so the area a clip
+ *  keeps is visible even where nothing is drawn yet; the selected one is drawn by outlineSlot. */
+void RigCanvas::paintClips(QPainter& p) {
+  if (!showClips_ || pose_.world.size() != rig_->bones.size()) return;
+  p.setBrush(Qt::NoBrush);
+  for (size_t i = 0; i < rig_->slots.size(); i++) {
+    if (hidden_.contains(qs(rig_->slots[i].id))) continue;
+    const QPolygonF polygon = clipPolygon(*rig_, pose_, int(i));
+    if (polygon.size() < 3) continue;
+    p.setPen(QPen(QColor(255, 122, 217, 220), 1.25 * ui_, Qt::DashDotLine));
+    p.drawPolygon(viewTransform().map(polygon));
+  }
 }
 // Hover cue: a thin light outline (part) or ring (handle) on what a click would pick, so a
 // crosshair over an image visibly wins before the press.
@@ -552,7 +600,7 @@ void RigCanvas::paintHover(QPainter& p) {
     const auto& m = pose_.world[size_t(bi)];
     const QPolygonF shape = boneShape(bi);
     if (hoverBody_ && !shape.isEmpty()) { p.drawPolygon(shape); return; }  // the body a drag would turn
-    const double r = isIkTarget(bi) ? IK_RADIUS + 2 : BONE_RADIUS + 1;
+    const double r = (isIkTarget(bi) ? IK_RADIUS + 2 : BONE_RADIUS + 1) * ui_;
     p.drawEllipse(rigToWidget(QPointF(m.e, m.f)), r, r);
   }
 }
@@ -576,10 +624,10 @@ void RigCanvas::paintBones(QPainter& p) {
     }
     if (isIkTarget(int(i))) {
       // IK target: a crosshair (no axis: only its origin matters) that reads as "drag me".
-      p.setPen(QPen(selected ? SELECT_COLOR : IK_COLOR, selected ? 2.5 : 2));
-      p.drawEllipse(at, 8.0, 8.0);
-      p.drawLine(at - QPointF(12, 0), at + QPointF(12, 0));
-      p.drawLine(at - QPointF(0, 12), at + QPointF(0, 12));
+      p.setPen(QPen(selected ? SELECT_COLOR : IK_COLOR, (selected ? 2.5 : 2) * ui_));
+      p.drawEllipse(at, 8.0 * ui_, 8.0 * ui_);
+      p.drawLine(at - QPointF(12 * ui_, 0), at + QPointF(12 * ui_, 0));
+      p.drawLine(at - QPointF(0, 12 * ui_), at + QPointF(0, 12 * ui_));
       continue;
     }
     const QColor color = boneColor(int(i));
@@ -592,16 +640,16 @@ void RigCanvas::paintBones(QPainter& p) {
       p.drawPolygon(shape);
       p.setPen(QPen(QColor("#0b1220"), 1));
       p.setBrush(selected ? SELECT_COLOR : color.lighter(115));
-      p.drawEllipse(at, selected ? 4.5 : 3.5, selected ? 4.5 : 3.5);
+      p.drawEllipse(at, (selected ? 4.5 : 3.5) * ui_, (selected ? 4.5 : 3.5) * ui_);
       p.setBrush(Qt::NoBrush);
       continue;
     }
     const double len = std::hypot(w.a, w.b);
-    const QPointF axis = len > 1e-9 ? QPointF(w.a / len, w.b / len) * AXIS_LENGTH : QPointF(AXIS_LENGTH, 0);
-    p.setPen(QPen(selected ? SELECT_COLOR : QColor("#c8d2dc"), selected ? 2.5 : 1.5));
+    const QPointF axis = len > 1e-9 ? QPointF(w.a / len, w.b / len) * AXIS_LENGTH * ui_ : QPointF(AXIS_LENGTH * ui_, 0);
+    p.setPen(QPen(selected ? SELECT_COLOR : QColor("#c8d2dc"), (selected ? 2.5 : 1.5) * ui_));
     p.drawLine(at, at + axis);
     p.setBrush(selected ? SELECT_COLOR : color);
-    p.drawEllipse(at, selected ? 6.0 : 4.5, selected ? 6.0 : 4.5);
+    p.drawEllipse(at, (selected ? 6.0 : 4.5) * ui_, (selected ? 6.0 : 4.5) * ui_);
     p.setBrush(Qt::NoBrush);
   }
 }
@@ -628,20 +676,22 @@ void RigCanvas::paintEvent(QPaintEvent*) {
       p.drawPolyline(line);
       p.setPen(QPen(QColor("#0b1220"), 1));
       p.setBrush(TRAIL_COLOR);
-      for (const QPointF& k : trailKeys_) p.drawEllipse(rigToWidget(k), 3.5, 3.5);
+      for (const QPointF& k : trailKeys_) p.drawEllipse(rigToWidget(k), 3.5 * ui_, 3.5 * ui_);
       p.setBrush(Qt::NoBrush);
     }
     // Instance anchor (rig origin): where the character stands on screen.
     const QPointF o = rigToWidget(QPointF(rig_->originX, rig_->originY));
     p.setPen(QPen(QColor("#8fd18f"), 1, Qt::DashLine));
-    p.drawLine(o - QPointF(12, 0), o + QPointF(12, 0));
-    p.drawLine(o - QPointF(0, 12), o + QPointF(0, 12));
+    p.drawLine(o - QPointF(12 * ui_, 0), o + QPointF(12 * ui_, 0));
+    p.drawLine(o - QPointF(0, 12 * ui_), o + QPointF(0, 12 * ui_));
+    paintClips(p);
     if (pose_.world.size() == rig_->bones.size()) {
       // Selected part outline.
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
       for (size_t i = 0; i < rig_->slots.size(); i++) if (isSelected("slot:" + qs(rig_->slots[i].id))) outlineSlot(p, int(i));
       paintIk(p);
       paintBones(p);
+      paintPhysics(p);
     }
     if (pose_.world.size() == rig_->bones.size()) paintHover(p);
     paintMesh(p);
@@ -661,14 +711,14 @@ void RigCanvas::paintEvent(QPaintEvent*) {
       const QPointF a = rigToWidget(drag_->start), b = rigToWidget(createEnd(*drag_));
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
       p.drawLine(a, b);
-      p.drawEllipse(a, 4, 4);
+      p.drawEllipse(a, 4 * ui_, 4 * ui_);
     }
     if (tool_ == Pivot && drag_) {
       const QPointF c = rigToWidget(drag_->current);
       p.setPen(QPen(SELECT_COLOR, 2));
-      p.drawEllipse(c, 8, 8);
-      p.drawLine(c - QPointF(12, 0), c + QPointF(12, 0));
-      p.drawLine(c - QPointF(0, 12), c + QPointF(0, 12));
+      p.drawEllipse(c, 8 * ui_, 8 * ui_);
+      p.drawLine(c - QPointF(12 * ui_, 0), c + QPointF(12 * ui_, 0));
+      p.drawLine(c - QPointF(0, 12 * ui_), c + QPointF(0, 12 * ui_));
     }
   }
   p.resetTransform();
@@ -688,7 +738,8 @@ void RigCanvas::paintEvent(QPaintEvent*) {
   // What a click would pick (handles beat images): named so an overlap is never a surprise.
   const QString kind = hoverRef_.startsWith("slot:") ? "조각" : rig_ && isIkTarget(rig_->boneIndex(ss(hoverRef_.section(':', 1)))) ? "IK 대상" : "본";
   if (!hoverRef_.isEmpty()) hint = QString("가리킴: %1 %2 · ").arg(kind, hoverRef_.section(':', 1)) + hint;
-  p.drawText(QRectF(10, height() - 24, width() - 20, 20), Qt::AlignLeft | Qt::AlignVCenter, hint + " · 휠 확대 · 가운데·오른쪽 버튼 끌기로 화면 이동");
+  const int hintHeight = fontMetrics().height() + 4;  // the hint line follows the (scaled) font
+  p.drawText(QRectF(10, height() - hintHeight - 4, width() - 20, hintHeight), Qt::AlignLeft | Qt::AlignVCenter, hint + " · 휠 확대 · 가운데·오른쪽 버튼 끌기로 화면 이동");
   // Strong mode cue: the whole canvas is framed in the mode color.
   p.setPen(QPen(animate_ ? ANIMATE_COLOR : SETUP_COLOR, 4));
   p.drawRect(QRectF(rect()).adjusted(2, 2, -2, -2));

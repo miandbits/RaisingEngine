@@ -42,6 +42,7 @@ class RigCanvas : public QWidget {
   explicit RigCanvas(QWidget* parent = nullptr);
 
   void setScene(std::shared_ptr<const cutout::Rig> rig, const cutout::Pose& pose);
+  const cutout::Pose& pose() const { return pose_; }  // what the canvas draws (tests, overlays)
   void setImages(ImageCache* images) { images_ = images; }
   void setHiddenSlots(const QSet<QString>& hidden) { hidden_ = hidden; refreshHover(); update(); }
   void setSelection(const QString& ref) { selection_ = ref; refreshHover(); update(); }
@@ -68,6 +69,15 @@ class RigCanvas : public QWidget {
   void setSelectedIk(const QString& id) { selectedIk_ = id; update(); }
   bool isIkTarget(int bone) const;
   static QColor ikColor();
+  /** Physics (plugin 1.13.0): physics bones get a teal spring mark at their tip, `selected` thicker;
+   *  `rest` (bone index -> rig point) = the unsimulated tips while preview playback simulates. */
+  void setPhysicsView(const QString& selected, const QHash<int, QPointF>& rest) { selectedPhysics_ = selected; physicsRest_ = rest; update(); }
+  const QHash<int, QPointF>& physicsRest() const { return physicsRest_; }
+  static QColor physicsColor();
+  /** Workspace UI scale (plugin 1.10.0, editor-only): handles, gizmos, pick radii and the hint
+   *  line grow with it, so a large-text workspace also gets larger targets. */
+  void setUiScale(double scale) { ui_ = scale; refreshHover(); update(); }
+  double uiScale() const { return ui_; }
   /** Fit the authoring canvas into the widget (also re-enables auto fit on resize). */
   void fitToCanvas();
   QTransform viewTransform() const;
@@ -137,6 +147,9 @@ class RigCanvas : public QWidget {
   const QPolygonF& outlinePreview() const { return outlinePreview_; }
   std::function<void(const QPolygonF& rigPoints)> onMeshOutline;
   std::function<void()> onOutlineCancel;
+  /** Clipping polygons (plugin 1.12.0): every shown clipping slot's outline, dashed (editor-only toggle). */
+  void setShowClipOutlines(bool on) { showClips_ = on; update(); }
+  bool showClipOutlines() const { return showClips_; }
   /** 정점 추가: a click (rig space); 가장자리 추가: a drag from vertex `a` to vertex `b`. */
   std::function<void(const QPointF& rigPoint)> onMeshAddVertex;
   std::function<void(int a, int b)> onMeshAddEdge;
@@ -186,7 +199,7 @@ class RigCanvas : public QWidget {
   QString pendingSingle_;       // press on a member of a multi-selection: a click (no drag) keeps only it
   int tool_ = Move;
   bool animate_ = false, autoFit_ = true;
-  double zoom_ = 1;
+  double zoom_ = 1, ui_ = 1;
   QPointF pan_;
   std::optional<Drag> drag_;
   bool panning_ = false;
@@ -204,6 +217,8 @@ class RigCanvas : public QWidget {
   int ghostRenders_ = 0;
   QPolygonF trail_, trailKeys_;
   QString selectedIk_;
+  QString selectedPhysics_;
+  QHash<int, QPointF> physicsRest_;
   // hover: what a click at the cursor would pick (Alt held = the cycled pick)
   QString hoverRef_;
   QPointF hoverAt_;
@@ -235,6 +250,9 @@ class RigCanvas : public QWidget {
   void paintMesh(QPainter& p);
   void paintGhosts(QPainter& p);
   void paintIk(QPainter& p);
+  void paintPhysics(QPainter& p);
+  bool showClips_ = true;
+  void paintClips(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;
 };
 }  // namespace cutout_studio

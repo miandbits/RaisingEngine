@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include "cutout/editing.hpp"
+#include "layer-import.hpp"
 #include "onion-skin.hpp"
 #include "plugin-api.hpp"
 #include "rig-canvas.hpp"
@@ -38,9 +39,11 @@ class QSplitter;
 class QTabWidget;
 class QTableWidget;
 class QTimer;
+class QToolBar;
 class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QVBoxLayout;
 
 namespace cutout_studio {
 class Dopesheet;
@@ -111,6 +114,17 @@ class CutoutPanel : public QWidget {
 
   // ---- Gestures (each sends at most one edit request; false = refused, see status()) ----
   bool newCharacter();
+  // ---- Layered-art import (plugin 1.11.0, "PSD 가져오기…"): the service op importLayers through the
+  // host's pluginImport request. Preview = dryRun (nothing changes); import = ONE edit (pictures as
+  // content-hashed assets + rig/controller), undone by one Ctrl+Z.
+  /** File (askLayerFile) -> preview -> LayerImportDialog -> import. False when nothing was started. */
+  bool importLayersInteractive();
+  /** Import without the dialog (one host request); the result arrives with the host's reply. */
+  bool importLayers(const LayerImportChoice& choice);
+  /** Defaults for `file`: update the selected character when it was imported from that file, else a new id. */
+  LayerImportChoice layerImportDefaults(const QString& file) const;
+  /** Result of the last finished import (`pluginImport` member of the reply: report, assetIds, files). */
+  QJsonObject lastLayerImport() const { return lastLayerImport_; }
   bool renameCharacter();
   bool deleteCharacter();
   bool addBone();
@@ -224,6 +238,35 @@ class CutoutPanel : public QWidget {
   bool deleteIk();        // also its target bone when nothing else uses it
   bool keyIk();           // IK 키: mix + bend of the selected constraint at the playhead
   bool bakeIk();          // IK 결과를 키로 굽기: solved rotations as keys, mix 0 there
+  /** 사슬 IK (plugin 1.13.0): the selected bones (2+, multi-selection) must form one parent -> child
+   *  run; they become the chain (2 = two-bone, 3+ = FABRIK) with a target bone at its effector. */
+  bool newChainIk();
+  /** stretch / compress / uniform of the selected constraint (setup values, also in Animate mode). */
+  bool setIkStretch(const QString& flag, bool on);
+  // ---- Physics constraints (plugin 1.13.0; the 물리 page). Setup mode edits the constraint
+  // (addPhysics / setPhysics); Animate mode keys its mix (physics:<id>). Preview playback simulates
+  // (editor-only PhysicsSim: scrubbing never does), with editor-only wind/gravity on top.
+  bool addPhysics(const QString& preset = "hair");     // one constraint per selected bone
+  bool selectPhysics(const QString& id);
+  QString physicsId() const { return physicsId_; }
+  bool applyPhysicsPreset(const QString& preset);       // the selected constraint's motion = the preset
+  /** One parameter (x y rotate scaleX inertia strength damping mass wind gravity mix limit step teleport);
+   *  Animate mode: `mix` becomes a key at the playhead, the others stay setup values. */
+  bool setPhysicsField(const QString& field, double value);
+  bool setPhysicsResetOnStart(bool on);
+  bool renamePhysics();
+  bool deletePhysics();
+  bool keyPhysicsMix();                                 // 혼합 키: the sampled mix at the playhead
+  bool selectPhysicsBone();
+  void setPhysicsPreview(bool on);                      // 재생 중 물리 (editor-only, QSettings-free)
+  bool physicsPreview() const { return physicsPreview_; }
+  void setPhysicsEnvironment(double wind, double gravity);  // preview wind / gravity (px/s^2)
+  double previewWind() const { return physicsWind_; }
+  double previewGravity() const { return physicsGravity_; }
+  void resetPhysicsPreview();                           // 다시 놓기: the bodies settle at the shown pose
+  /** The preview simulation (empty bodies while not playing); `running` = it drives the canvas. */
+  const cutout::PhysicsSim& physicsSim() const { return editorPhysics_; }
+  bool physicsRunning() const { return physicsRunning_; }
   // ---- Meshes (plugin 1.4.0) on the selected part's shown attachment (the preview skin's own when
   // it provides it). Setup mode edits the mesh (vertices, weights); Animate mode makes deform keys.
   enum class MeshEdit { Off = 0, Vertices = 1, Weights = 2 };
@@ -259,6 +302,42 @@ class CutoutPanel : public QWidget {
   bool addMeshEdge(int a, int b);                      // 가장자리 추가: pin an inside edge
   bool removeMeshEdge();                               // 가장자리 삭제: the pinned edge between the 2 selected vertices
   bool retriangulateMesh();                            // 다시 삼각분할
+  // ---- Clipping (plugin 1.12.0, setup mode; the 클리핑 page). A clip slot shows a clipping
+  // attachment: the parts after it through its end slot draw only inside its polygon (players cut
+  // their triangles, the canvas clips the painter: the same area). Every gesture is ONE core edit.
+  /** 클리핑 만들기: the outline tool draws the polygon for the selected part; closing it adds a clip
+   *  slot right below that part (addClipping, end = the part). */
+  bool beginClipping();
+  bool redrawClipping();                                    // 모양 다시 그리기: a new polygon for the selected clip slot
+  /** The closed canvas polygon (rig space) -> addClipping / setClipping, whichever was started. */
+  bool clippingFromCanvas(const QPolygonF& rigPoints);
+  bool addClipping(const QString& part, const QPolygonF& rigPoints);  // without the canvas (palette, automation)
+  bool setClipEnd(const QString& endSlot);                  // 끝 조각 of the selected clip slot
+  bool deleteClipping();                                    // 클리핑 삭제: the selected clip slot
+  QString clipSlot() const;                                 // the selection when it shows a clipping attachment
+  void setClipOutlines(bool on);                            // 윤곽 보기 (editor-only)
+  // ---- Image sequences (plugin 1.12.0; the 시퀀스 page) on the selected part's shown attachment
+  // (the preview skin's own entry when it provides it). Frames are image assets of one size.
+  std::function<QStringList()> askSequenceFiles;            // PNG files in frame order (empty = cancel)
+  bool importSequenceInteractive();                         // PNG로 시퀀스…: the files replace the frames
+  bool addSequenceFramesInteractive();                      // 프레임 추가…: the files are appended
+  /** importImage each file (asset gestures), then ONE edit: the frames of the selected part, or a
+   *  new part on the selected bone when no part is selected. */
+  bool importSequence(const QStringList& files, bool append = false);
+  bool setSequenceFrames(const QStringList& assetIds, int setupIndex = -1);
+  bool moveSequenceFrame(int from, int to);                 // ▲ / ▼ (frame list reorder)
+  bool removeSequenceFrame(int index);                      // 프레임 빼기
+  bool clearSequence();                                     // 시퀀스 해제 (frame 0 stays the picture; keys go)
+  bool setSequenceSetupFrame(int index);                    // 기본 프레임
+  bool keySequence();                                       // 시퀀스 키: mode/index/delay fields at the playhead
+  bool keySequence(const QString& mode, int index, double delayMs);
+  bool deleteSequenceKey();                                 // the sequence key at the playhead
+  /** Page preview (editor-only): the frames played with the mode/index/delay fields. */
+  void setSequencePreview(bool playing);
+  bool sequencePreviewPlaying() const;
+  int sequencePreviewFrame() const { return sequencePreviewFrame_; }
+  void advanceSequencePreview(double dtMs);                 // the preview timer's step (automation drives it)
+  QString sequenceSlot() const;                             // the selected part when its shown attachment has frames
   // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
   struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
   const OnionSettings& onionSettings() const { return onion_; }
@@ -313,6 +392,40 @@ class CutoutPanel : public QWidget {
   /** Current pose drawn contain-fit into `size` (dock launcher mini preview). */
   QImage thumbnail(const QSize& size);
 
+  // ---- Workspace view (plugin 1.10.0, editor-only: QSettings plugins/cutout-animation/view, never an edit)
+  /** 작업 공간 글자 크기 presets (scale, label): 작게 · 보통 · 크게 · 아주 크게. */
+  struct UiScaleChoice { double scale; const char* label; const char* objectName; };
+  static const QVector<UiScaleChoice>& uiScales();
+  /** Default for a screen (logical px): larger text on big screens at 100 % Windows scaling only;
+   *  display scaling (dpr > 1) or a larger system text size (logical DPI > 96) already sizes it. */
+  static double defaultUiScale(const QSize& screen, double devicePixelRatio, double logicalDpi);
+  /** Scales fonts (over the host font), icons, rows, dopesheet/graph metrics and canvas gizmos and
+   *  hit radii; saved in QSettings. The layout stays valid: an automatic layout is recomputed, a
+   *  user layout widened where rows would overflow. */
+  void setUiScale(double scale);
+  double uiScale() const { return ui_; }
+  void stepUiScale(int delta);  // Ctrl+= / Ctrl+- inside the workspace (one preset up / down)
+  /** Command palette (Ctrl+K / F1): every button, menu command and page of the workspace by its
+   *  Korean name, group or shortcut. Running one is what clicking it does (one edit when it edits). */
+  struct Command { QString id, name, group, shortcut, tip; bool enabled = true; };
+  QVector<Command> commands() const;
+  QVector<Command> findCommands(const QString& query) const;  // best match first
+  bool runCommand(const QString& id);  // false: unknown or disabled
+  void showCommandPalette();
+  QWidget* commandPalette() const;
+  /** First-run hint strip (dismissed = editor-only QSettings flag). */
+  void setHintVisible(bool on);
+  bool hintVisible() const;
+  /** Layout: until the user drags a splitter, the panes follow the window size (proportional, never
+   *  below what their widest tool row needs); 레이아웃 초기화 goes back to that. */
+  bool autoLayout() const { return autoLayout_; }
+  void resetLayout();
+  /** Width a pane needs to show every tool of its rows without the » overflow ("left", "canvas",
+   *  "right", "bottom", "clips", "timeline", "mix"). */
+  int paneNeed(const QString& pane) const;
+  /** Tool rows (QToolBar) whose items do not all fit right now (objectNames; tests/diagnostics). */
+  QStringList overflowingRows() const;
+
   // ---- Export settings (plugin 1.9.0): the project's settings document
   // plugins/cutout-animation/settings/project.json (absent = defaults: atlas on, 2048 px pages,
   // 2 px padding, trimming on). Each change is one edit: create the document, or replace it.
@@ -356,12 +469,17 @@ class CutoutPanel : public QWidget {
   std::function<bool(const QString& title, const QString& text)> askConfirm;
   std::function<bool(PartChoice&)> askPart;
   std::function<bool(SkinImageChoice&)> askSkinImage;
+  std::function<QString()> askLayerFile;  // PSD/PSB, a PNG of a folder, or a layout.json ("" = cancel)
   // The real dialogs behind askPart / askSkinImage (modal; tests drive them with timers).
   bool runPartDialog(PartChoice& choice);
   bool runSkinImageDialog(SkinImageChoice& choice);
+  /** The modal preview dialog (tests drive it with timers); accepted = import `choice`. */
+  bool runLayerImportDialog(LayerImportChoice& choice, const QJsonObject& report);
 
  protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
+  void resizeEvent(QResizeEvent* event) override;
+  void showEvent(QShowEvent* event) override;
 
  private:
   /** `data` is shared and immutable: refresh, the display snapshot and the in-flight edit hand the
@@ -372,9 +490,16 @@ class CutoutPanel : public QWidget {
   ImageCache images_;
   QMap<QString, Doc> rigs_, controllers_;
   QJsonArray characters_;  // project characters (kind "character") for characterId
+  QJsonObject lastLayerImport_;
+  void requestLayerImport(const LayerImportChoice& choice, bool dryRun, std::function<void(const QJsonObject&)> done);
   QString rigId_, controllerId_, selection_, clipId_, status_;
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)
+  QString physicsId_;                         // physics constraint shown in the 물리 page (editor state)
+  cutout::PhysicsSim editorPhysics_;          // preview playback simulation (editor-only)
+  bool physicsPreview_ = true, physicsRunning_ = false;
+  double physicsWind_ = 0, physicsGravity_ = 0;
+  void startPhysicsPreview();                 // init + settle at the shown pose
   QString eventId_;                           // event definition shown in the 이벤트 page (editor state)
   QStringList eventLog_;                      // preview event log (editor only)
   bool manualClock_ = false;
@@ -433,6 +558,35 @@ class CutoutPanel : public QWidget {
   QToolButton* fullViewButton_ = nullptr;
   QList<QToolButton*> sections_;  // collapsible section headers (objectName "<section>Toggle")
   bool restoringLayout_ = false;
+  // workspace view (plugin 1.10.0, editor-only)
+  double ui_ = 1;
+  bool uiScaleChosen_ = false;      // saved by the user (else the screen default is used)
+  bool autoLayout_ = true;          // panes follow the window size until a splitter is dragged
+  bool userSized_ = false;          // dragged in this session: no automatic adjustment any more
+  bool applyingLayout_ = false;
+  QWidget *canvasPane_ = nullptr, *clipsPane_ = nullptr, *timelinePane_ = nullptr, *mixPane_ = nullptr, *modeBar_ = nullptr;
+  QFrame* hintStrip_ = nullptr;
+  QFrame* palette_ = nullptr;
+  QLineEdit* paletteSearch_ = nullptr;
+  QListWidget* paletteList_ = nullptr;
+  QToolButton* viewMenuButton_ = nullptr;
+  QToolBar* viewTools_ = nullptr;   // mode bar: 보기 (onion, trail, fit, full view, 보기 ▾)
+  QList<QAction*> uiScaleActions_;
+  QAction* hintAction_ = nullptr;
+  QScrollArea* propertiesScroll_ = nullptr;
+  QPointer<QWidget> watchedParent_;  // its font changes = host font changes
+  void applyUiScale();
+  void applyDefaultLayout();
+  void sanitizeLayout();            // widen panes whose rows would overflow (restored / rescaled layout)
+  void adjustLayout();              // after a resize or scale change: defaults or sanitize
+  void buildViewMenu();
+  void buildHintStrip();            // overlay at the top of the canvas: costs no layout height
+  void layoutHintStrip();
+  void buildCommandPalette();
+  void finishTooltips();            // every tool gets a tooltip, shortcuts named in it
+  void fillPalette(const QString& query);
+  QWidget* commandWidget(const QString& id) const;
+  void revealWidget(QWidget* w);    // open the tab / section / side panel that holds `w`
   QTreeWidget* characterList_ = nullptr;
   QListWidget* diagnostics_ = nullptr;
   QPushButton *setupButton_ = nullptr, *animateButton_ = nullptr;
@@ -491,6 +645,20 @@ class CutoutPanel : public QWidget {
   QSpinBox* ikOrder_ = nullptr;
   QDoubleSpinBox* ikAimAxis_ = nullptr;
   QLabel* ikInfo_ = nullptr;
+  QCheckBox *ikStretch_ = nullptr, *ikCompress_ = nullptr, *ikUniform_ = nullptr;
+  // physics (plugin 1.13.0)
+  QListWidget* physicsList_ = nullptr;
+  QComboBox* physicsPreset_ = nullptr;
+  QMap<QString, QDoubleSpinBox*> physicsFields_;
+  QCheckBox* physicsResetOnStart_ = nullptr;
+  QToolButton* physicsPreviewButton_ = nullptr;
+  QDoubleSpinBox *physicsWindSpin_ = nullptr, *physicsGravitySpin_ = nullptr;
+  QLabel* physicsInfo_ = nullptr;
+  QVector<QWidget*> physicsEditors_, physicsAnimateTools_;
+  QWidget* buildPhysics();
+  void refreshPhysics();
+  void refreshPhysicsInfo();
+  const cutout::Json* currentPhysics() const;
   // events (plugin 1.8.0)
   QListWidget *eventList_ = nullptr, *eventLogList_ = nullptr;
   QSpinBox* eventInt_ = nullptr;
@@ -527,6 +695,30 @@ class CutoutPanel : public QWidget {
   std::vector<double> previewOutline_;                   // image px, for outlinePreviewKey_
   const AlphaMask* alphaMaskOf(const cutout::Attachment& attachment);
   void refreshOutlinePreview();
+  // clipping + sequences (plugin 1.12.0, editor state only)
+  bool outlineForClip_ = false;  // the outline being drawn is a clip polygon (outlineSlot_ = the part, or the clip slot to redraw)
+  QListWidget* clippingList_ = nullptr;
+  QComboBox* clippingEnd_ = nullptr;
+  QLabel* clippingInfo_ = nullptr;
+  QToolButton* clippingOutlines_ = nullptr;
+  QPushButton *clippingCreate_ = nullptr, *clippingRedraw_ = nullptr, *clippingDelete_ = nullptr;
+  QListWidget* sequenceFrames_ = nullptr;
+  QLabel *sequenceInfo_ = nullptr, *sequencePreview_ = nullptr;
+  QSpinBox *sequenceSetup_ = nullptr, *sequenceIndex_ = nullptr;
+  QComboBox* sequenceMode_ = nullptr;
+  QDoubleSpinBox* sequenceDelay_ = nullptr;
+  QToolButton* sequencePlay_ = nullptr;
+  QTimer* sequenceTimer_ = nullptr;
+  double sequencePreviewMs_ = 0;
+  int sequencePreviewFrame_ = 0;
+  QVector<QWidget*> sequencePartTools_, sequenceFrameTools_, sequenceKeyTools_;
+  QWidget* buildClipping();
+  void refreshClipping();
+  QWidget* buildSequence();
+  void refreshSequence();
+  void showSequenceFrame();
+  /** importImage `files` one after another; `done` gets the asset ids (empty on the first failure). */
+  void importImages(QStringList files, QStringList ids, std::function<void(const QStringList&)> done);
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;

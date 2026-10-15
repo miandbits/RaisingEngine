@@ -32,6 +32,20 @@ export interface PluginService {
    */
   prepareExport?(input: { target: 'windows' | 'web'; documents: { type: string; id: string; data: unknown }[]; assets: { id: string; kind: string; path: string }[];
     readAsset(id: string): Promise<Uint8Array>; hostFeatures?: string[] }): unknown;
+  /**
+   * Import hook (CONTRACT.md §11, plugin api 1, optional): turn an outside file (e.g. a layered
+   * PSD) into this plugin's documents plus PNG images. Input: the import `op` and `payload`, the
+   * draft's documents of this plugin and the project assets; `dryRun` = preview only (no image
+   * bytes needed). Returns `{ documents: [{type, id, data}], images: [{id, bytes}], report }`; the
+   * host (studio-service importPluginContent) checks it, publishes the images as content-hashed
+   * immutable assets and applies everything as ONE undoable edit. Must not write project files.
+   */
+  prepareImport?(input: ServiceImportInput): unknown;
+}
+export interface ServiceImportInput {
+  op: string; payload: unknown; dryRun: boolean;
+  documents: { file: string; type: string; id: string; data: unknown }[];
+  assets: { id: string; kind: string; path: string; absolutePath: string | null }[];
 }
 export interface LoadablePlugin { directory: string; manifest: PluginManifest }
 const services = new Map<string, Promise<PluginService | null>>();

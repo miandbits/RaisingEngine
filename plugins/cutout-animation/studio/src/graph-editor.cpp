@@ -12,7 +12,8 @@
 
 namespace cutout_studio {
 namespace {
-constexpr int LABEL = TimeView::LABEL, RULER = TimeView::RULER, HIT = 7, LEGEND_ROW = 16;
+// Key/handle pick radius and legend row height at UI scale 1 (scaled with the time view's UI scale).
+constexpr int HIT_PX = 7, LEGEND_ROW_PX = 16;
 // Handles snap to 0.001 and values to 0.0001: readable, diff-friendly documents.
 double round3(double v) { return std::round(v * 1000) / 1000; }
 double roundValue(double v) { return std::round(v * 1e4) / 1e4; }
@@ -28,8 +29,8 @@ double niceStep(double span) {
 GraphEditor::GraphEditor(QWidget* parent) : QWidget(parent) {
   setObjectName("cutoutGraphEditor");
   setFocusPolicy(Qt::StrongFocus);
-  setMinimumHeight(48);
   setTimeView(new TimeView(this));
+  setMinimumHeight(48);
 }
 void GraphEditor::setTimeView(TimeView* view) {
   if (view_) disconnect(view_, nullptr, this, nullptr);
@@ -91,7 +92,9 @@ int GraphEditor::channelIndex(const QString& target, const QString& property) co
 
 // ---------------------------------------------------------------- geometry
 int GraphEditor::timeToX(double ms) const { return int(std::lround(view_->timeToX(ms))); }
-double GraphEditor::plotTop() const { return RULER + 10; }
+double GraphEditor::hit() const { return HIT_PX * ui(); }
+double GraphEditor::legendRow() const { return LEGEND_ROW_PX * ui(); }
+double GraphEditor::plotTop() const { return ruler() + 10 * ui(); }
 double GraphEditor::plotBottom() const { return std::max(plotTop() + 20, double(height() - 12)); }
 double GraphEditor::valueToY(int c, double v) const {
   const auto [lo, hi] = ranges_.value(c, {0.0, 1.0});
@@ -192,7 +195,7 @@ int GraphEditor::keyAt(QPointF p, int* channel) const {
   for (int c = int(channels_.size()) - 1; c >= 0; c--) {
     if (!visible(c)) continue;
     for (int k = 0; k < channels_[c].keys.size(); k++)
-      if (QLineF(keyPoint(c, k), p).length() <= HIT) { *channel = c; return k; }
+      if (QLineF(keyPoint(c, k), p).length() <= hit()) { *channel = c; return k; }
   }
   return -1;
 }
@@ -203,14 +206,14 @@ bool GraphEditor::handleAt(QPointF p, int* channel, int* key, Side* side) const 
     for (int k = 0; k < channels_[c].keys.size(); k++) {
       if (channels_[c].keys[k].timeMs != ref.timeMs) continue;
       for (Side s : {Side::Out, Side::In})
-        if (auto hp = handlePoint(c, k, s); hp && QLineF(*hp, p).length() <= HIT) { *channel = c; *key = k; *side = s; return true; }
+        if (auto hp = handlePoint(c, k, s); hp && QLineF(*hp, p).length() <= hit()) { *channel = c; *key = k; *side = s; return true; }
     }
   }
   return false;
 }
 int GraphEditor::legendAt(QPointF p) const {
-  if (p.x() >= 6 + legendWidth() || p.y() < RULER + 4) return -1;
-  const int row = int((p.y() - RULER - 4) / LEGEND_ROW);
+  if (p.x() >= 6 + legendWidth() || p.y() < ruler() + 4) return -1;
+  const int row = int((p.y() - ruler() - 4) / legendRow());
   return row < channels_.size() ? row : -1;
 }
 
@@ -218,7 +221,7 @@ int GraphEditor::legendAt(QPointF p) const {
 void GraphEditor::paintEvent(QPaintEvent*) {
   QPainter p(this);
   p.fillRect(rect(), QColor("#1f242a"));
-  p.fillRect(QRectF(LABEL, plotTop(), width() - LABEL, plotBottom() - plotTop()), QColor("#1a1f24"));
+  p.fillRect(QRectF(label(), plotTop(), width() - label(), plotBottom() - plotTop()), QColor("#1a1f24"));
   view_->paintRuler(p, width());
   int shared = -1;
   for (int c = 0; c < channels_.size() && shared < 0; c++) if (visible(c)) shared = c;
@@ -229,19 +232,19 @@ void GraphEditor::paintEvent(QPaintEvent*) {
     for (double v = std::ceil(lo / step) * step; v <= hi; v += step) {
       const double y = valueToY(shared, v);
       p.setPen(QColor("#2c343d"));
-      p.drawLine(QPointF(LABEL, y), QPointF(width(), y));
+      p.drawLine(QPointF(label(), y), QPointF(width(), y));
       p.setPen(QColor("#7d8894"));
-      p.drawText(QRectF(LABEL - 64, y - 8, 60, 16), Qt::AlignRight | Qt::AlignVCenter, QString::number(std::fabs(v) < step * 1e-6 ? 0.0 : v, 'g', 5));
+      p.drawText(QRectF(label() - 64 * ui(), y - 8 * ui(), 60 * ui(), 16 * ui()), Qt::AlignRight | Qt::AlignVCenter, QString::number(std::fabs(v) < step * 1e-6 ? 0.0 : v, 'g', 5));
     }
   }
   p.setRenderHint(QPainter::Antialiasing, true);
-  p.setClipRect(QRectF(LABEL + 1, RULER, width() - LABEL - 1, height() - RULER));
+  p.setClipRect(QRectF(label() + 1, ruler(), width() - label() - 1, height() - ruler()));
   if (view_->loopActive()) {
     const QColor dim(0, 0, 0, 60);
-    p.fillRect(QRectF(LABEL, RULER, view_->timeToX(view_->loopIn()) - LABEL, height()), dim);
-    p.fillRect(QRectF(view_->timeToX(view_->loopOut()), RULER, width(), height()), dim);
+    p.fillRect(QRectF(label(), ruler(), view_->timeToX(view_->loopIn()) - label(), height()), dim);
+    p.fillRect(QRectF(view_->timeToX(view_->loopOut()), ruler(), width(), height()), dim);
   }
-  const double xFrom = std::max<double>(LABEL + 1, view_->timeToX(0)), xTo = std::min<double>(width(), view_->timeToX(view_->duration()) + 0.5);
+  const double xFrom = std::max<double>(label() + 1, view_->timeToX(0)), xTo = std::min<double>(width(), view_->timeToX(view_->duration()) + 0.5);
   for (int c = 0; c < channels_.size(); c++) {
     if (!visible(c) || channels_[c].keys.isEmpty()) continue;
     // Pixel samples plus each key time (and just before it) keep step jumps and corners sharp.
@@ -274,12 +277,12 @@ void GraphEditor::paintEvent(QPaintEvent*) {
             p.drawLine(pt, *hp);
             p.setBrush(QColor("#0f172a"));
             p.setPen(QPen(QColor("#f8fafc"), 1.5));
-            p.drawEllipse(*hp, 4, 4);
+            p.drawEllipse(*hp, 4 * ui(), 4 * ui());
           }
       const Key& key = channels_[c].keys[k];
       p.setBrush(sel ? QColor("#ffd34d") : key.interp == "bezier" ? channels_[c].color : QColor("#1f242a"));
       p.setPen(QPen(sel ? QColor("#ffffff") : channels_[c].color, 1.5));
-      const double r = sel ? 5.5 : 4.5;
+      const double r = (sel ? 5.5 : 4.5) * ui();
       if (key.interp == "step") p.drawRect(QRectF(pt.x() - r, pt.y() - r, 2 * r, 2 * r));
       else if (key.interp == "bezier") p.drawEllipse(pt, r, r);
       else p.drawPolygon(QPolygonF({pt + QPointF(0, -r - 1), pt + QPointF(r + 1, 0), pt + QPointF(0, r + 1), pt + QPointF(-r - 1, 0)}));
@@ -294,8 +297,8 @@ void GraphEditor::paintEvent(QPaintEvent*) {
   p.setRenderHint(QPainter::Antialiasing, false);
   // Legend: click toggles a channel (editor-only).
   for (int c = 0; c < channels_.size(); c++) {
-    const QRectF row(6, RULER + 4 + c * LEGEND_ROW, legendWidth(), LEGEND_ROW), label = row.adjusted(20, 0, 0, 0);
-    p.fillRect(QRectF(row.x(), row.center().y() - 4, 14, 8), visible(c) ? channels_[c].color : QColor("#3a424b"));
+    const QRectF row(6, ruler() + 4 + c * legendRow(), legendWidth(), legendRow()), label = row.adjusted(20 * ui(), 0, 0, 0);
+    p.fillRect(QRectF(row.x(), row.center().y() - 4 * ui(), 14 * ui(), 8 * ui()), visible(c) ? channels_[c].color : QColor("#3a424b"));
     p.setPen(visible(c) ? QColor("#d0d6dc") : QColor("#6b7580"));
     QString text = channels_[c].label;
     if (normalized_ && c < ranges_.size()) text += QString(" %1~%2").arg(ranges_[c].first, 0, 'g', 3).arg(ranges_[c].second, 0, 'g', 3);
@@ -303,13 +306,13 @@ void GraphEditor::paintEvent(QPaintEvent*) {
   }
   if (channels_.isEmpty() || shared < 0) {
     p.setPen(QColor("#8a949e"));
-    p.drawText(rect().adjusted(LABEL, RULER, 0, 0), Qt::AlignCenter | Qt::TextWordWrap,
+    p.drawText(rect().adjusted(label(), ruler(), 0, 0), Qt::AlignCenter | Qt::TextWordWrap,
                !message_.isEmpty() ? message_ : QString("숨긴 채널만 있습니다. 왼쪽 범례를 눌러 다시 켜세요."));
   }
   p.setPen(QColor("#56606c"));
-  p.drawLine(LABEL, 0, LABEL, height());
+  p.drawLine(label(), 0, label(), height());
   const double x = view_->timeToX(view_->playhead());
-  if (x >= LABEL) {
+  if (x >= label()) {
     p.setPen(QPen(QColor("#ef4444"), 2));
     p.drawLine(QPointF(x, 0), QPointF(x, height()));
   }
@@ -327,8 +330,8 @@ void GraphEditor::mousePressEvent(QMouseEvent* e) {
   if (e->button() == Qt::MiddleButton) { drag_ = Drag::Pan; return; }
   if (e->button() != Qt::LeftButton) return;
   const bool ctrl = e->modifiers() & Qt::ControlModifier, shift = e->modifiers() & Qt::ShiftModifier;
-  if (pos.y() < RULER) {
-    if (pos.x() < LABEL) return;
+  if (pos.y() < ruler()) {
+    if (pos.x() < label()) return;
     if (const int marker = view_->loopMarkerAt(pos.x(), pos.y())) { drag_ = marker == 1 ? Drag::LoopIn : Drag::LoopOut; return; }
     drag_ = Drag::Scrub;
     if (onScrub) onScrub(view_->snap(xToTime(pos.x()), shift));
@@ -360,7 +363,7 @@ void GraphEditor::mousePressEvent(QMouseEvent* e) {
     dragTime_ = ref.timeMs; dragValue_ = channels_[c].keys[k].value;
     return;
   }
-  if (pos.x() >= LABEL) {
+  if (pos.x() >= label()) {
     drag_ = Drag::Band;
     bandAdd_ = ctrl || shift;
     band_ = QRectF(pos, pos);

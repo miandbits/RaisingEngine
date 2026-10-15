@@ -209,9 +209,10 @@ before anything is written.
 **Compact frames** (ABI extension, still `raising-extension-1`; plugins and hosts that do not use it
 keep the documented items above, both directions stay compatible). A host lists the formats it
 reads in `init`: `{op:"init", documents, frameFormats:[2]}`; a plugin that writes them answers
-`{…, frameFormat:2, meshEpoch, meshes:[{id, uvs, indices}]}` (the topology of every mesh it may
-draw, fixed for the init lifetime) and an older plugin simply ignores the field, so the host keeps
-format 1. Then `{op:"frame", instance, format:2, since?}` answers
+`{…, frameFormat:2, meshEpoch, meshes:[{id, uvs, indices}]}` (the topology of every mesh its
+documents draw; an id keeps its topology within one `meshEpoch`, but later frames may name further
+ids, e.g. meshes a plugin cuts per frame, and a reply may start a new `meshEpoch`) and an older
+plugin simply ignores the field, so the host keeps format 1. Then `{op:"frame", instance, format:2, since?}` answers
 `{ok:true, format:2, meshEpoch, frame, items:[…]}` where each item is an array
 `[imageAssetId, a, b, c, d, e, f, width, height, alpha]`, extended by `region` (`[x, y, w, h]` or
 `null`, see atlases below) and, for a mesh, `meshId, [x, y, …]` (element-local positions; uvs and
@@ -303,6 +304,10 @@ export async function createService({ pluginDir, manifest }) {
     // optional (plugin api 1): rewrite what is exported, add export assets (§6)
     async prepareExport({ target, documents, assets: [{ id, kind, path }], readAsset, hostFeatures }) {
       return { documents, assets: [{ id, kind: 'image', extension: '.png', bytes }], replacedAssets: [id], report };
+    },
+    // optional (plugin api 1, §11): an outside file -> this plugin's documents + PNG images
+    async prepareImport({ op, payload, dryRun, documents: [{ file, type, id, data }], assets: [{ id, kind, path, absolutePath }] }) {
+      return { documents: [{ type, id, data }], images: [{ id: 'image-<sha256 24 hex>', bytes }], report };
     }
   };
 }
@@ -321,12 +326,37 @@ throwing hook or a malformed result refuses the export (`PLUGIN_SERVICE_ERROR`);
 project files. Cutout packs the images its rigs draw into atlas pages when its settings document
 allows it and `hostFeatures` contains `plugin-atlas-v1` (plugins/cutout-animation/docs/contract.md).
 
+## 11. Import hook (plugin api 1, optional)
+
+**`prepareImport`** turns an outside file (cutout: a layered PSD/PSB or a PNG folder) into the
+plugin's documents and pictures. Hosts call it through `studio-service` `importPluginContent(editor,
+{plugin, op, payload, dryRun?, expectedVersion?}, revision)`: Qt service method `pluginImport
+{plugin, op, payload, dryRun, revision}` (reply member `pluginImport`), MCP tool `plugin_import
+{expectedVersion, plugin, op, payload, dryRun, reason}` (saves like `apply_project_changes`). Input:
+the op and payload, `dryRun`, the draft's documents of this plugin (envelope `data` as `data`) and
+the project assets. The hook may read the files the payload names; it must never write project
+files. Output: `documents` (≤ 32, manifest types, ids as `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`; each
+becomes a `create` or `replace` of `plugins/<plugin>/<type>/<id>.json`, unchanged ones are
+skipped), `images` (≤ 1024, ≤ 256 MiB in all; `id` must be `image-` + the first 24 hex digits of
+the PNG's sha256, the same ids as `importImage`; each must decode as a PNG ≤ 8192 px) and `report`
+(returned to the caller as-is). A malformed result is `PLUGIN_SERVICE_ERROR`; a throwing hook
+passes its message on.
+
+The host checks the revision and draft before and after every await (an edit made meanwhile
+refuses the import), publishes new pictures as immutable `assets/<id>.png` files (content-hash
+names, never overwritten: an undone import only leaves unreferenced files, like `importImage`),
+re-checks the project on disk, then applies the asset-manifest addition and every document as
+**one** batch edit: one undo removes the whole import. `dryRun` returns `{dryRun: true, report,
+assetIds}` and changes nothing (also allowed on read-only projects). The result
+`{dryRun, changed, report, assetIds, addedAssetIds, files}`.
+
 `packages/plugin-host` exports `installPackage`, `inspectPackage`, `uninstallPlugin`,
 `listInstalled`, `resolveProjectPlugins`, `pluginStatus`, `callProjectPlugin`,
-`loadService`, `exportBundle`. `StudioEditor({ pluginStore })` adds `plugins()` and
+`projectPluginService`, `loadService`, `exportBundle`. `StudioEditor({ pluginStore })` adds `plugins()` and
 `exportExtensions(revision, content, target, hostFeatures?)`; `exportGame({ …, extensions })`
 refuses plugin elements without prepared extensions. Hosts: Qt service methods `pluginStatus`,
 `pluginInstall {file}`, `pluginEnable {id, version?, revision}`, `pluginDisable {id, revision}`,
-`pluginCall {plugin, op, payload}` and a `plugins` member in every reply; MCP tools
-`plugin_status`, `plugin_call`, `get_schema {name:"extension", plugin, type}` and the
+`pluginCall {plugin, op, payload}`, `pluginImport` (§11) and a `plugins` member in every reply;
+MCP tools `plugin_status`, `plugin_call`, `plugin_import` (§11), `get_schema {name:"extension",
+plugin, type}` and the
 `create` edit in `apply_project_changes`.

@@ -183,11 +183,28 @@ void ensureUniqueClip(Json& d, const Str& id) {
   if (findIndex(arr(d, "clips"), "id", id) >= 0) throw EditError("이미 있는 클립 ID입니다: " + id);
 }
 /** Keys of these properties always switch (no interp/curve is stored, copied or accepted). */
-bool stepOnly(const Str& property) { return property == "attachment" || property == "expression" || property == "bendPositive"; }
+bool stepOnly(const Str& property) { return property == "attachment" || property == "expression" || property == "bendPositive" || property == "sequence"; }
+/** Most frames of the slot's sequence attachments, any list (0 = none): what sequence keys may index (plugin 1.12.0). */
+size_t sequenceFrames(const Json& d, const Str& slotId) {
+  size_t most = 0;
+  auto scan = [&](const Json& list) {
+    for (const auto& a : list)
+      if (a.is_object() && a.value("slot", Str()) == slotId && a.contains("sequence") && a.at("sequence").is_object())
+        most = std::max(most, listOr(a.at("sequence"), "frames").size());
+  };
+  scan(listOr(d, "attachments"));
+  for (const auto& s : listOr(d, "skins")) scan(listOr(s, "attachments"));
+  return most;
+}
 Json& ikAt(Json& d, const Str& id) {
   const int i = findIndex(listOr(d, "ik"), "id", id);
   if (i < 0) throw EditError("없는 IK 제약입니다: " + id);
   return d["ik"][size_t(i)];
+}
+Json& physicsAt(Json& d, const Str& id) {
+  const int i = findIndex(listOr(d, "physics"), "id", id);
+  if (i < 0) throw EditError("없는 물리 제약입니다: " + id);
+  return d["physics"][size_t(i)];
 }
 struct Target { bool bone; Str id; Property property; bool rig = false; bool ik = false; };
 Target target(Json& d, const Json& op) {
@@ -200,6 +217,12 @@ Target target(Json& d, const Json& op) {
     return {false, "", *p, true};
   }
   if (*p == Property::Expression) throw EditError("표정 키의 대상은 rig입니다(target: \"rig\").");
+  // Physics mix tracks (plugin 1.13.0).
+  if (target.rfind("physics:", 0) == 0) {
+    if (*p != Property::Mix) throw EditError("물리 트랙의 속성은 mix뿐입니다.");
+    physicsAt(d, target.substr(8));
+    return {false, target.substr(8), *p};
+  }
   // IK constraint tracks (plugin 1.3.0): mix (numeric) and bendPositive (step, bool).
   const bool ikProp = *p == Property::Mix || *p == Property::BendPositive;
   if (target.rfind("ik:", 0) == 0) {
@@ -207,12 +230,12 @@ Target target(Json& d, const Json& op) {
     ikAt(d, target.substr(3));
     return {false, target.substr(3), *p, false, true};
   }
-  if (ikProp) throw EditError("mix·bendPositive 키의 대상은 ik:<id>입니다.");
+  if (ikProp) throw EditError("mix·bendPositive 키의 대상은 ik:<id> 또는 physics:<id>입니다.");
   const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0;
-  if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id>, slot:<id>, ik:<id> 또는 rig 형식입니다.");
+  if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id>, slot:<id>, ik:<id>, physics:<id> 또는 rig 형식입니다.");
   const Str id = target.substr(5);
   if (isBone) bone(d, id); else slot(d, id);
-  const bool slotProp = *p == Property::Alpha || *p == Property::Attachment || *p == Property::Deform;
+  const bool slotProp = *p == Property::Alpha || *p == Property::Attachment || *p == Property::Deform || *p == Property::Sequence;
   if (isBone == slotProp) throw EditError("대상 종류에 맞지 않는 속성입니다: " + prop);
   if (*p == Property::Deform && optStr(op, "attachment").empty()) throw EditError("변형(deform) 키에는 메시 첨부 이름(attachment)이 필요합니다.");
   return {isBone, id, *p};
@@ -305,14 +328,33 @@ size_t removeIk(Json& d, const Str& id) {
   return keys;
 }
 
+// ---- Physics helpers (plugin 1.13.0) ----
+std::vector<Str> physicsUsing(const Json& d, const Str& bone) {
+  std::vector<Str> out;
+  for (const auto& k : listOr(d, "physics")) if (optStr(k, "bone") == bone) out.push_back(optStr(k, "id"));
+  return out;
+}
+/** Drop physics constraint `id` and its mix tracks; the last one gone removes the list. */
+size_t removePhysics(Json& d, const Str& id) {
+  auto& list = arr(d, "physics");
+  list.erase(list.begin() + findIndex(list, "id", id));
+  if (list.empty()) d.erase("physics");
+  size_t keys = 0;
+  for (auto& c : arr(d, "clips"))
+    for (const auto& t : arr(c, "tracks")) if (t.value("target", Str()) == "physics:" + id) keys += t.contains("keys") ? t.at("keys").size() : 0;
+  removeTracks(d, {"physics:" + id});
+  return keys;
+}
+
 // ---- Mesh helpers (plugin 1.4.0; ops near the end) ----
 bool isMesh(const Json& a) { return a.is_object() && optStr(a, "type") == "mesh"; }
-/** Vertex counts of the meshes named (slot, name) in the default list and in every skin. */
+bool isClipping(const Json& a) { return a.is_object() && optStr(a, "type") == "clipping"; }
+/** Vertex counts of the meshes (and clip polygons, plugin 1.12.0: deform keys move them too) named (slot, name) in the default list and in every skin. */
 std::set<size_t> meshCounts(const Json& d, const Str& slotId, const Str& name) {
   std::set<size_t> out;
   auto scan = [&](const Json& list) {
     for (const auto& a : list)
-      if (isMesh(a) && optStr(a, "slot") == slotId && optStr(a, "name") == name && a.contains("vertices") && a.at("vertices").is_array())
+      if ((isMesh(a) || isClipping(a)) && optStr(a, "slot") == slotId && optStr(a, "name") == name && a.contains("vertices") && a.at("vertices").is_array())
         out.insert(a.at("vertices").size() / 2);
   };
   scan(listOr(d, "attachments"));
@@ -383,9 +425,10 @@ void writeLook(Json& b, const Json& op) {
   }
 }
 /**
- * A lower bone of a two-bone chain that gets a length would switch its implicit effector from
- * its first child to its own tip (the 1.5.0 precedence). Gestures that set a length must never
- * move a limb by surprise, so that child becomes the explicit `tip`.
+ * A lower bone of a two-bone chain (the last bone of a longer chain, plugin 1.13.0) that gets a
+ * length would switch its implicit effector from its first child to its own tip (the 1.5.0
+ * precedence). Gestures that set a length must never move a limb by surprise, so that child
+ * becomes the explicit `tip`.
  */
 void pinLimbTips(EditResult& r, const Str& id) {
   Json& d = r.data;
@@ -394,7 +437,7 @@ void pinLimbTips(EditResult& r, const Str& id) {
   for (const auto& c : arr(d, "bones")) if (parentOf(c) == id) { child = c.value("id", Str()); break; }
   if (child.empty()) return;
   for (auto& k : d["ik"])
-    if (k.is_object() && !k.contains("tip") && k.contains("bones") && k.at("bones").is_array() && k.at("bones").size() == 2 && k.at("bones")[1] == id) {
+    if (k.is_object() && !k.contains("tip") && k.contains("bones") && k.at("bones").is_array() && k.at("bones").size() >= 2 && k.at("bones").back() == id) {
       k["tip"] = child;
       r.affected.push_back("ik:" + optStr(k, "id"));
     }
@@ -711,6 +754,12 @@ void deleteBone(EditResult& r, const Json& op) {
     r.affected.push_back("ik:" + ik);
     warn(r, "ANIM_IK_REMOVED", "", "본을 지우면서 IK 제약 「" + ik + "」도 지웠습니다.");
   }
+  // Physics on the bone (plugin 1.13.0) is decoration of that bone only: it goes with it.
+  for (const auto& p : physicsUsing(d, id)) {
+    removePhysics(d, p);
+    r.affected.push_back("physics:" + p);
+    warn(r, "ANIM_PHYSICS_REMOVED", "", "본을 지우면서 물리 제약 「" + p + "」도 지웠습니다.");
+  }
   // An explicit effector that goes away falls back to the implicit rule (the lower bone's first child).
   if (d.contains("ik") && d["ik"].is_array())
     for (auto& k : d["ik"])
@@ -825,17 +874,23 @@ void setAttachment(EditResult& r, const Json& op) {
   }
   throw EditError("없는 첨부입니다: " + id + "/" + name);
 }
+std::set<Str> retargetClipEnds(EditResult& r, const Str& deleted);
 void deleteSlot(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str id = reqStr(op, "slot");
   slot(d, id);
+  // Clipping slots whose range ended here and is now empty go with it (nothing left to clip).
+  std::set<Str> ids = retargetClipEnds(r, id);
+  ids.insert(id);
   auto& slots = arr(d, "slots");
-  slots.erase(slots.begin() + findIndex(slots, "id", id));
-  auto& atts = arr(d, "attachments");
-  atts.erase(std::remove_if(atts.begin(), atts.end(), [&](const Json& a) { return a.value("slot", Str()) == id; }), atts.end());
-  removeTracks(d, {"slot:" + id});
-  purgeLookRefs(d, {id}, {});
-  r.affected.push_back("slot:" + id);
+  for (const auto& s : ids) {
+    slots.erase(slots.begin() + findIndex(slots, "id", s));
+    auto& atts = arr(d, "attachments");
+    atts.erase(std::remove_if(atts.begin(), atts.end(), [&](const Json& a) { return a.value("slot", Str()) == s; }), atts.end());
+    removeTracks(d, {"slot:" + s});
+    purgeLookRefs(d, {s}, {});
+    r.affected.push_back("slot:" + s);
+  }
 }
 void moveSlot(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -860,10 +915,21 @@ void setKey(EditResult& r, const Json& op) {
   Json& c = clip(d, clipId);
   const int64_t t = ms(op, "timeMs"), duration = c.value("durationMs", int64_t(0));
   if (t < 0 || t > duration) throw EditError("키 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
-  const bool deform = tg.property == Property::Deform;
-  if (!op.contains("value") && !deform) throw EditError("키 값이 필요합니다.");
+  const bool deform = tg.property == Property::Deform, sequence = tg.property == Property::Sequence;
+  if (!op.contains("value") && !deform && !sequence) throw EditError("키 값이 필요합니다.");
   Json value = op.contains("value") ? op.at("value") : Json();
-  if (deform) {
+  if (sequence) {
+    // {mode, index, delay} (plugin 1.12.0): frames of the slot's sequence attachment, step only.
+    const size_t frames = sequenceFrames(d, tg.id);
+    if (!frames) throw EditError("이 조각에는 시퀀스 첨부가 없습니다: " + tg.id + " (먼저 「시퀀스 만들기」로 프레임을 넣으세요)");
+    const Str mode = optStr(op, "mode", "hold");
+    if (!parseSequenceMode(mode)) throw EditError("시퀀스 재생 방식은 hold, once, loop, pingpong, onceReverse, loopReverse, pingpongReverse 중 하나입니다: " + mode);
+    const Json index = op.contains("index") ? op.at("index") : Json(0);
+    if (!index.is_number_integer() || index.get<int64_t>() < 0 || index.get<int64_t>() >= int64_t(frames)) throw EditError("시퀀스 프레임 번호는 0.." + std::to_string(frames - 1) + " 정수입니다.");
+    const double delay = num(op, "delay", 100);
+    if (!(delay > 0) || delay > 60000) throw EditError("프레임 간격(delay)은 0보다 크고 60000ms 이하입니다.");
+    value = Json{{"mode", mode}, {"index", index}, {"delay", clean(delay)}};
+  } else if (deform) {
     // offsets = dx, dy per vertex in image pixels; absent = the rest shape (all zero).
     const std::set<size_t> counts = meshCounts(d, tg.id, optStr(op, "attachment"));
     if (counts.empty()) throw EditError("메시가 아닌(또는 없는) 첨부입니다: " + tg.id + "/" + optStr(op, "attachment") + " (먼저 메시로 변환하세요)");
@@ -890,7 +956,7 @@ void setKey(EditResult& r, const Json& op) {
     const double v = num(op, "value", 0);
     if (!value.is_number()) throw EditError("키 값은 숫자여야 합니다.");
     if (tg.property == Property::Alpha && (v < 0 || v > 1)) throw EditError("투명도는 0..1이어야 합니다.");
-    if (tg.property == Property::Mix && (v < 0 || v > 1)) throw EditError("IK 혼합(mix)은 0..1이어야 합니다.");
+    if (tg.property == Property::Mix && (v < 0 || v > 1)) throw EditError(op.at("target").get<Str>().rfind("physics:", 0) == 0 ? "물리 혼합(mix)은 0..1이어야 합니다." : "IK 혼합(mix)은 0..1이어야 합니다.");
     value = clean(v);
   }
   const Str targetText = op.at("target").get<Str>(), prop = op.at("property").get<Str>(), attachment = deform ? optStr(op, "attachment") : Str();
@@ -904,7 +970,8 @@ void setKey(EditResult& r, const Json& op) {
   Json* key = nullptr;
   for (auto& k : arr(*tr, "keys")) if (k.value("timeMs", int64_t(-1)) == t) key = &k;
   if (!key) { arr(*tr, "keys").push_back({{"timeMs", t}}); key = &arr(*tr, "keys").back(); }
-  (*key)[deform ? "offsets" : "value"] = value;
+  if (sequence) { key->erase("value"); for (auto it = value.begin(); it != value.end(); ++it) (*key)[it.key()] = it.value(); }
+  else (*key)[deform ? "offsets" : "value"] = value;
   const bool step = stepOnly(prop);
   if (step) { key->erase("interp"); key->erase("curve"); }
   sortKeys(*tr);
@@ -1329,6 +1396,7 @@ void copyKeys(EditResult& r, const Json& op) {
       if (!p.times.count(t)) continue;
       Json e{{"target", p.target}, {"property", p.property}, {"offsetMs", t - lo}, {"value", k.contains("value") ? k.at("value") : Json(nullptr)}};
       if (p.property == "deform") { e.erase("value"); e["attachment"] = p.attachment; e["offsets"] = k.contains("offsets") ? k.at("offsets") : Json::array(); }
+      if (p.property == "sequence") { e.erase("value"); for (const char* f : {"mode", "index", "delay"}) if (k.contains(f)) e[f] = k.at(f); }
       if (!stepOnly(p.property)) {
         e["interp"] = k.contains("interp") && k.at("interp").is_string() ? k.at("interp") : Json("linear");
         if (e["interp"] == "bezier") e["curve"] = curveJson(curveOf(k));
@@ -1385,7 +1453,7 @@ void pasteKeys(EditResult& r, const Json& op) {
     const Str tg = retarget.empty() ? e.at("target").get<Str>() : retarget, prop = optStr(e, "property");
     Json set{{"clip", clipId}, {"target", tg}, {"property", prop}, {"timeMs", t}};
     if (e.contains("value")) set["value"] = e.at("value");
-    for (const char* k : {"interp", "curve", "attachment", "offsets"}) if (has(e, k)) set[k] = e.at(k);
+    for (const char* k : {"interp", "curve", "attachment", "offsets", "mode", "index", "delay"}) if (has(e, k)) set[k] = e.at(k);
     setKey(r, set);
     pasted.push_back(refJson(tg, prop, t, optStr(e, "attachment")));
   }
@@ -2224,22 +2292,34 @@ void orientBones(EditResult& r, const Json& op) {
   r.extra["oriented"] = oriented;
   r.extra["skipped"] = skipped;
 }
+/** stretch / compress / uniform of addIk / setIk (plugin 1.13.0): booleans, false drops the key. */
+void writeStretch(Json& k, const Json& op) {
+  for (const char* flag : {"stretch", "compress", "uniform"}) {
+    if (!op.contains(flag)) continue;
+    if (!op.at(flag).is_null() && !op.at(flag).is_boolean()) throw EditError(Str(flag) + "는 true 또는 false입니다.");
+    if (op.at(flag) == true) k[flag] = true;
+    else k.erase(flag);
+  }
+}
 /**
- * addIk {id?, name?, bones: [parent?, child], target? | createTarget: true (+ targetId?,
- * targetParent?), mix?, bendPositive?, order?, aimAxis?}. createTarget adds a bone at the chain
- * end as shown now (two-bone: the effector = the child's first child, else the child origin;
- * aim: along the aim axis), under the chain's top-level ancestor, so the new constraint starts by
- * holding the current pose; bendPositive defaults to the chain's current bend side. An aim chain
- * without `aimAxis` gets the bone's natural direction (naturalAimAxis; plugin 1.4.1), stored only
- * when it is not +x.
+ * addIk {id?, name?, bones: [parent?, child] | [b0, b1, b2, ...] (plugin 1.13.0: each the direct
+ * child of the previous), target? | createTarget: true (+ targetId?, targetParent?), mix?,
+ * bendPositive?, order?, aimAxis?, stretch?, compress?, uniform?}. createTarget adds a bone at the
+ * chain end as shown now (2+ bones: the effector = the last bone's length tip or first child,
+ * else its origin; aim: along the aim axis), under the chain's top-level ancestor, so the new
+ * constraint starts by holding the current pose; bendPositive (two bones) defaults to the chain's
+ * current bend side. An aim chain without `aimAxis` gets the bone's natural direction
+ * (naturalAimAxis; plugin 1.4.1), stored only when it is not +x.
  */
 void addIk(EditResult& r, const Json& op) {
   Json& d = r.data;
-  if (!has(op, "bones") || !op.at("bones").is_array() || op.at("bones").empty() || op.at("bones").size() > 2)
-    throw EditError("bones는 본 1개(조준) 또는 2개(부모 → 자식) ID 배열입니다.");
+  if (!has(op, "bones") || !op.at("bones").is_array() || op.at("bones").empty() || op.at("bones").size() > MAX_IK_CHAIN)
+    throw EditError("bones는 본 1개(조준), 2개(팔·다리) 또는 3.." + std::to_string(MAX_IK_CHAIN) + "개(부모 → 자식 사슬) ID 배열입니다.");
   std::vector<Str> chain;
   for (const auto& b : op.at("bones")) { chain.push_back(b.is_string() ? b.get<Str>() : Str()); bone(d, chain.back()); }
-  if (chain.size() == 2 && parentOf(bone(d, chain[1])) != chain[0]) throw EditError("두 본 IK 사슬은 직접 부모 → 자식이어야 합니다: " + chain[0] + " → " + chain[1]);
+  for (size_t i = 1; i < chain.size(); i++)
+    if (parentOf(bone(d, chain[i])) != chain[i - 1])
+      throw EditError(Str(chain.size() == 2 ? "두 본 IK 사슬은" : "IK 사슬의 본은 앞 본의") + " 직접 부모 → 자식이어야 합니다: " + chain[i - 1] + " → " + chain[i]);
   Str id = has(op, "id") ? reqStr(op, "id") : slugId(chain.back() + "-ik", "ik");
   if (!has(op, "id")) for (int n = 2; findIndex(listOr(d, "ik"), "id", id) >= 0; n++) id = slugId(chain.back() + "-ik-" + std::to_string(n), "ik");
   ensureUniqueIn(d, "ik", id, "IK");
@@ -2248,18 +2328,18 @@ void addIk(EditResult& r, const Json& op) {
   const int end = rig.boneIndex(chain.back());
   int tip = -1;
   if (has(op, "tip")) {
-    if (chain.size() != 2) throw EditError("끝점(tip)은 두 본 IK에만 지정합니다.");
+    if (chain.size() < 2) throw EditError("끝점(tip)은 본 2개 이상의 IK에만 지정합니다.");
     bone(d, reqStr(op, "tip"));
     tip = rig.boneIndex(reqStr(op, "tip"));
-    if (rig.bones[size_t(tip)].parentIndex != end) throw EditError("끝점(tip)은 아래 본 「" + chain.back() + "」의 직접 자식이어야 합니다: " + reqStr(op, "tip"));
+    if (rig.bones[size_t(tip)].parentIndex != end) throw EditError("끝점(tip)은 마지막 본 「" + chain.back() + "」의 직접 자식이어야 합니다: " + reqStr(op, "tip"));
   }
   // A lower bone with a length (plugin 1.5.0) reaches with its own tip: no child is picked then.
   const double endLength = rig.bones[size_t(end)].length;
-  const bool lengthTip = chain.size() == 2 && tip < 0 && endLength > 0;
+  const bool lengthTip = chain.size() >= 2 && tip < 0 && endLength > 0;
   for (size_t i = 0; i < rig.bones.size() && tip < 0 && !lengthTip; i++) if (rig.bones[i].parentIndex == end) tip = int(i);
   Json k{{"id", id}, {"name", displayName(op, id)}, {"bones", chain}};
   // A known end becomes the explicit effector: adding a sibling bone later never changes the limb.
-  if (chain.size() == 2 && tip >= 0) k["tip"] = rig.bones[size_t(tip)].id;
+  if (chain.size() >= 2 && tip >= 0) k["tip"] = rig.bones[size_t(tip)].id;
   double axis = 0, reach = 0;
   bool hasAxis = false;
   if (has(op, "aimAxis")) {
@@ -2273,9 +2353,9 @@ void addIk(EditResult& r, const Json& op) {
     hasAxis = true;  // a bone with a length points along +x (Spine): that is its natural aim
     reach = endLength;
   } else if (chain.size() == 1) hasAxis = naturalAimAxis(rig, end, axis, reach);
-  // The two-bone effector as shown now (rig space); `effector` false = none (the origin aims).
+  // The effector of a chain of 2+ as shown now (rig space); `effector` false = none (the origin aims).
   double ex = 0, ey = 0;
-  const bool effector = chain.size() == 2 && (tip >= 0 || lengthTip);
+  const bool effector = chain.size() >= 2 && (tip >= 0 || lengthTip);
   if (tip >= 0) { ex = pose.world[size_t(tip)].e; ey = pose.world[size_t(tip)].f; }
   else if (lengthTip) pose.world[size_t(end)].apply(endLength, 0, ex, ey);
   if (chain.size() == 1) putAimAxis(k, axis);
@@ -2317,11 +2397,12 @@ void addIk(EditResult& r, const Json& op) {
   } else bone(d, target);
   k["target"] = target;
   if (has(op, "mix")) k["mix"] = clean(optUnit(op, "mix"));
+  writeStretch(k, op);
   bool bend = true;
   if (has(op, "bendPositive")) {
     if (!op.at("bendPositive").is_boolean()) throw EditError("bendPositive는 true 또는 false입니다.");
     bend = op.at("bendPositive").get<bool>();
-  } else if (effector) {
+  } else if (effector && chain.size() == 2) {
     // Keep the side the limb bends to now (the angle between its two links, on screen).
     const int up = rig.boneIndex(chain[0]);
     const Affine& u = pose.world[size_t(up)];
@@ -2329,7 +2410,7 @@ void addIk(EditResult& r, const Json& op) {
     const double cross = (l.e - u.e) * (ey - l.f) - (l.f - u.f) * (ex - l.e);
     bend = cross >= 0;
   }
-  k["bendPositive"] = bend;
+  if (chain.size() <= 2) k["bendPositive"] = bend;  // chains of 3+ keep the bend the pose gives them
   if (has(op, "order")) k["order"] = int64_t(num(op, "order", 0));
   arr(d, "ik").push_back(k);
   if (const Str problem = ikProblem(d); !problem.empty()) throw EditError(problem);
@@ -2339,7 +2420,8 @@ void addIk(EditResult& r, const Json& op) {
 }
 /**
  * setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, bones?, aimAxis?
- * (null = +x), fitAimAxis? (+ clip?, timeMs?)}: setup values of one constraint. fitAimAxis (aim
+ * (null = +x), stretch?, compress?, uniform? (plugin 1.13.0), fitAimAxis? (+ clip?, timeMs?)}:
+ * setup values of one constraint. fitAimAxis (aim
  * chains) sets the axis to where the target is seen from the bone in the pose without IK (setup,
  * or `clip` at `timeMs`), so turning the constraint on stops moving the bone.
  */
@@ -2370,6 +2452,7 @@ void setIk(EditResult& r, const Json& op) {
     if (op.at("aimAxis").is_null()) k.erase("aimAxis");
     else putAimAxis(k, aimAxisOf(op));
   }
+  writeStretch(k, op);
   if (has(op, "fitAimAxis") && op.at("fitAimAxis") == true) {
     if (!k.contains("bones") || !k.at("bones").is_array() || k.at("bones").size() != 1) throw EditError("현재 방향으로 맞추기는 조준 IK(본 1개)에만 씁니다.");
     Rig rig;
@@ -2456,6 +2539,109 @@ void bakeIk(EditResult& r, const Json& op) {
     }
   }
   r.extra["keys"] = keyed;
+}
+
+// ---- Physics constraints (plugin 1.13.0) ----
+/** Parameter fields of a physics constraint with their ranges (the validation's, so a refused
+ *  edit names the field before validateRig would). */
+struct PhysicsField { const char* key; double lo, hi; };
+const PhysicsField PHYSICS_FIELDS[] = {
+  {"x", 0, 1}, {"y", 0, 1}, {"rotate", 0, 1}, {"scaleX", 0, 1}, {"inertia", 0, 1}, {"strength", 0, 10000}, {"damping", 0, 1},
+  {"mass", 0.01, 1000}, {"wind", -100000, 100000}, {"gravity", -100000, 100000}, {"mix", 0, 1}, {"limit", 1e-6, 1e6},
+  {"step", 1.0 / 240, 0.1}, {"teleport", 1e-6, 1e6}};
+/** Numbers (null = back to the default: the key goes) and resetOnStart of `op` into `k`. */
+void writePhysicsFields(Json& k, const Json& op) {
+  for (const auto& f : PHYSICS_FIELDS) {
+    if (!op.contains(f.key)) continue;
+    if (op.at(f.key).is_null()) { k.erase(f.key); continue; }
+    const double v = num(op, f.key, 0);
+    // step keeps full precision (1/60 is not a 6-decimal number); everything else is rounded.
+    const double stored = Str(f.key) == "step" ? v : clean(v);
+    if (stored < f.lo - 1e-12 || stored > f.hi + 1e-12) throw EditError(Str("물리 값 ") + f.key + "의 범위를 벗어났습니다.");
+    k[f.key] = stored;
+  }
+  if (op.contains("resetOnStart")) {
+    if (op.at("resetOnStart").is_null() || op.at("resetOnStart") == false) k.erase("resetOnStart");
+    else if (op.at("resetOnStart") == true) k["resetOnStart"] = true;
+    else throw EditError("resetOnStart는 true 또는 false입니다.");
+  }
+}
+void applyPreset(Json& k, const Json& op) {
+  if (!has(op, "preset")) return;
+  const Str name = reqStr(op, "preset");
+  for (const auto& p : physicsPresets())
+    if (p.at("id") == name) {
+      for (const auto& f : PHYSICS_FIELDS) if (Str(f.key) != "mix" && Str(f.key) != "step") k.erase(f.key);  // a preset replaces the motion, not mix/step
+      for (auto it = p.at("fields").begin(); it != p.at("fields").end(); ++it) k[it.key()] = it.value();
+      return;
+    }
+  throw EditError("물리 프리셋은 hair(머리카락), skirt(치마), accessory(장식 흔들림) 중 하나입니다: " + name);
+}
+/**
+ * addPhysics {bone | bones, preset?, id? (one bone), name?, x?, y?, rotate?, scaleX?, inertia?,
+ * strength?, damping?, mass?, wind?, gravity?, mix?, limit?, step?, teleport?, resetOnStart?}: one
+ * constraint per bone (ids "<bone>-physics"), the preset first, then the explicit fields.
+ * Without a preset and channels the constraint turns (rotate 1). extra.physics = the new ids.
+ */
+void addPhysics(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  std::vector<Str> bones;
+  if (has(op, "bones")) {
+    if (!op.at("bones").is_array() || op.at("bones").empty() || op.at("bones").size() > 64) throw EditError("bones는 본 ID 1..64개 배열입니다.");
+    for (const auto& b : op.at("bones")) bones.push_back(b.is_string() ? b.get<Str>() : Str());
+  } else bones.push_back(reqStr(op, "bone"));
+  if (has(op, "id") && bones.size() != 1) throw EditError("id는 본 하나에만 지정합니다.");
+  Json ids = Json::array();
+  for (const auto& b : bones) {
+    bone(d, b);
+    Str id = has(op, "id") ? reqStr(op, "id") : slugId(b + "-physics", "physics");
+    if (!has(op, "id")) for (int n = 2; findIndex(listOr(d, "physics"), "id", id) >= 0; n++) id = slugId(b + "-physics-" + std::to_string(n), "physics");
+    ensureUniqueIn(d, "physics", id, "물리 제약");
+    Json k{{"id", id}, {"name", displayName(op, id)}, {"bone", b}};
+    applyPreset(k, op);
+    writePhysicsFields(k, op);
+    if (!k.contains("x") && !k.contains("y") && !k.contains("rotate") && !k.contains("scaleX")) k["rotate"] = 1;
+    arr(d, "physics").push_back(k);
+    r.affected.push_back("physics:" + id);
+    ids.push_back(id);
+  }
+  r.extra["physics"] = ids;
+}
+/** setPhysics {physics, name?, bone?, preset?, ...fields (null = default)}: the preset replaces the
+ *  motion parameters first, explicit fields win. */
+void setPhysics(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "physics");
+  Json& k = physicsAt(d, id);
+  if (has(op, "name")) k["name"] = displayName(op, id);
+  if (has(op, "bone")) { bone(d, reqStr(op, "bone")); k["bone"] = reqStr(op, "bone"); }
+  applyPreset(k, op);
+  writePhysicsFields(k, op);
+  r.affected.push_back("physics:" + id);
+}
+/** renamePhysics {physics, id?, name?}: a new id renames its mix tracks too. */
+void renamePhysics(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "physics");
+  Json& k = physicsAt(d, from);
+  const Str to = has(op, "id") ? reqStr(op, "id") : from;
+  if (has(op, "name")) k["name"] = displayName(op, to);
+  r.affected.push_back("physics:" + to);
+  if (to == from) return;
+  ensureUniqueIn(d, "physics", to, "물리 제약");
+  k["id"] = to;
+  size_t tracks = 0;
+  for (auto& c : arr(d, "clips"))
+    for (auto& t : arr(c, "tracks")) if (t.value("target", Str()) == "physics:" + from) { t["target"] = "physics:" + to; tracks++; }
+  r.extra["tracks"] = tracks;
+}
+/** deletePhysics {physics}: the constraint and its mix keys (extra.keys). */
+void deletePhysics(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "physics");
+  physicsAt(d, id);
+  r.extra["keys"] = removePhysics(d, id);
+  r.affected.push_back("physics:" + id);
 }
 
 // ---- Mesh attachments (plugin 1.4.0) ----
@@ -2562,6 +2748,7 @@ void convertToMesh(EditResult& r, const Json& op) {
   Json& d = r.data;
   Str slotId, name;
   Json& a = attachmentEntry(d, op, slotId, name);
+  if (isClipping(a)) throw EditError("클리핑 첨부는 메시로 바꿀 수 없습니다(그림이 없음). 모양은 「모양 다시 그리기」로 바꿉니다.");
   const int64_t rows = has(op, "rows") ? int64_t(num(op, "rows", 4)) : 4, cols = has(op, "cols") ? int64_t(num(op, "cols", 4)) : 4;
   if (rows < 1 || cols < 1 || rows > 64 || cols > 64) throw EditError("격자 칸 수(rows, cols)는 1..64입니다.");
   if (size_t((rows + 1) * (cols + 1)) > MAX_MESH_VERTICES) throw EditError("정점이 너무 많습니다(최대 " + std::to_string(MAX_MESH_VERTICES) + "개). 칸 수를 줄이세요.");
@@ -3244,6 +3431,136 @@ void retriangulate(EditResult& r, const Json& op) {
   r.affected.push_back("slot:" + slotId);
 }
 
+// ---- Clipping (plugin 1.12.0) ----
+/** Clip polygon of op `vertices` (the slot bone's px) or `worldVertices` (rig px at the setup pose). */
+std::vector<double> clipPolygonOf(Json& d, const Json& op, const Str& boneId) {
+  const bool world = has(op, "worldVertices");
+  std::vector<double> pts = pointList(op, world ? "worldVertices" : "vertices");
+  if (world) {
+    const Affine inv = inverseOr(setupWorld(d)[boneId], "본");
+    for (size_t i = 0; i + 1 < pts.size(); i += 2) { double x, y; inv.apply(pts[i], pts[i + 1], x, y); pts[i] = clean(x); pts[i + 1] = clean(y); }
+  }
+  if (pts.size() / 2 < 3 || pts.size() / 2 > MAX_CLIP_VERTICES) throw EditError("클리핑 다각형은 점 3.." + std::to_string(MAX_CLIP_VERTICES) + "개입니다.");
+  if (const Str problem = polygonProblem(pts); !problem.empty()) throw EditError("클리핑 다각형이 올바르지 않습니다: " + problem);
+  return pts;
+}
+/** Clip ranges ending at slot `deleted` end at the slot before it instead. Returns the clipping
+ *  slots whose range that empties (the caller deletes them with `deleted`). */
+std::set<Str> retargetClipEnds(EditResult& r, const Str& deleted) {
+  Json& d = r.data;
+  const auto& slots = arr(d, "slots");
+  const int at = findIndex(slots, "id", deleted);
+  std::set<Str> emptied;
+  auto fix = [&](Json& list) {
+    for (auto& a : list) {
+      if (!isClipping(a) || optStr(a, "end") != deleted || optStr(a, "slot") == deleted) continue;
+      const int from = findIndex(slots, "id", optStr(a, "slot"));
+      if (at - 1 > from) { a["end"] = slots[size_t(at - 1)].value("id", Str()); continue; }
+      warn(r, "ANIM_CLIP_REMOVED", "", "클리핑 「" + optStr(a, "slot") + "」의 범위가 비어 그 클리핑 조각도 지웠습니다.");
+      emptied.insert(optStr(a, "slot"));
+    }
+  };
+  fix(arr(d, "attachments"));
+  if (d.contains("skins") && d["skins"].is_array()) for (auto& s : d["skins"]) if (s.is_object() && s.contains("attachments") && s["attachments"].is_array()) fix(s["attachments"]);
+  return emptied;
+}
+/**
+ * addClipping {slot (new), bone?, before? | index?, name?, vertices | worldVertices, end?}: a new
+ * slot showing a clipping attachment, inserted before slot `before` (default: on top), clipping
+ * the slots after it through `end` (default `before`). bone defaults to `before`'s bone.
+ */
+void addClipping(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str slotId = reqStr(op, "slot"), before = optStr(op, "before");
+  if (!validId(slotId)) throw EditError("조각 ID는 소문자 영문·숫자·하이픈 형식이어야 합니다: " + slotId);
+  auto& slots = arr(d, "slots");
+  if (findIndex(slots, "id", slotId) >= 0) throw EditError("이미 있는 조각 ID입니다: " + slotId);
+  Str boneId = optStr(op, "bone");
+  if (!before.empty() && boneId.empty()) boneId = slot(d, before).value("bone", Str());
+  if (boneId.empty()) throw EditError("클리핑을 붙일 본을 선택하세요.");
+  bone(d, boneId);
+  const Str name = optStr(op, "name", "clip");
+  if (!validName(name)) throw EditError("첨부 이름 형식이 올바르지 않습니다: " + name);
+  const std::vector<double> polygon = clipPolygonOf(d, op, boneId);
+  const Str end = optStr(op, "end", before);
+  if (end.empty()) throw EditError("클리핑할 마지막 조각(end)을 지정하세요.");
+  slot(d, end);
+  const int64_t index = !before.empty() ? findIndex(slots, "id", before) : std::clamp<int64_t>(op.value("index", int64_t(slots.size())), 0, int64_t(slots.size()));
+  slots.insert(slots.begin() + index, Json{{"id", slotId}, {"bone", boneId}, {"attachment", name}});
+  arr(d, "attachments").push_back(Json{{"slot", slotId}, {"name", name}, {"type", "clipping"}, {"vertices", numbersJson(polygon)}, {"end", end}});
+  r.affected.push_back("slot:" + slotId);
+  r.extra["attachment"] = name;
+}
+/** setClipping {slot, name?, skin?, vertices? | worldVertices?, end?}: a new polygon (weights and deform keys
+ *  dropped when the point count changes) and/or a new last clipped slot. */
+void setClipping(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = attachmentEntry(d, op, slotId, name);
+  if (!isClipping(a)) throw EditError("클리핑 첨부가 아닙니다: " + slotId + "/" + name);
+  if (has(op, "vertices") || has(op, "worldVertices")) {
+    const std::vector<double> polygon = clipPolygonOf(d, op, slot(d, slotId).value("bone", Str()));
+    if (listOr(a, "vertices").size() != polygon.size() && a.contains("weights")) {
+      a.erase("weights");
+      warn(r, "ANIM_CLIP_WEIGHTS_DROPPED", "", "클리핑 점 수가 바뀌어 웨이트를 지웠습니다.");
+    }
+    a["vertices"] = numbersJson(polygon);
+    if (const size_t removed = purgeDeform(r)) warn(r, "ANIM_MESH_DEFORM_REMOVED", "", "점 수가 바뀌어 클리핑 변형 키 트랙 " + std::to_string(removed) + "개를 지웠습니다.");
+  }
+  if (has(op, "end")) {
+    const Str end = reqStr(op, "end");
+    slot(d, end);
+    a["end"] = end;
+  }
+  r.affected.push_back("slot:" + slotId);
+}
+
+// ---- Image sequences (plugin 1.12.0) ----
+/**
+ * setSequence {slot, name?, skin?, frames, setupIndex?, width?, height?}: the attachment shows
+ * `frames` (image assets of one size; imageAssetId = frames[0], width/height when given). Keys of
+ * the slot that index past the new frame count are clamped (ANIM_SEQUENCE_INDEX_CLAMPED).
+ * frames null / [] removes the sequence; the slot's sequence keys go when no sequence is left.
+ */
+void setSequence(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = attachmentEntry(d, op, slotId, name);
+  if (isClipping(a)) throw EditError("클리핑 첨부에는 시퀀스를 쓸 수 없습니다.");
+  const bool clear = !has(op, "frames") || (op.at("frames").is_array() && op.at("frames").empty());
+  if (clear) {
+    if (!a.contains("sequence")) throw EditError("시퀀스가 없는 첨부입니다: " + slotId + "/" + name);
+    a.erase("sequence");
+  } else {
+    const Json& frames = op.at("frames");
+    if (!frames.is_array() || frames.size() > MAX_SEQUENCE_FRAMES) throw EditError("frames는 이미지 에셋 ID 1.." + std::to_string(MAX_SEQUENCE_FRAMES) + "개의 배열입니다.");
+    for (const auto& f : frames) if (!f.is_string() || f.get<Str>().empty() || f.get<Str>().size() > 64) throw EditError("프레임은 이미지 에셋 ID입니다: " + f.dump());
+    const int64_t previous = a.contains("sequence") && a.at("sequence").is_object() ? a.at("sequence").value("setupIndex", int64_t(0)) : 0;
+    const int64_t setup = has(op, "setupIndex") ? op.at("setupIndex").get<int64_t>() : std::min<int64_t>(previous, int64_t(frames.size()) - 1);
+    if (setup < 0 || setup >= int64_t(frames.size())) throw EditError("기본 프레임(setupIndex)은 0.." + std::to_string(frames.size() - 1) + "입니다.");
+    Json q{{"frames", frames}};
+    if (setup) q["setupIndex"] = setup;
+    a["sequence"] = q;
+    a["imageAssetId"] = frames[0];
+    for (const char* k : {"width", "height"}) if (has(op, k)) { const double v = num(op, k, 0); if (!(v > 0)) throw EditError("이미지 크기는 0보다 커야 합니다."); a[k] = clean(v); }
+  }
+  // Keys follow the frames that exist now: past the end -> the last frame; no sequence left -> gone.
+  const size_t frames = sequenceFrames(d, slotId);
+  size_t clamped = 0, removed = 0;
+  for (auto& c : arr(d, "clips")) {
+    auto& tracks = arr(c, "tracks");
+    for (auto it = tracks.begin(); it != tracks.end();) {
+      if (it->value("target", Str()) != "slot:" + slotId || it->value("property", Str()) != "sequence") { ++it; continue; }
+      if (!frames) { removed += listOr(*it, "keys").size(); it = tracks.erase(it); continue; }
+      for (auto& k : arr(*it, "keys")) if (k.value("index", int64_t(0)) >= int64_t(frames)) { k["index"] = int64_t(frames) - 1; clamped++; }
+      ++it;
+    }
+  }
+  if (clamped) warn(r, "ANIM_SEQUENCE_INDEX_CLAMPED", "", "프레임 수가 줄어 시퀀스 키 " + std::to_string(clamped) + "개를 마지막 프레임으로 맞췄습니다.");
+  if (removed) warn(r, "ANIM_SEQUENCE_KEYS_REMOVED", "", "시퀀스가 없어져 시퀀스 키 " + std::to_string(removed) + "개를 지웠습니다.");
+  r.affected.push_back("slot:" + slotId);
+}
+
 void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth) {
   if (!op.is_object()) throw EditError("편집 명령은 객체여야 합니다.");
   const Str name = reqStr(op, "op");
@@ -3273,11 +3590,13 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"addSkin", addSkin}, {"duplicateSkin", duplicateSkin}, {"setSkinAttachment", setSkinAttachment}, {"removeSkinAttachment", removeSkinAttachment},
     {"addExpression", addExpression}, {"setExpressionSlot", setExpressionSlot}, {"setExpressionBone", setExpressionBone}, {"captureExpression", captureExpression},
     {"addIk", addIk}, {"setIk", setIk}, {"fitBoneLengths", fitBoneLengths}, {"orientBones", orientBones}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
+    {"addPhysics", addPhysics}, {"setPhysics", setPhysics}, {"renamePhysics", renamePhysics}, {"deletePhysics", deletePhysics},
     {"convertToMesh", convertToMesh}, {"convertToRegion", convertToRegion}, {"setMeshVertices", setMeshVertices}, {"setWeights", setWeights},
     {"unbindMesh", unbindMesh}, {"autoWeights", [](EditResult& r, const Json& op) { autoWeights(r, op, false); }},
     {"bindMesh", [](EditResult& r, const Json& op) { autoWeights(r, op, true); }},
     {"createMeshFromOutline", createMeshFromOutline}, {"autoOutline", autoOutline}, {"addMeshVertex", addMeshVertex},
     {"removeMeshVertex", removeMeshVertex}, {"retriangulate", retriangulate},
+    {"addClipping", addClipping}, {"setClipping", setClipping}, {"setSequence", setSequence},
     {"addMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, true); }},
     {"removeMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, false); }},
   };
@@ -3298,6 +3617,17 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
   throw EditError("알 수 없는 편집 명령입니다: " + name);
 }
 }  // namespace
+
+const Json& physicsPresets() {
+  // Tuned for 60 Hz steps and px-sized rigs: hair trails and sags, a skirt follows stiffly and
+  // settles fast, an accessory keeps swinging (low damping) and also bobs (x/y).
+  static const Json presets = Json::parse(R"([
+    {"id": "hair", "label": "머리카락", "fields": {"rotate": 1, "inertia": 0.7, "strength": 60, "damping": 0.8, "mass": 1, "gravity": 400}},
+    {"id": "skirt", "label": "치마", "fields": {"rotate": 1, "inertia": 0.5, "strength": 140, "damping": 0.7, "mass": 1.5, "gravity": 200}},
+    {"id": "accessory", "label": "장식 흔들림", "fields": {"rotate": 1, "x": 0.4, "y": 0.4, "inertia": 0.9, "strength": 50, "damping": 0.92, "mass": 0.8, "gravity": 300}}
+  ])");
+  return presets;
+}
 
 bool validId(const std::string& id) {
   if (id.empty() || id.size() > 64 || id[0] < 'a' || id[0] > 'z' || id.back() == '-') return false;

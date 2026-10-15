@@ -7,7 +7,8 @@ set(RAISING_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." CACHE PATH "Engine r
 
 # Qt/SDL independent evaluation and playback core.
 add_library(cutout_core STATIC core/src/rig.cpp core/src/runtime.cpp core/src/host.cpp core/src/signals.cpp
-  core/src/editing.cpp core/src/templates.cpp core/src/curve.cpp core/src/mesh.cpp)
+  core/src/editing.cpp core/src/templates.cpp core/src/curve.cpp core/src/mesh.cpp core/src/clipping.cpp
+  core/src/physics.cpp)
 target_include_directories(cutout_core PUBLIC core/include "${RAISING_ENGINE_ROOT}/native/vendor")
 set_target_properties(cutout_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MINGW)

@@ -15,6 +15,8 @@
 #include <QElapsedTimer>
 #include <QFileDialog>
 #include <QHeaderView>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QMenuBar>
 #include <QTabBar>
 #include <QTreeWidgetItemIterator>
@@ -255,6 +257,59 @@ QJsonObject trackOf(const QJsonObject &instance, int track) {
   for (auto v : instance.value("state").toObject().value("tracks").toArray())
     if (v.toObject().value("track").toInt() == track) return v.toObject();
   return {};
+}
+/**
+ * Minimal layered PSD (8-bit RGB, raw channels) for the PSD import step (plugin 1.11.0): a body,
+ * a "head" group (section dividers) with a face and two eye variants, the closed one hidden.
+ * Record layout as in Adobe's file format spec; the service's reader is tested far more widely
+ * in tests/plugins/cutout-layer-import.test.mjs.
+ */
+QByteArray layeredPsd(int width, int height) {
+  struct Layer { QString name; QRect rect; QColor color; bool hidden; int section; };  // section: 0 layer, 3 divider, 1 folder
+  const QList<Layer> layers{{"body", QRect(60, 140, 80, 160), QColor(200, 60, 40), false, 0},
+                            {"</Layer group>", QRect(), QColor(), false, 3},
+                            {"face", QRect(70, 40, 60, 70), QColor(240, 200, 160), false, 0},
+                            {"eyes/closed", QRect(80, 72, 40, 6), QColor(10, 10, 10), true, 0},
+                            {"eyes/open", QRect(80, 66, 40, 12), QColor(30, 30, 200), false, 0},
+                            {"head", QRect(), QColor(), false, 1}};
+  QByteArray records, channels;
+  QDataStream r(&records, QIODevice::WriteOnly), c(&channels, QIODevice::WriteOnly);
+  for (const auto &l : layers) {
+    const int w = l.rect.width(), h = l.rect.height();
+    r << qint32(l.rect.top()) << qint32(l.rect.left()) << qint32(l.rect.top() + h) << qint32(l.rect.left() + w) << quint16(4);
+    for (qint16 id : {qint16(-1), qint16(0), qint16(1), qint16(2)}) r << id << quint32(2 + w * h);
+    r.writeRawData("8BIM", 4);
+    r.writeRawData(l.section == 1 ? "pass" : "norm", 4);
+    r << quint8(255) << quint8(0) << quint8(l.hidden ? 2 : 0) << quint8(0);
+    QByteArray name = l.name.toLatin1(), extra;
+    QDataStream e(&extra, QIODevice::WriteOnly);
+    e << quint32(0) << quint32(0) << quint8(name.size());
+    e.writeRawData(name.constData(), int(name.size()));
+    for (int pad = (4 - (1 + int(name.size())) % 4) % 4; pad > 0; pad--) e << quint8(0);
+    if (l.section) { e.writeRawData("8BIM", 4); e.writeRawData("lsct", 4); e << quint32(4) << quint32(l.section); }
+    r << quint32(extra.size());
+    r.writeRawData(extra.constData(), int(extra.size()));
+    for (int channel : {3, 0, 1, 2}) {
+      c << quint16(0);
+      const int value = channel == 3 ? 255 : channel == 0 ? l.color.red() : channel == 1 ? l.color.green() : l.color.blue();
+      for (int i = 0; i < w * h; i++) c << quint8(value);
+    }
+  }
+  QByteArray info;
+  QDataStream i(&info, QIODevice::WriteOnly);
+  i << qint16(-int(layers.size()));
+  i.writeRawData(records.constData(), int(records.size()));
+  i.writeRawData(channels.constData(), int(channels.size()));
+  if (info.size() % 2) i << quint8(0);
+  QByteArray out;
+  QDataStream o(&out, QIODevice::WriteOnly);
+  o.writeRawData("8BPS", 4);
+  o << quint16(1) << quint32(0) << quint16(0) << quint16(3) << quint32(height) << quint32(width) << quint16(8) << quint16(3) << quint32(0) << quint32(0);
+  o << quint32(4 + info.size() + 4) << quint32(info.size());
+  o.writeRawData(info.constData(), int(info.size()));
+  o << quint32(0) << quint16(0);  // no global mask info; raw merged image (unused by the import)
+  for (int k = 0; k < 3 * width * height; k++) o << quint8(255);
+  return out;
 }
 bool copyTree(const QString &from, const QString &to) {
   QDir source(from);
@@ -772,11 +827,29 @@ void StudioTests::cutoutEndToEnd() {
   QVERIFY(seek(idleMs, idleMs));
   QVERIFY(poseKey("bone:head", "Rotation", "0", false));
   QCOMPARE(keyAt(rig(), "idle", "bone:head", "rotation", idleMs / 2 / 10 * 10).value("value").toDouble(), 3.0);
-  // face-happy expression clip (looping attachment pose).
-  ask("new clip face-happy", "face-happy");
-  click("cutoutNewClip");
-  QVERIFY(waitFor([&] { return !w->busy() && clips().contains("face-happy"); }));
-  QVERIFY(settle());
+  // face-happy expression clip (looping attachment pose), made through the command palette
+  // (plugin 1.10.0): Ctrl+K, type the Korean name, Enter = exactly what the button does (one edit).
+  {
+    const int revisionBefore = w->currentView().value("revision").toInt();
+    w->activateWindow();  // window shortcuts need the active window
+    QVERIFY(QTest::qWaitForWindowActive(w));
+    canvas->setFocus();
+    QTest::keyClick(canvas, Qt::Key_K, Qt::ControlModifier);
+    auto palette = panel->findChild<QWidget *>("cutoutCommandPalette");
+    auto search = panel->findChild<QLineEdit *>("cutoutCommandSearch");
+    QVERIFY(palette && palette->isVisible() && search && search->hasFocus());
+    typeText(search, QString::fromUtf8("새 클립"));
+    auto list = panel->findChild<QListWidget *>("cutoutCommandList");
+    QVERIFY(list && list->currentItem());
+    QCOMPARE(list->currentItem()->data(Qt::UserRole).toString(), QString("cutoutNewClip"));
+    ask("new clip face-happy", "face-happy");
+    QTest::keyClick(search, Qt::Key_Return);
+    QVERIFY(waitFor([&] { return !w->busy() && clips().contains("face-happy"); }));
+    QVERIFY(settle());
+    QVERIFY(!palette->isVisible());
+    QCOMPARE(w->currentView().value("revision").toInt(), revisionBefore + 1);
+    step("palette: 새 클립 face-happy (one edit)");
+  }
   QVERIFY(pickClip("face-happy"));
   QVERIFY(seek(0, 1000));
   QVERIFY(swapKey("mouth", "smile", false));
@@ -1189,6 +1262,261 @@ void StudioTests::cutoutEndToEnd() {
           QVERIFY2(QFileInfo::exists(exported[target] + "/assets/" + atlas.value("page").toString() + ".png"), qPrintable(atlas.value("page").toString()));
         }
     QVERIFY2(regions >= 8, qPrintable(QString("%1 atlas regions in the %2 export").arg(regions).arg(target)));
+  }
+
+  // ---- 11. PSD 가져오기 (plugin 1.11.0): layered art -> a new character in ONE edit ---------
+  step("11 psd import");
+  {
+    if (w->currentWorkspace() != WORKSPACE) w->findChild<QAction *>("studioWorkspace-cutout-animation-character")->trigger();
+    QVERIFY(waitFor([&] { return w->currentWorkspace() == WORKSPACE; }, 3000));
+    const QString psdFile = work + "/art-" + stamp + "/psd-hero.psd", psdRig = "plugins/cutout-animation/rig/psd-hero.json";
+    QVERIFY(QDir().mkpath(QFileInfo(psdFile).path()));
+    {
+      QFile f(psdFile);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write(layeredPsd(200, 320));
+    }
+    const int revision = w->currentView().value("revision").toInt();
+    bool previewed = false;
+    onModal(&pollers, &errors, "psd file dialog", isFileDialog, [&](QWidget *f) { chooseFile(f, psdFile, &hooks); });
+    onModal(&pollers, &errors, "layer import dialog", [](QWidget *m) { return m->objectName() == "cutoutLayerImportDialog"; }, [&](QWidget *d) {
+      auto layersTree = d->findChild<QTreeWidget *>("cutoutLayerImportTree");
+      auto id = d->findChild<QLineEdit *>("cutoutLayerImportId");
+      int rows = 0;
+      for (QTreeWidgetItemIterator it(layersTree); *it; ++it) rows++;
+      previewed = rows == 5 && id && id->text() == "psd-hero" && layersTree->topLevelItem(0)->text(0) == "head" &&
+                  d->findChild<QLabel *>("cutoutLayerImportSummary")->text().contains(QString::fromUtf8("첨부 4(숨김 1)"));
+      if (!previewed) errors << "layer import preview: rows " + QString::number(rows) + " / " + d->findChild<QLabel *>("cutoutLayerImportSummary")->text();
+      d->grab().save(evidence + "/09-layer-import-dialog.png");
+      QTest::mouseClick(d->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok), Qt::LeftButton);
+    });
+    click("cutoutImportLayers");
+    QVERIFY2(waitFor([&] { return !w->busy() && !pluginData(w->currentView(), psdRig).isEmpty(); }, 40000), qPrintable(w->lastError + noErrors()));
+    QVERIFY(settle());
+    QVERIFY2(previewed && errors.isEmpty(), qPrintable(noErrors()));
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);  // the preview changed nothing, the import is one edit
+    const auto imported = pluginData(w->currentView(), psdRig);
+    QCOMPARE(slotOrder(imported), QStringList({"body", "face", "eyes"}));
+    QCOMPARE(byId(imported.value("slots").toArray(), "eyes").value("attachment").toString(), QString("open"));
+    QVERIFY(!attachment(imported, "eyes", "closed").isEmpty());
+    QCOMPARE(byId(imported.value("bones").toArray(), "head").value("parent").toString(), QString("root"));
+    QCOMPARE(attachment(imported, "body", "body").value("width").toInt(), 82);  // trimmed + 1 px ring
+    for (auto a : imported.value("attachments").toArray())
+      QVERIFY2(QFileInfo::exists(projectRoot + "/assets/" + a.toObject().value("imageAssetId").toString() + ".png"), qPrintable(a.toObject().value("imageAssetId").toString()));
+    QVERIFY(!pluginData(w->currentView(), "plugins/cutout-animation/controller/psd-hero.json").isEmpty());
+    QVERIFY2(status->text().contains(QString::fromUtf8("가져옴")), qPrintable(status->text()));
+    QVERIFY(waitFor([&] { return panel->findChild<QTreeWidget *>("cutoutCharacterList")->topLevelItemCount() == 2; }, 3000));
+    for (auto d : w->currentView().value("diagnostics").toArray())
+      QVERIFY2(!(d.toObject().value("severity") == "error" && d.toObject().value("file").toString().contains("psd-hero")), qPrintable(d.toObject().value("message").toString()));
+    QVERIFY(shot("10-psd-imported.png"));
+    // One 되돌리기 removes the character (rig, controller, asset entries); 다시 실행 brings it back.
+    menuClick(w->findChild<QAction *>("undoEdit"), &hooks, "되돌리기");
+    QVERIFY(waitFor([&] { return !w->busy() && pluginData(w->currentView(), psdRig).isEmpty(); }));
+    QVERIFY(settle());
+    menuClick(w->findChild<QAction *>("redoEdit"), &hooks, "다시 실행");
+    QVERIFY(waitFor([&] { return !w->busy() && pluginData(w->currentView(), psdRig) == imported; }));
+    QVERIFY(settle());
+    QVERIFY2(saveProject(), qPrintable(w->lastError));
+  }
+
+  // ---- 12. 클리핑 · 시퀀스 (plugin 1.12.0) on the imported character: one edit per gesture ----
+  step("12 clipping and sequence");
+  {
+    const QString psdRig = "plugins/cutout-animation/rig/psd-hero.json";
+    auto psd = [&] { return pluginData(w->currentView(), psdRig); };
+    order = panel->findChild<QListWidget *>("cutoutDrawOrder");
+    auto characters = panel->findChild<QTreeWidget *>("cutoutCharacterList");
+    QTreeWidgetItem *psdItem = nullptr;
+    for (int i = 0; i < characters->topLevelItemCount(); ++i)
+      if (characters->topLevelItem(i)->data(0, Qt::UserRole).toString() == "rig:psd-hero") psdItem = characters->topLevelItem(i);
+    QVERIFY(psdItem);
+    if (characters->isVisible() && !characters->visualItemRect(psdItem).isEmpty())
+      QTest::mouseClick(characters->viewport(), Qt::LeftButton, Qt::NoModifier, characters->visualItemRect(psdItem).center());
+    if (characters->currentItem() != psdItem) { hooks << "character list: setCurrentItem() (the list is in a collapsed section)"; characters->setCurrentItem(psdItem); }
+    QVERIFY(waitFor([&] { return treeItem("slot:face") != nullptr; }, 3000));
+    click("cutoutModeSetup");
+    QVERIFY(settle());
+    auto tabs = panel->findChild<QTabWidget *>("cutoutLookTabs");
+    auto showPage = [&](const char *name) {
+      QWidget *page = panel->findChild<QWidget *>(name);
+      const QRect r = tabs->tabBar()->tabRect(tabs->indexOf(page));
+      if (tabs->tabBar()->rect().contains(r)) QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier, r.center());
+      if (tabs->currentWidget() != page) { hooks << QString("look tab %1 chosen with setCurrentWidget() (scrolled out of the tab bar)").arg(name); tabs->setCurrentWidget(page); }
+      return waitFor([&] { return page->isVisible(); }, 2000);
+    };
+    QVERIFY(showPage("cutoutClippingPage"));
+    QVERIFY(pickOrder("face"));
+    click("cutoutFitView");
+    QTest::qWait(80);
+    // 클리핑 만들기: four canvas clicks around the left of the face (x 70..130), the first point again closes.
+    int revision = w->currentView().value("revision").toInt();
+    click("cutoutClippingCreate");
+    const QList<QPointF> polygon{{60, 30}, {100, 30}, {100, 120}, {60, 120}, {60, 30}};
+    for (const QPointF &p : polygon) { QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, rigPoint(canvas, p.x(), p.y(), 200, 320)); QTest::qWait(30); }
+    QVERIFY2(waitFor([&] { return !w->busy() && w->currentView().value("revision").toInt() == revision + 1; }, 10000), qPrintable(status->text() + noErrors()));
+    QVERIFY(settle());
+    QCOMPARE(slotOrder(psd()), QStringList({"body", "face-clip", "face", "eyes"}));
+    QCOMPARE(attachment(psd(), "face-clip", "clip").value("type").toString(), QString("clipping"));
+    QCOMPARE(attachment(psd(), "face-clip", "clip").value("end").toString(), QString("face"));
+    // The canvas preview cuts the face at x = 100 (rig px), like the players.
+    auto canvasAt = [&](double x, double y) { QTest::qWait(60); return canvas->grab().toImage().pixelColor(rigPoint(canvas, x, y, 200, 320)); };
+    const QColor kept = canvasAt(85, 50), cut = canvasAt(118, 50);
+    QVERIFY2(std::abs(kept.red() - 240) < 30 && std::abs(kept.green() - 200) < 30, qPrintable(kept.name()));
+    QVERIFY2(std::abs(cut.red() - 240) > 60 || std::abs(cut.green() - 200) > 60, qPrintable(cut.name()));
+    // 끝 조각 → eyes (keyboard on the combo), then one 되돌리기 / 다시 실행.
+    auto end = panel->findChild<QComboBox *>("cutoutClippingEnd");
+    QVERIFY(end && end->isEnabled());
+    revision = w->currentView().value("revision").toInt();
+    end->setFocus();
+    QTest::keyClick(end, Qt::Key_Down);
+    QVERIFY2(waitFor([&] { return !w->busy() && attachment(psd(), "face-clip", "clip").value("end").toString() == "eyes"; }, 10000), qPrintable(status->text()));
+    QVERIFY(settle());
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);
+    canvas->grab().save(evidence + "/11-clipping-canvas.png");
+    menuClick(w->findChild<QAction *>("undoEdit"), &hooks, "되돌리기");
+    QVERIFY(waitFor([&] { return !w->busy() && attachment(psd(), "face-clip", "clip").value("end").toString() == "face"; }));
+    QVERIFY(settle());
+    menuClick(w->findChild<QAction *>("redoEdit"), &hooks, "다시 실행");
+    QVERIFY(waitFor([&] { return !w->busy() && attachment(psd(), "face-clip", "clip").value("end").toString() == "eyes"; }));
+    QVERIFY(settle());
+
+    // PNG로 시퀀스…: three frames picked at once in the file dialog become the body's picture.
+    QVERIFY(showPage("cutoutSequencePage"));
+    QVERIFY(pickOrder("body"));
+    const QString frameDir = work + "/frames-" + stamp;
+    QVERIFY(QDir().mkpath(frameDir));
+    const QList<QColor> colors{QColor(200, 60, 40), QColor(60, 160, 60), QColor(60, 80, 200)};
+    for (int i = 0; i < colors.size(); ++i) {
+      QImage frame(82, 162, QImage::Format_ARGB32);
+      frame.fill(colors[i]);
+      QVERIFY(frame.save(frameDir + QString("/walk-%1.png").arg(i + 1)));
+    }
+    onModal(&pollers, &errors, "sequence frames dialog", isFileDialog, [&](QWidget *d) {
+      auto fd = static_cast<QFileDialog *>(d);
+      fd->setDirectory(frameDir);
+      QTest::qWait(80);
+      auto edit = fd->findChild<QLineEdit *>("fileNameEdit");
+      if (edit) edit->setText("\"walk-3.png\" \"walk-1.png\" \"walk-2.png\"");
+      QTest::qWait(50);
+      auto box = fd->findChild<QDialogButtonBox *>("buttonBox");
+      QPushButton *open = box ? box->button(QDialogButtonBox::Open) : nullptr;
+      if (edit && open && open->isEnabled()) { QTest::mouseClick(open, Qt::LeftButton); return; }
+      hooks << "sequence QFileDialog accepted with selectFile()+accept()";
+      fd->selectFile(frameDir + "/walk-1.png");
+      static_cast<QDialog *>(fd)->accept();
+    });
+    click("cutoutSequenceImport");
+    QVERIFY2(waitFor([&] { return !w->busy() && attachment(psd(), "body", "body").value("sequence").toObject().value("frames").toArray().size() == 3; }, 30000),
+             qPrintable(status->text() + w->lastError + noErrors()));
+    QVERIFY(settle());
+    const auto body = attachment(psd(), "body", "body");
+    const QJsonArray frames = body.value("sequence").toObject().value("frames").toArray();
+    QCOMPARE(body.value("imageAssetId").toString(), frames[0].toString());
+    for (auto f : frames) QVERIFY2(QFileInfo::exists(projectRoot + "/assets/" + f.toString() + ".png"), qPrintable(f.toString()));
+    QCOMPARE(panel->findChild<QListWidget *>("cutoutSequenceFrames")->count(), 3);
+    // 시퀀스 키 in the idle clip: loop, 120 ms frames from frame 0.
+    click("cutoutModeAnimate");
+    QVERIFY(settle());
+    QVERIFY(pickOrder("body"));
+    typeSpin(panel->findChild<QSpinBox *>("cutoutTimeField"), "0");
+    QVERIFY(settle());
+    QVERIFY(choose(panel->findChild<QComboBox *>("cutoutSequenceMode"), "loop"));
+    typeSpin(panel->findChild<QDoubleSpinBox *>("cutoutSequenceDelay"), "120");
+    revision = w->currentView().value("revision").toInt();
+    click("cutoutSequenceKey");
+    QVERIFY2(waitFor([&] { return !w->busy() && !keyAt(psd(), "idle", "slot:body", "sequence", 0).isEmpty(); }, 10000), qPrintable(status->text()));
+    QVERIFY(settle());
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);
+    const auto key = keyAt(psd(), "idle", "slot:body", "sequence", 0);
+    QCOMPARE(key.value("mode").toString(), QString("loop"));
+    QCOMPARE(key.value("delay").toDouble(), 120.0);
+    QVERIFY(shot("11-clipping-sequence.png"));
+    menuClick(w->findChild<QAction *>("undoEdit"), &hooks, "되돌리기");
+    QVERIFY(waitFor([&] { return !w->busy() && keyAt(psd(), "idle", "slot:body", "sequence", 0).isEmpty(); }));
+    QVERIFY(settle());
+    menuClick(w->findChild<QAction *>("redoEdit"), &hooks, "다시 실행");
+    QVERIFY(waitFor([&] { return !w->busy() && !keyAt(psd(), "idle", "slot:body", "sequence", 0).isEmpty(); }));
+    QVERIFY(settle());
+    for (auto d : w->currentView().value("diagnostics").toArray())
+      QVERIFY2(!(d.toObject().value("severity") == "error" && d.toObject().value("file").toString().contains("psd-hero")), qPrintable(d.toObject().value("message").toString()));
+    click("cutoutModeSetup");
+    QVERIFY(settle());
+    QVERIFY2(saveProject(), qPrintable(w->lastError));
+  }
+
+  // ---- 13. 사슬 IK · 늘이기 · 물리 (plugin 1.13.0) on the imported character: one edit per gesture ----
+  step("13 chain IK and physics");
+  {
+    const QString psdRig = "plugins/cutout-animation/rig/psd-hero.json";
+    auto psd = [&] { return pluginData(w->currentView(), psdRig); };
+    auto tabs = panel->findChild<QTabWidget *>("cutoutLookTabs");
+    auto showPage = [&](const char *name) {
+      QWidget *page = panel->findChild<QWidget *>(name);
+      const QRect r = tabs->tabBar()->tabRect(tabs->indexOf(page));
+      if (tabs->tabBar()->rect().contains(r)) QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier, r.center());
+      if (tabs->currentWidget() != page) { hooks << QString("look tab %1 chosen with setCurrentWidget() (scrolled out of the tab bar)").arg(name); tabs->setCurrentWidget(page); }
+      return waitFor([&] { return page->isVisible(); }, 2000);
+    };
+    click("cutoutModeSetup");
+    QVERIFY(settle());
+    QVERIFY(showPage("cutoutIkPage"));
+    // root + Ctrl+click head in the hierarchy: the run becomes a chain (two bones = 팔·다리 solve).
+    QVERIFY(select("bone:root"));
+    auto head = treeItem("bone:head");
+    QVERIFY(head);
+    tree->scrollToItem(head);
+    const QRect hr = tree->visualItemRect(head);
+    QTest::mouseClick(tree->viewport(), Qt::LeftButton, Qt::ControlModifier, QPoint(hr.left() + 16, hr.center().y()));
+    QTest::qWait(60);
+    int revision = w->currentView().value("revision").toInt();
+    click("cutoutNewChainIk");
+    QVERIFY2(waitFor([&] { return !w->busy() && w->currentView().value("revision").toInt() == revision + 1; }, 10000), qPrintable(status->text() + noErrors()));
+    QVERIFY(settle());
+    const QJsonArray ik = psd().value("ik").toArray();
+    QVERIFY2(!ik.isEmpty() && ik.last().toObject().value("bones").toArray() == QJsonArray({"root", "head"}), qPrintable(QJsonDocument(psd().value("ik").toArray()).toJson()));
+    const QString ikId = ik.last().toObject().value("id").toString();
+    auto ikOf = [&] { for (auto k : psd().value("ik").toArray()) if (k.toObject().value("id").toString() == ikId) return k.toObject(); return QJsonObject(); };
+    revision = w->currentView().value("revision").toInt();
+    click("cutoutIkStretch");
+    QVERIFY2(waitFor([&] { return !w->busy() && ikOf().value("stretch").toBool(); }, 10000), qPrintable(status->text()));
+    QVERIFY(settle());
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);
+    // 물리 추가 on the head with the 장식 흔들림 preset, then one field.
+    QVERIFY(showPage("cutoutPhysicsPage"));
+    QVERIFY(select("bone:head"));
+    QVERIFY(choose(panel->findChild<QComboBox *>("cutoutPhysicsPreset"), "accessory"));
+    revision = w->currentView().value("revision").toInt();
+    click("cutoutAddPhysics");
+    QVERIFY2(waitFor([&] { return !w->busy() && psd().value("physics").toArray().size() == 1; }, 10000), qPrintable(status->text() + noErrors()));
+    QVERIFY(settle());
+    QCOMPARE(w->currentView().value("revision").toInt(), revision + 1);
+    auto physics = [&] { return psd().value("physics").toArray().first().toObject(); };
+    QCOMPARE(physics().value("bone").toString(), QString("head"));
+    QCOMPARE(physics().value("damping").toDouble(), 0.92);
+    typeSpin(panel->findChild<QDoubleSpinBox *>("cutoutPhysicsStrength"), "80");
+    QVERIFY2(waitFor([&] { return !w->busy() && physics().value("strength").toDouble() == 80; }, 10000), qPrintable(status->text()));
+    QVERIFY(settle());
+    // Preview playback simulates (the info line reports the steps); stopping goes back to the clip pose.
+    click("cutoutModeAnimate");
+    QVERIFY(settle());
+    click("cutoutPlay");
+    auto info = panel->findChild<QLabel *>("cutoutPhysicsInfo");
+    QVERIFY2(waitFor([&] { return info->text().contains(QString::fromUtf8("미리 보기")); }, 5000), qPrintable(info->text()));
+    QTest::qWait(300);
+    canvas->grab().save(evidence + "/12-physics-canvas.png");
+    click("cutoutPlay");
+    QVERIFY(waitFor([&] { return !info->text().contains(QString::fromUtf8("미리 보기")); }, 5000));
+    menuClick(w->findChild<QAction *>("undoEdit"), &hooks, "되돌리기");
+    QVERIFY(waitFor([&] { return !w->busy() && physics().value("strength").toDouble() != 80; }));
+    QVERIFY(settle());
+    menuClick(w->findChild<QAction *>("redoEdit"), &hooks, "다시 실행");
+    QVERIFY(waitFor([&] { return !w->busy() && physics().value("strength").toDouble() == 80; }));
+    QVERIFY(settle());
+    for (auto d : w->currentView().value("diagnostics").toArray())
+      QVERIFY2(!(d.toObject().value("severity") == "error" && d.toObject().value("file").toString().contains("psd-hero")), qPrintable(d.toObject().value("message").toString()));
+    click("cutoutModeSetup");
+    QVERIFY(settle());
+    QVERIFY2(saveProject(), qPrintable(w->lastError));
   }
 
   // Hand-off for the browser / exported-player checks and the reusable demo copy.

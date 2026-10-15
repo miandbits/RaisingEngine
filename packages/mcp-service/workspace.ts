@@ -6,6 +6,7 @@ import { traceScenario } from '../analysis-service/scenario.js';
 import { readFile } from 'node:fs/promises';
 import { StudioEditor, type Edit } from '../studio-service/editor.js';
 import { importSprites, type SpriteImportInput } from '../studio-service/sprites.js';
+import { importPluginContent } from '../studio-service/plugin-import.js';
 import { ProjectConflict } from '../project-service/version.js';
 import { runScenario } from '../runtime-service/scenario.js';
 import { createSession, dispatchSession } from '../runtime-service/session.js';
@@ -135,6 +136,31 @@ export class McpWorkspace {
     const lock = editor.documents.find(d => d.kind === 'pluginLock')?.data ?? null;
     try { return { ok: true, version: editor.diskVersion(), plugin, op, result: await callProjectPlugin(this.pluginStore, lock, plugin, op, payload) as unknown }; }
     catch (error) { throw new ToolFault((error as { code?: string }).code ?? 'PLUGIN_ERROR', error instanceof Error ? error.message : String(error)); }
+  }
+
+  /**
+   * Plugin import hook (packages/plugin-host CONTRACT.md §11, e.g. cutout `importLayers` from a
+   * layered PSD): `dryRun` returns the preview; otherwise the images and documents save as one
+   * version-checked transaction, like apply_project_changes.
+   */
+  async pluginImport(expectedVersion: string, plugin: string, op: string, payload: Record<string, unknown>, dryRun: boolean, reason: string) {
+    if (!dryRun && this.readOnly) throw new ToolFault('READ_ONLY', '이 MCP 서버는 읽기 전용입니다.');
+    const editor = await this.open(expectedVersion), before = editor.fileVersions();
+    if (!dryRun) editor.readOnly = false;
+    try {
+      const pluginImport = await importPluginContent(editor, { plugin, op, payload, dryRun, expectedVersion }, editor.revision);
+      if (dryRun || !pluginImport.changed) return { ok: true, version: editor.diskVersion(), dryRun, pluginImport };
+      await editor.validate(editor.revision);
+      if (editor.diagnostics.some(d => d.severity === 'error')) throw new ToolFault('VALIDATION_FAILED', '가져온 내용에 오류가 있어 저장하지 않았습니다.', { diagnostics: editor.diagnostics });
+      await editor.save(editor.revision);
+      const after = editor.fileVersions();
+      return { ok: true, previousVersion: expectedVersion, version: editor.diskVersion(), reason, dryRun, pluginImport,
+        changes: [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(file => before[file] !== after[file]).map(file => ({ file, before: before[file] ?? null, after: after[file] ?? null })),
+        diagnostics: editor.diagnostics };
+    } catch (error) {
+      if (error instanceof ProjectConflict || error instanceof ToolFault || (error as NodeJS.ErrnoException).code) throw error;
+      throw new ToolFault('CHANGE_REJECTED', error instanceof Error ? error.message : String(error), { diagnostics: editor.diagnostics });
+    }
   }
 
   async validate(expectedVersion: string) {

@@ -20,6 +20,7 @@ import { StudioEditor } from '../../dist/packages/studio-service/editor.js';
 import { detachProject } from '../../dist/packages/project-service/snapshot.js';
 import { importPng } from '../../dist/packages/studio-service/images.js';
 import { importSprites } from '../../dist/packages/studio-service/sprites.js';
+import { importPluginContent } from '../../dist/packages/studio-service/plugin-import.js';
 import { importFont } from '../../dist/packages/studio-service/fonts.js';
 import { extractMessages,contentFromDocuments } from '../../dist/packages/localization/catalog.js';
 import { createTemplateProject, createProjectFromSource } from '../../dist/packages/studio-service/templates.js';
@@ -221,6 +222,12 @@ export class QtStudioService {
         if (typeof params.plugin !== 'string' || typeof params.op !== 'string') throw new Error('plugin과 op를 지정하세요.');
         const lock = this.editor.documents.find(d => d.kind === 'pluginLock')?.data ?? null;
         extra = { pluginResult: await callProjectPlugin(this.pluginStore, lock, params.plugin, params.op, params.payload ?? {}) }; break;
+      }
+      case 'pluginImport': {
+        // Plugin import hook (CONTRACT.md §11): dryRun = preview, else images + documents as one edit.
+        extra = { pluginImport: await importPluginContent(this.editor, { plugin: params.plugin, op: params.op, payload: params.payload ?? {}, dryRun: params.dryRun === true }, params.revision) };
+        if (params.dryRun !== true) await this.editor.validate(this.editor.revision);
+        break;
       }
       case 'importImage':
         extra = { importedAssetId: await importPng(this.editor, params.file, params.revision) };

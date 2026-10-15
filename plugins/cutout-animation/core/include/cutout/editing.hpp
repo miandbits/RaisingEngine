@@ -84,6 +84,22 @@ struct EditResult {
  * {clip, name, timeMs}. The multi-key ops (moveKeys scaleKeys deleteKeys copyKeys pasteKeys) take event
  * keys as refs {target: "event", property: <name>, timeMs}; event keys collide only with a key of the
  * same name at the same time.
+ * Clipping (plugin 1.12.0): addClipping {slot (new), bone?, before? | index?, name? ("clip"), vertices
+ * (bone px) | worldVertices (rig px, setup pose), end? (= before)} inserts a slot showing a clipping
+ * attachment; setClipping {slot, name?, skin?, vertices? | worldVertices?, end?}; deleteSlot of a clip
+ * range's end moves it to the slot below (an emptied range removes the clipping).
+ * Sequences (plugin 1.12.0): setSequence {slot, name?, skin?, frames (image ids; [] / null = remove),
+ * setupIndex?, width?, height?}; keys setKey {target: "slot:<id>", property: "sequence", mode? (hold),
+ * index? (0), delay? (100 ms)} (step only; copy/paste carry mode/index/delay).
+ * IK chains (plugin 1.13.0): addIk bones may be a run of 3..32 bones (each the direct child of the
+ * previous; tip / length tip of the last bone as effector, solved by FABRIK); addIk/setIk take
+ * stretch / compress (aim only) / uniform (booleans, false drops the key).
+ * Physics (plugin 1.13.0): addPhysics {bone | bones, preset? (hair | skirt | accessory), id?, name?,
+ * x?, y?, rotate?, scaleX?, inertia?, strength?, damping?, mass?, wind?, gravity?, mix?, limit?,
+ * step?, teleport?, resetOnStart?} (one constraint per bone, extra.physics = ids) setPhysics
+ * {physics, preset?, bone?, name?, ...fields (null = default)} renamePhysics {physics, id?, name?}
+ * deletePhysics {physics}; keys setKey {target: "physics:<id>", property: "mix"}. deleteBone drops
+ * the bone's physics (warning ANIM_PHYSICS_REMOVED).
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */
@@ -104,6 +120,8 @@ Transform toAxes(const Transform& local, const Affine& parentWorld, Axes axes);
  *  nullopt when the parent matrix is singular. */
 std::optional<Transform> fromAxes(const Transform& shown, const Affine& parentWorld, Axes axes, const Transform& hint);
 
+/** Physics presets (plugin 1.13.0): [{id, label (Korean), fields}] for addPhysics/setPhysics `preset`. */
+const Json& physicsPresets();
 /** Decompose into x,y,rotation,scaleX,scaleY. Skew (non-uniform parent scale) is dropped; *skew gets its size. */
 Transform decompose(const Affine& m, double* skew = nullptr);
 /** Setup-pose world matrices keyed by bone id. Tolerates unknown parents (treated as roots) and cycles. */

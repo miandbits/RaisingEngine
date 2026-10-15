@@ -77,21 +77,51 @@ struct Attachment {
   size_t hull = 0;
   std::vector<int> edges;
   std::optional<AtlasRegion> atlas;  // export-time atlas packing (plugin 1.9.0)
+  /**
+   * Clipping (plugin 1.12.0, `type: "clipping"`, Spine semantics): no picture. `vertices` is the
+   * clip polygon (x, y pairs placed like mesh vertices: slot bone · offset, or weighted with
+   * `binds`/`weights`, deform keys apply), and the slots after this one up to and including
+   * `clipEnd` (draw order) are drawn only inside it. Inside an active clip range another clipping
+   * attachment is ignored (no nesting).
+   */
+  bool clipping = false;
+  std::string clipEnd;
+  int clipEndIndex = -1;
+  /**
+   * Image sequence (plugin 1.12.0, `sequence`): `frames` are image assets of the same size (frame
+   * 0 = imageAssetId); a slot's sequence keys pick the frame, `setupIndex` without keys.
+   * `frameAtlas` (export only) holds each frame's atlas region (nullopt = its own image).
+   */
+  std::vector<std::string> frames;
+  std::vector<std::optional<AtlasRegion>> frameAtlas;
+  int setupIndex = 0;
+  bool sequence() const { return !frames.empty(); }
   size_t vertexCount() const { return vertices.size() / 2; }
 };
 
 /** Expression is the rig-level track `{"target":"rig","property":"expression"}` (step only).
  *  Mix / BendPositive key IK constraints: `{"target":"ik:<id>"}` (bend is step only, value bool).
- *  Deform keys mesh vertex offsets: `{"target":"slot:<id>","property":"deform","attachment":"<name>"}`. */
-enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive, Deform };
+ *  Deform keys mesh vertex offsets: `{"target":"slot:<id>","property":"deform","attachment":"<name>"}`.
+ *  Sequence keys (plugin 1.12.0) pick the frame of the slot's sequence attachment: `{"target":"slot:<id>","property":"sequence"}`.
+ *  Physics mix keys (plugin 1.13.0): `{"target":"physics:<id>","property":"mix"}`. */
+enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive, Deform, Sequence };
+/** Sequence key playback (plugin 1.12.0, Spine SequenceMode): hold shows `index`; the others
+ *  advance one frame per `delay` ms from the key's time (reverse modes count from the last frame). */
+enum class SequenceMode { Hold, Once, Loop, Pingpong, OnceReverse, LoopReverse, PingpongReverse };
+const char* sequenceModeName(SequenceMode mode);
+std::optional<SequenceMode> parseSequenceMode(const std::string& name);
+constexpr size_t MAX_SEQUENCE_FRAMES = 256, MAX_CLIP_VERTICES = 256;
 enum class Interp { Step, Linear, Bezier };
 /** `curve` is used only when interp is Bezier (segment from this key to the next).
- *  Deform keys carry `offsets` (dx, dy per vertex, image pixels) instead of `value`. */
-struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; std::vector<double> offsets; };
+ *  Deform keys carry `offsets` (dx, dy per vertex, image pixels) instead of `value`.
+ *  Sequence keys (step): `value` = the frame index, `mode` and `delay` (ms per frame). */
+struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; std::vector<double> offsets;
+             SequenceMode mode = SequenceMode::Hold; double delay = 0; };
 /** bone=false + rig=true: the rig expression track (target "", targetIndex -1, key.name = expression id).
  *  bone=false + ik=true: an IK constraint track (target = constraint id, targetIndex = Rig::ik index;
- *  bendPositive keys carry value 1/0). Deform tracks are slot tracks naming `attachment`. */
-struct Track { bool bone = true; bool rig = false; bool ik = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; std::string attachment; };
+ *  bendPositive keys carry value 1/0). bone=false + physics=true: a physics mix track (targetIndex =
+ *  Rig::physics index). Deform tracks are slot tracks naming `attachment`. */
+struct Track { bool bone = true; bool rig = false; bool ik = false; bool physics = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; std::string attachment; };
 /**
  * Rig-level event definition (plugin 1.8.0, Spine-like): optional default payload of every key
  * of that name. `audio` names an audio asset the host MAY play when the event fires (with
@@ -124,25 +154,61 @@ struct Expression {
 
 /**
  * IK constraint (plugin 1.3.0). `bones` = 1 (aim: the bone-local direction `aimAxis` (plugin 1.4.1,
- * degrees, default 0 = +x, the direction a bone length points) points at the target) or 2 (parent,
- * direct child: two-bone limb). Two-bone effector precedence: the explicit `tip` bone's origin
- * (plugin 1.4.0, a direct child of the lower bone) > the lower bone's own tip (length, 0) when its
- * length > 0 (plugin 1.5.0) > its first child bone in array order > its origin. Solved after
- * expressions on world transforms, in `Rig::ikOrder`.
+ * degrees, default 0 = +x, the direction a bone length points) points at the target), 2 (parent,
+ * direct child: two-bone limb, analytic) or 3..MAX_IK_CHAIN (plugin 1.13.0: each bone the direct
+ * child of the previous one, solved by FABRIK). Effector precedence of chains of 2+: the explicit
+ * `tip` bone's origin (plugin 1.4.0, a direct child of the last bone) > the last bone's own tip
+ * (length, 0) when its length > 0 (plugin 1.5.0) > its first child bone in array order > its
+ * origin. Solved after expressions on world transforms, in `Rig::ikOrder`.
+ * Stretch (plugin 1.13.0, Spine-like): `stretch` scales the chain along its length axis when the
+ * target is out of reach, `compress` (aim chains only) when it is closer than the bone's length,
+ * `uniform` scales y too. Needs every chain bone to have a length (`stretchable`); otherwise, and
+ * for aim chains with an aimAxis other than 0, it is a no-op (validation warns).
  */
+constexpr size_t MAX_IK_CHAIN = 32;
+/** FABRIK of chains of 3+ (plugin 1.13.0): at most this many backward/forward passes, fewer when
+ *  the effector is within IK_CHAIN_TOLERANCE rig px of the target. Fixed numbers: every runtime
+ *  runs the same arithmetic, so native and Wasm agree to libm noise. */
+constexpr int IK_CHAIN_ITERATIONS = 32;
+constexpr double IK_CHAIN_TOLERANCE = 0.01;
 struct IkConstraint {
   std::string id, name;
   std::vector<int> bones;     // chain, parent first
   int target = -1;
-  int tip = -1;               // two-bone effector bone (-1 = none: tipLength, else the child origin aims at the target)
-  double tipLength = 0;       // two-bone, tip < 0: effector (tipLength, 0) in the lower bone (its length, plugin 1.5.0)
+  int tip = -1;               // effector bone of chains of 2+ (-1 = none: tipLength, else the last bone's origin)
+  double tipLength = 0;       // chains of 2+, tip < 0: effector (tipLength, 0) in the last bone (its length, plugin 1.5.0)
   bool explicitTip = false;   // `tip` named in the data (else the implicit first-child rule)
   double mix = 1;
   double aimAxis = 0;         // aim: bone-local direction (degrees, before the bone's scale) aimed at the target
   bool bendPositive = true;   // two-bone: the child turns in the positive (clockwise on screen) direction
-  bool stretch = false;       // accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH)
+  bool stretch = false, compress = false, uniform = false;  // plugin 1.13.0 (see above)
+  bool stretchable = false;   // every chain bone has a length > 0 (and aim chains aim along +x)
   int order = 0;
   std::vector<int> affected;  // bones[0] and its descendants, parents first: world recomputed after solving
+};
+
+/**
+ * Physics constraint (plugin 1.13.0, Spine 4.2-like, presentation only). Bone `bone` follows its
+ * animated pose (after IK) through a damped spring per channel: `x`, `y` (world offset of its
+ * origin), `rotate` (turn about its origin) and `scaleX` (stretch along its length), each a mix
+ * 0..1. `inertia` 0..1 = how much it lags behind the motion of its parents, `strength` (1/s^2)
+ * pulls it back, `damping` = velocity kept per 1/60 s, `mass` divides the forces, `wind` (+x)
+ * and `gravity` (+y, down) in px/s^2, `limit` (px/s) caps the motion that pushes it, `mix` 0..1
+ * (keyable: `physics:<id>` mix tracks). The simulation runs in fixed `step`s (seconds) of
+ * instance time: see docs/contract.md "Physics" for the integrator, determinism and resets.
+ */
+constexpr double DEFAULT_PHYSICS_LEVER = 50;  // px: lever of rotate/scaleX on a point bone (no length)
+struct PhysicsConstraint {
+  std::string id, name;
+  int bone = -1;
+  double x = 0, y = 0, rotate = 0, scaleX = 0;
+  double inertia = 1, strength = 100, damping = 0.85, mass = 1, wind = 0, gravity = 0, mix = 1;
+  double limit = 5000, step = 1.0 / 60, teleport = 300;
+  bool resetOnStart = false;
+  double stepMs = 1000.0 / 60;  // step in ms (derived)
+  double decay = 1;             // damping^(60 step): velocity kept per step (derived once, at parse)
+  double lever = DEFAULT_PHYSICS_LEVER;  // the bone's length, or the default for point bones
+  std::vector<int> affected;    // the bone and its descendants, parents first
 };
 
 struct Rig {
@@ -161,6 +227,8 @@ struct Rig {
   std::vector<IkConstraint> ik;
   std::vector<int> ikOrder;         // evaluation order: (order, array index) ascending
   std::vector<EventDef> events;     // event definitions (plugin 1.8.0); empty = any key name
+  std::vector<PhysicsConstraint> physics;  // plugin 1.13.0
+  std::vector<int> physicsOrder;    // evaluation order: the bone's place in evalOrder, then array index
 
   int boneIndex(const std::string& id) const;
   int slotIndex(const std::string& id) const;
@@ -169,6 +237,7 @@ struct Rig {
   int expressionIndex(const std::string& id) const;  // -1 = unknown / none
   int ikIndex(const std::string& id) const;
   int eventIndex(const std::string& name) const;     // -1 = not defined
+  int physicsIndex(const std::string& id) const;
   /** Lookup order: skin `skin` (when >= 0) first, then the rig's default attachments. */
   const Attachment* attachment(const std::string& slot, const std::string& name, int skin = -1) const;
   int64_t mixDuration(const std::string& from, const std::string& to) const;

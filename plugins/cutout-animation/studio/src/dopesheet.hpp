@@ -32,8 +32,10 @@ class Dopesheet : public QWidget {
     bool events = false;
     QStringList names;
   };
-  /** Row height, selection strip (extent + scale handles) and the key distance below which keys cluster. */
+  /** Row height, selection strip (extent + scale handles) and the key distance below which keys
+   *  cluster, at UI scale 1; the drawn sizes follow the time view's UI scale (plugin 1.10.0). */
   static constexpr int ROW = 20, STRIP = 10, CLUSTER_PX = 7;
+  int rowHeight() const { return rowH(); }
 
   explicit Dopesheet(QWidget* parent = nullptr);
   /** Share zoom/scroll/playhead/selection with other views (the panel's TimeView). */
@@ -62,7 +64,7 @@ class Dopesheet : public QWidget {
   // Geometry (shared with automation/tests).
   int timeToX(double ms) const;
   int rowCenterY(int row) const;
-  /** Key-index groups of a row closer than CLUSTER_PX at the current zoom (size 1 = lone key). */
+  /** Key-index groups of a row closer than clusterPx() at the current zoom (size 1 = lone key). */
   QVector<QVector<int>> clusters(int row) const;
   /** Center of the selection strip's scale handle (left/right end), nullopt below 2 distinct times. */
   std::optional<QPointF> scaleHandle(bool right) const;
@@ -102,7 +104,12 @@ class Dopesheet : public QWidget {
   void moveEvent(QMoveEvent*) override { update(); }  // the sticky header must repaint on scroll
 
  private:
-  static constexpr int LABEL = TimeView::LABEL, RULER = TimeView::RULER;
+  double ui() const { return view_->uiScale(); }
+  int label() const { return view_->label(); }
+  int ruler() const { return view_->ruler(); }
+  int rowH() const { return int(std::lround(ROW * ui())); }
+  int strip() const { return int(std::lround(STRIP * ui())); }
+  double clusterPx() const { return CLUSTER_PX * ui(); }
   enum class Drag { None, Pan, Scrub, LoopIn, LoopOut, Keys, ScaleLeft, ScaleRight, Band };
   struct Hit { int row = -1; QVector<int> keys; };  // key indices (sorted by time) of a lone key or a cluster
   TimeView* view_ = nullptr;
@@ -119,7 +126,7 @@ class Dopesheet : public QWidget {
   double xToTime(double x) const { return view_->xToTime(x); }
   /** Ruler + selection strip stay at the top of the visible area when the rows scroll. */
   int headerTop() const { return std::max(0, -y()); }
-  int rowTop(int row) const { return RULER + STRIP + row * ROW; }
+  int rowTop(int row) const { return ruler() + strip() + row * rowH(); }
   int rowAt(int y) const;
   Hit hitAt(QPointF p) const;
   KeyRef pickInCluster(const Hit& hit) const;

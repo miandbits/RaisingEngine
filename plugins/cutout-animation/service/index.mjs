@@ -6,6 +6,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { ATLAS_DEFAULTS, attachmentsOf, buildAtlas, decodePng } from './atlas.mjs';
+import { importLayers } from './layer-import.mjs';
+
+/** Image ids an attachment draws: its picture and, for sequences (plugin 1.12.0), every frame. */
+const drawnImages = a => [...new Set([a?.imageAssetId, ...(Array.isArray(a?.sequence?.frames) ? a.sequence.frames : [])].filter(id => typeof id === 'string' && id))];
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RIG_SENTINEL = '#rig';
@@ -162,7 +166,7 @@ export async function createService({ pluginDir, manifest }) {
     const referenced = new Set();
     for (const rig of rigs.values())
       for (const list of [rig.data.attachments, ...(Array.isArray(rig.data.skins) ? rig.data.skins.map(s => s?.attachments) : [])])
-        for (const a of Array.isArray(list) ? list : []) { const asset = images.get(a?.imageAssetId); if (asset?.kind === 'image' && asset.absolutePath) referenced.add(asset.absolutePath); }
+        for (const a of Array.isArray(list) ? list : []) for (const id of drawnImages(a)) { const asset = images.get(id); if (asset?.kind === 'image' && asset.absolutePath) referenced.add(asset.absolutePath); }
     const sizes = new Map(await Promise.all([...referenced].map(async file => [file, await pngSize(file)])));
 
     const controllersOf = id => [...controllers.values()].filter(c => c.data?.rig === id);
@@ -185,6 +189,18 @@ export async function createService({ pluginDir, manifest }) {
         const size = sizes.get(asset.absolutePath);
         if (size && (size.width !== attachment.width || size.height !== attachment.height))
           push(rig.file, `${pointer}/width`, 'ANIM_IMAGE_SIZE_MISMATCH', `첨부 크기 ${attachment.width}×${attachment.height}가 PNG '${id}'의 실제 크기 ${size.width}×${size.height}와 다릅니다.`, [rig.id, id], 'warning');
+        // Sequence frames (plugin 1.12.0) share the attachment's placement and uvs: one size for all.
+        const frames = Array.isArray(attachment?.sequence?.frames) ? attachment.sequence.frames : [];
+        for (const [f, frameId] of frames.entries()) {
+          if (f === 0 || typeof frameId !== 'string' || !frameId) continue;  // frame 0 = imageAssetId (checked above / by the core)
+          const framePointer = `${pointer}/sequence/frames/${f}`, frameAsset = images.get(frameId);
+          if (!frameAsset || frameAsset.kind !== 'image') { push(rig.file, framePointer, 'ANIM_IMAGE_MISSING', frameAsset ? `에셋 '${frameId}'는 이미지가 아닙니다.` : `시퀀스 프레임 이미지 '${frameId}'가 없습니다.`, [rig.id, frameId]); continue; }
+          if (!frameAsset.absolutePath) continue;
+          if (!sizes.has(frameAsset.absolutePath)) sizes.set(frameAsset.absolutePath, await pngSize(frameAsset.absolutePath));
+          const frameSize = sizes.get(frameAsset.absolutePath);
+          if (size && frameSize && (frameSize.width !== size.width || frameSize.height !== size.height))
+            push(rig.file, framePointer, 'ANIM_SEQUENCE_FRAME_SIZE', `시퀀스 프레임 '${frameId}'(${frameSize.width}×${frameSize.height})의 크기가 첫 프레임 '${id}'(${size.width}×${size.height})와 다릅니다. 모든 프레임을 같은 크기로 저장하세요.`, [rig.id, frameId]);
+        }
       }
     }
     // Event sounds (plugin 1.8.0): `audio` of a definition must name an audio asset.
@@ -236,12 +252,22 @@ export async function createService({ pluginDir, manifest }) {
 
   /**
    * Pass-through to the core JSON ops (validate, sample, template, edit, …). Never writes project
-   * files; the only read is the PNG an `edit` → `autoOutline` names by `imagePath` (decoded here
-   * into the op's `mask`, plugin 1.6.0).
+   * files; the only reads are the PNG an `edit` → `autoOutline` names by `imagePath` (decoded here
+   * into the op's `mask`, plugin 1.6.0) and the layered file of `importLayers` (plugin 1.11.0).
    */
   async function call(op, payload = {}) {
     if (typeof op !== 'string' || !/^[a-zA-Z][a-zA-Z0-9]{0,63}$/.test(op)) throw new Error('잘못된 플러그인 명령입니다.');
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('플러그인 명령 인자는 객체여야 합니다.');
+    // Layer import preview (plugin 1.11.0) without the project: `target: {id, rig}` re-imports onto
+    // that rig data; `includeImages` also encodes the PNGs (base64). Applying it with its images is
+    // the host's job (Qt pluginImport / MCP plugin_import, which run prepareImport below).
+    if (op === 'importLayers') {
+      const { target, includeImages, ...rest } = payload;
+      if (target !== undefined && !(target && typeof target === 'object' && typeof target.id === 'string' && target.rig && typeof target.rig === 'object')) throw new Error('target은 {id, rig}입니다.');
+      const result = await importLayers({ payload: target ? { ...rest, rig: target.id } : rest, documents: target ? [{ type: 'rig', id: target.id, data: target.rig }] : [],
+        dryRun: includeImages !== true, validateRig: rigDiagnostics });
+      return { ok: true, ...result.report, documents: result.documents, images: result.images.map(i => ({ id: i.id, png: Buffer.from(i.bytes).toString('base64') })) };
+    }
     const body = { ...payload, op };
     if (op === 'edit' && body.operation && typeof body.operation === 'object') {
       body.operation = structuredClone(body.operation);
@@ -257,7 +283,8 @@ export async function createService({ pluginDir, manifest }) {
    */
   function requiredHostFeatures(documents) {
     const rigs = (Array.isArray(documents) ? documents : []).filter(d => d?.type === 'rig');
-    const mesh = rigs.some(d => attachmentsOf(d.data).some(a => a.type === 'mesh'));
+    // Clipping (plugin 1.12.0) cuts the parts it clips into mesh items: the same capability.
+    const mesh = rigs.some(d => attachmentsOf(d.data).some(a => a.type === 'mesh' || a.type === 'clipping'));
     // Atlas regions (plugin 1.9.0) are written by prepareExport; players must draw sub-images.
     const atlas = rigs.some(d => attachmentsOf(d.data).some(a => a.atlas));
     return [...(mesh ? ['plugin-mesh-v1'] : []), ...(atlas ? ['plugin-atlas-v1'] : [])];
@@ -277,7 +304,7 @@ export async function createService({ pluginDir, manifest }) {
     if (!Array.isArray(hostFeatures) || !hostFeatures.includes('plugin-atlas-v1')) return { documents: exported, report: { atlas: false, reason: 'player' } };
     const byId = new Map((assets ?? []).map(a => [a.id, a]));
     const wanted = new Set();
-    for (const rig of exported.filter(d => d.type === 'rig')) for (const a of attachmentsOf(rig.data)) if (typeof a.imageAssetId === 'string') wanted.add(a.imageAssetId);
+    for (const rig of exported.filter(d => d.type === 'rig')) for (const a of attachmentsOf(rig.data)) for (const id of drawnImages(a)) wanted.add(id);
     const images = new Map();
     for (const id of [...wanted].sort()) {
       const asset = byId.get(id);
@@ -299,5 +326,22 @@ export async function createService({ pluginDir, manifest }) {
       report: { atlas: true, pages: atlas.pages.map(p => ({ id: pageId(p.index), width: p.width, height: p.height, bytes: p.png.length })), packed: atlas.packed, skipped: atlas.skipped },
     };
   }
-  return { validate, call, requiredHostFeatures, prepareExport };
+  /** Core diagnostics of one rig (no controllers): what the layer import checks before returning. */
+  function rigDiagnostics(data) {
+    const reply = validateRig(data, []);
+    if (!reply.ok) return [{ severity: 'error', pointer: '', code: 'ANIM_CORE', message: String(reply.error) }];
+    return (reply.diagnostics ?? []).map(d => ({ ...d, pointer: String(d.pointer).replace(/^\/data/, '') }));
+  }
+  /**
+   * Import hook (packages/plugin-host CONTRACT.md §11, plugin 1.11.0): op `importLayers` — a
+   * layered PSD/PSB or a PNG folder into a new character (rig + controller) or onto an existing
+   * rig (`payload.rig`). Reads only the named source file(s); the host publishes the images and
+   * applies the documents as one edit.
+   */
+  async function prepareImport({ op, payload, dryRun, documents }) {
+    if (op !== 'importLayers') throw new Error(`알 수 없는 가져오기 명령입니다: ${op}`);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('가져오기 인자는 객체여야 합니다.');
+    return importLayers({ payload, documents: (documents ?? []).filter(d => d?.type === 'rig' || d?.type === 'controller'), dryRun: dryRun === true, validateRig: rigDiagnostics });
+  }
+  return { validate, call, requiredHostFeatures, prepareExport, prepareImport };
 }

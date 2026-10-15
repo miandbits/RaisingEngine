@@ -3,6 +3,7 @@
 // Every gesture must issue exactly one edit and leave documents valid for the core.
 #include <QtTest>
 #include <QtWidgets>
+#include <cstring>
 #include <functional>
 #include <set>
 #include "cutout-plugin.hpp"
@@ -26,6 +27,10 @@ class MockHost : public raising::StudioHost {
   QMap<QString, QMenu*> menus;
   raising::StudioPlugin* plugin = nullptr;
   QString root;
+  /** `pluginImport` (plugin 1.11.0 layer import): the test plays the service op; members of its
+   *  result go into the reply. Every request's params are kept. */
+  std::function<QJsonObject(const QJsonObject&)> pluginImport;
+  QList<QJsonObject> pluginImports;
 
   QJsonObject view() const override {
     // Diagnostics are recomputed only when the documents change (a real host caches its view too),
@@ -73,6 +78,10 @@ class MockHost : public raising::StudioHost {
       const QString id = "img-" + QFileInfo(file).completeBaseName().toLower();
       assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", "assets/" + QFileInfo(file).fileName()}, {"absolutePath", file}});
       reply["importedAssetId"] = id;
+    } else if (method == "pluginImport") {
+      pluginImports << params;
+      const QJsonObject result = pluginImport ? pluginImport(params) : QJsonObject{{"error", "no import"}};
+      for (auto it = result.begin(); it != result.end(); ++it) reply[it.key()] = it.value();
     }
     reply["view"] = view();
     if (plugin) plugin->viewChanged();
@@ -163,6 +172,7 @@ class StudioTests : public QObject {
   std::optional<CutoutPanel::SkinImageChoice> nextSkinImage, skinPrefill;  // scripted 그림 지정 / what it was offered
   QTemporaryDir dir;
   int gestures = 0;
+  bool realFonts = false;  // Windows UI fonts loaded: text widths are the real editor's
 
   void pump() { for (int i = 0; i < 6; i++) QCoreApplication::processEvents(); }
   QString png(const QString& name, QSize size, QColor color) {
@@ -225,6 +235,18 @@ class StudioTests : public QObject {
     keep = rig();
     for (const auto& c : keep["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property) return &t;
     return nullptr;
+  }
+  /** keyOf / timesOf for another character's rig data. */
+  static Json keyOfRig(const Json& data, const char* clip, const char* target, const char* property, int ms) {
+    for (const auto& c : data["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property)
+      for (const auto& k : t["keys"]) if (k["timeMs"] == ms) return k;
+    return Json();
+  }
+  static QVector<int> timesOfRig(const Json& data, const char* clip, const char* target, const char* property) {
+    QVector<int> out;
+    for (const auto& c : data["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property)
+      for (const auto& k : t["keys"]) out << k["timeMs"].get<int>();
+    return out;
   }
   Json keyOf(const char* clip, const char* target, const char* property, int ms) const {
     if (const Json* t = track(clip, target, property))
@@ -347,6 +369,85 @@ class StudioTests : public QObject {
     tabs->setCurrentIndex(keep);
     return problems;
   }
+  /** The splitter pane holding `w` (its ancestor that is a splitter child). */
+  QWidget* paneOf(QWidget* w) const {
+    for (QWidget* p = w; p && p != panel; p = p->parentWidget())
+      if (qobject_cast<QSplitter*>(p->parentWidget())) return p;
+    return panel;
+  }
+  /** Every tool of every visible row is shown (not behind the » overflow) and lies inside its row
+   *  and its pane (plugin 1.10.0). */
+  QStringList rowProblems() {
+    QStringList problems;
+    if (!realFonts) return problems;  // fallback glyphs: widths say nothing about the real editor
+    for (const QString& row : panel->overflowingRows()) problems << row + " overflows (»)";
+    for (QToolBar* bar : panel->findChildren<QToolBar*>()) {
+      if (!bar->isVisible()) continue;
+      QWidget* pane = paneOf(bar);
+      for (QWidget* w : bar->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (!w->objectName().startsWith("cutout") || w->property("cutoutGroupLabel").toBool() || w->isWindow()) continue;
+        const QString what = bar->objectName() + "/" + w->objectName();
+        if (!w->isVisible()) { problems << what + " hidden"; continue; }
+        const QRect r(w->mapTo(pane, QPoint(0, 0)), w->size());
+        if (!QRect(QPoint(0, 0), bar->size()).contains(QRect(w->pos(), w->size()))) problems << what + " outside its row";
+        if (!pane->rect().contains(r)) problems << what + QString(" outside %1 (%2,%3 %4x%5 in %6x%7)").arg(pane->objectName()).arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).arg(pane->width()).arg(pane->height());
+      }
+    }
+    return problems;
+  }
+  /** Splitter children at their minimum, the panel filling the page, the key widgets on screen. */
+  QStringList splitterProblems(QWidget* page) {
+    QStringList problems;
+    if (panel->geometry() != page->rect()) problems << "panel does not fill the workspace";
+    for (QSplitter* split : panel->splitters()) {
+      if (!split->isVisible()) continue;
+      for (int i = 0; i < split->count(); i++) {
+        QWidget* child = split->widget(i);
+        if (!child->isVisible()) continue;
+        const bool horizontal = split->orientation() == Qt::Horizontal;
+        const int have = horizontal ? child->width() : child->height();
+        const int explicitMin = horizontal ? child->minimumWidth() : child->minimumHeight();
+        const int need = explicitMin > 0 ? explicitMin : (horizontal ? child->minimumSizeHint().width() : child->minimumSizeHint().height());
+        if (have < need) problems << QString("%1[%2] %3 < %4").arg(split->objectName()).arg(i).arg(have).arg(need);
+      }
+    }
+    for (const char* name : {"cutoutModeBanner", "cutoutStatus", "cutoutCanvas"}) {
+      auto* w = find<QWidget>(name);
+      if (!w || !w->isVisible()) problems << QString(name) + " hidden";
+      else if (!panel->rect().contains(QRect(w->mapTo(panel, QPoint(0, 0)), w->size()))) problems << QString(name) + " cut off";
+    }
+    return problems;
+  }
+  /** Rows, look pages and splitters in both modes and on both timeline pages (animation, game connection). */
+  QStringList fullLayoutProblems(QWidget* page) {
+    QStringList problems;
+    auto* bottom = find<QTabWidget>("cutoutBottomTabs");
+    const auto keepMode = panel->mode();
+    for (const auto mode : {CutoutPanel::Mode::Setup, CutoutPanel::Mode::Animate}) {
+      panel->setMode(mode);
+      for (int tab : {0, 1}) {
+        bottom->setCurrentIndex(tab);
+        pump();
+        const QString where = QString(mode == CutoutPanel::Mode::Setup ? "setup" : "animate") + (tab ? "/connection: " : ": ");
+        for (const QString& p : rowProblems() + splitterProblems(page)) problems << where + p;
+      }
+      for (const QString& p : lookPageProblems()) problems << QString(mode == CutoutPanel::Mode::Setup ? "setup: " : "animate: ") + p;
+    }
+    bottom->setCurrentIndex(0);
+    panel->setMode(keepMode);
+    pump();
+    return problems;
+  }
+  QWidget* workspacePage() const { return host.mainWindow.centralWidget(); }
+  /** Typed text (Hangul included: QTest::keyClicks only knows Latin-1 keys), one key event per character. */
+  static void typeText(QWidget* w, const QString& text) {
+    for (QChar c : text) {
+      QKeyEvent press(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier, QString(c));
+      QCoreApplication::sendEvent(w, &press);
+      QKeyEvent release(QEvent::KeyRelease, Qt::Key_unknown, Qt::NoModifier, QString(c));
+      QCoreApplication::sendEvent(w, &release);
+    }
+  }
 
  private Q_SLOTS:
   void initTestCase() {
@@ -355,6 +456,16 @@ class StudioTests : public QObject {
     QCoreApplication::setOrganizationName("RaisingEngineCutoutTests");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
+    // The offscreen platform has no fonts of its own (its fallback glyphs are ~1.5x wider than
+    // real text): load the studio's Windows UI font (Segoe UI 9 pt, Hangul from Malgun Gothic)
+    // so row widths, overflow and the 1280x720 layout are measured like the real editor.
+    realFonts = QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf") >= 0 && QFontDatabase::addApplicationFont("C:/Windows/Fonts/malgun.ttf") >= 0;
+    if (realFonts) {
+      QFont ui;
+      ui.setFamilies({"Segoe UI", "Malgun Gothic"});
+      ui.setPointSizeF(9);
+      QApplication::setFont(ui);
+    }
     host.root = dir.path();
     host.plugin = &plugin;
     QCOMPARE(plugin.pluginId(), QString("cutout-animation"));
@@ -937,7 +1048,7 @@ class StudioTests : public QObject {
     QVERIFY(gesture("onion clip", 1, [&] { click("cutoutNewClip"); }));
     QCOMPARE(panel->clipId(), QString("onion"));
     double x0 = 0, y0 = 0;
-    for (const auto& b : rig()["bones"]) if (b["id"] == "root") { x0 = b.value("x", 0.0); y0 = b.value("y", 0.0); }
+    for (const auto& b : Json(rig()["bones"])) if (b["id"] == "root") { x0 = b.value("x", 0.0); y0 = b.value("y", 0.0); }
     // root x: x0-150 at 0 -> x0+150 at 1000 (looping, 1000 ms); root y key at 300; head rotation key at 700.
     panel->setAutoKey(true);
     panel->selectItem("bone:root");
@@ -1304,7 +1415,7 @@ class StudioTests : public QObject {
     panel->selectItem("bone:head");
     QVERIFY(gesture("head tilt (pending)", 0, [&] { setSpin("cutoutPropRotation", 12); }));
     QVERIFY(panel->hasPending());
-    const Json idleBefore = [&] { for (const auto& c : rig()["clips"]) if (c["id"] == "idle") return c; return Json(); }();
+    const Json idleBefore = [&] { for (const auto& c : Json(rig()["clips"])) if (c["id"] == "idle") return c; return Json(); }();
     answers = {"smile"};
     QVERIFY(gesture("capture expression", 1, [&] { click("cutoutCaptureExpression"); }));
     const Json smile = rig()["expressions"][0];
@@ -1312,7 +1423,7 @@ class StudioTests : public QObject {
     QVERIFY(same(smile["slots"], Json({{"eyes", "closed"}})));
     QVERIFY(same(smile["bones"]["head"], Json({{"rotation", 12}})));
     QVERIFY(!panel->hasPending());
-    QVERIFY(same([&] { for (const auto& c : rig()["clips"]) if (c["id"] == "idle") return c; return Json(); }(), idleBefore));  // pending keys not committed
+    QVERIFY(same([&] { for (const auto& c : Json(rig()["clips"])) if (c["id"] == "idle") return c; return Json(); }(), idleBefore));  // pending keys not committed
     QCOMPARE(panel->previewExpression(), QString("smile"));
     QVERIFY(gesture("nothing changed: capture refused", 0, [&] { panel->setMode(CutoutPanel::Mode::Setup); answers = {"same"}; QVERIFY(!panel->captureExpression()); }));
     panel->setMode(CutoutPanel::Mode::Animate);
@@ -1590,7 +1701,7 @@ class StudioTests : public QObject {
     QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
     const QPointF moved = worldOf(rig(), target.c_str());
     QVERIFY(!closeTo(moved, wristBefore, 1) && closeTo(worldOf(rig(), "wrist"), moved, 1e-6));  // the limb follows the target
-    for (const auto& b : rig()["bones"]) if (b["id"] == "elbow") QCOMPARE(b["rotation"].get<double>(), 40.0);  // ... the arm's own data untouched
+    for (const auto& b : Json(rig()["bones"])) if (b["id"] == "elbow") QCOMPARE(b["rotation"].get<double>(), 40.0);  // ... the arm's own data untouched
     // Flip the bend (Setup: the constraint's setup value).
     panel->selectIk("elbow-ik");
     QVERIFY(gesture("toggle bend", 1, [&] { click("cutoutIkBend"); }));
@@ -3242,6 +3353,11 @@ class StudioTests : public QObject {
       pump();
       QTest::qWait(30);
       const QString at = QString("%1x%2: ").arg(size.width()).arg(size.height());
+      if (size == QSize(1280, 720)) {
+        QStringList widths;
+        for (QToolBar* bar : panel->findChildren<QToolBar*>()) widths << QString("%1=%2").arg(bar->objectName()).arg(bar->sizeHint().width());
+        qInfo("rows (font %s %.1fpt, min %dx%d): %s", qPrintable(QFontInfo(panel->font()).family()), panel->font().pointSizeF(), panel->minimumSizeHint().width(), panel->minimumSizeHint().height(), qPrintable(widths.join(" ")));
+      }
       QVERIFY2(host.mainWindow.size() == size, qPrintable(at + "window refused its size (minimum too large)"));
       QVERIFY2(panel->geometry() == page->rect(), qPrintable(at + "panel does not fill the workspace"));
       for (QSplitter* split : panel->splitters()) {
@@ -3272,42 +3388,72 @@ class StudioTests : public QObject {
       panel->setMode(CutoutPanel::Mode::Setup);
       find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
       pump();
-      // Side panels keep their width on wide screens: the canvas gets the extra space.
+      qInfo("%s needs left %d canvas %d right %d bottom %d (clips %d time %d mix %d) · sizes left %d canvas %d right %d", qPrintable(at), panel->paneNeed("left"), panel->paneNeed("canvas"),
+            panel->paneNeed("right"), panel->paneNeed("bottom"), panel->paneNeed("clips"), panel->paneNeed("timeline"), panel->paneNeed("mix"), panel->leftPane()->width(),
+            panel->canvas()->width(), panel->rightPane()->width());
+      // Automatic layout (plugin 1.10.0): side panes at least what their rows need, a bounded share
+      // of the window on wide screens (the canvas and the time area get the rest).
+      QVERIFY(panel->autoLayout());
+      if (size.width() >= 1280) {
+      QVERIFY2(panel->leftPane()->width() >= panel->paneNeed("left"), qPrintable(at + QString("left %1 < %2").arg(panel->leftPane()->width()).arg(panel->paneNeed("left"))));
+      QVERIFY2(panel->rightPane()->width() >= panel->paneNeed("right"), qPrintable(at + QString("right %1 < %2").arg(panel->rightPane()->width()).arg(panel->paneNeed("right"))));
+      QVERIFY2(panel->leftPane()->width() <= std::max(panel->paneNeed("left") * 3 / 2 + 1, 0), qPrintable(at + "left pane wider than 1.5x its need"));
+      }
+      const QStringList rows = size.width() >= 1280 ? rowProblems() : QStringList();  // narrower: » allowed
+      QVERIFY2(rows.isEmpty(), qPrintable(at + rows.join(" | ")));
       if (size.width() >= 3840) {
         if (sideWidth < 0) sideWidth = panel->leftPane()->width();
-        QCOMPARE(panel->leftPane()->width(), sideWidth);
-        QVERIFY2(panel->canvas()->width() > size.width() - 700, qPrintable(QString::number(panel->canvas()->width())));
+        QCOMPARE(panel->leftPane()->width(), sideWidth);  // capped: a wider ultrawide only grows the canvas
+        QVERIFY2(panel->canvas()->width() > size.width() / 2, qPrintable(QString::number(panel->canvas()->width())));
       }
     }
     host.mainWindow.resize(1700, 1200);
     pump();
-    // A layout saved by plugin <= 1.4.0 (no version, right column starving the look pages) comes
-    // back as the defaults; the same state saved by this version is restored as is.
+    // Layouts saved by plugin <= 1.9.0 (version 1/2: fixed pixel sizes from before the regrouped
+    // rows) come back as the automatic defaults. A version-3 user layout is restored, but a pane
+    // narrower than its rows need is widened (sanitized) instead of hiding tools behind ».
     {
       auto* right = find<QSplitter>("cutoutRightSplitter");
-      const QList<int> defaults = right->sizes();
+      auto* outer = find<QSplitter>("cutoutOuterSplitter");
+      auto* workspace = find<QSplitter>("cutoutWorkspaceSplitter");
+      const QList<int> defaults = right->sizes(), outerDefaults = outer->sizes(), workspaceDefaults = workspace->sizes();
       right->setSizes({5000, 1, 1});
+      outer->setSizes({5000, 1});        // right column at its minimum
+      workspace->setSizes({1, 5000});    // left pane at its minimum: its rows overflow
       pump();
       const QList<int> starved = right->sizes();
       QVERIFY2(starved[1] < defaults[1] - 100, qPrintable(QString("%1 vs %2").arg(starved[1]).arg(defaults[1])));
+      QVERIFY2(!panel->overflowingRows().isEmpty(), "a squeezed left pane overflows (the case to sanitize)");
       QSettings q;
       q.beginGroup("plugins/cutout-animation/layout");
-      q.setValue("cutoutRightSplitter", right->saveState());
-      q.setValue("version", 1);
-      right->setSizes(defaults);
+      for (QSplitter* s : {right, outer, workspace}) q.setValue(s->objectName(), s->saveState());
+      q.setValue("custom", true);
+      for (int version : {1, 2}) {
+        q.setValue("version", version);
+        q.sync();
+        panel->restoreLayout();
+        pump();
+        QVERIFY2(panel->autoLayout(), qPrintable(QString("v%1 states are not restored").arg(version)));
+        QCOMPARE(right->sizes(), defaults);
+        QCOMPARE(outer->sizes(), outerDefaults);
+        QCOMPARE(workspace->sizes(), workspaceDefaults);
+        QVERIFY(rowProblems().isEmpty() && lookPageProblems().isEmpty());
+      }
+      q.setValue("version", 3);
       q.sync();
       panel->restoreLayout();
       pump();
-      QCOMPARE(right->sizes(), defaults);
-      QVERIFY(lookPageProblems().isEmpty());
-      q.setValue("version", 2);
-      q.sync();
-      panel->restoreLayout();
-      pump();
-      QCOMPARE(right->sizes(), starved);
+      QVERIFY(!panel->autoLayout());
+      QCOMPARE(right->sizes(), starved);  // vertical sizes kept: the look pages still show every button
       QVERIFY2(lookPageProblems().isEmpty(), "even at its minimum the look section keeps its buttons");
-      right->setSizes(defaults);
-      panel->saveLayout();
+      QVERIFY2(panel->leftPane()->width() >= panel->paneNeed("left") && panel->rightPane()->width() >= panel->paneNeed("right"),
+               qPrintable(QString("sanitized %1/%2, %3/%4").arg(panel->leftPane()->width()).arg(panel->paneNeed("left")).arg(panel->rightPane()->width()).arg(panel->paneNeed("right"))));
+      const QStringList rows = rowProblems();
+      QVERIFY2(rows.isEmpty(), qPrintable(rows.join(" | ")));
+      panel->resetLayout();  // back to the automatic layout (and nothing saved)
+      pump();
+      QVERIFY(panel->autoLayout() && !QSettings().value("plugins/cutout-animation/layout/custom").toBool());
+      QCOMPARE(right->sizes(), defaults);
     }
     // Tab on the canvas / dopesheet = full view (side panels hidden); Tab in a form field still
     // moves the focus. Presentation only.
@@ -3328,7 +3474,8 @@ class StudioTests : public QObject {
     spin->setFocus();
     QTest::keyClick(spin, Qt::Key_Tab);
     QVERIFY(!panel->fullView());
-    // Splitter sizes and collapsed sections persist (QSettings), restored on the next build.
+    // Splitter sizes and collapsed sections persist (QSettings), restored on the next build: a
+    // drag makes the layout the user's (no longer automatic).
     auto* split = find<QSplitter>("cutoutWorkspaceSplitter");
     QSplitterHandle* handle = split->handle(1);
     const int leftBefore = split->sizes()[0];
@@ -3338,8 +3485,10 @@ class StudioTests : public QObject {
     pump();
     const QList<int> moved = split->sizes();
     QVERIFY2(moved[0] > leftBefore + 40, qPrintable(QString("%1 -> %2").arg(leftBefore).arg(moved[0])));
+    QVERIFY(!panel->autoLayout());
     QSettings settings;
     QVERIFY(settings.contains("plugins/cutout-animation/layout/cutoutWorkspaceSplitter"));
+    QVERIFY(settings.value("plugins/cutout-animation/layout/custom").toBool());
     find<QToolButton>("cutoutSectionDrawOrderToggle")->click();
     pump();
     QVERIFY(!find<QWidget>("cutoutDrawOrder")->isVisible());
@@ -3377,6 +3526,264 @@ class StudioTests : public QObject {
     // Switching, full view, splitters and the launcher never issued an edit.
     QCOMPARE(host.edits, edits);
     QCOMPARE(host.revision, revision);
+    panel->resetLayout();
+  }
+
+  /**
+   * Plugin 1.10.0: the workspace layout out of the box on the listed screens at 100/150/200 %
+   * Windows scaling (logical window = resolution / scale; QT_SCALE_FACTOR=<f> runs only that
+   * scale with Qt's real scaling), with the UI scale each screen defaults to: every tool of every
+   * row visible (no »), inside its row and pane, look pages complete, splitters at their minimum.
+   * Logical sizes below 1280x720 are reported as skipped (overflow is allowed there).
+   */
+  void workspaceScaleMatrix() {
+    QWidget* page = workspacePage();
+    QVERIFY(page && page->isAncestorOf(panel));
+    const int edits = host.edits;
+    const double envScale = qEnvironmentVariable("QT_SCALE_FACTOR").toDouble();
+    const QList<double> scales = envScale > 0 ? QList<double>{envScale} : QList<double>{1.0, 1.5, 2.0};
+    const QList<QSize> screens{{1280, 720}, {1920, 1080}, {2560, 1440}, {3840, 2160}, {5120, 1440}, {1440, 2560}};
+    QStringList report, failures;
+    panel->resetLayout();
+    for (const QSize screen : screens)
+      for (const double scale : scales) {
+        const QSize logical(int(std::lround(screen.width() / scale)), int(std::lround(screen.height() / scale)));
+        const QString at = QString("%1x%2@%3%").arg(screen.width()).arg(screen.height()).arg(int(std::lround(scale * 100)));
+        if (logical.width() < 1280 || logical.height() < 720) { report << at + " skipped (logical " + QString("%1x%2").arg(logical.width()).arg(logical.height()) + " < 1280x720)"; continue; }
+        const double ui = CutoutPanel::defaultUiScale(logical, scale, 96);
+        panel->setUiScale(ui);
+        host.mainWindow.resize(logical);
+        pump();
+        QTest::qWait(20);
+        QStringList problems;
+        if (host.mainWindow.size() != logical) problems << QString("window refused %1x%2 (got %3x%4)").arg(logical.width()).arg(logical.height()).arg(host.mainWindow.width()).arg(host.mainWindow.height());
+        problems << fullLayoutProblems(page);
+        report << QString("%1 ui %2: %3").arg(at).arg(ui, 0, 'f', 2).arg(problems.isEmpty() ? "ok" : QString("%1 problems").arg(problems.size()));
+        if (!problems.isEmpty()) failures << at + ": " + problems.mid(0, 6).join(" | ");
+      }
+    // Every 작업 공간 글자 크기 level on common screens (the user's choice, not the default).
+    for (const QSize logical : {QSize(1920, 1080), QSize(2560, 1440)})
+      for (const auto& choice : CutoutPanel::uiScales()) {
+        panel->setUiScale(choice.scale);
+        host.mainWindow.resize(logical);
+        pump();
+        const QStringList problems = fullLayoutProblems(page);
+        const QString at = QString("%1x%2 %3").arg(logical.width()).arg(logical.height()).arg(choice.label);
+        report << at + (problems.isEmpty() ? QString(": ok") : QString(": %1 problems").arg(problems.size()));
+        if (!problems.isEmpty()) failures << at + ": " + problems.mid(0, 6).join(" | ");
+      }
+    // A larger host text size (Windows "make text bigger" / a big editor font): the workspace scales over it.
+    if (envScale <= 0) {
+      const QFont keep = QApplication::font();
+      QFont big = keep;
+      big.setPointSizeF((keep.pointSizeF() > 0 ? keep.pointSizeF() : 9) * 1.33);
+      QApplication::setFont(big);
+      panel->setUiScale(1.0);
+      host.mainWindow.resize(1920, 1080);
+      pump();
+      QVERIFY2(std::fabs(panel->font().pointSizeF() - big.pointSizeF()) < 0.05, qPrintable(QString("%1 vs %2").arg(panel->font().pointSizeF()).arg(big.pointSizeF())));
+      const QStringList problems = fullLayoutProblems(page);
+      report << QString("1920x1080 host text 133%: ") + (problems.isEmpty() ? "ok" : QString("%1 problems").arg(problems.size()));
+      if (!problems.isEmpty()) failures << "host text 133%: " + problems.mid(0, 6).join(" | ");
+      QApplication::setFont(keep);
+    }
+    qInfo("scale matrix:\n  %s", qPrintable(report.join("\n  ")));
+    QVERIFY2(failures.isEmpty(), qPrintable(failures.join("\n")));
+    panel->setUiScale(1.0);
+    host.mainWindow.resize(1700, 1200);
+    pump();
+    QCOMPARE(host.edits, edits);  // presentation only
+  }
+
+  /** UI scale: fonts, rows, dopesheet/ruler metrics, gizmo radii follow it; persisted per user; new panels read it. */
+  void uiScaleSetting() {
+    host.mainWindow.activateWindow();  // window shortcuts (Ctrl+K, Ctrl+=) need the active window
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    const int edits = host.edits;
+    QSettings().remove("plugins/cutout-animation/view/uiScale");
+    // Defaults from the screen (logical size, dpr, logical DPI).
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(1920, 1080), 1, 96), 1.0);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(2560, 1440), 1, 96), 1.25);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(5120, 1440), 1, 96), 1.25);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(3840, 2160), 1, 96), 1.5);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(1440, 2560), 1, 96), 1.0);   // portrait QHD: width keeps 보통
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(2560, 1440), 1.5, 144), 1.0);  // 4K at 150 %: Windows already scales
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(2560, 1440), 1, 120), 1.0);    // larger system text
+    host.mainWindow.resize(1920, 1080);
+    pump();
+    const double base = panel->font().pointSizeF() / panel->uiScale();
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("joy");
+    pump();
+    // The 보기 ▾ menu sets it (one exclusive group) and the setting persists.
+    auto* large = find<QAction>("cutoutUiScaleLarge");
+    QVERIFY(large && find<QMenu>("cutoutUiScaleMenu"));
+    large->trigger();
+    pump();
+    QCOMPARE(panel->uiScale(), 1.25);
+    QVERIFY(large->isChecked() && !find<QAction>("cutoutUiScaleNormal")->isChecked());
+    QCOMPARE(QSettings().value("plugins/cutout-animation/view/uiScale").toDouble(), 1.25);
+    QVERIFY(std::fabs(panel->font().pointSizeF() - base * 1.25) < 0.05);
+    QVERIFY2(std::fabs(find<QWidget>("cutoutDopesheet")->font().pointSizeF() - base * 1.25) < 0.05, qPrintable(QString("dopesheet %1, base %2").arg(find<QWidget>("cutoutDopesheet")->font().pointSizeF()).arg(base)));  // children inherit
+    QCOMPARE(panel->canvas()->uiScale(), 1.25);
+    QCOMPARE(panel->timeView()->uiScale(), 1.25);
+    QCOMPARE(panel->dopesheet()->rowHeight(), 25);
+    QCOMPARE(panel->timeView()->ruler(), 28);
+    QCOMPARE(panel->timeView()->label(), 213);
+    QCOMPARE(find<QToolBar>("cutoutCanvasTools")->iconSize(), QSize(20, 20));
+    QCOMPARE(find<QFrame>("cutoutOnionSettings")->font().pointSizeF(), panel->font().pointSizeF());  // popups too
+    // Rows of the dopesheet follow its row height (keys stay on their rows).
+    const int row = rowOf("bone:head", "rotation");
+    if (row >= 0) QCOMPARE(panel->dopesheet()->rowCenterY(row) - panel->dopesheet()->rowCenterY(0), row * 25);
+    QVERIFY(rowProblems().isEmpty());
+    // Ctrl+= / Ctrl+- inside the workspace step through the presets; Ctrl+0 = 보통.
+    panel->canvas()->setFocus();
+    QTest::keyClick(panel->canvas(), Qt::Key_Equal, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.5);
+    QTest::keyClick(panel->canvas(), Qt::Key_Equal, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.5);  // the largest preset
+    QTest::keyClick(panel->canvas(), Qt::Key_Minus, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.25);
+    QTest::keyClick(panel->canvas(), Qt::Key_0, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.0);
+    QTest::keyClick(panel->canvas(), Qt::Key_Minus, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 0.9);
+    // Gizmo hit radii scale with it: a press 10 px from a bone origin misses at 1.0 and picks at 1.5.
+    panel->setUiScale(1.0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->selectItem(QString());
+    pump();
+    auto* canvas = panel->canvas();
+    // (The view refits when the rows change height: the origin is looked up each time.)
+    auto bonePicked = [&](QPointF offset) {
+      const QPointF at = canvas->rigToWidget(world("head")) + offset;
+      for (const auto& h : canvas->hitCandidates(at)) if (h.ref == "bone:head" && h.rank <= RigCanvas::HitBone) return true;
+      return false;
+    };
+    QVERIFY(bonePicked(QPointF(6, 0)) && !bonePicked(QPointF(0, 10.5)));
+    panel->setUiScale(1.5);
+    pump();
+    QVERIFY(bonePicked(QPointF(0, 10.5)) && !bonePicked(QPointF(0, 13)));
+    // The host's plugin menu offers the same choices (and the palette).
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleNormalPlugin")->trigger();
+    QCOMPARE(panel->uiScale(), 1.0);
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleHugePlugin")->trigger();
+    QCOMPARE(panel->uiScale(), 1.5);
+    QVERIFY(host.mainWindow.findChild<QAction*>("cutoutCommandPaletteMenuAction"));
+    // A new panel (the next editor session) starts with the saved scale.
+    {
+      CutoutPanel next(&host);
+      QCOMPARE(next.uiScale(), 1.5);
+      next.detachHost();
+    }
+    panel->setUiScale(1.0);
+    QCOMPARE(host.edits, edits);  // editor-only
+  }
+
+  /** The first-run hint strip, the 보기 ▾ menu and every tool's tooltip (shortcuts named). */
+  void hintStripAndTooltips() {
+    const int edits = host.edits;
+    auto* strip = find<QFrame>("cutoutHintStrip");
+    QVERIFY(strip && strip->isVisible() && panel->hintVisible());  // first run (fresh settings)
+    QVERIFY(find<QLabel>("cutoutHintText")->text().contains("Ctrl+K"));
+    click("cutoutHintDismiss");
+    pump();
+    QVERIFY(!strip->isVisible() && !panel->hintVisible());
+    QVERIFY(QSettings().value("plugins/cutout-animation/view/hintDismissed").toBool());
+    QVERIFY(!find<QAction>("cutoutShowHintAction")->isChecked());
+    find<QAction>("cutoutShowHintAction")->trigger();
+    pump();
+    QVERIFY(strip->isVisible() && !QSettings().value("plugins/cutout-animation/view/hintDismissed").toBool());
+    // Tooltips: every named button of the workspace explains itself; known shortcuts are in it.
+    QStringList missing;
+    for (QAbstractButton* b : panel->findChildren<QAbstractButton*>()) {
+      if (!b->objectName().startsWith("cutout")) continue;
+      if (b->toolTip().trimmed().isEmpty()) missing << b->objectName() + " has no tooltip";
+      const QString key = b->property("cutoutShortcut").toString();
+      if (!key.isEmpty() && !b->toolTip().contains(key)) missing << b->objectName() + " tooltip lacks " + key;
+    }
+    for (const char* name : {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot", "cutoutToolCreate", "cutoutKeyButton", "cutoutOnionSkin", "cutoutPlay", "cutoutCopyKeys", "cutoutFitView"})
+      if (find<QWidget>(name)->property("cutoutShortcut").toString().isEmpty()) missing << QString(name) + " names no shortcut";
+    QVERIFY2(missing.isEmpty(), qPrintable(missing.join("\n")));
+    // Labelled groups on the rows (선택 / 변형 / 본 / 키 ...).
+    QStringList groups;
+    for (QLabel* l : panel->findChildren<QLabel*>("cutoutGroupLabel")) groups << l->text();
+    for (const char* g : {"선택", "변형", "본", "조각", "키", "타이밍", "재생", "보기"}) QVERIFY2(groups.contains(g), g);
+    QCOMPARE(host.edits, edits);
+  }
+
+  /** Ctrl+K / F1 palette: finds commands by Korean name, group or shortcut and runs them (one edit when the command edits). */
+  void commandPalette() {
+    host.mainWindow.activateWindow();  // window shortcuts (Ctrl+K, Ctrl+=) need the active window
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    auto* palette = panel->commandPalette();
+    QVERIFY(palette && !palette->isVisible());
+    panel->setMode(CutoutPanel::Mode::Setup);
+    pump();
+    panel->canvas()->setFocus();
+    QTest::keyClick(panel->canvas(), Qt::Key_K, Qt::ControlModifier);
+    pump();
+    QVERIFY(palette->isVisible());
+    auto* search = find<QLineEdit>("cutoutCommandSearch");
+    auto* list = find<QListWidget>("cutoutCommandList");
+    QVERIFY(search->hasFocus() && list->count() > 100);
+    QTest::keyClick(search, Qt::Key_Escape);
+    QVERIFY(!palette->isVisible());
+    QTest::keyClick(panel->canvas(), Qt::Key_F1);
+    QVERIFY(palette->isVisible());
+    // Typing filters; Enter runs the best match = what its button does: one edit.
+    panel->selectItem("bone:root");
+    const int bones = int(rig()["bones"].size());
+    QVERIFY(gesture("palette: 본 추가", 1, [&] {
+      typeText(search, "본 추가");
+      QCOMPARE(list->currentItem()->data(Qt::UserRole).toString(), QString("cutoutAddBone"));
+      QTest::keyClick(search, Qt::Key_Return);
+    }));
+    QVERIFY(!palette->isVisible());
+    QCOMPARE(int(rig()["bones"].size()), bones + 1);
+    undo();
+    // By shortcut, by group words, arrows choose.
+    QCOMPARE(panel->findCommands("K").value(0).id, QString("cutoutKeyButton"));
+    QCOMPARE(panel->findCommands("Ctrl+C").value(0).id, QString("cutoutCopyKeys"));
+    QCOMPARE(panel->findCommands("V").value(0).id, QString("cutoutToolSelect"));
+    QCOMPARE(panel->findCommands("스킨 삭제").value(0).id, QString("cutoutDeleteSkin"));
+    QCOMPARE(panel->findCommands("이전 간격으로").value(0).id, QString("cutoutStepBack"));  // symbol button by its tooltip
+    QVERIFY(panel->findCommands("자동 웨이트").value(0).group == "메시");
+    // A command on a hidden page opens that page (look tab, collapsed section) and runs once.
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(2);  // IK page shown
+    answers = {"palette-skin"};
+    QVERIFY(gesture("palette: 새 스킨", 1, [&] {
+      panel->showCommandPalette();
+      typeText(search, "새 스킨");
+      QTest::keyClick(search, Qt::Key_Return);
+    }));
+    QCOMPARE(find<QTabWidget>("cutoutLookTabs")->currentWidget()->objectName(), QString("cutoutSkinPage"));
+    undo();
+    // Pages and view commands are commands too; a disabled one does nothing.
+    QVERIFY(panel->runCommand("tab:cutoutBottomTabs:1"));
+    QCOMPARE(find<QTabWidget>("cutoutBottomTabs")->currentIndex(), 1);
+    QVERIFY(panel->runCommand("tab:cutoutBottomTabs:0"));
+    QVERIFY(gesture("disabled in setup mode", 0, [&] { QVERIFY(!panel->runCommand("cutoutCopyKeys")); }));
+    QVERIFY(!panel->findCommands("키 복사").isEmpty() || !panel->findCommands("복사").isEmpty());
+    // Every action the README authoring guide names is reachable from the palette.
+    const QStringList guide{"새 캐릭터", "이미지 조각 추가", "회전 중심", "본 만들기", "자동 길이", "본 방향 맞추기", "선택/이동", "회전 (R)", "크기 (S)",
+                            "자식 본까지 선택", "모든 본 선택", "선택 해제", "본 보정", "이미지 보정", "상대값 입력", "뒤로 ↑", "앞으로 ↓", "캔버스 크게", "화면 맞춤",
+                            "조립", "애니메이션 (Animate)", "새 클립", "자동 키", "키 추가", "맞춤", "[ 구간 시작", "구간 끝 ]", "구간 해제", "간격 배율", "만큼 이동",
+                            "복사", "붙여넣기", "복제", "포즈 복사", "포즈 붙여넣기", "그래프", "도프시트", "둘 다", "채널별 맞춤", "값 맞춤", "이벤트 키", "키 편집",
+                            "새 이벤트", "지우기", "숨쉬기", "눈깜빡임", "어니언 스킨", "어니언 스킨 설정", "궤적", "재생", "처음으로", "새 스킨", "그림 지정", "빼기",
+                            "현재 상태로 표정 만들기", "다시 담기", "표정 키", "팔·다리 IK", "조준 IK", "현재 방향으로 맞추기", "대상 선택", "IK 키", "IK 결과를 키로 굽기",
+                            "메시로 변환", "투명 칸 빼기", "이미지로 되돌리기", "윤곽 그리기", "자동 윤곽", "자동 윤곽 미리보기", "정점 편집", "정점 추가", "가장자리 추가",
+                            "정점 삭제", "가장자리 삭제", "다시 삼각분할", "자동 웨이트", "웨이트 칠하기", "웨이트 해제", "변형 키", "변형 키 삭제", "게임 연결 탭",
+                            "내보내기 탭", "레이어 추가", "연결 추가", "전환 추가", "미리 보기 신호", "미리 보기 초기화", "내보낼 때 캐릭터 그림을 아틀라스로 묶기",
+                            "작업 공간 글자 크기", "크게", "레이아웃 초기화", "도움말 줄 보이기"};
+    QStringList unreachable;
+    for (const QString& name : guide) {
+      bool found = false;
+      for (const auto& c : panel->findCommands(name)) found = found || c.name.contains(name, Qt::CaseInsensitive) || (c.group + " " + c.name).contains(name);
+      if (!found) unreachable << name;
+    }
+    QVERIFY2(unreachable.isEmpty(), qPrintable("not in the palette: " + unreachable.join(", ")));
+    QVERIFY(!palette->isVisible());
   }
 
   /** 내보내기 tab (plugin 1.9.0): atlas settings live in plugins/cutout-animation/settings/project.json;
@@ -3419,11 +3826,595 @@ class StudioTests : public QObject {
   }
 
   /**
+   * PSD 가져오기 (plugin 1.11.0): button and palette command, file -> preview request (dryRun) ->
+   * LayerImportDialog (layer tree with include boxes, mapping columns, warnings, options, 미리 보기
+   * 갱신) -> ONE import request = one host edit; undo/redo; re-import of the same file defaults to
+   * updating that character; cancel and refused files change nothing. The mock host plays the
+   * service op (its real mapping is tested in tests/plugins/cutout-layer-import.test.mjs).
+   */
+  void layerImportDialog() {
+    const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
+    const auto keepHistory = host.history, keepFuture = host.future;
+    const QString keepRig = panel->rigId(), keepClip = panel->clipId();
+    const auto keepMode = panel->mode();
+    auto restore = qScopeGuard([&] {
+      host.documents = keepDocuments; host.assetList = keepAssets; host.history = keepHistory; host.future = keepFuture; host.revision++;
+      host.pluginImport = nullptr;
+      panel->askLayerFile = nullptr;
+      plugin.viewChanged();
+      panel->selectRig(keepRig);
+      panel->selectClip(keepClip);
+      panel->setMode(keepMode);
+      pump();
+    });
+    const QString psd = dir.filePath("psdhero.psd");
+    const QString bodyPng = png("psd-body", QSize(40, 60), Qt::red), facePng = png("psd-face", QSize(30, 30), Qt::yellow), eyesPng = png("psd-eyes", QSize(16, 6), Qt::blue);
+    // The "PSD": body, a head group with face and two eye variants (closed hidden). Keys like the service's.
+    auto layer = [](const QString& key, const QString& name, const QString& role, const QString& bone, const QString& slot, const QString& att, bool visible, bool setup) {
+      return QJsonObject{{"key", key}, {"name", name}, {"kind", "layer"}, {"visible", visible}, {"opacity", 1}, {"include", true}, {"role", role}, {"bone", bone},
+                         {"slot", slot}, {"attachment", att}, {"setup", setup}, {"status", "add"}, {"warnings", QJsonArray()},
+                         {"bounds", QJsonObject{{"x", 10}, {"y", 10}, {"width", 20}, {"height", 20}}}};
+    };
+    auto report = [&](const QJsonObject& payload, bool update) {
+      QSet<QString> out;
+      for (const auto& k : payload.value("exclude").toArray()) out << k.toString();
+      QJsonObject head{{"key", "1"}, {"name", "Head"}, {"kind", "group"}, {"visible", true}, {"include", !out.contains("1")}, {"role", out.contains("1") ? "excluded" : "bone"}, {"bone", "head"}, {"warnings", QJsonArray()}};
+      head["children"] = QJsonArray{layer("1.0", "face", "image", "head", "face", "face", true, true),
+                                    layer("1.1", "eyes/closed", out.contains("1.1") ? "excluded" : "image", "head", "eyes", "closed", false, false),
+                                    layer("1.2", "eyes/open", "image", "head", "eyes", "open", true, true)};
+      const int attachments = 4 - out.contains("1.1");
+      return QJsonObject{{"mode", update ? "update" : "create"}, {"rigId", update ? payload.value("rig").toString() : payload.value("id").toString()},
+                         {"source", QJsonObject{{"format", "psd"}, {"file", "psdhero.psd"}, {"width", 200}, {"height", 300}}},
+                         {"layers", QJsonArray{layer("0", "body", "image", "root", "body", "body", true, true), head}},
+                         {"warnings", QJsonArray{QJsonObject{{"code", "ANIM_IMPORT_MASK"}, {"message", "'body': 레이어 마스크는 무시됩니다."}, {"layer", "0"}}}},
+                         {"summary", QJsonObject{{"bones", 1}, {"slots", 3}, {"attachments", attachments}, {"hidden", attachments - 3}, {"added", update ? 1 : attachments}, {"updated", update ? 1 : 0}, {"unchanged", update ? 2 : 0}}},
+                         {"changes", QJsonObject{{"attachments", QJsonObject{{"missing", QJsonArray()}}}}}};
+    };
+    auto envelope = [](const char* type, const QString& id, const QJsonObject& data) {
+      return QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", "cutout-animation"}, {"type", type}, {"id", id}, {"data", data}};
+    };
+    host.pluginImport = [&](const QJsonObject& params) -> QJsonObject {
+      const QJsonObject payload = params.value("payload").toObject();
+      if (payload.value("file").toString().endsWith("deep.psd")) return {{"error", "16비트 PSD는 지원하지 않습니다. 8비트로 바꿔 저장하세요."}};
+      const bool update = payload.contains("rig");
+      if (params.value("dryRun").toBool()) return {{"pluginImport", QJsonObject{{"dryRun", true}, {"changed", false}, {"report", report(payload, update)}}}};
+      // The import: pictures + rig (+ controller) as ONE batch edit, like importPluginContent.
+      for (const auto& [id, file] : {std::pair{"image-psd-body", bodyPng}, {"image-psd-face", facePng}, {"image-psd-eyes", eyesPng}})
+        if (std::none_of(host.assetList.begin(), host.assetList.end(), [&](const QJsonValue& a) { return a.toObject().value("id") == id; }))
+          host.assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", QString("assets/%1.png").arg(id)}, {"absolutePath", file}});
+      const QString id = update ? payload.value("rig").toString() : payload.value("id").toString();
+      QJsonArray attachments{QJsonObject{{"slot", "body"}, {"name", "body"}, {"imageAssetId", "image-psd-body"}, {"width", 40}, {"height", 60}, {"x", 0}, {"y", -30}},
+                             QJsonObject{{"slot", "face"}, {"name", "face"}, {"imageAssetId", "image-psd-face"}, {"width", 30}, {"height", 30}},
+                             QJsonObject{{"slot", "eyes"}, {"name", "open"}, {"imageAssetId", "image-psd-eyes"}, {"width", 16}, {"height", 6}}};
+      bool excludedClosed = false;
+      for (const auto& k : payload.value("exclude").toArray()) excludedClosed |= k.toString() == "1.1";
+      if (!excludedClosed || update) attachments.append(QJsonObject{{"slot", "eyes"}, {"name", "closed"}, {"imageAssetId", "image-psd-eyes"}, {"width", 16}, {"height", 6}});
+      QJsonObject rig{{"schemaVersion", 1}, {"name", id}, {"canvas", QJsonObject{{"width", 200}, {"height", 300}, {"originX", 100}, {"originY", 300}}},
+                      {"bones", QJsonArray{QJsonObject{{"id", "root"}, {"parent", QJsonValue()}, {"x", 100}, {"y", 300}}, QJsonObject{{"id", "head"}, {"parent", "root"}, {"y", -90}}}},
+                      {"slots", QJsonArray{QJsonObject{{"id", "body"}, {"bone", "root"}, {"attachment", "body"}}, QJsonObject{{"id", "face"}, {"bone", "head"}, {"attachment", "face"}},
+                                           QJsonObject{{"id", "eyes"}, {"bone", "head"}, {"attachment", "open"}}}},
+                      {"attachments", attachments}, {"clips", QJsonArray{QJsonObject{{"id", "idle"}, {"durationMs", 1000}, {"loop", true}, {"tracks", QJsonArray()}}}},
+                      {"editor", QJsonObject{{"layerImport", QJsonObject{{"source", "psdhero.psd"}, {"format", "psd"}, {"layers", QJsonObject()}}}}}};
+      QJsonArray edits;
+      const QString rigFile = QString("plugins/cutout-animation/rig/%1.json").arg(id);
+      if (update) {
+        QJsonObject current;
+        for (const auto& d : host.documents) if (d.toObject().value("file") == rigFile) current = d.toObject().value("data").toObject().value("data").toObject();
+        rig["bones"] = current.value("bones");  // re-import keeps bones (and keys)
+        rig["clips"] = current.value("clips");
+        edits.append(QJsonObject{{"type", "replace"}, {"file", rigFile}, {"data", envelope("rig", id, rig)}});
+      } else {
+        edits.append(QJsonObject{{"type", "create"}, {"file", rigFile}, {"data", envelope("rig", id, rig)}});
+        edits.append(QJsonObject{{"type", "create"}, {"file", QString("plugins/cutout-animation/controller/%1.json").arg(id)},
+                                 {"data", envelope("controller", id, QJsonObject{{"schemaVersion", 1}, {"rig", id}, {"defaultClip", "idle"}, {"layers", QJsonArray()}, {"bindings", QJsonArray()}})}});
+      }
+      const QJsonObject batch{{"type", "batch"}, {"edits", edits}};
+      host.edits++; host.lastEdit = batch;
+      host.lastError = host.apply(batch);
+      if (!host.lastError.isEmpty()) return {{"error", host.lastError}};
+      return {{"pluginImport", QJsonObject{{"dryRun", false}, {"changed", true}, {"report", report(payload, update)}, {"files", QJsonArray{rigFile}}}}};
+    };
+
+    // Button + palette command + plugin menu entry.
+    QVERIFY(find<QPushButton>("cutoutImportLayers"));
+    QVERIFY(host.mainWindow.findChild<QAction*>("cutoutImportLayersAction"));
+    QVERIFY(!panel->findCommands("PSD 가져오기").isEmpty() && panel->findCommands("PSD 가져오기").first().id == "cutoutImportLayers");
+    // Cancelled file dialog: nothing is asked of the host.
+    panel->askLayerFile = [] { return QString(); };
+    QVERIFY(gesture("psd import: no file", 0, [&] { click("cutoutImportLayers"); }));
+    QVERIFY(host.pluginImports.isEmpty());
+
+    // New character: the dialog shows the tree, mapping, warnings; leave out the closed eyes, refresh, import.
+    panel->askLayerFile = [&] { return psd; };
+    bool shown = false;
+    onDialog("cutoutLayerImportDialog", [&](QDialog* d) {
+      auto* tree = d->findChild<QTreeWidget*>("cutoutLayerImportTree");
+      auto* id = d->findChild<QLineEdit*>("cutoutLayerImportId");
+      auto* target = d->findChild<QComboBox*>("cutoutLayerImportTarget");
+      auto* warnings = d->findChild<QListWidget*>("cutoutLayerImportWarnings");
+      if (!tree || !id || !target || !warnings || !d->findChild<QComboBox*>("cutoutLayerImportOrigin") || !d->findChild<QCheckBox*>("cutoutLayerImportTrim") ||
+          !d->findChild<QDoubleSpinBox*>("cutoutLayerImportScale") || !d->findChild<QLabel*>("cutoutLayerImportSummary")) return false;
+      shown = id->text() == "psdhero" && target->currentData().toString().isEmpty() && warnings->count() == 1 && warnings->item(0)->text().contains("마스크");
+      // Photoshop order: front first, so Head (key 1) is the first row and body (key 0) the second.
+      QTreeWidgetItem* head = tree->topLevelItem(0);
+      shown = shown && tree->topLevelItemCount() == 2 && head->text(0) == "Head" && head->text(1) == "본" && head->childCount() == 3;
+      QTreeWidgetItem* closed = nullptr;
+      for (int i = 0; head && i < head->childCount(); i++) if (head->child(i)->text(0).startsWith("eyes/closed")) closed = head->child(i);
+      shown = shown && closed && closed->text(0).contains("(숨김)") && closed->text(3) == "eyes" && closed->text(4) == "closed" && closed->checkState(0) == Qt::Checked;
+      if (closed) closed->setCheckState(0, Qt::Unchecked);
+      d->findChild<QPushButton*>("cutoutLayerImportRefresh")->click();  // second preview with the exclusion
+      for (int i = 0; i < tree->topLevelItem(0)->childCount(); i++)
+        if (tree->topLevelItem(0)->child(i)->text(0).startsWith("eyes/closed")) shown = shown && tree->topLevelItem(0)->child(i)->text(1) == "빼기";
+      shown = shown && d->findChild<QLabel*>("cutoutLayerImportSummary")->text().contains("첨부 3");
+      return true;
+    });
+    QVERIFY(gesture("psd import: new character", 1, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(shown);
+    QCOMPARE(host.pluginImports.size(), 3);
+    QVERIFY(host.pluginImports[0].value("dryRun").toBool() && host.pluginImports[1].value("dryRun").toBool() && !host.pluginImports[2].value("dryRun").toBool());
+    const QJsonObject sent = host.pluginImports[2].value("payload").toObject();
+    QCOMPARE(host.pluginImports[2].value("plugin").toString(), QString("cutout-animation"));
+    QCOMPARE(host.pluginImports[2].value("op").toString(), QString("importLayers"));
+    QCOMPARE(sent.value("file").toString(), psd);
+    QCOMPARE(sent.value("id").toString(), QString("psdhero"));
+    QCOMPARE(sent.value("exclude").toArray(), QJsonArray{"1.1"});
+    QCOMPARE(sent.value("origin").toString(), QString("bottom-center"));
+    QVERIFY(sent.value("trim").toBool() && sent.value("scale").toDouble() == 1 && !sent.contains("rig"));
+    QCOMPARE(panel->rigId(), QString("psdhero"));
+    QVERIFY2(panel->status().contains("가져옴") && panel->status().contains("Ctrl+Z"), qPrintable(panel->status()));
+    { const Json r = host.data("rig", "psdhero"); QCOMPARE(int(r["attachments"].size()), 3); QVERIFY(!host.data("controller", "psdhero").is_null()); }
+    QCOMPARE(panel->lastLayerImport().value("changed").toBool(), true);
+    // One undo removes the whole import; redo restores it.
+    undo();
+    QVERIFY(host.data("rig", "psdhero").is_null() && host.data("controller", "psdhero").is_null());
+    redo();
+    QVERIFY(!host.data("rig", "psdhero").is_null());
+    pump();
+
+    // Re-import of the same file with that character selected: the dialog defaults to updating it.
+    panel->selectRig("psdhero");
+    pump();
+    QCOMPARE(panel->layerImportDefaults(psd).target, QString("psdhero"));
+    QCOMPARE(panel->layerImportDefaults(psd).id, QString("psdhero-2"));
+    { Json r = host.data("rig", "psdhero"); QVERIFY(r["bones"].size() == 2); }
+    bool update = false;
+    onDialog("cutoutLayerImportDialog", [&](QDialog* d) {
+      auto* target = d->findChild<QComboBox*>("cutoutLayerImportTarget");
+      update = target && target->currentData().toString() == "psdhero" && !d->findChild<QLineEdit*>("cutoutLayerImportId")->isEnabled() &&
+               d->findChild<QLabel*>("cutoutLayerImportSummary")->text().contains("교체 1");
+      return true;
+    });
+    host.pluginImports.clear();
+    QVERIFY(gesture("psd re-import", 1, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(update);
+    QCOMPARE(host.pluginImports.size(), 2);
+    QCOMPARE(host.pluginImports[1].value("payload").toObject().value("rig").toString(), QString("psdhero"));
+    QVERIFY(!host.pluginImports[1].value("payload").toObject().contains("id"));
+    QCOMPARE(host.lastEdit.value("edits").toArray().size(), 1);
+    QVERIFY2(panel->status().contains("갱신"), qPrintable(panel->status()));
+    { const Json r = host.data("rig", "psdhero"); QCOMPARE(int(r["attachments"].size()), 4); }
+
+    // Cancel in the dialog and a refused file: no edit.
+    onDialog("cutoutLayerImportDialog", [](QDialog*) { return false; });
+    QVERIFY(gesture("psd import cancelled", 0, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(panel->status().contains("취소"));
+    panel->askLayerFile = [&] { return dir.filePath("deep.psd"); };
+    QVERIFY(gesture("16-bit psd refused", 0, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY2(panel->status().contains("16비트"), qPrintable(panel->status()));
+    // An invalid id keeps the dialog open (then cancel).
+    panel->askLayerFile = [&] { return psd; };
+    bool kept = false;
+    onDialog("cutoutLayerImportDialog", [&](QDialog* d) {
+      d->findChild<QComboBox*>("cutoutLayerImportTarget")->setCurrentIndex(0);
+      d->findChild<QLineEdit*>("cutoutLayerImportId")->setText("Bad Id");
+      d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok)->click();
+      kept = d->isVisible() && d->findChild<QLabel*>("cutoutLayerImportSummary")->text().contains("캐릭터 ID");
+      return false;
+    });
+    QVERIFY(gesture("bad id refused", 0, [&] { click("cutoutImportLayers"); pump(); }));
+    QVERIFY(kept);
+  }
+
+  /**
    * Large-rig editor timings (plugin 1.9.0): the generated 200-bone / 150-slot / 40-mesh / 30-clip
    * character (core/tests/stress-rig.hpp, the same one the core and player benchmarks use) loaded
    * into this host. Medians of a few runs; budgets are ~3x the development machine so a regression
    * of the refresh paths fails here. CUTOUT_PERF_OUT=<json> writes the numbers for the perf report.
    */
+  /**
+   * Clipping and image sequences (plugin 1.12.0) on a character of their own: a clip polygon drawn
+   * with the outline tool, its end slot, redraw, Esc, delete; a sequence from PNG files (numeric
+   * file order), frame reorder / remove / append / size refusal, setup frame, keys with modes and
+   * the dopesheet row, preview playback; undo/redo. Every gesture is one edit; the canvas preview
+   * clips and swaps frames like the runtimes.
+   */
+  void clippingAndSequences() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "masked"); };
+    // Copies first: a range-for over a member of a temporary would read freed memory.
+    auto attachment = [&](const char* slot) { const Json d = data(); for (const auto& a : d["attachments"]) if (a["slot"] == slot) return a; return Json(); };
+    auto slotIds = [&] { const Json d = data(); QStringList ids; for (const auto& s : d["slots"]) ids << qs(s["id"].get<std::string>()); return ids; };
+    answers = {"masked"};
+    QVERIFY(gesture("new masked character", 1, [&] { click("cutoutNewCharacter"); }));
+    QCOMPARE(panel->rigId(), QString("masked"));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    QVERIFY(gesture("card part", 1, [&] { panel->importAndAddPart(png("clip-card", QSize(80, 60), QColor("#d1495b")), "card", "card", "root"); }));
+    QVERIFY(gesture("top part", 1, [&] { panel->importAndAddPart(png("clip-top", QSize(40, 40), QColor("#00798c")), "top", "top", "root"); }));
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutClippingPage"));
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    pump();
+    // The root sits at (256, 720): the card covers x 216..296. The clip keeps its left half.
+    const std::vector<QPointF> square = {{200, 680}, {256, 680}, {256, 760}, {200, 760}};
+    auto drawPolygon = [&](const std::vector<QPointF>& points) {
+      for (const QPointF& p : points) tap(canvas, canvas->rigToWidget(p));
+      const QPointF last = canvas->rigToWidget(points.back());
+      QMouseEvent dbl(QEvent::MouseButtonDblClick, last, canvas->mapToGlobal(last), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(canvas, &dbl);
+      mouse(canvas, QEvent::MouseButtonRelease, last, Qt::LeftButton, Qt::NoButton);
+    };
+    panel->selectItem("slot:card");
+    pump();
+    QVERIFY(find<QWidget>("cutoutClippingCreate")->isEnabled() && !find<QWidget>("cutoutClippingRedraw")->isEnabled());
+    QVERIFY(gesture("clipping: Esc cancels", 0, [&] {
+      click("cutoutClippingCreate");
+      QVERIFY(canvas->outlineDrawing());
+      tap(canvas, canvas->rigToWidget(square[0]));
+      QTest::keyClick(canvas, Qt::Key_Escape);
+    }));
+    QVERIFY(!canvas->outlineDrawing());
+    QVERIFY(gesture("draw a clipping polygon", 1, [&] { click("cutoutClippingCreate"); drawPolygon(square); }));
+    QCOMPARE(slotIds(), QStringList({"card-clip", "card", "top"}));
+    Json clip = attachment("card-clip");
+    QCOMPARE(qs(clip["type"].get<std::string>()), QString("clipping"));
+    QCOMPARE(qs(clip["end"].get<std::string>()), QString("card"));
+    QCOMPARE(clip["vertices"].size(), size_t(8));
+    QVERIFY2(std::fabs(clip["vertices"][0].get<double>() + 56) < 0.5 && std::fabs(clip["vertices"][1].get<double>() + 40) < 0.5, clip["vertices"].dump().c_str());
+    QCOMPARE(panel->clipSlot(), QString("card-clip"));
+    QCOMPARE(find<QListWidget>("cutoutClippingList")->count(), 1);
+    QVERIFY(!canvas->outlineDrawing());
+    // The runtime draw list and the canvas renderer agree: the card shows only left of x = 256.
+    auto render = [&] {
+      const cutout::Rig parsed = cutout::parseRig("masked", data());
+      QImage img(512, 768, QImage::Format_ARGB32_Premultiplied);
+      img.fill(Qt::transparent);
+      QPainter p(&img);
+      drawRig(p, parsed, cutout::samplePose(parsed, -1, 0), panel->images());
+      p.end();
+      return img;
+    };
+    {
+      const QImage img = render();
+      QVERIFY2(qAlpha(img.pixel(236, 720)) > 200 && qAlpha(img.pixel(276, 720)) == 0, "canvas: clipped right half");
+      cutout::Instance inst(std::make_shared<const cutout::Rig>(cutout::parseRig("masked", data())));
+      const auto items = inst.drawList();
+      QVERIFY(items.size() == 2 && items[0].slot == "card" && items[0].clipped && !items[1].clipped);
+      double maxX = -1e9;
+      for (size_t v = 0; v < items[0].positions.size(); v += 2) maxX = std::max(maxX, items[0].positions[v]);
+      QVERIFY2(std::fabs(maxX) < 0.5, qPrintable(QString::number(maxX)));  // instance space: origin (256, 720) -> 0
+    }
+    // 끝 조각: the clip range grows over the top part.
+    auto* end = find<QComboBox>("cutoutClippingEnd");
+    QVERIFY(end->isEnabled() && end->findData("top") >= 0);
+    QVERIFY(gesture("clip end = top", 1, [&] { end->setCurrentIndex(end->findData("top")); Q_EMIT end->activated(end->currentIndex()); }));
+    QCOMPARE(qs(attachment("card-clip")["end"].get<std::string>()), QString("top"));
+    QVERIFY2(qAlpha(render().pixel(266, 720)) == 0, "the top part is clipped too");
+    undo();
+    QCOMPARE(qs(attachment("card-clip")["end"].get<std::string>()), QString("card"));
+    redo();
+    QCOMPARE(qs(attachment("card-clip")["end"].get<std::string>()), QString("top"));
+    // 모양 다시 그리기: a triangle replaces the square (one edit).
+    panel->selectItem("slot:card-clip");
+    pump();
+    QVERIFY(find<QWidget>("cutoutClippingRedraw")->isEnabled());
+    QVERIFY(gesture("redraw clipping", 1, [&] { click("cutoutClippingRedraw"); drawPolygon({{180, 650}, {300, 650}, {240, 780}}); }));
+    QCOMPARE(attachment("card-clip")["vertices"].size(), size_t(6));
+    // A polygon crossing itself is refused (no edit) and the tool stays on to try again.
+    QVERIFY(gesture("bow tie refused", 0, [&] { click("cutoutClippingRedraw"); drawPolygon({{200, 680}, {256, 760}, {256, 680}, {200, 760}}); }));
+    QVERIFY(canvas->outlineDrawing());
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!canvas->outlineDrawing());
+
+    // ---- sequences
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutSequencePage"));
+    const QStringList files = {png("seq-10", QSize(40, 40), QColor("#edae49")), png("seq-2", QSize(40, 40), QColor("#66a182")), png("seq-1", QSize(40, 40), QColor("#2e4057"))};
+    QStringList nextFiles = files;
+    panel->askSequenceFiles = [&] { return nextFiles; };
+    panel->selectItem("slot:top");
+    pump();
+    const int importsBefore = host.imports;
+    QVERIFY(gesture("sequence from PNGs", 1, [&] { click("cutoutSequenceImport"); pump(); }));
+    QCOMPARE(host.imports - importsBefore, 3);
+    Json top = attachment("top");
+    QVERIFY2(top["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2", "img-seq-10"}), top["sequence"]["frames"].dump().c_str());  // numeric file order
+    QCOMPARE(qs(top["imageAssetId"].get<std::string>()), QString("img-seq-1"));
+    QCOMPARE(panel->sequenceSlot(), QString("top"));
+    auto* frames = find<QListWidget>("cutoutSequenceFrames");
+    QCOMPARE(frames->count(), 3);
+    frames->setCurrentRow(2);
+    QVERIFY(gesture("frame up", 1, [&] { click("cutoutSequenceUp"); }));
+    QVERIFY2(attachment("top")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-10", "img-seq-2"}), attachment("top")["sequence"]["frames"].dump().c_str());
+    QCOMPARE(frames->currentRow(), 1);
+    frames->setCurrentRow(1);
+    QVERIFY(gesture("frame remove", 1, [&] { click("cutoutSequenceRemoveFrame"); }));
+    QVERIFY2(attachment("top")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2"}), attachment("top")["sequence"]["frames"].dump().c_str());
+    nextFiles = {png("seq-3", QSize(40, 40), QColor("#d1495b"))};
+    QVERIFY(gesture("frames appended", 1, [&] { click("cutoutSequenceAddFrames"); pump(); }));
+    QVERIFY2(attachment("top")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2", "img-seq-3"}), attachment("top")["sequence"]["frames"].dump().c_str());
+    nextFiles = {png("seq-big", QSize(50, 40), QColor("#d1495b"))};
+    QVERIFY(gesture("other frame size refused", 0, [&] { click("cutoutSequenceAddFrames"); pump(); }));
+    QVERIFY2(panel->status().contains("크기"), qPrintable(panel->status()));
+    auto* setupFrame = find<QSpinBox>("cutoutSequenceSetup");
+    QVERIFY(gesture("setup frame 2", 1, [&] { setupFrame->setValue(2); Q_EMIT setupFrame->editingFinished(); }));
+    QCOMPARE(attachment("top")["sequence"]["setupIndex"].get<int>(), 2);
+    {
+      const cutout::Rig parsed = cutout::parseRig("masked", data());
+      QCOMPARE(qs(cutout::attachmentImage(cutout::samplePose(parsed, -1, 0), parsed.slotIndex("top"), *parsed.attachment("top", "top"))), QString("img-seq-3"));
+    }
+    // Keys: pingpong from frame 0, 50 ms frames at 0 ms; the dopesheet shows a 시퀀스 row.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("idle");
+    panel->setPlayhead(0);
+    panel->selectItem("slot:top");
+    pump();
+    QVERIFY(find<QWidget>("cutoutSequenceKeyTools")->isVisible() && find<QWidget>("cutoutSequenceKey")->isEnabled());
+    auto* mode = find<QComboBox>("cutoutSequenceMode");
+    mode->setCurrentIndex(mode->findData("pingpong"));
+    find<QSpinBox>("cutoutSequenceIndex")->setValue(0);
+    find<QDoubleSpinBox>("cutoutSequenceDelay")->setValue(50);
+    QVERIFY(gesture("sequence key", 1, [&] { click("cutoutSequenceKey"); }));
+    QVERIFY(keyOfRig(data(), "idle", "slot:top", "sequence", 0) == Json({{"timeMs", 0}, {"mode", "pingpong"}, {"index", 0}, {"delay", 50}}));
+    const int row = rowOf("slot:top", "sequence");
+    QVERIFY(row >= 0 && panel->dopesheet()->rows()[row].label.contains("시퀀스") && panel->dopesheet()->rows()[row].attachment);
+    {
+      // Scrubbing shows the frame the players show: 150 ms -> index 3 -> pingpong 1 (img-seq-2).
+      const cutout::Rig parsed = cutout::parseRig("masked", data());
+      const int slot = parsed.slotIndex("top");
+      QCOMPARE(qs(cutout::attachmentImage(cutout::samplePose(parsed, parsed.clipIndex("idle"), 150), slot, *parsed.attachment("top", "top"))), QString("img-seq-2"));
+      QCOMPARE(qs(cutout::attachmentImage(cutout::samplePose(parsed, parsed.clipIndex("idle"), 100), slot, *parsed.attachment("top", "top"))), QString("img-seq-3"));
+    }
+    // Preview playback (editor-only): the same frame rule from the fields.
+    panel->setManualClock(true);
+    QVERIFY(gesture("sequence preview", 0, [&] { panel->setSequencePreview(true); panel->advanceSequencePreview(150); }));
+    QVERIFY(panel->sequencePreviewPlaying());
+    QCOMPARE(panel->sequencePreviewFrame(), 1);
+    panel->advanceSequencePreview(50);
+    QCOMPARE(panel->sequencePreviewFrame(), 0);
+    panel->setSequencePreview(false);
+    panel->setManualClock(false);
+    // The key's fields come back when the playhead sits on it; another key, then delete it.
+    panel->setPlayhead(400);
+    mode->setCurrentIndex(mode->findData("once"));
+    QVERIFY(gesture("second sequence key", 1, [&] { click("cutoutSequenceKey"); }));
+    panel->setPlayhead(0);
+    pump();
+    QCOMPARE(mode->currentData().toString(), QString("pingpong"));
+    QCOMPARE(find<QDoubleSpinBox>("cutoutSequenceDelay")->value(), 50.0);
+    panel->setPlayhead(400);
+    QVERIFY(gesture("delete sequence key", 1, [&] { click("cutoutSequenceDeleteKey"); }));
+    QCOMPARE(timesOfRig(data(), "idle", "slot:top", "sequence"), QVector<int>({0}));
+    // Multi-key ops move sequence keys like any other (dopesheet selection).
+    QVERIFY(gesture("move sequence key", 1, [&] { panel->moveKeys({{"slot:top", "sequence", 0}}, 200); }));
+    QCOMPARE(timesOfRig(data(), "idle", "slot:top", "sequence"), QVector<int>({200}));
+    // 시퀀스 해제 removes frames and keys; undo brings both back.
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->selectItem("slot:top");
+    pump();
+    QVERIFY(gesture("clear sequence", 1, [&] { click("cutoutSequenceClear"); }));
+    QVERIFY(!attachment("top").contains("sequence") && timesOfRig(data(), "idle", "slot:top", "sequence").isEmpty());
+    undo();
+    QCOMPARE(attachment("top")["sequence"]["frames"].size(), size_t(3));
+    QCOMPARE(timesOfRig(data(), "idle", "slot:top", "sequence"), QVector<int>({200}));
+    redo();
+    QVERIFY(!attachment("top").contains("sequence"));
+    undo();
+    // No part selected: the frames become a new part on the selected bone (one edit).
+    panel->selectItem("bone:root");
+    pump();
+    nextFiles = {files[2], files[1]};
+    QVERIFY(gesture("sequence as a new part", 1, [&] { click("cutoutSequenceImport"); pump(); }));
+    QCOMPARE(panel->selection(), QString("slot:img-seq-1"));
+    QVERIFY2(attachment("img-seq-1")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2"}), attachment("img-seq-1")["sequence"]["frames"].dump().c_str());
+    // 클리핑 삭제: the whole parts show again.
+    panel->selectItem("slot:card-clip");
+    pump();
+    QVERIFY(gesture("delete clipping", 1, [&] { click("cutoutClippingDelete"); }));
+    QVERIFY(!slotIds().contains("card-clip"));
+    QVERIFY(qAlpha(render().pixel(276, 720)) > 200);
+    for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
+    panel->selectRig(keepRig);
+    pump();
+  }
+
+  // Plugin 1.13.0: 사슬 IK from a multi-selected bone run, the stretch toggles and chain info, and
+  // the 물리 page: presets on several bones, parameter fields, the mix key, the preview simulation
+  // (playback simulates, scrubbing never does, pacing does not matter) and its wind/gravity.
+  void ikChainsAndPhysics() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "swing"); };
+    answers = {"swing"};
+    QVERIFY(gesture("new swing character", 1, [&] { click("cutoutNewCharacter"); }));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->selectItem("bone:root");
+    for (const char* id : {"c0", "c1", "c2", "c3"}) {
+      answers = {id};
+      QVERIFY(gesture("add chain bone", 1, [&] { click("cutoutAddBone"); }));
+      QVERIFY(gesture("chain bone length", 1, [&] { setSpin("cutoutPropLength", 40); }));
+    }
+    panel->selectItem("bone:c1");
+    QVERIFY(gesture("bend c1", 1, [&] { setSpin("cutoutPropRotation", 25); }));
+    auto worlds = [&](const Json& d) { const cutout::Rig r = cutout::parseRig("swing", d); return std::make_pair(r, cutout::samplePose(r, -1, 0)); };
+    const auto [before, beforePose] = worlds(data());
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutIkPage"));
+    // A gap (c0 + c2) or a single bone is refused without an edit.
+    panel->setSelection({"bone:c0", "bone:c2"});
+    QVERIFY(gesture("chain with a gap: refused", 0, [&] { click("cutoutNewChainIk"); }));
+    QVERIFY(panel->status().contains("사슬"));
+    panel->setSelection({"bone:c3", "bone:c1", "bone:c0", "bone:c2"}, "bone:c3");  // pick order does not matter
+    QVERIFY(gesture("사슬 IK from the run", 1, [&] { click("cutoutNewChainIk"); }));
+    Json k = data()["ik"][0];
+    QVERIFY2(k["bones"] == Json::array({"c0", "c1", "c2", "c3"}) && !k.contains("bendPositive"), k.dump().c_str());
+    QCOMPARE(panel->selection(), QString("bone:") + qs(k["target"].get<std::string>()));
+    {
+      const auto [after, afterPose] = worlds(data());
+      for (const char* b : {"c0", "c1", "c2", "c3"}) {
+        const auto& x = beforePose.world[size_t(before.boneIndex(b))];
+        const auto& y = afterPose.world[size_t(after.boneIndex(b))];
+        QVERIFY2(std::hypot(x.e - y.e, x.f - y.f) < 1e-6, b);  // the target sits on the effector: nothing jumps
+      }
+      QVERIFY(afterPose.ikSolve[0].solved && afterPose.ikSolve[0].iterations == 0);
+    }
+    QVERIFY(find<QListWidget>("cutoutIkList")->item(0)->text().contains("사슬 4"));
+    QVERIFY(find<QLabel>("cutoutIkInfo")->text().contains("FABRIK"));
+    QVERIFY(!find<QWidget>("cutoutIkCompress")->isEnabled() && !find<QWidget>("cutoutIkBend")->isEnabled());  // aim-only / two-bone-only
+    // Stretch toggle: one setup edit (also in Animate mode), undoable.
+    QVERIFY(gesture("stretch on", 1, [&] { click("cutoutIkStretch"); }));
+    QVERIFY(data()["ik"][0]["stretch"] == true && find<QCheckBox>("cutoutIkStretch")->isChecked());
+    undo();
+    QVERIFY(!data()["ik"][0].contains("stretch"));
+    redo();
+    QVERIFY(data()["ik"][0]["stretch"] == true);
+    // Dragging the target far away: the info reports the stretch.
+    const std::string target = data()["ik"][0]["target"].get<std::string>();
+    panel->selectItem(qs("bone:" + target));
+    QVERIFY(gesture("target far (setup x)", 1, [&] { setSpin("cutoutPropX", 400); }));
+    QVERIFY2(find<QLabel>("cutoutIkInfo")->text().contains("늘이기 ×"), qPrintable(find<QLabel>("cutoutIkInfo")->text()));
+    undo();
+    // ---- physics: two hair bones with the hair preset (one edit), then a preset and a field.
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutPhysicsPage"));
+    pump();
+    QVERIFY(!find<QWidget>("cutoutPhysicsStrength")->isEnabled());  // nothing to edit yet
+    panel->setSelection({"bone:c2", "bone:c3"});
+    auto* preset = find<QComboBox>("cutoutPhysicsPreset");
+    QVERIFY(preset && preset->count() == 3 && preset->itemText(0) == "머리카락" && preset->itemText(1) == "치마" && preset->itemText(2) == "장식 흔들림");
+    preset->setCurrentIndex(0);
+    QVERIFY(gesture("물리 추가 (hair, two bones)", 1, [&] { click("cutoutAddPhysics"); }));
+    QCOMPARE(data()["physics"].size(), size_t(2));
+    QVERIFY(data()["physics"][0]["bone"] == "c2" && data()["physics"][0]["gravity"] == 400 && data()["physics"][1]["bone"] == "c3");
+    QCOMPARE(find<QListWidget>("cutoutPhysicsList")->count(), 2);
+    QCOMPARE(panel->physicsId(), QString("c3-physics"));
+    QVERIFY(find<QWidget>("cutoutPhysicsStrength")->isEnabled() && !find<QWidget>("cutoutPhysicsKey")->isEnabled());
+    QCOMPARE(find<QDoubleSpinBox>("cutoutPhysicsStrength")->value(), 60.0);
+    preset->setCurrentIndex(1);
+    QVERIFY(gesture("프리셋 적용 (skirt)", 1, [&] { click("cutoutApplyPhysicsPreset"); }));
+    QVERIFY(data()["physics"][1]["damping"] == 0.7 && data()["physics"][1]["strength"] == 140);
+    QVERIFY(gesture("strength field", 1, [&] { setSpin("cutoutPhysicsStrength", 90); }));
+    QVERIFY(data()["physics"][1]["strength"] == 90);
+    QVERIFY(gesture("step 120 Hz", 1, [&] { setSpin("cutoutPhysicsStepHz", 120); }));
+    QVERIFY(std::fabs(data()["physics"][1]["step"].get<double>() - 1.0 / 120) < 1e-15);
+    QVERIFY(gesture("reset on start", 1, [&] { click("cutoutPhysicsResetOnStart"); }));
+    QVERIFY(data()["physics"][1]["resetOnStart"] == true);
+    QVERIFY(gesture("select physics c2", 0, [&] { panel->selectPhysics("c2-physics"); }));
+    QCOMPARE(find<QDoubleSpinBox>("cutoutPhysicsStrength")->value(), 60.0);
+    undo();
+    QVERIFY(!data()["physics"][1].contains("resetOnStart"));
+    redo();
+    // The canvas marks both physics bones (teal rings at their tips).
+    panel->selectItem("");
+    pump();
+    {
+      const cutout::Rig r = cutout::parseRig("swing", data());
+      const auto& w = panel->canvas()->pose().world[size_t(r.boneIndex("c3"))];
+      double tx, ty;
+      w.apply(40, 0, tx, ty);
+      const QPointF at = panel->canvas()->rigToWidget(QPointF(tx, ty));
+      const QImage shot = panel->canvas()->grab().toImage();
+      const qreal dpr = shot.devicePixelRatio();
+      int teal = 0;
+      for (int dx = -7; dx <= 7; dx++)
+        for (int dy = -7; dy <= 7; dy++) {
+          const QColor c = shot.pixelColor(int((at.x() + dx) * dpr), int((at.y() + dy) * dpr));
+          teal += c.green() > 150 && c.blue() > 130 && c.red() < 120;
+        }
+      QVERIFY2(teal > 4, "teal physics mark at the c3 tip");
+    }
+    // ---- Animate: a clip that swings the chain root, the mix key, then the preview simulation.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    answers = {"wave"};
+    QVERIFY(gesture("new wave clip", 1, [&] { click("cutoutNewClip"); }));
+    panel->setAutoKey(true);
+    panel->selectItem("bone:c0");
+    for (const auto& [ms, deg] : std::vector<std::pair<int, double>>{{0, -30}, {250, 30}, {500, -30}, {750, 30}, {1000, -30}}) {
+      panel->setPlayhead(ms);
+      QVERIFY(gesture("swing key", 1, [&] { setSpin("cutoutPropRotation", deg); }));
+    }
+    panel->setAutoKey(false);
+    panel->selectPhysics("c3-physics");
+    panel->setPlayhead(600);
+    QVERIFY(find<QWidget>("cutoutPhysicsKey")->isEnabled());
+    QVERIFY(gesture("mix 0.5 at 600 (pending)", 0, [&] { setSpin("cutoutPhysicsMix", 0.5); }));
+    QVERIFY(panel->hasPending());
+    QVERIFY(gesture("K commits the mix key", 1, [&] { click("cutoutKeyButton"); }));
+    QVERIFY(keyOfRig(data(), "wave", "physics:c3-physics", "mix", 600)["value"] == 0.5);
+    QVERIFY(gesture("혼합 키 at 900", 1, [&] { panel->setPlayhead(900); click("cutoutPhysicsKey"); }));
+    QCOMPARE(timesOfRig(data(), "wave", "physics:c3-physics", "mix"), QVector<int>({600, 900}));
+    QVERIFY(rowOf("physics:c3-physics", "mix") >= 0);
+    // Scrubbing never simulates: the canvas shows the clip pose, nothing runs.
+    panel->setManualClock(true);
+    panel->setPlayhead(300);
+    pump();
+    QVERIFY(!panel->physicsRunning() && panel->canvas()->physicsRest().isEmpty());
+    const cutout::Rig parsed = cutout::parseRig("swing", data());
+    auto plainAt = [&](double ms) { cutout::Rig r = parsed; for (auto& c : r.clips) c.loop = false; return cutout::samplePose(r, r.clipIndex("wave"), ms); };
+    auto c3 = [&](const cutout::Pose& p) { const auto& w = p.world[size_t(parsed.boneIndex("c3"))]; return QPointF(w.e, w.f); };
+    QVERIFY(std::hypot(c3(panel->canvas()->pose()).x() - c3(plainAt(300)).x(), c3(panel->canvas()->pose()).y() - c3(plainAt(300)).y()) < 1e-9);
+    // Preview playback simulates (fixed steps), the hair trails the swing and the tethers show it.
+    auto playFor = [&](double totalMs, const std::function<double(int)>& dtAt) {
+      panel->setPlayhead(0);
+      click("cutoutPlay");
+      QVERIFY(panel->physicsRunning());
+      double done = 0;
+      for (int i = 0; done < totalMs - 1e-9; i++) { const double dt = std::min(dtAt(i), totalMs - done); panel->advancePlayback(dt); done += dt; }
+    };
+    std::vector<cutout::PhysicsBody> at60, irregular;
+    playFor(400, [](int) { return 1000.0 / 60; });
+    QVERIFY(panel->physicsSim().steps > 40);
+    at60 = panel->physicsSim().bodies;
+    QCOMPARE(panel->canvas()->physicsRest().size(), 2);
+    {
+      const QPointF moved = c3(panel->canvas()->pose()), still = c3(plainAt(400));
+      QVERIFY2(std::hypot(moved.x() - still.x(), moved.y() - still.y()) > 0.5, "the physics bone trails its animated pose");
+    }
+    QVERIFY(find<QLabel>("cutoutPhysicsInfo")->text().contains("미리 보기"));
+    click("cutoutPlay");  // stop
+    QVERIFY(!panel->physicsRunning());
+    const double irregularDts[] = {7.3, 11.1, 3.9, 20.0, 0.25, 33.0, 5.45, 19.0};
+    playFor(400, [&](int i) { return irregularDts[i % 8]; });
+    irregular = panel->physicsSim().bodies;
+    QCOMPARE(irregular.size(), at60.size());
+    for (size_t i = 0; i < at60.size(); i++)
+      QVERIFY2(std::memcmp(&irregular[i].r, &at60[i].r, sizeof(double)) == 0 && irregular[i].steps == at60[i].steps, "preview pacing does not change the simulation");
+    // Wind / gravity of the preview: editor-only, no edit.
+    QVERIFY(gesture("preview wind", 0, [&] { setSpin("cutoutPhysicsWind", 300); setSpin("cutoutPhysicsGravity", -100); }));
+    QCOMPARE(panel->previewWind(), 300.0);
+    QCOMPARE(panel->physicsSim().gravity, -100.0);
+    QVERIFY(gesture("다시 놓기", 0, [&] { click("cutoutPhysicsReset"); }));
+    QVERIFY(panel->physicsSim().settles >= 2);
+    click("cutoutPlay");  // stop
+    QVERIFY(gesture("preview off", 0, [&] { click("cutoutPhysicsPreview"); }));
+    QVERIFY(!panel->physicsPreview());
+    click("cutoutPlay");
+    panel->advancePlayback(100);
+    QVERIFY(!panel->physicsRunning());
+    click("cutoutPlay");
+    click("cutoutPhysicsPreview");
+    QVERIFY(gesture("preview environment back", 0, [&] { setSpin("cutoutPhysicsWind", 0); setSpin("cutoutPhysicsGravity", 0); }));
+    panel->setManualClock(false);
+    // Rename / delete (one edit each); deleting drops its mix keys.
+    panel->setMode(CutoutPanel::Mode::Setup);
+    answers = {"tip-sway"};
+    QVERIFY(gesture("rename physics", 1, [&] { panel->selectPhysics("c3-physics"); click("cutoutRenamePhysics"); }));
+    QVERIFY(data()["physics"][1]["id"] == "tip-sway" && timesOfRig(data(), "wave", "physics:tip-sway", "mix").size() == 2);
+    QVERIFY(gesture("delete physics", 1, [&] { click("cutoutDeletePhysics"); }));
+    QCOMPARE(data()["physics"].size(), size_t(1));
+    QVERIFY(timesOfRig(data(), "wave", "physics:tip-sway", "mix").isEmpty());
+    for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
+    panel->selectRig(keepRig);
+    pump();
+  }
+
   void largeRigPerformance() {
     const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
     const auto keepHistory = host.history, keepFuture = host.future;

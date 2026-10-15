@@ -102,8 +102,9 @@ export const pluginElement={id:'hero-anim',kind:'plugin',x:440,y:130,width:300,h
  * Content is a real project snapshot; the plugin element is injected after the snapshot because
  * project schema support is owned by another change.
  */
-/** mesh: true uses meshRig/meshController (images: the two-tone arm) instead of the hero fixture. */
-export async function makeGame({target,name,runtime=true,mesh=false}){
+/** mesh: true uses meshRig/meshController (images: the two-tone arm) instead of the hero fixture.
+ *  documents: {rig, controller} replaces both; images: {assetId: PNG bytes} adds pictures (plugin 1.12.0 fixtures). */
+export async function makeGame({target,name,runtime=true,mesh=false,documents=null,images={}}){
   await mkdir(resolve('.cache/anim-tests'),{recursive:true});
   const root=await mkdtemp(resolve(`.cache/anim-tests/${name}-`)),projectRoot=resolve(root,'project'),game=resolve(root,'game');
   await cp(resolve('examples/academy-journey'),projectRoot,{recursive:true});
@@ -121,10 +122,11 @@ export async function makeGame({target,name,runtime=true,mesh=false}){
   for(const asset of content.assets){const relative=`assets/${asset.id}${extname(asset.path).toLowerCase()}`;await cp(resolve(projectRoot,asset.path),resolve(game,relative));assets[asset.id]=relative;}
   for(const [id,[w,h,colour]] of Object.entries(IMAGES)){const relative=`assets/${id}.png`;await writeFile(resolve(game,relative),png(w,h,colour));assets[id]=relative;}
   if(mesh){await writeFile(resolve(game,'assets/anim-arm.png'),pngBands(240,40,RED,BLUE));assets['anim-arm']='assets/anim-arm.png';}
+  for(const [id,bytes] of Object.entries(images)){await writeFile(resolve(game,`assets/${id}.png`),bytes);assets[id]=`assets/${id}.png`;}
   await writeFile(resolve(game,'assets/anim-cheer.wav'),wav());assets['anim-cheer']='assets/anim-cheer.wav';
   const module=target==='windows'?'cutout-runtime.dll':'cutout-runtime.mjs';
   const extensions={version:1,plugins:[{id:'cutout-animation',version:'1.0.0',abi:'raising-extension-1',entry:`plugins/cutout-animation/${module}`,
-    documents:[{type:'rig',id:'hero',data:mesh?meshRig():rig},{type:'controller',id:'hero-main',data:mesh?meshController:controller}]}]};
+    documents:[{type:'rig',id:'hero',data:documents?documents.rig:mesh?meshRig():rig},{type:'controller',id:'hero-main',data:documents?documents.controller:mesh?meshController:controller}]}]};
   if(runtime){
     await mkdir(resolve(game,'plugins/cutout-animation'),{recursive:true});
     const files=target==='windows'?['build-win/cutout-runtime.dll']:['build-wasm/cutout-runtime.mjs','build-wasm/cutout-runtime.wasm'];

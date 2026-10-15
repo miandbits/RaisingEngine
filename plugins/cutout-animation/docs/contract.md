@@ -184,7 +184,7 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 ## IK constraints (plugin 1.3.0)
 
-* `ik: [{id, name?, bones, target, tip?, mix?, aimAxis?, bendPositive?, stretch?, order?}]` (optional;
+* `ik: [{id, name?, bones, target, tip?, mix?, aimAxis?, bendPositive?, stretch?, compress?, uniform?, order?}]` (optional;
   absent = no constraints). `bones` is the chain, parent first:
   * **1 bone = aim**: the bone is rotated so its bone-local direction **`aimAxis`** (plugin
     1.4.1; degrees, −360..360, default **0 = +x**, 90 = +y, i.e. down a y-down screen) points at
@@ -210,9 +210,11 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   * `bendPositive` (default true): the side a two-bone limb bends to **on screen** —
     `cross(lower − upper, effector − lower) > 0`, i.e. the lower link turns clockwise from the
     upper link on a y-down screen. A mirrored parent space keeps the on-screen side.
+  * **3..32 bones = chain** (plugin 1.13.0), each a direct child of the previous one: see "IK
+    chains and stretch" below.
   * `order` integer −1000..1000 (default 0): constraints are solved in ascending `order`, ties
-    in array order. `stretch` is accepted and **not applied** in 1.3.0 (warning
-    `ANIM_IK_STRETCH`).
+    in array order. `stretch` / `compress` / `uniform`: plugin 1.13.0, below (1.3.0..1.12.0
+    accepted `stretch` and ignored it with warning `ANIM_IK_STRETCH`, no longer emitted).
 * **Order of operations** (all runtimes, `samplePose`, onion skin, trail and drawing): tracks
   0..15 (with the expression layer between track 0 and 1) → world transforms → **IK
   constraints in order**, each reading the current world of its target and chain parent and
@@ -274,6 +276,135 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   * Deleting the last constraint removes the `ik` list (documents keep the 1.2 shape).
 * Editor-only: the constraint shown in the IK page, the target crosshair and the highlighted
   chain on the canvas never reach documents.
+
+### IK chains and stretch (plugin 1.13.0)
+
+* **Compatibility**: one- and two-bone constraints without `stretch` run exactly the 1.12 code
+  path: their poses are identical bit for bit (core test `ik golden`, which compares every IK
+  scenario of the earlier tests against bit patterns recorded by the 1.12.0 build).
+* **Chains** (`bones` 3..32, each the direct child of the previous; `ANIM_IK_CHAIN` otherwise).
+  Effector: the explicit `tip` (a direct child of the **last** bone), else the last bone's
+  length tip, else its first child bone, else its origin (then the last link is the one before
+  it). Solving runs **FABRIK** on the joints in rig space (bone origins, then the effector) with
+  the link lengths of the pose being solved: at most `IK_CHAIN_ITERATIONS` = 32 backward/forward
+  passes, stopping as soon as the effector is within `IK_CHAIN_TOLERANCE` = 0.01 rig px of the
+  target. A target at or beyond the chain's reach lays it straight at the target (0 passes).
+  Each bone then turns in **its parent's space** so its next joint lies on the solved
+  direction (exact under any ancestor transform; parents first), blended by `mix` like the
+  other chains. A chain keeps the bend side its animated pose gives it; only a straight chain
+  (all joints within 1e-6 · length of the line) is first bent 1 % of its length to the
+  `bendPositive` side (the two-bone convention: positive = clockwise on screen) so FABRIK does
+  not fold it onto itself. Fixed passes and no randomness: the same input gives the same bits,
+  and native and Wasm run the same arithmetic (parity to libm last-ulp noise).
+* **Stretch** (`stretch: true`, Spine-like): when the target is farther than the chain reaches,
+  the chain scales along its bones' length axis — aim: the bone's `scaleX` becomes
+  `scaleX · (1 + (dist / reach − 1) · mix)` with reach = `length · |scaleX|` in the parent
+  space (exact under any parent transform); two bones and chains: the **first** bone's `scaleX`
+  by `1 + (dist / total − 1) · mix` (total = the link lengths), which stretches the straight
+  chain exactly when each child sits on its parent's +x axis (bones drawn with a length;
+  otherwise approximate, as in Spine). `compress: true` (aim chains only; elsewhere warning
+  `ANIM_IK_COMPRESS`) also shrinks the bone when the target is closer than its length.
+  `uniform: true` scales `scaleY` by the same factor (without stretch/compress: warning
+  `ANIM_IK_UNIFORM`). Stretch needs **every chain bone to have a length > 0**: otherwise it is a
+  no-op with warning `ANIM_IK_STRETCH_LENGTH`; an aim chain with `aimAxis` ≠ 0 does not stretch
+  (warning `ANIM_IK_STRETCH_AXIS`). The scale lands in `Pose.applied` (the animated `scaleX`
+  stays the keyable value).
+* `Pose.ikSolve[i]` = `{iterations, error, stretch, solved}` of the last solve; the `sample`
+  reply adds `iterations` and `error` to `ik.<id>` for chains of 3+, `stretch` when a constraint
+  stretched, and `appliedScaleX` for chain bones whose solved scale differs (other replies keep
+  their shape).
+* Editing ops: `addIk` takes `bones` of up to 32 (adjacent run; `createTarget` puts the target
+  at the effector, so nothing moves; chains of 3+ write no `bendPositive`) and `stretch`,
+  `compress`, `uniform`; `setIk` takes the three flags (booleans, `false` drops the key).
+  Setting a length on a chain's last bone pins its first child as `tip` (as for two bones).
+* Editor: `사슬 IK` (`cutoutNewChainIk`) turns the multi-selected bone run (any pick order) into
+  a chain, refusing gaps and forks; the IK page has `늘이기` / `줄이기` / `균일`
+  (`cutoutIkStretch`, `cutoutIkCompress`, `cutoutIkUniform`, setup values in both modes) and its
+  info line (`cutoutIkInfo`) reports the FABRIK passes, the effector error and the stretch factor
+  of the shown pose.
+
+## Physics (plugin 1.13.0)
+
+Spine 4.2-like physics constraints: a bone (hair, skirt, accessories) trails its animated pose
+through a damped spring. **Presentation only**: never in saves, never a signal, never a game rule.
+
+* `physics: [{id, name?, bone, x?, y?, rotate?, scaleX?, inertia?, strength?, damping?, mass?,
+  wind?, gravity?, mix?, limit?, step?, teleport?, resetOnStart?}]` (optional). Channels `x`,
+  `y` (world offset of the bone's origin), `rotate` (turn about the origin) and `scaleX`
+  (stretch along the bone's x axis) are mixes 0..1 (default 0; none = warning
+  `ANIM_PHYSICS_CHANNELS`; `shearX` is not supported: warning `ANIM_PHYSICS_UNUSED`).
+  `inertia` 0..1 (default 1), `strength` 0..10000 (1/s², default 100), `damping` 0..1 = velocity
+  kept per 1/60 s (default 0.85; 1 = none), `mass` 0.01..1000 (default 1), `wind` (+x) and
+  `gravity` (+y, down the screen) px/s² (default 0), `mix` 0..1 (default 1), `limit` px/s
+  (> 0, default 5000), `step` seconds 1/240..1/10 (default 1/60), `teleport` px (> 0, default
+  300), `resetOnStart` bool. The lever of `rotate`/`scaleX` is the bone's length (a point bone
+  uses 50 px: warning `ANIM_PHYSICS_LENGTH`). Errors: `ANIM_PHYSICS_DUP_ID`,
+  `ANIM_PHYSICS_BONE`, `ANIM_PHYSICS_RANGE`, `ANIM_PHYSICS_MASS`, `ANIM_PHYSICS_STEP`,
+  `ANIM_PHYSICS_MIX`; two constraints on one bone are allowed (warning `ANIM_PHYSICS_SAME_BONE`).
+* **Order**: tracks → expression → world → IK → **physics**, constraints parents first (the
+  bone's place in the evaluation order, then array order), each seeing the ones before it
+  applied, each rewriting its bone's world and recomputing its descendants (`Pose.applied`
+  stays the IK result). Meshes skin on the result.
+* **Integrator** (`core/src/physics.cpp`), per step of h = `step` s with the bone's input world
+  W (origin P, x-axis angle α, lever L = length · |W x axis|): the input origin's motion since
+  the last step, capped per axis at `limit · h`, pushes the body by `inertia` — translation
+  `o −= Δ·inertia`, rotation turns toward where the simulated tip was seen from the moved
+  origin, scale shrinks/grows by the motion along the axis / L. Then semi-implicit Euler with
+  m = h / mass: `v += (wind − o·strength)·m` (x), `v += (gravity − o·strength)·m` (y), angular
+  `v += ((gravity·cos θ − wind·sin θ) / L − r·strength)·m` (θ = α + r), scale
+  `v += ((wind·cos θ + gravity·sin θ) / L − s·strength)·m`; `o += v·h`; `v *= damping^(60h)`
+  (computed once at load). Output: the bone's world gets `+o·mix·x/y`, a turn of `r·mix·rotate`
+  about its origin and `1 + s·mix·scaleX` along its x axis.
+* **Determinism (frame-rate independence)**: steps sit on an **absolute grid of the instance
+  clock** — constraint c steps at `k · stepMs_c` — and `update(dt)` advances the tracks
+  piecewise to every due step, so each step sees the pose at its own time. Physics rigs sample
+  clip times (and mix progress) on a 1/1024 ms grid (`snapMs`), both for the step inputs and the
+  shown pose: sums of the same time in different pieces (16.6 + 16.7 vs 33.3) differ only in the
+  last bits, which the grid removes, and step boundaries compare against the snapped clock. So
+  any partition of the same time — 30, 60, 144 Hz, irregular dts, 0-length updates — produces
+  **identical bits** (core test `physics: frame-rate independence`, Wasm and both players
+  likewise). The only exceptions are a clip switch inside an update (where a one-shot ends is
+  already frame-quantized) and a hitch: more than `PHYSICS_MAX_STEPS_PER_UPDATE` = 240 due steps
+  in one update skip the simulation and settle at the end. Rigs without physics keep the
+  previous code path (no snapping), bit for bit.
+* **Settled state**: the bodies rest in the integrator's own equilibrium at the current input —
+  translation `o = (wind, gravity) / strength`, rotation the root of
+  `(gravity·cos θ − wind·sin θ) / L = strength·r` on [−π, π] (64 bisection halvings; a spring
+  too weak to have one hangs the bone along the force), scale likewise, velocities 0 — so a
+  start never jumps or sags visibly.
+* **Reset rules**: a new instance starts settled; **restore** never restores physics (state is
+  not saved) and starts settled; **`resetOnStart`** constraints settle whenever a clip starts on
+  track 0 (layer tracks never reset); a **teleport** — the input origin moving more than
+  `teleport` px within one step (a root jump, a clip switch without mix) — settles that body
+  instead of flinging it (`describe().physics.teleports`); **seek** (editor scrubbing) settles
+  every body: no simulation while scrubbing. Host op `resetPhysics {instance}` settles on
+  demand (players never need it), `setPhysicsEnvironment {instance?, wind, gravity}` adds
+  px/s² to every constraint (editor preview controls). `describe` adds
+  `physics: {clockMs, steps, settles, teleports, wind, gravity}` for physics rigs.
+* Keys: track `{"target": "physics:<id>", "property": "mix"}` (numeric 0..1, any interp; only
+  `mix`: `ANIM_PROPERTY`; unknown id `ANIM_TARGET_MISSING`); mixes cross-fade like IK mix.
+  `sample` (stateless) adds `physics: {<id>: {mix}}` and applies no simulation.
+* Editing ops: `addPhysics {bone | bones, preset?, id?, name?, ...fields}` (one constraint per
+  bone, ids `<bone>-physics`, no channel given = `rotate: 1`; `extra.physics`), `setPhysics
+  {physics, preset?, bone?, name?, ...fields}` (`null` = back to the default, the key goes; a
+  preset replaces the motion fields, keeps `mix`/`step`), `renamePhysics {physics, id?, name?}`
+  (renames `physics:<id>` tracks), `deletePhysics {physics}` (and its tracks; `extra.keys`);
+  `deleteBone` drops the bone's physics (warning `ANIM_PHYSICS_REMOVED`). Presets
+  (`physicsPresets()`): `hair` 머리카락 {rotate 1, inertia 0.7, strength 60, damping 0.8,
+  gravity 400}, `skirt` 치마 {rotate 1, inertia 0.5, strength 140, damping 0.7, mass 1.5,
+  gravity 200}, `accessory` 장식 흔들림 {rotate 1, x 0.4, y 0.4, inertia 0.9, strength 50,
+  damping 0.92, mass 0.8, gravity 300}.
+* Editor: the `물리` page (`cutoutPhysicsPage`): `cutoutPhysicsPreset`, `cutoutAddPhysics` (every
+  selected bone), `cutoutApplyPhysicsPreset`, `cutoutDeletePhysics`, `cutoutPhysicsList`, the
+  fields `cutoutPhysicsRotate|X|Y|ScaleX|Inertia|Strength|Damping|Mass|WindField|GravityField|
+  Mix|Limit|Teleport|StepHz` and `cutoutPhysicsResetOnStart` (one edit each; Animate mode keys
+  the mix, K commits), `cutoutPhysicsKey` (혼합 키), `cutoutRenamePhysics`,
+  `cutoutPhysicsSelectBone`, and the editor-only preview controls `cutoutPhysicsPreview` (재생 중
+  물리), `cutoutPhysicsWind`, `cutoutPhysicsGravity`, `cutoutPhysicsReset` (다시 놓기),
+  `cutoutPhysicsInfo`. Preview playback simulates with the same `runPhysics` (fixed steps in
+  clip time, settled at the start, restarted on a playhead jump); scrubbing shows the plain clip
+  pose. The canvas marks physics bones with a teal spring ring at their tip and, while
+  simulating, a dashed tether from the unsimulated tip.
 
 ## Mesh attachments and weights (plugin 1.4.0)
 
@@ -496,6 +627,19 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * The authoring layout is editor-only too: the 애니메이션 작업 공간 (host workspace) switch,
   splitter sizes and collapsed sections (QSettings `plugins/cutout-animation/layout/*`) and
   the Tab full view never send an edit and never reach documents or the game.
+  * Plugin 1.10.0: until the user drags a splitter the layout is automatic (pane sizes are
+    proportional to the window, never below the width the pane's widest tool row needs, side
+    panes capped at a multiple of it); only a dragged layout is saved (`layout/version` 3,
+    `layout/custom`). Older (v1/v2) states are ignored; a v3 state is restored and widened
+    where a row would hide tools behind the overflow `»`. `레이아웃 초기화` returns to automatic.
+  * 작업 공간 글자 크기 (`view/uiScale`: 0.9 / 1 / 1.25 / 1.5, Ctrl+= / Ctrl+- / Ctrl+0) scales the
+    workspace text over the host font, plus icons, row paddings, the dopesheet row height,
+    ruler and label column, graph key/handle radii, canvas gizmos and their pick radii. Absent,
+    the default comes from the screen: 1.25 (short side >= 1400) or 1.5 (>= 2000) at 100 %
+    Windows scaling when the width keeps 1280 logical px per step, else 1.
+  * The first-run hint strip (`view/hintDismissed`) and the command palette (Ctrl+K / F1: every
+    workspace button, menu command and page by name, group or shortcut; running one is the
+    same as clicking it, so an editing command is exactly one edit) are presentation only.
 * Onion skin and motion trail are editor-only views; their settings are a per-user
   preference (QSettings `plugins/cutout-animation/onionSkin/*`), never rig/controller data
   (not even an `editor` block). Ghosts are pure `samplePose` results of the clip being edited
@@ -616,6 +760,8 @@ in 1.7):
 * One-shot `then`: `default` (track 0 → controller default clip; other tracks stop),
   `hold` (stay on the last frame), `stop` (mix out to lower tracks/setup).
 * `update(dt)` clamps dt to 0..10 s; a long pause completes loops instead of replaying them.
+* Physics rigs (plugin 1.13.0) advance in pieces cut at the physics step boundaries (same events
+  and completions) and sample clip times on the 1/1024 ms grid; see "Physics".
 
 ## Controller bindings and game signals
 
@@ -670,7 +816,8 @@ so it cannot duplicate a game effect.
 `playerPresentation.extensions["cutout-animation"]` stores per mounted instance:
 controller ref, active clip per track, binding, `then`, `stopOn`, speed, and (plugin 1.2.0)
 `skin` and `expression`. IK and meshes add no state: constraint values, weights and deform
-offsets come from the rig and the clips.
+offsets come from the rig and the clips. Physics (plugin 1.13.0) is not saved either: a
+restored instance starts settled at its restored pose.
 
 * Policy: skin and expression are both restored. An id removed since the save falls back to
   the controller default; saves without these fields (1.x) keep the current look.
@@ -744,3 +891,176 @@ pictures larger than a page. Packing is deterministic (skyline, tallest first).
   unless the content names them elsewhere (fewer files: the test fixture's 8 rig images become one
   page). Screenshots with and without atlas differ by a mean of 0.0013/255 (native) and 0.004/255
   (web) (`tests/plugins/cutout-atlas.test.mjs`).
+
+## Layer import (plugin 1.11.0)
+
+Layered art becomes a rig whose setup pose looks exactly like the document. One implementation
+(`service/psd.mjs` reader + `service/layer-import.mjs` mapping) serves every path: the service
+import hook `prepareImport` (engine CONTRACT.md §11; Qt `pluginImport`, MCP `plugin_import`) and
+the read-only op `importLayers` (`plugin_call`). No document format change: everything it writes
+is ordinary schemaVersion 1 data plus editor metadata.
+
+* **Sources** (`payload.file`, absolute): a `.psd` (version 1) or `.psb` (version 2); a folder of
+  PNGs, a PNG inside it (= the folder) or its `layout.json`
+  `{width?, height?, layers: [{file, name?, x?, y?, visible?, opacity?, group?: "body/head"}]}`
+  (first = back; without a layout every PNG at 0,0, sub-folders = groups, natural name order, a
+  leading number `01-` only sorts). PSD: 8-bit RGB only — 16/32-bit, CMYK, indexed, grayscale,
+  Lab, … are refused with a message saying how to re-save; raw and PackBits channels (ZIP channels
+  refused); Unicode names (`luni`); section dividers (`lsct`/`lsdk`) = groups; a document without
+  layer records imports its merged image as one layer. Canvas ≤ 8192 px, ≤ 64 Mpx of layers.
+* **Payload**: `file`, `id` (new character, default from the file name; an existing rig or
+  controller id is refused) **or** `rig` (re-import onto that rig), `name?`, `origin?`
+  (`bottom-center` default, `center`, `top-center`, `top-left`, `{x, y}` in document px),
+  `trim?` (default true), `scale?` (0.05..4, default 1), `exclude?` (report layer keys).
+* **Mapping** (new character): canvas = document size × scale, root bone `root` at the origin;
+  a top-level `[pivot]` layer's centre overrides the origin.
+  * group → bone (id from the name, nested groups = child bones, local = world − parent); origin =
+    the centre of a `[pivot]` / `[bone]` / `#pivot` marker layer inside it (not imported as a
+    picture), else the centre of its content. A group without pictures makes no bone.
+  * layer → region attachment, picture trimmed to its pixels (alpha > 0) plus a 1 px transparent
+    ring (linear filtering at the edge blends to transparency like the document), placed with
+    pivot 0.5 at its centre in the bone's space; `scale` ≠ 1 sets the attachment scale (the
+    pictures keep their resolution). `trim: false` keeps the whole layer rectangle.
+  * names: `slot/attachment` or `slot@attachment` → one slot (`eyes/open`, `eyes/closed`); the
+    layers of a `[slot]` group are attachments of the slot named after the group; every plain
+    layer is its own slot (attachment named like the slot). Ids are lowercase kebab-case from
+    the name (accents dropped); names without Latin letters fall back to `part-N` / `bone-N`; a
+    slot name used under two bones becomes `<bone>-<slot>`, later duplicates `-2`.
+  * draw order = layer order (a slot sits where its shown layer is); the topmost visible layer of a
+    slot is its setup attachment, hidden layers (or layers of hidden groups) are attachments that
+    are not shown (expression / key swaps); a slot with only hidden layers has `attachment: null`.
+    Layer opacity × group opacities → slot `alpha` (overlapping children of a translucent group can
+    differ slightly from Photoshop's isolated group).
+  * `[ignore]` / `[skip]` drop a layer or a whole group; `exclude` keys likewise.
+  * Warnings (report): blend modes other than normal/pass-through (`ANIM_IMPORT_BLEND`, drawn
+    normal), clipping masks (`ANIM_IMPORT_CLIPPING`), layer masks (`ANIM_IMPORT_MASK`, not applied),
+    translucent groups, two visible layers in one slot, empty layers/groups, more than one marker.
+  * New rig: `idle` clip, mix 150 ms; new controller `{rig: id, defaultClip: "idle"}`.
+* **Provenance**: `editor.layerImport = {source, format, width, height, scale, layers: {"slot/name":
+  {x, y, width, height, pixels}}}` (picture rectangle in document px and a pixel hash). Runtimes
+  ignore `editor`.
+* **Re-import** (`rig`): bones, slots, keys, skins, expressions, IK and every placement stay.
+  Matching is by id: groups map to bones of the same id (kept, never moved; new groups become new
+  bones placed through the current setup pose), `slot/name` to existing attachments.
+  * Unchanged picture (same rectangle and pixel hash): untouched (`unchanged`).
+  * Changed region attachment: new image and size; the placement (x, y, rotation, scale) is kept
+    and the pivot moves so the same picture content stays under (x, y):
+    `pivot' · size' = pivot · size − d`, `d` = how far the picture's corner moved since the last
+    import (no provenance: placement kept, warning `ANIM_IMPORT_PLACEMENT`). An untouched rig
+    re-imported from a changed document therefore draws the new document exactly.
+  * Mesh attachments only get a new image when its size and position are unchanged
+    (`ANIM_IMPORT_MESH` otherwise).
+  * New layers: new attachments / slots (inserted after the nearest earlier imported slot).
+    Attachments imported before but absent now are reported (`missing`) and kept. The canvas
+    stays (`ANIM_IMPORT_CANVAS` when the document size differs); the first import's scale is used.
+* **Result**: `{documents: [{type: "rig", id, data}, {type: "controller", …}?], images: [{id, bytes}],
+  report}`; image ids are `image-<sha256 of the PNG, 24 hex>` (the same as `importImage`), so an
+  unchanged picture is the same asset. `report`: `mode` (`create`/`update`), `rigId`, `source`,
+  `options`, `canvas`, `layers` (tree, back → front: `key`, `name`, `kind`, `visible`, `opacity`,
+  `blend`, `bounds`, `include`, `role` = image/bone/pivot/slot-group/ignored/excluded/empty/…,
+  `bone`, `slot`, `attachment`, `setup`, `status` = add/update/same/skip/kept, `warnings`),
+  `warnings`, `changes` (bones added/kept, slots added/kept, attachments added/updated/unchanged/
+  skipped/missing) and `summary`. The rig passes core validation before it is returned. A preview
+  (`dryRun`) has no images and empty `imageAssetId`s.
+* `plugin_call` op `importLayers`: the same with `target: {id, rig}` for a re-import preview of rig
+  data and `includeImages: true` for base64 PNGs; it never writes anything.
+* Editor: `PSD 가져오기…` (character row `cutoutImportLayers`, plugin menu
+  `cutoutImportLayersAction`, command palette) → file → preview → dialog
+  `cutoutLayerImportDialog` (`cutoutLayerImportSource`, `…Target` new / update, `…Id`, `…Origin`,
+  `…Scale`, `…Trim`, layer tree `…Tree` with include boxes and bone/slot/attachment/status columns,
+  `…Warnings`, `…Summary`, `…Refresh` = preview again) → `가져오기` = one edit (one Ctrl+Z). The
+  file the selected character was imported from defaults to updating it.
+
+## Clipping (plugin 1.12.0)
+
+Spine clipping attachments: a polygon that hides everything of a slot range outside it.
+
+* **Data**: an attachment (default list or a skin) `type: "clipping"` with `vertices: [x, y, …]`
+  (3..256 points, a simple polygon, convex or concave) and `end: <slot id>`. No picture:
+  `imageAssetId`, `width`, `height`, `pivotX/Y`, `uvs`, `triangles`, `hull`, `edges`, `atlas`,
+  `sequence` are not used (`ANIM_CLIP_UNUSED` warning). The polygon is placed like a mesh: points
+  in the slot bone's space through the attachment's `x, y, rotation, scaleX, scaleY` (pivot and
+  size are 0), or `weights` (1..4 bones per point, bind pose = setup pose, exactly the mesh rules);
+  deform keys (`property: "deform"`, `attachment` = the clip's name, offsets per point) move it.
+* **Range**: when a slot shows a clipping attachment, the slots after it in draw order up to and
+  including `end` draw only inside the polygon. The clipping slot itself draws nothing and its
+  alpha does not matter. The range ends at `end` even when that slot shows nothing. A clipping
+  attachment inside an active range is ignored (no nesting, as in Spine).
+* **Runtime** (`cutout::drawItems`, every player): each drawn item of the range is cut on the CPU.
+  The polygon is ear-clipped and merged into convex parts (Hertel–Mehlhorn, so concave polygons
+  work); every item triangle (a region = its two-triangle quad over uvs 0..1 of its picture or
+  atlas sub-image) inside one part is kept, others are cut against each part (Sutherland–Hodgman,
+  uvs interpolated linearly). Results: an item entirely inside stays exactly as it was (a region
+  stays a region, a mesh keeps its topology id); an item entirely outside is dropped; otherwise
+  the item becomes a mesh item (`positions`, `uvs`, `indices`; matrix/size/region unchanged as the
+  fallback rectangle) with shared vertices deduplicated, split into several items of at most 2048
+  vertices / 4096 triangles. Hosts therefore need nothing beyond `plugin-mesh-v1`
+  (`requiredHostFeatures` lists it for rigs with a clipping attachment). Positions are snapped to
+  1/4096 px before cutting, the cut uses plain IEEE arithmetic (sqrt, no libm) and every
+  intersection is computed from its segment's endpoints in one canonical order: native and Wasm
+  emit bit-identical triangles, and two triangles sharing an edge get the same cut points.
+* **Compact frames**: a clipped item's topology changes with the pose, so its mesh id is interned
+  by content (`uvs` + `indices`) instead of by attachment: an unmoved clip keeps its id, a moving
+  one adds ids that hosts fetch with `meshes` like any unknown id. After 4096 such topologies the
+  plugin restarts the table under a new `meshEpoch` (between frames), which hosts already handle.
+* **Validation**: `ANIM_CLIP_END` (missing, unknown, not after the clipping slot),
+  `ANIM_CLIP_VERTICES` (pairs, 3..256), `ANIM_CLIP_POLYGON` (`polygonProblem`: crossing or
+  touching edges, spikes, no area), weights as meshes (`ANIM_MESH_WEIGHTS`, …). A pose may still
+  fold a weighted polygon over itself: the runtime then fans what ear clipping cannot cut
+  (bounded, deterministic).
+* **Editing ops**: `addClipping {slot (new), bone?, before? | index?, name? ("clip"), vertices |
+  worldVertices (rig px at the setup pose), end? (= before)}`, `setClipping {slot, name?, skin?,
+  vertices? | worldVertices?, end?}` (a new point count drops weights and the polygon's deform
+  keys). `deleteSlot` of a range's end moves `end` to the slot below; a range that becomes empty
+  deletes the clipping slot too (`ANIM_CLIP_REMOVED`). `moveSlot` that would put `end` before the
+  clip is refused (`ANIM_CLIP_END`).
+* **Editor** (page `클리핑`, `cutoutClippingPage`): `클리핑 만들기` (`cutoutClippingCreate`) draws
+  the polygon with the outline tool over the selected part (clicks; first point / double-click /
+  Enter closes, Esc cancels) → `addClipping` (new slot `<part>-clip` right below the part, end =
+  the part); `모양 다시 그리기` (`cutoutClippingRedraw`) → `setClipping`; `끝 조각`
+  (`cutoutClippingEnd`) → `setClipping {end}`; `클리핑 삭제` (`cutoutClippingDelete`); the list
+  `cutoutClippingList` (clip slot · first → end); `윤곽 보기` (`cutoutClippingOutlines`, dashed
+  polygons on the canvas, editor-only). The canvas clips with a painter clip path from the same
+  core polygon (`drawRig`); a clipping slot hidden with the eye toggle clips nothing.
+
+## Image sequences (plugin 1.12.0)
+
+Spine sequences: one attachment shows one of several same-size pictures, picked by keys.
+
+* **Data**: a region or mesh attachment may have `sequence: {frames: [imageAssetId…], setupIndex?,
+  atlas?}`: 1..256 image assets of the attachment's size (`imageAssetId` must be `frames[0]`,
+  `ANIM_SEQUENCE_IMAGE`; the service checks every frame's PNG size against the first,
+  `ANIM_SEQUENCE_FRAME_SIZE`, and that it is an image, `ANIM_IMAGE_MISSING`). All frames share the
+  placement (and a mesh's uvs/triangles). `setupIndex` (default 0) is shown without keys.
+* **Keys**: slot track `{target: "slot:<id>", property: "sequence", keys: [{timeMs, mode, index,
+  delay}]}`, step only (`ANIM_INTERP`); `mode` = `hold` (default) | `once` | `loop` | `pingpong`
+  | `onceReverse` | `loopReverse` | `pingpongReverse` (`ANIM_SEQUENCE_KEY`), `index` (start frame,
+  default 0, below the slot's largest frame count: `ANIM_SEQUENCE_INDEX`), `delay` (ms per frame,
+  default 100, > 0: `ANIM_SEQUENCE_DELAY`). The slot must have a sequence attachment
+  (`ANIM_SEQUENCE_TARGET`).
+* **Frame rule** (`cutout::sequenceFrame`, Spine `SequenceTimeline`): before the clip's first key
+  the frame is `setupIndex`; afterwards from the last key at or before the clip time `t`:
+  `i = index + floor((t − key.timeMs) / delay + 1e-6)` (hold: `i = index`), then with `n` frames:
+  once `min(i, n−1)`, loop `i mod n`, pingpong `i mod (2n−2)` mirrored above `n−1`, onceReverse
+  `max(n−1−i, 0)`, loopReverse `n−1 − i mod n`, pingpongReverse `(i + n−1) mod (2n−2)` mirrored;
+  clamped to `0..n−1`. The epsilon keeps exact multiples on the new frame despite rounding
+  (83.33 ms frames at 250 ms = frame 3). Clip time is the looping/clamped time like every track, so
+  a looping clip restarts the sequence. Cross-fades switch the frame halfway, like attachments.
+* **Draw items**: `imageAssetId` = the shown frame; packed sequences use `sequence.atlas[frame]`
+  (written by the export packer: one region per frame, `null` = that frame kept its own file; the
+  attachment's own `atlas` is not used for sequences). `sample` reports `slots[id].sequence` (the
+  frame index) for slots showing a sequence.
+* **Editing ops**: `setSequence {slot, name?, skin?, frames ([] / null removes), setupIndex?,
+  width?, height?}`; keys with `setKey {…, property: "sequence", mode?, index?, delay?}`; the
+  multi-key ops (move, scale, delete, copy, paste) carry `mode`/`index`/`delay`. Fewer frames clamp
+  key indices (`ANIM_SEQUENCE_INDEX_CLAMPED`); removing the last sequence of a slot removes its
+  sequence keys (`ANIM_SEQUENCE_KEYS_REMOVED`).
+* **Editor** (page `시퀀스`, `cutoutSequencePage`): `PNG로 시퀀스…` (`cutoutSequenceImport`: PNG
+  files in natural name order → one edit on the selected part, or a new part on the selected bone),
+  `프레임 추가…` (`cutoutSequenceAddFrames`), `시퀀스 해제` (`cutoutSequenceClear`), frame list
+  `cutoutSequenceFrames` with `▲`/`▼`/`빼기` (`cutoutSequenceUp`/`Down`/`RemoveFrame`), `기본
+  프레임` (`cutoutSequenceSetup`), preview playback `▶ 미리보기` (`cutoutSequencePlay`, editor-only)
+  with `재생 방식` / `시작 프레임` / `프레임 간격` (`cutoutSequenceMode`/`Index`/`Delay`), and in
+  Animate mode `시퀀스 키` / `키 삭제` (`cutoutSequenceKey` / `DeleteKey`) at the playhead; the
+  dopesheet shows a `<slot> 시퀀스` row (step keys). The canvas draws the pose's frame while
+  scrubbing (`attachmentImage`).

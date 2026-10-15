@@ -1,4 +1,5 @@
 #include "cutout/runtime.hpp"
+#include "cutout/clipping.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -64,6 +65,45 @@ std::vector<double> sampleDeform(const Track& track, double t) {
   for (size_t i = 0; i < out.size(); i++) out[i] = a.offsets[i] + (b.offsets[i] - a.offsets[i]) * f;
   return out;
 }
+/** Sequence keys (plugin 1.12.0): the last key at or before t sets the state; before the first
+ *  key the slot shows its attachment's setupIndex (Spine semantics). */
+static SequenceState sampleSequence(const Track& track, double t) {
+  SequenceState s;
+  for (const auto& k : track.keys) {
+    if (double(k.timeMs) > t) break;
+    s.keyed = true; s.mode = k.mode; s.index = int(k.value); s.delay = k.delay > 0 ? k.delay : 100; s.elapsedMs = t - double(k.timeMs);
+  }
+  return s;
+}
+int sequenceFrame(const SequenceState& s, size_t countIn, int setupIndex) {
+  if (countIn == 0) return 0;
+  const int64_t count = int64_t(countIn), last = count - 1;
+  if (!s.keyed) return int(std::clamp<int64_t>(setupIndex, 0, last));
+  int64_t index = s.index;
+  // Frames advanced since the key; the epsilon keeps exact multiples of the delay on the new frame
+  // despite a rounded quotient (83.333.. ms frames at 250 ms are frame 3, not 2.999..).
+  if (s.mode != SequenceMode::Hold) index += int64_t(std::floor(std::max(0.0, s.elapsedMs) / s.delay + 1e-6));
+  switch (s.mode) {
+    case SequenceMode::Hold: break;
+    case SequenceMode::Once: index = std::min(last, index); break;
+    case SequenceMode::Loop: index %= count; break;
+    case SequenceMode::Pingpong: {
+      const int64_t n = 2 * count - 2;
+      index = n == 0 ? 0 : index % n;
+      if (index >= count) index = n - index;
+      break;
+    }
+    case SequenceMode::OnceReverse: index = std::max<int64_t>(last - index, 0); break;
+    case SequenceMode::LoopReverse: index = last - index % count; break;
+    case SequenceMode::PingpongReverse: {
+      const int64_t n = 2 * count - 2;
+      index = n == 0 ? 0 : (index + last) % n;
+      if (index >= count) index = n - index;
+      break;
+    }
+  }
+  return int(std::clamp<int64_t>(index, 0, last));
+}
 static std::optional<std::string> sampleAttachment(const Track& track, double t) {
   const auto& keys = track.keys;
   const Key* chosen = &keys.front();
@@ -101,6 +141,8 @@ static Pose setupPose(const Rig& rig) {
   for (const auto& b : rig.bones) pose.bones.push_back(b.setup);
   for (const auto& s : rig.slots) { pose.attachments.push_back(s.attachment); pose.alpha.push_back(s.alpha); }
   for (const auto& k : rig.ik) { pose.ikMix.push_back(k.mix); pose.ikBend.push_back(k.bendPositive); }
+  for (const auto& k : rig.physics) pose.physicsMix.push_back(k.mix);
+  pose.sequence.assign(rig.slots.size(), SequenceState{});
   return pose;
 }
 static void computeWorld(const Rig& rig, Pose& pose) {
@@ -121,6 +163,11 @@ static double clipTime(const Clip& clip, double timeMs, bool loop) {
 static void applyClip(const Rig& rig, const Clip& clip, double t, Pose& pose) {
   for (const auto& tr : clip.tracks) {
     if (tr.targetIndex < 0) continue;
+    if (tr.physics) {
+      const size_t i = size_t(tr.targetIndex);
+      if (i < pose.physicsMix.size()) pose.physicsMix[i] = sampleTrack(tr, t, pose.physicsMix[i]);
+      continue;
+    }
     if (tr.ik) {
       const size_t i = size_t(tr.targetIndex);
       if (i >= pose.ikMix.size()) continue;
@@ -131,6 +178,7 @@ static void applyClip(const Rig& rig, const Clip& clip, double t, Pose& pose) {
     if (tr.bone) { auto& value = field(pose.bones[tr.targetIndex], tr.property); value = sampleTrack(tr, t, value); }
     else if (tr.property == Property::Deform) { if (!tr.keys.empty()) pose.deform[{tr.targetIndex, tr.attachment}] = sampleDeform(tr, t); }
     else if (tr.property == Property::Alpha) pose.alpha[tr.targetIndex] = sampleTrack(tr, t, pose.alpha[tr.targetIndex]);
+    else if (tr.property == Property::Sequence) { if (!tr.keys.empty() && size_t(tr.targetIndex) < pose.sequence.size()) pose.sequence[tr.targetIndex] = sampleSequence(tr, t); }
     else if (!tr.keys.empty()) pose.attachments[tr.targetIndex] = sampleAttachment(tr, t);
   }
   (void)rig;
@@ -144,6 +192,7 @@ static Pose blend(const Pose& a, const Pose& b, double alpha) {
   }
   for (size_t i = 0; i < out.alpha.size(); i++) out.alpha[i] = lerp(a.alpha[i], out.alpha[i], alpha);
   for (size_t i = 0; i < out.ikMix.size() && i < a.ikMix.size(); i++) out.ikMix[i] = lerp(a.ikMix[i], out.ikMix[i], alpha);
+  for (size_t i = 0; i < out.physicsMix.size() && i < a.physicsMix.size(); i++) out.physicsMix[i] = lerp(a.physicsMix[i], out.physicsMix[i], alpha);
   // Deform offsets cross-fade per vertex; a side that does not key a mesh contributes no offset.
   for (const auto& [key, from] : a.deform) {
     auto& to = out.deform[key];
@@ -152,8 +201,8 @@ static Pose blend(const Pose& a, const Pose& b, double alpha) {
   }
   for (auto& [key, to] : out.deform)
     if (!a.deform.count(key)) for (double& v : to) v *= alpha;
-  // Attachments (and the IK bend direction) cannot interpolate: switch halfway through the mix.
-  if (alpha < 0.5) { out.attachments = a.attachments; out.ikBend = a.ikBend; }
+  // Attachments, sequence frames and the IK bend direction cannot interpolate: switch halfway through the mix.
+  if (alpha < 0.5) { out.attachments = a.attachments; out.ikBend = a.ikBend; out.sequence = a.sequence; }
   return out;
 }
 
@@ -170,9 +219,10 @@ static double blendAngle(double from, double to, double mix) {
  * points at the target. Exact for any parent transform (an affine map keeps directions parallel).
  * The bone's own scale acts before its rotation, so the axis is measured after it: a negative
  * scaleX flips +x, a non-uniform scale bends an oblique axis. aimAxis 0 keeps the 1.3.0 formula
- * bit for bit.
+ * bit for bit. Stretch / compress (plugin 1.13.0, aimAxis 0, a bone length): scaleX makes the
+ * bone's tip reach the target (`uniform`: scaleY too), blended by mix; exact in parent space.
  */
-static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix) {
+static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, IkSolve& solve) {
   const int b = k.bones[0], parent = rig.bones[size_t(b)].parentIndex;
   const auto inv = (parent < 0 ? Affine{} : pose.world[size_t(parent)]).inverse();
   if (!inv) return false;
@@ -183,6 +233,16 @@ static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double t
   if (std::hypot(dx, dy) < IK_EPS) return false;
   const double axis = k.aimAxis == 0 ? (t.scaleX < 0 ? PI : 0) : std::atan2(t.scaleY * std::sin(k.aimAxis * RAD), t.scaleX * std::cos(k.aimAxis * RAD));
   t.rotation = blendAngle(t.rotation, (std::atan2(dy, dx) - axis) * DEG, mix);
+  if ((k.stretch || k.compress) && k.stretchable) {
+    // The tip lies |scaleX| · length from the origin in parent space, whatever the parent does.
+    const double reach = rig.bones[size_t(b)].length * std::fabs(t.scaleX), dist = std::hypot(dx, dy);
+    if (reach > IK_EPS && ((k.stretch && dist > reach) || (k.compress && dist < reach))) {
+      const double f = 1 + (dist / reach - 1) * mix;
+      t.scaleX *= f;
+      if (k.uniform) t.scaleY *= f;
+      solve.stretch = f;
+    }
+  }
   return true;
 }
 /**
@@ -193,8 +253,11 @@ static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double t
  * upper bone with non-uniform scale uses the geometric mean for l2 (approximate, like Spine).
  * Unreachable targets clamp the cosine: the limb points straight at it (too far) or folds (too
  * close). bendPositive picks the side on screen: a mirrored parent space flips it back.
+ * Stretch (plugin 1.13.0, both bones with a length): an unreachable target scales the upper bone's
+ * x by dist / (l1 + l2) (blended by mix, Spine semantics); the straight limb lies along that axis
+ * when the lower bone sits on it (bones drawn with a length), so both links reach exactly.
  */
-static bool solveTwoBone(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, bool bendPositive) {
+static bool solveTwoBone(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, bool bendPositive, IkSolve& solve) {
   const int up = k.bones[0], low = k.bones[1], parent = rig.bones[size_t(up)].parentIndex;
   const Affine pw = parent < 0 ? Affine{} : pose.world[size_t(parent)];
   const auto inv = pw.inverse();
@@ -225,22 +288,113 @@ static bool solveTwoBone(const Rig& rig, Pose& pose, const IkConstraint& k, doub
     const double first = aim - std::atan2(l2 * std::sin(bend), l1 + l2 * std::cos(bend));
     a = first - th1;
     b = bend + th1 - th2;
+    if (k.stretch && k.stretchable && dist > l1 + l2) {
+      const double f = 1 + (dist / (l1 + l2) - 1) * mix;
+      tu.scaleX *= f;
+      if (k.uniform) tu.scaleY *= f;
+      solve.stretch = f;
+    }
   }
   tu.rotation = blendAngle(tu.rotation, a * DEG, mix);
   tl.rotation = blendAngle(tl.rotation, sense * b * DEG, mix);
   return true;
 }
+/**
+ * Chains of 3+ bones (plugin 1.13.0): FABRIK on the joints in rig space (the bone origins, then
+ * the effector), link lengths from the pose being solved, at most IK_CHAIN_ITERATIONS passes,
+ * stopping once the effector is within IK_CHAIN_TOLERANCE px. An unreachable target lays the
+ * chain straight at it (stretch: the first bone's x scales by dist / total, like two-bone). Each
+ * bone then turns in its parent's space (exact for any ancestor transform) so its next joint lies
+ * on the solved direction, parents first, blended by mix. The chain keeps the bend side the
+ * animated pose gives it; only a straight chain uses bendPositive to pick one. Deterministic:
+ * fixed passes, no randomness.
+ */
+static bool solveChain(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, bool bendPositive, IkSolve& solve) {
+  const size_t n = k.bones.size();
+  const int last = k.bones.back();
+  const bool effector = k.tip >= 0 || k.tipLength > 0;
+  const size_t links = effector ? n : n - 1;
+  std::vector<double> px(links + 1), py(links + 1), len(links);
+  for (size_t i = 0; i < n && i <= links; i++) { px[i] = pose.world[size_t(k.bones[i])].e; py[i] = pose.world[size_t(k.bones[i])].f; }
+  // Effector in the last bone's space (the same precedence as two-bone chains).
+  const double ex = k.tip >= 0 ? pose.applied[size_t(k.tip)].x : k.tipLength, ey = k.tip >= 0 ? pose.applied[size_t(k.tip)].y : 0;
+  if (effector) pose.world[size_t(last)].apply(ex, ey, px[n], py[n]);
+  double total = 0;
+  for (size_t i = 0; i < links; i++) total += len[i] = std::hypot(px[i + 1] - px[i], py[i + 1] - py[i]);
+  const double rx = px[0], ry = py[0], dist = std::hypot(tx - rx, ty - ry);
+  if (total < IK_EPS || dist < IK_EPS) return false;
+  // p = q + l · unit(p - q); a coincident pair keeps the link's current direction toward +x.
+  auto place = [](double& x, double& y, double qx, double qy, double l) {
+    const double dx = x - qx, dy = y - qy, d = std::hypot(dx, dy);
+    if (d < IK_EPS) { x = qx + l; y = qy; return; }
+    x = qx + dx / d * l;
+    y = qy + dy / d * l;
+  };
+  int iterations = 0;
+  if (dist >= total) {
+    const double ux = (tx - rx) / dist, uy = (ty - ry) / dist;
+    for (size_t i = 0; i < links; i++) { px[i + 1] = px[i] + ux * len[i]; py[i + 1] = py[i] + uy * len[i]; }
+  } else {
+    // A straight chain gives FABRIK no side to fold to (it would fold onto itself): bend its inner
+    // joints 1 % of its length to the bendPositive side first (the two-bone convention: positive =
+    // the joints turn clockwise on screen).
+    const double lx = px[links] - rx, ly = py[links] - ry, ll = std::hypot(lx, ly);
+    double off = 0;
+    for (size_t i = 1; i < links && ll > IK_EPS; i++) off = std::max(off, std::fabs((px[i] - rx) * ly - (py[i] - ry) * lx) / ll);
+    if (links > 1 && ll > IK_EPS && off < 1e-6 * total) {
+      const double side = bendPositive ? 1 : -1, nx = side * ly / ll * 0.01 * total, ny = -side * lx / ll * 0.01 * total;
+      for (size_t i = 1; i < links; i++) { px[i] += nx; py[i] += ny; }
+    }
+    for (; iterations < IK_CHAIN_ITERATIONS && std::hypot(px[links] - tx, py[links] - ty) > IK_CHAIN_TOLERANCE; iterations++) {
+      px[links] = tx; py[links] = ty;
+      for (size_t i = links; i-- > 0;) place(px[i], py[i], px[i + 1], py[i + 1], len[i]);
+      px[0] = rx; py[0] = ry;
+      for (size_t i = 0; i < links; i++) place(px[i + 1], py[i + 1], px[i], py[i], len[i]);
+    }
+  }
+  solve.iterations = iterations;
+  solve.error = dist >= total ? dist - total : std::hypot(px[links] - tx, py[links] - ty);
+  for (size_t i = 0; i < links; i++) {
+    const int b = k.bones[i], parent = rig.bones[size_t(b)].parentIndex;
+    const Affine pw = parent < 0 ? Affine{} : pose.world[size_t(parent)];
+    const auto inv = pw.inverse();
+    Transform& t = pose.applied[size_t(b)];
+    if (inv) {
+      // Next joint in this bone's space: the child's origin, or the effector for the last link.
+      const double nx = i + 1 < n ? pose.applied[size_t(k.bones[i + 1])].x : ex, ny = i + 1 < n ? pose.applied[size_t(k.bones[i + 1])].y : ey;
+      double cx, cy, gx, gy;
+      Affine::compose(0, 0, t.rotation, t.scaleX, t.scaleY).apply(nx, ny, cx, cy);
+      inv->apply(px[i + 1], py[i + 1], gx, gy);
+      gx -= t.x; gy -= t.y;
+      if (std::hypot(cx, cy) >= IK_EPS && std::hypot(gx, gy) >= IK_EPS)
+        t.rotation = blendAngle(t.rotation, t.rotation + (std::atan2(gy, gx) - std::atan2(cy, cx)) * DEG, mix);
+    }
+    pose.world[size_t(b)] = pw * Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+  }
+  if (k.stretch && k.stretchable && dist > total) {
+    const double f = 1 + (dist / total - 1) * mix;
+    pose.applied[size_t(k.bones[0])].scaleX *= f;
+    if (k.uniform) pose.applied[size_t(k.bones[0])].scaleY *= f;
+    solve.stretch = f;
+    solve.error = (dist - total) * (1 - mix);
+  }
+  return true;
+}
 void applyIk(const Rig& rig, Pose& pose) {
   if (rig.ik.empty() || pose.world.size() != rig.bones.size() || pose.bones.size() != rig.bones.size()) return;
   pose.applied = pose.bones;
+  pose.ikSolve.assign(rig.ik.size(), IkSolve{});
   for (int ci : rig.ikOrder) {
     const IkConstraint& k = rig.ik[size_t(ci)];
     const double mix = size_t(ci) < pose.ikMix.size() ? std::clamp(pose.ikMix[size_t(ci)], 0.0, 1.0) : k.mix;
     const bool bend = size_t(ci) < pose.ikBend.size() ? pose.ikBend[size_t(ci)] != 0 : k.bendPositive;
     if (!(mix > 0) || k.target < 0 || k.bones.empty() || k.bones[0] < 0) continue;
     const double tx = pose.world[size_t(k.target)].e, ty = pose.world[size_t(k.target)].f;
-    const bool solved = k.bones.size() == 1 ? solveAim(rig, pose, k, tx, ty, mix) : solveTwoBone(rig, pose, k, tx, ty, mix, bend);
+    IkSolve& solve = pose.ikSolve[size_t(ci)];
+    const bool solved = k.bones.size() == 1 ? solveAim(rig, pose, k, tx, ty, mix, solve)
+                        : k.bones.size() == 2 ? solveTwoBone(rig, pose, k, tx, ty, mix, bend, solve) : solveChain(rig, pose, k, tx, ty, mix, bend, solve);
     if (!solved) continue;
+    solve.solved = true;
     // Later constraints see this one's result (a spine solved before an arm moves the shoulder).
     for (int i : k.affected) {
       const auto& t = pose.applied[size_t(i)];
@@ -335,12 +489,18 @@ Controller parseController(const std::string& id, const Json& data) {
 
 Instance::Instance(std::shared_ptr<const Rig> rig, std::optional<Controller> controller) : rig_(std::move(rig)), controller_(std::move(controller)) {
   if (!rig_) throw std::runtime_error("rig is required");
+  physics_.init(*rig_);
   startDefaults();
   if (controller_) {
     setSkin(controller_->defaultSkin);
     setExpression(controller_->defaultExpression.empty() ? std::nullopt : std::optional<std::string>(controller_->defaultExpression));
   }
   pending_.clear();  // construction is not an observable transition
+  resetPhysics();    // starts settled at the first pose
+}
+void Instance::resetPhysics() {
+  if (rig_->physics.empty()) return;
+  physics_.settle(*rig_, basePose(true));
 }
 bool Instance::setSkin(const std::string& id) {
   const int i = id.empty() ? -1 : rig_->skinIndex(id);
@@ -380,6 +540,14 @@ uint64_t Instance::play(int track, const std::string& clipId, std::optional<bool
   entry.then = then; entry.serial = nextSerial_++;
   state.current = entry; state.stopOn.clear();
   pending_.push_back({"start", track, clipId, "", entry.serial});
+  // Physics constraints with resetOnStart settle when a base-track clip starts (layers such as a
+  // blink never reset hair). At the start pose (a mix in progress included).
+  if (track == 0 && !rig_->physics.empty()) {
+    std::vector<char> only(rig_->physics.size(), 0);
+    bool any = false;
+    for (size_t i = 0; i < only.size(); i++) any |= (only[i] = rig_->physics[i].resetOnStart) != 0;
+    if (any) physics_.settle(*rig_, basePose(true), &only);
+  }
   return entry.serial;
 }
 
@@ -486,6 +654,12 @@ void Instance::update(double dtMs) {
   if (paused_ || !std::isfinite(dtMs)) return;
   const double dt = std::clamp(dtMs, 0.0, MAX_DT_MS) * timeScale_;
   if (dt <= 0) return;
+  if (rig_->physics.empty()) { advanceTracks(dt); return; }
+  // Physics (plugin 1.13.0): the tracks advance piecewise to every step boundary, each step sees
+  // the pose at its own time; a frame rate only changes where the pieces are cut.
+  runPhysics(physics_, *rig_, dt, [this](double ms) { if (ms > 0) advanceTracks(ms); }, [this] { return basePose(true); });
+}
+void Instance::advanceTracks(double dt) {
   std::vector<int> order;
   for (const auto& [track, _] : tracks_) order.push_back(track);
   for (int track : order) {
@@ -503,41 +677,49 @@ void Instance::seek(int track, double timeMs) {
   e.timeMs = e.loop ? std::max(0.0, timeMs) : std::clamp(timeMs, 0.0, d);
   e.ended = !e.loop && e.timeMs >= d && e.then == Then::Hold;
   it->second.from.reset();
+  resetPhysics();  // scrubbing never simulates: the next update starts from the settled pose
 }
 
-void Instance::sampleClip(const Entry& entry, Pose& pose, std::vector<char>*, double, bool) const {
+void Instance::sampleClip(const Entry& entry, Pose& pose, std::vector<char>*, double, bool, bool snap) const {
   const Clip& clip = rig_->clips[entry.clip];
-  applyClip(*rig_, clip, clipTime(clip, entry.timeMs, entry.loop), pose);
+  applyClip(*rig_, clip, clipTime(clip, snap ? snapMs(entry.timeMs) : entry.timeMs, entry.loop), pose);
 }
 
-int Instance::activeExpression() const {
+int Instance::activeExpression(bool snap) const {
   int expression = expression_;
   for (const auto& [track, state] : tracks_) {  // ascending: the highest track keying it wins
     const Entry* e = state.current ? &*state.current : nullptr;
     // Like attachments, a cross-fade switches a keyed expression at its halfway point.
-    if (state.from && state.mixDuration > 0 && state.mixElapsed / state.mixDuration < 0.5) e = &*state.from;
+    if (state.from && state.mixDuration > 0 && (snap ? snapMs(state.mixElapsed) : state.mixElapsed) / state.mixDuration < 0.5) e = &*state.from;
     if (!e) continue;
     const Clip& clip = rig_->clips[size_t(e->clip)];
-    clipExpression(*rig_, clip, clipTime(clip, e->timeMs, e->loop), expression);
+    clipExpression(*rig_, clip, clipTime(clip, snap ? snapMs(e->timeMs) : e->timeMs, e->loop), expression);
   }
   return expression;
 }
 
 Pose Instance::pose() const {
+  if (rig_->physics.empty()) return basePose(false);
+  // Physics rigs sample on the snap grid everywhere: the shown pose is partition independent too.
+  Pose pose = basePose(true);
+  physics_.apply(*rig_, pose);
+  return pose;
+}
+Pose Instance::basePose(bool snap) const {
   Pose pose = setupPose(*rig_);
   pose.skin = skin_;
-  const int expression = activeExpression();
+  const int expression = activeExpression(snap);
   bool expressed = false;
   for (const auto& [track, state] : tracks_) {
     // The expression is a base-layer override: after track 0, before layer tracks 1..15, so a
     // blink layer keying the eyes still blinks over any expression.
     if (!expressed && track >= 1) { applyExpression(*rig_, expression, pose); expressed = true; }
     Pose to = pose;
-    if (state.current) sampleClip(*state.current, to, nullptr, 1, true);
+    if (state.current) sampleClip(*state.current, to, nullptr, 1, true, snap);
     if (state.from && state.mixDuration > 0) {
       Pose from = pose;
-      sampleClip(*state.from, from, nullptr, 1, true);
-      pose = blend(from, to, std::clamp(state.mixElapsed / state.mixDuration, 0.0, 1.0));
+      sampleClip(*state.from, from, nullptr, 1, true, snap);
+      pose = blend(from, to, std::clamp((snap ? snapMs(state.mixElapsed) : state.mixElapsed) / state.mixDuration, 0.0, 1.0));
     } else pose = to;
   }
   if (!expressed) applyExpression(*rig_, expression, pose);
@@ -573,7 +755,7 @@ const std::vector<double>* deformOf(const Pose& pose, int slot, const Attachment
 }
 std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, const Attachment& a) {
   std::vector<double> out;
-  if (!a.mesh || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
+  if ((!a.mesh && !a.clipping) || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
   const std::vector<double>* d = deformOf(pose, slot, a);
   const Affine rigid = pose.world[size_t(rig.slots[size_t(slot)].boneIndex)] * attachmentPlacement(a);
   // world(bone) · bind per influencing bone, once per call rather than once per vertex.
@@ -606,39 +788,70 @@ Affine meshVertexMatrix(const Rig& rig, const Pose& pose, int slot, const Attach
   return m;
 }
 
-std::vector<DrawItem> Instance::drawList() const {
-  const Pose pose = this->pose();
+// ---- Sequences and clipping (plugin 1.12.0) ----
+int attachmentFrame(const Pose& pose, int slot, const Attachment& a) {
+  if (!a.sequence()) return 0;
+  const SequenceState state = slot >= 0 && size_t(slot) < pose.sequence.size() ? pose.sequence[size_t(slot)] : SequenceState{};
+  return sequenceFrame(state, a.frames.size(), a.setupIndex);
+}
+const std::string& attachmentImage(const Pose& pose, int slot, const Attachment& a) {
+  return a.sequence() ? a.frames[size_t(attachmentFrame(pose, slot, a))] : a.imageAssetId;
+}
+const std::optional<AtlasRegion>& attachmentAtlas(const Pose& pose, int slot, const Attachment& a) {
+  static const std::optional<AtlasRegion> none;
+  if (!a.sequence()) return a.atlas;
+  // Packed sequences carry one region per frame; frame 0's `atlas` alone would draw the wrong frame.
+  const size_t f = size_t(attachmentFrame(pose, slot, a));
+  return f < a.frameAtlas.size() ? a.frameAtlas[f] : none;
+}
+std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose) {
   std::vector<DrawItem> out;
-  const Affine origin = Affine::compose(-rig_->originX, -rig_->originY, 0, 1, 1);
-  for (size_t i = 0; i < rig_->slots.size(); i++) {
-    const auto& slot = rig_->slots[i];
-    if (!pose.attachments[i] || pose.alpha[i] <= 0 || slot.boneIndex < 0) continue;
-    const Attachment* att = rig_->attachment(slot.id, *pose.attachments[i], pose.skin);
-    if (!att) continue;
-    const Affine m = origin * pose.world[slot.boneIndex] * attachmentPlacement(*att);
-    out.push_back({slot.id, att->imageAssetId, m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)});
-    DrawItem& item = out.back();
-    item.source = att;
-    if (att->atlas) {
-      // Packed picture: the page's sub-image; a trimmed region draws only the kept rectangle,
-      // placed where it was in the original image (the rest was fully transparent).
-      const AtlasRegion& r = *att->atlas;
-      item.imageAssetId = r.page;
-      item.hasRegion = true;
-      item.region[0] = r.x; item.region[1] = r.y; item.region[2] = r.width; item.region[3] = r.height;
-      if (r.trimmed && !att->mesh) {
-        item.matrix = m * Affine::compose(r.trimX, r.trimY, 0, 1, 1);
-        item.width = r.trimWidth; item.height = r.trimHeight;
+  const Affine origin = Affine::compose(-rig.originX, -rig.originY, 0, 1, 1);
+  std::optional<ClipRegion> clip;
+  int clipEnd = -1;
+  for (size_t i = 0; i < rig.slots.size(); i++) {
+    const auto& slot = rig.slots[i];
+    const Attachment* att = pose.attachments[i] && slot.boneIndex >= 0 ? rig.attachment(slot.id, *pose.attachments[i], pose.skin) : nullptr;
+    if (att && att->clipping) {
+      // A clip range starts here (alpha does not matter); one inside an active range is ignored.
+      if (!clip) {
+        std::vector<double> polygon = meshPositions(rig, pose, int(i), *att);
+        for (size_t v = 0; v + 1 < polygon.size(); v += 2) { polygon[v] -= rig.originX; polygon[v + 1] -= rig.originY; }
+        clip = clipRegion(polygon);
+        clipEnd = att->clipEndIndex >= 0 ? att->clipEndIndex : int(rig.slots.size()) - 1;
       }
+    } else if (att && pose.alpha[i] > 0) {
+      const Affine m = origin * pose.world[slot.boneIndex] * attachmentPlacement(*att);
+      DrawItem item{slot.id, attachmentImage(pose, int(i), *att), m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)};
+      item.source = att;
+      if (const auto& atlas = attachmentAtlas(pose, int(i), *att)) {
+        // Packed picture: the page's sub-image; a trimmed region draws only the kept rectangle,
+        // placed where it was in the original image (the rest was fully transparent).
+        const AtlasRegion& r = *atlas;
+        item.imageAssetId = r.page;
+        item.hasRegion = true;
+        item.region[0] = r.x; item.region[1] = r.y; item.region[2] = r.width; item.region[3] = r.height;
+        if (r.trimmed && !att->mesh) {
+          item.matrix = m * Affine::compose(r.trimX, r.trimY, 0, 1, 1);
+          item.width = r.trimWidth; item.height = r.trimHeight;
+        }
+      }
+      if (att->mesh) {
+        item.positions = meshPositions(rig, pose, int(i), *att);
+        for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig.originX; item.positions[v + 1] -= rig.originY; }  // = origin
+        item.uvs = att->uvs;
+        item.indices = att->triangles;
+      }
+      if (clip) clipItem(item, *clip, out);
+      else out.push_back(std::move(item));
     }
-    if (!att->mesh) continue;
-    item.positions = meshPositions(*rig_, pose, int(i), *att);
-    for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig_->originX; item.positions[v + 1] -= rig_->originY; }  // = origin
-    item.uvs = att->uvs;
-    item.indices = att->triangles;
+    // The end slot is inclusive and ends the range whether or not it drew anything.
+    if (clip && int(i) >= clipEnd) clip.reset();
   }
   return out;
 }
+
+std::vector<DrawItem> Instance::drawList() const { return drawItems(*rig_, pose()); }
 
 std::vector<Notification> Instance::takeNotifications() {
   std::vector<Notification> out(pending_.begin(), pending_.end());
@@ -689,6 +902,8 @@ void Instance::restoreState(const Json& state) {
     const std::optional<std::string> saved = state.at("expression").is_string() ? std::optional<std::string>(state.at("expression").get<std::string>()) : std::nullopt;
     if (!setExpression(saved)) setExpression(controller_ && !controller_->defaultExpression.empty() ? std::optional<std::string>(controller_->defaultExpression) : std::nullopt);
   }
+  // Policy (plugin 1.13.0): physics state is never saved; a restored instance starts settled.
+  resetPhysics();
 }
 
 Json Instance::describe() const {
@@ -701,8 +916,13 @@ Json Instance::describe() const {
   }
   const auto expression = this->expression();
   const int active = activeExpression();
-  return {{"tracks", tracks}, {"paused", paused_}, {"timeScale", timeScale_}, {"skin", skin()},
-          {"expression", expression ? Json(*expression) : Json(nullptr)},
-          {"activeExpression", active >= 0 ? Json(rig_->expressions[size_t(active)].id) : Json(nullptr)}};
+  Json out = {{"tracks", tracks}, {"paused", paused_}, {"timeScale", timeScale_}, {"skin", skin()},
+              {"expression", expression ? Json(*expression) : Json(nullptr)},
+              {"activeExpression", active >= 0 ? Json(rig_->expressions[size_t(active)].id) : Json(nullptr)}};
+  // Physics rigs only (older replies keep their shape): step counters for tools and tests.
+  if (!rig_->physics.empty())
+    out["physics"] = {{"clockMs", physics_.clock}, {"steps", physics_.steps}, {"settles", physics_.settles}, {"teleports", physics_.teleports},
+                      {"wind", physics_.wind}, {"gravity", physics_.gravity}};
+  return out;
 }
 }  // namespace cutout
