@@ -909,7 +909,7 @@ QWidget* CutoutPanel::buildIk() {
   });
   QWidget* tools = buttonRow("cutoutIkTools");
   button(tools, "팔·다리 IK", "cutoutNewIk", "선택한 본(아래팔·정강이처럼 사슬의 끝)과 그 부모로 두 본 IK를 만들고, 손·발 자리에 대상 본(✛)을 만듭니다.\n끝점은 선택한 본의 첫 자식 본(손·발)입니다.", [this] { return newIk(false); });
-  button(tools, "조준 IK", "cutoutNewAimIk", "선택한 본의 x축(→)이 대상 본을 향하게 하는 한 본 IK를 만듭니다(눈·머리·무기 조준).", [this] { return newIk(true); });
+  button(tools, "조준 IK", "cutoutNewAimIk", "선택한 본이 대상 본을 향하게 하는 한 본 IK를 만듭니다(눈·머리·무기·팔 조준).\n조준 축은 본이 뻗은 방향(자식 본, 없으면 붙은 그림)에서 시작하므로 만들 때 본이 돌지 않습니다.", [this] { return newIk(true); });
   button(tools, "이름 변경", "cutoutRenameIk", "IK ID를 바꿉니다. 이 IK의 키(혼합·굽힘)도 함께 바뀝니다.", [this] { return renameIk(); });
   button(tools, "삭제", "cutoutDeleteIk", "고른 IK와 그 키를 삭제합니다(다른 곳에서 쓰지 않는 대상 본도 함께).", [this] { return deleteIk(); });
   auto* form = new QFormLayout;
@@ -947,6 +947,25 @@ QWidget* CutoutPanel::buildIk() {
   form->addRow("혼합 (mix)", ikMix_);
   form->addRow("굽힘", ikBend_);
   form->addRow("순서", ikOrder_);
+  // Aim axis (plugin 1.4.1): a fixed row, the fit button stays reachable with the list.
+  QWidget* aimTools = buttonRow("cutoutIkAimTools");
+  auto* aimLabel = new QLabel("조준 축(°)");
+  aimLabel->setToolTip("조준 IK: 대상을 향하는 본의 방향 · 0 = 오른쪽(→), 90 = 아래(↓), -90 = 위(↑). 캔버스에 주황 화살표로 보입니다.");
+  ikAimAxis_ = new QDoubleSpinBox;
+  ikAimAxis_->setObjectName("cutoutIkAimAxis");
+  ikAimAxis_->setRange(-360, 360);
+  ikAimAxis_->setDecimals(1);
+  ikAimAxis_->setSingleStep(5);
+  ikAimAxis_->setKeyboardTracking(false);
+  ikAimAxis_->setToolTip(aimLabel->toolTip() + "\n애니메이션 모드에서도 키가 아닌 IK 설정이 바뀝니다.");
+  connect(ikAimAxis_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (filling_ || std::fabs(ikAimAxis_->value() - ikAimAxis_->property("shown").toDouble()) < 0.05) return;
+    setIkAimAxis(ikAimAxis_->value());
+  });
+  addToRow(aimTools, aimLabel);
+  addToRow(aimTools, ikAimAxis_);
+  QPushButton* fit = button(aimTools, "현재 방향으로 맞추기", "cutoutIkFitAimAxis",
+                            "IK 없이 본이 지금 놓인 방향에서 대상 본(✛)이 보이는 각도를 조준 축으로 삼습니다.\nIK를 켜도 본이 돌지 않게 됩니다(애니메이션 모드: 재생 헤드 시간의 자세 기준).", [this] { return fitIkAimAxis(); });
   QWidget* keyTools = buttonRow("cutoutIkKeyTools");
   QPushButton* key = button(keyTools, "IK 키", "cutoutIkKey", "애니메이션 모드: 이 시간에 고른 IK의 혼합·굽힘 키를 넣습니다.", [this] { return keyIk(); });
   button(keyTools, "대상 선택", "cutoutIkSelectTarget", "고른 IK의 대상 본을 선택합니다(캔버스에서 끌어 옮기기).", [this] { return selectIkTarget(); });
@@ -959,6 +978,7 @@ QWidget* CutoutPanel::buildIk() {
   // Fixed: chain tools above the list, key tools below it; the constraint's values scroll.
   layout->addWidget(tools);
   layout->addWidget(ikList_, 2);
+  layout->addWidget(aimTools);
   layout->addWidget(keyTools);
   formLayout->addLayout(form);
   formLayout->addWidget(ikInfo_);
@@ -966,6 +986,7 @@ QWidget* CutoutPanel::buildIk() {
   layout->addWidget(formScroll("cutoutIkFormScroll", inner), 3);
   ikEditors_ = {ikTarget_, ikMix_, ikBend_, ikOrder_};
   ikAnimateTools_ = {key, bake};
+  ikAimTools_ = {aimLabel, ikAimAxis_, fit};
   return page;
 }
 
@@ -4032,13 +4053,18 @@ void CutoutPanel::refreshIk() {
     ikBend_->setChecked(bend);
     ikOrder_->setValue(k ? int(k->value("order", int64_t(0))) : 0);
     ikOrder_->setProperty("shown", ikOrder_->value());
+    QSignalBlocker b5(ikAimAxis_);
+    ikAimAxis_->setValue(k ? k->value("aimAxis", 0.0) : 0);
+    ikAimAxis_->setProperty("shown", ikAimAxis_->value());
   }
   for (QWidget* w : ikEditors_) w->setEnabled(k);
+  const bool aim = k && listOf(*k, "bones").size() == 1;
+  for (QWidget* w : ikAimTools_) w->setEnabled(aim);
   for (QWidget* w : ikAnimateTools_) w->setEnabled(k && animate);
   QString info = "본을 고른 뒤 「팔·다리 IK」(아래팔·정강이) 또는 「조준 IK」(머리·눈)를 누르세요. 캔버스의 ✛ 대상 본을 끌면 사슬이 따라옵니다.";
   if (k && index >= 0) {
     const auto& c = rig_->ik[size_t(index)];
-    const QString tip = c.bones.size() == 1 ? QString("x축(→)이 대상을 향함") : c.tip >= 0 ? QString("끝점: %1의 원점").arg(qs(rig_->bones[size_t(c.tip)].id))
+    const QString tip = c.bones.size() == 1 ? QString("조준 축 %1°가 대상을 향함").arg(c.aimAxis, 0, 'g', 6) : c.tip >= 0 ? QString("끝점: %1의 원점").arg(qs(rig_->bones[size_t(c.tip)].id))
                                                                                       : QString("끝점 본 없음 · %1의 원점이 대상을 향함").arg(qs(rig_->bones[size_t(c.bones.back())].id));
     info = tip + (animate ? " · 애니메이션 모드: 혼합·굽힘을 바꾸면 이 시간의 키가 되고, ✛를 끌면 대상 본 위치가 바뀝니다(K로 키)."
                           : " · 조립 모드: 값은 IK의 기본값입니다. ✛를 끌면 대상 본의 기본 자세가 바뀝니다.");
@@ -4072,6 +4098,26 @@ bool CutoutPanel::newIk(bool aim) {
   if (!ok) return false;
   setStatus(QString("IK 「%1」를 만들었습니다. 캔버스의 ✛ 「%2」를 끌면 %3. 되돌리기: Ctrl+Z")
                 .arg(ikId_, target, aim ? QString("「%1」가 그쪽을 바라봅니다").arg(bone) : QString("팔·다리가 따라옵니다")));
+  return true;
+}
+bool CutoutPanel::setIkAimAxis(double degrees) {
+  const Json* k = currentIk();
+  if (!k) { setStatus("먼저 IK를 고르세요.", true); return false; }
+  if (listOf(*k, "bones").size() != 1) { setStatus("조준 축은 조준 IK(본 1개)에만 씁니다. 팔·다리 IK는 본 위치로 풉니다.", true); refreshIk(); return false; }
+  // Not keyable: in both modes this is the constraint's setup value (one edit).
+  const double clean = std::round(degrees * 10) / 10;
+  return runOps({{{"op", "setIk"}, {"ik", ss(ikId_)}, {"aimAxis", clean == 0 ? Json(nullptr) : Json(clean)}}}, false);
+}
+bool CutoutPanel::fitIkAimAxis() {
+  const Json* k = currentIk();
+  if (!k) { setStatus("먼저 IK를 고르세요.", true); return false; }
+  if (listOf(*k, "bones").size() != 1) { setStatus("현재 방향으로 맞추기는 조준 IK(본 1개)에만 씁니다.", true); return false; }
+  if (refusePending()) return false;
+  Json op = {{"op", "setIk"}, {"ik", ss(ikId_)}, {"fitAimAxis", true}};
+  if (mode_ == Mode::Animate && !clipId_.isEmpty()) { op["clip"] = ss(clipId_); op["timeMs"] = playheadExact_; }
+  if (!runOps({op}, false)) return false;
+  const Json* fitted = findIn(committedRig(), "ik", ss(ikId_));
+  setStatus(QString("조준 축을 %1°로 맞췄습니다(지금 본이 대상을 보는 방향). 되돌리기: Ctrl+Z").arg(fitted ? fitted->value("aimAxis", 0.0) : 0.0, 0, 'g', 6));
   return true;
 }
 bool CutoutPanel::selectIk(const QString& id) {

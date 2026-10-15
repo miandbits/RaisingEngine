@@ -1661,6 +1661,93 @@ class StudioTests : public QObject {
     QVERIFY(gesture("target into its own chain", 0, [&] { panel->selectIk("left-arm"); QVERIFY(!panel->setIkTarget("wrist")); }));
   }
 
+  // 조준 IK on a limb as cutout rigs make it (rotation 0, image hanging down): the aim axis follows
+  // the image, creating the constraint moves nothing, dragging the target turns the image's long
+  // axis onto it; 조준 축 and 현재 방향으로 맞추기 are one edit each; undo restores everything.
+  void aimIkOnHangingArm() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setTool(RigCanvas::Move);
+    pump();
+    const Json start = rig();
+    panel->selectItem("bone:root");
+    answers = {"forearm"};
+    QVERIFY(gesture("add a limb bone", 1, [&] { click("cutoutAddBone"); }));
+    nextPart = CutoutPanel::PartChoice{"img-body", QString(), "sleeve", QString(), "forearm"};  // 60x100: long axis = image y
+    QVERIFY(gesture("limb image", 1, [&] { click("cutoutAddPart"); }));
+    panel->selectItem("slot:sleeve");
+    QVERIFY(gesture("the image hangs from the shoulder", 1, [&] { setSpin("cutoutPropPivotY", 0); }));
+    const Json made = rig();  // (iterating rig()["..."] directly would read a destroyed temporary)
+    for (const auto& b : made["bones"]) if (b["id"] == "forearm") QCOMPARE(b.value("rotation", 0.0), 0.0);
+    // Angle (degrees) between the image's long axis (its +y in rig space) and the bone -> target line.
+    auto imageError = [&](const Json& data, const std::string& target) {
+      const cutout::Rig r = cutout::parseRig("hero", data);
+      const cutout::Pose p = cutout::samplePose(r, -1, 0);
+      const int si = r.slotIndex("sleeve");
+      const cutout::Affine m = p.world[size_t(r.boneIndex("forearm"))] * cutout::attachmentPlacement(*r.attachment("sleeve", *r.slots[size_t(si)].attachment));
+      const auto& o = p.world[size_t(r.boneIndex("forearm"))];
+      const auto& t = p.world[size_t(r.boneIndex(target))];
+      return std::fabs(std::remainder(std::atan2(m.d, m.c) - std::atan2(t.f - o.f, t.e - o.e), 2 * M_PI)) * 180 / M_PI;
+    };
+    const auto before = cutout::setupWorld(rig());
+    panel->selectItem("bone:forearm");
+    QVERIFY(gesture("new aim IK on the hanging arm", 1, [&] { click("cutoutNewAimIk"); }));
+    Json k;
+    const Json withIk = rig();
+    for (const auto& x : withIk["ik"]) if (x["bones"] == Json::array({"forearm"})) k = x;
+    QVERIFY2(k.is_object() && std::fabs(k.value("aimAxis", 0.0) - 90) < 1e-6, k.dump().c_str());
+    const std::string target = k["target"].get<std::string>();
+    {
+      const cutout::Rig r = cutout::parseRig("hero", rig());
+      const cutout::Pose p = cutout::samplePose(r, -1, 0);
+      QVERIFY(std::fabs(p.applied[size_t(r.boneIndex("forearm"))].rotation) < 1e-6);  // creating it turned nothing
+      const auto& w = p.world[size_t(r.boneIndex("forearm"))];
+      QVERIFY(std::hypot(w.e - before.at("forearm").e, w.f - before.at("forearm").f) < 1e-6 && std::fabs(w.b - before.at("forearm").b) < 1e-9);
+      double dx = 0, dy = 0;
+      QVERIFY(cutout::ikAimDirection(r, p, r.ikIndex(k["id"].get<std::string>()), dx, dy) && std::fabs(dx) < 1e-6 && dy > 0.999);  // the canvas arrow points down
+    }
+    QVERIFY(imageError(rig(), target) < 1e-6);
+    QCOMPARE(panel->ikId(), qs(k["id"].get<std::string>()));
+    QVERIFY(find<QWidget>("cutoutIkAimAxis")->isEnabled() && find<QWidget>("cutoutIkFitAimAxis")->isEnabled());
+    QCOMPARE(find<QDoubleSpinBox>("cutoutIkAimAxis")->value(), 90.0);
+    // Drag the target sideways and up on the canvas: one edit, the image points at it.
+    panel->selectItem("");
+    pump();
+    const QPointF at = panel->canvas()->rigToWidget(world(target));
+    QVERIFY(gesture("drag the aim target", 1, [&] { drag(panel->canvas(), at, at + QPointF(90, -40)); }));
+    QVERIFY(std::hypot(world(target).x() - before.at("forearm").e, world(target).y() - before.at("forearm").f) > 20);
+    const double error = imageError(rig(), target);
+    QVERIFY2(error < 1.0, qPrintable(QString::number(error)));
+    // 조준 축 0: the bone's +x aims instead (the 1.3.0 behaviour), one edit.
+    panel->selectIk(qs(k["id"].get<std::string>()));
+    QVERIFY(gesture("aim axis 0", 1, [&] { setSpin("cutoutIkAimAxis", 0); }));
+    QVERIFY(!rig()["ik"].back().contains("aimAxis"));
+    QVERIFY(std::fabs(imageError(rig(), target) - 90) < 1e-3);
+    // 현재 방향으로 맞추기: the axis becomes where the bone sees the target on its own, so the
+    // constraint stops turning it (rotation 0 = its setup pose).
+    QVERIFY(gesture("fit the aim axis", 1, [&] { click("cutoutIkFitAimAxis"); }));
+    {
+      const cutout::Rig r = cutout::parseRig("hero", rig());
+      const cutout::Pose p = cutout::samplePose(r, -1, 0);
+      QVERIFY(std::fabs(p.applied[size_t(r.boneIndex("forearm"))].rotation) < 1e-4);
+      QVERIFY(rig()["ik"].back().contains("aimAxis"));
+    }
+    QCOMPARE(find<QDoubleSpinBox>("cutoutIkAimAxis")->value(), std::round(rig()["ik"].back()["aimAxis"].get<double>() * 10) / 10);
+    // A two-bone IK has no aim axis: the row is disabled.
+    panel->selectIk("left-arm");
+    pump();
+    QVERIFY(!find<QWidget>("cutoutIkAimAxis")->isEnabled() && !find<QWidget>("cutoutIkFitAimAxis")->isEnabled());
+    QVERIFY(gesture("aim axis on a two-bone IK refused", 0, [&] { QVERIFY(!panel->setIkAimAxis(30)); }));
+    for (int i = 0; i < 7; i++) undo();
+    QVERIFY(rig() == start);
+    redo();
+    undo();
+    QVERIFY(rig() == start);
+  }
+
   void meshEditing() {
     panel->selectRig("hero");
     find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);

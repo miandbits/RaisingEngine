@@ -163,7 +163,7 @@ Json ikParityRig() {
   d["bones"][0] = {{"id", "root"}, {"parent", nullptr}, {"x", 200}, {"y", 200}, {"rotation", 15}, {"scaleX", 1.3}, {"scaleY", 1.3}};
   d["bones"][2]["rotation"] = 25;
   d["bones"].push_back({{"id", "head"}, {"parent", "root"}, {"x", -20}, {"y", -60}, {"scaleX", -1}});
-  d["ik"].push_back({{"id", "look"}, {"bones", {"head"}}, {"target", "t"}, {"mix", 0.8}, {"order", 1}});
+  d["ik"].push_back({{"id", "look"}, {"bones", {"head"}}, {"target", "t"}, {"mix", 0.8}, {"order", 1}, {"aimAxis", 35}});
   d["slots"].push_back({{"id", "face"}, {"bone", "head"}, {"attachment", "face"}});
   d["attachments"].push_back({{"slot", "face"}, {"name", "face"}, {"imageAssetId", "img-face"}, {"width", 30}, {"height", 20}, {"x", 10}});
   d["clips"].push_back(Json::parse(R"({"id": "reach", "durationMs": 1000, "loop": true, "tracks": [
@@ -184,6 +184,21 @@ Json ikParityScript() {
   for (double dt : {16.0, 125.5, 233.25, 180.0, 60.0, 90.0, 210.0, 333.0}) { script.push_back({{"op", "update"}, {"dtMs", dt}}); script.push_back(frame); }
   for (double ms : {0.0, 250.0, 650.0, 1000.0}) script.push_back({{"op", "sample"}, {"rig", ikParityRig()}, {"clip", "reach"}, {"timeMs", ms}});
   return script;
+}
+/**
+ * Cutout limb as rigs usually make it (plugin 1.4.1 aim axis): bone `arm` keeps rotation 0 while
+ * its 20x100 image hangs straight down from the shoulder (pivot top centre). Target `t` under the
+ * root; `ik` is left to the tests.
+ */
+Json hangingArm() {
+  return Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 400, "height": 400, "originX": 0, "originY": 0},
+    "bones": [
+      {"id": "root", "parent": null, "x": 200, "y": 100},
+      {"id": "arm", "parent": "root", "x": 30, "y": 0},
+      {"id": "t", "parent": "root", "x": 120, "y": 60}],
+    "slots": [{"id": "sleeve", "bone": "arm", "attachment": "sleeve"}],
+    "attachments": [{"slot": "sleeve", "name": "sleeve", "imageAssetId": "img-sleeve", "width": 20, "height": 100, "pivotX": 0.5, "pivotY": 0}],
+    "clips": []})");
 }
 /**
  * Arm for meshes (plugin 1.4.0): root (100,150) -> upper -> lower (+100 px) -> hand (+100 px),
@@ -1427,6 +1442,121 @@ int main(int argc, char** argv) {
     check(near(ax * ty - ay * tx, 0, 1e-9) && ax * tx + ay * ty > 0, "aim exact under a skewing parent and a flipped bone");
     d["ik"][0]["mix"] = 0.25;
     check(near(ikPose(d).applied[1].rotation, p.applied[1].rotation * 0.25, 1e-9), "aim mix");
+  });
+
+  test("ik aim axis (plugin 1.4.1)", [&] {
+    const double DEGREES = 180 / 3.14159265358979323846;
+    // The image's long axis (its +y through the attachment placement) in rig space.
+    auto imageAxis = [](const Rig& r, const Pose& p) {
+      const Affine m = p.world[size_t(r.boneIndex("arm"))] * attachmentPlacement(r.attachments[0]);
+      return std::pair<double, double>{m.c, m.d};
+    };
+    auto angleTo = [&](std::pair<double, double> axis, const Pose& p, const Rig& r) {
+      const auto& o = p.world[size_t(r.boneIndex("arm"))];
+      const auto& t = p.world[size_t(r.boneIndex("t"))];
+      return std::fabs(std::remainder(std::atan2(axis.second, axis.first) - std::atan2(t.f - o.f, t.e - o.e), 2 * 3.14159265358979323846)) * DEGREES;
+    };
+    Json d = hangingArm();
+    d["ik"] = Json::array({{{"id", "aim"}, {"bones", {"arm"}}, {"target", "t"}, {"aimAxis", 90}}});
+    check(validateRig(d).empty(), "aimAxis 90 validates");
+    Rig r = parseRig("arm", d);
+    Pose p = samplePose(r, -1, 0);
+    check(angleTo(imageAxis(r, p), p, r) < 1e-9, "axis 90: the hanging image points at the target");
+    double dx = 0, dy = 0;
+    check(ikAimDirection(r, p, 0, dx, dy) && angleTo({dx, dy}, p, r) < 1e-9, "ikAimDirection is the solved axis");
+    // Exact under a rotated, non-uniformly scaled parent and bone, oblique axis.
+    d["bones"][0]["rotation"] = 25; d["bones"][0]["scaleX"] = 1.5; d["bones"][0]["scaleY"] = 0.6;
+    d["bones"][1]["scaleX"] = -0.8; d["bones"][1]["scaleY"] = 1.7;
+    d["ik"][0]["aimAxis"] = -130;
+    r = parseRig("arm", d);
+    p = samplePose(r, -1, 0);
+    check(ikAimDirection(r, p, 0, dx, dy) && angleTo({dx, dy}, p, r) < 1e-9, "oblique axis exact under skew and a flipped, stretched bone");
+    // Old documents: no field == aimAxis 0, bit for bit, and the +x axis still aims.
+    Json old = armRig(0, 80);
+    old["ik"][0]["bones"] = {"upper"};
+    old["bones"][0]["rotation"] = 30; old["bones"][0]["scaleX"] = 2; old["bones"][1]["scaleX"] = -1;
+    Json zero = old;
+    zero["ik"][0]["aimAxis"] = 0;
+    const Pose a = samplePose(parseRig("arm", old), -1, 0), b = samplePose(parseRig("arm", zero), -1, 0);
+    bool same = a.world.size() == b.world.size();
+    for (size_t i = 0; same && i < a.world.size(); i++)
+      same = a.world[i].a == b.world[i].a && a.world[i].b == b.world[i].b && a.world[i].e == b.world[i].e && a.world[i].f == b.world[i].f && a.applied[i].rotation == b.applied[i].rotation;
+    check(same, "no aimAxis == aimAxis 0, bit for bit");
+    // Validation.
+    auto code = [&](const Json& axis, bool twoBone = false) {
+      Json x = twoBone ? armRig(60, 40) : hangingArm();
+      if (!twoBone) x["ik"] = Json::array({{{"id", "aim"}, {"bones", {"arm"}}, {"target", "t"}}});
+      x["ik"][0]["aimAxis"] = axis;
+      return hasCode(validateRig(x), "ANIM_IK_AIM_AXIS");
+    };
+    check(code(400) && code(-360.5) && code("down") && code(90, true) && !code(360) && !code(-12.5), "range ±360, a number, aim chains only");
+  });
+
+  test("ik aim axis: addIk infers it and never moves the limb", [&] {
+    auto worlds = [](const Json& d) { return samplePose(parseRig("arm", d), -1, 0).world; };
+    auto unchanged = [&](const Json& before, const Json& after) {
+      const auto a = worlds(before), b = worlds(after);
+      for (size_t i = 0; i < a.size(); i++)
+        // (aimAxis is stored rounded to 1e-6°: the solve may differ by that much, nothing visible)
+        if (!(near(a[i].a, b[i].a, 1e-7) && near(a[i].b, b[i].b, 1e-7) && near(a[i].e, b[i].e, 1e-5) && near(a[i].f, b[i].f, 1e-5))) return false;
+      return true;
+    };
+    // Hanging image, no child bone: axis = down (+y, 90°), target at the image's far end.
+    Json base = hangingArm();
+    auto r = applyEdit(base, {{"op", "addIk"}, {"bones", {"arm"}}, {"createTarget", true}});
+    const Json& k = r.data["ik"][0];
+    check(near(k["aimAxis"].get<double>(), 90, 1e-9), "hanging image: aimAxis 90 (" + k.dump() + ")");
+    const auto setup = setupWorld(r.data);
+    check(near(setup.at("arm-target").e, 230, 1e-6) && near(setup.at("arm-target").f, 200, 1e-6), "target at the image's far end");
+    check(unchanged(base, r.data), "creating it moves nothing");
+    // Dragging the target then turns the image's long axis onto it.
+    Json moved = r.data;
+    for (auto& b : moved["bones"]) if (b["id"] == "arm-target") { b["x"] = 150; b["y"] = 40; }
+    {
+      const Rig rr = parseRig("arm", moved);
+      const Pose p = samplePose(rr, -1, 0);
+      const Affine m = p.world[size_t(rr.boneIndex("arm"))] * attachmentPlacement(rr.attachments[0]);
+      const auto& o = p.world[size_t(rr.boneIndex("arm"))];
+      const auto& t = p.world[size_t(rr.boneIndex("arm-target"))];
+      check(std::fabs(m.c * (t.f - o.f) - m.d * (t.e - o.e)) < 1e-6 && m.c * (t.e - o.e) + m.d * (t.f - o.f) > 0, "the image follows the target");
+    }
+    // A child bone (wrist) wins over the images; a centred image keeps the old +x behaviour.
+    Json child = hangingArm();
+    child["bones"].push_back({{"id", "hand"}, {"parent", "arm"}, {"x", -40}, {"y", 40}});
+    r = applyEdit(child, {{"op", "addIk"}, {"bones", {"arm"}}, {"createTarget", true}});
+    check(near(r.data["ik"][0]["aimAxis"].get<double>(), 135, 1e-9) && unchanged(child, r.data), "toward the first child bone");
+    Json centred = hangingArm();
+    centred["attachments"][0]["pivotY"] = 0.5;
+    r = applyEdit(centred, {{"op", "addIk"}, {"bones", {"arm"}}, {"createTarget", true}});
+    check(!r.data["ik"][0].contains("aimAxis") && unchanged(centred, r.data), "centred image: +x, no field (the 1.3.0 document)");
+    check(near(setupWorld(r.data).at("arm-target").e, 290, 1e-6), "... target 60 px along +x as before");
+    // Under a rotated, scaled parent and a scaled bone it still holds the pose.
+    Json skew = hangingArm();
+    skew["bones"][0]["rotation"] = -35; skew["bones"][0]["scaleX"] = 1.4; skew["bones"][0]["scaleY"] = 0.7;
+    skew["bones"][1]["rotation"] = 12; skew["bones"][1]["scaleY"] = 1.3;
+    skew["attachments"][0]["x"] = 6; skew["attachments"][0]["rotation"] = 20;
+    r = applyEdit(skew, {{"op", "addIk"}, {"bones", {"arm"}}, {"createTarget", true}});
+    check(r.data["ik"][0].contains("aimAxis") && unchanged(skew, r.data), "skewed rig: no jump");
+    // Explicit axis, setIk, fit to the current direction.
+    r = applyEdit(base, {{"op", "addIk"}, {"id", "aim"}, {"bones", {"arm"}}, {"createTarget", true}, {"aimAxis", 0}});
+    check(!r.data["ik"][0].contains("aimAxis") && unchanged(base, r.data), "explicit +x: target on +x, nothing moves");
+    check(refused(base, {{"op", "addIk"}, {"bones", {"arm"}}, {"createTarget", true}, {"aimAxis", 720}}), "addIk aimAxis range");
+    Json far = r.data;
+    for (auto& b : far["bones"]) if (b["id"] == "arm-target") { b["x"] = 30; b["y"] = 150; }  // straight below the shoulder
+    r = applyEdit(far, {{"op", "setIk"}, {"ik", "aim"}, {"aimAxis", 45}});
+    check(r.data["ik"][0]["aimAxis"] == 45, "setIk aimAxis");
+    r = applyEdit(r.data, {{"op", "setIk"}, {"ik", "aim"}, {"aimAxis", nullptr}});
+    check(!r.data["ik"][0].contains("aimAxis"), "setIk aimAxis null = +x");
+    r = applyEdit(far, {{"op", "setIk"}, {"ik", "aim"}, {"fitAimAxis", true}});
+    check(near(r.data["ik"][0]["aimAxis"].get<double>(), 90, 1e-9), "fit: the target is below the bone");
+    {
+      Json noIk = r.data;
+      noIk.erase("ik");
+      check(unchanged(noIk, r.data), "fit: the constraint holds the bone's own pose");
+    }
+    check(refused(far, {{"op", "setIk"}, {"ik", "aim"}, {"aimAxis", "down"}}) && refused(armRig(60, 40), {{"op", "setIk"}, {"ik", "arm"}, {"aimAxis", 30}}) &&
+              refused(armRig(60, 40), {{"op", "setIk"}, {"ik", "arm"}, {"fitAimAxis", true}}) && refused(far, {{"op", "setIk"}, {"ik", "aim"}, {"fitAimAxis", true}, {"clip", "nope"}}),
+          "setIk refusals: type, two-bone chains, unknown clip");
   });
 
   test("ik in clips, instances, frame-rate determinism, save/restore", [&] {

@@ -150,6 +150,9 @@ void applyExpression(const Rig& rig, int index, Pose& pose);
  * recompute the world of every bone they move. Fills pose.applied. No-op without constraints.
  */
 void applyIk(const Rig& rig, Pose& pose);
+/** Unit rig-space direction of aim constraint `ik`'s axis (`aimAxis` on its bone) in `pose`: after
+ *  solving at full mix it points at the target. false for two-bone chains or a degenerate bone. */
+bool ikAimDirection(const Rig& rig, const Pose& pose, int ik, double& dx, double& dy);
 double sampleTrack(const Track& track, double timeMs, double fallback);
 /** Deform offsets of a deform track at `timeMs` (step/linear/bezier between keys, ends held). */
 std::vector<double> sampleDeform(const Track& track, double timeMs);

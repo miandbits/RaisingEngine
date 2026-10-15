@@ -188,6 +188,9 @@ class CutoutPanel : public QWidget {
   bool setIkBend(bool positive);
   bool setIkOrder(int order);
   bool setIkTarget(const QString& bone);
+  /** Aim chains (plugin 1.4.1): the bone-local direction (degrees) that points at the target. */
+  bool setIkAimAxis(double degrees);
+  bool fitIkAimAxis();  // 현재 방향으로 맞추기: the axis the target is seen at without IK (core fitAimAxis)
   bool selectIkTarget();  // canvas/tree selection = the constraint's target bone
   bool renameIk();
   bool deleteIk();        // also its target bone when nothing else uses it
@@ -366,8 +369,9 @@ class CutoutPanel : public QWidget {
   QDoubleSpinBox* ikMix_ = nullptr;
   QCheckBox* ikBend_ = nullptr;
   QSpinBox* ikOrder_ = nullptr;
+  QDoubleSpinBox* ikAimAxis_ = nullptr;
   QLabel* ikInfo_ = nullptr;
-  QVector<QWidget*> ikEditors_, ikAnimateTools_;
+  QVector<QWidget*> ikEditors_, ikAnimateTools_, ikAimTools_;
   // meshes (editor state: mode, vertex selection and brush never reach documents)
   MeshEdit meshEdit_ = MeshEdit::Off;
   QSet<int> meshSelection_;

@@ -163,9 +163,11 @@ static double blendAngle(double from, double to, double mix) {
   return from + d * mix;
 }
 /**
- * One-bone aim: rotate the bone in its parent space so its local +x axis points at the target.
- * Exact for any parent transform (an affine map keeps directions parallel); a negative scaleX
- * flips the axis.
+ * One-bone aim: rotate the bone in its parent space so its local direction `aimAxis` (default +x)
+ * points at the target. Exact for any parent transform (an affine map keeps directions parallel).
+ * The bone's own scale acts before its rotation, so the axis is measured after it: a negative
+ * scaleX flips +x, a non-uniform scale bends an oblique axis. aimAxis 0 keeps the 1.3.0 formula
+ * bit for bit.
  */
 static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix) {
   const int b = k.bones[0], parent = rig.bones[size_t(b)].parentIndex;
@@ -176,7 +178,8 @@ static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double t
   Transform& t = pose.applied[size_t(b)];
   const double dx = lx - t.x, dy = ly - t.y;
   if (std::hypot(dx, dy) < IK_EPS) return false;
-  t.rotation = blendAngle(t.rotation, (std::atan2(dy, dx) - (t.scaleX < 0 ? PI : 0)) * DEG, mix);
+  const double axis = k.aimAxis == 0 ? (t.scaleX < 0 ? PI : 0) : std::atan2(t.scaleY * std::sin(k.aimAxis * RAD), t.scaleX * std::cos(k.aimAxis * RAD));
+  t.rotation = blendAngle(t.rotation, (std::atan2(dy, dx) - axis) * DEG, mix);
   return true;
 }
 /**
@@ -538,6 +541,21 @@ Pose Instance::pose() const {
   computeWorld(*rig_, pose);
   applyIk(*rig_, pose);
   return pose;
+}
+
+bool ikAimDirection(const Rig& rig, const Pose& pose, int ik, double& dx, double& dy) {
+  if (ik < 0 || size_t(ik) >= rig.ik.size() || rig.ik[size_t(ik)].bones.size() != 1) return false;
+  const int b = rig.ik[size_t(ik)].bones[0];
+  if (b < 0 || size_t(b) >= pose.world.size()) return false;
+  const Affine& w = pose.world[size_t(b)];
+  const double a = rig.ik[size_t(ik)].aimAxis * RAD, cx = std::cos(a), cy = std::sin(a);
+  dx = w.a * cx + w.c * cy;
+  dy = w.b * cx + w.d * cy;
+  const double len = std::hypot(dx, dy);
+  if (len < IK_EPS) return false;
+  dx /= len;
+  dy /= len;
+  return true;
 }
 
 // ---- Mesh attachments (plugin 1.4.0) ----
