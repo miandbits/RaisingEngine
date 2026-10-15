@@ -496,6 +496,19 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * The authoring layout is editor-only too: the 애니메이션 작업 공간 (host workspace) switch,
   splitter sizes and collapsed sections (QSettings `plugins/cutout-animation/layout/*`) and
   the Tab full view never send an edit and never reach documents or the game.
+  * Plugin 1.10.0: until the user drags a splitter the layout is automatic (pane sizes are
+    proportional to the window, never below the width the pane's widest tool row needs, side
+    panes capped at a multiple of it); only a dragged layout is saved (`layout/version` 3,
+    `layout/custom`). Older (v1/v2) states are ignored; a v3 state is restored and widened
+    where a row would hide tools behind the overflow `»`. `레이아웃 초기화` returns to automatic.
+  * 작업 공간 글자 크기 (`view/uiScale`: 0.9 / 1 / 1.25 / 1.5, Ctrl+= / Ctrl+- / Ctrl+0) scales the
+    workspace text over the host font, plus icons, row paddings, the dopesheet row height,
+    ruler and label column, graph key/handle radii, canvas gizmos and their pick radii. Absent,
+    the default comes from the screen: 1.25 (short side >= 1400) or 1.5 (>= 2000) at 100 %
+    Windows scaling when the width keeps 1280 logical px per step, else 1.
+  * The first-run hint strip (`view/hintDismissed`) and the command palette (Ctrl+K / F1: every
+    workspace button, menu command and page by name, group or shortcut; running one is the
+    same as clicking it, so an editing command is exactly one edit) are presentation only.
 * Onion skin and motion trail are editor-only views; their settings are a per-user
   preference (QSettings `plugins/cutout-animation/onionSkin/*`), never rig/controller data
   (not even an `editor` block). Ghosts are pure `samplePose` results of the clip being edited

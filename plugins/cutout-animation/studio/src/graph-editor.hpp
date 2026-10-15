@@ -108,7 +108,13 @@ class GraphEditor : public QWidget {
   std::optional<KeyRef> pendingSingle_;
   QRectF band_;
 
-  double legendWidth() const { return normalized_ ? 158 : 98; }  // value ticks use the rest of the label column
+  double legendWidth() const { return (normalized_ ? 158 : 98) * ui(); }  // value ticks use the rest of the label column
+  // Metrics of the shared time view's UI scale (plugin 1.10.0).
+  double ui() const { return view_->uiScale(); }
+  int label() const { return view_->label(); }
+  int ruler() const { return view_->ruler(); }
+  double hit() const;
+  double legendRow() const;
   double plotTop() const;
   double plotBottom() const;
   bool visible(int channel) const;

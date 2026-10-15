@@ -16,6 +16,13 @@ void TimeView::setDuration(int ms) {
   setLoop(loopIn_, loopOut_);
   if (fitted_) fit(); else { clampScroll(); Q_EMIT changed(); }
 }
+void TimeView::setUiScale(double scale) {
+  scale = std::clamp(scale, 0.5, 3.0);
+  if (std::fabs(scale - ui_) < 1e-6) return;
+  ui_ = scale;
+  // The label column changed: a fitted view refits, a zoomed one keeps its zoom.
+  if (fitted_) fit(); else { clampScroll(); Q_EMIT changed(); }
+}
 void TimeView::addView(QWidget* view) {
   views_ << view;
   viewResized();
@@ -85,9 +92,9 @@ void TimeView::setLoop(int in, int out) {
   Q_EMIT changed();
 }
 int TimeView::loopMarkerAt(double x, double rulerY) const {
-  if (rulerY < RULER - 10 || rulerY > RULER) return 0;
+  if (rulerY < ruler() - 10 * ui_ || rulerY > ruler()) return 0;
   const double din = std::fabs(x - timeToX(loopIn())), dout = std::fabs(x - timeToX(loopOut()));
-  if (std::min(din, dout) > 6) return 0;
+  if (std::min(din, dout) > 6 * ui_) return 0;
   return din < dout ? 1 : 2;
 }
 
@@ -114,6 +121,8 @@ void TimeView::pruneSelection(const QSet<KeyRef>& existing) {
 
 void TimeView::paintRuler(QPainter& p, int width) const {
   p.save();
+  const int LABEL = label(), RULER = ruler();
+  const double u = ui_;
   p.fillRect(QRect(0, 0, width, RULER), QColor("#2a3038"));
   // Left of the plot: the visible span, so the zoom level is always readable.
   p.setPen(QColor("#7d8894"));
@@ -126,19 +135,19 @@ void TimeView::paintRuler(QPainter& p, int width) const {
   if (loopActive()) p.fillRect(QRectF(timeToX(loopIn()), 0, timeToX(loopOut()) - timeToX(loopIn()), RULER), QColor(74, 222, 128, 48));
   // Label spacing adapts to the zoom (1 ms ticks when zoomed in, seconds when zoomed out).
   int tick = 60000;
-  for (int c : {1, 2, 5, 10, 20, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 30000, 60000}) if (c * px_ >= 56) { tick = c; break; }
+  for (int c : {1, 2, 5, 10, 20, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 30000, 60000}) if (c * px_ >= 56 * u) { tick = c; break; }
   int minor = 0;
   for (int div : {5, 2}) if (tick % div == 0 && tick / div * px_ >= 6) { minor = tick / div; break; }
   const double lo = std::max(0.0, scroll_), hi = std::min<double>(duration_, scroll_ + visibleMs() + 1);
   if (minor > 0) {
     p.setPen(QColor("#56606c"));
-    for (long long t = (long long)(lo / minor) * minor; t <= hi; t += minor) { const double x = timeToX(double(t)); p.drawLine(QPointF(x, RULER - 3), QPointF(x, RULER)); }
+    for (long long t = (long long)(lo / minor) * minor; t <= hi; t += minor) { const double x = timeToX(double(t)); p.drawLine(QPointF(x, RULER - 3 * u), QPointF(x, RULER)); }
   }
   p.setPen(QColor("#8a949e"));
   for (long long t = (long long)(lo / tick) * tick; t <= hi; t += tick) {
     const double x = timeToX(double(t));
-    p.drawLine(QPointF(x, RULER - 7), QPointF(x, RULER));
-    p.drawText(QRectF(x + 2, 2, 70, RULER - 6), Qt::AlignLeft | Qt::AlignVCenter, QString::number(t));
+    p.drawLine(QPointF(x, RULER - 7 * u), QPointF(x, RULER));
+    p.drawText(QRectF(x + 2, 2, 70 * u, RULER - 6 * u), Qt::AlignLeft | Qt::AlignVCenter, QString::number(t));
   }
   // Loop markers are always drawn (grey when the range is the whole clip) so they can be dragged.
   p.setRenderHint(QPainter::Antialiasing, true);
@@ -146,8 +155,8 @@ void TimeView::paintRuler(QPainter& p, int width) const {
   p.setPen(Qt::NoPen);
   p.setBrush(marker);
   const double xi = timeToX(loopIn()), xo = timeToX(loopOut());
-  p.drawPolygon(QPolygonF({QPointF(xi, RULER - 9), QPointF(xi + 7, RULER - 4.5), QPointF(xi, RULER)}));
-  p.drawPolygon(QPolygonF({QPointF(xo, RULER - 9), QPointF(xo - 7, RULER - 4.5), QPointF(xo, RULER)}));
+  p.drawPolygon(QPolygonF({QPointF(xi, RULER - 9 * u), QPointF(xi + 7 * u, RULER - 4.5 * u), QPointF(xi, RULER)}));
+  p.drawPolygon(QPolygonF({QPointF(xo, RULER - 9 * u), QPointF(xo - 7 * u, RULER - 4.5 * u), QPointF(xo, RULER)}));
   p.restore();
 }
 }  // namespace cutout_studio

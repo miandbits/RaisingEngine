@@ -15,6 +15,8 @@
 #include <QElapsedTimer>
 #include <QFileDialog>
 #include <QHeaderView>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QMenuBar>
 #include <QTabBar>
 #include <QTreeWidgetItemIterator>
@@ -772,11 +774,29 @@ void StudioTests::cutoutEndToEnd() {
   QVERIFY(seek(idleMs, idleMs));
   QVERIFY(poseKey("bone:head", "Rotation", "0", false));
   QCOMPARE(keyAt(rig(), "idle", "bone:head", "rotation", idleMs / 2 / 10 * 10).value("value").toDouble(), 3.0);
-  // face-happy expression clip (looping attachment pose).
-  ask("new clip face-happy", "face-happy");
-  click("cutoutNewClip");
-  QVERIFY(waitFor([&] { return !w->busy() && clips().contains("face-happy"); }));
-  QVERIFY(settle());
+  // face-happy expression clip (looping attachment pose), made through the command palette
+  // (plugin 1.10.0): Ctrl+K, type the Korean name, Enter = exactly what the button does (one edit).
+  {
+    const int revisionBefore = w->currentView().value("revision").toInt();
+    w->activateWindow();  // window shortcuts need the active window
+    QVERIFY(QTest::qWaitForWindowActive(w));
+    canvas->setFocus();
+    QTest::keyClick(canvas, Qt::Key_K, Qt::ControlModifier);
+    auto palette = panel->findChild<QWidget *>("cutoutCommandPalette");
+    auto search = panel->findChild<QLineEdit *>("cutoutCommandSearch");
+    QVERIFY(palette && palette->isVisible() && search && search->hasFocus());
+    typeText(search, QString::fromUtf8("새 클립"));
+    auto list = panel->findChild<QListWidget *>("cutoutCommandList");
+    QVERIFY(list && list->currentItem());
+    QCOMPARE(list->currentItem()->data(Qt::UserRole).toString(), QString("cutoutNewClip"));
+    ask("new clip face-happy", "face-happy");
+    QTest::keyClick(search, Qt::Key_Return);
+    QVERIFY(waitFor([&] { return !w->busy() && clips().contains("face-happy"); }));
+    QVERIFY(settle());
+    QVERIFY(!palette->isVisible());
+    QCOMPARE(w->currentView().value("revision").toInt(), revisionBefore + 1);
+    step("palette: 새 클립 face-happy (one edit)");
+  }
   QVERIFY(pickClip("face-happy"));
   QVERIFY(seek(0, 1000));
   QVERIFY(swapKey("mouth", "smile", false));

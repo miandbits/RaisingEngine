@@ -5,6 +5,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QPushButton>
+#include <cmath>
 #include <QVBoxLayout>
 
 namespace cutout_studio {
@@ -31,6 +32,16 @@ void CutoutStudioPlugin::activate(raising::StudioHost* host) {
     add("조립 모드", "cutoutSetupModeAction", [this] { showDock(); panel_->setMode(CutoutPanel::Mode::Setup); });
     add("애니메이션 모드", "cutoutAnimateModeAction", [this] { showDock(); panel_->setMode(CutoutPanel::Mode::Animate); });
     add("게임 연결 편집", "cutoutControllerAction", [this] { showDock(); panel_->showControllerTab(); });
+    // Plugin 1.10.0: the workspace's command palette and text size from the host menu too.
+    add("명령 찾기… (Ctrl+K)", "cutoutCommandPaletteMenuAction", [this] { showDock(); panel_->showCommandPalette(); });
+    sizeMenu_ = menu->addMenu("작업 공간 글자 크기");
+    sizeMenu_->setObjectName("cutoutUiScalePluginMenu");
+    for (const auto& c : CutoutPanel::uiScales()) {
+      const double scale = c.scale;
+      QAction* a = sizeMenu_->addAction(QString("%1 (%2%)").arg(c.label).arg(int(std::lround(scale * 100))));
+      a->setObjectName(QString(c.objectName) + "Plugin");
+      QObject::connect(a, &QAction::triggered, panel_, [this, scale] { panel_->setUiScale(scale); });
+    }
   }
   viewChanged();
 }
@@ -38,6 +49,7 @@ void CutoutStudioPlugin::activate(raising::StudioHost* host) {
 void CutoutStudioPlugin::deactivate() {
   for (const auto& a : actions_) if (a) delete a.data();
   actions_.clear();
+  if (sizeMenu_) delete sizeMenu_.data();
   // The host owns (and deletes, before unloading this DLL) the dock and the workspace page
   // holding the panel; a deleteLater() here could run after unload. Just make the panel inert.
   if (panel_) { panel_->detachHost(); panel_->setEnabled(false); }

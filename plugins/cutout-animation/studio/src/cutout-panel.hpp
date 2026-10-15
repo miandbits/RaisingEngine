@@ -38,9 +38,11 @@ class QSplitter;
 class QTabWidget;
 class QTableWidget;
 class QTimer;
+class QToolBar;
 class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QVBoxLayout;
 
 namespace cutout_studio {
 class Dopesheet;
@@ -313,6 +315,40 @@ class CutoutPanel : public QWidget {
   /** Current pose drawn contain-fit into `size` (dock launcher mini preview). */
   QImage thumbnail(const QSize& size);
 
+  // ---- Workspace view (plugin 1.10.0, editor-only: QSettings plugins/cutout-animation/view, never an edit)
+  /** 작업 공간 글자 크기 presets (scale, label): 작게 · 보통 · 크게 · 아주 크게. */
+  struct UiScaleChoice { double scale; const char* label; const char* objectName; };
+  static const QVector<UiScaleChoice>& uiScales();
+  /** Default for a screen (logical px): larger text on big screens at 100 % Windows scaling only;
+   *  display scaling (dpr > 1) or a larger system text size (logical DPI > 96) already sizes it. */
+  static double defaultUiScale(const QSize& screen, double devicePixelRatio, double logicalDpi);
+  /** Scales fonts (over the host font), icons, rows, dopesheet/graph metrics and canvas gizmos and
+   *  hit radii; saved in QSettings. The layout stays valid: an automatic layout is recomputed, a
+   *  user layout widened where rows would overflow. */
+  void setUiScale(double scale);
+  double uiScale() const { return ui_; }
+  void stepUiScale(int delta);  // Ctrl+= / Ctrl+- inside the workspace (one preset up / down)
+  /** Command palette (Ctrl+K / F1): every button, menu command and page of the workspace by its
+   *  Korean name, group or shortcut. Running one is what clicking it does (one edit when it edits). */
+  struct Command { QString id, name, group, shortcut, tip; bool enabled = true; };
+  QVector<Command> commands() const;
+  QVector<Command> findCommands(const QString& query) const;  // best match first
+  bool runCommand(const QString& id);  // false: unknown or disabled
+  void showCommandPalette();
+  QWidget* commandPalette() const;
+  /** First-run hint strip (dismissed = editor-only QSettings flag). */
+  void setHintVisible(bool on);
+  bool hintVisible() const;
+  /** Layout: until the user drags a splitter, the panes follow the window size (proportional, never
+   *  below what their widest tool row needs); 레이아웃 초기화 goes back to that. */
+  bool autoLayout() const { return autoLayout_; }
+  void resetLayout();
+  /** Width a pane needs to show every tool of its rows without the » overflow ("left", "canvas",
+   *  "right", "bottom", "clips", "timeline", "mix"). */
+  int paneNeed(const QString& pane) const;
+  /** Tool rows (QToolBar) whose items do not all fit right now (objectNames; tests/diagnostics). */
+  QStringList overflowingRows() const;
+
   // ---- Export settings (plugin 1.9.0): the project's settings document
   // plugins/cutout-animation/settings/project.json (absent = defaults: atlas on, 2048 px pages,
   // 2 px padding, trimming on). Each change is one edit: create the document, or replace it.
@@ -362,6 +398,8 @@ class CutoutPanel : public QWidget {
 
  protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
+  void resizeEvent(QResizeEvent* event) override;
+  void showEvent(QShowEvent* event) override;
 
  private:
   /** `data` is shared and immutable: refresh, the display snapshot and the in-flight edit hand the
@@ -433,6 +471,35 @@ class CutoutPanel : public QWidget {
   QToolButton* fullViewButton_ = nullptr;
   QList<QToolButton*> sections_;  // collapsible section headers (objectName "<section>Toggle")
   bool restoringLayout_ = false;
+  // workspace view (plugin 1.10.0, editor-only)
+  double ui_ = 1;
+  bool uiScaleChosen_ = false;      // saved by the user (else the screen default is used)
+  bool autoLayout_ = true;          // panes follow the window size until a splitter is dragged
+  bool userSized_ = false;          // dragged in this session: no automatic adjustment any more
+  bool applyingLayout_ = false;
+  QWidget *canvasPane_ = nullptr, *clipsPane_ = nullptr, *timelinePane_ = nullptr, *mixPane_ = nullptr, *modeBar_ = nullptr;
+  QFrame* hintStrip_ = nullptr;
+  QFrame* palette_ = nullptr;
+  QLineEdit* paletteSearch_ = nullptr;
+  QListWidget* paletteList_ = nullptr;
+  QToolButton* viewMenuButton_ = nullptr;
+  QToolBar* viewTools_ = nullptr;   // mode bar: 보기 (onion, trail, fit, full view, 보기 ▾)
+  QList<QAction*> uiScaleActions_;
+  QAction* hintAction_ = nullptr;
+  QScrollArea* propertiesScroll_ = nullptr;
+  QPointer<QWidget> watchedParent_;  // its font changes = host font changes
+  void applyUiScale();
+  void applyDefaultLayout();
+  void sanitizeLayout();            // widen panes whose rows would overflow (restored / rescaled layout)
+  void adjustLayout();              // after a resize or scale change: defaults or sanitize
+  void buildViewMenu();
+  void buildHintStrip();            // overlay at the top of the canvas: costs no layout height
+  void layoutHintStrip();
+  void buildCommandPalette();
+  void finishTooltips();            // every tool gets a tooltip, shortcuts named in it
+  void fillPalette(const QString& query);
+  QWidget* commandWidget(const QString& id) const;
+  void revealWidget(QWidget* w);    // open the tab / section / side panel that holds `w`
   QTreeWidget* characterList_ = nullptr;
   QListWidget* diagnostics_ = nullptr;
   QPushButton *setupButton_ = nullptr, *animateButton_ = nullptr;

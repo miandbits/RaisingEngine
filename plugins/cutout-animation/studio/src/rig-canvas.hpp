@@ -68,6 +68,10 @@ class RigCanvas : public QWidget {
   void setSelectedIk(const QString& id) { selectedIk_ = id; update(); }
   bool isIkTarget(int bone) const;
   static QColor ikColor();
+  /** Workspace UI scale (plugin 1.10.0, editor-only): handles, gizmos, pick radii and the hint
+   *  line grow with it, so a large-text workspace also gets larger targets. */
+  void setUiScale(double scale) { ui_ = scale; refreshHover(); update(); }
+  double uiScale() const { return ui_; }
   /** Fit the authoring canvas into the widget (also re-enables auto fit on resize). */
   void fitToCanvas();
   QTransform viewTransform() const;
@@ -186,7 +190,7 @@ class RigCanvas : public QWidget {
   QString pendingSingle_;       // press on a member of a multi-selection: a click (no drag) keeps only it
   int tool_ = Move;
   bool animate_ = false, autoFit_ = true;
-  double zoom_ = 1;
+  double zoom_ = 1, ui_ = 1;
   QPointF pan_;
   std::optional<Drag> drag_;
   bool panning_ = false;

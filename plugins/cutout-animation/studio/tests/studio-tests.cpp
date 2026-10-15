@@ -163,6 +163,7 @@ class StudioTests : public QObject {
   std::optional<CutoutPanel::SkinImageChoice> nextSkinImage, skinPrefill;  // scripted 그림 지정 / what it was offered
   QTemporaryDir dir;
   int gestures = 0;
+  bool realFonts = false;  // Windows UI fonts loaded: text widths are the real editor's
 
   void pump() { for (int i = 0; i < 6; i++) QCoreApplication::processEvents(); }
   QString png(const QString& name, QSize size, QColor color) {
@@ -347,6 +348,85 @@ class StudioTests : public QObject {
     tabs->setCurrentIndex(keep);
     return problems;
   }
+  /** The splitter pane holding `w` (its ancestor that is a splitter child). */
+  QWidget* paneOf(QWidget* w) const {
+    for (QWidget* p = w; p && p != panel; p = p->parentWidget())
+      if (qobject_cast<QSplitter*>(p->parentWidget())) return p;
+    return panel;
+  }
+  /** Every tool of every visible row is shown (not behind the » overflow) and lies inside its row
+   *  and its pane (plugin 1.10.0). */
+  QStringList rowProblems() {
+    QStringList problems;
+    if (!realFonts) return problems;  // fallback glyphs: widths say nothing about the real editor
+    for (const QString& row : panel->overflowingRows()) problems << row + " overflows (»)";
+    for (QToolBar* bar : panel->findChildren<QToolBar*>()) {
+      if (!bar->isVisible()) continue;
+      QWidget* pane = paneOf(bar);
+      for (QWidget* w : bar->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (!w->objectName().startsWith("cutout") || w->property("cutoutGroupLabel").toBool() || w->isWindow()) continue;
+        const QString what = bar->objectName() + "/" + w->objectName();
+        if (!w->isVisible()) { problems << what + " hidden"; continue; }
+        const QRect r(w->mapTo(pane, QPoint(0, 0)), w->size());
+        if (!QRect(QPoint(0, 0), bar->size()).contains(QRect(w->pos(), w->size()))) problems << what + " outside its row";
+        if (!pane->rect().contains(r)) problems << what + QString(" outside %1 (%2,%3 %4x%5 in %6x%7)").arg(pane->objectName()).arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).arg(pane->width()).arg(pane->height());
+      }
+    }
+    return problems;
+  }
+  /** Splitter children at their minimum, the panel filling the page, the key widgets on screen. */
+  QStringList splitterProblems(QWidget* page) {
+    QStringList problems;
+    if (panel->geometry() != page->rect()) problems << "panel does not fill the workspace";
+    for (QSplitter* split : panel->splitters()) {
+      if (!split->isVisible()) continue;
+      for (int i = 0; i < split->count(); i++) {
+        QWidget* child = split->widget(i);
+        if (!child->isVisible()) continue;
+        const bool horizontal = split->orientation() == Qt::Horizontal;
+        const int have = horizontal ? child->width() : child->height();
+        const int explicitMin = horizontal ? child->minimumWidth() : child->minimumHeight();
+        const int need = explicitMin > 0 ? explicitMin : (horizontal ? child->minimumSizeHint().width() : child->minimumSizeHint().height());
+        if (have < need) problems << QString("%1[%2] %3 < %4").arg(split->objectName()).arg(i).arg(have).arg(need);
+      }
+    }
+    for (const char* name : {"cutoutModeBanner", "cutoutStatus", "cutoutCanvas"}) {
+      auto* w = find<QWidget>(name);
+      if (!w || !w->isVisible()) problems << QString(name) + " hidden";
+      else if (!panel->rect().contains(QRect(w->mapTo(panel, QPoint(0, 0)), w->size()))) problems << QString(name) + " cut off";
+    }
+    return problems;
+  }
+  /** Rows, look pages and splitters in both modes and on both timeline pages (animation, game connection). */
+  QStringList fullLayoutProblems(QWidget* page) {
+    QStringList problems;
+    auto* bottom = find<QTabWidget>("cutoutBottomTabs");
+    const auto keepMode = panel->mode();
+    for (const auto mode : {CutoutPanel::Mode::Setup, CutoutPanel::Mode::Animate}) {
+      panel->setMode(mode);
+      for (int tab : {0, 1}) {
+        bottom->setCurrentIndex(tab);
+        pump();
+        const QString where = QString(mode == CutoutPanel::Mode::Setup ? "setup" : "animate") + (tab ? "/connection: " : ": ");
+        for (const QString& p : rowProblems() + splitterProblems(page)) problems << where + p;
+      }
+      for (const QString& p : lookPageProblems()) problems << QString(mode == CutoutPanel::Mode::Setup ? "setup: " : "animate: ") + p;
+    }
+    bottom->setCurrentIndex(0);
+    panel->setMode(keepMode);
+    pump();
+    return problems;
+  }
+  QWidget* workspacePage() const { return host.mainWindow.centralWidget(); }
+  /** Typed text (Hangul included: QTest::keyClicks only knows Latin-1 keys), one key event per character. */
+  static void typeText(QWidget* w, const QString& text) {
+    for (QChar c : text) {
+      QKeyEvent press(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier, QString(c));
+      QCoreApplication::sendEvent(w, &press);
+      QKeyEvent release(QEvent::KeyRelease, Qt::Key_unknown, Qt::NoModifier, QString(c));
+      QCoreApplication::sendEvent(w, &release);
+    }
+  }
 
  private Q_SLOTS:
   void initTestCase() {
@@ -355,6 +435,16 @@ class StudioTests : public QObject {
     QCoreApplication::setOrganizationName("RaisingEngineCutoutTests");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
+    // The offscreen platform has no fonts of its own (its fallback glyphs are ~1.5x wider than
+    // real text): load the studio's Windows UI font (Segoe UI 9 pt, Hangul from Malgun Gothic)
+    // so row widths, overflow and the 1280x720 layout are measured like the real editor.
+    realFonts = QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf") >= 0 && QFontDatabase::addApplicationFont("C:/Windows/Fonts/malgun.ttf") >= 0;
+    if (realFonts) {
+      QFont ui;
+      ui.setFamilies({"Segoe UI", "Malgun Gothic"});
+      ui.setPointSizeF(9);
+      QApplication::setFont(ui);
+    }
     host.root = dir.path();
     host.plugin = &plugin;
     QCOMPARE(plugin.pluginId(), QString("cutout-animation"));
@@ -3242,6 +3332,11 @@ class StudioTests : public QObject {
       pump();
       QTest::qWait(30);
       const QString at = QString("%1x%2: ").arg(size.width()).arg(size.height());
+      if (size == QSize(1280, 720)) {
+        QStringList widths;
+        for (QToolBar* bar : panel->findChildren<QToolBar*>()) widths << QString("%1=%2").arg(bar->objectName()).arg(bar->sizeHint().width());
+        qInfo("rows (font %s %.1fpt, min %dx%d): %s", qPrintable(QFontInfo(panel->font()).family()), panel->font().pointSizeF(), panel->minimumSizeHint().width(), panel->minimumSizeHint().height(), qPrintable(widths.join(" ")));
+      }
       QVERIFY2(host.mainWindow.size() == size, qPrintable(at + "window refused its size (minimum too large)"));
       QVERIFY2(panel->geometry() == page->rect(), qPrintable(at + "panel does not fill the workspace"));
       for (QSplitter* split : panel->splitters()) {
@@ -3272,42 +3367,72 @@ class StudioTests : public QObject {
       panel->setMode(CutoutPanel::Mode::Setup);
       find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
       pump();
-      // Side panels keep their width on wide screens: the canvas gets the extra space.
+      qInfo("%s needs left %d canvas %d right %d bottom %d (clips %d time %d mix %d) · sizes left %d canvas %d right %d", qPrintable(at), panel->paneNeed("left"), panel->paneNeed("canvas"),
+            panel->paneNeed("right"), panel->paneNeed("bottom"), panel->paneNeed("clips"), panel->paneNeed("timeline"), panel->paneNeed("mix"), panel->leftPane()->width(),
+            panel->canvas()->width(), panel->rightPane()->width());
+      // Automatic layout (plugin 1.10.0): side panes at least what their rows need, a bounded share
+      // of the window on wide screens (the canvas and the time area get the rest).
+      QVERIFY(panel->autoLayout());
+      if (size.width() >= 1280) {
+      QVERIFY2(panel->leftPane()->width() >= panel->paneNeed("left"), qPrintable(at + QString("left %1 < %2").arg(panel->leftPane()->width()).arg(panel->paneNeed("left"))));
+      QVERIFY2(panel->rightPane()->width() >= panel->paneNeed("right"), qPrintable(at + QString("right %1 < %2").arg(panel->rightPane()->width()).arg(panel->paneNeed("right"))));
+      QVERIFY2(panel->leftPane()->width() <= std::max(panel->paneNeed("left") * 3 / 2 + 1, 0), qPrintable(at + "left pane wider than 1.5x its need"));
+      }
+      const QStringList rows = size.width() >= 1280 ? rowProblems() : QStringList();  // narrower: » allowed
+      QVERIFY2(rows.isEmpty(), qPrintable(at + rows.join(" | ")));
       if (size.width() >= 3840) {
         if (sideWidth < 0) sideWidth = panel->leftPane()->width();
-        QCOMPARE(panel->leftPane()->width(), sideWidth);
-        QVERIFY2(panel->canvas()->width() > size.width() - 700, qPrintable(QString::number(panel->canvas()->width())));
+        QCOMPARE(panel->leftPane()->width(), sideWidth);  // capped: a wider ultrawide only grows the canvas
+        QVERIFY2(panel->canvas()->width() > size.width() / 2, qPrintable(QString::number(panel->canvas()->width())));
       }
     }
     host.mainWindow.resize(1700, 1200);
     pump();
-    // A layout saved by plugin <= 1.4.0 (no version, right column starving the look pages) comes
-    // back as the defaults; the same state saved by this version is restored as is.
+    // Layouts saved by plugin <= 1.9.0 (version 1/2: fixed pixel sizes from before the regrouped
+    // rows) come back as the automatic defaults. A version-3 user layout is restored, but a pane
+    // narrower than its rows need is widened (sanitized) instead of hiding tools behind ».
     {
       auto* right = find<QSplitter>("cutoutRightSplitter");
-      const QList<int> defaults = right->sizes();
+      auto* outer = find<QSplitter>("cutoutOuterSplitter");
+      auto* workspace = find<QSplitter>("cutoutWorkspaceSplitter");
+      const QList<int> defaults = right->sizes(), outerDefaults = outer->sizes(), workspaceDefaults = workspace->sizes();
       right->setSizes({5000, 1, 1});
+      outer->setSizes({5000, 1});        // right column at its minimum
+      workspace->setSizes({1, 5000});    // left pane at its minimum: its rows overflow
       pump();
       const QList<int> starved = right->sizes();
       QVERIFY2(starved[1] < defaults[1] - 100, qPrintable(QString("%1 vs %2").arg(starved[1]).arg(defaults[1])));
+      QVERIFY2(!panel->overflowingRows().isEmpty(), "a squeezed left pane overflows (the case to sanitize)");
       QSettings q;
       q.beginGroup("plugins/cutout-animation/layout");
-      q.setValue("cutoutRightSplitter", right->saveState());
-      q.setValue("version", 1);
-      right->setSizes(defaults);
+      for (QSplitter* s : {right, outer, workspace}) q.setValue(s->objectName(), s->saveState());
+      q.setValue("custom", true);
+      for (int version : {1, 2}) {
+        q.setValue("version", version);
+        q.sync();
+        panel->restoreLayout();
+        pump();
+        QVERIFY2(panel->autoLayout(), qPrintable(QString("v%1 states are not restored").arg(version)));
+        QCOMPARE(right->sizes(), defaults);
+        QCOMPARE(outer->sizes(), outerDefaults);
+        QCOMPARE(workspace->sizes(), workspaceDefaults);
+        QVERIFY(rowProblems().isEmpty() && lookPageProblems().isEmpty());
+      }
+      q.setValue("version", 3);
       q.sync();
       panel->restoreLayout();
       pump();
-      QCOMPARE(right->sizes(), defaults);
-      QVERIFY(lookPageProblems().isEmpty());
-      q.setValue("version", 2);
-      q.sync();
-      panel->restoreLayout();
-      pump();
-      QCOMPARE(right->sizes(), starved);
+      QVERIFY(!panel->autoLayout());
+      QCOMPARE(right->sizes(), starved);  // vertical sizes kept: the look pages still show every button
       QVERIFY2(lookPageProblems().isEmpty(), "even at its minimum the look section keeps its buttons");
-      right->setSizes(defaults);
-      panel->saveLayout();
+      QVERIFY2(panel->leftPane()->width() >= panel->paneNeed("left") && panel->rightPane()->width() >= panel->paneNeed("right"),
+               qPrintable(QString("sanitized %1/%2, %3/%4").arg(panel->leftPane()->width()).arg(panel->paneNeed("left")).arg(panel->rightPane()->width()).arg(panel->paneNeed("right"))));
+      const QStringList rows = rowProblems();
+      QVERIFY2(rows.isEmpty(), qPrintable(rows.join(" | ")));
+      panel->resetLayout();  // back to the automatic layout (and nothing saved)
+      pump();
+      QVERIFY(panel->autoLayout() && !QSettings().value("plugins/cutout-animation/layout/custom").toBool());
+      QCOMPARE(right->sizes(), defaults);
     }
     // Tab on the canvas / dopesheet = full view (side panels hidden); Tab in a form field still
     // moves the focus. Presentation only.
@@ -3328,7 +3453,8 @@ class StudioTests : public QObject {
     spin->setFocus();
     QTest::keyClick(spin, Qt::Key_Tab);
     QVERIFY(!panel->fullView());
-    // Splitter sizes and collapsed sections persist (QSettings), restored on the next build.
+    // Splitter sizes and collapsed sections persist (QSettings), restored on the next build: a
+    // drag makes the layout the user's (no longer automatic).
     auto* split = find<QSplitter>("cutoutWorkspaceSplitter");
     QSplitterHandle* handle = split->handle(1);
     const int leftBefore = split->sizes()[0];
@@ -3338,8 +3464,10 @@ class StudioTests : public QObject {
     pump();
     const QList<int> moved = split->sizes();
     QVERIFY2(moved[0] > leftBefore + 40, qPrintable(QString("%1 -> %2").arg(leftBefore).arg(moved[0])));
+    QVERIFY(!panel->autoLayout());
     QSettings settings;
     QVERIFY(settings.contains("plugins/cutout-animation/layout/cutoutWorkspaceSplitter"));
+    QVERIFY(settings.value("plugins/cutout-animation/layout/custom").toBool());
     find<QToolButton>("cutoutSectionDrawOrderToggle")->click();
     pump();
     QVERIFY(!find<QWidget>("cutoutDrawOrder")->isVisible());
@@ -3377,6 +3505,264 @@ class StudioTests : public QObject {
     // Switching, full view, splitters and the launcher never issued an edit.
     QCOMPARE(host.edits, edits);
     QCOMPARE(host.revision, revision);
+    panel->resetLayout();
+  }
+
+  /**
+   * Plugin 1.10.0: the workspace layout out of the box on the listed screens at 100/150/200 %
+   * Windows scaling (logical window = resolution / scale; QT_SCALE_FACTOR=<f> runs only that
+   * scale with Qt's real scaling), with the UI scale each screen defaults to: every tool of every
+   * row visible (no »), inside its row and pane, look pages complete, splitters at their minimum.
+   * Logical sizes below 1280x720 are reported as skipped (overflow is allowed there).
+   */
+  void workspaceScaleMatrix() {
+    QWidget* page = workspacePage();
+    QVERIFY(page && page->isAncestorOf(panel));
+    const int edits = host.edits;
+    const double envScale = qEnvironmentVariable("QT_SCALE_FACTOR").toDouble();
+    const QList<double> scales = envScale > 0 ? QList<double>{envScale} : QList<double>{1.0, 1.5, 2.0};
+    const QList<QSize> screens{{1280, 720}, {1920, 1080}, {2560, 1440}, {3840, 2160}, {5120, 1440}, {1440, 2560}};
+    QStringList report, failures;
+    panel->resetLayout();
+    for (const QSize screen : screens)
+      for (const double scale : scales) {
+        const QSize logical(int(std::lround(screen.width() / scale)), int(std::lround(screen.height() / scale)));
+        const QString at = QString("%1x%2@%3%").arg(screen.width()).arg(screen.height()).arg(int(std::lround(scale * 100)));
+        if (logical.width() < 1280 || logical.height() < 720) { report << at + " skipped (logical " + QString("%1x%2").arg(logical.width()).arg(logical.height()) + " < 1280x720)"; continue; }
+        const double ui = CutoutPanel::defaultUiScale(logical, scale, 96);
+        panel->setUiScale(ui);
+        host.mainWindow.resize(logical);
+        pump();
+        QTest::qWait(20);
+        QStringList problems;
+        if (host.mainWindow.size() != logical) problems << QString("window refused %1x%2 (got %3x%4)").arg(logical.width()).arg(logical.height()).arg(host.mainWindow.width()).arg(host.mainWindow.height());
+        problems << fullLayoutProblems(page);
+        report << QString("%1 ui %2: %3").arg(at).arg(ui, 0, 'f', 2).arg(problems.isEmpty() ? "ok" : QString("%1 problems").arg(problems.size()));
+        if (!problems.isEmpty()) failures << at + ": " + problems.mid(0, 6).join(" | ");
+      }
+    // Every 작업 공간 글자 크기 level on common screens (the user's choice, not the default).
+    for (const QSize logical : {QSize(1920, 1080), QSize(2560, 1440)})
+      for (const auto& choice : CutoutPanel::uiScales()) {
+        panel->setUiScale(choice.scale);
+        host.mainWindow.resize(logical);
+        pump();
+        const QStringList problems = fullLayoutProblems(page);
+        const QString at = QString("%1x%2 %3").arg(logical.width()).arg(logical.height()).arg(choice.label);
+        report << at + (problems.isEmpty() ? QString(": ok") : QString(": %1 problems").arg(problems.size()));
+        if (!problems.isEmpty()) failures << at + ": " + problems.mid(0, 6).join(" | ");
+      }
+    // A larger host text size (Windows "make text bigger" / a big editor font): the workspace scales over it.
+    if (envScale <= 0) {
+      const QFont keep = QApplication::font();
+      QFont big = keep;
+      big.setPointSizeF((keep.pointSizeF() > 0 ? keep.pointSizeF() : 9) * 1.33);
+      QApplication::setFont(big);
+      panel->setUiScale(1.0);
+      host.mainWindow.resize(1920, 1080);
+      pump();
+      QVERIFY2(std::fabs(panel->font().pointSizeF() - big.pointSizeF()) < 0.05, qPrintable(QString("%1 vs %2").arg(panel->font().pointSizeF()).arg(big.pointSizeF())));
+      const QStringList problems = fullLayoutProblems(page);
+      report << QString("1920x1080 host text 133%: ") + (problems.isEmpty() ? "ok" : QString("%1 problems").arg(problems.size()));
+      if (!problems.isEmpty()) failures << "host text 133%: " + problems.mid(0, 6).join(" | ");
+      QApplication::setFont(keep);
+    }
+    qInfo("scale matrix:\n  %s", qPrintable(report.join("\n  ")));
+    QVERIFY2(failures.isEmpty(), qPrintable(failures.join("\n")));
+    panel->setUiScale(1.0);
+    host.mainWindow.resize(1700, 1200);
+    pump();
+    QCOMPARE(host.edits, edits);  // presentation only
+  }
+
+  /** UI scale: fonts, rows, dopesheet/ruler metrics, gizmo radii follow it; persisted per user; new panels read it. */
+  void uiScaleSetting() {
+    host.mainWindow.activateWindow();  // window shortcuts (Ctrl+K, Ctrl+=) need the active window
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    const int edits = host.edits;
+    QSettings().remove("plugins/cutout-animation/view/uiScale");
+    // Defaults from the screen (logical size, dpr, logical DPI).
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(1920, 1080), 1, 96), 1.0);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(2560, 1440), 1, 96), 1.25);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(5120, 1440), 1, 96), 1.25);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(3840, 2160), 1, 96), 1.5);
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(1440, 2560), 1, 96), 1.0);   // portrait QHD: width keeps 보통
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(2560, 1440), 1.5, 144), 1.0);  // 4K at 150 %: Windows already scales
+    QCOMPARE(CutoutPanel::defaultUiScale(QSize(2560, 1440), 1, 120), 1.0);    // larger system text
+    host.mainWindow.resize(1920, 1080);
+    pump();
+    const double base = panel->font().pointSizeF() / panel->uiScale();
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("joy");
+    pump();
+    // The 보기 ▾ menu sets it (one exclusive group) and the setting persists.
+    auto* large = find<QAction>("cutoutUiScaleLarge");
+    QVERIFY(large && find<QMenu>("cutoutUiScaleMenu"));
+    large->trigger();
+    pump();
+    QCOMPARE(panel->uiScale(), 1.25);
+    QVERIFY(large->isChecked() && !find<QAction>("cutoutUiScaleNormal")->isChecked());
+    QCOMPARE(QSettings().value("plugins/cutout-animation/view/uiScale").toDouble(), 1.25);
+    QVERIFY(std::fabs(panel->font().pointSizeF() - base * 1.25) < 0.05);
+    QVERIFY2(std::fabs(find<QWidget>("cutoutDopesheet")->font().pointSizeF() - base * 1.25) < 0.05, qPrintable(QString("dopesheet %1, base %2").arg(find<QWidget>("cutoutDopesheet")->font().pointSizeF()).arg(base)));  // children inherit
+    QCOMPARE(panel->canvas()->uiScale(), 1.25);
+    QCOMPARE(panel->timeView()->uiScale(), 1.25);
+    QCOMPARE(panel->dopesheet()->rowHeight(), 25);
+    QCOMPARE(panel->timeView()->ruler(), 28);
+    QCOMPARE(panel->timeView()->label(), 213);
+    QCOMPARE(find<QToolBar>("cutoutCanvasTools")->iconSize(), QSize(20, 20));
+    QCOMPARE(find<QFrame>("cutoutOnionSettings")->font().pointSizeF(), panel->font().pointSizeF());  // popups too
+    // Rows of the dopesheet follow its row height (keys stay on their rows).
+    const int row = rowOf("bone:head", "rotation");
+    if (row >= 0) QCOMPARE(panel->dopesheet()->rowCenterY(row) - panel->dopesheet()->rowCenterY(0), row * 25);
+    QVERIFY(rowProblems().isEmpty());
+    // Ctrl+= / Ctrl+- inside the workspace step through the presets; Ctrl+0 = 보통.
+    panel->canvas()->setFocus();
+    QTest::keyClick(panel->canvas(), Qt::Key_Equal, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.5);
+    QTest::keyClick(panel->canvas(), Qt::Key_Equal, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.5);  // the largest preset
+    QTest::keyClick(panel->canvas(), Qt::Key_Minus, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.25);
+    QTest::keyClick(panel->canvas(), Qt::Key_0, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 1.0);
+    QTest::keyClick(panel->canvas(), Qt::Key_Minus, Qt::ControlModifier);
+    QCOMPARE(panel->uiScale(), 0.9);
+    // Gizmo hit radii scale with it: a press 10 px from a bone origin misses at 1.0 and picks at 1.5.
+    panel->setUiScale(1.0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->selectItem(QString());
+    pump();
+    auto* canvas = panel->canvas();
+    // (The view refits when the rows change height: the origin is looked up each time.)
+    auto bonePicked = [&](QPointF offset) {
+      const QPointF at = canvas->rigToWidget(world("head")) + offset;
+      for (const auto& h : canvas->hitCandidates(at)) if (h.ref == "bone:head" && h.rank <= RigCanvas::HitBone) return true;
+      return false;
+    };
+    QVERIFY(bonePicked(QPointF(6, 0)) && !bonePicked(QPointF(0, 10.5)));
+    panel->setUiScale(1.5);
+    pump();
+    QVERIFY(bonePicked(QPointF(0, 10.5)) && !bonePicked(QPointF(0, 13)));
+    // The host's plugin menu offers the same choices (and the palette).
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleNormalPlugin")->trigger();
+    QCOMPARE(panel->uiScale(), 1.0);
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleHugePlugin")->trigger();
+    QCOMPARE(panel->uiScale(), 1.5);
+    QVERIFY(host.mainWindow.findChild<QAction*>("cutoutCommandPaletteMenuAction"));
+    // A new panel (the next editor session) starts with the saved scale.
+    {
+      CutoutPanel next(&host);
+      QCOMPARE(next.uiScale(), 1.5);
+      next.detachHost();
+    }
+    panel->setUiScale(1.0);
+    QCOMPARE(host.edits, edits);  // editor-only
+  }
+
+  /** The first-run hint strip, the 보기 ▾ menu and every tool's tooltip (shortcuts named). */
+  void hintStripAndTooltips() {
+    const int edits = host.edits;
+    auto* strip = find<QFrame>("cutoutHintStrip");
+    QVERIFY(strip && strip->isVisible() && panel->hintVisible());  // first run (fresh settings)
+    QVERIFY(find<QLabel>("cutoutHintText")->text().contains("Ctrl+K"));
+    click("cutoutHintDismiss");
+    pump();
+    QVERIFY(!strip->isVisible() && !panel->hintVisible());
+    QVERIFY(QSettings().value("plugins/cutout-animation/view/hintDismissed").toBool());
+    QVERIFY(!find<QAction>("cutoutShowHintAction")->isChecked());
+    find<QAction>("cutoutShowHintAction")->trigger();
+    pump();
+    QVERIFY(strip->isVisible() && !QSettings().value("plugins/cutout-animation/view/hintDismissed").toBool());
+    // Tooltips: every named button of the workspace explains itself; known shortcuts are in it.
+    QStringList missing;
+    for (QAbstractButton* b : panel->findChildren<QAbstractButton*>()) {
+      if (!b->objectName().startsWith("cutout")) continue;
+      if (b->toolTip().trimmed().isEmpty()) missing << b->objectName() + " has no tooltip";
+      const QString key = b->property("cutoutShortcut").toString();
+      if (!key.isEmpty() && !b->toolTip().contains(key)) missing << b->objectName() + " tooltip lacks " + key;
+    }
+    for (const char* name : {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot", "cutoutToolCreate", "cutoutKeyButton", "cutoutOnionSkin", "cutoutPlay", "cutoutCopyKeys", "cutoutFitView"})
+      if (find<QWidget>(name)->property("cutoutShortcut").toString().isEmpty()) missing << QString(name) + " names no shortcut";
+    QVERIFY2(missing.isEmpty(), qPrintable(missing.join("\n")));
+    // Labelled groups on the rows (선택 / 변형 / 본 / 키 ...).
+    QStringList groups;
+    for (QLabel* l : panel->findChildren<QLabel*>("cutoutGroupLabel")) groups << l->text();
+    for (const char* g : {"선택", "변형", "본", "조각", "키", "타이밍", "재생", "보기"}) QVERIFY2(groups.contains(g), g);
+    QCOMPARE(host.edits, edits);
+  }
+
+  /** Ctrl+K / F1 palette: finds commands by Korean name, group or shortcut and runs them (one edit when the command edits). */
+  void commandPalette() {
+    host.mainWindow.activateWindow();  // window shortcuts (Ctrl+K, Ctrl+=) need the active window
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    auto* palette = panel->commandPalette();
+    QVERIFY(palette && !palette->isVisible());
+    panel->setMode(CutoutPanel::Mode::Setup);
+    pump();
+    panel->canvas()->setFocus();
+    QTest::keyClick(panel->canvas(), Qt::Key_K, Qt::ControlModifier);
+    pump();
+    QVERIFY(palette->isVisible());
+    auto* search = find<QLineEdit>("cutoutCommandSearch");
+    auto* list = find<QListWidget>("cutoutCommandList");
+    QVERIFY(search->hasFocus() && list->count() > 100);
+    QTest::keyClick(search, Qt::Key_Escape);
+    QVERIFY(!palette->isVisible());
+    QTest::keyClick(panel->canvas(), Qt::Key_F1);
+    QVERIFY(palette->isVisible());
+    // Typing filters; Enter runs the best match = what its button does: one edit.
+    panel->selectItem("bone:root");
+    const int bones = int(rig()["bones"].size());
+    QVERIFY(gesture("palette: 본 추가", 1, [&] {
+      typeText(search, "본 추가");
+      QCOMPARE(list->currentItem()->data(Qt::UserRole).toString(), QString("cutoutAddBone"));
+      QTest::keyClick(search, Qt::Key_Return);
+    }));
+    QVERIFY(!palette->isVisible());
+    QCOMPARE(int(rig()["bones"].size()), bones + 1);
+    undo();
+    // By shortcut, by group words, arrows choose.
+    QCOMPARE(panel->findCommands("K").value(0).id, QString("cutoutKeyButton"));
+    QCOMPARE(panel->findCommands("Ctrl+C").value(0).id, QString("cutoutCopyKeys"));
+    QCOMPARE(panel->findCommands("V").value(0).id, QString("cutoutToolSelect"));
+    QCOMPARE(panel->findCommands("스킨 삭제").value(0).id, QString("cutoutDeleteSkin"));
+    QCOMPARE(panel->findCommands("이전 간격으로").value(0).id, QString("cutoutStepBack"));  // symbol button by its tooltip
+    QVERIFY(panel->findCommands("자동 웨이트").value(0).group == "메시");
+    // A command on a hidden page opens that page (look tab, collapsed section) and runs once.
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(2);  // IK page shown
+    answers = {"palette-skin"};
+    QVERIFY(gesture("palette: 새 스킨", 1, [&] {
+      panel->showCommandPalette();
+      typeText(search, "새 스킨");
+      QTest::keyClick(search, Qt::Key_Return);
+    }));
+    QCOMPARE(find<QTabWidget>("cutoutLookTabs")->currentWidget()->objectName(), QString("cutoutSkinPage"));
+    undo();
+    // Pages and view commands are commands too; a disabled one does nothing.
+    QVERIFY(panel->runCommand("tab:cutoutBottomTabs:1"));
+    QCOMPARE(find<QTabWidget>("cutoutBottomTabs")->currentIndex(), 1);
+    QVERIFY(panel->runCommand("tab:cutoutBottomTabs:0"));
+    QVERIFY(gesture("disabled in setup mode", 0, [&] { QVERIFY(!panel->runCommand("cutoutCopyKeys")); }));
+    QVERIFY(!panel->findCommands("키 복사").isEmpty() || !panel->findCommands("복사").isEmpty());
+    // Every action the README authoring guide names is reachable from the palette.
+    const QStringList guide{"새 캐릭터", "이미지 조각 추가", "회전 중심", "본 만들기", "자동 길이", "본 방향 맞추기", "선택/이동", "회전 (R)", "크기 (S)",
+                            "자식 본까지 선택", "모든 본 선택", "선택 해제", "본 보정", "이미지 보정", "상대값 입력", "뒤로 ↑", "앞으로 ↓", "캔버스 크게", "화면 맞춤",
+                            "조립", "애니메이션 (Animate)", "새 클립", "자동 키", "키 추가", "맞춤", "[ 구간 시작", "구간 끝 ]", "구간 해제", "간격 배율", "만큼 이동",
+                            "복사", "붙여넣기", "복제", "포즈 복사", "포즈 붙여넣기", "그래프", "도프시트", "둘 다", "채널별 맞춤", "값 맞춤", "이벤트 키", "키 편집",
+                            "새 이벤트", "지우기", "숨쉬기", "눈깜빡임", "어니언 스킨", "어니언 스킨 설정", "궤적", "재생", "처음으로", "새 스킨", "그림 지정", "빼기",
+                            "현재 상태로 표정 만들기", "다시 담기", "표정 키", "팔·다리 IK", "조준 IK", "현재 방향으로 맞추기", "대상 선택", "IK 키", "IK 결과를 키로 굽기",
+                            "메시로 변환", "투명 칸 빼기", "이미지로 되돌리기", "윤곽 그리기", "자동 윤곽", "자동 윤곽 미리보기", "정점 편집", "정점 추가", "가장자리 추가",
+                            "정점 삭제", "가장자리 삭제", "다시 삼각분할", "자동 웨이트", "웨이트 칠하기", "웨이트 해제", "변형 키", "변형 키 삭제", "게임 연결 탭",
+                            "내보내기 탭", "레이어 추가", "연결 추가", "전환 추가", "미리 보기 신호", "미리 보기 초기화", "내보낼 때 캐릭터 그림을 아틀라스로 묶기",
+                            "작업 공간 글자 크기", "크게", "레이아웃 초기화", "도움말 줄 보이기"};
+    QStringList unreachable;
+    for (const QString& name : guide) {
+      bool found = false;
+      for (const auto& c : panel->findCommands(name)) found = found || c.name.contains(name, Qt::CaseInsensitive) || (c.group + " " + c.name).contains(name);
+      if (!found) unreachable << name;
+    }
+    QVERIFY2(unreachable.isEmpty(), qPrintable("not in the palette: " + unreachable.join(", ")));
+    QVERIFY(!palette->isVisible());
   }
 
   /** 내보내기 tab (plugin 1.9.0): atlas settings live in plugins/cutout-animation/settings/project.json;

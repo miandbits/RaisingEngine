@@ -1,5 +1,9 @@
 #include "plugin-host.hpp"
+#include <QFontDatabase>
 #include <QLibraryInfo>
+#include <QLineEdit>
+#include <QSettings>
+#include <QTabWidget>
 #include <QMenuBar>
 #include <QRegularExpression>
 #include <QStackedWidget>
@@ -93,6 +97,45 @@ QStringList lookPageProblems(QWidget *panel) {
     }
   }
   tabs->setCurrentIndex(keep);
+  return problems;
+}
+/**
+ * Cutout workspace tool rows (plugin 1.10.0): at the current window size every tool of every
+ * visible row is shown (no » overflow) and lies inside its row and its splitter pane.
+ */
+QStringList toolRowProblems(QWidget *panel) {
+  QStringList problems;
+  auto paneOf = [panel](QWidget *w) -> QWidget * {
+    for (QWidget *p = w; p && p != panel; p = p->parentWidget())
+      if (qobject_cast<QSplitter *>(p->parentWidget())) return p;
+    return panel;
+  };
+  for (auto bar : panel->findChildren<QToolBar *>()) {
+    if (!bar->isVisible()) continue;
+    if (auto more = bar->findChild<QToolButton *>("qt_toolbar_ext_button"); more && more->isVisible()) problems << bar->objectName() + " overflows";
+    QWidget *pane = paneOf(bar);
+    for (auto w : bar->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly)) {
+      if (!w->objectName().startsWith("cutout") || w->property("cutoutGroupLabel").toBool() || w->isWindow()) continue;
+      const QString what = bar->objectName() + "/" + w->objectName();
+      if (!w->isVisible()) { problems << what + " hidden"; continue; }
+      if (!QRect(QPoint(0, 0), bar->size()).contains(w->geometry())) problems << what + " outside its row";
+      if (!pane->rect().contains(QRect(w->mapTo(pane, QPoint(0, 0)), w->size()))) problems << what + " outside " + pane->objectName();
+    }
+  }
+  return problems;
+}
+/** Rows of both modes and both timeline pages (animation, game connection). */
+QStringList allToolRowProblems(QWidget *panel) {
+  QStringList problems;
+  auto tabs = panel->findChild<QTabWidget *>("cutoutBottomTabs");
+  for (const char *mode : {"cutoutModeAnimate", "cutoutModeSetup"}) {
+    panel->findChild<QPushButton *>(mode)->click();
+    for (int tab : {1, 0}) {
+      tabs->setCurrentIndex(tab);
+      QCoreApplication::processEvents();
+      for (const auto &p : toolRowProblems(panel)) problems << QString(mode).mid(10) + (tab ? "/connection: " : ": ") + p;
+    }
+  }
   return problems;
 }
 QList<QAction *> pluginPaletteActions(StudioWindow &w) {
@@ -273,6 +316,21 @@ void StudioTests::pluginWorkspaceSwitch() {
   const auto dll = qEnvironmentVariable("RAISING_CUTOUT_STUDIO_DLL", engine + "/dist/cutout/build-win/studio/cutout-studio.dll");
   if (!QFileInfo::exists(dll)) QSKIP("Build plugins/cutout-animation (tools/build.mjs win studio) or set RAISING_CUTOUT_STUDIO_DLL");
   const auto projectA = qEnvironmentVariable("RAISING_QT_PROJECT");
+  // Editor-only workspace settings of earlier runs (UI scale, hint strip, splitter states) would
+  // change the layout under test: start (and leave) without them.
+  auto clearWorkspaceSettings = [] { QSettings s; s.remove("plugins/cutout-animation/view"); s.remove("plugins/cutout-animation/layout"); s.sync(); };
+  clearWorkspaceSettings();
+  // Offscreen has no fonts of its own: measure rows with the studio's Windows UI font (Segoe UI
+  // 9 pt, Hangul from Malgun Gothic) so "no tool behind »" means the same as on a real screen.
+  const QFont keepFont = QApplication::font();
+  const bool realFonts = QFontDatabase::addApplicationFont("C:/Windows/Fonts/segoeui.ttf") >= 0 && QFontDatabase::addApplicationFont("C:/Windows/Fonts/malgun.ttf") >= 0;
+  if (realFonts) {
+    QFont ui;
+    ui.setFamilies({"Segoe UI", "Malgun Gothic"});
+    ui.setPointSizeF(9);
+    QApplication::setFont(ui);
+  }
+  auto restore = qScopeGuard([&] { QApplication::setFont(keepFont); clearWorkspaceSettings(); });
   StudioWindow w(engine);
   w.resize(1280, 720);
   w.show();
@@ -335,6 +393,10 @@ void StudioTests::pluginWorkspaceSwitch() {
   QVERIFY2(problems.isEmpty(), qPrintable(problems.join(" | ")));
   problems = lookPageProblems(panel);  // 1280x720: the look pages keep every button
   QVERIFY2(problems.isEmpty(), qPrintable(problems.join(" | ")));
+  if (realFonts) {
+    problems = allToolRowProblems(panel);  // and every row shows all of its tools out of the box
+    QVERIFY2(problems.isEmpty(), qPrintable("1280x720: " + problems.join(" | ")));
+  }
   auto canvas = panel->findChild<QWidget *>("cutoutCanvas");
   QVERIFY2(canvas->width() >= 240 && canvas->height() >= 150, qPrintable(QString("%1x%2").arg(canvas->width()).arg(canvas->height())));
   // Ctrl+Shift+A toggles back to 화면 편집 with exactly the previous dock layout.
@@ -357,18 +419,59 @@ void StudioTests::pluginWorkspaceSwitch() {
   QCOMPARE(w.saveState(1), settled);
   QTest::keyClick(&w, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
   QCOMPARE(w.currentWorkspace(), QString("cutout-animation/character"));
-  const int leftWidth = panel->findChild<QWidget *>("cutoutLeftSplitter")->width();
-  // Ultrawide and very tall: only the canvas / time area grow, side panels keep their width.
-  for (const QSize size : {QSize(1920, 1080), QSize(3840, 1080), QSize(5120, 1440), QSize(1440, 2560)}) {
-    w.resize(size);
-    QTest::qWait(120);
-    QCOMPARE(w.size(), size);
-    problems = workspaceLayoutProblems(page, panel) + lookPageProblems(panel);
-    QVERIFY2(problems.isEmpty(), qPrintable(QString("%1x%2: ").arg(size.width()).arg(size.height()) + problems.join(" | ")));
-    QCOMPARE(panel->findChild<QWidget *>("cutoutLeftSplitter")->width(), leftWidth);
-    if (size.width() >= 3840) QVERIFY2(canvas->width() > size.width() - 700, qPrintable(QString::number(canvas->width())));
-    if (size.height() >= 2560) QVERIFY2(panel->findChild<QWidget *>("cutoutBottomTabs")->height() > 700, "tall screens grow the timeline too");
+  // Listed screens x Windows scaling (100/150/200 %: the window gets the logical size), each with
+  // the 작업 공간 글자 크기 the plugin picks for that screen by default (larger text at 100 % on
+  // QHD/4K/ultrawide). Panes follow the window size (side panes capped, canvas and time area take
+  // the rest); every row keeps all of its tools. Logical sizes below 1280x720 are skipped.
+  QStringList matrix;
+  for (const QSize screen : {QSize(1280, 720), QSize(1920, 1080), QSize(2560, 1440), QSize(3840, 2160), QSize(5120, 1440), QSize(1440, 2560)})
+    for (const int percent : {100, 150, 200}) {
+      const QSize size(screen.width() * 100 / percent, screen.height() * 100 / percent);
+      const QString at = QString("%1x%2@%3%").arg(screen.width()).arg(screen.height()).arg(percent);
+      if (size.width() < 1280 || size.height() < 720) { matrix << at + " skipped"; continue; }
+      const int shortSide = qMin(screen.width(), screen.height());
+      const char *scale = percent > 100 ? "cutoutUiScaleNormal" : shortSide >= 2000 ? "cutoutUiScaleHuge" : shortSide >= 1400 && screen.width() >= 1600 ? "cutoutUiScaleLarge" : "cutoutUiScaleNormal";
+      panel->findChild<QAction *>(scale)->trigger();
+      w.resize(size);
+      QTest::qWait(120);
+      QCOMPARE(w.size(), size);
+      problems = workspaceLayoutProblems(page, panel) + lookPageProblems(panel) + (realFonts ? allToolRowProblems(panel) : QStringList());
+      QVERIFY2(problems.isEmpty(), qPrintable(at + ": " + problems.join(" | ")));
+      if (size.width() >= 3840) QVERIFY2(canvas->width() > size.width() / 2, qPrintable(QString::number(canvas->width())));
+      if (size.height() >= 2560) QVERIFY2(panel->findChild<QWidget *>("cutoutBottomTabs")->height() > 700, "tall screens grow the timeline too");
+      matrix << at + " " + scale + ": ok";
+    }
+  qInfo("cutout workspace matrix: %s", qPrintable(matrix.join(", ")));
+  // Changing the text size (보기 ▾ › 작업 공간 글자 크기) keeps the layout valid and is remembered.
+  w.resize(1920, 1080);
+  QTest::qWait(120);
+  for (const char *scale : {"cutoutUiScaleHuge", "cutoutUiScaleSmall", "cutoutUiScaleLarge"}) {
+    panel->findChild<QAction *>(scale)->trigger();
+    QTest::qWait(60);
+    problems = workspaceLayoutProblems(page, panel) + lookPageProblems(panel) + (realFonts ? allToolRowProblems(panel) : QStringList());
+    QVERIFY2(problems.isEmpty(), qPrintable(QString(scale) + ": " + problems.join(" | ")));
   }
+  // Remembered per user (this test executable has no settings store: its QSettings has no file).
+  if (!QSettings().fileName().isEmpty()) QCOMPARE(QSettings().value("plugins/cutout-animation/view/uiScale").toDouble(), 1.25);
+  QVERIFY(panel->findChild<QAction *>("cutoutUiScaleLarge")->isChecked());
+  panel->findChild<QAction *>("cutoutUiScaleNormal")->trigger();
+  // Command palette (Ctrl+K): finds a page and a mode by name and runs them (presentation only here;
+  // the end-to-end scenario creates a clip through it).
+  canvas->setFocus();
+  QTest::keyClick(canvas, Qt::Key_K, Qt::ControlModifier);
+  auto palette = panel->findChild<QWidget *>("cutoutCommandPalette");
+  QVERIFY(palette && palette->isVisible());
+  auto search = panel->findChild<QLineEdit *>("cutoutCommandSearch");
+  QVERIFY(search && search->hasFocus());
+  search->setText(QString::fromUtf8("게임 연결 탭"));
+  QTest::keyClick(search, Qt::Key_Return);
+  QVERIFY(!palette->isVisible());
+  QCOMPARE(panel->findChild<QTabWidget *>("cutoutBottomTabs")->currentIndex(), 1);
+  QTest::keyClick(canvas, Qt::Key_F1);
+  QVERIFY(palette->isVisible());
+  search->setText(QString::fromUtf8("애니메이션 탭"));
+  QTest::keyClick(search, Qt::Key_Return);
+  QCOMPARE(panel->findChild<QTabWidget *>("cutoutBottomTabs")->currentIndex(), 0);
   w.resize(1280, 720);
   QTest::qWait(120);
 

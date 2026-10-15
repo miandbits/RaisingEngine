@@ -13,6 +13,7 @@
 
 class QAction;
 class QLabel;
+class QMenu;
 
 namespace cutout_studio {
 constexpr const char* WORKSPACE_ID = "character";
@@ -42,6 +43,7 @@ class CutoutStudioPlugin : public QObject, public raising::StudioPlugin, public 
   QPointer<QWidget> dockBody_, launcher_;
   QPointer<QLabel> launcherPreview_, launcherSummary_;
   QList<QPointer<QAction>> actions_;
+  QPointer<QMenu> sizeMenu_;  // 작업 공간 글자 크기 submenu of the plugin menu
   ImageCache images_;
   QHash<QString, Cached> cache_;  // controller id + "\n" + props.skin -> parsed rig + first default frame
   void showDock();
