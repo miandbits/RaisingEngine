@@ -219,6 +219,22 @@ class CutoutPanel : public QWidget {
   void setBrush(const QString& bone, double weight, double strength, double radius);
   bool keyDeform();          // deform key of the shown offsets at the playhead
   bool deleteDeformKey();    // the deform key at the playhead
+  // ---- Freeform meshes (plugin 1.6.0, setup mode, selected part): every finished gesture is one
+  // core edit (createMeshFromOutline, autoOutline, addMeshVertex, removeMeshVertex, add/removeMeshEdge,
+  // retriangulate), so the MCP/LLM `edit` op makes exactly the same meshes.
+  bool beginOutline();                                 // 윤곽 그리기: canvas clicks place the outline (region or mesh)
+  bool outlineFromCanvas(const QPolygonF& rigPoints);  // the closed outline -> createMeshFromOutline
+  bool autoOutline();                                  // 자동 윤곽 from the image alpha (threshold/detail/spacing fields)
+  /** Rig-space outline 자동 윤곽 would make now (empty = no part / image / opaque pixels). */
+  QPolygonF autoOutlinePreview();
+  void setAutoOutlineParams(double threshold, double detail, double spacing, bool preview);
+  void setMeshTool(int tool);                          // RigCanvas::MeshTool; a shape tool turns 정점 편집 on
+  int meshTool() const { return meshTool_; }
+  bool addVertexAt(const QPointF& rigPoint);           // 정점 추가 (snaps onto an outline edge within 6 px)
+  bool deleteVertices();                               // 정점 삭제: the selected vertices
+  bool addMeshEdge(int a, int b);                      // 가장자리 추가: pin an inside edge
+  bool removeMeshEdge();                               // 가장자리 삭제: the pinned edge between the 2 selected vertices
+  bool retriangulateMesh();                            // 다시 삼각분할
   // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
   struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
   const OnionSettings& onionSettings() const { return onion_; }
@@ -390,6 +406,18 @@ class CutoutPanel : public QWidget {
   QLabel* meshInfo_ = nullptr;
   QVector<QWidget*> meshTools_, meshSetupTools_, meshAnimateTools_;
   QVector<QWidget*> meshModeRows_;  // button rows shown in one mode only (property cutoutModeRow)
+  // freeform mesh tools (plugin 1.6.0, editor state)
+  int meshTool_ = 0;          // RigCanvas::MeshTool
+  QString outlineSlot_;       // part whose outline is being drawn ("" = not drawing)
+  QToolButton *meshSelectTool_ = nullptr, *meshAddVertexTool_ = nullptr, *meshAddEdgeTool_ = nullptr;
+  QDoubleSpinBox *outlineThreshold_ = nullptr, *outlineDetail_ = nullptr, *outlineSpacing_ = nullptr;
+  QCheckBox* outlinePreview_ = nullptr;
+  struct AlphaMask { QString key; int width = 0, height = 0; std::vector<uint8_t> alpha; };
+  AlphaMask alphaMask_;                                  // last decoded image alpha (자동 윤곽, preview)
+  QString outlinePreviewKey_;
+  std::vector<double> previewOutline_;                   // image px, for outlinePreviewKey_
+  const AlphaMask* alphaMaskOf(const cutout::Attachment& attachment);
+  void refreshOutlinePreview();
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;

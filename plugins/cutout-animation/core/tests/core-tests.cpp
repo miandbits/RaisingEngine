@@ -1,8 +1,12 @@
 // Core tests: validation, evaluation, playback, multi-instance, persistence, signals.
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <map>
+#include <set>
 #include "cutout/host.hpp"
+#include "cutout/mesh.hpp"
 #include "cutout/signals.hpp"
 #include "cutout/templates.hpp"
 
@@ -275,6 +279,162 @@ std::vector<std::string> kinds(const std::vector<Notification>& ns) {
   for (const auto& n : ns) out.push_back(n.kind + ":" + n.clip + (n.kind == "event" ? ":" + n.name : ""));
   return out;
 }
+bool hasErrors(const std::vector<Diagnostic>& ds) {
+  for (const auto& d : ds) if (d.severity == "error") return true;
+  return false;
+}
+/** One 100x100 image part on a root + two child bones (freeform mesh tests, plugin 1.6.0). */
+Json outlineRig() {
+  return Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 300, "height": 300, "originX": 150, "originY": 250},
+    "bones": [{"id": "root", "parent": null, "x": 100, "y": 100}, {"id": "left", "parent": "root", "x": 0, "y": 50}, {"id": "right", "parent": "root", "x": 100, "y": 50}],
+    "slots": [{"id": "cape", "bone": "root", "attachment": "cape"}],
+    "attachments": [{"slot": "cape", "name": "cape", "imageAssetId": "img-cape", "width": 100, "height": 100, "pivotX": 0, "pivotY": 0}],
+    "clips": []})");
+}
+std::string base64(const std::vector<uint8_t>& bytes) {
+  static const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  for (size_t i = 0; i < bytes.size(); i += 3) {
+    const uint32_t v = uint32_t(bytes[i]) << 16 | (i + 1 < bytes.size() ? uint32_t(bytes[i + 1]) << 8 : 0) | (i + 2 < bytes.size() ? bytes[i + 2] : 0);
+    out += t[(v >> 18) & 63];
+    out += t[(v >> 12) & 63];
+    out += i + 1 < bytes.size() ? t[(v >> 6) & 63] : '=';
+    out += i + 2 < bytes.size() ? t[v & 63] : '=';
+  }
+  return out;
+}
+/** Alpha mask w x h: an opaque disc (centre cx, cy, radius r) plus a small square blob. */
+Json discMask(int w, int h, double cx, double cy, double r) {
+  std::vector<uint8_t> a(size_t(w) * size_t(h), 0);
+  for (int y = 0; y < h; y++)
+    for (int x = 0; x < w; x++) {
+      const double dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+      if (dx * dx + dy * dy <= r * r) a[size_t(y) * size_t(w) + size_t(x)] = 255;
+      if (x >= w - 4 && y < 3) a[size_t(y) * size_t(w) + size_t(x)] = 200;  // a far-away speck: not the largest region
+    }
+  return {{"width", w}, {"height", h}, {"alpha", base64(a)}};
+}
+const Json* meshEntryOf(const Json& d, const char* slot) {
+  for (const auto& a : d["attachments"]) if (a["slot"] == slot) return &a;
+  return nullptr;
+}
+std::vector<double> numbers(const Json& list) { std::vector<double> v; for (const auto& x : list) v.push_back(x.get<double>()); return v; }
+/**
+ * Why the mesh's triangles are not a valid tiling of its outline ("" = valid): every triangle
+ * positive and non-degenerate, inside the outline, no edge used by more than two triangles, the
+ * once-used edges exactly the outline cycle, every vertex used, total area = outline area.
+ */
+std::string tilingProblem(const Json& a, double expectArea = -1) {
+  const std::vector<double> xy = numbers(a["vertices"]);
+  std::vector<int> tris;
+  for (const auto& v : a["triangles"]) tris.push_back(v.get<int>());
+  const size_t n = xy.size() / 2, hull = a.value("hull", size_t(0));
+  const std::vector<double> outline(xy.begin(), xy.begin() + std::ptrdiff_t(2 * hull));
+  double sum = 0;
+  std::map<std::pair<int, int>, int> uses;
+  std::vector<bool> used(n, false);
+  for (size_t t = 0; t + 2 < tris.size(); t += 3) {
+    const int i = tris[t], j = tris[t + 1], k = tris[t + 2];
+    const double area = ((xy[2 * j] - xy[2 * i]) * (xy[2 * k + 1] - xy[2 * i + 1]) - (xy[2 * j + 1] - xy[2 * i + 1]) * (xy[2 * k] - xy[2 * i])) / 2;
+    if (!(area > 1e-9)) return "triangle " + std::to_string(t / 3) + " not positive (" + std::to_string(area) + ")";
+    sum += area;
+    for (int v : {i, j, k}) used[size_t(v)] = true;
+    for (const auto& [x, y] : {std::pair<int, int>{i, j}, {j, k}, {k, i}}) uses[{std::min(x, y), std::max(x, y)}]++;
+    const double cx = (xy[2 * i] + xy[2 * j] + xy[2 * k]) / 3, cy = (xy[2 * i + 1] + xy[2 * j + 1] + xy[2 * k + 1]) / 3;
+    if (hull >= 3 && !insidePolygon(outline, cx, cy)) return "triangle " + std::to_string(t / 3) + " outside the outline";
+  }
+  std::set<std::pair<int, int>> once;
+  for (const auto& [e, c] : uses) {
+    if (c > 2) return "edge used " + std::to_string(c) + " times";
+    if (c == 1) once.insert(e);
+  }
+  for (size_t v = 0; v < n; v++) if (!used[v]) return "vertex " + std::to_string(v) + " unused";
+  if (hull >= 3) {
+    std::set<std::pair<int, int>> cycle;
+    for (size_t i = 0; i < hull; i++) cycle.insert({int(std::min(i, (i + 1) % hull)), int(std::max(i, (i + 1) % hull))});
+    if (cycle != once) return "outline edges differ from the hull cycle";
+    if (expectArea < 0) expectArea = std::fabs(polygonArea(outline, hull));
+  }
+  if (expectArea >= 0 && std::fabs(sum - expectArea) > 1e-6 * std::max(1.0, expectArea)) return "area " + std::to_string(sum) + " != " + std::to_string(expectArea);
+  return "";
+}
+/** Unpinned interior edges whose opposite vertex lies inside the neighbour's circumcircle. */
+int delaunayViolations(const Json& a) {
+  const std::vector<double> xy = numbers(a["vertices"]);
+  std::vector<int> tris;
+  for (const auto& v : a["triangles"]) tris.push_back(v.get<int>());
+  std::set<std::pair<int, int>> pinned;
+  for (size_t i = 0; i + 1 < a.value("edges", Json::array()).size(); i += 2) pinned.insert({a["edges"][i].get<int>(), a["edges"][i + 1].get<int>()});
+  std::map<std::pair<int, int>, int> opposite;  // directed edge -> third vertex
+  for (size_t t = 0; t + 2 < tris.size(); t += 3)
+    for (int e = 0; e < 3; e++) opposite[{tris[t + size_t(e)], tris[t + size_t((e + 1) % 3)]}] = tris[t + size_t((e + 2) % 3)];
+  int bad = 0;
+  for (const auto& [e, c] : opposite) {
+    auto it = opposite.find({e.second, e.first});
+    if (it == opposite.end() || pinned.count({std::min(e.first, e.second), std::max(e.first, e.second)})) continue;
+    const int A = e.first, B = e.second, C = c, D = it->second;
+    const double adx = xy[2 * A] - xy[2 * D], ady = xy[2 * A + 1] - xy[2 * D + 1], bdx = xy[2 * B] - xy[2 * D], bdy = xy[2 * B + 1] - xy[2 * D + 1], cdx = xy[2 * C] - xy[2 * D], cdy = xy[2 * C + 1] - xy[2 * D + 1];
+    const double det = (adx * adx + ady * ady) * (bdx * cdy - cdx * bdy) + (bdx * bdx + bdy * bdy) * (cdx * ady - adx * cdy) + (cdx * cdx + cdy * cdy) * (adx * bdy - bdx * ady);
+    const double s = std::max({std::fabs(adx), std::fabs(ady), std::fabs(bdx), std::fabs(bdy), std::fabs(cdx), std::fabs(cdy)});
+    bad += det > 1e-6 * s * s * s * s;
+  }
+  return bad;
+}
+bool hasEdge(const Json& a, int x, int y) {
+  for (size_t t = 0; t + 2 < a["triangles"].size(); t += 3)
+    for (int e = 0; e < 3; e++) {
+      const int p = a["triangles"][t + size_t(e)].get<int>(), q = a["triangles"][t + size_t((e + 1) % 3)].get<int>();
+      if ((p == x && q == y) || (p == y && q == x)) return true;
+    }
+  return false;
+}
+/** Outline parity fixture (plugin 1.6.0): a concave outline with an interior grid, an alpha-traced
+ *  skin mesh, a vertex added / removed, a pinned edge, weights by bone and a deform key; the script
+ *  replays the edit ops (identical rig JSON expected) and then plays the result. */
+Json outlineParityScript() {
+  Json d = outlineRig();
+  d["skins"] = Json::array({{{"id", "alt"}, {"attachments", Json::array({d["attachments"][0]})}}});
+  const Json concave = {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 45, 55, 45, 55, 100, 0, 100}}, {"spacing", 12.5}};
+  const Json traced = {{"op", "autoOutline"}, {"slot", "cape"}, {"skin", "alt"}, {"mask", discMask(50, 50, 25, 25, 18)}, {"detail", 0.7}};
+  Json script = Json::array();
+  Host host;
+  auto edit = [&](const Json& op) {
+    const Json step = {{"op", "edit"}, {"rig", d}, {"operation", op}};
+    script.push_back(step);
+    d = host.handle(step)["rig"];
+  };
+  edit(concave);
+  edit(traced);
+  edit({{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {20.25, 70.5}}});
+  edit({{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {77.5, 0}}});
+  edit({{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {9}}});
+  edit({{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {0, 3}}});
+  Json weights = Json::array(), vertices = Json::array();
+  const Json& v = d["attachments"][0]["vertices"];
+  for (size_t i = 0; i < v.size() / 2; i++) {
+    const double x = v[2 * i].get<double>() / 100;
+    vertices.push_back(i);
+    weights.push_back(Json::array({{{"bone", "left"}, {"weight", 1 - x}}, {{"bone", "right"}, {"weight", x}}}));
+  }
+  edit({{"op", "setWeights"}, {"slot", "cape"}, {"vertices", vertices}, {"weights", weights}});
+  edit({{"op", "retriangulate"}, {"slot", "cape"}, {"skin", "alt"}});
+  const size_t n = d["attachments"][0]["vertices"].size() / 2;
+  std::vector<double> wave(2 * n);
+  for (size_t i = 0; i < n; i++) wave[2 * i + 1] = 4 * std::sin(double(i));
+  d["clips"] = Json::array({{{"id", "sway"}, {"durationMs", 800}, {"loop", true}, {"tracks", Json::array({
+    {{"target", "bone:right"}, {"property", "rotation"}, {"keys", Json::array({{{"timeMs", 0}, {"value", 0}}, {{"timeMs", 400}, {"value", 30}}, {{"timeMs", 800}, {"value", 0}}})}},
+    {{"target", "slot:cape"}, {"property", "deform"}, {"attachment", "cape"}, {"keys", Json::array({{{"timeMs", 0}, {"offsets", std::vector<double>(2 * n, 0.0)}}, {{"timeMs", 400}, {"offsets", wave}}})}}})}}});
+  const Json controller = {{"schemaVersion", 1}, {"rig", "cape"}, {"defaultClip", "sway"}};
+  script.push_back({{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "cape"}, {"data", d}}, {{"type", "controller"}, {"id", "cape-main"}, {"data", controller}}})}});
+  script.push_back({{"op", "mount"}, {"instance", "a"}, {"element", {{"type", "character"}, {"ref", "cape-main"}, {"width", 300}, {"height", 300}, {"props", Json::object()}}}});
+  for (double dt : {0.0, 133.0, 250.5, 199.0}) {
+    if (dt > 0) script.push_back({{"op", "update"}, {"dtMs", dt}});
+    script.push_back({{"op", "frame"}, {"instance", "a"}});
+  }
+  script.push_back({{"op", "setSkin"}, {"instance", "a"}, {"skin", "alt"}});
+  script.push_back({{"op", "frame"}, {"instance", "a"}});
+  return script;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -301,6 +461,15 @@ int main(int argc, char** argv) {
     Json replies = Json::array();
     for (const auto& op : meshParityScript()) replies.push_back(host.handle(op));
     std::cout << Json({{"script", meshParityScript()}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--outline-parity") {
+    // Native reference for freeform mesh edits (outline, alpha trace, vertex/edge ops) and their draw items.
+    Host host;
+    Json replies = Json::array();
+    const Json script = outlineParityScript();
+    for (const auto& op : script) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
     return 0;
   }
   if (argc > 1 && std::string(argv[1]) == "--look-parity") {
@@ -2219,6 +2388,220 @@ int main(int argc, char** argv) {
     mesh["bones"][2]["x"] = 70.710678; mesh["bones"][2]["y"] = 70.710678;  // a weighted arm whose frame turns
     e = applyEdit(mesh, {{"op", "orientBones"}});
     check(e.extra["oriented"].contains("upper") && e.extra["oriented"].contains("hand") && drawDiff(mesh, e.data) < 1e-6, "weighted mesh + deform + skin fixture identical");
+  });
+
+  // ---- Freeform meshes: outlines, vertex / edge edits, alpha tracing (plugin 1.6.0) ----
+  test("outline mesh: concave polygon is tiled exactly (constrained Delaunay)", [&] {
+    const std::vector<double> L = {0, 0, 100, 0, 100, 40, 40, 40, 40, 100, 0, 100};
+    auto r = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", L}});
+    const Json& a = r.data["attachments"][0];
+    check(validateRig(r.data).empty() && a["type"] == "mesh" && a["hull"] == 6 && a["vertices"].size() == 12, "region -> 6-vertex outline mesh");
+    check(tilingProblem(a, 6400).empty(), "L shape: " + tilingProblem(a, 6400));
+    check(a["triangles"].size() == 12 && r.extra["triangles"] == 4, "n - 2 triangles");
+    check(a["uvs"][2] == 1 && a["uvs"][3] == 0 && a["uvs"][6] == 0.4, "uvs = position / image size");
+    check(a["edges"] == Json::array({0, 1, 0, 5, 1, 2, 2, 3, 3, 4, 4, 5}), "edges = the outline cycle (sorted pairs)");
+    // Interior grid: denser, still an exact tiling, Delaunay away from the outline, every point used.
+    auto dense = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", L}, {"spacing", 10}});
+    const Json& b = dense.data["attachments"][0];
+    check(b["vertices"].size() / 2 > 40 && tilingProblem(b, 6400).empty() && delaunayViolations(b) == 0, "spacing grid: " + tilingProblem(b, 6400));
+    // Drawn the other way round: kept as drawn (index 0 = the first click), same area.
+    std::vector<double> back;
+    for (size_t i = 0; i < 6; i++) { const size_t k = (6 - i) % 6; back.push_back(L[2 * k]); back.push_back(L[2 * k + 1]); }
+    auto cw = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", back}, {"points", {20, 20, 20, 80}}});
+    const Json& c = cw.data["attachments"][0];
+    check(c["vertices"][2] == 0 && c["vertices"][3] == 100 && tilingProblem(c, 6400).empty() && c["vertices"].size() == 16, "either direction, interior points appended");
+    // Collinear outline points (a rectangle with points on its sides) and a comb (deeply concave).
+    auto rect = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 50, 0, 100, 0, 100, 50, 100, 100, 50, 100, 0, 100, 0, 50}}, {"points", {50, 50}}});
+    check(tilingProblem(rect.data["attachments"][0], 10000).empty(), "collinear outline points: " + tilingProblem(rect.data["attachments"][0], 10000));
+    std::vector<double> comb = {0, 100, 0, 0};
+    for (int t = 0; t < 5; t++) { const double x = t * 20.0; comb.insert(comb.end(), {x + 5, 0, x + 10, 90, x + 15, 0, x + 20, 0}); }
+    comb.resize(comb.size() - 2);
+    comb.insert(comb.end(), {100, 0, 100, 100});
+    auto combed = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", comb}});
+    check(tilingProblem(combed.data["attachments"][0]).empty(), "comb outline: " + tilingProblem(combed.data["attachments"][0]));
+    // Refusals with a clear reason: self-intersection, doubled point, flat, too few, interior point outside.
+    auto reason = [&](const Json& op) { try { applyEdit(outlineRig(), op); } catch (const EditError& e) { return std::string(e.what()); } return std::string(); };
+    const Json base = {{"op", "createMeshFromOutline"}, {"slot", "cape"}};
+    Json bow = base; bow["hull"] = {0, 0, 100, 100, 100, 0, 0, 100};
+    check(reason(bow).find("교차") != std::string::npos, "bow tie refused: " + reason(bow));
+    Json dup = base; dup["hull"] = {0, 0, 100, 0, 100, 100, 100, 0, 0, 100};
+    check(!reason(dup).empty(), "doubled point refused");
+    Json flat = base; flat["hull"] = {0, 0, 50, 0, 100, 0};
+    check(!reason(flat).empty(), "flat outline refused");
+    Json two = base; two["hull"] = {0, 0, 10, 10};
+    Json out = base; out["hull"] = L; out["points"] = {80, 80};
+    check(!reason(two).empty() && reason(out).find("윤곽 밖") != std::string::npos, "two points / interior point outside refused");
+    Json bad = base; bad["hull"] = L; bad["edges"] = {0, 9};
+    check(!reason(bad).empty(), "edge index out of range refused");
+    Host host;
+    const Json op = {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", L}, {"spacing", 15}};
+    check(host.handle({{"op", "edit"}, {"rig", outlineRig()}, {"operation", op}})["rig"] == applyEdit(outlineRig(), op).data, "host edit = core edit");
+    // A large mesh stays within the limits and is fast enough for an editor gesture.
+    const auto start = std::chrono::steady_clock::now();
+    Json big = outlineRig();
+    big["attachments"][0]["width"] = 1024; big["attachments"][0]["height"] = 1024;
+    auto large = applyEdit(big, {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 1024, 0, 1024, 1024, 0, 1024}}, {"spacing", 25}});
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    std::cout << "outline mesh " << large.data["attachments"][0]["vertices"].size() / 2 << " vertices / " << large.extra["triangles"] << " triangles in " << ms << " ms\n";
+    check(tilingProblem(large.data["attachments"][0], 1024.0 * 1024).empty() && large.extra["triangles"].get<int>() > 3000 && ms < 3000, "1600+ vertices triangulated");
+  });
+
+  test("mesh vertex add/remove interpolates weights, uvs and deform keys", [&] {
+    Json d = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 100, 0, 100}}}).data;
+    // Weights by x: left at x = 0, right at x = 100 (linear in x on any triangulation of the square).
+    d = applyEdit(d, {{"op", "setWeights"}, {"slot", "cape"}, {"vertices", {0, 1, 2, 3}}, {"weights", Json::array({
+      Json::array({{{"bone", "left"}, {"weight", 1}}}), Json::array({{{"bone", "right"}, {"weight", 1}}}),
+      Json::array({{{"bone", "right"}, {"weight", 1}}}), Json::array({{{"bone", "left"}, {"weight", 1}}})})}}).data;
+    // A skin's same-named mesh with another vertex count keeps its own deform keys.
+    d["skins"] = Json::array({{{"id", "alt"}, {"attachments", Json::array({d["attachments"][0]})}}});
+    d = applyEdit(d, {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"skin", "alt"}, {"hull", {0, 0, 50, 0, 100, 0, 100, 100, 0, 100, 0, 50}}}).data;
+    const std::vector<double> four = {0, 0, 10, 0, 10, 0, 0, 0}, six(12, 3.0);
+    d["clips"] = Json::array({{{"id", "c"}, {"durationMs", 1000}, {"tracks", Json::array({{{"target", "slot:cape"}, {"property", "deform"}, {"attachment", "cape"},
+      {"keys", Json::array({{{"timeMs", 0}, {"offsets", four}}, {{"timeMs", 500}, {"offsets", six}}})}}})}}});
+    check(validateRig(d).size() == 1 && hasCode(validateRig(d), "ANIM_MESH_DEFORM_SKIN"), "fixture: two same-named meshes, keys for both");
+    auto r = applyEdit(d, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {25, 50}}});
+    const Json& a = r.data["attachments"][0];
+    check(r.extra["vertex"] == 4 && a["vertices"].size() == 10 && a["hull"] == 4 && tilingProblem(a, 10000).empty(), "interior vertex appended, re-triangulated");
+    check(a["weights"][4] == Json::array({{{"bone", "left"}, {"weight", 0.75}}, {{"bone", "right"}, {"weight", 0.25}}}), "weights interpolated barycentrically: " + a["weights"][4].dump());
+    check(a["uvs"][8] == 0.25 && a["uvs"][9] == 0.5, "uv interpolated (image stays put)");
+    const Json keys = r.data["clips"][0]["tracks"][0]["keys"];
+    check(keys[0]["offsets"].size() == 10 && near(keys[0]["offsets"][8].get<double>(), 2.5) && keys[0]["offsets"][2] == 10 && keys[1]["offsets"] == Json(six), "deform: kept vertices keep, new blends; the skin mesh's key untouched");
+    check(hasCode(r.diagnostics, "ANIM_MESH_DEFORM_REMAPPED") && r.extra["remappedKeys"] == 1 && !hasErrors(validateRig(r.data)), "remap reported, rig valid");
+    check(r.data["skins"][0]["attachments"][0]["vertices"].size() == 12, "skin mesh unchanged");
+    // On an outline edge: a new outline vertex right after the edge's start; later indices shift.
+    auto e = applyEdit(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {100, 30}}});
+    const Json& b = e.data["attachments"][0];
+    check(e.extra["vertex"] == 2 && b["hull"] == 5 && b["vertices"][4] == 100 && b["vertices"][5] == 30 && tilingProblem(b, 10000).empty(), "outline vertex inserted at 2");
+    check(b["weights"][2] == Json::array({{{"bone", "right"}, {"weight", 1}}}) && b["weights"][5] == a["weights"][4], "weights follow the renumbering");
+    check(e.data["clips"][0]["tracks"][0]["keys"][0]["offsets"][4] == 10 && e.data["clips"][0]["tracks"][0]["keys"][0]["offsets"][10] == 2.5, "deform follows the renumbering");
+    check(refused(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {150, 50}}}) && refused(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {25, 50}}}) &&
+          refused(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {1}}}), "outside / on a vertex / bad position refused");
+    // Remove: the interior vertex goes back to the original data exactly.
+    auto back = applyEdit(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {4}}});
+    const Json& c = back.data["attachments"][0];
+    check(c["vertices"] == d["attachments"][0]["vertices"] && c["weights"] == d["attachments"][0]["weights"] && back.data["clips"][0]["tracks"][0]["keys"][0]["offsets"] == Json(four), "remove restores vertices, weights, deform");
+    // Outline vertices: removable while the outline stays valid and holds every interior vertex.
+    auto pent = applyEdit(e.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {2}}});
+    check(pent.data["attachments"][0]["hull"] == 4 && tilingProblem(pent.data["attachments"][0], 10000).empty(), "outline vertex removed");
+    auto tri = applyEdit(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {1}}});
+    check(tri.data["attachments"][0]["hull"] == 3 && tilingProblem(tri.data["attachments"][0], 5000).empty(), "square -> triangle, the interior vertex still inside");
+    check(refused(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {0}}}), "interior vertex left outside refused");
+    check(refused(tri.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {0}}}) && refused(r.data, {{"op", "removeMeshVertex"}, {"slot", "cape"}, {"vertices", {0, 1}}}), "fewer than 3 outline vertices refused");
+    // Meshes without an outline (alpha-trimmed grids): local edits only, outline vertices stay.
+    Json grid = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 3}, {"cols", 3}, {"cells", "111111110"}}).data;
+    const Json& g = grid["attachments"][0];
+    int centre = -1;
+    for (size_t i = 0; i < g["vertices"].size() / 2; i++) if (near(g["vertices"][2 * i].get<double>(), 200.0 / 3, 1e-4) && near(g["vertices"][2 * i + 1].get<double>(), 40.0 / 3, 1e-4)) centre = int(i);
+    const double gridArea = 200.0 * 40 * 8 / 9;
+    auto split = applyEdit(grid, {{"op", "addMeshVertex"}, {"slot", "arm"}, {"position", {40, 20}}});
+    check(split.extra["vertex"] == 15 && tilingProblem(split.data["attachments"][0], gridArea).empty() && !split.data["attachments"][0].contains("hull"), "no outline: local split");
+    auto gone = applyEdit(grid, {{"op", "removeMeshVertex"}, {"slot", "arm"}, {"vertices", {centre}}});
+    check(centre >= 0 && gone.data["attachments"][0]["vertices"].size() == 28 && tilingProblem(gone.data["attachments"][0], gridArea).empty(), "no outline: interior vertex removed");
+    auto reason = [&](const Json& data, const Json& op) { try { applyEdit(data, op); } catch (const EditError& x) { return std::string(x.what()); } return std::string(); };
+    check(reason(grid, {{"op", "removeMeshVertex"}, {"slot", "arm"}, {"vertices", {0}}}).find("윤곽 그리기") != std::string::npos, "no outline: outline vertex refused with a hint");
+    check(refused(grid, {{"op", "addMeshVertex"}, {"slot", "arm"}, {"position", {190, 35}}}), "no outline: a point in the trimmed cell is outside");
+  });
+
+  test("mesh edges: pin, keep through re-triangulation, refuse crossings", [&] {
+    Json d = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 100, 0, 100}}, {"points", {30, 30, 70, 30, 70, 70, 30, 70, 50, 50}}}).data;
+    check(!hasEdge(d["attachments"][0], 0, 5), "fixture: 0-5 is not a Delaunay edge");
+    auto r = applyEdit(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {5, 0}}});
+    const Json& a = r.data["attachments"][0];
+    bool listed = false;
+    for (size_t i = 0; i + 1 < a["edges"].size(); i += 2) listed = listed || (a["edges"][i] == 0 && a["edges"][i + 1] == 5);
+    check(hasEdge(a, 0, 5) && listed && r.extra["pinnedEdges"] == 1 && tilingProblem(a, 10000).empty() && delaunayViolations(a) == 0, "pinned edge forced in, rest Delaunay");
+    auto again = applyEdit(r.data, {{"op", "retriangulate"}, {"slot", "cape"}});
+    check(hasEdge(again.data["attachments"][0], 0, 5) && again.data["attachments"][0]["edges"] == a["edges"], "re-triangulation keeps the pinned edge");
+    auto moved = applyEdit(r.data, {{"op", "addMeshVertex"}, {"slot", "cape"}, {"position", {10, 80}}});
+    check(hasEdge(moved.data["attachments"][0], 0, 5), "vertex edits keep pinned edges");
+    auto reason = [&](const Json& data, const Json& op) { try { applyEdit(data, op); } catch (const EditError& x) { return std::string(x.what()); } return std::string(); };
+    check(reason(r.data, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {1, 4}}}).find("교차") != std::string::npos, "crossing a pinned edge refused");
+    check(reason(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {4, 6}}}).find("지납니다") != std::string::npos, "through another vertex refused");
+    check(refused(r.data, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {0, 5}}}) && refused(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {0, 1}}}) &&
+          refused(d, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {2, 2}}}), "already pinned / outline edge / same vertex refused");
+    Json concave = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 40, 40, 40, 40, 100, 0, 100}}}).data;
+    check(reason(concave, {{"op", "addMeshEdge"}, {"slot", "cape"}, {"edge", {2, 4}}}).find("밖") != std::string::npos, "an edge across the notch (outside) refused");
+    auto unpinned = applyEdit(r.data, {{"op", "removeMeshEdge"}, {"slot", "cape"}, {"edge", {0, 5}}});
+    check(unpinned.data["attachments"][0]["edges"] == d["attachments"][0]["edges"] && unpinned.data["attachments"][0]["triangles"] == d["attachments"][0]["triangles"], "unpinned: back to the Delaunay mesh");
+    check(refused(d, {{"op", "removeMeshEdge"}, {"slot", "cape"}, {"edge", {0, 1}}}) && refused(d, {{"op", "removeMeshEdge"}, {"slot", "cape"}, {"edge", {4, 8}}}), "outline / unpinned edges cannot be removed");
+    // Without an outline the edge is forced in by flips (Sloan).
+    Json grid = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 2}, {"cols", 4}, {"cells", "11111110"}}).data;
+    const Json& g = grid["attachments"][0];
+    int p = -1, q = -1;
+    for (size_t i = 0; i < g["vertices"].size() / 2; i++) {
+      if (g["vertices"][2 * i] == 50 && g["vertices"][2 * i + 1] == 0) p = int(i);
+      if (g["vertices"][2 * i] == 100 && g["vertices"][2 * i + 1] == 40) q = int(i);
+    }
+    check(p >= 0 && q >= 0 && !hasEdge(g, p, q), "grid fixture");
+    auto pinned = applyEdit(grid, {{"op", "addMeshEdge"}, {"slot", "arm"}, {"edge", {p, q}}});
+    check(hasEdge(pinned.data["attachments"][0], p, q) && tilingProblem(pinned.data["attachments"][0], 200.0 * 40 * 7 / 8).empty(), "no outline: edge flipped in");
+    auto flat = applyEdit(pinned.data, {{"op", "retriangulate"}, {"slot", "arm"}});
+    check(hasEdge(flat.data["attachments"][0], p, q) && delaunayViolations(flat.data["attachments"][0]) == 0 && tilingProblem(flat.data["attachments"][0], 200.0 * 40 * 7 / 8).empty(), "no outline: retriangulate keeps it");
+  });
+
+  test("retriangulate repairs a folded mesh; validation of outline data", [&] {
+    Json d = applyEdit(outlineRig(), {{"op", "createMeshFromOutline"}, {"slot", "cape"}, {"hull", {0, 0, 100, 0, 100, 100, 0, 100}}, {"spacing", 20}}).data;
+    const size_t n = d["attachments"][0]["vertices"].size() / 2;
+    // Drag an interior vertex across its neighbours: triangles fold over (still inside the outline).
+    auto folded = applyEdit(d, {{"op", "setMeshVertices"}, {"slot", "cape"}, {"vertices", {4}}, {"positions", {85, 85}}});
+    check(!tilingProblem(folded.data["attachments"][0], 10000).empty(), "fixture folds");
+    auto fixed = applyEdit(folded.data, {{"op", "retriangulate"}, {"slot", "cape"}});
+    check(tilingProblem(fixed.data["attachments"][0], 10000).empty() && fixed.data["attachments"][0]["vertices"].size() / 2 == n && delaunayViolations(fixed.data["attachments"][0]) == 0, "re-triangulated from the outline");
+    check(fixed.data["attachments"][0]["vertices"] == folded.data["attachments"][0]["vertices"] && fixed.data["attachments"][0]["uvs"] == folded.data["attachments"][0]["uvs"], "vertices and uvs untouched");
+    // Outline crossing itself: a warning (drawing is unaffected), and re-triangulation explains why it cannot.
+    auto twisted = applyEdit(d, {{"op", "setMeshVertices"}, {"slot", "cape"}, {"vertices", {1}}, {"positions", {-20, 100}}});
+    check(hasCode(twisted.diagnostics, "ANIM_MESH_HULL_SELF") && !hasErrors(twisted.diagnostics), "self-crossing outline warned");
+    check(refused(twisted.data, {{"op", "retriangulate"}, {"slot", "cape"}}), "retriangulate refused on a crossing outline");
+    Json e = d;
+    e["attachments"][0]["edges"].push_back(3);
+    e["attachments"][0]["edges"].push_back(3);
+    check(hasCode(validateRig(e), "ANIM_MESH_EDGES") && !hasErrors(validateRig(e)), "self-loop edge warned");
+    e = d;
+    e["attachments"][0]["hull"] = 2;
+    check(hasCode(validateRig(e), "ANIM_MESH_HULL") && !hasErrors(validateRig(e)), "hull of 2 warned");
+    // Grid meshes of plugin 1.4.0 keep loading and can be re-triangulated (outline = the grid hull).
+    Json grid = applyEdit(meshArm(), {{"op", "convertToMesh"}, {"slot", "arm"}, {"rows", 2}, {"cols", 4}}).data;
+    auto g = applyEdit(grid, {{"op", "retriangulate"}, {"slot", "arm"}});
+    check(tilingProblem(g.data["attachments"][0], 8000).empty() && g.data["attachments"][0]["vertices"] == grid["attachments"][0]["vertices"], "grid re-triangulated in place");
+  });
+
+  test("autoOutline traces the largest opaque region of an alpha mask", [&] {
+    Json d = outlineRig();
+    d["attachments"][0]["width"] = 128; d["attachments"][0]["height"] = 96;
+    // 64x48 mask (half the image size): a disc of radius 20 at (30, 24) -> 40 px in image space.
+    const Json mask = discMask(64, 48, 30, 24, 20);
+    auto r = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}});
+    const Json& a = r.data["attachments"][0];
+    const std::vector<double> outline = numbers(r.extra["outline"]);
+    const size_t hull = outline.size() / 2;
+    check(validateRig(r.data).empty() && a["hull"] == hull && hull >= 6 && hull <= 256 && polygonProblem(outline).empty() && tilingProblem(a).empty(), "simple outline, tiled: " + std::to_string(hull) + " points");
+    bool covered = true, bounded = true;
+    for (int k = 0; k < 64; k++) {
+      const double t = k * 2 * 3.14159265358979 / 64;
+      covered = covered && insidePolygon(outline, 60 + 39 * std::cos(t), 48 + 39 * std::sin(t));  // just inside the disc's edge
+    }
+    for (size_t i = 0; i < hull; i++) bounded = bounded && outline[2 * i] >= 0 && outline[2 * i] <= 128 && outline[2 * i + 1] >= 0 && outline[2 * i + 1] <= 96;
+    const double area = std::fabs(polygonArea(outline, hull)), disc = 3.14159265358979 * 40 * 40;
+    check(covered && bounded && area > disc && area < disc * 1.6, "covers the disc, stays in the image, not much bigger (area " + std::to_string(area) + ")");
+    check(!insidePolygon(outline, 125, 2), "the far speck is left out");
+    auto fine = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"detail", 1}});
+    auto coarse = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"detail", 0}});
+    check(fine.extra["hull"].get<int>() > r.extra["hull"].get<int>() && coarse.extra["hull"].get<int>() < r.extra["hull"].get<int>(), "detail controls the point count");
+    auto threshold = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"alphaThreshold", 0.9}});
+    check(insidePolygon(numbers(threshold.extra["outline"]), 60, 48), "threshold above the speck's alpha still finds the disc");
+    auto withGrid = applyEdit(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"spacing", 12}});
+    check(withGrid.data["attachments"][0]["vertices"].size() / 2 > hull + 10 && tilingProblem(withGrid.data["attachments"][0]).empty(), "interior grid inside the traced outline");
+    Json empty = mask;
+    empty["alpha"] = base64(std::vector<uint8_t>(64 * 48, 0));
+    Json shortMask = mask;
+    shortMask["alpha"] = base64(std::vector<uint8_t>(10, 255));
+    check(refused(d, {{"op", "autoOutline"}, {"slot", "cape"}}) && refused(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", empty}}) &&
+          refused(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", shortMask}}) && refused(d, {{"op", "autoOutline"}, {"slot", "cape"}, {"mask", mask}, {"detail", 2}}), "missing / empty / wrong-size mask, bad detail refused");
+    // Tracing is the exported core function (Qt previews with it before the edit).
+    std::vector<uint8_t> raw(64 * 48, 0);
+    for (int y = 10; y < 30; y++) for (int x = 5; x < 50; x++) raw[size_t(y) * 64 + size_t(x)] = 255;
+    const std::vector<double> box = traceAlphaOutline(raw, 64, 48, 0.5, 1);
+    check(polygonProblem(box).empty() && insidePolygon(box, 5.5, 10.5) && insidePolygon(box, 49.5, 29.5) && std::fabs(polygonArea(box, box.size() / 2)) < 46.0 * 21 + 50, "rectangle traced around its pixels");
   });
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";

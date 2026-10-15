@@ -113,6 +113,28 @@ class RigCanvas : public QWidget {
   /** Weight brush stroke: every vertex the brush touched so far (one edit on finish). */
   std::function<void(const QVector<int>& vertices, bool finished)> onMeshPaint;
 
+  // ---- Mesh shape tools (plugin 1.6.0, setup mode). In vertex mode `meshTool` picks what a left
+  // press does; outline drawing works on a plain image too (it is how a freeform mesh is made).
+  enum MeshTool { MeshSelect = 0, MeshAddVertex = 1, MeshAddEdge = 2 };
+  void setMeshTool(int tool) { meshTool_ = tool; meshGesture_ = MeshGesture::None; update(); }
+  int meshTool() const { return meshTool_; }
+  /** 윤곽 그리기 on `slot` ("" = off): clicks place outline points (rig space); a click on the first
+   *  point, a double-click or Enter closes it (onMeshOutline, >= 3 points); Backspace drops the
+   *  last point, Esc cancels (onOutlineCancel). */
+  void setOutlineDrawing(const QString& slot);
+  bool outlineDrawing() const { return !outlineSlot_.isEmpty(); }
+  const QPolygonF& outlineDraft() const { return outline_; }
+  /** Dashed outline shown before 자동 윤곽 is applied (rig space; empty = none). */
+  void setOutlinePreview(const QPolygonF& rigPolygon) { outlinePreview_ = rigPolygon; update(); }
+  const QPolygonF& outlinePreview() const { return outlinePreview_; }
+  std::function<void(const QPolygonF& rigPoints)> onMeshOutline;
+  std::function<void()> onOutlineCancel;
+  /** 정점 추가: a click (rig space); 가장자리 추가: a drag from vertex `a` to vertex `b`. */
+  std::function<void(const QPointF& rigPoint)> onMeshAddVertex;
+  std::function<void(int a, int b)> onMeshAddEdge;
+  /** Delete / Backspace in vertex mode (the panel deletes the selected vertices). */
+  std::function<void()> onMeshDelete;
+
   std::function<void(const QString&)> onSelect;
   std::function<QPointF(const QString&)> originOf;
   std::function<void(const Drag&, bool finished)> onDrag;
@@ -130,6 +152,7 @@ class RigCanvas : public QWidget {
   void mousePressEvent(QMouseEvent*) override;
   void mouseMoveEvent(QMouseEvent*) override;
   void mouseReleaseEvent(QMouseEvent*) override;
+  void mouseDoubleClickEvent(QMouseEvent*) override;
   void wheelEvent(QWheelEvent*) override;
   void resizeEvent(QResizeEvent*) override;
   void keyPressEvent(QKeyEvent*) override;
@@ -177,10 +200,16 @@ class RigCanvas : public QWidget {
   QString meshSlot_;
   QSet<int> meshSelected_, meshStroke_;
   double brushRadius_ = 24;
-  enum class MeshGesture { None, Vertices, Band, Paint };
+  enum class MeshGesture { None, Vertices, Band, Paint, Edge };
   MeshGesture meshGesture_ = MeshGesture::None;
   QPointF meshStart_, meshCurrent_, hover_;
   bool meshMoved_ = false, meshAdd_ = false;
+  int meshTool_ = MeshSelect, edgeFrom_ = -1;
+  QString outlineSlot_;
+  QPolygonF outline_, outlinePreview_;
+  bool outlinePress(QMouseEvent* e);
+  void finishOutline();
+  void paintOutline(QPainter& p);
   bool meshPress(QMouseEvent* e);
   void meshMove(const QPointF& widgetPos);
   void meshRelease(const QPointF& widgetPos);

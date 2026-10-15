@@ -1,9 +1,10 @@
 // Node service module of the cutout animation plugin (role "service", platform "node").
 // Runs the SAME C++ core as the players (web runtime Wasm) for validation and authoring
 // ops, so Studio, MCP and the exported game can never disagree about a rig.
-import { open } from 'node:fs/promises';
+import { open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { inflateSync } from 'node:zlib';
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RIG_SENTINEL = '#rig';
@@ -19,6 +20,77 @@ async function pngSize(file) {
     if (bytesRead < 24 || !header.subarray(0, 8).equals(PNG) || header.toString('ascii', 12, 16) !== 'IHDR') return null;
     return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
   } catch { return null; } finally { await handle?.close(); }
+}
+
+/**
+ * Alpha channel of a PNG file (one byte per pixel) for the core's `autoOutline` mask: the core
+ * has no PNG decoder (players get decoded images from their host). Gray / gray+alpha / RGB / RGBA
+ * at 8 or 16 bits and palettes (1..8 bits, tRNS) — what image editors write; Adam7 interlacing is
+ * refused with a message. Read-only, like pngSize.
+ */
+async function pngAlpha(file) {
+  const bytes = await readFile(file);
+  if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG)) throw new Error(`PNG 파일이 아닙니다: ${file}`);
+  let at = 8, header = null, palette = null, trns = null;
+  const data = [];
+  while (at + 8 <= bytes.length) {
+    const length = bytes.readUInt32BE(at), type = bytes.toString('ascii', at + 4, at + 8), body = bytes.subarray(at + 8, at + 8 + length);
+    if (type === 'IHDR') header = { width: body.readUInt32BE(0), height: body.readUInt32BE(4), depth: body[8], color: body[9], interlace: body[12] };
+    else if (type === 'PLTE') palette = body;
+    else if (type === 'tRNS') trns = body;
+    else if (type === 'IDAT') data.push(body);
+    else if (type === 'IEND') break;
+    at += 12 + length;
+  }
+  if (!header) throw new Error(`PNG 헤더가 없습니다: ${file}`);
+  const { width, height, depth, color, interlace } = header;
+  const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[color];
+  if (!channels || ![1, 2, 4, 8, 16].includes(depth) || (color !== 0 && color !== 3 && depth < 8)) throw new Error(`지원하지 않는 PNG 형식입니다(색 ${color}, ${depth}비트).`);
+  if (interlace) throw new Error('인터레이스 PNG는 자동 윤곽에 쓸 수 없습니다. 인터레이스 없이 다시 저장하세요.');
+  if (width * height > 8192 * 8192) throw new Error('PNG가 너무 큽니다.');
+  const raw = inflateSync(Buffer.concat(data));
+  const bits = channels * depth, bpp = Math.max(1, bits >> 3), stride = Math.ceil(width * bits / 8);
+  const rows = Buffer.alloc(stride * height);
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)), out = rows.subarray(y * stride, (y + 1) * stride);
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? out[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
+      const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+      const predictor = [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][filter];
+      if (predictor === undefined) throw new Error('손상된 PNG입니다(필터).');
+      out[i] = (line[i] + predictor) & 255;
+    }
+    prev = out;
+  }
+  const alpha = Buffer.alloc(width * height, 255);
+  const sample = (row, x, channel) => depth === 16 ? row[(x * channels + channel) * 2] : depth === 8 ? row[x * channels + channel]
+    : (row[(x * depth) >> 3] >> (8 - depth - ((x * depth) & 7))) & ((1 << depth) - 1);
+  for (let y = 0; y < height; y++) {
+    const row = rows.subarray(y * stride, (y + 1) * stride);
+    for (let x = 0; x < width; x++) {
+      let v = 255;
+      if (color === 6 || color === 4) v = sample(row, x, channels - 1);
+      else if (color === 3) { const i = sample(row, x, 0); v = trns && i < trns.length ? trns[i] : 255; }
+      else if (trns && depth >= 8) {
+        // Color key (tRNS for gray / RGB): that exact color is transparent (compared on the high byte).
+        const key = Array.from({ length: channels }, (_, k) => trns[k * 2 + (depth === 16 ? 0 : 1)]);
+        v = key.every((k, ch) => sample(row, x, ch) === k) ? 0 : 255;
+      }
+      alpha[y * width + x] = v;
+    }
+  }
+  return { width, height, alpha };
+}
+/** `autoOutline` ops (alone or in a batch) naming `imagePath` get the PNG's alpha as `mask`. */
+async function fillOutlineMasks(operation) {
+  const ops = operation?.op === 'batch' && Array.isArray(operation.operations) ? operation.operations : [operation];
+  for (const op of ops) {
+    if (op?.op !== 'autoOutline' || op.mask !== undefined || typeof op.imagePath !== 'string') continue;
+    const { width, height, alpha } = await pngAlpha(op.imagePath);
+    op.mask = { width, height, alpha: alpha.toString('base64') };
+    delete op.imagePath;
+  }
 }
 
 export async function createService({ pluginDir, manifest }) {
@@ -97,11 +169,20 @@ export async function createService({ pluginDir, manifest }) {
     return out;
   }
 
-  /** Pass-through to the core JSON ops (validate, sample, template, edit, …). Never touches project files. */
-  function call(op, payload = {}) {
+  /**
+   * Pass-through to the core JSON ops (validate, sample, template, edit, …). Never writes project
+   * files; the only read is the PNG an `edit` → `autoOutline` names by `imagePath` (decoded here
+   * into the op's `mask`, plugin 1.6.0).
+   */
+  async function call(op, payload = {}) {
     if (typeof op !== 'string' || !/^[a-zA-Z][a-zA-Z0-9]{0,63}$/.test(op)) throw new Error('잘못된 플러그인 명령입니다.');
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('플러그인 명령 인자는 객체여야 합니다.');
-    return request({ ...payload, op });
+    const body = { ...payload, op };
+    if (op === 'edit' && body.operation && typeof body.operation === 'object') {
+      body.operation = structuredClone(body.operation);
+      await fillOutlineMasks(body.operation);
+    }
+    return request(body);
   }
   /**
    * Player capabilities an exported game needs for these documents beyond `plugin-elements-v1`

@@ -1,4 +1,5 @@
 #include "cutout/rig.hpp"
+#include "cutout/mesh.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -130,9 +131,23 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
   };
   if (!a.contains("triangles")) { c.error(at(p, "triangles"), "ANIM_MESH_TRIANGLES", "메시에는 triangles(삼각형 정점 번호)가 필요합니다."); ok = false; }
   else if (!indexList("triangles", 3, MAX_MESH_TRIANGLES, "ANIM_MESH_TRIANGLES")) ok = false;
-  if (a.contains("edges")) indexList("edges", 2, 0, "ANIM_MESH_EDGES");  // editor-only outline: never blocks drawing
+  const bool edgesOk = a.contains("edges") && indexList("edges", 2, 0, "ANIM_MESH_EDGES");  // editor-only outline: never blocks drawing
   if (a.contains("hull") && (!a.at("hull").is_number_integer() || a.at("hull").get<int64_t>() < 0 || a.at("hull").get<int64_t>() > int64_t(n)))
     c.error(at(p, "hull"), "ANIM_MESH_HULL", "hull(외곽 정점 수)은 0..정점 수 정수입니다.");
+  else if (ok && a.contains("hull")) {
+    // Outline the mesh edits (plugin 1.6.0) re-triangulate from: warnings only, drawing never uses it.
+    const size_t hull = size_t(a.at("hull").get<int64_t>());
+    if (hull > 0 && hull < 3) c.warn(at(p, "hull"), "ANIM_MESH_HULL", "윤곽(hull)은 정점 3개 이상이어야 메시를 다시 나눌 수 있습니다.");
+    else if (hull >= 3) {
+      std::vector<double> outline;
+      for (size_t i = 0; i < 2 * hull; i++) outline.push_back(a.at("vertices")[i].get<double>());
+      if (const std::string problem = polygonProblem(outline); !problem.empty())
+        c.warn(at(p, "hull"), "ANIM_MESH_HULL_SELF", "윤곽(hull)이 올바른 다각형이 아닙니다: " + problem + " 다시 나누기 전에 정점을 옮기세요.");
+    }
+  }
+  if (ok && edgesOk)
+    for (size_t i = 0; i + 1 < a.at("edges").size(); i += 2)
+      if (a.at("edges")[i] == a.at("edges")[i + 1]) { c.warn(at(at(p, "edges"), i), "ANIM_MESH_EDGES", "가장자리가 같은 정점을 잇습니다(무시됨)."); break; }
   if (a.contains("weights")) {
     const Json& weights = a.at("weights");
     if (!weights.is_array() || (ok && weights.size() != n)) { c.error(at(p, "weights"), "ANIM_MESH_WEIGHTS", "weights는 정점마다 [{bone, weight}] 목록 하나씩입니다(정점 수와 같아야 함)."); return 0; }
@@ -609,6 +624,8 @@ Rig parseRig(const std::string& id, const Json& data) {
     for (const auto& v : a.at("vertices")) att.vertices.push_back(v.get<double>());
     for (const auto& v : a.at("uvs")) att.uvs.push_back(v.get<double>());
     for (const auto& v : a.at("triangles")) att.triangles.push_back(v.get<int>());
+    if (a.contains("hull")) att.hull = a.at("hull").get<size_t>();
+    if (a.contains("edges")) for (const auto& v : a.at("edges")) att.edges.push_back(v.get<int>());
     if (!a.contains("weights")) return att;
     const int slot = rig.slotIndex(att.slot);
     const int slotBone = slot >= 0 ? rig.slots[size_t(slot)].boneIndex : -1;

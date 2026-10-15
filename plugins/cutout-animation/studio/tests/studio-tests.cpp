@@ -1893,6 +1893,171 @@ class StudioTests : public QObject {
     QCOMPARE(qs(barOf(rig())["type"].get<std::string>()), QString("mesh"));
   }
 
+  // Freeform meshes (plugin 1.6.0): 윤곽 그리기 (clicks + double-click = one edit, Esc cancels),
+  // 자동 윤곽 from a generated PNG of known shape with a canvas preview, 정점 추가 inside / on the
+  // outline, 가장자리 추가 by dragging, Delete, 가장자리 삭제, 다시 삼각분할, and undo/redo of it all.
+  void freeformMeshEditing() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setTool(RigCanvas::Move);
+    pump();
+    // An 80x60 picture: an opaque ellipse filling it, transparent corners.
+    QImage blob(80, 60, QImage::Format_ARGB32);
+    blob.fill(Qt::transparent);
+    for (int y = 0; y < 60; y++)
+      for (int x = 0; x < 80; x++)
+        if (std::pow((x + 0.5 - 40) / 40, 2) + std::pow((y + 0.5 - 30) / 30, 2) <= 1) blob.setPixelColor(x, y, QColor("#e76f51"));
+    const QString file = dir.filePath("blob.png");
+    QVERIFY(blob.save(file));
+    QVERIFY(gesture("add blob part", 1, [&] { panel->importAndAddPart(file, "blob", "blob", "root"); }));
+    const Json start = rig();
+    panel->selectItem("slot:blob");
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(3);
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    pump();
+    auto blobOf = [](const Json& data) { for (const auto& a : data["attachments"]) if (a["slot"] == "blob") return a; return Json(); };
+    // Image pixel -> widget point of the part as shown (setup pose).
+    auto widgetAt = [&](double x, double y) {
+      const cutout::Rig parsed = cutout::parseRig("hero", rig());
+      const cutout::Attachment* att = nullptr;
+      const cutout::Affine m = attachmentMatrix(parsed, cutout::samplePose(parsed, -1, 0), parsed.slotIndex("blob"), &att);
+      double rx, ry;
+      m.apply(x, y, rx, ry);
+      return canvas->rigToWidget(QPointF(rx, ry));
+    };
+    auto area = [](const Json& a) {
+      double sum = 0;
+      for (size_t t = 0; t + 2 < a["triangles"].size(); t += 3) {
+        const auto& v = a["vertices"];
+        const int i = a["triangles"][t], j = a["triangles"][t + 1], k = a["triangles"][t + 2];
+        sum += std::fabs((v[2 * j].get<double>() - v[2 * i].get<double>()) * (v[2 * k + 1].get<double>() - v[2 * i + 1].get<double>()) -
+                         (v[2 * j + 1].get<double>() - v[2 * i + 1].get<double>()) * (v[2 * k].get<double>() - v[2 * i].get<double>())) / 2;
+      }
+      return sum;
+    };
+    QVERIFY(find<QWidget>("cutoutMeshDrawOutline")->isEnabled() && find<QWidget>("cutoutMeshAutoOutline")->isEnabled());
+    // Esc cancels a started outline: no edit.
+    QVERIFY(gesture("outline: Esc cancels", 0, [&] {
+      click("cutoutMeshDrawOutline");
+      QVERIFY(canvas->outlineDrawing());
+      tap(canvas, widgetAt(0, 0));
+      tap(canvas, widgetAt(80, 0));
+      QCOMPARE(canvas->outlineDraft().size(), 2);
+      QTest::keyClick(canvas, Qt::Key_Escape);
+    }));
+    QVERIFY(!canvas->outlineDrawing() && blobOf(rig()).value("type", std::string()) != "mesh");
+    // 윤곽 그리기: an L outline clicked point by point, closed by a double-click = ONE edit.
+    const std::vector<QPointF> L = {{0, 0}, {80, 0}, {80, 30}, {40, 30}, {40, 60}, {0, 60}};
+    QVERIFY(gesture("draw an outline", 1, [&] {
+      click("cutoutMeshDrawOutline");
+      for (const QPointF& p : L) tap(canvas, widgetAt(p.x(), p.y()));
+      const QPointF last = widgetAt(L.back().x(), L.back().y());
+      QMouseEvent dbl(QEvent::MouseButtonDblClick, last, canvas->mapToGlobal(last), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(canvas, &dbl);
+      mouse(canvas, QEvent::MouseButtonRelease, last, Qt::LeftButton, Qt::NoButton);
+    }));
+    Json a = blobOf(rig());
+    QCOMPARE(qs(a["type"].get<std::string>()), QString("mesh"));
+    QCOMPARE(a["hull"].get<int>(), 6);
+    QCOMPARE(a["vertices"].size(), size_t(12));
+    for (size_t i = 0; i < L.size(); i++)
+      QVERIFY2(std::fabs(a["vertices"][2 * i].get<double>() - L[i].x()) < 0.2 && std::fabs(a["vertices"][2 * i + 1].get<double>() - L[i].y()) < 0.2, a["vertices"].dump().c_str());
+    QVERIFY2(std::fabs(area(a) - 3600) < 20, qPrintable(QString::number(area(a))));
+    QVERIFY(!canvas->outlineDrawing() && panel->meshEdit() == CutoutPanel::MeshEdit::Vertices);
+    QVERIFY(find<QWidget>("cutoutMeshShapeTools")->isVisible() && !find<QWidget>("cutoutMeshWeightTools")->isVisible());
+    undo();
+    QVERIFY(blobOf(rig()).value("type", std::string()) != "mesh");
+    redo();
+    QCOMPARE(blobOf(rig())["hull"].get<int>(), 6);
+    // 자동 윤곽 with the preview on: the dashed preview is what the edit makes; it hugs the ellipse.
+    panel->selectItem("slot:blob");
+    panel->setAutoOutlineParams(0.1, 0.6, 0, true);
+    pump();
+    const QPolygonF preview = canvas->outlinePreview();
+    QVERIFY(preview.size() >= 8);
+    QVERIFY(gesture("auto outline", 1, [&] { click("cutoutMeshAutoOutline"); }));
+    a = blobOf(rig());
+    const int hull = a["hull"].get<int>();
+    QCOMPARE(hull, int(preview.size()));
+    double x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (int i = 0; i < hull; i++) {
+      const double x = a["vertices"][2 * i].get<double>(), y = a["vertices"][2 * i + 1].get<double>();
+      x0 = std::min(x0, x); x1 = std::max(x1, x); y0 = std::min(y0, y); y1 = std::max(y1, y);
+    }
+    QVERIFY2(x0 >= 0 && x0 < 3 && x1 > 77 && x1 <= 80 && y0 >= 0 && y0 < 3 && y1 > 57 && y1 <= 60, qPrintable(QString("%1 %2 %3 %4").arg(x0).arg(x1).arg(y0).arg(y1)));
+    QVERIFY2(area(a) > 3770 && area(a) < 4800, qPrintable(QString::number(area(a))));  // between the ellipse and its box
+    // Weights first, so the new vertices below must get interpolated weights.
+    auto* bones = find<QListWidget>("cutoutMeshBones");
+    for (int i = 0; i < bones->count(); i++) bones->item(i)->setCheckState(bones->item(i)->data(Qt::UserRole).toString() == "root" ? Qt::Checked : Qt::Unchecked);
+    QVERIFY(gesture("auto weights", 1, [&] { QVERIFY(panel->autoWeights()); }));
+    // 정점 추가: inside -> an interior vertex (selected), near the outline -> an outline vertex.
+    QVERIFY(gesture("add-vertex tool", 0, [&] { click("cutoutMeshToolAddVertex"); }));
+    QCOMPARE(canvas->meshTool(), int(RigCanvas::MeshAddVertex));
+    const size_t before = blobOf(rig())["vertices"].size() / 2;
+    QVERIFY(gesture("add interior vertex", 1, [&] { tap(canvas, widgetAt(40, 30)); }));
+    a = blobOf(rig());
+    QCOMPARE(a["vertices"].size() / 2, before + 1);
+    QCOMPARE(panel->selectedVertices(), QVector<int>({int(before)}));
+    QVERIFY(std::fabs(a["vertices"][2 * before].get<double>() - 40) < 0.5 && std::fabs(a["vertices"][2 * before + 1].get<double>() - 30) < 0.5);
+    QCOMPARE(a["weights"].size(), before + 1);
+    const QPointF h0 = widgetAt(a["vertices"][0].get<double>(), a["vertices"][1].get<double>()), h1 = widgetAt(a["vertices"][2].get<double>(), a["vertices"][3].get<double>());
+    const QPointF mid = (h0 + h1) / 2, normal = QPointF(h1.y() - h0.y(), h0.x() - h1.x()) / QLineF(h0, h1).length();
+    QVERIFY(gesture("add outline vertex", 1, [&] { tap(canvas, mid + normal * 2); }));
+    a = blobOf(rig());
+    QCOMPARE(a["hull"].get<int>(), hull + 1);
+    QCOMPARE(panel->selectedVertices(), QVector<int>({1}));
+    // 가장자리 추가: drag from outline vertex 0 to the interior vertex (now index before + 1).
+    QVERIFY(gesture("add-edge tool", 0, [&] { click("cutoutMeshToolAddEdge"); }));
+    const int centre = int(before) + 1;
+    auto vertexWidget = [&](int v) { const Json m = blobOf(rig()); return widgetAt(m["vertices"][2 * v].get<double>(), m["vertices"][2 * v + 1].get<double>()); };
+    const int far = (hull + 1) / 2;
+    QVERIFY(gesture("pin an edge", 1, [&] { drag(canvas, vertexWidget(far), vertexWidget(centre)); }));
+    auto pinnedEdge = [&](int x, int y) {
+      const Json m = blobOf(rig());
+      for (size_t i = 0; i + 1 < m["edges"].size(); i += 2) if (m["edges"][i] == std::min(x, y) && m["edges"][i + 1] == std::max(x, y)) return true;
+      return false;
+    };
+    QVERIFY(pinnedEdge(far, centre));
+    QVERIFY(panel->findChild<QLabel*>("cutoutMeshInfo")->text().contains("고정 가장자리 1"));
+    if (const QString evidence = qEnvironmentVariable("CUTOUT_STUDIO_EVIDENCE"); !evidence.isEmpty())
+      QVERIFY(panel->window()->grab().save(evidence + "/studio-mesh-freeform.png"));
+    // 가장자리 삭제 on the two selected vertices.
+    QVERIFY(gesture("select tool", 0, [&] { click("cutoutMeshToolSelect"); }));
+    panel->selectVertices({far, centre});
+    QVERIFY(gesture("unpin the edge", 1, [&] { click("cutoutMeshRemoveEdge"); }));
+    QVERIFY(!pinnedEdge(far, centre));
+    // Delete key removes the selected vertex (the interior one).
+    panel->selectVertices({centre});
+    const size_t count = blobOf(rig())["vertices"].size() / 2;
+    QVERIFY(gesture("Delete vertex", 1, [&] { canvas->setFocus(); QTest::keyClick(canvas, Qt::Key_Delete); }));
+    QCOMPARE(blobOf(rig())["vertices"].size() / 2, count - 1);
+    QCOMPARE(blobOf(rig())["weights"].size(), count - 1);
+    // 다시 삼각분할 after dragging an outline vertex across the mesh (its triangles fold).
+    panel->selectVertices({far});
+    QVERIFY(gesture("drag a vertex", 1, [&] { drag(canvas, vertexWidget(far), (vertexWidget(far) + vertexWidget(0)) / 2 + (vertexWidget(0) - vertexWidget(far)) * 0.05); }));
+    const Json folded = blobOf(rig());
+    QVERIFY(gesture("retriangulate", 1, [&] { click("cutoutMeshRetriangulate"); }));
+    QVERIFY(blobOf(rig())["triangles"] != folded["triangles"] && blobOf(rig())["vertices"] == folded["vertices"]);
+    // Refusals keep the documents unchanged (status explains).
+    QVERIFY(gesture("unpin without a pinned edge", 0, [&] { panel->selectVertices({0, 1}); click("cutoutMeshRemoveEdge"); }));
+    QVERIFY(panel->status().contains("윤곽"));
+    // Undo walks every gesture back to the plain picture; redo replays the outline.
+    for (int i = 0; i < 10; i++) undo();
+    QVERIFY(rig() == start);
+    redo();
+    QCOMPARE(blobOf(rig())["hull"].get<int>(), 6);
+    undo();
+    QVERIFY(rig() == start);
+    panel->selectItem("slot:blob");
+    QVERIFY(gesture("remove the blob part", 1, [&] { QVERIFY(panel->deleteSelected()); }));
+    panel->setMeshTool(RigCanvas::MeshSelect);
+    panel->setAutoOutlineParams(0.05, 0.5, 0, false);
+  }
+
   // Canvas hit priority (Spine-like, one hit test for click, drag and hover): handles — an IK
   // crosshair, bone origins, mesh vertices in vertex mode — beat the image parts under them; a part
   // away from handles still drags; Alt+click walks the stack; editor-hidden parts are never picked.
@@ -2350,6 +2515,84 @@ class StudioTests : public QObject {
     for (int i = host.edits - editsBefore; i > 0; i--) undo();
     QVERIFY(rig() == start);
     panel->setTool(RigCanvas::Move);
+  }
+
+  // Mesh repaint budget (plugin 1.6.0): a 2048-triangle mesh (32x32 grid over a 512x512 image)
+  // drawn offscreen at 1.6x, undeformed (one textured fill) and deformed (per-triangle textured
+  // brushes, no clip paths). The rigid fill must also look like the plain region it replaces.
+  void meshRenderBenchmark() {
+    QImage tex(512, 512, QImage::Format_ARGB32);
+    for (int y = 0; y < 512; y++) for (int x = 0; x < 512; x++) tex.setPixelColor(x, y, QColor((x * 7) & 255, (y * 5) & 255, ((x + y) * 3) & 255, 255));
+    const QString file = dir.filePath("bench.png");
+    QVERIFY(tex.save(file));
+    ImageCache images;
+    images.setAssets(QJsonArray{QJsonObject{{"id", "img-bench"}, {"kind", "image"}, {"absolutePath", file}}});
+    Json d = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 600, "height": 600, "originX": 300, "originY": 300},
+      "bones": [{"id": "root", "parent": null, "x": 300, "y": 300}],
+      "slots": [{"id": "sheet", "bone": "root", "attachment": "sheet"}],
+      "attachments": [{"slot": "sheet", "name": "sheet", "imageAssetId": "img-bench", "width": 512, "height": 512}], "clips": []})");
+    const Json region = d;
+    d = cutout::applyEdit(d, {{"op", "convertToMesh"}, {"slot", "sheet"}, {"rows", 32}, {"cols", 32}}).data;
+    QCOMPARE(d["attachments"][0]["triangles"].size(), size_t(3 * 2048));
+    const size_t n = d["attachments"][0]["vertices"].size() / 2;
+    std::vector<double> wave(2 * n);
+    for (size_t v = 0; v < n; v++) {
+      const double x = d["attachments"][0]["vertices"][2 * v].get<double>(), y = d["attachments"][0]["vertices"][2 * v + 1].get<double>();
+      wave[2 * v] = 9 * std::sin(y / 40.0);
+      wave[2 * v + 1] = 7 * std::cos(x / 55.0);
+    }
+    d["clips"] = Json::array({{{"id", "wave"}, {"durationMs", 1000}, {"tracks", Json::array({{{"target", "slot:sheet"}, {"property", "deform"}, {"attachment", "sheet"},
+                                                                                              {"keys", Json::array({{{"timeMs", 0}, {"offsets", wave}}})}}})}}});
+    const cutout::Rig rig = cutout::parseRig("bench", d), plain = cutout::parseRig("bench", region);
+    const cutout::Pose rest = cutout::samplePose(rig, -1, 0), bent = cutout::samplePose(rig, 0, 0);
+    QImage target(1024, 1024, QImage::Format_ARGB32_Premultiplied);
+    auto render = [&](const cutout::Rig& r, const cutout::Pose& pose) {
+      target.fill(Qt::black);
+      QPainter p(&target);
+      p.translate(512, 512);
+      p.scale(1.6, 1.6);
+      p.translate(-300, -300);
+      drawRig(p, r, pose, images);
+    };
+    auto timeMs = [&](const cutout::Rig& r, const cutout::Pose& pose) {
+      render(r, pose);  // warm-up (image decode)
+      QVector<double> runs;
+      for (int i = 0; i < 9; i++) {
+        QElapsedTimer t;
+        t.start();
+        render(r, pose);
+        runs << t.nsecsElapsed() / 1e6;
+      }
+      std::sort(runs.begin(), runs.end());
+      return runs[runs.size() / 2];
+    };
+    const double rigid = timeMs(rig, rest), deformed = timeMs(rig, bent), regionMs = timeMs(plain, cutout::samplePose(plain, -1, 0));
+    qInfo("mesh repaint 2048 triangles, 1024x1024 offscreen (median of 9): rigid %.2f ms, deformed %.2f ms, plain region %.2f ms", rigid, deformed, regionMs);
+    // Correctness: the undeformed mesh draws the region's pixels (inside, away from the outer edge).
+    render(plain, cutout::samplePose(plain, -1, 0));
+    const QImage want = target.copy();
+    render(rig, rest);
+    double diff = 0;
+    int samples = 0;
+    for (int y = 140; y < 884; y += 7)
+      for (int x = 140; x < 884; x += 7) {
+        const QRgb a = want.pixel(x, y), b = target.pixel(x, y);
+        diff += std::abs(qRed(a) - qRed(b)) + std::abs(qGreen(a) - qGreen(b)) + std::abs(qBlue(a) - qBlue(b));
+        samples++;
+      }
+    qInfo("rigid mesh vs region: mean channel difference %.3f", diff / samples / 3);
+    QVERIFY(diff / samples / 3 < 2.0);
+    // Deformed: no seams (no background showing through inside) and the texture really moved.
+    render(rig, bent);
+    int holes = 0, moved = 0;
+    for (int y = 160; y < 864; y += 5)
+      for (int x = 160; x < 864; x += 5) {
+        holes += target.pixel(x, y) == qRgb(0, 0, 0);
+        moved += target.pixel(x, y) != want.pixel(x, y);
+      }
+    QCOMPARE(holes, 0);
+    QVERIFY(moved > 1000);
+    QVERIFY2(rigid < 30 && deformed < 30, qPrintable(QString("budget 30 ms: rigid %1, deformed %2").arg(rigid).arg(deformed)));
   }
 
   void paintElementDrawsPixels() {

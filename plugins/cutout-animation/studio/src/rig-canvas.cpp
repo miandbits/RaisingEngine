@@ -12,6 +12,8 @@ namespace cutout_studio {
 namespace {
 constexpr double PI = 3.14159265358979323846;
 const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d"), TRAIL_COLOR("#38bdf8"), IK_COLOR("#f97316");
+// Mesh edit (plugin 1.6.0): outline edges, pinned inside edges, outline being drawn / previewed.
+const QColor OUTLINE_COLOR("#f59e0b"), PINNED_COLOR("#22d3ee"), DRAFT_COLOR("#e879f9");
 double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 * PI; return a; }
 // Pick radii in widget px, matched to what is drawn: the IK crosshair's arms reach 12 px, so a
 // press anywhere on it grabs the target (the old 7 px circle let the body image under its ring win).
@@ -153,7 +155,18 @@ bool RigCanvas::meshPress(QMouseEvent* e) {
     meshMove(e->position());
     return true;
   }
+  if (meshTool_ == MeshAddVertex) {
+    if (onMeshAddVertex) onMeshAddVertex(widgetToRig(e->position()));
+    return true;
+  }
   const int v = vertexAt(e->position());
+  if (meshTool_ == MeshAddEdge) {
+    // Press on a vertex, release on another: one pinned edge (a press elsewhere does nothing).
+    edgeFrom_ = v;
+    meshGesture_ = v >= 0 ? MeshGesture::Edge : MeshGesture::None;
+    update();
+    return true;
+  }
   if (v >= 0) {
     // Pressing a vertex outside the selection selects it first, so a click-drag moves just that one.
     if (!meshSelected_.contains(v) && onMeshSelect) onMeshSelect({v}, meshAdd_);
@@ -185,6 +198,10 @@ void RigCanvas::meshRelease(const QPointF& w) {
   meshCurrent_ = w;
   if (g == MeshGesture::Vertices) {
     if (meshMoved_ && onMeshDrag) onMeshDrag(widgetToRig(w) - widgetToRig(meshStart_), true);
+  } else if (g == MeshGesture::Edge) {
+    const int to = vertexAt(w), from = edgeFrom_;
+    edgeFrom_ = -1;
+    if (to >= 0 && from >= 0 && to != from && onMeshAddEdge) onMeshAddEdge(from, to);
   } else if (g == MeshGesture::Band && onMeshSelect) {
     QVector<int> inside;
     if (meshMoved_) {
@@ -200,6 +217,61 @@ void RigCanvas::meshRelease(const QPointF& w) {
     if (!stroke.isEmpty() && onMeshPaint) onMeshPaint(stroke, true);
   }
   update();
+}
+void RigCanvas::setOutlineDrawing(const QString& slot) {
+  outlineSlot_ = slot;
+  outline_.clear();
+  if (!slot.isEmpty()) { hoverRef_.clear(); unsetCursor(); setCursor(Qt::CrossCursor); }
+  else unsetCursor();
+  update();
+}
+bool RigCanvas::outlinePress(QMouseEvent* e) {
+  if (!outlineDrawing()) return false;
+  const QPointF w = e->position();
+  // A click on the first point closes the outline (Spine-like); a second click on the last point is
+  // the first half of a double-click, not a new point.
+  if (outline_.size() >= 3 && QLineF(rigToWidget(outline_[0]), w).length() <= VERTEX_RADIUS) { finishOutline(); return true; }
+  if (!outline_.isEmpty() && QLineF(rigToWidget(outline_.back()), w).length() <= 2) return true;
+  outline_ << widgetToRig(w);
+  update();
+  return true;
+}
+void RigCanvas::finishOutline() {
+  if (outline_.size() < 3) return;  // keeps drawing: a closed outline needs three points
+  const QPolygonF points = outline_;
+  outline_.clear();
+  update();
+  if (onMeshOutline) onMeshOutline(points);
+}
+// The outline being drawn (points, the edge to the cursor, the closing edge) and the 자동 윤곽 preview.
+void RigCanvas::paintOutline(QPainter& p) {
+  if (!outlinePreview_.isEmpty()) {
+    QPolygonF poly;
+    for (const QPointF& q : outlinePreview_) poly << rigToWidget(q);
+    p.setBrush(QColor(232, 121, 249, 40));
+    p.setPen(QPen(DRAFT_COLOR, 1.5, Qt::DashLine));
+    p.drawPolygon(poly);
+    p.setBrush(DRAFT_COLOR);
+    p.setPen(Qt::NoPen);
+    for (const QPointF& q : poly) p.drawEllipse(q, 2.5, 2.5);
+    p.setBrush(Qt::NoBrush);
+  }
+  if (!outlineDrawing()) return;
+  QPolygonF line;
+  for (const QPointF& q : outline_) line << rigToWidget(q);
+  p.setPen(QPen(DRAFT_COLOR, 2));
+  p.drawPolyline(line);
+  if (!line.isEmpty() && rect().contains(hover_.toPoint())) {
+    p.setPen(QPen(DRAFT_COLOR, 1.5, Qt::DashLine));
+    p.drawLine(line.back(), hover_);
+    if (line.size() >= 2) p.drawLine(hover_, line.front());
+  }
+  p.setPen(QPen(QColor("#0b1220"), 1));
+  for (int i = 0; i < line.size(); i++) {
+    p.setBrush(i == 0 ? SELECT_COLOR : DRAFT_COLOR);
+    p.drawEllipse(line[i], i == 0 ? 5.0 : 3.5, i == 0 ? 5.0 : 3.5);
+  }
+  p.setBrush(Qt::NoBrush);
 }
 // Wireframe, weight heat map (blue 0 -> red 1 for the chosen bone), vertex handles, band and brush.
 void RigCanvas::paintMesh(QPainter& p) {
@@ -222,13 +294,32 @@ void RigCanvas::paintMesh(QPainter& p) {
       p.drawPolygon(tri);
     }
     p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(QColor(255, 255, 255, 120), 1));
+    p.setPen(QPen(QColor(255, 255, 255, meshMode_ == MeshVertices ? 90 : 120), 1));
     p.drawPolygon(tri);
+  }
+  if (meshMode_ == MeshVertices) {
+    // Outline (edges of one triangle) in orange, the author's pinned inside edges in cyan: the
+    // two kinds re-triangulation keeps.
+    QSet<QPair<int, int>> outline;
+    p.setPen(QPen(OUTLINE_COLOR, 2));
+    for (const auto& e : meshOutline(att->triangles)) {
+      outline.insert(e);
+      if (e.first < pts.size() && e.second < pts.size()) p.drawLine(rigToWidget(pts[e.first]), rigToWidget(pts[e.second]));
+    }
+    p.setPen(QPen(PINNED_COLOR, 2));
+    for (size_t k = 0; k + 1 < att->edges.size(); k += 2) {
+      const int a = std::min(att->edges[k], att->edges[k + 1]), b = std::max(att->edges[k], att->edges[k + 1]);
+      if (a != b && !outline.contains({a, b}) && b < pts.size()) p.drawLine(rigToWidget(pts[a]), rigToWidget(pts[b]));
+    }
+    if (meshGesture_ == MeshGesture::Edge && edgeFrom_ >= 0 && edgeFrom_ < pts.size()) {
+      p.setPen(QPen(PINNED_COLOR, 1.5, Qt::DashLine));
+      p.drawLine(rigToWidget(pts[edgeFrom_]), meshCurrent_);
+    }
   }
   for (int i = 0; i < pts.size(); i++) {
     const QPointF o = rigToWidget(pts[i]);
     const bool picked = meshSelected_.contains(i) || (meshGesture_ == MeshGesture::Paint && meshStroke_.contains(i));
-    p.setPen(QPen(QColor("#0b1220"), 1));
+    p.setPen(QPen(meshMode_ == MeshVertices && size_t(i) < att->hull ? OUTLINE_COLOR.darker(160) : QColor("#0b1220"), 1));
     p.setBrush(meshMode_ == MeshWeights ? heat(weight[i], 255) : picked ? SELECT_COLOR : QColor("#f8fafc"));
     p.drawEllipse(o, picked ? 4.5 : 3.0, picked ? 4.5 : 3.0);
   }
@@ -428,7 +519,7 @@ void RigCanvas::updateHover(const QPointF& w, bool alt) {
   hoverAlt_ = alt;
   hoverInside_ = true;
   // Mesh modes own the left button (vertices/brush): nothing else would be picked there.
-  const Hit hit = meshMode_ != MeshOff ? Hit{} : pickHit(w, alt);
+  const Hit hit = meshMode_ != MeshOff || outlineDrawing() ? Hit{} : pickHit(w, alt);
   const QString ref = hit.ref;
   if (ref == hoverRef_ && hit.body == hoverBody_) return;
   hoverRef_ = ref;
@@ -554,6 +645,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
     }
     if (pose_.world.size() == rig_->bones.size()) paintHover(p);
     paintMesh(p);
+    paintOutline(p);
     if (drag_ && drag_->moved && (drag_->tool == Rotate || drag_->tool == Scale)) {
       p.setPen(QPen(SELECT_COLOR, 1, Qt::DotLine));
       p.drawLine(rigToWidget(drag_->origin), rigToWidget(drag_->current));
@@ -580,7 +672,10 @@ void RigCanvas::paintEvent(QPaintEvent*) {
   }
   static const char* names[] = {"이동(V)", "회전(R)", "크기(S)", "회전 중심(P)", "본 만들기(C)"};
   p.setPen(QColor("#9aa4ae"));
-  QString hint = meshMode_ == MeshVertices ? QString("메시 정점: 클릭·Shift+클릭 선택 · 빈 곳 끌기 상자 선택 · 정점 끌기로 이동") + (animate_ ? " (K로 변형 키)" : "")
+  QString hint = outlineDrawing() ? QString("윤곽 그리기: 그림 둘레를 차례로 클릭 · 첫 점 클릭·더블클릭·Enter로 닫기(메시 만들기) · Backspace 마지막 점 지우기 · Esc 취소")
+                 : meshMode_ == MeshVertices && meshTool_ == MeshAddVertex ? QString("정점 추가: 메시 안(안쪽 정점)이나 윤곽 가까이(윤곽 정점)를 클릭 · 다시 삼각분할됩니다")
+                 : meshMode_ == MeshVertices && meshTool_ == MeshAddEdge ? QString("가장자리 추가: 정점에서 다른 정점으로 끌면 그 안쪽 가장자리가 고정됩니다(하늘색) · 주황 = 윤곽")
+                 : meshMode_ == MeshVertices ? QString("메시 정점: 클릭·Shift+클릭 선택 · 빈 곳 끌기 상자 선택 · 정점 끌기로 이동") + (animate_ ? " (K로 변형 키)" : " · Delete 정점 삭제")
                        : meshMode_ == MeshWeights ? QString("웨이트 칠하기: 끌어서 붓으로 칠함 · 색 = 고른 본의 웨이트(파랑 0 → 빨강 1)")
                        : tool_ == Create ? QString("본 만들기: 끌어서 고른 본의 자식 본(길이·방향) · 클릭 = 점 본 · 본 원점 클릭 = 부모 고르기 · Shift 15° 스냅")
                                          : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Shift 미세 조정/15° 스냅 · Alt+클릭 겹친 항목 차례로").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
@@ -601,6 +696,7 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
     return;
   }
   if (e->button() != Qt::LeftButton) return;
+  if (outlinePress(e)) return;
   if (meshPress(e)) return;
   // One pick for every tool: handles first, Alt = the next candidate under the cursor.
   const Hit picked = pickHit(e->position(), e->modifiers() & Qt::AltModifier);
@@ -652,6 +748,7 @@ void RigCanvas::mouseMoveEvent(QMouseEvent* e) {
     update();
     return;
   }
+  if (outlineDrawing() && !drag_) { hover_ = e->position(); update(); return; }
   if (meshGesture_ != MeshGesture::None || (meshMode_ == MeshWeights && !drag_)) { meshMove(e->position()); return; }
   if (!drag_) { if (!(e->buttons() & Qt::LeftButton)) updateHover(e->position(), e->modifiers() & Qt::AltModifier); return; }
   Drag& d = *drag_;
@@ -679,6 +776,10 @@ void RigCanvas::mouseReleaseEvent(QMouseEvent* e) {
   updateHover(e->position(), e->modifiers() & Qt::AltModifier);
   update();
 }
+void RigCanvas::mouseDoubleClickEvent(QMouseEvent* e) {
+  if (outlineDrawing() && e->button() == Qt::LeftButton) { finishOutline(); return; }
+  QWidget::mouseDoubleClickEvent(e);  // = a second press for every other tool
+}
 void RigCanvas::wheelEvent(QWheelEvent* e) {
   const double factor = std::pow(1.0015, e->angleDelta().y());
   const QPointF anchor = widgetToRig(e->position());
@@ -698,6 +799,12 @@ void RigCanvas::dropEvent(QDropEvent* e) {
   onDropImage(e->mimeData(), hitTest(e->position(), false));
 }
 void RigCanvas::keyPressEvent(QKeyEvent* e) {
+  if (outlineDrawing()) {
+    if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) { finishOutline(); return; }
+    if (e->key() == Qt::Key_Backspace && !outline_.isEmpty()) { outline_.removeLast(); update(); return; }
+    if (e->key() == Qt::Key_Escape) { setOutlineDrawing(QString()); if (onOutlineCancel) onOutlineCancel(); return; }
+  }
+  if (meshMode_ == MeshVertices && (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) && onMeshDelete) { onMeshDelete(); return; }
   const int tools[] = {Qt::Key_V, Qt::Key_R, Qt::Key_S, Qt::Key_P, Qt::Key_C};
   for (int i = 0; i < TOOL_COUNT; i++) if (e->key() == tools[i] && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) { if (onTool) onTool(i); return; }
   if (e->key() == Qt::Key_K && onKey) { onKey(); return; }

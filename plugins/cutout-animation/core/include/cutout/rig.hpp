@@ -58,6 +58,11 @@ struct Attachment {
   std::vector<int> triangles;
   std::vector<std::vector<Influence>> weights;  // empty = unweighted; else one list per vertex (sum 1)
   std::vector<std::pair<int, Affine>> binds;
+  /** Editor-only outline data, never used for drawing: the first `hull` vertices are the outline
+   *  polygon in order (0 = none), `edges` index pairs of the outline and of internal edges the
+   *  author pinned (plugin 1.6.0 mesh edits keep pinned edges through re-triangulation). */
+  size_t hull = 0;
+  std::vector<int> edges;
   size_t vertexCount() const { return vertices.size() / 2; }
 };
 

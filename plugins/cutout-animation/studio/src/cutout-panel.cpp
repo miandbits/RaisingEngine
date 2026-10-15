@@ -5,6 +5,7 @@
 #include <set>
 #include <tuple>
 #include "cutout/host.hpp"
+#include "cutout/mesh.hpp"
 #include "cutout/templates.hpp"
 #include "dopesheet.hpp"
 #include "graph-editor.hpp"
@@ -815,6 +816,10 @@ QWidget* CutoutPanel::buildMesh() {
   convertTools->setProperty("cutoutModeRow", "setup");
   QPushButton* convert = button(convertTools, "메시로 변환", "cutoutConvertMesh", "조립 모드: 고른 조각의 그림을 격자 메시로 바꿉니다(격자 크기는 아래). 모양은 그대로이고, 정점을 옮기거나 본 웨이트를 주면 휘어집니다.",
                                 [this] { return convertToMesh(meshRows_->value(), meshCols_->value(), meshTrim_->isChecked()); });
+  QPushButton* drawOutline = button(convertTools, "윤곽 그리기", "cutoutMeshDrawOutline", "조립 모드: 캔버스에서 그림 둘레를 차례로 클릭해 윤곽을 그립니다. 첫 점 클릭·더블클릭·Enter로 닫으면 그 안을 삼각형으로 나눈 메시가 됩니다(오목해도 됨). Backspace = 마지막 점 지우기, Esc = 취소.",
+                                    [this] { return beginOutline(); });
+  QPushButton* autoOutlineButton = button(convertTools, "자동 윤곽", "cutoutMeshAutoOutline", "조립 모드: 그림의 불투명한 부분(알파 기준 이상)을 따라 윤곽을 자동으로 찾아 메시로 만듭니다. 기준·디테일·안쪽 간격은 아래 칸, 「미리보기」를 켜면 캔버스에 점선으로 보입니다.",
+                                          [this] { return autoOutline(); });
   QPushButton* revert = button(convertTools, "이미지로 되돌리기", "cutoutConvertRegion", "메시를 지우고 보통 그림(사각형)으로 되돌립니다. 이 메시의 변형 키도 지워집니다.", [this] { return convertToRegion(); });
   QWidget* modeRow = buttonRow("cutoutMeshModes");
   auto mode = [&](const QString& text, const char* name, const QString& tip, MeshEdit m) {
@@ -833,8 +838,29 @@ QWidget* CutoutPanel::buildMesh() {
   meshBones_->setObjectName("cutoutMeshBones");
   meshBones_->setMinimumHeight(LIST_MIN_HEIGHT);
   meshBones_->setToolTip("자동 웨이트에 쓸 본 · 체크한 본들 가운데 가까운 1~4개가 정점을 움직입니다.");
+  // Shape tools (plugin 1.6.0): shown in setup mode while 정점 편집 is on, in place of the weight row.
+  QWidget* shapeTools = buttonRow("cutoutMeshShapeTools");
+  shapeTools->setProperty("cutoutModeRow", "setup-vertices");
+  auto shapeTool = [&](const QString& text, const char* name, const QString& tip, int t) {
+    auto* b = new QToolButton;
+    b->setObjectName(name);
+    b->setText(text);
+    b->setToolTip(tip);
+    b->setCheckable(true);
+    connect(b, &QToolButton::clicked, this, [this, t] { setMeshTool(t); });
+    addToRow(shapeTools, b);
+    return b;
+  };
+  meshSelectTool_ = shapeTool("선택·이동", "cutoutMeshToolSelect", "정점을 클릭·상자로 골라 끌어 옮깁니다.", RigCanvas::MeshSelect);
+  meshAddVertexTool_ = shapeTool("정점 추가", "cutoutMeshToolAddVertex", "메시 안을 클릭하면 안쪽 정점, 윤곽 가까이를 클릭하면 윤곽 정점이 생깁니다. 웨이트·변형은 주변 정점 값을 섞어 받고, 메시는 다시 삼각분할됩니다.", RigCanvas::MeshAddVertex);
+  meshAddEdgeTool_ = shapeTool("가장자리 추가", "cutoutMeshToolAddEdge", "정점에서 다른 정점으로 끌면 그 사이 가장자리를 고정합니다(하늘색). 다시 삼각분할해도 남아, 메시가 그 선을 따라 접힙니다.", RigCanvas::MeshAddEdge);
+  QWidget* shapeActions = buttonRow("cutoutMeshShapeActions");
+  shapeActions->setProperty("cutoutModeRow", "setup-vertices");
+  QPushButton* deleteVertex = button(shapeActions, "정점 삭제", "cutoutMeshDeleteVertices", "고른 정점을 지웁니다(Delete). 윤곽 정점은 윤곽이 3개 이상 남고 안쪽 정점이 모두 그 안에 있을 때만 지울 수 있습니다.", [this] { return deleteVertices(); });
+  QPushButton* removeEdge = button(shapeActions, "가장자리 삭제", "cutoutMeshRemoveEdge", "고른 두 정점 사이의 고정 가장자리(하늘색)를 풉니다.", [this] { return removeMeshEdge(); });
+  QPushButton* retriangulate = button(shapeActions, "다시 삼각분할", "cutoutMeshRetriangulate", "지금 정점으로 삼각형을 다시 나눕니다(들로네, 윤곽·고정 가장자리 유지). 정점을 많이 옮겨 삼각형이 뒤집혔을 때 씁니다.", [this] { return retriangulateMesh(); });
   QWidget* weightTools = buttonRow("cutoutMeshWeightTools");
-  weightTools->setProperty("cutoutModeRow", "setup");
+  weightTools->setProperty("cutoutModeRow", "setup-weights");
   QPushButton* autoButton = button(weightTools, "자동 웨이트", "cutoutMeshAutoWeights", "아래 목록에서 체크한 본(없으면 조각의 본과 그 부모·자식)까지의 거리로 웨이트를 자동으로 줍니다. 부드럽게 이어지고 합은 1입니다.", [this] { return autoWeights(); });
   QPushButton* unbind = button(weightTools, "웨이트 해제", "cutoutMeshUnbind", "웨이트를 지웁니다. 메시는 다시 조각의 본만 따라갑니다(모양은 그대로).", [this] { return unbindMesh(); });
   auto* form = new QFormLayout;
@@ -866,20 +892,50 @@ QWidget* CutoutPanel::buildMesh() {
   deformTools->setProperty("cutoutModeRow", "animate");
   QPushButton* deformKey = button(deformTools, "변형 키", "cutoutMeshDeformKey", "애니메이션 모드: 지금 보이는 메시 변형을 이 시간의 키로 넣습니다(K와 같음).", [this] { return keyDeform(); });
   QPushButton* deformDelete = button(deformTools, "변형 키 삭제", "cutoutMeshDeleteDeform", "애니메이션 모드: 이 시간의 변형 키를 지웁니다.", [this] { return deleteDeformKey(); });
+  // 자동 윤곽 settings (plugin 1.6.0): editor state, the op carries them.
+  auto* outlineForm = new QFormLayout;
+  outlineForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  auto outlineSpin = [&](const char* name, double lo, double hi, double step, double value, int decimals, const QString& tip) {
+    auto* sp = new QDoubleSpinBox;
+    sp->setObjectName(name);
+    sp->setRange(lo, hi);
+    sp->setSingleStep(step);
+    sp->setDecimals(decimals);
+    sp->setValue(value);
+    sp->setToolTip(tip);
+    connect(sp, &QDoubleSpinBox::valueChanged, this, [this] { refreshOutlinePreview(); });
+    return sp;
+  };
+  outlineThreshold_ = outlineSpin("cutoutMeshOutlineThreshold", 0, 0.95, 0.05, 0.05, 2, "자동 윤곽: 이 값보다 불투명한 픽셀을 그림으로 봅니다(0 = 조금이라도 보이면).");
+  outlineDetail_ = outlineSpin("cutoutMeshOutlineDetail", 0, 1, 0.1, 0.5, 2, "자동 윤곽: 1에 가까울수록 윤곽 점이 많아 그림을 꼭 맞게 따라갑니다.");
+  outlineSpacing_ = outlineSpin("cutoutMeshOutlineSpacing", 0, 500, 5, 0, 0, "윤곽 그리기·자동 윤곽: 안쪽에 이 간격(그림 px)으로 정점을 채웁니다. 0 = 윤곽 정점만.");
+  outlineSpacing_->setSpecialValueText("없음");
+  outlinePreview_ = new QCheckBox("자동 윤곽 미리보기");
+  outlinePreview_->setObjectName("cutoutMeshOutlinePreview");
+  outlinePreview_->setToolTip("자동 윤곽이 만들 윤곽을 캔버스에 점선(분홍)으로 보여 줍니다.");
+  connect(outlinePreview_, &QCheckBox::toggled, this, [this] { refreshOutlinePreview(); });
+  outlineForm->addRow("알파 기준", outlineThreshold_);
+  outlineForm->addRow("윤곽 디테일", outlineDetail_);
+  outlineForm->addRow("안쪽 간격", outlineSpacing_);
+  outlineForm->addRow(outlinePreview_);
   // Fixed: the mode's action rows and the bone list. Scrolling: state text, grid size, brush.
   layout->addWidget(convertTools);
   layout->addWidget(modeRow);
+  layout->addWidget(shapeTools);
+  layout->addWidget(shapeActions);
   layout->addWidget(weightTools);
   layout->addWidget(deformTools);
   layout->addWidget(meshBones_, 2);
   formLayout->addWidget(meshInfo_);
   formLayout->addWidget(convertRow);
+  formLayout->addLayout(outlineForm);
   formLayout->addLayout(form);
   formLayout->addStretch();
   layout->addWidget(formScroll("cutoutMeshFormScroll", inner), 3);
-  meshModeRows_ = {convertTools, weightTools, deformTools};
-  meshSetupTools_ = {meshRows_, meshCols_, meshTrim_, convert};
-  meshTools_ = {revert, meshVerticesButton_, meshWeightsButton_, meshBones_, autoButton, unbind, brushBone_, brushWeight_, brushStrength_, brushRadius_};
+  meshModeRows_ = {convertTools, shapeTools, shapeActions, weightTools, deformTools};
+  meshSetupTools_ = {meshRows_, meshCols_, meshTrim_, convert, drawOutline, autoOutlineButton, outlineThreshold_, outlineDetail_, outlineSpacing_, outlinePreview_};
+  meshTools_ = {revert, meshVerticesButton_, meshWeightsButton_, meshBones_, autoButton, unbind, brushBone_, brushWeight_, brushStrength_, brushRadius_,
+                meshSelectTool_, meshAddVertexTool_, meshAddEdgeTool_, deleteVertex, removeEdge, retriangulate};
   meshAnimateTools_ = {deformKey, deformDelete};
   return page;
 }
@@ -1158,6 +1214,11 @@ QWidget* CutoutPanel::buildWorkspace() {
   canvas_->onDropImage = [this](const QMimeData* mime, const QString& slot) { dropImages(mime, slot); };
   canvas_->onMeshSelect = [this](const QVector<int>& vertices, bool add) { selectVertices(vertices, add); };
   canvas_->onMeshDrag = [this](const QPointF& delta, bool finished) { onMeshDrag(delta, finished); };
+  canvas_->onMeshOutline = [this](const QPolygonF& points) { outlineFromCanvas(points); };
+  canvas_->onOutlineCancel = [this] { outlineSlot_.clear(); setStatus("윤곽 그리기를 취소했습니다."); refreshMesh(); };
+  canvas_->onMeshAddVertex = [this](const QPointF& at) { addVertexAt(at); };
+  canvas_->onMeshAddEdge = [this](int a, int b) { addMeshEdge(a, b); };
+  canvas_->onMeshDelete = [this] { deleteVertices(); };
   canvas_->onMeshPaint = [this](const QVector<int>& vertices, bool finished) {
     if (finished) { dragPreview_.reset(); paintWeights(vertices); return; }
     // Live heat map while the stroke goes on; the stroke is ONE edit on release.
@@ -4326,6 +4387,8 @@ void CutoutPanel::refreshMesh() {
   if (key != meshSelectionKey_) { meshSelection_.clear(); meshSelectionKey_ = key; }
   if (mesh) for (auto it = meshSelection_.begin(); it != meshSelection_.end();) it = *it >= int(att->vertexCount()) ? meshSelection_.erase(it) : std::next(it);
   if (!mesh || (animate && meshEdit_ == MeshEdit::Weights)) meshEdit_ = MeshEdit::Off;
+  // Outline drawing belongs to one part in setup mode: another selection or Animate ends it.
+  if (!outlineSlot_.isEmpty() && (animate || !part || refId(selection_) != outlineSlot_)) outlineSlot_.clear();
   // Bone lists: rebuilt for another part (checks are editor state of this part's next auto weights).
   if (meshBones_->property("key").toString() != key || meshBones_->count() != int(rig_ ? rig_->bones.size() : 0)) {
     QSignalBlocker block(meshBones_);
@@ -4350,7 +4413,15 @@ void CutoutPanel::refreshMesh() {
     brushBone_->setCurrentIndex(std::max(0, at));
   }
   for (QWidget* w : meshSetupTools_) w->setEnabled(part && !animate);
-  for (QWidget* row : meshModeRows_) row->setVisible(row->property("cutoutModeRow").toString() == (animate ? "animate" : "setup"));
+  // Setup rows: the shape tools replace the weight row while 정점 편집 is on (plugin 1.6.0).
+  const bool shaping = !animate && mesh && meshEdit_ == MeshEdit::Vertices;
+  for (QWidget* row : meshModeRows_) {
+    const QString kind = row->property("cutoutModeRow").toString();
+    row->setVisible(animate ? kind == "animate" : kind == "setup" || (kind == "setup-vertices" ? shaping : kind == "setup-weights" && !shaping));
+  }
+  meshSelectTool_->setChecked(meshTool_ == RigCanvas::MeshSelect);
+  meshAddVertexTool_->setChecked(meshTool_ == RigCanvas::MeshAddVertex);
+  meshAddEdgeTool_->setChecked(meshTool_ == RigCanvas::MeshAddEdge);
   for (QWidget* w : meshTools_) w->setEnabled(mesh && (!animate || w == meshVerticesButton_));
   for (QWidget* w : meshAnimateTools_) w->setEnabled(mesh && animate);
   meshVerticesButton_->setChecked(meshEdit_ == MeshEdit::Vertices);
@@ -4364,12 +4435,26 @@ void CutoutPanel::refreshMesh() {
                .arg(qs(att->name)).arg(att->vertexCount()).arg(att->triangles.size() / 3)
                .arg(bones.isEmpty() ? QString("웨이트 없음(본 「%1」을 따라감)").arg(qs(rig_->slots[size_t(si)].bone)) : "웨이트: " + bones.join(", "))
                .arg(meshSelection_.size());
+    int pinned = 0;
+    std::set<std::pair<int, int>> outline;
+    for (const auto& e : meshOutline(att->triangles)) outline.insert({e.first, e.second});
+    for (size_t k = 0; k + 1 < att->edges.size(); k += 2)
+      pinned += att->edges[k] != att->edges[k + 1] && !outline.count({std::min(att->edges[k], att->edges[k + 1]), std::max(att->edges[k], att->edges[k + 1])});
+    info += att->hull >= 3 ? QString(" · 윤곽 정점 %1").arg(att->hull) : QString(" · 윤곽 없음(격자)");
+    if (pinned) info += QString(" · 고정 가장자리 %1").arg(pinned);
     if (animate) info += " · 애니메이션 모드: 정점을 끌면 이 시간의 변형이 됩니다(K로 키).";
   }
+  if (!outlineSlot_.isEmpty()) info = QString("윤곽 그리기 중: 「%1」 둘레를 클릭하세요. 첫 점 클릭·더블클릭·Enter = 메시 만들기, Esc = 취소.").arg(outlineSlot_);
   meshInfo_->setText(info);
-  if (canvas_)
+  if (canvas_) {
     canvas_->setMeshEdit(int(meshEdit_), mesh ? refId(selection_) : QString(), meshSelection_,
                          rig_ ? rig_->boneIndex(ss(brushBone_->currentData().toString())) : -1, brushRadius_->value());
+    // Only on change: both reset the canvas gesture (a refresh can run in the middle of a drag).
+    const int tool = shaping ? meshTool_ : int(RigCanvas::MeshSelect);
+    if (canvas_->meshTool() != tool) canvas_->setMeshTool(tool);
+    if (canvas_->outlineDrawing() != !outlineSlot_.isEmpty()) canvas_->setOutlineDrawing(outlineSlot_);
+  }
+  refreshOutlinePreview();
   filling_ = wasFilling;
 }
 bool CutoutPanel::convertToMesh(int rows, int cols, bool trim) {
@@ -4563,6 +4648,217 @@ bool CutoutPanel::deleteDeformKey() {
   Json fields;
   if (!meshTarget(si, att, fields) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
   return runOps({{{"op", "deleteKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", "deform"}, {"attachment", att->name}, {"timeMs", playheadMs_}}}, false);
+}
+
+// ---------------------------------------------------------------- freeform meshes (plugin 1.6.0)
+// Gestures turn canvas points into image pixels of the shown attachment and run ONE core op; the
+// core triangulates (constrained Delaunay) and keeps weights / deform keys consistent.
+const CutoutPanel::AlphaMask* CutoutPanel::alphaMaskOf(const cutout::Attachment& att) {
+  const QImage img = images_.image(qs(att.imageAssetId));
+  if (img.isNull()) return nullptr;
+  const QString key = qs(att.imageAssetId) + "#" + QString::number(img.cacheKey());
+  if (alphaMask_.key != key) {
+    alphaMask_ = {key, img.width(), img.height(), std::vector<uint8_t>(size_t(img.width()) * size_t(img.height()))};
+    const QImage argb = img.convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < argb.height(); y++) {
+      const QRgb* line = reinterpret_cast<const QRgb*>(argb.constScanLine(y));
+      for (int x = 0; x < argb.width(); x++) alphaMask_.alpha[size_t(y) * size_t(argb.width()) + size_t(x)] = uint8_t(qAlpha(line[x]));
+    }
+  }
+  return &alphaMask_;
+}
+QPolygonF CutoutPanel::autoOutlinePreview() {
+  int si;
+  const cutout::Attachment* att;
+  Json fields;
+  if (!outlinePreview_ || !outlinePreview_->isChecked() || mode_ != Mode::Setup || !meshTarget(si, att, fields)) return {};
+  const AlphaMask* mask = alphaMaskOf(*att);
+  if (!mask) return {};
+  // The trace (the slow part) is cached per image and settings; the placement is cheap.
+  const QString key = mask->key + QString("|%1|%2").arg(outlineThreshold_->value()).arg(outlineDetail_->value());
+  if (key != outlinePreviewKey_) {
+    outlinePreviewKey_ = key;
+    try { previewOutline_ = cutout::traceAlphaOutline(mask->alpha, mask->width, mask->height, outlineThreshold_->value(), outlineDetail_->value()); }
+    catch (const std::exception&) { previewOutline_.clear(); }
+  }
+  const cutout::Attachment* shown = nullptr;
+  const cutout::Affine m = attachmentMatrix(*rig_, currentPose(false), si, &shown);
+  QPolygonF out;
+  const double sx = att->width / mask->width, sy = att->height / mask->height;
+  for (size_t i = 0; i + 1 < previewOutline_.size(); i += 2) {
+    double x, y;
+    m.apply(previewOutline_[i] * sx, previewOutline_[i + 1] * sy, x, y);
+    out << QPointF(x, y);
+  }
+  return out;
+}
+void CutoutPanel::refreshOutlinePreview() { if (canvas_) canvas_->setOutlinePreview(autoOutlinePreview()); }
+void CutoutPanel::setAutoOutlineParams(double threshold, double detail, double spacing, bool preview) {
+  outlineThreshold_->setValue(threshold);
+  outlineDetail_->setValue(detail);
+  outlineSpacing_->setValue(spacing);
+  outlinePreview_->setChecked(preview);
+  refreshOutlinePreview();
+}
+bool CutoutPanel::beginOutline() {
+  if (mode_ != Mode::Setup) { setStatus("윤곽 그리기는 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json fields;
+  if (!meshTarget(si, att, fields)) { setStatus("윤곽을 그릴 조각(▣)을 먼저 고르세요.", true); return false; }
+  outlineSlot_ = refId(selection_);
+  meshEdit_ = MeshEdit::Off;  // the new outline replaces the shape: vertex handles would only get in the way
+  refreshMesh();
+  if (canvas_) canvas_->setFocus(Qt::OtherFocusReason);
+  setStatus(QString("윤곽 그리기: 「%1」 그림 둘레를 차례로 클릭하세요. 첫 점 클릭·더블클릭·Enter로 닫으면 메시가 됩니다. Esc = 취소").arg(outlineSlot_));
+  return true;
+}
+bool CutoutPanel::outlineFromCanvas(const QPolygonF& rigPoints) {
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (mode_ != Mode::Setup || !meshTarget(si, att, op)) { outlineSlot_.clear(); refreshMesh(); return false; }
+  const cutout::Attachment* shown = nullptr;
+  const auto inverse = attachmentMatrix(*rig_, currentPose(false), si, &shown).inverse();
+  if (!inverse) { setStatus("크기가 0인 조각에는 윤곽을 그릴 수 없습니다.", true); return false; }
+  std::vector<double> hull;
+  for (const QPointF& p : rigPoints) {
+    double x, y;
+    inverse->apply(p.x(), p.y(), x, y);
+    hull.push_back(x);
+    hull.push_back(y);
+  }
+  op["op"] = "createMeshFromOutline";
+  op["hull"] = hull;
+  if (outlineSpacing_->value() > 0) op["spacing"] = outlineSpacing_->value();
+  int vertices = 0, triangles = 0;
+  // A refused outline (crossing itself...) keeps the tool on so the author can draw again.
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { vertices = r.extra.value("vertices", 0); triangles = r.extra.value("triangles", 0); })) return false;
+  outlineSlot_.clear();
+  meshEdit_ = MeshEdit::Vertices;
+  meshTool_ = RigCanvas::MeshSelect;
+  refreshMesh();
+  setStatus(QString("윤곽으로 메시를 만들었습니다(정점 %1 · 삼각형 %2). 「정점 추가」로 안쪽 정점을 더하고 「자동 웨이트」로 본에 묶으세요. 되돌리기: Ctrl+Z").arg(vertices).arg(triangles));
+  return true;
+}
+bool CutoutPanel::autoOutline() {
+  if (mode_ != Mode::Setup) { setStatus("자동 윤곽은 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op)) { setStatus("윤곽을 찾을 조각(▣)을 먼저 고르세요.", true); return false; }
+  const AlphaMask* mask = alphaMaskOf(*att);
+  if (!mask) { setStatus("이 조각의 그림을 읽을 수 없습니다(이미지 에셋을 확인하세요).", true); return false; }
+  // The decoded alpha travels with the op: the core traces it (it has no PNG decoder), the same
+  // op the service builds from imagePath for MCP.
+  const QByteArray bytes(reinterpret_cast<const char*>(mask->alpha.data()), qsizetype(mask->alpha.size()));
+  op.update({{"op", "autoOutline"}, {"mask", {{"width", mask->width}, {"height", mask->height}, {"alpha", bytes.toBase64().toStdString()}}},
+             {"alphaThreshold", outlineThreshold_->value()}, {"detail", outlineDetail_->value()}});
+  if (outlineSpacing_->value() > 0) op["spacing"] = outlineSpacing_->value();
+  int hull = 0, vertices = 0, triangles = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { hull = r.extra.value("hull", 0); vertices = r.extra.value("vertices", 0); triangles = r.extra.value("triangles", 0); })) return false;
+  outlineSlot_.clear();
+  meshEdit_ = MeshEdit::Vertices;
+  refreshMesh();
+  setStatus(QString("자동 윤곽으로 메시를 만들었습니다(윤곽 점 %1 · 정점 %2 · 삼각형 %3). 되돌리기: Ctrl+Z").arg(hull).arg(vertices).arg(triangles));
+  return true;
+}
+void CutoutPanel::setMeshTool(int tool) {
+  meshTool_ = std::clamp(tool, int(RigCanvas::MeshSelect), int(RigCanvas::MeshAddEdge));
+  if (meshEdit_ != MeshEdit::Vertices && !meshSlot().isEmpty() && mode_ == Mode::Setup) meshEdit_ = MeshEdit::Vertices;
+  refreshMesh();
+}
+bool CutoutPanel::addVertexAt(const QPointF& rigPoint) {
+  if (mode_ != Mode::Setup) { setStatus("정점 추가는 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  const QVector<QPointF> pts = meshPoints(*rig_, currentPose(false), si);
+  if (pts.size() != int(att->vertexCount())) return false;
+  auto image = [&](int v) { return QPointF(att->vertices[2 * size_t(v)], att->vertices[2 * size_t(v) + 1]); };
+  std::optional<QPointF> at;
+  // Near the outline (6 widget px): onto that edge, so the core adds an outline vertex there.
+  double best = 6;
+  const QPointF w = canvas_->rigToWidget(rigPoint);
+  for (const auto& [a, b] : meshOutline(att->triangles)) {
+    const QPointF wa = canvas_->rigToWidget(pts[a]), wb = canvas_->rigToWidget(pts[b]), ab = wb - wa;
+    const double len2 = QPointF::dotProduct(ab, ab);
+    const double t = len2 > 1e-12 ? std::clamp(QPointF::dotProduct(w - wa, ab) / len2, 0.0, 1.0) : 0.0;
+    const double d = QLineF(w, wa + ab * t).length();
+    if (d < best && t > 0.02 && t < 0.98) { best = d; at = image(a) + (image(b) - image(a)) * t; }
+  }
+  // Inside: the shown triangle under the click, mapped barycentrically onto the setup shape (exact
+  // whatever bones or deform do to the drawn mesh).
+  for (size_t t = 0; !at && t + 2 < att->triangles.size(); t += 3) {
+    const int i = att->triangles[t], j = att->triangles[t + 1], k = att->triangles[t + 2];
+    const QPointF a = pts[i], b = pts[j], c = pts[k];
+    const double det = (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x());
+    if (std::fabs(det) < 1e-12) continue;
+    const double l1 = ((rigPoint.x() - a.x()) * (c.y() - a.y()) - (rigPoint.y() - a.y()) * (c.x() - a.x())) / det;
+    const double l2 = ((b.x() - a.x()) * (rigPoint.y() - a.y()) - (b.y() - a.y()) * (rigPoint.x() - a.x())) / det;
+    if (l1 < 0 || l2 < 0 || l1 + l2 > 1) continue;
+    at = image(i) + (image(j) - image(i)) * l1 + (image(k) - image(i)) * l2;
+  }
+  if (!at) { setStatus("메시 밖입니다. 메시 안이나 윤곽 가까이를 클릭하세요.", true); return false; }
+  op.update({{"op", "addMeshVertex"}, {"position", {at->x(), at->y()}}});
+  int vertex = -1;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { vertex = r.extra.value("vertex", -1); })) return false;
+  meshSelection_ = {vertex};
+  refreshMesh();
+  setStatus(QString("정점 %1을 추가했습니다(웨이트·변형은 주변에서 섞음). 되돌리기: Ctrl+Z").arg(vertex));
+  return true;
+}
+bool CutoutPanel::deleteVertices() {
+  if (mode_ != Mode::Setup) { setStatus("정점 삭제는 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  if (meshSelection_.isEmpty()) { setStatus("지울 정점을 먼저 고르세요.", true); return false; }
+  const QVector<int> list = selectedVertices();
+  op.update({{"op", "removeMeshVertex"}, {"vertices", std::vector<int>(list.begin(), list.end())}});
+  if (!runOps({op}, false)) return false;
+  meshSelection_.clear();
+  refreshMesh();
+  setStatus(QString("정점 %1개를 지웠습니다. 되돌리기: Ctrl+Z").arg(list.size()));
+  return true;
+}
+bool CutoutPanel::addMeshEdge(int a, int b) {
+  if (mode_ != Mode::Setup) { setStatus("가장자리는 조립 모드에서 고정합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  op.update({{"op", "addMeshEdge"}, {"edge", {a, b}}});
+  if (!runOps({op}, false)) return false;
+  setStatus(QString("가장자리 %1-%2를 고정했습니다(하늘색). 되돌리기: Ctrl+Z").arg(a).arg(b));
+  return true;
+}
+bool CutoutPanel::removeMeshEdge() {
+  if (mode_ != Mode::Setup) { setStatus("가장자리는 조립 모드에서 풉니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  const QVector<int> list = selectedVertices();
+  if (list.size() != 2) { setStatus("풀 가장자리의 두 정점을 고르세요(Shift+클릭).", true); return false; }
+  op.update({{"op", "removeMeshEdge"}, {"edge", {list[0], list[1]}}});
+  if (!runOps({op}, false)) return false;
+  setStatus(QString("가장자리 %1-%2 고정을 풀었습니다. 되돌리기: Ctrl+Z").arg(list[0]).arg(list[1]));
+  return true;
+}
+bool CutoutPanel::retriangulateMesh() {
+  if (mode_ != Mode::Setup) { setStatus("삼각분할은 조립 모드에서 합니다.", true); return false; }
+  int si;
+  const cutout::Attachment* att;
+  Json op;
+  if (!meshTarget(si, att, op) || !att->mesh) { setStatus("메시인 조각을 먼저 고르세요.", true); return false; }
+  op["op"] = "retriangulate";
+  int triangles = 0;
+  if (!runOps({op}, false, [&](const cutout::EditResult& r) { triangles = r.extra.value("triangles", 0); })) return false;
+  setStatus(QString("삼각형 %1개로 다시 나눴습니다. 되돌리기: Ctrl+Z").arg(triangles));
+  return true;
 }
 
 // ---------------------------------------------------------------- playback

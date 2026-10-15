@@ -2,8 +2,10 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <set>
 #include "cutout/curve.hpp"
+#include "cutout/mesh.hpp"
 #include "cutout/runtime.hpp"
 
 namespace cutout {
@@ -2361,6 +2363,438 @@ void unbindMesh(EditResult& r, const Json& op) {
   r.affected.push_back("slot:" + slotId);
 }
 
+// ---- Freeform meshes (plugin 1.6.0): outlines, vertex / edge edits, re-triangulation ----
+/** Where a vertex of the edited mesh comes from: an old vertex (`from`), or a point inside the
+ *  old setup mesh (its triangle and barycentric shares), so uvs, weights and deform offsets of new
+ *  vertices blend their neighbours' and the picture does not move. */
+struct Origin { int from = -1; int v[3] = {-1, -1, -1}; double w[3] = {0, 0, 0}; };
+Origin locateIn(const std::vector<double>& xy, const std::vector<int>& tris, double px, double py) {
+  Origin best;
+  double bestD = std::numeric_limits<double>::infinity();
+  auto X = [&](int i) { return xy[2 * size_t(i)]; };
+  auto Y = [&](int i) { return xy[2 * size_t(i) + 1]; };
+  for (size_t t = 0; t + 2 < tris.size(); t += 3) {
+    const int a = tris[t], b = tris[t + 1], c = tris[t + 2];
+    const double det = (X(b) - X(a)) * (Y(c) - Y(a)) - (Y(b) - Y(a)) * (X(c) - X(a));
+    if (std::fabs(det) < 1e-12) continue;
+    double l[3] = {((X(b) - px) * (Y(c) - py) - (Y(b) - py) * (X(c) - px)) / det, ((X(c) - px) * (Y(a) - py) - (Y(c) - py) * (X(a) - px)) / det, 0};
+    l[2] = 1 - l[0] - l[1];
+    double dist = 0;
+    if (std::min({l[0], l[1], l[2]}) < -1e-9) {
+      // Outside: the clamped shares give a point on the triangle; the nearest such triangle wins.
+      double sum = 0;
+      for (double& x : l) { x = std::max(0.0, x); sum += x; }
+      for (double& x : l) x /= sum;
+      const double qx = l[0] * X(a) + l[1] * X(b) + l[2] * X(c), qy = l[0] * Y(a) + l[1] * Y(b) + l[2] * Y(c);
+      dist = std::sqrt((qx - px) * (qx - px) + (qy - py) * (qy - py));
+    }
+    if (dist < bestD) {
+      bestD = dist;
+      best.v[0] = a; best.v[1] = b; best.v[2] = c;
+      for (int k = 0; k < 3; k++) best.w[k] = std::clamp(l[k], 0.0, 1.0);
+      if (dist == 0) break;
+    }
+  }
+  return best;
+}
+/** The editable parts of a mesh entry; `pinned` = internal edges listed in `edges` (the outline
+ *  edges there are derived again from the triangles on write). */
+struct MeshShape {
+  std::vector<double> xy, uvs;
+  std::vector<int> tris, pinned;
+  size_t hull = 0;
+  size_t count() const { return xy.size() / 2; }
+};
+std::vector<int> intsOf(const Json& a, const char* k) {
+  std::vector<int> out;
+  for (const auto& v : listOr(a, k)) out.push_back(v.is_number_integer() ? v.get<int>() : -1);
+  return out;
+}
+MeshShape readShape(const Json& a) {
+  MeshShape m;
+  m.xy = numbersOf(a, "vertices");
+  m.uvs = numbersOf(a, "uvs");
+  m.tris = intsOf(a, "triangles");
+  const int n = int(m.count());
+  if (a.contains("hull") && a.at("hull").is_number_integer() && a.at("hull").get<int64_t>() >= 3 && a.at("hull").get<int64_t>() <= n) m.hull = size_t(a.at("hull").get<int64_t>());
+  std::set<std::pair<int, int>> outline, seen;
+  const std::vector<int> b = boundaryEdges(m.tris);
+  for (size_t i = 0; i + 1 < b.size(); i += 2) outline.insert({b[i], b[i + 1]});
+  const std::vector<int> e = intsOf(a, "edges");
+  for (size_t i = 0; i + 1 < e.size(); i += 2) {
+    const std::pair<int, int> k{std::min(e[i], e[i + 1]), std::max(e[i], e[i + 1])};
+    if (k.first < 0 || k.second >= n || k.first == k.second || outline.count(k) || !seen.insert(k).second) continue;
+    m.pinned.push_back(k.first);
+    m.pinned.push_back(k.second);
+  }
+  return m;
+}
+/** Outline-based constrained Delaunay triangulation of the shape (it must have a hull). */
+void rebuild(MeshShape& m) {
+  const PlanarMesh pm = PlanarMesh::fromOutline(m.xy, m.hull, m.pinned);
+  m.tris = pm.triangles();
+  m.pinned = pm.constraints();
+}
+void writeShape(EditResult& r, Json& a, const MeshShape& m) {
+  if (m.count() < 3 || m.count() > MAX_MESH_VERTICES) throw EditError("메시 정점은 3.." + std::to_string(MAX_MESH_VERTICES) + "개입니다.");
+  if (m.tris.size() / 3 > MAX_MESH_TRIANGLES) throw EditError("삼각형이 너무 많습니다(최대 " + std::to_string(MAX_MESH_TRIANGLES) + "개). 정점을 줄이세요.");
+  a["type"] = "mesh";
+  a["vertices"] = numbersJson(m.xy);
+  a["uvs"] = numbersJson(m.uvs);
+  a["triangles"] = m.tris;
+  if (m.hull >= 3) a["hull"] = m.hull; else a.erase("hull");
+  // Spine's convention: the outline edges (derived from the triangles) plus the pinned ones.
+  std::set<std::pair<int, int>> all;
+  const std::vector<int> b = boundaryEdges(m.tris);
+  for (size_t i = 0; i + 1 < b.size(); i += 2) all.insert({b[i], b[i + 1]});
+  for (size_t i = 0; i + 1 < m.pinned.size(); i += 2) all.insert({std::min(m.pinned[i], m.pinned[i + 1]), std::max(m.pinned[i], m.pinned[i + 1])});
+  Json edges = Json::array();
+  for (const auto& [x, y] : all) { edges.push_back(x); edges.push_back(y); }
+  a["edges"] = edges;
+  r.extra["vertices"] = m.count();
+  r.extra["triangles"] = m.tris.size() / 3;
+  r.extra["hull"] = m.hull;
+  r.extra["pinnedEdges"] = m.pinned.size() / 2;
+}
+/** uv of a vertex: kept, blended from the old mesh where it lies on it, else position / image size. */
+void blendUv(const MeshShape& old, const Origin& o, double px, double py, double w, double h, double& u, double& v) {
+  if (o.from >= 0) { u = old.uvs[2 * size_t(o.from)]; v = old.uvs[2 * size_t(o.from) + 1]; return; }
+  if (o.v[0] >= 0) {
+    u = v = 0;
+    for (int k = 0; k < 3; k++) { u += o.w[k] * old.uvs[2 * size_t(o.v[k])]; v += o.w[k] * old.uvs[2 * size_t(o.v[k]) + 1]; }
+  } else { u = px / w; v = py / h; }
+  u = std::clamp(u, 0.0, 1.0);
+  v = std::clamp(v, 0.0, 1.0);
+}
+/**
+ * Weights and this attachment's deform keys follow a vertex change: kept vertices keep theirs,
+ * new ones blend their old triangle's (barycentric). Keys with another vertex count belong to a
+ * same-named mesh of another skin and are left alone; keys of the old count are rewritten.
+ */
+void remapVertexData(EditResult& r, Json& a, const Str& slotId, const Str& name, size_t oldN, const std::vector<Origin>& origins) {
+  bool identity = origins.size() == oldN;
+  for (size_t i = 0; i < origins.size() && identity; i++) identity = origins[i].from == int(i);
+  if (identity) return;
+  if (a.contains("weights")) {
+    const Weights old = weightsOf(r.data, a, oldN);
+    Weights next(origins.size());
+    const Str slotBone = optStr(slot(r.data, slotId), "bone");
+    for (size_t i = 0; i < origins.size(); i++) {
+      const Origin& o = origins[i];
+      if (o.from >= 0) { next[i] = old[size_t(o.from)]; continue; }
+      std::vector<std::pair<Str, double>> mix;
+      for (int k = 0; k < 3; k++) {
+        if (o.v[k] < 0) continue;
+        for (const auto& [bone, w] : old[size_t(o.v[k])]) {
+          auto it = std::find_if(mix.begin(), mix.end(), [&](const auto& x) { return x.first == bone; });
+          if (it == mix.end()) mix.push_back({bone, w * o.w[k]}); else it->second += w * o.w[k];
+        }
+      }
+      if (mix.empty()) mix.push_back({slotBone, 1});
+      normalizeWeights(mix);
+      next[i] = mix;
+    }
+    writeWeights(a, next);
+  }
+  size_t remapped = 0;
+  for (auto& c : arr(r.data, "clips"))
+    for (auto& t : arr(c, "tracks")) {
+      if (t.value("target", Str()) != "slot:" + slotId || t.value("property", Str()) != "deform" || optStr(t, "attachment") != name) continue;
+      for (auto& k : arr(t, "keys")) {
+        const std::vector<double> off = numbersOf(k, "offsets");
+        if (off.size() != 2 * oldN) continue;
+        std::vector<double> next(2 * origins.size(), 0.0);
+        for (size_t i = 0; i < origins.size(); i++)
+          for (size_t c2 = 0; c2 < 2; c2++) {
+            const Origin& o = origins[i];
+            if (o.from >= 0) next[2 * i + c2] = off[2 * size_t(o.from) + c2];
+            else for (int m = 0; m < 3; m++) if (o.v[m] >= 0) next[2 * i + c2] += o.w[m] * off[2 * size_t(o.v[m]) + c2];
+          }
+        k["offsets"] = numbersJson(next);
+        remapped++;
+      }
+    }
+  if (remapped) warn(r, "ANIM_MESH_DEFORM_REMAPPED", "", "메시 정점이 바뀌어 변형 키 " + std::to_string(remapped) + "개의 오프셋을 새 정점에 맞췄습니다(새 정점은 주변 정점의 값을 섞음).");
+  r.extra["remappedKeys"] = remapped;
+}
+/** x, y pairs of op[k]: finite, |v| <= 1e5, rounded like stored vertices (triangulation sees the saved values). */
+std::vector<double> pointList(const Json& op, const char* k) {
+  if (!has(op, k) || !op.at(k).is_array() || op.at(k).size() % 2) throw EditError(Str(k) + "는 x, y 숫자 쌍의 배열입니다.");
+  std::vector<double> out;
+  for (const auto& v : op.at(k)) {
+    if (!v.is_number() || !std::isfinite(v.get<double>()) || std::fabs(v.get<double>()) > 1e5) throw EditError(Str(k) + " 값은 유한한 숫자여야 합니다.");
+    out.push_back(clean(v.get<double>()));
+  }
+  return out;
+}
+std::pair<int, int> edgeOf(const Json& op, size_t n) {
+  if (!has(op, "edge") || !op.at("edge").is_array() || op.at("edge").size() != 2) throw EditError("edge는 정점 번호 두 개 [a, b]입니다.");
+  int e[2];
+  for (size_t i = 0; i < 2; i++) {
+    const Json& v = op.at("edge")[i];
+    if (!v.is_number_integer() || v.get<int64_t>() < 0 || v.get<int64_t>() >= int64_t(n)) throw EditError("정점 번호가 범위(0.." + std::to_string(n - 1) + ") 밖입니다: " + v.dump());
+    e[i] = int(v.get<int64_t>());
+  }
+  if (e[0] == e[1]) throw EditError("가장자리는 서로 다른 두 정점을 잇습니다.");
+  return {std::min(e[0], e[1]), std::max(e[0], e[1])};
+}
+/**
+ * createMeshFromOutline / autoOutline: the attachment (region or mesh) becomes the constrained
+ * Delaunay mesh of `hull` (image px, either direction, simple) plus `points` (interior) and a grid
+ * every `spacing` px inside, with pinned `edges` (index pairs into hull + points). uvs = position
+ * / image size. Re-outlining a mesh resamples its weights and deform keys at the new vertices.
+ */
+void outlineMesh(EditResult& r, const Json& op, const std::vector<double>& hull) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = attachmentEntry(d, op, slotId, name);
+  const double w = num(a, "width", 0), h = num(a, "height", 0);
+  if (!(w > 0 && h > 0)) throw EditError("그림 크기(width, height)가 없는 첨부입니다.");
+  MeshShape m;
+  m.xy = hull;
+  m.hull = hull.size() / 2;
+  if (m.hull < 3) throw EditError("윤곽에는 점이 3개 이상 필요합니다.");
+  if (has(op, "points")) { const auto p = pointList(op, "points"); m.xy.insert(m.xy.end(), p.begin(), p.end()); }
+  if (has(op, "spacing")) {
+    const double spacing = num(op, "spacing", 0);
+    if (spacing != 0 && (spacing < 2 || spacing > 1e4)) throw EditError("spacing(안쪽 정점 간격)은 0(없음) 또는 2..10000 px입니다.");
+    for (double v : interiorGrid(hull, spacing)) m.xy.push_back(clean(v));
+  }
+  if (m.count() > MAX_MESH_VERTICES) throw EditError("정점이 너무 많습니다(최대 " + std::to_string(MAX_MESH_VERTICES) + "개). 간격을 넓히세요.");
+  if (has(op, "edges")) {
+    if (!op.at("edges").is_array() || op.at("edges").size() % 2) throw EditError("edges는 정점 번호 쌍의 배열입니다.");
+    for (const auto& v : op.at("edges")) {
+      if (!v.is_number_integer() || v.get<int64_t>() < 0 || v.get<int64_t>() >= int64_t(m.count())) throw EditError("edges의 정점 번호가 범위를 벗어났습니다: " + v.dump());
+      m.pinned.push_back(int(v.get<int64_t>()));
+    }
+  }
+  rebuild(m);
+  const bool wasMesh = isMesh(a);
+  const MeshShape old = wasMesh ? readShape(a) : MeshShape();
+  std::vector<Origin> origins(m.count());
+  for (size_t i = 0; i < m.count(); i++) {
+    const double px = m.xy[2 * i], py = m.xy[2 * i + 1];
+    for (size_t j = 0; j < old.count() && origins[i].from < 0; j++)
+      if (std::fabs(old.xy[2 * j] - px) < 1e-6 && std::fabs(old.xy[2 * j + 1] - py) < 1e-6) origins[i].from = int(j);
+    if (origins[i].from < 0 && wasMesh) origins[i] = locateIn(old.xy, old.tris, px, py);
+    m.uvs.push_back(std::clamp(px / w, 0.0, 1.0));
+    m.uvs.push_back(std::clamp(py / h, 0.0, 1.0));
+  }
+  if (wasMesh) remapVertexData(r, a, slotId, name, old.count(), origins);
+  else a.erase("weights");
+  writeShape(r, a, m);
+  r.extra["keys"] = purgeDeform(r);
+  r.affected.push_back("slot:" + slotId);
+}
+void createMeshFromOutline(EditResult& r, const Json& op) { outlineMesh(r, op, pointList(op, "hull")); }
+
+std::vector<uint8_t> decodeBase64(const Str& s) {
+  static const Str table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::vector<uint8_t> out;
+  out.reserve(s.size() * 3 / 4);
+  uint32_t acc = 0;
+  int bits = 0;
+  for (char ch : s) {
+    if (ch == '=' || ch == '\n' || ch == '\r' || ch == ' ') continue;
+    const size_t v = table.find(ch);
+    if (v == Str::npos) throw EditError("mask.alpha는 base64 문자열입니다.");
+    acc = ((acc << 6) | uint32_t(v)) & 0xffffff;
+    bits += 6;
+    if (bits >= 8) { bits -= 8; out.push_back(uint8_t((acc >> bits) & 0xff)); }
+  }
+  return out;
+}
+/**
+ * autoOutline {slot, name?, skin?, mask: {width, height, alpha: base64 bytes, one per pixel},
+ * alphaThreshold? = 0.05, detail? = 0.5, spacing?, points?, edges?}: the outline of the largest
+ * opaque region of the mask (traceAlphaOutline), scaled from mask to image pixels, meshed like
+ * createMeshFromOutline. The core decodes no PNG: Qt passes the decoded image's alpha, the node
+ * service fills `mask` from `imagePath` (PNG) before calling the core.
+ */
+void autoOutline(EditResult& r, const Json& op) {
+  if (!has(op, "mask") || !op.at("mask").is_object()) throw EditError("mask(그림의 알파 값: width, height, alpha)가 필요합니다. 서비스에서는 imagePath(PNG)로 채울 수 있습니다.");
+  const Json& mask = op.at("mask");
+  const double mw = num(mask, "width", 0), mh = num(mask, "height", 0);
+  if (mw < 1 || mh < 1 || mw > 8192 || mh > 8192 || mw != std::floor(mw) || mh != std::floor(mh)) throw EditError("mask 크기는 1..8192 정수입니다.");
+  const std::vector<uint8_t> alpha = decodeBase64(optStr(mask, "alpha"));
+  if (alpha.size() != size_t(mw) * size_t(mh)) throw EditError("mask.alpha 길이(" + std::to_string(alpha.size()) + ")가 width × height와 다릅니다.");
+  const double threshold = num(op, "alphaThreshold", 0.05), detail = num(op, "detail", 0.5);
+  if (threshold < 0 || threshold > 1 || detail < 0 || detail > 1) throw EditError("alphaThreshold와 detail은 0..1입니다.");
+  Str slotId, name;
+  const Json& a = attachmentEntry(r.data, op, slotId, name);
+  const double sx = num(a, "width", mw) / mw, sy = num(a, "height", mh) / mh;
+  std::vector<double> hull = traceAlphaOutline(alpha, int(mw), int(mh), threshold, detail);
+  for (size_t i = 0; i < hull.size(); i += 2) { hull[i] = clean(hull[i] * sx); hull[i + 1] = clean(hull[i + 1] * sy); }
+  outlineMesh(r, op, hull);
+  r.extra["outline"] = numbersJson(hull);
+}
+bool hasOutline(const MeshShape& m) { return m.hull >= 3; }
+Str outlineHint() { return " (윤곽(hull)이 없는 메시입니다. 「윤곽 그리기」·「자동 윤곽」으로 다시 만들면 자유롭게 고칠 수 있습니다.)"; }
+/**
+ * addMeshVertex {slot, name?, skin?, position: [x, y]} (image px). With an outline (`hull`): a point
+ * inside becomes an interior vertex (appended), a point on an outline edge an outline vertex
+ * (inserted after that edge's first vertex; later vertices shift by one), then the whole mesh is
+ * re-triangulated (constrained Delaunay, outline and pinned edges kept). Without one (alpha-trimmed
+ * grids): the triangle under the point is split locally. Weights, uvs and deform offsets of the new
+ * vertex are interpolated from the triangle it lands in; extra.vertex = its index.
+ */
+void addMeshVertex(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const std::vector<double> pos = pointList(op, "position");
+  if (pos.size() != 2) throw EditError("position은 [x, y]입니다.");
+  const MeshShape old = readShape(a);
+  const size_t n = old.count();
+  MeshShape m = old;
+  std::vector<Origin> origins(n);
+  for (size_t i = 0; i < n; i++) origins[i].from = int(i);
+  const Origin here = locateIn(old.xy, old.tris, pos[0], pos[1]);
+  int index = int(n);
+  if (hasOutline(old)) {
+    const std::vector<double> outline(old.xy.begin(), old.xy.begin() + std::ptrdiff_t(2 * old.hull));
+    double scale = 1;
+    for (double v : outline) scale = std::max(scale, std::fabs(v));
+    const double onTol = 1e-6 * scale;
+    int edgeAt = -1;
+    for (size_t i = 0; i < old.hull && edgeAt < 0; i++) {
+      const size_t j = (i + 1) % old.hull;
+      if (segmentDistance(pos[0], pos[1], old.xy[2 * i], old.xy[2 * i + 1], old.xy[2 * j], old.xy[2 * j + 1]) <= onTol) edgeAt = int(i);
+    }
+    if (edgeAt < 0 && !insidePolygon(outline, pos[0], pos[1])) throw EditError("윤곽 밖입니다. 정점은 메시 안쪽이나 윤곽 위에 추가하세요.");
+    if (edgeAt >= 0) {
+      // A new outline vertex keeps the outline-first order: it goes right after the edge's start.
+      index = edgeAt + 1;
+      m.xy.insert(m.xy.begin() + 2 * index, pos.begin(), pos.end());
+      origins.insert(origins.begin() + index, here);
+      m.hull++;
+      for (int& v : m.pinned) if (v >= index) v++;
+    } else {
+      m.xy.insert(m.xy.end(), pos.begin(), pos.end());
+      origins.push_back(here);
+    }
+    rebuild(m);
+  } else {
+    PlanarMesh pm(old.xy, old.tris, old.pinned);
+    pm.addPoint(pos[0], pos[1], true);
+    m.xy = pm.points();
+    m.tris = pm.triangles();
+    m.pinned = pm.constraints();
+    origins.push_back(here);
+  }
+  m.uvs.clear();
+  for (size_t i = 0; i < m.count(); i++) {
+    double u, v;
+    blendUv(old, origins[i], m.xy[2 * i], m.xy[2 * i + 1], num(a, "width", 1), num(a, "height", 1), u, v);
+    m.uvs.push_back(u);
+    m.uvs.push_back(v);
+  }
+  remapVertexData(r, a, slotId, name, n, origins);
+  writeShape(r, a, m);
+  r.extra["vertex"] = index;
+  r.affected.push_back("slot:" + slotId);
+}
+/**
+ * removeMeshVertex {slot, name?, skin?, vertices}: the listed vertices go, later ones shift down.
+ * With an outline, outline vertices may go while >= 3 stay and the outline stays simple with every
+ * interior vertex inside; then the mesh is re-triangulated. Without one only interior vertices can
+ * go (their neighbourhood is re-triangulated). Pinned edges touching them are dropped; weights,
+ * uvs and deform offsets of the other vertices are kept.
+ */
+void removeMeshVertex(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const MeshShape old = readShape(a);
+  const size_t n = old.count();
+  const std::vector<size_t> list = vertexList(op, n, true);
+  if (n - list.size() < 3) throw EditError("메시에는 정점이 3개 이상 남아야 합니다.");
+  std::vector<int> renumber(n, -1);
+  std::vector<bool> gone(n, false);
+  for (size_t v : list) gone[v] = true;
+  MeshShape m;
+  std::vector<Origin> origins;
+  for (size_t i = 0; i < n; i++) {
+    if (gone[i]) continue;
+    renumber[i] = int(m.count());
+    m.xy.push_back(old.xy[2 * i]);
+    m.xy.push_back(old.xy[2 * i + 1]);
+    m.uvs.push_back(old.uvs[2 * i]);
+    m.uvs.push_back(old.uvs[2 * i + 1]);
+    Origin o;
+    o.from = int(i);
+    origins.push_back(o);
+    if (i < old.hull) m.hull++;
+  }
+  for (size_t i = 0; i + 1 < old.pinned.size(); i += 2) {
+    const int x = renumber[size_t(old.pinned[i])], y = renumber[size_t(old.pinned[i + 1])];
+    if (x >= 0 && y >= 0) { m.pinned.push_back(x); m.pinned.push_back(y); }
+  }
+  if (hasOutline(old)) {
+    if (m.hull < 3) throw EditError("윤곽에는 정점이 3개 이상 남아야 합니다.");
+    rebuild(m);
+  } else {
+    PlanarMesh pm(old.xy, old.tris, old.pinned);
+    for (size_t v : list) {
+      if (pm.outlineVertex(int(v))) throw EditError("가장자리 정점(" + std::to_string(v) + ")은 지울 수 없습니다." + outlineHint());
+      pm.removeVertex(int(v));
+    }
+    for (int v : pm.triangles()) m.tris.push_back(renumber[size_t(v)]);
+    m.pinned.clear();
+    for (int v : pm.constraints()) m.pinned.push_back(renumber[size_t(v)]);
+    m.hull = 0;
+  }
+  remapVertexData(r, a, slotId, name, n, origins);
+  writeShape(r, a, m);
+  r.extra["removed"] = list.size();
+  r.affected.push_back("slot:" + slotId);
+}
+/** addMeshEdge / removeMeshEdge {slot, name?, skin?, edge: [a, b]}: pin (or unpin) an internal
+ *  edge so re-triangulation keeps it (a crease the mesh folds along); outline edges stay. */
+void meshEdge(EditResult& r, const Json& op, bool add) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  MeshShape m = readShape(a);
+  const auto [x, y] = edgeOf(op, m.count());
+  const std::vector<int> b = boundaryEdges(m.tris);
+  for (size_t i = 0; i + 1 < b.size(); i += 2)
+    if (b[i] == x && b[i + 1] == y) throw EditError(add ? "이미 있는 윤곽 가장자리입니다." : "윤곽 가장자리는 지울 수 없습니다(정점을 지우거나 윤곽을 다시 그리세요).");
+  size_t at = m.pinned.size();
+  for (size_t i = 0; i + 1 < m.pinned.size(); i += 2) if (std::min(m.pinned[i], m.pinned[i + 1]) == x && std::max(m.pinned[i], m.pinned[i + 1]) == y) at = i;
+  if (add && at < m.pinned.size()) throw EditError("이미 고정된 가장자리입니다.");
+  if (!add && at == m.pinned.size()) throw EditError("고정된 안쪽 가장자리가 아닙니다: " + std::to_string(x) + "-" + std::to_string(y));
+  if (hasOutline(m)) {
+    if (add) { m.pinned.push_back(x); m.pinned.push_back(y); }
+    else m.pinned.erase(m.pinned.begin() + std::ptrdiff_t(at), m.pinned.begin() + std::ptrdiff_t(at + 2));
+    rebuild(m);
+  } else {
+    PlanarMesh pm(m.xy, m.tris, m.pinned);
+    if (add) pm.addConstraint(x, y); else pm.removeConstraint(x, y);
+    m.tris = pm.triangles();
+    m.pinned = pm.constraints();
+  }
+  writeShape(r, a, m);
+  r.affected.push_back("slot:" + slotId);
+}
+/** retriangulate {slot, name?, skin?}: constrained Delaunay triangulation of the current vertices
+ *  (from the outline when the mesh has one, else by flipping the existing triangles). */
+void retriangulate(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  MeshShape m = readShape(a);
+  if (hasOutline(m)) rebuild(m);
+  else {
+    PlanarMesh pm(m.xy, m.tris, m.pinned);
+    pm.delaunay();
+    m.tris = pm.triangles();
+    m.pinned = pm.constraints();
+  }
+  writeShape(r, a, m);
+  r.affected.push_back("slot:" + slotId);
+}
+
 void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth) {
   if (!op.is_object()) throw EditError("편집 명령은 객체여야 합니다.");
   const Str name = reqStr(op, "op");
@@ -2391,6 +2825,10 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"convertToMesh", convertToMesh}, {"convertToRegion", convertToRegion}, {"setMeshVertices", setMeshVertices}, {"setWeights", setWeights},
     {"unbindMesh", unbindMesh}, {"autoWeights", [](EditResult& r, const Json& op) { autoWeights(r, op, false); }},
     {"bindMesh", [](EditResult& r, const Json& op) { autoWeights(r, op, true); }},
+    {"createMeshFromOutline", createMeshFromOutline}, {"autoOutline", autoOutline}, {"addMeshVertex", addMeshVertex},
+    {"removeMeshVertex", removeMeshVertex}, {"retriangulate", retriangulate},
+    {"addMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, true); }},
+    {"removeMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, false); }},
   };
   if (auto it = simple.find(name); it != simple.end()) return it->second(r, op);
   if (name == "renameClip") return renameClip(r, op, controllers);

@@ -63,6 +63,13 @@ struct EditResult {
  * images, compensating children, keys, attachments and aim axes so nothing draws differently;
  * extra.oriented / extra.skipped). addIk prefers a bone's length direction (+x) for aim chains
  * and the lower bone's length tip as two-bone effector.
+ * Freeform meshes (plugin 1.6.0; points in image px): createMeshFromOutline {hull, points?, spacing?,
+ * edges?} (constrained Delaunay of the outline polygon; self-intersections refused) autoOutline
+ * {mask: {width, height, alpha (base64 bytes)}, alphaThreshold?, detail?, spacing?} (traceAlphaOutline,
+ * then as createMeshFromOutline; the service fills `mask` from `imagePath`) addMeshVertex {position}
+ * removeMeshVertex {vertices} addMeshEdge / removeMeshEdge {edge: [a, b]} (pinned internal edges, kept
+ * in `edges`) retriangulate. Meshes with a `hull` re-triangulate from it, others are edited locally;
+ * uvs, weights and deform keys follow (new vertices blend barycentrically, ANIM_MESH_DEFORM_REMAPPED).
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */
