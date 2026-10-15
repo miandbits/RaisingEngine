@@ -741,6 +741,7 @@ public:
       {{"id","system-widget"},{"kind",phase},{"x",width/16},{"y",height/6},{"width",width*7/8},{"height",height*3/4}}
     })}};
   }
+#include "gallery-screen.inc"
   std::string document() {
     refreshDisplay();
     if(extensions)extensions->begin_sync();
@@ -822,6 +823,7 @@ public:
     if(!game.message.empty())out+="<div class=\"status\">"+escape(game.message)+"</div>";
     out+=timeline_overlay();
     out+=direction_overlay();
+    out+=gallery_overlay();
     if(extensions)extensions->end_sync();
     return out+"</body></rml>";
   }

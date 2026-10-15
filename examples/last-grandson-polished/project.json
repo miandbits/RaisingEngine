@@ -1046,5 +1046,37 @@
       "holdMs": 1000
     }
   },
-  "schedulePlayback": "continuous"
+  "schedulePlayback": "continuous",
+  "gallery": {
+    "entries": [
+      {
+        "category": "인연",
+        "hint": "첫 인연의 이야기를 끝까지 보세요.",
+        "id": "promise",
+        "kind": "event",
+        "sourceId": "exam-invitation",
+        "thumbnailAssetId": "winter-courtyard",
+        "title": "약방 노인의 제안"
+      },
+      {
+        "category": "결말",
+        "hint": "두 달의 삶을 마무리하세요.",
+        "id": "survival",
+        "kind": "ending",
+        "sourceId": "certified",
+        "thumbnailAssetId": "seol-neutral",
+        "title": "겨울을 넘어"
+      },
+      {
+        "category": "결말",
+        "hint": "두 달의 삶을 마무리하세요.",
+        "id": "farewell",
+        "kind": "ending",
+        "sourceId": "ordinary",
+        "thumbnailAssetId": "seol-rest",
+        "title": "조용한 작별"
+      }
+    ],
+    "title": "설이의 추억과 결말"
+  }
 }

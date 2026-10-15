@@ -1,5 +1,7 @@
 #include "studio.hpp"
 #include <QStandardPaths>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QDialog>
 #include <QCheckBox>
 #include <QDialogButtonBox>
@@ -54,6 +56,7 @@ void StudioWindow::editProjectSettings() {
   auto timing=[&](const char* key,const QString& label,int initial,int minimum){auto field=new QSpinBox;field->setObjectName(QString("projectResult-")+key);field->setRange(minimum,10000);field->setSuffix(" ms");field->setValue(resultConfig.value(key).toInt(initial));field->setEnabled(resultEnabled->isChecked());connect(resultEnabled,&QCheckBox::toggled,field,&QWidget::setEnabled);resultForm->addRow(label,field);return field;};
   auto lead=timing("leadInMs",tr("동작 먼저 보여주기"),800,1),change=timing("changeMs",tr("능력치 한 항목 변화 시간"),800,100),hold=timing("holdMs",tr("마지막 수치 유지"),1000,1);
   auto resultHelp=new QLabel(tr("화면의 결과 위젯에 실제 확정된 수치를 순서대로 표시합니다. 기본 탭에서 월 일정 연속 진행을 선택하면 연출 후 다음 활동으로 이동하며 사건·선택지에서는 멈춥니다. 별도로 연결한 활동 타임라인이 있으면 그 연출이 우선합니다."));resultHelp->setWordWrap(true);resultForm->addRow(resultHelp);
+#include "gallery-settings.inc"
   auto calendar=new QLabel;calendar->setObjectName("projectCalendarSummary");calendar->setWordWrap(true);form->addRow(calendar);
   auto updateCalendar=[=]{const int last=month->value()-1+duration->value()-1;calendar->setText(tr("마지막 일정: %1년 %2월 · 총 %3기간\n연속 진행은 결과 연출 후 다음 일정으로 이어집니다. 대화·선택·전투는 입력을 기다립니다.\n일정 칸 수 변경은 사건의 기간 번호를 자동 수정하지 않습니다. 새 게임으로 확인하세요.").arg(year->value()+last/12).arg(last%12+1).arg(duration->value()*periods->value()));};
   for(auto spin:{year,month,duration,periods})connect(spin,qOverload<int>(&QSpinBox::valueChanged),&dialog,updateCalendar);updateCalendar();
@@ -69,8 +72,9 @@ void StudioWindow::editProjectSettings() {
   auto error=new QLabel;error->setObjectName("projectSettingsError");error->setWordWrap(true);layout->addWidget(error);
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->setObjectName("projectSettingsButtons");buttons->button(QDialogButtonBox::Ok)->setText(tr("설정 적용"));layout->addWidget(buttons);
   connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
-  connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(title->text().trimmed().isEmpty()){error->setText(tr("게임 제목을 입력하세요."));return;}if(!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(id->text()).hasMatch()){error->setText(tr("게임 ID는 소문자로 시작하고 영문 소문자·숫자·하이픈을 사용합니다."));return;}dialog.accept();});
+  connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(galleryEnabled->isChecked()){const auto config=readGallery();if(config.value("title").toString().isEmpty()){error->setText(tr("도감 제목을 입력하세요."));return;}QSet<QString> ids;for(auto value:config.value("entries").toArray()){const auto e=value.toObject();const auto id=e.value("id").toString();if(!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(id).hasMatch()||ids.contains(id)||e.value("sourceId").toString().isEmpty()||e.value("title").toString().isEmpty()){error->setText(tr("도감 항목의 고유 ID·대본·제목을 확인하세요."));return;}ids.insert(id);}}if(title->text().trimmed().isEmpty()){error->setText(tr("게임 제목을 입력하세요."));return;}if(!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(id->text()).hasMatch()){error->setText(tr("게임 ID는 소문자로 시작하고 영문 소문자·숫자·하이픈을 사용합니다."));return;}dialog.accept();});
   if(dialog.exec()!=QDialog::Accepted)return;
+  if(galleryEnabled->isChecked())project["gallery"]=readGallery();else project.remove("gallery");
   project["title"]=title->text().trimmed();project["gameId"]=id->text();project["description"]=description->toPlainText();project["startYear"]=year->value();project["startMonth"]=month->value();project["durationMonths"]=duration->value();project["protagonistId"]=protagonist->currentData().toString();project["defaultEndingId"]=ending->currentData().toString();
   project["periodsPerMonth"]=periods->value();if(playback->currentData()=="manual"&&!project.contains("schedulePlayback"))project.remove("schedulePlayback");else project["schedulePlayback"]=playback->currentData().toString();
   if(resultEnabled->isChecked()||!resultConfig.isEmpty()){auto visual=project.value("visual").toObject();if(resultEnabled->isChecked())visual["resultPlayback"]=QJsonObject{{"leadInMs",lead->value()},{"changeMs",change->value()},{"holdMs",hold->value()}};else visual.remove("resultPlayback");project["visual"]=visual;}

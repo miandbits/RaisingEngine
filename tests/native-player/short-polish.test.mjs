@@ -45,7 +45,7 @@ test('polished short: real animation plugin, both endings and save/resume', {tim
   const loaded=await loadProject(project);const built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot;assert.equal(content.project.gameId,'last-grandson');assert.equal(content.project.visual.screens.length,4);
   const root=await mkdtemp(resolve('.cache/short-native-')),game=resolve(root,'game'),evidence=resolve('.cache/short-polish');await mkdir(evidence,{recursive:true});
-  const capabilities=JSON.parse(await readFile(resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-auto-result','capabilities.json'),'utf8'));
+  const capabilities=JSON.parse(await readFile(resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player','capabilities.json'),'utf8'));
   const extensions=await exportBundle({lock:loaded.documents.find(d=>d.kind==='pluginLock')?.data,documents:loaded.documents,visual:content.project.visual,target:'windows',assets:{root:project,assets:content.assets,hashes:content.assetHashes},hostFeatures:capabilities.visualFeatures});
   assert.ok(extensions);
   await exportGame({extensions,content,projectRoot:project,destination:game,target:'windows',runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-auto-result'),web:resolve('dist/web')}});

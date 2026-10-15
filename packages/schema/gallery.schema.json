@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/gallery.schema.json",
+  "title": "Cross-run narrative gallery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "entries"],
+  "properties": {
+    "title": {"type":"string", "minLength":1, "maxLength":120},
+    "entries": {
+      "type":"array", "maxItems":2000,
+      "items": {
+        "type":"object", "additionalProperties":false,
+        "required":["id","kind","sourceId","title","category","hint"],
+        "properties": {
+          "id":{"$ref":"common.schema.json#/$defs/id"},
+          "kind":{"enum":["event","ending"]},
+          "sourceId":{"$ref":"common.schema.json#/$defs/id"},
+          "title":{"type":"string","minLength":1,"maxLength":120},
+          "category":{"type":"string","maxLength":80},
+          "hint":{"type":"string","maxLength":500},
+          "thumbnailAssetId":{"$ref":"common.schema.json#/$defs/id"}
+        }
+      }
+    }
+  }
+}

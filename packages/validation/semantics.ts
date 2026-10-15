@@ -1,6 +1,7 @@
 import { childPointer, isObject, type Diagnostic, type DocumentKind, type Json, type JsonObject, type ProjectDocument } from './model.js';
 import { SemanticContext, idOf, objectItems, type Entry, type Index } from './context.js';
 import { checkNarrative, checkScenarioChoice } from './narrative.js';
+import { checkGallery } from './gallery.js';
 import { checkVisual } from './visual.js';
 import { checkLocalization } from './localization.js';
 import { checkGameplay } from './gameplay.js';
@@ -101,6 +102,7 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
     checkProgression(ctx, root, project);
     checkUserFields(ctx, root, project);
     checkLocalization(ctx, root, documents);
+    if (isObject(project.gallery)) checkGallery(ctx, root, project.gallery);
     if (isObject(project.visual)) checkVisual(ctx, root, project.visual);
     if (isObject(project.gameplay)) checkGameplay(ctx, root, project.gameplay);
     if (isObject(project.systems)) checkSystems(ctx, root, project.systems);

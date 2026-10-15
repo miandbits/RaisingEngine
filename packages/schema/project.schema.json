@@ -9,6 +9,7 @@
     }
   ],
   "properties": {
+    "gallery": {"$ref":"gallery.schema.json"},
     "gameId": {
       "$ref": "common.schema.json#/$defs/id"
     },

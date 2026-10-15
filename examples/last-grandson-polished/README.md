@@ -35,8 +35,16 @@
 
 ## 검증과 범위
 
-`node --test tests/native-player/short-polish.test.mjs`로 두 엔딩, 중간 저장·복원, 프로그램 재실행, SD 클립·프레임 전환·일정표 비표시, 해상도와 음악 토글을 검사합니다. 네이티브 플레이어와 웹 런타임 빌드, 설치된 플러그인이 필요합니다. 기본 플레이어는 `dist/native-player-auto-result`이며 `RAISING_NATIVE_PLAYER_RUNTIME`으로 지정할 수 있습니다. `node scripts/test-qt-studio.mjs shortPolishAuthoring`은 실제 Qt 위젯에서 복제·일정 설정·클립 길이 변경·저장·재열기를 검사합니다.
+`node --test tests/native-player/short-polish.test.mjs`로 두 엔딩, 중간 저장·복원, 프로그램 재실행, SD 클립·프레임 전환·일정표 비표시, 해상도와 음악 토글을 검사합니다. 네이티브 플레이어와 웹 런타임 빌드, 설치된 플러그인이 필요합니다. 기본 플레이어는 `dist/native-player`이며 `RAISING_NATIVE_PLAYER_RUNTIME`으로 지정할 수 있습니다. `node scripts/test-qt-studio.mjs shortPolishAuthoring`은 실제 Qt 위젯에서 복제·일정 설정·클립 길이 변경·저장·재열기를 검사합니다.
 
 반복 클립은 불러올 때 처음부터 재생하며, 단발 클립은 저장된 재생 위치를 복원합니다. 원본 프로젝트의 저장 파일을 이 별도 샘플로 이식하는 검증은 이번 범위에 포함하지 않습니다.
 
 상용 출시본으로 인증한 게임은 아닙니다. 현재는 짧은 시각·제작 흐름 검토판이며, 일러스트 디테일 보정·전신 분절 애니메이션·최종 사운드 제작·장편 콘텐츠·현지화·배포 품질 검증은 남아 있습니다. 데이터 배치는 공통 JSON 계약으로 작성하고 편집기에서 조정·검증했습니다. 모든 배치를 GUI에서 처음부터 제작했다고 주장하지 않습니다. 자세한 기록은 `docs/short-game-polish.md`, 에셋 출처와 프롬프트는 [assets/PROVENANCE.md](assets/PROVENANCE.md)에 있습니다.
+
+## 회상과 엔딩 도감
+
+화면의 **설이의 추억과 결말** 버튼에서 약방 노인의 제안과 두 결말을 확인합니다. 이야기를 끝까지 보면 해금되며, 당시 대사·선택·최종 능력치를 다시 볼 수 있습니다. 새 게임이나 과거 저장 불러오기로 도감은 지워지지 않습니다. 다른 선택의 대사는 별도 기록으로 남습니다.
+
+Qt **프로젝트 설정 → 회상 · 엔딩 도감**에서 항목과 힌트·썸네일·순서를 바꿉니다. 이 샘플의 도감 항목은 실제 Qt 편집기로 제작·저장했습니다. 현재 도감은 Windows 네이티브 플레이어에서 지원합니다. 미지원 웹 내보내기는 명시적으로 거부합니다. 도감을 제거한 기존 샘플 구성은 종전 웹 기능을 유지합니다.
+
+최신 빌드를 지정한 검증: `RAISING_NATIVE_PLAYER_RUNTIME=dist/native-player-gallery node --test tests/native-player/gallery.test.mjs` (PowerShell에서는 먼저 `$env:RAISING_NATIVE_PLAYER_RUNTIME='dist/native-player-gallery'` 설정). 범위와 저장 규칙은 [도감 문서](../../docs/gallery-and-recollection.md)를 참고하세요.

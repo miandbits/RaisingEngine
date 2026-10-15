@@ -18,8 +18,21 @@ inline Json read_json(const fs::path& file, uintmax_t limit = 64 * 1024 * 1024) 
   return Json::parse(stream);
 }
 
+#include "gallery.hpp"
+
 class GameSession {
 public:
+  GalleryProfile gallery;
+  GalleryCapture gallery_capture;
+  Json gallery_pending=Json::array();
+  std::function<Json()> gallery_content;
+  void flush_gallery() {
+    if(!content.at("project").contains("gallery"))return;
+    while(!gallery_pending.empty()){
+      try{gallery.unlock(content.at("project").at("gallery"),gallery_pending.front());gallery_pending.erase(gallery_pending.begin());}
+      catch(const std::exception& e){gallery.error=e.what();message=std::string("컬렉션 저장 실패: ")+e.what();return;}
+    }
+  }
   Json content, state = nullptr, commands = Json::array(), projection;
   std::string message;
   std::vector<std::string> sound_cues;
@@ -85,6 +98,7 @@ public:
     catch(const std::exception& error){if(reason)*reason=error.what();return false;}
   }
   void start(const Json& userValues=Json::object()) {
+    gallery_capture.pending=nullptr;
     schedule_speed=1;
     state = call({{"operation", "create"}, {"seed", seed}, {"options", {{"mode", "full"},{"userValues",userValues}}}}).at("state");
     commands = Json::array(); message.clear(); sound_cues.clear(); battle_selection=nullptr;refresh(); sync_timeline();
@@ -95,12 +109,18 @@ public:
     if (state.is_null()) throw std::runtime_error("먼저 새 게임을 시작해 주세요.");
     // Single choke point for submitted commands: extensions observe each reply exactly once.
     const Json before=observer?Json{{"state",state},{"narrative",projection.value("narrative",Json())}}:Json();
+    const bool collect=content.at("project").contains("gallery")&&!state.value("activeNarrative",Json()).is_null()&&(command.value("type","")=="advanceNarrative"||command.value("type","")=="choose");
+    const auto gallery_before=collect?state:Json();
+    const auto capture_content=collect?(gallery_content?gallery_content():content):Json();
+    Json capture_narrative=nullptr;
+    if(collect&&!state.value("activeNarrative",Json()).is_null())capture_narrative=Json::parse(raising::process(Json({{"operation","view"},{"content",capture_content},{"state",state}}).dump())).value("narrative",Json());
     Json result;
     try {result = call({{"operation", "command"}, {"state", state}, {"command", command}, {"expectedRevision", state.at("stateRevision")}});}
     catch(const std::exception& error){if(observer)observer(before,before,command,error.what());throw;}
     state = result.at("state"); commands.push_back(command);
     for(const auto& cue:result.at("transition").value("soundCues",Json::array()))sound_cues.push_back(cue.get<std::string>());
     refresh(); sync_timeline();sync_battle_selection();
+    if(collect){const auto record=gallery_capture.observe(capture_content,gallery_before,state,command,capture_narrative);if(!record.is_null()){gallery_pending.push_back(record);flush_gallery();}}
     if(observer)observer(before,{{"state",state},{"narrative",projection.value("narrative",Json())}},command,"");
     return result.at("transition");
   }
@@ -150,7 +170,15 @@ public:
     Json options={{"mode","full"},{"initialOverrides",savedOrigin.at("initialOverrides")}};if(hasFields)options["userValues"]=savedOrigin.at("userValues");
     Json replay = call({{"operation", "create"}, {"seed", savedOrigin.at("seed")},{"options", options}}).at("state");
     if (saved.at("coreVersion") != replay.at("coreVersion")) throw std::runtime_error("실행 규칙 버전이 다릅니다.");
-    for (const auto& command : saved.at("commands")) replay = call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}}).at("state");
+    GalleryCapture restored_capture;
+    for (const auto& command : saved.at("commands")) {
+      const auto next=call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}}).at("state");
+      if(content.at("project").contains("gallery")&&!replay.value("activeNarrative",Json()).is_null()){
+        const auto narrative=call({{"operation","view"},{"state",replay}}).value("narrative",Json());
+        restored_capture.observe(content,replay,next,command,narrative);
+      }
+      replay=next;
+    }
     if (replay != saved.at("state")) throw std::runtime_error("저장 데이터와 명령 재현 결과가 다릅니다.");
     const auto restored_plan=plan_activity_timeline(content,replay);Json restored_cursor=restored_plan.is_null()?Json():create_timeline_cursor(restored_plan);
     Json restored_battle=nullptr,restored_extensions=nullptr,restored_direction=nullptr;int restored_speed=1;
@@ -171,6 +199,7 @@ public:
       }
     }
     if(!restored_plan.is_null()&&restored_plan.contains("resultPlayback")){const int speed=restored_cursor.at("speed");if(saved.contains("playerPresentation")&&saved.at("playerPresentation").contains("scheduleSpeed")&&speed!=restored_speed)throw std::runtime_error("Inconsistent schedule speed");restored_speed=speed;}
+    gallery_capture=std::move(restored_capture);
     schedule_speed=restored_speed;state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
     message = "저장한 지점에서 이어갑니다.";
   }

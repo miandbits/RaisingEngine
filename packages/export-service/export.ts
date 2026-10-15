@@ -47,6 +47,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  if(content.project.gallery)requiredFeatures.push('narrative-gallery-v1');
   if(visual?.resultPlayback)requiredFeatures.push('inline-result-playback-v1');
   if(content.project.roster)requiredFeatures.push('roster-activities-v1');
   if((content.project.visual as any)?.direction)requiredFeatures.push('direction-sequences-v1');

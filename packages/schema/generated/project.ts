@@ -1,6 +1,7 @@
 /* Generated from JSON Schema. Do not edit; run npm run build. */
 
 export type ProjectDefinition = Header & {
+  gallery?: CrossRunNarrativeGallery;
   gameId: string;
   title: string;
   description?: string;
@@ -12297,6 +12298,21 @@ export interface Header {
    * @maxItems 32
    */
   tags?: string[];
+}
+export interface CrossRunNarrativeGallery {
+  title: string;
+  /**
+   * @maxItems 2000
+   */
+  entries: {
+    id: string;
+    kind: "event" | "ending";
+    sourceId: string;
+    title: string;
+    category: string;
+    hint: string;
+    thumbnailAssetId?: string;
+  }[];
 }
 export interface Overrides {
   attributes: {

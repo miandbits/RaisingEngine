@@ -45,7 +45,7 @@ public:
   int auto_revision=-1,auto_attempted=-1;
   double auto_elapsed=0;
   void advance_schedule_clock(double delta) {
-    if(preview()||backgrounded||game.state.is_null())return;
+    if(preview()||backgrounded||game.gallery.active||game.state.is_null())return;
     const int revision=game.state.value("stateRevision",-1);
     if(auto_revision!=revision){auto_revision=revision;auto_elapsed=0;}
     const auto command=game.schedule_step();
@@ -55,6 +55,7 @@ public:
     auto_attempted=revision;execute({{"type","scheduleStep"}});
   }
   void advance_timeline_clock(double delta) {
+    if(game.gallery.active)return;
     if(!preview()&&!game.direction_cursor.is_null()){auto next=direction_advance(direction_config(game.content),game.direction_cursor,int(std::round(delta)));if(next!=game.direction_cursor){game.direction_cursor=next;dirty=true;}}
     if(preview()||!game.timeline_active())return;
     const auto before=game.timeline_cursor;game.tick_timeline(delta);
@@ -90,7 +91,7 @@ public:
     const double dt=preview()?0:extension_dt*extension_playback_rate();extension_dt=0;
     extensions.update(dt);play_extension_sounds();extensions.frame();
   }
-  double extension_playback_rate() const {return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
+  double extension_playback_rate() const {if(game.gallery.active)return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
   void advance_extensions(double delta){if(!extensions.active())return;extensions.update(delta*extension_playback_rate());play_extension_sounds();extensions.frame();}
   /** Event sounds of plugin notifications (presentation only): a missing file never stops the game. */
   uint64_t extension_sounds_played=0,extension_sound_errors=0,extension_sound_missing=0;
@@ -128,6 +129,8 @@ public:
     game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){extensions.observe(before,after,command,error);};
     game.extension_state=[this]{return extensions.save();};
     game.content=bundle.at("content"); game.refresh();
+    game.gallery_content=[this]{return localized_content(game.content,markup.locale);};
+    if(game.content.at("project").contains("gallery"))game.gallery.open(this->save_file.parent_path()/("collection-"+game.content.at("project").value("gameId","game")+".json"),game.content.at("project").value("gameId","game"));
 #ifdef SDL_PLATFORM_ANDROID
     SDL_AddEventWatch(watch_lifecycle,this);
 #endif
@@ -268,6 +271,17 @@ public:
     try {
       const auto action=markup.selection_action(incoming);
       game.message.clear();const std::string type=action.value("type","");
+      if(type=="galleryOpen"){if(!game.content.at("project").contains("gallery"))return;game.gallery.reload();game.flush_gallery();game.gallery.active=true;markup.gallery_entry.clear();dirty=true;return;}
+      if(game.gallery.active){
+        if(type=="galleryClose"){game.gallery.active=false;auto_elapsed=0;}
+        else if(type=="galleryBack")markup.gallery_entry.clear();
+        else if(type=="gallerySelect"){for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==action.value("entryId",Json())&&!game.gallery.records(e).empty()){markup.gallery_entry=e.at("id");markup.gallery_record=0;markup.gallery_frame=0;}}
+        else if(type=="galleryFrame"){if(action.value("delta",0)>0)++markup.gallery_frame;else if(markup.gallery_frame>0)--markup.gallery_frame;}
+        else if(type=="galleryVariant"){for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==markup.gallery_entry){const auto records=game.gallery.records(e);if(!records.empty())markup.gallery_record=(markup.gallery_record+1)%records.size();}markup.gallery_frame=0;}
+        else if(type=="galleryPage"){if(action.value("delta",0)>0)++markup.gallery_page;else if(markup.gallery_page>0)--markup.gallery_page;}
+        else if(type=="galleryCategory"){std::vector<std::string> list={""};for(const auto& e:game.content.at("project").at("gallery").at("entries")){auto c=e.value("category","");if(std::find(list.begin(),list.end(),c)==list.end())list.push_back(c);}const auto it=std::find(list.begin(),list.end(),markup.gallery_category);markup.gallery_category=list[(std::distance(list.begin(),it)+1)%list.size()];markup.gallery_page=0;}
+        dirty=true;return;
+      }
       if(type=="selectRow"){const auto key=action.value("selectionKey","");if(key.empty()||!action.contains("_selectionSource"))throw std::runtime_error("선택 목록 연결이 없습니다.");markup.ui_selections[key]={{"source",action.at("_selectionSource")},{"rowId",action.at("_rowId")}};if(markup.selected_values(key).is_null())throw std::runtime_error("선택할 수 없는 행입니다.");if(action.contains("screenId"))markup.ui_modal=action.at("screenId");dirty=true;return;}
       if(type=="openModal"){markup.ui_modal=action.at("screenId");dirty=true;return;}
       if(type=="closeModal"){markup.ui_modal.clear();dirty=true;return;}
@@ -473,7 +487,7 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"gallery",{{"active",game.gallery.active},{"entryId",markup.gallery_entry},{"frameIndex",markup.gallery_frame},{"recordIndex",markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource","initial"},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},

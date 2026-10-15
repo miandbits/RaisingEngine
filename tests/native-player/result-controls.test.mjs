@@ -47,7 +47,7 @@ function route(content,ending,mode,evidence){
 
 test('actual native controls freeze SD/stats, restore pause and speed, preserve both endings and stop at every event', {timeout:240000},async()=>{
   const project=resolve('examples/last-grandson-polished'),loaded=await loadProject(project),built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
-  const content=built.snapshot,runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-controls');
+  const content=built.snapshot,runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
   const root=await mkdtemp(resolve('.cache/result-controls-')),game=resolve(root,'game'),evidence=resolve('.cache/result-controls');await mkdir(evidence,{recursive:true});
   const capabilities=JSON.parse(await readFile(resolve(runtime,'capabilities.json'),'utf8'));
   const extensions=await exportBundle({lock:loaded.documents.find(d=>d.kind==='pluginLock')?.data,documents:loaded.documents,visual:content.project.visual,target:'windows',assets:{root:project,assets:content.assets,hashes:content.assetHashes},hostFeatures:capabilities.visualFeatures});
