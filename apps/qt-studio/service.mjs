@@ -77,13 +77,14 @@ export class QtStudioService {
         const content=await this.debugSnapshot(params.revision);
         extra={goalSearch:await this.goalSearchJobs.start(this.editor.root,content,params.revision,params)};break;
       }
+      case 'goalBaselineApprovePartial':
       case 'goalBaselineApprove':
       case 'goalBaselineRestore': {
         const content=await this.debugSnapshot(params.revision);
         const resolved=await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);
-        if(method==='goalBaselineApprove'&&resolved.row.status!=='changed')throw Error('목표에 도달한 변경 경로만 승인할 수 있습니다.');
-        if(method==='goalBaselineRestore'&&!params.baselineId)throw Error('되돌릴 기준을 선택하세요.');
-        const entry=await changeGoalBaseline(this.editor.root,{expectedRevision:resolved.report.selectionRevision,route:resolved.route,baseline:resolved.baseline,content,reportId:resolved.report.id,name:params.name,note:params.note,restoreId:method==='goalBaselineRestore'?params.baselineId:undefined,validate:async()=>{this.editor.current(params.revision);await this.editor.assertDiskUnchanged();await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);}});
+        if(['goalBaselineApprove','goalBaselineApprovePartial'].includes(method)&&resolved.row.status!=='changed')throw Error('목표에 도달한 변경 경로만 승인할 수 있습니다.');
+        if(method==='goalBaselineRestore'&&!params.baselineId&&!params.restoreReview)throw Error('되돌릴 기준을 선택하세요.');
+        const entry=await changeGoalBaseline(this.editor.root,{expectedRevision:resolved.report.selectionRevision,route:resolved.route,baseline:resolved.baseline,content,reportId:resolved.report.id,name:params.name,note:params.note,restoreId:method==='goalBaselineRestore'?params.baselineId:undefined,restoreReview:method==='goalBaselineRestore'?params.restoreReview:undefined,itemIds:method==='goalBaselineApprovePartial'?(params.itemIds??[]):undefined,validate:async()=>{this.editor.current(params.revision);await this.editor.assertDiskUnchanged();await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);}});
         extra={goalApproval:entry};
         try{const report=await checkGoalImpacts(this.editor.root,content,params.revision);extra.goalImpact=await publishGoalImpacts(this.editor,content,params.revision,report);}
         catch(error){extra.goalImpact={rows:[],error:'기준 변경은 완료되었으나 재검사에 실패했습니다: '+error.message,stale:true,complete:false};}

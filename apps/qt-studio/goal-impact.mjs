@@ -1,4 +1,5 @@
-import {goalBaselineSelection} from './goal-approvals.mjs';
+import {reviewGoalItems,applyGoalPartial} from './goal-partial.mjs';
+import {goalBaselineSelection,goalReviewHistory} from './goal-approvals.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {mkdir,realpath,readdir,readFile,writeFile,rename,unlink,stat} from 'node:fs/promises';
 import path from 'node:path';
@@ -32,7 +33,7 @@ export async function latestGoalImpact(root,content){
   if(!entries.length)return null;
   const report=await readGoalImpact(root,entries[0].file.slice(12,-5)),routes=await listGoalRoutes(root);
   const digest=routeDigest(routes.map(e=>e.route??{file:path.basename(e.file),error:e.error}));
-  return {...report,stale:report.fingerprint!==content.contentFingerprint||report.routesDigest!==digest||report.runtime!==await runtimeIdentity()||report.selectionRevision!==(await goalBaselineSelection(root)).revision};
+  return {...report,stale:report.rows.some(r=>['changed','unchanged','failed'].includes(r.status)&&!Array.isArray(r.changeItems))||report.fingerprint!==content.contentFingerprint||report.routesDigest!==digest||report.runtime!==await runtimeIdentity()||report.selectionRevision!==(await goalBaselineSelection(root)).revision};
 }
 function summarize(pair){
   const definitions=Array.isArray(pair.content.attributes)?pair.content.attributes:(pair.content.attributes?.attributes??[]);
@@ -68,14 +69,14 @@ export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000}={
   for(const entry of routes){
     if(!entry.route){report.rows.push({name:path.basename(entry.file),status:'error',error:entry.error});continue;}
     const route=entry.route,row={routeId:route.id,name:route.name,routeDigest:routeDigest(route)},baselineInfo=baselines.find(b=>b.id===selection.active[route.id]);
-    row.baselineHistory=baselines.filter(b=>!b.error&&b.routeId===route.id);row.approvalHistory=selection.history.filter(h=>h.routeId===route.id);
+    row.reviewHistory=goalReviewHistory(selection,route.id);row.baselineHistory=baselines.filter(b=>!b.error&&b.routeId===route.id);row.approvalHistory=selection.history.filter(h=>h.routeId===route.id);
     if(selection.active[route.id]&&(!baselineInfo||baselineInfo.error)){report.rows.push({...row,status:'error',error:'활성 기준 기록이 없거나 손상되었습니다.'});continue;}
     if(!baselineInfo){report.rows.push({...row,status:'missing-baseline',message:'기준 기록이 없습니다. 수정 전에 기준을 저장하세요.'});continue;}
     row.baselineId=baselineInfo.id;row.baselineName=baselineInfo.name;row.baselineCreatedAt=baselineInfo.createdAt;
     if(Date.now()-started>=timeoutMs){report.rows.push({...row,status:'incomplete',error:'저장 비교 시간 제한에 도달했습니다. 다음 저장에서 다시 검사하세요.'});continue;}
     try{
       const baseline=await readGoalBaseline(root,baselineInfo.id);row.baselineChecksum=baseline.checksum;
-      const pair=await compareGoalBaseline(content,baseline,runtime,route,Math.max(1,timeoutMs-(Date.now()-started)));report.rows.push({...row,...summarize(pair)});
+      const pair=await compareGoalBaseline(content,baseline,runtime,route,Math.max(1,timeoutMs-(Date.now()-started)));report.rows.push({...row,...applyGoalPartial(summarize(pair),reviewGoalItems(pair,selection.partials[route.id]))});
     }catch(e){report.rows.push({...row,status:/시간|60초/.test(e.message)?'incomplete':'error',error:e.message});}
   }
   report.counts=Object.fromEntries(['failed','changed','unchanged','missing-baseline','error','incomplete'].map(s=>[s,report.rows.filter(r=>r.status===s).length]));
