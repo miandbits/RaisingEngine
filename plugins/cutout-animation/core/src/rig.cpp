@@ -61,18 +61,20 @@ Transform readTransform(const Json& obj) {
   return t;
 }
 // Bezier handles: x must stay in [0,1] so segment time never runs backwards.
-void checkCurve(Checker& c, const Json& key, const std::string& kp) {
-  const std::string p = at(kp, "curve");
+/** `kp` builds the key pointer (only called for a diagnostic). */
+template <class Pointer>
+void checkCurve(Checker& c, const Json& key, const Pointer& kp) {
+  const auto p = [&] { return at(kp(), "curve"); };
   if (!key.contains("curve") || !key.at("curve").is_array() || key.at("curve").size() != 4) {
-    c.error(p, "ANIM_CURVE", "bezier 키에는 curve [x1, y1, x2, y2] 숫자 4개가 필요합니다.");
+    c.error(p(), "ANIM_CURVE", "bezier 키에는 curve [x1, y1, x2, y2] 숫자 4개가 필요합니다.");
     return;
   }
   for (size_t i = 0; i < 4; i++) {
     const Json& v = key.at("curve")[i];
-    if (!v.is_number() || !std::isfinite(v.get<double>())) { c.error(at(p, i), "ANIM_CURVE", "curve 값은 유한한 숫자여야 합니다."); continue; }
+    if (!v.is_number() || !std::isfinite(v.get<double>())) { c.error(at(p(), i), "ANIM_CURVE", "curve 값은 유한한 숫자여야 합니다."); continue; }
     const double x = v.get<double>();
-    if (i % 2 == 0 && (x < 0 || x > 1)) c.error(at(p, i), "ANIM_CURVE", "curve의 시간 손잡이(x)는 0..1이어야 합니다.");
-    if (i % 2 == 1 && (x < CURVE_Y_MIN || x > CURVE_Y_MAX)) c.error(at(p, i), "ANIM_CURVE", "curve의 값 손잡이(y)는 -4..5이어야 합니다.");
+    if (i % 2 == 0 && (x < 0 || x > 1)) c.error(at(p(), i), "ANIM_CURVE", "curve의 시간 손잡이(x)는 0..1이어야 합니다.");
+    if (i % 2 == 1 && (x < CURVE_Y_MIN || x > CURVE_Y_MAX)) c.error(at(p(), i), "ANIM_CURVE", "curve의 값 손잡이(y)는 -4..5이어야 합니다.");
   }
 }
 /** Event/attachment name: the schema's $defs/name ([A-Za-z0-9][A-Za-z0-9_-]*, <= 64). */
@@ -170,23 +172,24 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
     if (!weights.is_array() || (ok && weights.size() != n)) { c.error(at(p, "weights"), "ANIM_MESH_WEIGHTS", "weights는 정점마다 [{bone, weight}] 목록 하나씩입니다(정점 수와 같아야 함)."); return 0; }
     bool warned = false;
     for (size_t v = 0; v < weights.size(); v++) {
-      const std::string wp = at(at(p, "weights"), v);
+      const auto wp = [&] { return at(at(p, "weights"), v); };
       const Json& list = weights[v];
-      if (!list.is_array() || list.empty()) { c.error(wp, "ANIM_MESH_WEIGHTS", "정점마다 본 영향이 1개 이상 필요합니다."); ok = false; continue; }
-      if (list.size() > MAX_INFLUENCES) { c.error(wp, "ANIM_MESH_INFLUENCES", "정점 하나에 영향을 주는 본은 최대 4개입니다."); ok = false; continue; }
+      if (!list.is_array() || list.empty()) { c.error(wp(), "ANIM_MESH_WEIGHTS", "정점마다 본 영향이 1개 이상 필요합니다."); ok = false; continue; }
+      if (list.size() > MAX_INFLUENCES) { c.error(wp(), "ANIM_MESH_INFLUENCES", "정점 하나에 영향을 주는 본은 최대 4개입니다."); ok = false; continue; }
       double sum = 0;
-      std::set<std::string> bones;
+      std::vector<std::string> bones;  // <= 4 influences: a set per vertex would allocate for nothing
       for (size_t k = 0; k < list.size(); k++) {
         const std::string bone = text(list[k], "bone");
-        if (!parentOf.count(bone)) { c.error(at(at(wp, k), "bone"), "ANIM_MESH_BONE_MISSING", "메시 웨이트가 없는 본을 가리킵니다: " + bone); ok = false; }
-        else if (!bones.insert(bone).second) { c.error(at(at(wp, k), "bone"), "ANIM_MESH_WEIGHTS", "한 정점에 같은 본이 두 번 있습니다: " + bone); ok = false; }
+        if (!parentOf.count(bone)) { c.error(at(at(wp(), k), "bone"), "ANIM_MESH_BONE_MISSING", "메시 웨이트가 없는 본을 가리킵니다: " + bone); ok = false; }
+        else if (std::find(bones.begin(), bones.end(), bone) != bones.end()) { c.error(at(at(wp(), k), "bone"), "ANIM_MESH_WEIGHTS", "한 정점에 같은 본이 두 번 있습니다: " + bone); ok = false; }
+        else bones.push_back(bone);
         const Json w = list[k].is_object() && list[k].contains("weight") ? list[k].at("weight") : Json();
-        if (!finiteNumber(w) || w.get<double>() < 0 || w.get<double>() > 1) { c.error(at(at(wp, k), "weight"), "ANIM_MESH_WEIGHTS", "웨이트는 0..1 숫자입니다."); ok = false; }
+        if (!finiteNumber(w) || w.get<double>() < 0 || w.get<double>() > 1) { c.error(at(at(wp(), k), "weight"), "ANIM_MESH_WEIGHTS", "웨이트는 0..1 숫자입니다."); ok = false; }
         else sum += w.get<double>();
       }
-      if (ok && !(sum > 1e-9)) { c.error(wp, "ANIM_MESH_WEIGHTS", "정점의 웨이트 합이 0입니다."); ok = false; }
+      if (ok && !(sum > 1e-9)) { c.error(wp(), "ANIM_MESH_WEIGHTS", "정점의 웨이트 합이 0입니다."); ok = false; }
       else if (ok && std::fabs(sum - 1) > 1e-3 && !warned) {
-        c.warn(wp, "ANIM_MESH_WEIGHT_SUM", "웨이트 합이 1이 아니라 불러올 때 1로 맞춥니다(합 " + std::to_string(sum) + ").");
+        c.warn(wp(), "ANIM_MESH_WEIGHT_SUM", "웨이트 합이 1이 아니라 불러올 때 1로 맞춥니다(합 " + std::to_string(sum) + ").");
         warned = true;  // one warning per mesh is enough to point at the problem
       }
     }
@@ -551,39 +554,40 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       int64_t previous = -1;
       for (size_t ki = 0; ki < keys.size(); ki++) {
         const auto& key = keys[ki];
-        const std::string kp = at(at(tp, "keys"), ki);
-        if (!key.contains("timeMs") || !key.at("timeMs").is_number_integer()) { c.error(at(kp, "timeMs"), "ANIM_KEY_TIME", "키 시간은 정수 ms여야 합니다."); continue; }
+        // Pointers are built only for a diagnostic: thousands of valid keys must not allocate them.
+        const auto kp = [&] { return at(at(tp, "keys"), ki); };
+        if (!key.contains("timeMs") || !key.at("timeMs").is_number_integer()) { c.error(at(kp(), "timeMs"), "ANIM_KEY_TIME", "키 시간은 정수 ms여야 합니다."); continue; }
         const int64_t t = key.at("timeMs").get<int64_t>();
-        if (t < 0 || (duration > 0 && t > duration)) c.error(at(kp, "timeMs"), "ANIM_KEY_TIME_RANGE", "키 시간이 클립 범위(0..길이)를 벗어났습니다.");
-        if (t <= previous) c.error(at(kp, "timeMs"), "ANIM_KEY_UNSORTED", "키는 시간순으로 중복 없이 정렬되어야 합니다.");
+        if (t < 0 || (duration > 0 && t > duration)) c.error(at(kp(), "timeMs"), "ANIM_KEY_TIME_RANGE", "키 시간이 클립 범위(0..길이)를 벗어났습니다.");
+        if (t <= previous) c.error(at(kp(), "timeMs"), "ANIM_KEY_UNSORTED", "키는 시간순으로 중복 없이 정렬되어야 합니다.");
         previous = t;
         const std::string interp = text(key, "interp");
-        if (!interp.empty() && interp != "step" && interp != "linear" && interp != "bezier") c.error(at(kp, "interp"), "ANIM_INTERP", "보간은 step, linear, bezier 중 하나입니다.");
+        if (!interp.empty() && interp != "step" && interp != "linear" && interp != "bezier") c.error(at(kp(), "interp"), "ANIM_INTERP", "보간은 step, linear, bezier 중 하나입니다.");
         else if (interp == "bezier" && (*property == Property::Attachment || *property == Property::Expression || *property == Property::BendPositive))
-          c.error(at(kp, "interp"), "ANIM_INTERP", "첨부·표정·IK 굽힘 키는 항상 계단(step) 전환입니다.");
+          c.error(at(kp(), "interp"), "ANIM_INTERP", "첨부·표정·IK 굽힘 키는 항상 계단(step) 전환입니다.");
         if (interp == "bezier") checkCurve(c, key, kp);
-        else if (key.contains("curve")) c.warn(at(kp, "curve"), "ANIM_CURVE_UNUSED", "bezier가 아닌 키의 curve는 쓰이지 않습니다.");
+        else if (key.contains("curve")) c.warn(at(kp(), "curve"), "ANIM_CURVE_UNUSED", "bezier가 아닌 키의 curve는 쓰이지 않습니다.");
         if (deform) {
           const Json offsets = key.contains("offsets") ? key.at("offsets") : Json();
           bool finite = offsets.is_array();
           for (size_t i = 0; finite && i < offsets.size(); i++) finite = finiteNumber(offsets[i]);
-          if (!finite) c.error(at(kp, "offsets"), "ANIM_MESH_DEFORM", "변형 키에는 offsets(정점마다 dx, dy 숫자)가 필요합니다.");
+          if (!finite) c.error(at(kp(), "offsets"), "ANIM_MESH_DEFORM", "변형 키에는 offsets(정점마다 dx, dy 숫자)가 필요합니다.");
           else if (deformCounts && (offsets.size() % 2 || !deformCounts->count(offsets.size() / 2)))
-            c.error(at(kp, "offsets"), "ANIM_MESH_DEFORM", "변형 키의 offsets 개수가 메시 정점 수 × 2와 다릅니다: " + std::to_string(offsets.size()));
+            c.error(at(kp(), "offsets"), "ANIM_MESH_DEFORM", "변형 키의 offsets 개수가 메시 정점 수 × 2와 다릅니다: " + std::to_string(offsets.size()));
         } else if (*property == Property::BendPositive) {
-          if (!key.contains("value") || !key.at("value").is_boolean()) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "IK 굽힘 키 값은 true 또는 false입니다.");
+          if (!key.contains("value") || !key.at("value").is_boolean()) c.error(at(kp(), "value"), "ANIM_KEY_VALUE", "IK 굽힘 키 값은 true 또는 false입니다.");
         } else if (*property == Property::Expression) {
-          if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "표정 키 값은 표정 ID 또는 null입니다.");
+          if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp(), "value"), "ANIM_KEY_VALUE", "표정 키 값은 표정 ID 또는 null입니다.");
           else if (key.at("value").is_string() && !expressionIds.count(key.at("value").get<std::string>()))
-            c.error(at(kp, "value"), "ANIM_EXPRESSION_UNKNOWN", "없는 표정을 가리킵니다: " + key.at("value").get<std::string>());
+            c.error(at(kp(), "value"), "ANIM_EXPRESSION_UNKNOWN", "없는 표정을 가리킵니다: " + key.at("value").get<std::string>());
         } else if (*property == Property::Attachment) {
-          if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp, "value"), "ANIM_KEY_VALUE", "첨부 키 값은 이름 또는 null입니다.");
+          if (!key.contains("value") || (!key.at("value").is_null() && !key.at("value").is_string())) c.error(at(kp(), "value"), "ANIM_KEY_VALUE", "첨부 키 값은 이름 또는 null입니다.");
           else if (key.at("value").is_string() && !knownName(targetId, key.at("value").get<std::string>()))
-            c.error(at(kp, "value"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯에 없는 첨부를 가리킵니다: " + key.at("value").get<std::string>());
+            c.error(at(kp(), "value"), "ANIM_ATTACHMENT_UNKNOWN", "슬롯에 없는 첨부를 가리킵니다: " + key.at("value").get<std::string>());
           else if (key.at("value").is_string()) referenced.insert({targetId, key.at("value").get<std::string>()});
-        } else if (!key.contains("value") || !finiteNumber(key.at("value"))) c.error(at(kp, "value"), "ANIM_NONFINITE", "키 값은 유한한 숫자여야 합니다.");
-        else if (*property == Property::Alpha && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp, "value"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
-        else if (*property == Property::Mix && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp, "value"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
+        } else if (!key.contains("value") || !finiteNumber(key.at("value"))) c.error(at(kp(), "value"), "ANIM_NONFINITE", "키 값은 유한한 숫자여야 합니다.");
+        else if (*property == Property::Alpha && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp(), "value"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
+        else if (*property == Property::Mix && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp(), "value"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
       }
     }
     const auto& events = arrayOr(clip, "events");
@@ -626,6 +630,10 @@ std::vector<Diagnostic> validateRig(const Json& data) {
 Rig parseRig(const std::string& id, const Json& data) {
   for (const auto& d : validateRig(data))
     if (d.severity == "error") throw std::runtime_error(d.code + " " + d.pointer + ": " + d.message);
+  return parseValidatedRig(id, data);
+}
+
+Rig parseValidatedRig(const std::string& id, const Json& data) {
   Rig rig;
   rig.id = id;
   if (data.contains("canvas")) {

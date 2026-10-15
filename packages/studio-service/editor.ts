@@ -1,7 +1,7 @@
 import { readFile, realpath } from 'node:fs/promises';
 import type { StudioTemplate } from './templates.js';
 import path from 'node:path';
-import { loadProject } from '../project-service/loader.js';
+import { documentSizeMessage, loadProject, maxDocumentBytes } from '../project-service/loader.js';
 import { parseDocument } from '../project-service/json-document.js';
 import { buildSnapshot } from '../project-service/snapshot.js';
 import { bytesOrNull, commitProject, EXTENSION_FILE, fileHash, PLUGIN_LOCK_FILE, recoverProject, safeFile } from '../project-service/transaction.js';
@@ -10,7 +10,7 @@ import { pluginStatus, type PluginStatus } from '../plugin-host/resolve.js';
 import type { ContentSnapshot } from '../core/model.js';
 import { ProjectConflict, projectVersion } from '../project-service/version.js';
 import { validateProject } from '../validation/index.js';
-import type { Diagnostic, DocumentKind, Json, LoadedProject } from '../validation/model.js';
+import type { Diagnostic, DocumentKind, Json, LoadedProject, ProjectDocument } from '../validation/model.js';
 import type { ExportTarget } from '../export-service/model.js';
 
 export interface DraftDocument { file: string; kind: DocumentKind; data: Json }
@@ -37,7 +37,21 @@ export interface StudioBridge {
   exportGame(target: ExportTarget, revision: number): Promise<StudioReply>;
 }
 const serialize = (data: Json) => JSON.stringify(data, null, 2) + '\n';
-const sourceKey = (documents: DraftDocument[]) => JSON.stringify(documents);
+/*
+ * Draft documents are immutable values: an edit builds a new array with new objects for the
+ * documents it changes and shares the others with the previous revision (history keeps whole
+ * arrays). Per-object caches below therefore never go stale, and a large plugin document that an
+ * edit did not touch is never cloned, re-serialized or re-parsed again (the round trip of one rig
+ * edit used to clone, stringify and re-parse every document several times).
+ */
+const keys = new WeakMap<DraftDocument, string>();
+const texts = new WeakMap<DraftDocument, string>();
+const versions = new WeakMap<DraftDocument[], string>();
+const keyOf = (doc: DraftDocument) => { let key = keys.get(doc); if (key === undefined) keys.set(doc, key = JSON.stringify(doc)); return key; };
+/** JSON.stringify(documents), assembled from cached per-document parts (same text). */
+const sourceKey = (documents: DraftDocument[]) => '[' + documents.map(keyOf).join(',') + ']';
+const locationsOf = new WeakMap<DraftDocument, ProjectDocument['locations']>();
+const textOf = (doc: DraftDocument) => { let text = texts.get(doc); if (text === undefined) texts.set(doc, text = serialize(doc.data)); return text; };
 export interface StudioEditorOptions { /** Plugin store directory; default $RAISING_PLUGIN_STORE or <engine>/plugin-store. */ pluginStore?: string | null | undefined }
 export class StudioEditor {
   root: string | null = null;
@@ -81,11 +95,27 @@ export class StudioEditor {
     if (files.length) throw new ProjectConflict(this.diskVersion(), projectVersion(this.root, actual), files);
   }
 
-  draftVersion(): string { return `draft-v1:${fileHash(sourceKey(this.documents))}`; }
-  view(): StudioView { return { revision: this.revision, root: this.root, documents: structuredClone(this.documents), draftVersion: this.draftVersion(), diskVersion: this.root ? this.diskVersion() : null,
-    dirty: sourceKey(this.documents) !== this.original, undo: !!this.history.length, redo: !!this.future.length,
-    diagnostics: this.diagnostics, readOnly: this.readOnly }; }
-  reply(error: string | null = null, notice: string | null = null): StudioReply { return { view: this.view(), error, notice }; }
+  draftVersion(): string {
+    let version = versions.get(this.documents);
+    if (version === undefined) versions.set(this.documents, version = `draft-v1:${fileHash(sourceKey(this.documents))}`);
+    return version;
+  }
+  /** `shared`: the reply is serialized at once (Qt stdio protocol), so documents are not cloned. */
+  view(options: { shared?: boolean } = {}): StudioView {
+    // `documents` is cloned when first read: replies that are never inspected (edit/validate
+    // return values the Qt service discards) cost nothing, and the captured array never changes.
+    const documents = this.documents;
+    if (options.shared) return { revision: this.revision, root: this.root, documents, draftVersion: this.draftVersion(), diskVersion: this.root ? this.diskVersion() : null,
+      dirty: sourceKey(this.documents) !== this.original, undo: !!this.history.length, redo: !!this.future.length, diagnostics: this.diagnostics, readOnly: this.readOnly };
+    let cloned: DraftDocument[] | null = null;
+    const view = { revision: this.revision, root: this.root, documents, draftVersion: this.draftVersion(), diskVersion: this.root ? this.diskVersion() : null,
+      dirty: sourceKey(this.documents) !== this.original, undo: !!this.history.length, redo: !!this.future.length,
+      diagnostics: this.diagnostics, readOnly: this.readOnly } as StudioView;
+    Object.defineProperty(view, 'documents', { enumerable: true, configurable: true, get: () => cloned ??= structuredClone(documents),
+      set: (value: DraftDocument[]) => { cloned = value; } });
+    return view;
+  }
+  reply(error: string | null = null, notice: string | null = null, options: { shared?: boolean } = {}): StudioReply { return { view: this.view(options), error, notice }; }
   current(revision: unknown): void { if (revision !== this.revision) throw new Error('편집 내용이 갱신되었습니다. 다시 시도해 주세요.'); }
 
   async open(root: string, readOnly = false): Promise<StudioReply> {
@@ -111,7 +141,7 @@ export class StudioEditor {
 
   edit(edit: Edit, revision: number): StudioReply {
     this.current(revision);
-    const next = structuredClone(this.documents);
+    const next = [...this.documents];  // documents are replaced, never mutated (see keys above)
     if (edit.type === 'undo' || edit.type === 'redo') {
       const from = edit.type === 'undo' ? this.history : this.future;
       const to = edit.type === 'undo' ? this.future : this.history;
@@ -129,13 +159,16 @@ export class StudioEditor {
         throw new Error('일괄 편집에는 추가·수정·삭제·생성·시나리오 가져오기만 사용할 수 있습니다.');
       const edit = primitive;
       if (edit.type === 'replace') {
-        const doc = next.find(d => d.file === edit.file);
+        const at = next.findIndex(d => d.file === edit.file);
+        const doc = next[at];
         if (!doc) throw new Error('문서를 찾을 수 없습니다.');
         const text = serialize(edit.data);
-        if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw new Error('문서는 2 MiB 이하여야 합니다.');
-        const parsed = parseDocument(doc.file, doc.kind, text);
+        if (Buffer.byteLength(text) > maxDocumentBytes(doc.kind)) throw new Error(documentSizeMessage(doc.kind));
+        const parsed = parseDocument(doc.file, doc.kind, text, { serialized: true });
         if (!parsed.document) throw new Error('문서 구조를 읽을 수 없습니다.');
-        doc.data = parsed.document.data;
+        const replaced = { ...doc, data: parsed.document.data };
+        texts.set(replaced, text);
+        next[at] = replaced;
       } else if (edit.type === 'add') {
         if (!['activity', 'event', 'ending', 'character'].includes(edit.kind) || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(edit.id) || edit.id.length > 64) throw new Error('ID는 소문자 영문·숫자·하이픈으로 입력하세요.');
         const folders = { activity: 'activities', event: 'events', ending: 'endings', character: 'characters' };
@@ -165,10 +198,12 @@ export class StudioEditor {
         if (!kind) throw new Error('create는 plugins/lock.json 또는 plugins/<플러그인>/<종류>/<ID>.json 문서에만 사용할 수 있습니다.');
         if (next.some(d => d.file.toLowerCase() === edit.file.toLowerCase())) throw new Error(`이미 있는 문서입니다: ${edit.file}`);
         const text = serialize(edit.data);
-        if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw new Error('문서는 2 MiB 이하여야 합니다.');
-        const parsed = parseDocument(edit.file, kind, text);
+        if (Buffer.byteLength(text) > maxDocumentBytes(kind)) throw new Error(documentSizeMessage(kind));
+        const parsed = parseDocument(edit.file, kind, text, { serialized: true });
         if (!parsed.document) throw new Error('문서 구조를 읽을 수 없습니다.');
-        next.push({ file: edit.file, kind, data: parsed.document.data });
+        const created: DraftDocument = { file: edit.file, kind, data: parsed.document.data };
+        texts.set(created, text);
+        next.push(created);
       } else if (edit.type === 'delete') {
         const at = next.findIndex(d => d.file === edit.file && ['activity', 'event', 'ending', 'character', 'scenario', 'extension', 'pluginLock'].includes(d.kind));
         if (at < 0) throw new Error('이 문서는 삭제할 수 없습니다.');
@@ -185,8 +220,15 @@ export class StudioEditor {
     if (!this.root) throw new Error('프로젝트를 열어 주세요.');
     const loaded: LoadedProject = { root: this.root, documents: [], diagnostics: [...this.loaderDiagnostics], ...(this.pluginStore ? { pluginStore: this.pluginStore } : {}) };
     for (const doc of this.documents) {
-      const parsed = parseDocument(doc.file, doc.kind, serialize(doc.data));
-      if (parsed.document) loaded.documents.push(parsed.document);
+      // Fresh data per validation (validators get their own copy), text and locations cached/lazy.
+      const parsed = parseDocument(doc.file, doc.kind, textOf(doc), { serialized: true });
+      if (parsed.document) {
+        // One (lazy) location map per document value: diagnostics of an untouched large document
+        // never rebuild it on the next validation.
+        const locations = locationsOf.get(doc) ?? parsed.document.locations;
+        locationsOf.set(doc, locations);
+        loaded.documents.push({ ...parsed.document, locations });
+      }
       loaded.diagnostics.push(...parsed.diagnostics);
     }
     return loaded;

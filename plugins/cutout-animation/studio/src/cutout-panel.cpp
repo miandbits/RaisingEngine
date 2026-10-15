@@ -357,7 +357,8 @@ CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(p
 CutoutPanel::~CutoutPanel() = default;
 bool CutoutPanel::runPartDialog(PartChoice& choice) {
   QStringList bones, slots;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   for (const auto& b : listOf(data, "bones")) bones << qs(b.value("id", std::string()));
   for (const auto& s : listOf(data, "slots")) slots << qs(s.value("id", std::string()));
   PartDialog dialog(this, images_, bones, slots, choice);
@@ -1365,7 +1366,7 @@ QWidget* CutoutPanel::buildWorkspace() {
     if (!meshTarget(si, att, op) || brushBone_->currentData().toString().isEmpty()) return;
     op.update({{"op", "setWeights"}, {"vertices", std::vector<int>(vertices.begin(), vertices.end())}, {"bone", ss(brushBone_->currentData().toString())},
                {"weight", brushWeight_->value()}, {"strength", brushStrength_->value()}});
-    try { dragPreview_ = cutout::applyEdit(working_ ? *working_ : committedRig(), op).data; } catch (const std::exception&) { return; }
+    try { dragPreview_ = std::make_shared<const Json>(cutout::applyEdit(working_ ? *working_ : committedRig(), op).data); } catch (const std::exception&) { return; }
     rebuildDisplay(false);
   };
   canvas_->onToggleSelect = [this](const QString& ref) { toggleSelected(ref); };
@@ -1996,18 +1997,29 @@ const CutoutPanel::Doc* CutoutPanel::controllerDoc() const { auto it = controlle
 // References (never temporaries): callers iterate listOf(displayData(), ...) directly, and an
 // empty object (never null) when absent because nlohmann value() throws on null.
 static const Json& emptyObject() { static const Json e = Json::object(); return e; }
-const Json& CutoutPanel::committedRig() const { const Doc* d = rigDoc(); return d ? d->data : emptyObject(); }
-const Json& CutoutPanel::committedController() const { const Doc* d = controllerDoc(); return d ? d->data : emptyObject(); }
-const Json& CutoutPanel::displayData() const {
-  if (dragPreview_) return *dragPreview_;
-  if (inflight_) return *inflight_;
-  if (working_) return *working_;
-  return committedRig();
+const Json& CutoutPanel::committedRig() const { const Doc* d = rigDoc(); return d && d->data ? *d->data : emptyObject(); }
+const Json& CutoutPanel::committedController() const { const Doc* d = controllerDoc(); return d && d->data ? *d->data : emptyObject(); }
+CutoutPanel::JsonPtr CutoutPanel::displayShared() const {
+  static const JsonPtr empty = std::make_shared<const Json>(Json::object());
+  if (dragPreview_) return dragPreview_;
+  if (inflight_) return inflight_;
+  if (working_) return working_;
+  const Doc* d = rigDoc();
+  return d && d->data ? d->data : empty;
+}
+const Json& CutoutPanel::displayData() const { return *displayShared(); }
+CutoutPanel::JsonPtr CutoutPanel::committedShared() const {
+  const Doc* d = rigDoc();
+  return d && d->data ? d->data : std::make_shared<const Json>(Json::object());
+}
+CutoutPanel::JsonPtr CutoutPanel::controllerShared() const {
+  const Doc* d = controllerDoc();
+  return d && d->data ? d->data : std::make_shared<const Json>(Json::object());
 }
 Json CutoutPanel::controllersFor(const QString& rig) const {
   Json out = Json::array();
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-    if (qs(it->data.value("rig", std::string())) == rig) out.push_back({{"id", ss(it.key())}, {"data", it->data}});
+    if (qs(it->data->value("rig", std::string())) == rig) out.push_back({{"id", ss(it.key())}, {"data", *it->data}});
   return out;
 }
 QStringList CutoutPanel::clipIds() const {
@@ -2016,7 +2028,8 @@ QStringList CutoutPanel::clipIds() const {
   return out;
 }
 QString CutoutPanel::uniqueBoneId(const QString& base) const {
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   QString id = base;
   for (int n = 2; findIn(data, "bones", ss(id)); n++) id = QString("%1-%2").arg(base).arg(n);
   return id;
@@ -2061,10 +2074,10 @@ bool CutoutPanel::submit(const QJsonArray& edits) {
   inSubmit_ = false;
   return true;
 }
-bool CutoutPanel::commitRig(const cutout::EditResult& result) {
+bool CutoutPanel::commitRig(cutout::EditResult result) {
   const Doc* doc = rigDoc();
   if (!doc) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
-  if (result.data == doc->data && !result.extra.contains("controllers")) { working_.reset(); setStatus("바뀐 것이 없습니다."); rebuildDisplay(); return false; }
+  if (result.data == *doc->data && !result.extra.contains("controllers")) { working_.reset(); setStatus("바뀐 것이 없습니다."); rebuildDisplay(); return false; }
   QJsonArray edits{replaceEdit(*doc, toQtObject(result.data))};
   if (result.extra.contains("controllers"))
     for (const auto& c : result.extra.at("controllers")) {
@@ -2075,7 +2088,14 @@ bool CutoutPanel::commitRig(const cutout::EditResult& result) {
   for (const auto& d : result.diagnostics) if (d.severity == "warning" && d.code.rfind("ANIM_REPARENT", 0) == 0) warnings << qs(d.message);
   if (!submit(edits)) { rebuildDisplay(false); return false; }
   working_.reset();
-  inflight_ = result.data;
+  // The sent data itself (moved, not copied): shown now, and adopted as the document when the
+  // host's view reports the accepted edit (no reconversion of the large Qt JSON reply).
+  bool valid = true;
+  for (const auto& d : result.diagnostics) valid = valid && d.severity != "error";
+  inflight_ = std::make_shared<const Json>(std::move(result.data));
+  inflightStamp_ = ++stampCounter_;
+  inflightRig_ = rigId_;
+  inflightValid_ = valid;  // applyEdit just validated it: the display parse can skip that pass
   setStatus(warnings.isEmpty() ? QString("변경을 적용했습니다. 되돌리기: Ctrl+Z") : warnings.join(" "), !warnings.isEmpty());
   rebuildDisplay();
   return true;
@@ -2093,24 +2113,24 @@ bool CutoutPanel::runOps(const std::vector<Json>& ops, bool keyGesture, const st
   }
   if (keyGesture && mode_ == Mode::Animate && !autoKey_) {
     // Auto-key off: show the change but keep it local until K commits it as one edit.
-    working_ = result.data;
+    working_ = std::make_shared<const Json>(std::move(result.data));
     setStatus("변경됨 · K(키 추가)를 누르면 이 시간에 키로 저장됩니다. 시간을 옮기면 버려집니다.");
     rebuildDisplay();
     return true;
   }
   if (accepted) accepted(result);
-  return commitRig(result);
+  return commitRig(std::move(result));
 }
 bool CutoutPanel::commitController(const Json& data) {
   const Doc* doc = controllerDoc();
   if (!doc) { setStatus("이 캐릭터에 게임 연결 문서가 없습니다.", true); return false; }
-  if (data == doc->data) return false;
+  if (data == *doc->data) return false;
   auto hasError = [&](const Json& d) {
     for (const auto& x : cutout::validateController(d, rig_.get())) if (x.severity == "error") return qs(x.message + " (" + x.pointer + ")");
     return QString();
   };
   const QString error = hasError(data);
-  if (!error.isEmpty() && hasError(doc->data).isEmpty()) {
+  if (!error.isEmpty() && hasError(*doc->data).isEmpty()) {
     setStatus("게임 연결을 적용하지 않았습니다: " + error, true);
     refreshController();
     return false;
@@ -2132,7 +2152,13 @@ void CutoutPanel::refreshFromView() {
   if (!host_) return;
   const QJsonObject view = host_->view();
   const int revision = view.value("revision").toInt();
-  images_.setAssets(host_->assets());
+  const QJsonArray assets = host_->assets();
+  images_.setAssets(assets);
+  // Documents whose envelope is unchanged keep their parsed data and stamp (converting a large rig
+  // from Qt JSON costs tens of ms); the accepted reply to our own edit is the data we sent.
+  const QMap<QString, Doc> oldRigs = rigs_, oldControllers = controllers_;
+  const QJsonArray oldCharacters = characters_;
+  const bool ownEdit = inflight_ && revision == lastRevision_ + 1;
   rigs_.clear();
   controllers_.clear();
   characters_ = {};
@@ -2142,35 +2168,71 @@ void CutoutPanel::refreshFromView() {
     if (doc.value("kind") == "character") { characters_.append(data); continue; }
     if (doc.value("kind") != "extension" || data.value("plugin") != PLUGIN_ID) continue;
     const QString type = data.value("type").toString(), id = data.value("id").toString();
-    Doc d{doc.value("file").toString(), data, toJson(data.value("data").toObject())};
-    if (type == "rig") rigs_.insert(id, d);
-    else if (type == "controller") controllers_.insert(id, d);
+    if (type != "rig" && type != "controller") continue;
+    Doc d{doc.value("file").toString(), data, nullptr, 0};
+    const QMap<QString, Doc>& old = type == "rig" ? oldRigs : oldControllers;
+    const auto previous = old.find(id);
+    if (previous != old.end() && previous->file == d.file && previous->envelope == data) { d.data = previous->data; d.stamp = previous->stamp; }
+    else if (type == "rig" && ownEdit && id == inflightRig_) { d.data = inflight_; d.stamp = inflightStamp_; }
+    else { d.data = std::make_shared<const Json>(toJson(data.value("data").toObject())); d.stamp = ++stampCounter_; }
+    (type == "rig" ? rigs_ : controllers_).insert(id, d);
   }
   if (inflight_) inflight_.reset();
   else if (revision != lastRevision_ && working_) { working_.reset(); setStatus("문서가 바뀌어 키로 저장하지 않은 변경을 버렸습니다."); }
   lastRevision_ = revision;
+  const bool dragged = dragPreview_ != nullptr;
   dragPreview_.reset();
   if (!rigs_.contains(rigId_)) rigId_ = rigs_.isEmpty() ? QString() : rigs_.firstKey();
-  auto controllerFits = [&](const QString& id) { return controllers_.contains(id) && qs(controllers_[id].data.value("rig", std::string())) == rigId_; };
+  auto controllerFits = [&](const QString& id) { return controllers_.contains(id) && qs(controllers_[id].data->value("rig", std::string())) == rigId_; };
   if (!controllerFits(controllerId_)) {
     controllerId_.clear();
     for (auto it = controllers_.begin(); it != controllers_.end(); ++it) if (controllerFits(it.key())) { controllerId_ = it.key(); break; }
   }
+  // Incremental refresh: the shown documents (and the lists built from them) are unchanged, as for
+  // the reply to our own edit, which was already displayed from inflight_: only the host-side state
+  // (diagnostics) changed. Anything else rebuilds every widget as before.
+  if (!dragged && !working_ && characters_ == oldCharacters && assets == shownAssets_ && displaySignature() == shownSignature_) {
+    lightRefreshes_++;
+    refreshDiagnostics();
+    return;
+  }
   rebuildDisplay();
 }
 
+QString CutoutPanel::displaySignature() const {
+  // Stamp of the data on screen (0 = pending/drag data) + every document's identity and stamp.
+  const quint64 shown = dragPreview_ || working_ ? 0 : inflight_ ? inflightStamp_ : rigDoc() ? rigDoc()->stamp : 0;
+  QString s = QString("%1|%2|%3|%4").arg(rigId_, controllerId_).arg(shown).arg(controllerDoc() ? controllerDoc()->stamp : 0);
+  for (auto it = rigs_.begin(); it != rigs_.end(); ++it) s += QString("|r:%1:%2").arg(it.key()).arg(it->stamp);
+  for (auto it = controllers_.begin(); it != controllers_.end(); ++it) s += QString("|c:%1:%2").arg(it.key()).arg(it->stamp);
+  return s;
+}
+
 void CutoutPanel::rebuildDisplay(bool full) {
-  const Json data = displayData();
-  rig_.reset();
-  rigError_.clear();
-  if (rigDoc() && data.is_object()) {
-    try {
-      cutout::Rig r = cutout::parseRig(ss(rigId_), data);
-      // The editor samples clip time itself (scrubbing to the very end must show the end pose).
-      for (auto& c : r.clips) c.loop = false;
-      rig_ = std::make_shared<const cutout::Rig>(std::move(r));
-    } catch (const std::exception& e) { rigError_ = qs(e.what()); }
+  const JsonPtr held = displayShared();  // kept alive for this call (no 1 MB copy)
+  const Json& data = *held;
+  fullRefreshes_ += full;
+  // The parse is reused while the same data is shown (selection, clip or mode changes rebuild the
+  // widgets but not the rig); pending and drag data (stamp 0) are always parsed again.
+  const quint64 stamp = dragPreview_ || working_ ? 0 : inflight_ ? inflightStamp_ : rigDoc() ? rigDoc()->stamp : 0;
+  if (!stamp || stamp != parsedStamp_ || parsedRig_ != rigId_) {
+    rig_.reset();
+    rigError_.clear();
+    parsedStamp_ = stamp;
+    parsedRig_ = rigId_;
+    if (rigDoc() && data.is_object()) {
+      try {
+        cutout::Rig r = inflight_ && inflightValid_ && stamp == inflightStamp_ ? cutout::parseValidatedRig(ss(rigId_), data) : cutout::parseRig(ss(rigId_), data);
+        // The editor samples clip time itself (scrubbing to the very end must show the end pose).
+        for (auto& c : r.clips) c.loop = false;
+        rig_ = std::make_shared<const cutout::Rig>(std::move(r));
+      } catch (const std::exception& e) { rigError_ = qs(e.what()); }
+    }
   }
+  if (!rigDoc()) { rig_.reset(); rigError_.clear(); parsedStamp_ = 0; }
+  const QString signature = displaySignature();
+  shownSignature_ = full || signature == shownSignature_ ? signature : QString();
+  if (full && host_) shownAssets_ = host_->assets();
   displayGeneration_++;  // every rebuild may change the data (or the preview look): ghost poses are resampled
   // The preview look follows the data: a deleted (or undone) skin/expression stops being previewed.
   if (!previewSkin_.isEmpty() && !findIn(data, "skins", ss(previewSkin_))) previewSkin_.clear();
@@ -2210,12 +2272,12 @@ void CutoutPanel::refreshCharacters() {
   filling_ = true;
   characterList_->clear();
   for (auto it = rigs_.begin(); it != rigs_.end(); ++it) {
-    const QString name = qs(it->data.value("name", std::string()));
+    const QString name = qs(it->data->value("name", std::string()));
     auto* item = new QTreeWidgetItem(characterList_, {name.isEmpty() || name == it.key() ? it.key() : QString("%1 (%2)").arg(name, it.key())});
     item->setData(0, Qt::UserRole, "rig:" + it.key());
     if (it.key() == rigId_) characterList_->setCurrentItem(item);
     for (auto c = controllers_.begin(); c != controllers_.end(); ++c) {
-      if (qs(c->data.value("rig", std::string())) != it.key()) continue;
+      if (qs(c->data->value("rig", std::string())) != it.key()) continue;
       auto* child = new QTreeWidgetItem(item, {"게임 연결: " + c.key()});
       child->setData(0, Qt::UserRole, "controller:" + c.key());
     }
@@ -2246,7 +2308,8 @@ void CutoutPanel::refreshTree() {
   QSignalBlocker block(tree_);
   filling_ = true;
   tree_->clear();
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   std::map<std::string, QTreeWidgetItem*> items;
   std::map<std::string, std::vector<std::string>> children;
   std::vector<std::string> roots;
@@ -2336,7 +2399,8 @@ cutout::Pose CutoutPanel::currentPose(bool expressions) const {
 void CutoutPanel::refreshProperties() {
   filling_ = true;
   const QString kind = refKind(selection_), id = refId(selection_);
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const cutout::Pose pose = currentPose(false);  // keyable values (a previewed expression only overlays the canvas)
   const bool animate = mode_ == Mode::Animate;
   QMap<QString, double> values;
@@ -2416,7 +2480,7 @@ void CutoutPanel::refreshProperties() {
   keyButton_->setToolTip(selectedItems().size() > 1 ? QString("고른 %1개(본: 위치·회전·크기, 조각: 그림)를 이 시간에 모두 키로 넣습니다.").arg(selectedItems().size()) : QString());
   keyButton_->setText(state == "modified" ? "◆ 변경됨 · 키 추가 (K)" : state == "keyed" ? "◆ 키 있음 · 다시 키 (K)" : "◇ 키 추가 (K)");
   keyButton_->setStyleSheet(state == "modified" ? "background:#f59e0b;color:#111;font-weight:bold;" : state == "keyed" ? "background:#16a34a;color:white;" : "");
-  discardButton_->setEnabled(working_.has_value());
+  discardButton_->setEnabled(working_ != nullptr);
   filling_ = false;
   refreshIk();  // mix/bend shown at the playhead follow every pose change
   refreshMesh();
@@ -2439,7 +2503,8 @@ void CutoutPanel::refreshClips() {
   QSignalBlocker block(clipList_);
   filling_ = true;
   clipList_->clear();
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json* current = nullptr;
   for (const auto& c : listOf(data, "clips")) {
     const QString id = qs(c.value("id", std::string())), name = qs(c.value("name", std::string()));
@@ -2563,7 +2628,8 @@ void CutoutPanel::refreshGraph() {
 
 void CutoutPanel::refreshMix() {
   filling_ = true;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json mix = data.is_object() && data.contains("mix") && data.at("mix").is_object() ? data.at("mix") : Json::object();
   {
     QSignalBlocker block(mixDefault_);
@@ -2599,7 +2665,8 @@ void CutoutPanel::refreshMix() {
 
 void CutoutPanel::refreshController() {
   filling_ = true;
-  const Json c = committedController();
+  const JsonPtr heldController = controllerShared();
+  const Json& c = *heldController;
   const QStringList clips = clipIds(), skins = idsOf(displayData(), "skins"), expressions = idsOf(displayData(), "expressions");
   for (auto [combo, key, none, ids] : {std::tuple{defaultSkinCombo_, "defaultSkin", "(기본 첨부)", &skins}, std::tuple{defaultExpressionCombo_, "defaultExpression", "(없음)", &expressions}}) {
     QSignalBlocker b(combo);
@@ -2614,7 +2681,7 @@ void CutoutPanel::refreshController() {
     QSignalBlocker b(controllerCombo_);
     controllerCombo_->clear();
     for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-      if (qs(it->data.value("rig", std::string())) == rigId_) controllerCombo_->addItem(it.key(), it.key());
+      if (qs(it->data->value("rig", std::string())) == rigId_) controllerCombo_->addItem(it.key(), it.key());
     controllerCombo_->setCurrentIndex(controllerCombo_->findData(controllerId_));
   }
   {
@@ -3036,14 +3103,14 @@ void CutoutPanel::selectRig(const QString& id) {
   previewExpression_.clear();
   lastSetupDelta_.reset();
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-    if (qs(it->data.value("rig", std::string())) == id) { controllerId_ = it.key(); break; }
+    if (qs(it->data->value("rig", std::string())) == id) { controllerId_ = it.key(); break; }
   previewKey_.clear();
   rebuildDisplay();
   canvas_->fitToCanvas();
 }
 void CutoutPanel::selectController(const QString& id) {
   if (!controllers_.contains(id)) return;
-  const QString rig = qs(controllers_[id].data.value("rig", std::string()));
+  const QString rig = qs(controllers_[id].data->value("rig", std::string()));
   if (rig != rigId_ && rigs_.contains(rig)) selectRig(rig);
   controllerId_ = id;
   previewKey_.clear();
@@ -3225,7 +3292,8 @@ void CutoutPanel::onDiagnosticClicked(const QString& file, const QString& pointe
   static const QRegularExpression re("/(bones|slots|clips|attachments|skins|expressions|ik)/(\\d+)");
   const auto m = re.match(pointer);
   if (!m.hasMatch()) return;
-  const Json data = committedRig();
+  const JsonPtr heldRig = committedShared();
+  const Json& data = *heldRig;
   const size_t index = m.captured(2).toUInt();
   const Json& list = listOf(data, ss(m.captured(1)).c_str());
   if (index >= list.size()) return;
@@ -3290,7 +3358,7 @@ bool CutoutPanel::deleteCharacter() {
   QJsonArray edits{QJsonObject{{"type", "delete"}, {"file", doc->file}}};
   QStringList names;
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it)
-    if (qs(it->data.value("rig", std::string())) == rigId_) { edits.append(QJsonObject{{"type", "delete"}, {"file", it->file}}); names << it.key(); }
+    if (qs(it->data->value("rig", std::string())) == rigId_) { edits.append(QJsonObject{{"type", "delete"}, {"file", it->file}}); names << it.key(); }
   if (!askConfirm("캐릭터 삭제", QString("「%1」 리그%2를 삭제할까요? 되돌리기(Ctrl+Z)로 복구할 수 있습니다.")
                                     .arg(rigId_, names.isEmpty() ? QString() : " 와 게임 연결 " + names.join(", "))))
     return false;
@@ -3581,7 +3649,7 @@ void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
   const std::vector<Json> ops = dragOps(d);
   if (!finished) {
     if (ops.empty()) return;
-    try { dragPreview_ = cutout::applyEdit(dragBase_, batch(ops)).data; } catch (const std::exception&) { return; }
+    try { dragPreview_ = std::make_shared<const Json>(cutout::applyEdit(dragBase_, batch(ops)).data); } catch (const std::exception&) { return; }
     rebuildDisplay(false);
     return;
   }
@@ -4146,14 +4214,16 @@ void CutoutPanel::commitMixTable() {
     auto* ms = qobject_cast<QSpinBox*>(mixTable_->cellWidget(r, 2));
     if (from && to && ms) pairs.push_back({{"from", ss(from->currentText())}, {"to", ss(to->currentText())}, {"durationMs", ms->value()}});
   }
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json mix = data.contains("mix") && data.at("mix").is_object() ? data.at("mix") : Json::object();
   if (mix.value("defaultMs", int64_t(0)) == mixDefault_->value() && mix.value("pairs", Json::array()) == pairs) return;
   if (!runOps({{{"op", "setMix"}, {"defaultMs", mixDefault_->value()}, {"pairs", pairs}}}, false)) refreshMix();
 }
 bool CutoutPanel::addMixPair() {
   const QStringList clips = clipIds();
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json mix = data.contains("mix") && data.at("mix").is_object() ? data.at("mix") : Json::object();
   Json pairs = mix.value("pairs", Json::array());
   for (const QString& a : clips) for (const QString& b : clips) {
@@ -4170,7 +4240,8 @@ bool CutoutPanel::addMixPair() {
 bool CutoutPanel::removeMixPair() {
   const int row = mixTable_->currentRow() >= 0 ? mixTable_->currentRow() : mixTable_->rowCount() - 1;
   if (row < 0) return false;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   Json pairs = data.contains("mix") && data.at("mix").is_object() ? data.at("mix").value("pairs", Json::array()) : Json::array();
   if (size_t(row) >= pairs.size()) return false;
   pairs.erase(pairs.begin() + row);
@@ -4282,8 +4353,8 @@ void CutoutPanel::ensurePreview() {
   if (!rig || !controller) return;
   try {
     // Real loop flags here: the preview behaves exactly like the game runtime.
-    auto parsed = std::make_shared<const cutout::Rig>(cutout::parseRig(ss(rigId_), rig->data));
-    preview_ = std::make_unique<cutout::Instance>(parsed, cutout::parseController(ss(controllerId_), controller->data));
+    auto parsed = std::make_shared<const cutout::Rig>(cutout::parseRig(ss(rigId_), *rig->data));
+    preview_ = std::make_unique<cutout::Instance>(parsed, cutout::parseController(ss(controllerId_), *controller->data));
   } catch (const std::exception& e) {
     previewResult_->setText("미리 보기를 만들 수 없습니다: " + qs(e.what()));
   }
@@ -4308,7 +4379,8 @@ QStringList CutoutPanel::previewSignal(const QString& name, const QMap<QString, 
 void CutoutPanel::refreshLooks() {
   if (!skinList_) return;
   filling_ = true;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   {
     QSignalBlocker block(skinList_);
     skinList_->clear();
@@ -4507,7 +4579,8 @@ bool CutoutPanel::assignSkinImageInteractive() {
 }
 QVector<CutoutPanel::SkinSlotInfo> CutoutPanel::skinSlots() const {
   QVector<SkinSlotInfo> out;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const cutout::Pose pose = currentPose(false);
   const Json* skin = findIn(data, "skins", ss(previewSkin_));
   for (const auto& s : listOf(data, "slots")) {
@@ -4647,7 +4720,8 @@ void CutoutPanel::refreshIk() {
   if (!ikList_) return;
   const bool wasFilling = filling_;
   filling_ = true;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json& list = listOf(data, "ik");
   if (!ikId_.isEmpty() && !findIn(data, "ik", ss(ikId_))) ikId_.clear();
   if (ikId_.isEmpty() && !list.empty()) ikId_ = qs(list[0].value("id", std::string()));
@@ -5049,7 +5123,7 @@ void CutoutPanel::onMeshDrag(const QPointF& delta, bool finished) {
   const std::vector<Json> ops = meshMoveOps(delta);
   if (!finished) {
     if (ops.empty()) return;
-    try { dragPreview_ = cutout::applyEdit(dragBase_, batch(ops)).data; } catch (const std::exception&) { return; }
+    try { dragPreview_ = std::make_shared<const Json>(cutout::applyEdit(dragBase_, batch(ops)).data); } catch (const std::exception&) { return; }
     rebuildDisplay(false);
     return;
   }
@@ -5112,7 +5186,7 @@ bool CutoutPanel::unbindMesh() {
 }
 bool CutoutPanel::keyDeform() {
   if (mode_ != Mode::Animate || clipId_.isEmpty()) { setStatus("변형 키는 애니메이션 모드에서 클립에 넣습니다.", true); return false; }
-  if (working_) { cutout::EditResult r; r.data = *working_; return commitRig(r); }
+  if (working_) { cutout::EditResult r; r.data = *working_; return commitRig(std::move(r)); }
   int si;
   const cutout::Attachment* att;
   Json fields;
@@ -5363,7 +5437,8 @@ const Json* CutoutPanel::currentEvent() const {
 void CutoutPanel::refreshEvents() {
   if (!eventList_) return;
   filling_ = true;
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json& defs = listOf(data, "events");
   if (!currentEvent()) eventId_ = defs.empty() ? QString() : qs(defs.front().value("name", std::string()));
   {
@@ -5536,7 +5611,8 @@ bool CutoutPanel::editEventKeyInteractive(const KeyRef& keyIn) {
   return editEventKey(key, choice);
 }
 bool CutoutPanel::runEventKeyDialog(EventKeyChoice& choice) {
-  const Json data = displayData();
+  const JsonPtr heldData = displayShared();  // shared, not copied
+  const Json& data = *heldData;
   const Json& defs = listOf(data, "events");
   QDialog dialog(this);
   dialog.setObjectName("cutoutEventKeyDialog");

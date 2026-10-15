@@ -4,7 +4,126 @@ import { childPointer, type Diagnostic, type DocumentKind, type Json, type Proje
 
 export interface ParseResult { document?: ProjectDocument; diagnostics: Diagnostic[] }
 
-export function parseDocument(file: string, kind: DocumentKind, source: string): ParseResult {
+/**
+ * Source locations computed on first use. A document the editor serialized itself (JSON.stringify)
+ * cannot have syntax errors or duplicate keys, so only a diagnostic that needs a line/column pays
+ * for the full tree walk; on a large plugin document (a 2.7 MiB rig) that walk dominated every edit.
+ */
+class LazyLocations implements ReadonlyMap<string, SourceLocation> {
+  private built: ReadonlyMap<string, SourceLocation> | null = null;
+  constructor(private readonly file: string, private readonly kind: DocumentKind, private readonly source: string) {}
+  private get map(): ReadonlyMap<string, SourceLocation> { return this.built ??= parseDocument(this.file, this.kind, this.source).document?.locations ?? new Map(); }
+  get size(): number { return this.map.size; }
+  get(key: string): SourceLocation | undefined { return this.map.get(key); }
+  has(key: string): boolean { return this.map.has(key); }
+  forEach(callback: (value: SourceLocation, key: string, map: ReadonlyMap<string, SourceLocation>) => void, thisArg?: unknown): void { this.map.forEach(callback, thisArg); }
+  entries(): MapIterator<[string, SourceLocation]> { return this.map.entries(); }
+  keys(): MapIterator<string> { return this.map.keys(); }
+  values(): MapIterator<SourceLocation> { return this.map.values(); }
+  [Symbol.iterator](): MapIterator<[string, SourceLocation]> { return this.map[Symbol.iterator](); }
+}
+/**
+ * Locations in the editor's own serialization (JSON.stringify(value, null, 2) + newline) computed
+ * from the value instead of the text: every array element / object member starts its own line,
+ * so a node's line is its container's line + 1 + the lines of the siblings before it, and its column
+ * is the indent (+ the quoted key and ": " for members). One diagnostic on a 2.7 MiB rig resolves
+ * a path in microseconds instead of walking ~100k nodes; iteration falls back to the full map.
+ */
+class PrettyLocations implements ReadonlyMap<string, SourceLocation> {
+  private value: Json | undefined;
+  private lineStarts: number[] | null = null;
+  private readonly lines = new WeakMap<object, number>();
+  private readonly before = new WeakMap<object, number[]>();
+  private readonly memberIndex = new WeakMap<object, Map<string, number>>();
+  private readonly full: LazyLocations;
+  constructor(file: string, kind: DocumentKind, private readonly source: string) { this.full = new LazyLocations(file, kind, source); }
+  private linesOf(v: Json): number {
+    if (v === null || typeof v !== 'object') return 1;
+    let n = this.lines.get(v);
+    if (n === undefined) {
+      const children = Array.isArray(v) ? v : Object.values(v);
+      n = children.length ? 2 : 1;
+      for (const c of children) n += this.linesOf(c);
+      this.lines.set(v, n);
+    }
+    return n;
+  }
+  private beforeOf(v: object): number[] {
+    let prefix = this.before.get(v);
+    if (!prefix) {
+      prefix = [];
+      let sum = 0;
+      for (const c of Array.isArray(v) ? v as Json[] : Object.values(v) as Json[]) { prefix.push(sum); sum += this.linesOf(c); }
+      this.before.set(v, prefix);
+    }
+    return prefix;
+  }
+  private resolve(pointer: string): SourceLocation | undefined {
+    // A private parse of the same text: validators may mutate the document's own data.
+    this.value ??= JSON.parse(this.source) as Json;
+    let node: Json = this.value, line = 1, column = 1, depth = 0;
+    if (pointer !== '') {
+      if (!pointer.startsWith('/')) return undefined;
+      for (const raw of pointer.slice(1).split('/')) {
+        const part = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+        if (Array.isArray(node)) {
+          if (!/^(0|[1-9][0-9]*)$/.test(part) || Number(part) >= node.length) return undefined;
+          line += 1 + this.beforeOf(node)[Number(part)]!;
+          column = 2 * (depth + 1) + 1;
+          node = node[Number(part)]!;
+        } else if (node !== null && typeof node === 'object') {
+          if (!Object.hasOwn(node, part)) return undefined;
+          let index = this.memberIndex.get(node);
+          if (!index) this.memberIndex.set(node, index = new Map(Object.keys(node).map((k, i) => [k, i])));
+          line += 1 + this.beforeOf(node)[index.get(part)!]!;
+          column = 2 * (depth + 1) + JSON.stringify(part).length + 3;
+          node = node[part]!;
+        } else return undefined;
+        depth++;
+      }
+    }
+    if (!this.lineStarts) {
+      this.lineStarts = [0];
+      for (let at = this.source.indexOf('\n'); at >= 0; at = this.source.indexOf('\n', at + 1)) this.lineStarts.push(at + 1);
+    }
+    return { offset: (this.lineStarts[line - 1] ?? 0) + column - 1, line, column };
+  }
+  get size(): number { return this.full.size; }
+  get(key: string): SourceLocation | undefined { return this.resolve(key); }
+  has(key: string): boolean { return this.resolve(key) !== undefined; }
+  forEach(callback: (value: SourceLocation, key: string, map: ReadonlyMap<string, SourceLocation>) => void, thisArg?: unknown): void { this.full.forEach(callback, thisArg); }
+  entries(): MapIterator<[string, SourceLocation]> { return this.full.entries(); }
+  keys(): MapIterator<string> { return this.full.keys(); }
+  values(): MapIterator<SourceLocation> { return this.full.values(); }
+  [Symbol.iterator](): MapIterator<[string, SourceLocation]> { return this.full[Symbol.iterator](); }
+}
+const MAX_DEPTH = 128;
+function deeperThan(value: Json, limit: number): boolean {
+  const pending: [unknown, number][] = [[value, 0]];
+  while (pending.length) {
+    const [node, depth] = pending.pop()!;
+    if (!node || typeof node !== 'object') continue;
+    if (depth >= limit) return true;
+    for (const child of Array.isArray(node) ? node : Object.values(node)) if (child && typeof child === 'object') pending.push([child, depth + 1]);
+  }
+  return false;
+}
+
+export interface ParseOptions {
+  /** `source` is exactly JSON.stringify(value, null, 2) + newline (the editor's own serialization):
+   *  parsed with JSON.parse, locations computed from the value on demand. Falls back to the full
+   *  parse for anything unexpected. */
+  serialized?: boolean;
+}
+export function parseDocument(file: string, kind: DocumentKind, source: string, options: ParseOptions = {}): ParseResult {
+  if (options.serialized) {
+    try {
+      const data = JSON.parse(source) as Json;
+      // Same depth limit as below; deeper documents take the full path for its exact diagnostics.
+      if (data !== null && typeof data === 'object' && !deeperThan(data, MAX_DEPTH))
+        return { document: { file, kind, data, version: createHash('sha256').update(source).digest('hex'), locations: new PrettyLocations(file, kind, source) }, diagnostics: [] };
+    } catch { /* not plain JSON after all: full parse below reports it */ }
+  }
   const diagnostics: Diagnostic[] = [];
   const lineStarts = [0];
   for (let i = 0; i < source.length; i++) if (source[i] === '\n') lineStarts.push(i + 1);
@@ -38,7 +157,7 @@ export function parseDocument(file: string, kind: DocumentKind, source: string):
   while (pending.length) {
     const { node, pointer, depth } = pending.pop()!;
     locations.set(pointer, locate(node.offset));
-    if (depth > 128) {
+    if (depth > MAX_DEPTH) {
       report('JSON_DEPTH_LIMIT', pointer, node.offset, 'JSON 중첩은 128단계를 넘을 수 없습니다.');
       continue;
     }

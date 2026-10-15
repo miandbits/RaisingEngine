@@ -58,6 +58,7 @@ const QVector<SignalInfo>& signalVocabulary();
 class CutoutPanel : public QWidget {
   Q_OBJECT
  public:
+  using JsonPtr = std::shared_ptr<const cutout::Json>;
   enum class Mode { Setup, Animate };
   struct PartChoice { QString assetId, importFile, slot, name, bone; };
   /** 스킨 그림 지정: `slot` is always an existing slot; the image never changes slot or name. */
@@ -319,7 +320,7 @@ class CutoutPanel : public QWidget {
   QString clipId() const { return clipId_; }
   Mode mode() const { return mode_; }
   int playhead() const { return playheadMs_; }
-  bool hasPending() const { return working_.has_value(); }
+  bool hasPending() const { return working_ != nullptr; }
   QString keyState() const;
   QString status() const;
   RigCanvas* canvas() const { return canvas_; }
@@ -330,6 +331,14 @@ class CutoutPanel : public QWidget {
   TimeView* timeView() const { return timeView_; }
   /** Rig data currently shown (pending/drag preview included). */
   const cutout::Json& displayData() const;
+  /** The display data's owner: hold it while working with displayData() across calls that may
+   *  replace the pending/committed data (cheap: no copy). */
+  JsonPtr displayShared() const;
+  JsonPtr committedShared() const;
+  JsonPtr controllerShared() const;
+  /** Light refresh after a view whose documents are what is already shown (counts for tests). */
+  int lightRefreshes() const { return lightRefreshes_; }
+  int fullRefreshes() const { return fullRefreshes_; }
   const cutout::Json& committedRig() const;
   const cutout::Json& committedController() const;
 
@@ -346,7 +355,10 @@ class CutoutPanel : public QWidget {
   bool eventFilter(QObject* watched, QEvent* event) override;
 
  private:
-  struct Doc { QString file; QJsonObject envelope; cutout::Json data; };
+  /** `data` is shared and immutable: refresh, the display snapshot and the in-flight edit hand the
+   *  same parsed document around instead of copying ~1 MB of JSON per use (plugin 1.9.0). `stamp`
+   *  identifies the parsed value: an unchanged document keeps it across views. */
+  struct Doc { QString file; QJsonObject envelope; JsonPtr data; quint64 stamp = 0; };
   raising::StudioHost* host_;
   ImageCache images_;
   QMap<QString, Doc> rigs_, controllers_;
@@ -365,9 +377,20 @@ class CutoutPanel : public QWidget {
   int playheadMs_ = 0, lastRevision_ = -1;
   double playheadExact_ = 0;
   bool filling_ = false, inSubmit_ = false, refreshQueued_ = false, autoKey_ = false, dragActive_ = false;
-  std::optional<cutout::Json> working_;      // uncommitted animate-mode changes (auto-key off): shown, not saved
-  std::optional<cutout::Json> inflight_;     // sent, waiting for the host reply (avoids flicker)
-  std::optional<cutout::Json> dragPreview_;  // live drag preview, never sent until release
+  JsonPtr working_;      // uncommitted animate-mode changes (auto-key off): shown, not saved
+  JsonPtr inflight_;     // sent, waiting for the host reply (avoids flicker); adopted as the doc when it arrives
+  JsonPtr dragPreview_;  // live drag preview, never sent until release
+  quint64 inflightStamp_ = 0, stampCounter_ = 0;
+  // What the last rebuildDisplay showed (rig/controller stamps, 0 = pending data): a view whose
+  // documents keep these stamps only refreshes diagnostics instead of every widget.
+  quint64 shownRigStamp_ = 0, shownControllerStamp_ = 0;
+  int lightRefreshes_ = 0, fullRefreshes_ = 0;
+  QString inflightRig_, shownSignature_, parsedRig_;
+  quint64 parsedStamp_ = 0;
+  bool inflightValid_ = false;
+  QJsonArray shownAssets_;
+  QString displaySignature() const;
+  QStringList shownControllers_;
   cutout::Json dragBase_;                    // data/pose at drag start: deltas are relative to it
   std::shared_ptr<const cutout::Rig> dragRig_;
   cutout::Pose dragPose_;
@@ -553,7 +576,7 @@ class CutoutPanel : public QWidget {
   void keyCommand(const QString& command);
   void updateTimeUi(int duration);
   void syncTimeScroll();
-  bool commitRig(const cutout::EditResult& result);
+  bool commitRig(cutout::EditResult result);
   bool commitController(const cutout::Json& data);
   bool captureExpressionAs(const QString& id, bool replace);
   bool busy();

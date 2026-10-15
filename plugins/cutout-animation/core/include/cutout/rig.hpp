@@ -169,6 +169,9 @@ struct Diagnostic {
 std::vector<Diagnostic> validateRig(const Json& data);
 /** Parse validated data. Throws std::runtime_error when validateRig reports errors. */
 Rig parseRig(const std::string& id, const Json& data);
+/** parseRig for data the caller has just validated (validateRig reported no error): skips the
+ *  second validation pass, which costs as much as the parse on large rigs (plugin 1.9.0). */
+Rig parseValidatedRig(const std::string& id, const Json& data);
 
 const char* propertyName(Property p);
 std::optional<Property> parseProperty(const std::string& name);

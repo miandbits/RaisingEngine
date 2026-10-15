@@ -75,6 +75,11 @@ The envelope (`extension.schema.json`) is validated by the engine; `data` is val
 the plugin (its JSON schema, then its service module). The path must equal
 `plugins/<plugin>/<type>/<id>.json`.
 
+Size: an extension document may be up to **8 MiB** as written by the editor (indented JSON;
+other project documents keep 2 MiB, `DOCUMENT_SIZE_LIMIT`). The loader and the editor's
+`create`/`replace` checks use the same limit, so a document that can be edited can be saved and
+reloaded (a 200-bone animation rig is ~0.8 MiB compact but ~2.7 MiB indented).
+
 ### Missing / disabled / incompatible plugins never delete data
 
 | Situation | Diagnostic (severity) | Behavior |
@@ -168,7 +173,8 @@ Requests (replies are `{ "ok": true, … }` or `{ "ok": false, "error": "…" }`
 | `unmount` | `{instance}` | |
 | `observe` | `{before, after, command, error}` where before/after = `{state, narrative}` | `{signals, matched}` |
 | `update` | `{dtMs}` | `{notifications}` (presentation only) |
-| `frame` | `{instance}` | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha, mesh?}]}` |
+| `frame` | `{instance}` (+ `format`, `since`: compact frames below) | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha, mesh?}]}` |
+| `meshes` | `{ids?}` (compact frames only) | `{meshEpoch, meshes:[{id, uvs, indices}]}` |
 | `saveAll` / `restoreAll` | — / `{state}` | opaque `state` |
 | `describeAll` | — | debug/report data |
 
@@ -191,6 +197,35 @@ documents need beyond `plugin-elements-v1` (cutout returns `["plugin-mesh-v1"]` 
 a mesh). `exportBundle` collects them as `PreparedExtensions.features` (a failing service is
 `PLUGIN_SERVICE_ERROR`) and `exportGame` refuses a target player whose capabilities lack one,
 before anything is written.
+
+**Compact frames** (ABI extension, still `raising-extension-1`; plugins and hosts that do not use it
+keep the documented items above, both directions stay compatible). A host lists the formats it
+reads in `init`: `{op:"init", documents, frameFormats:[2]}`; a plugin that writes them answers
+`{…, frameFormat:2, meshEpoch, meshes:[{id, uvs, indices}]}` (the topology of every mesh it may
+draw, fixed for the init lifetime) and an older plugin simply ignores the field, so the host keeps
+format 1. Then `{op:"frame", instance, format:2, since?}` answers
+`{ok:true, format:2, meshEpoch, frame, items:[…]}` where each item is an array
+`[imageAssetId, a, b, c, d, e, f, width, height, alpha]`, extended for a mesh by `null` (a reserved
+slot), `meshId, [x, y, …]` (element-local positions; uvs and indices come from the `meshes` entry
+of that id). Numbers are fixed-point decimals: `a`–`d` to
+1e-6, `e`, `f`, sizes and positions to 1/1000 px, alpha to 1e-4 (sub-pixel; parity checks
+against format 1 use 6e-4). `frame` is a number the host sends back as `since` on the next request
+of that instance: an item identical to the one at the same index in that frame is sent as `0`
+("unchanged"; a paused character costs a few hundred bytes). A `since` that is not the instance's
+last frame (or 0) gets every item. A changed `meshEpoch` (a rig loaded after `init`) or an unknown
+mesh id is resolved with `{op:"meshes", ids?}` → `{meshEpoch, meshes:[{id, uvs, indices}]}`. Hosts
+that lose their cached items (a `0` they cannot resolve) send `since:0` next time. Measured on the
+200-bone stress rig (tests/plugins/cutout-perf.test.mjs): 146 KB → 39 KB per character and frame,
+native player 95 → 9 ms per frame for 20 characters, web 64 → 18 ms. Hosts expose their frame
+costs in reports (`extensions.timing`: frames, frameMs, bytes, frameFormats) and accept
+`RAISING_EXTENSION_FRAME_FORMATS=1` (native) / `window.raisingExtensionFrameFormats=[1]` (web) to
+stay on format 1 for diagnostics.
+
+**Wasm hosts and large requests**: `cwrap` string arguments are copied onto the module's stack
+(1 MB for cutout), which a large rig in `init`/`validate` overflows. A module that also exports
+`_malloc`, `_free`, `stringToUTF8`, `lengthBytesUTF8` and `UTF8ToString` is called with the request
+in heap memory (`_raising_extension_request(pointer)` → reply pointer); the web player and the
+cutout service do so (web limit 64 MiB, else 48 KiB through `cwrap`).
 
 Hosts must call `observe` exactly once per submitted command (after the reply), in
 command order, and never from frame callbacks. `update` uses wall-clock presentation

@@ -8,6 +8,7 @@ import { inflateSync } from 'node:zlib';
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RIG_SENTINEL = '#rig';
+
 const SCALAR = new Set(['string', 'number', 'boolean']);
 
 /** Width/height from the PNG IHDR chunk, or null when the file is unreadable / not a PNG. */
@@ -93,15 +94,44 @@ async function fillOutlineMasks(operation) {
   }
 }
 
+/**
+ * `raising_extension_request` with the request copied into _malloc'd heap memory (plugin 1.9.0):
+ * cwrap 'string' arguments go onto the 1 MB Wasm stack, which a large rig in `validate`/`edit`
+ * overflows. Older runtime builds without the heap helpers keep the cwrap path.
+ */
+function heapRequest(module) {
+  const call = module._raising_extension_request;
+  if (typeof call !== 'function' || typeof module._malloc !== 'function' || typeof module._free !== 'function' || typeof module.stringToUTF8 !== 'function' ||
+      typeof module.lengthBytesUTF8 !== 'function' || typeof module.UTF8ToString !== 'function') return module.cwrap('raising_extension_request', 'string', ['string']);
+  return text => {
+    const size = module.lengthBytesUTF8(text) + 1, at = module._malloc(size);
+    try { module.stringToUTF8(text, at, size); return module.UTF8ToString(call(at)); } finally { module._free(at); }
+  };
+}
+
 export async function createService({ pluginDir, manifest }) {
   const runtime = manifest.modules.find(m => m.role === 'runtime' && m.platform === 'web-wasm');
   if (!runtime) throw new Error('cutout-animation: web-wasm 런타임 모듈이 없습니다.');
   const { default: factory } = await import(pathToFileURL(path.join(pluginDir, ...runtime.path.split('/'))).href);
   const module = await factory();
-  const raw = module.cwrap('raising_extension_request', 'string', ['string']);
+  const raw = heapRequest(module);
   const request = value => {
     const reply = JSON.parse(raw(JSON.stringify(value)));
     if (!reply || typeof reply !== 'object') throw new Error('cutout core가 잘못된 응답을 돌려주었습니다.');
+    return reply;
+  };
+  // Rig validation results by rig text (plugin 1.9.0): an edit to another document (or to a
+  // controller) does not send a large rig through the core again. A few entries are enough: one
+  // validation pass sees each rig once.
+  const rigResults = new Map();
+  const validateRig = (data, controllers) => {
+    const text = JSON.stringify(data);
+    const key = text + ' #controllers ' + JSON.stringify(controllers);
+    if (rigResults.has(key)) { const hit = rigResults.get(key); rigResults.delete(key); rigResults.set(key, hit); return hit; }
+    // One core request for the rig and all its controllers: it is validated and parsed once.
+    const reply = request({ op: 'validate', rig: data, rigPointer: '/data', controllers: controllers.map(c => ({ data: c, pointer: '/data' })) });
+    rigResults.set(key, reply);
+    while (rigResults.size > 8) rigResults.delete(rigResults.keys().next().value);
     return reply;
   };
   const version = request({ op: 'version' });
@@ -119,10 +149,19 @@ export async function createService({ pluginDir, manifest }) {
     const rigs = new Map(documents.filter(d => d.type === 'rig').map(d => [d.id, d]));
     const controllers = new Map(documents.filter(d => d.type === 'controller').map(d => [d.id, d]));
     const images = new Map(assets.map(a => [a.id, a]));
-    const sizes = new Map();
+    // PNG headers of every referenced image, read concurrently up front (plugin 1.9.0): one await
+    // per file in turn left a large character's validation waiting on hundreds of file reads.
+    const referenced = new Set();
+    for (const rig of rigs.values())
+      for (const list of [rig.data.attachments, ...(Array.isArray(rig.data.skins) ? rig.data.skins.map(s => s?.attachments) : [])])
+        for (const a of Array.isArray(list) ? list : []) { const asset = images.get(a?.imageAssetId); if (asset?.kind === 'image' && asset.absolutePath) referenced.add(asset.absolutePath); }
+    const sizes = new Map(await Promise.all([...referenced].map(async file => [file, await pngSize(file)])));
 
+    const controllersOf = id => [...controllers.values()].filter(c => c.data?.rig === id);
+    const rigReplies = new Map();
     for (const rig of rigs.values()) {
-      const reply = request({ op: 'validate', rig: rig.data, rigPointer: '/data' });
+      const reply = validateRig(rig.data, controllersOf(rig.id).map(c => c.data));
+      rigReplies.set(rig.id, reply);
       if (!reply.ok) { push(rig.file, '/data', 'ANIM_CORE', `리그를 검사할 수 없습니다: ${reply.error}`, [rig.id]); continue; }
       fromCore(rig, reply.diagnostics);
       // Default attachments and every skin's attachments get the same image checks.
@@ -152,11 +191,17 @@ export async function createService({ pluginDir, manifest }) {
     for (const controller of controllers.values()) {
       const rigId = controller.data.rig, rig = rigs.get(rigId);
       if (typeof rigId === 'string' && !rig) push(controller.file, '/data/rig', 'ANIM_RIG_MISSING', `리그 '${rigId}'가 없습니다. plugins/cutout-animation/rig/${rigId}.json을 만드세요.`, [controller.id, rigId]);
-      // With the rig present the core also checks clip names; its rig diagnostics are already reported above.
-      const reply = request(rig ? { op: 'validate', rig: rig.data, rigPointer: RIG_SENTINEL, controller: controller.data, controllerPointer: '/data' }
-        : { op: 'validate', controller: controller.data, controllerPointer: '/data' });
+      // With the rig present the core checked clip names in the rig's batch request above (its
+      // rig diagnostics are already reported); an orphan controller is checked on its own.
+      if (rig) {
+        const batch = rigReplies.get(rig.id), index = controllersOf(rig.id).indexOf(controller);
+        if (!batch?.ok) { push(controller.file, '/data', 'ANIM_CORE', `컨트롤러를 검사할 수 없습니다: ${batch?.error}`, [controller.id]); continue; }
+        fromCore(controller, batch.controllerDiagnostics?.[index] ?? []);
+        continue;
+      }
+      const reply = request({ op: 'validate', controller: controller.data, controllerPointer: '/data' });
       if (!reply.ok) { push(controller.file, '/data', 'ANIM_CORE', `컨트롤러를 검사할 수 없습니다: ${reply.error}`, [controller.id]); continue; }
-      fromCore(controller, (reply.diagnostics ?? []).filter(d => !(rig === undefined && d.code === 'ANIM_RIG_MISSING')), true);
+      fromCore(controller, (reply.diagnostics ?? []).filter(d => d.code !== 'ANIM_RIG_MISSING'), true);
     }
     for (const { file, pointer, element } of elements) {
       const ext = element?.extension ?? {};

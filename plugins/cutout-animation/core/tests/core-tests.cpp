@@ -9,6 +9,7 @@
 #include "cutout/mesh.hpp"
 #include "cutout/signals.hpp"
 #include "cutout/templates.hpp"
+#include "bench.hpp"
 
 using namespace cutout;
 namespace {
@@ -466,6 +467,50 @@ Json outlineParityScript() {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--stress-rig") {
+    // The generated large character for the node/player/service benchmarks (plugin 1.9.0).
+    const Json rig = cutout_stress::rig();
+    std::cout << Json({{"rig", rig}, {"controller", cutout_stress::controller()}, {"images", cutout_stress::imageIds(rig)}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--frame-parity") {
+    // Native reference for compact frames (plugin 1.9.0) through the ABI string path: deltas, the
+    // mesh table, skins/expressions, mirrored placement (tests/plugins/cutout-frame-parity.test.mjs).
+    const Json rig = cutout_stress::rig();
+    Json script = Json::array({{{"op", "init"}, {"frameFormats", {2}}, {"documents", {{{"type", "rig"}, {"id", "stress"}, {"data", rig}}, {{"type", "controller"}, {"id", "c"}, {"data", cutout_stress::controller()}}}}}});
+    for (int i = 0; i < 3; i++)
+      script.push_back({{"op", "mount"}, {"instance", "i" + std::to_string(i)}, {"element", {{"type", "character"}, {"ref", "c"}, {"width", 200 + 100 * i}, {"height", 300}, {"props", {{"flipX", i == 2}, {"scale", 1 + 0.25 * i}}}}}});
+    const double steps[] = {0, 0, 16.7, 33.4, 250, 1200};
+    for (double dt : steps) {
+      script.push_back({{"op", "update"}, {"dtMs", dt}});
+      for (int i = 0; i < 3; i++) script.push_back({{"op", "frame"}, {"instance", "i" + std::to_string(i)}, {"format", 2}, {"since", "?"}});
+    }
+    script.push_back({{"op", "setSkin"}, {"instance", "i1"}, {"skin", "skin-2"}});
+    script.push_back({{"op", "setExpression"}, {"instance", "i1"}, {"expression", "face-3"}});
+    script.push_back({{"op", "frame"}, {"instance", "i1"}, {"format", 2}, {"since", "?"}});
+    script.push_back({{"op", "meshes"}, {"ids", {0, 7, 39}}});
+    // "?" = the frame number of that instance's previous reply (what a host sends back).
+    Host host;
+    std::map<std::string, Json> last;
+    Json replies = Json::array();
+    for (auto& op : script) {
+      if (op.contains("since")) op["since"] = last.count(op["instance"]) ? last[op["instance"]] : Json(0);
+      const Json reply = Json::parse(host.requestText(op.dump()));
+      if (op["op"] == "frame") last[op["instance"]] = reply["frame"];
+      replies.push_back(reply);
+    }
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && (std::string(argv[1]) == "--bench" || std::string(argv[1]) == "--perf")) {
+    // Large-rig medians; --perf also checks the regression budgets (exit 1 when one is exceeded).
+    const Json result = cutout_bench::run();
+    std::cout << result.dump() << "\n";
+    if (std::string(argv[1]) == "--bench") return 0;
+    const auto failed = cutout_bench::checkBudgets(result);
+    for (const auto& f : failed) std::cerr << "PERF BUDGET " << f << "\n";
+    return failed.empty() ? 0 : 1;
+  }
   if (argc > 1 && std::string(argv[1]) == "--bezier-parity") {
     // Native reference samples for tests/plugins/cutout-bezier-parity.test.mjs (Wasm `sample`).
     Host host;
@@ -2984,6 +3029,83 @@ int main(int argc, char** argv) {
       if (r.contains("notifications") && r["notifications"].contains("a"))
         for (const auto& n : r["notifications"]["a"]) if (n["kind"] == "event") { events++; audio += n.contains("audio"); }
     check(events == 14 && audio == 8, "walk loops + joy events through the generic update op");
+  });
+
+  // ---- Large rigs (plugin 1.9.0): the benchmark character, compact frames, batched validation.
+  test("stress rig validates cleanly; parseValidatedRig builds the same rig", [] {
+    const Json data = cutout_stress::rig();
+    check(validateRig(data).empty(), "no diagnostics at all");
+    const auto a = std::make_shared<const Rig>(parseRig("s", data)), b = std::make_shared<const Rig>(parseValidatedRig("s", data));
+    check(validateController(cutout_stress::controller(), a.get()).empty(), "controller fits");
+    check(a->bones.size() == 200 && a->slots.size() == 150 && a->clips.size() == 30 && a->skins.size() == 4 && a->ik.size() == 6, "counts");
+    Instance x(a, parseController("c", cutout_stress::controller())), y(b, parseController("c", cutout_stress::controller()));
+    x.update(333); y.update(333);
+    const auto p = x.drawList(), q = y.drawList();
+    bool same = p.size() == q.size() && p.size() > 140;
+    for (size_t i = 0; same && i < p.size(); i++) same = p[i].imageAssetId == q[i].imageAssetId && p[i].positions == q[i].positions && near(p[i].matrix.e, q[i].matrix.e, 0);
+    check(same, "identical draw lists");
+  });
+
+  test("appendFixed: compact frame numbers", [] {
+    auto f = [](double v, int d) { std::string s; appendFixed(s, v, d); return s; };
+    check(f(0, 3) == "0" && f(-0.0, 3) == "0" && f(-0.0004, 3) == "0" && f(-0.0006, 3) == "-0.001", "zero and sign");
+    check(f(1.5, 3) == "1.5" && f(84.00000001, 3) == "84" && f(123.4567, 3) == "123.457" && f(0.1, 6) == "0.1" && f(-2.0000006, 6) == "-2.000001", "rounding, trailing zeros");
+    check(f(std::nan(""), 3) == "0" && f(1e300, 3) == "1000000000000", "non-finite and clamped");
+    check(f(0.001, 3) == "0.001" && f(10.25, 1) == "10.3" && f(7, 0) == "7", "leading zeros, few decimals");
+  });
+
+  test("host op: compact frames (format 2) carry the documented items, deltas and the mesh table", [] {
+    Host host;
+    const Json rig = cutout_stress::rig();
+    Json init = host.handle({{"op", "init"}, {"frameFormats", {2}}, {"documents", {{{"type", "rig"}, {"id", "stress"}, {"data", rig}}, {{"type", "controller"}, {"id", "c"}, {"data", cutout_stress::controller()}}}}});
+    check(init["ok"] == true && init["frameFormat"] == 2 && init["meshes"].size() == 40, "negotiated with the topology of every mesh");
+    check(!host.handle({{"op", "init"}, {"documents", Json::array()}}).contains("frameFormat"), "a host that does not ask keeps the documented format");
+    init = host.handle({{"op", "init"}, {"frameFormats", {1, 2}}, {"documents", {{{"type", "rig"}, {"id", "stress"}, {"data", rig}}, {{"type", "controller"}, {"id", "c"}, {"data", cutout_stress::controller()}}}}});
+    check(host.handle({{"op", "mount"}, {"instance", "a"}, {"element", {{"type", "character"}, {"ref", "c"}, {"width", 400}, {"height", 300}, {"props", Json::object()}}}})["ok"] == true, "mounted");
+    host.handle({{"op", "update"}, {"dtMs", 250}});
+    const Json full = Json::parse(host.requestText(Json({{"op", "frame"}, {"instance", "a"}, {"format", 2}}).dump()));
+    const Json documented = host.handle({{"op", "frame"}, {"instance", "a"}});
+    check(full["format"] == 2 && full["items"].size() == documented["items"].size(), "same item count");
+    bool same = true;
+    size_t meshes = 0;
+    for (size_t k = 0; k < full["items"].size(); k++) {
+      const Json& e = full["items"][k];
+      const Json& d = documented["items"][k];
+      same = same && e[0] == d["imageAssetId"] && near(e[7].get<double>(), d["width"].get<double>(), 6e-4) && near(e[9].get<double>(), d["alpha"].get<double>(), 6e-5);
+      for (int i = 0; i < 6; i++) same = same && near(e[1 + i].get<double>(), d["matrix"][i].get<double>(), i < 4 ? 6e-7 : 6e-4);
+      if (!d.contains("mesh")) { same = same && e.size() == 10; continue; }
+      meshes++;
+      const Json& t = init["meshes"][e[11].get<size_t>()];
+      same = same && e.size() == 13 && e[10].is_null() && t["indices"] == d["mesh"]["indices"] && t["uvs"] == d["mesh"]["uvs"] && e[12].size() == d["mesh"]["positions"].size();
+      for (size_t v = 0; same && v < e[12].size(); v++) same = near(e[12][v].get<double>(), d["mesh"]["positions"][v].get<double>(), 6e-4);
+    }
+    check(same && meshes == 40, "every compact item matches its documented item (1/1000 px)");
+    // Nothing advanced: every item is "0" against that frame; another `since` gets everything again.
+    const uint64_t serial = full["frame"].get<uint64_t>();
+    const Json still = Json::parse(host.requestText(Json({{"op", "frame"}, {"instance", "a"}, {"format", 2}, {"since", serial}}).dump()));
+    bool zeros = still["items"].size() == full["items"].size();
+    for (const auto& e : still["items"]) zeros = zeros && e == 0;
+    check(zeros && still["frame"].get<uint64_t>() > serial, "unchanged items are 0");
+    const Json stale = host.handle({{"op", "frame"}, {"instance", "a"}, {"format", 2}, {"since", serial}});
+    check(stale["items"][0].is_array(), "a since that is not the last frame gets every item");
+    host.handle({{"op", "update"}, {"dtMs", 40}});
+    const Json moved = host.handle({{"op", "frame"}, {"instance", "a"}, {"format", 2}, {"since", stale["frame"]}});
+    size_t changed = 0;
+    for (const auto& e : moved["items"]) changed += e.is_array();
+    check(changed > 0 && changed <= moved["items"].size(), "an advanced pose sends the changed items");
+    const Json table = host.handle({{"op", "meshes"}, {"ids", {3, 999}}});
+    check(table["meshes"].size() == 1 && table["meshes"][0]["id"] == 3 && table["meshEpoch"] == init["meshEpoch"], "meshes op: known ids only");
+    host.handle({{"op", "loadRig"}, {"id", "other"}, {"data", rigData()}});
+    check(host.handle({{"op", "meshes"}})["meshEpoch"] != init["meshEpoch"], "loading a rig starts a new mesh epoch");
+  });
+
+  test("host op: validate checks every controller of a rig in one request", [] {
+    Host host;
+    Json bad = controllerData();
+    bad["defaultClip"] = "nope";
+    const Json r = host.handle({{"op", "validate"}, {"rig", rigData()}, {"rigPointer", "/data"}, {"controllers", {{{"data", controllerData()}, {"pointer", "/data"}}, {{"data", bad}, {"pointer", "/data"}}}}});
+    check(r["ok"] == true && r["diagnostics"].empty() && r["controllerDiagnostics"].size() == 2, "rig once, one list per controller");
+    check(r["controllerDiagnostics"][0].empty() && r["controllerDiagnostics"][1][0]["code"] == "ANIM_CLIP_UNKNOWN" && r["controllerDiagnostics"][1][0]["pointer"] == "/data/defaultClip", "clip names checked against the rig");
   });
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";

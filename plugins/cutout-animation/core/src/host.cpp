@@ -2,6 +2,7 @@
 #include "cutout/signals.hpp"
 #include "cutout/templates.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace cutout {
@@ -33,6 +34,101 @@ Json drawItemJson(const DrawItem& i) {
   // ABI extension (CONTRACT.md §7, plugin-mesh-v1): mesh items add triangles; matrix stays the fallback rectangle.
   if (i.mesh()) j["mesh"] = {{"positions", i.positions}, {"uvs", i.uvs}, {"indices", i.indices}};
   return j;
+}
+
+void appendFixed(std::string& out, double v, int decimals) {
+  static const int64_t scale[] = {1, 10, 100, 1000, 10000, 100000, 1000000};
+  if (!std::isfinite(v) || decimals < 0 || decimals > 6) { out += '0'; return; }
+  // Integer arithmetic after one rounding: no locale, no printf, the same text on every toolchain.
+  const double limit = 1e12;
+  int64_t q = std::llround(std::clamp(v, -limit, limit) * double(scale[decimals]));
+  if (q == 0) { out += '0'; return; }
+  if (q < 0) { out += '-'; q = -q; }
+  const int64_t whole = q / scale[decimals];
+  int64_t frac = q % scale[decimals];
+  out += std::to_string(whole);
+  if (!frac) return;
+  int digits = decimals;
+  while (frac % 10 == 0) { frac /= 10; digits--; }
+  const std::string f = std::to_string(frac);
+  out += '.';
+  out.append(size_t(digits) - f.size(), '0');
+  out += f;
+}
+
+namespace {
+/** One compact (format 2) item: [image, a, b, c, d, e, f, width, height, alpha(, null, meshId, positions)]. */
+std::string encodeItem(const DrawItem& i, int mesh) {
+  std::string s = "[";
+  s += Json(i.imageAssetId).dump();
+  const double m[6] = {i.matrix.a, i.matrix.b, i.matrix.c, i.matrix.d, i.matrix.e, i.matrix.f};
+  // a..d scale a whole picture (1e-6 keeps a 4096 px edge within 0.005 px); offsets/sizes/vertices in 1/1000 px.
+  for (int k = 0; k < 6; k++) { s += ','; appendFixed(s, m[k], k < 4 ? 6 : 3); }
+  s += ','; appendFixed(s, i.width, 3);
+  s += ','; appendFixed(s, i.height, 3);
+  s += ','; appendFixed(s, i.alpha, 4);
+  if (i.mesh()) {
+    // Slot 10 is reserved (null) so mesh fields keep their positions in later versions.
+    s += ",null," + std::to_string(mesh) + ",[";
+    for (size_t k = 0; k < i.positions.size(); k++) { if (k) s += ','; appendFixed(s, i.positions[k], 3); }
+    s += ']';
+  }
+  s += ']';
+  return s;
+}
+}  // namespace
+
+void Host::resetMeshes() {
+  meshList_.clear();
+  meshIds_.clear();
+  meshEpoch_++;
+  // Stable ids for the init lifetime: rigs by id, then each rig's default list and skins in order.
+  for (const auto& [id, rig] : rigs_) {
+    for (const auto& a : rig->attachments) if (a.mesh) meshId(rig, &a);
+    for (const auto& skin : rig->skins) for (const auto& a : skin.attachments) if (a.mesh) meshId(rig, &a);
+  }
+}
+int Host::meshId(const std::shared_ptr<const Rig>& rig, const Attachment* a) {
+  auto it = meshIds_.find(a);
+  if (it != meshIds_.end()) return it->second;
+  meshList_.push_back({rig, a});
+  return meshIds_[a] = int(meshList_.size() - 1);
+}
+Json Host::meshTable(const Json& ids) {
+  Json out = Json::array();
+  auto entry = [&](size_t id) { const Attachment* a = meshList_[id].second; return Json{{"id", id}, {"uvs", a->uvs}, {"indices", a->triangles}}; };
+  if (ids.is_array()) {
+    for (const auto& v : ids) if (v.is_number_integer() && v.get<int64_t>() >= 0 && size_t(v.get<int64_t>()) < meshList_.size()) out.push_back(entry(size_t(v.get<int64_t>())));
+  } else for (size_t i = 0; i < meshList_.size(); i++) out.push_back(entry(i));
+  return out;
+}
+std::string Host::frameCompact(const std::string& id, uint64_t since) {
+  auto* inst = instance(id);
+  if (!inst) throw std::runtime_error("unknown instance: " + id);
+  const Affine place = placement(id, inst->rig());
+  FrameCache& cache = frames_[id];
+  // Delta only against the frame the host says it holds; anything else gets every item.
+  const bool delta = since != 0 && since == cache.serial;
+  const uint64_t serial = ++frameSerial_;
+  std::string out = "{\"ok\":true,\"format\":2,\"meshEpoch\":" + std::to_string(meshEpoch_) + ",\"frame\":" + std::to_string(serial) + ",\"items\":[";
+  std::vector<std::string> encoded;
+  size_t k = 0;
+  for (auto item : inst->drawList()) {
+    item.matrix = place * item.matrix;
+    for (size_t v = 0; v + 1 < item.positions.size(); v += 2) {
+      const double x = item.positions[v], y = item.positions[v + 1];
+      place.apply(x, y, item.positions[v], item.positions[v + 1]);
+    }
+    std::string e = encodeItem(item, item.mesh() ? meshId(inst->sharedRig(), item.source) : -1);
+    if (k) out += ',';
+    out += delta && k < cache.items.size() && cache.items[k] == e ? std::string("0") : e;
+    encoded.push_back(std::move(e));
+    k++;
+  }
+  out += "]}";
+  cache.serial = serial;
+  cache.items = std::move(encoded);
+  return out;
 }
 Json poseJson(const Rig& rig, const Pose& pose) {
   Json bones = Json::object(), slots = Json::object();
@@ -90,6 +186,17 @@ Json Host::request(const std::string& text) {
     return {{"ok", false}, {"error", error.what()}};
   }
 }
+std::string Host::requestText(const std::string& text) {
+  try {
+    const Json r = Json::parse(text);
+    // The per-frame hot path: no reply tree, numbers written once (format 2, plugin 1.9.0).
+    if (r.is_object() && r.value("op", std::string()) == "frame" && r.value("format", 1) == 2)
+      return frameCompact(str(r, "instance"), r.contains("since") && r.at("since").is_number_unsigned() ? r.at("since").get<uint64_t>() : 0);
+    return handle(r).dump();
+  } catch (const std::exception& error) {
+    return Json({{"ok", false}, {"error", error.what()}}).dump();
+  }
+}
 
 Json Host::handle(const Json& r) {
   const std::string& op = str(r, "op");
@@ -106,19 +213,30 @@ Json Host::handle(const Json& r) {
       const auto issues = validateRig(r.at("rig"));
       diagnostics = diagnosticsJson(issues, r.value("rigPointer", std::string()));
       bool bad = false; for (const auto& d : issues) bad |= d.severity == "error";
-      if (!bad) rig = parseRig("validate", r.at("rig"));
+      if (!bad) rig = parseValidatedRig("validate", r.at("rig"));  // just validated: no second pass
     }
     if (r.contains("controller"))
       for (auto& d : diagnosticsJson(validateController(r.at("controller"), rig ? &*rig : nullptr), r.value("controllerPointer", std::string()))) diagnostics.push_back(d);
-    return {{"ok", true}, {"diagnostics", diagnostics}};
+    Json reply{{"ok", true}, {"diagnostics", diagnostics}};
+    // Every controller of the rig in one request (plugin 1.9.0): the rig is validated and parsed
+    // once instead of once per controller. One diagnostics list per entry, in order.
+    if (r.contains("controllers") && r.at("controllers").is_array()) {
+      Json each = Json::array();
+      for (const auto& c : r.at("controllers"))
+        each.push_back(diagnosticsJson(validateController(c.is_object() ? c.value("data", Json()) : Json(), rig ? &*rig : nullptr), c.is_object() ? c.value("pointer", std::string()) : std::string()));
+      reply["controllerDiagnostics"] = each;
+    }
+    return reply;
   }
   if (op == "loadRig") {
     rigs_[str(r, "id")] = std::make_shared<const Rig>(parseRig(str(r, "id"), r.at("data")));
+    resetMeshes();
     return {{"ok", true}};
   }
   if (op == "unloadRig") {
     for (const auto& [id, inst] : instances_) if (inst->rig().id == str(r, "id")) throw std::runtime_error("rig still in use by " + id);
     rigs_.erase(str(r, "id"));
+    resetMeshes();
     return {{"ok", true}};
   }
   if (op == "create") {
@@ -134,11 +252,11 @@ Json Host::handle(const Json& r) {
     instances_[str(r, "instance")] = std::make_unique<Instance>(rig->second, controller);
     return {{"ok", true}};
   }
-  if (op == "destroy" || op == "unmount") { instances_.erase(str(r, "instance")); mounts_.erase(str(r, "instance")); return {{"ok", true}}; }
-  if (op == "reset") { instances_.clear(); rigs_.clear(); controllers_.clear(); mounts_.clear(); return {{"ok", true}}; }
+  if (op == "destroy" || op == "unmount") { instances_.erase(str(r, "instance")); mounts_.erase(str(r, "instance")); frames_.erase(str(r, "instance")); return {{"ok", true}}; }
+  if (op == "reset") { instances_.clear(); rigs_.clear(); controllers_.clear(); mounts_.clear(); frames_.clear(); resetMeshes(); return {{"ok", true}}; }
   // ---- Generic runtime-extension protocol (host knows only these ops) ----
   if (op == "init") {
-    instances_.clear(); rigs_.clear(); controllers_.clear(); mounts_.clear();
+    instances_.clear(); rigs_.clear(); controllers_.clear(); mounts_.clear(); frames_.clear();
     Json diagnostics = Json::array();
     const Json docs = r.value("documents", Json::array());
     for (const auto& d : docs) {
@@ -149,7 +267,14 @@ Json Host::handle(const Json& r) {
       }
     }
     for (const auto& d : docs) if (d.value("type", std::string()) == "controller") controllers_[d.value("id", std::string())] = d.at("data");
-    return {{"ok", true}, {"api", 1}, {"diagnostics", diagnostics}};
+    resetMeshes();
+    Json reply{{"ok", true}, {"api", 1}, {"diagnostics", diagnostics}};
+    // Frame format negotiation (CONTRACT.md §7, plugin 1.9.0): a host listing 2 in frameFormats gets
+    // the mesh topology table now and may request compact frames; others keep the documented items.
+    if (r.contains("frameFormats") && r.at("frameFormats").is_array())
+      for (const auto& f : r.at("frameFormats"))
+        if (f == 2) { reply["frameFormat"] = 2; reply["meshEpoch"] = meshEpoch_; reply["meshes"] = meshTable(nullptr); }
+    return reply;
   }
   if (op == "mount") {
     const std::string id = str(r, "instance");
@@ -173,6 +298,7 @@ Json Host::handle(const Json& r) {
     // the service reports them, and the controller default stays.
     const bool fresh = !instances_.count(id) || mounts_[id].ref != m.ref;
     if (fresh) instances_[id] = std::make_unique<Instance>(rig->second, parseController(m.ref, c->second));
+    if (fresh || mounts_[id].width != m.width || mounts_[id].height != m.height || mounts_[id].scale != m.scale || mounts_[id].flipX != m.flipX) frames_.erase(id);
     if (!m.skin.empty() && (fresh || mounts_[id].skin != m.skin)) instances_[id]->setSkin(m.skin);
     mounts_[id] = m;
     return {{"ok", true}};
@@ -254,6 +380,10 @@ Json Host::handle(const Json& r) {
     }
     return {{"ok", true}, {"notifications", notes}};
   }
+  if (op == "frame" && r.value("format", 1) == 2)
+    return Json::parse(frameCompact(str(r, "instance"), r.contains("since") && r.at("since").is_number_unsigned() ? r.at("since").get<uint64_t>() : 0));
+  // Mesh topology of compact frames: {ids?} -> [{id, uvs, indices}] (all when ids is absent).
+  if (op == "meshes") return {{"ok", true}, {"meshEpoch", meshEpoch_}, {"meshes", meshTable(r.contains("ids") ? r.at("ids") : Json())}};
   if (op == "frame") {
     auto& inst = need("instance");
     // Mounted instances get element-local pixels; raw instances stay in rig-origin space.

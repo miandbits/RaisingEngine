@@ -57,6 +57,7 @@ struct DrawItem {
   double width = 0, height = 0, alpha = 1;
   std::vector<double> positions, uvs;
   std::vector<int> indices;
+  const Attachment* source = nullptr;  // the drawn attachment (hosts key mesh topology by it)
   bool mesh() const { return !indices.empty(); }
 };
 
@@ -86,6 +87,7 @@ class Instance {
  public:
   Instance(std::shared_ptr<const Rig> rig, std::optional<Controller> controller = std::nullopt);
   const Rig& rig() const { return *rig_; }
+  const std::shared_ptr<const Rig>& sharedRig() const { return rig_; }
 
   /** Start a clip. mixMs < 0 uses rig mix table. Returns entry serial (0 when clip unknown). */
   uint64_t play(int track, const std::string& clip, std::optional<bool> loop = std::nullopt, double speed = 1,

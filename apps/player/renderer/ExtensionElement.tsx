@@ -30,6 +30,7 @@ function meshImage(src: string): HTMLImageElement {
   if (!image) { image = new Image(); image.decoding = 'async'; image.src = src; meshImages.set(src, image); }
   return image;
 }
+
 const MAX_MESH_VERTICES = 2048, MAX_MESH_INDICES = 3 * 4096;
 /** Bounding box of a well-formed mesh (pairs of the same count, indices in range), or null. */
 function meshBox(mesh: ExtensionItem['mesh']): { x: number; y: number; w: number; h: number } | null {
@@ -48,7 +49,7 @@ function meshBox(mesh: ExtensionItem['mesh']): { x: number; y: number; w: number
  * triangle grown by a pixel so anti-aliased clip edges of neighbours leave no seams. One
  * canvas per item keeps the back-to-front order with the <img> region items around it.
  */
-function MeshItem({ item, src }: { item: ExtensionItem; src: string }) {
+const MeshItem = React.memo(function MeshItem({ item, src }: { item: ExtensionItem; src: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const box = useMemo(() => meshBox(item.mesh), [item.mesh]);
   const [loaded, setLoaded] = useState(0);
@@ -95,7 +96,12 @@ function MeshItem({ item, src }: { item: ExtensionItem; src: string }) {
   if (!box) return null;  // a malformed mesh draws nothing (never the undeformed fallback rectangle)
   return <canvas ref={ref} className="visual-plugin-item visual-plugin-mesh" aria-hidden="true" data-image-asset-id={item.imageAssetId} data-mesh="true"
     style={{ left: box.x, top: box.y, width: box.w, height: box.h, opacity: item.alpha }}/>;
-}
+});
+/** A rectangle item. Items unchanged between compact frames keep their object, so memo skips them. */
+const RegionItem = React.memo(function RegionItem({ item, src }: { item: ExtensionItem; src: string }) {
+  return <img className="visual-plugin-item" src={src} alt="" aria-hidden="true" draggable={false}
+    data-image-asset-id={item.imageAssetId} style={{ width: item.width, height: item.height, opacity: item.alpha, transform: `matrix(${item.matrix.join(',')})` }}/>;
+});
 
 /** Screen element of kind `plugin`: absolutely positioned images with the plugin's affine matrices (meshes on canvases). */
 export function ExtensionView({ instance, extension, width, height, assetUrl, editing = false }: {
@@ -115,8 +121,6 @@ export function ExtensionView({ instance, extension, width, height, assetUrl, ed
   const plugin = extension?.plugin ?? '?';
   if (!usable || error) return <div className="visual-plugin-placeholder" data-instance={instance} role="note">{!usable ? `플러그인 필요: ${plugin}` : `플러그인 오류: ${plugin}`}{error && <small>{error}</small>}</div>;
   return <div className="visual-plugin-layer" data-instance={instance}>
-    {items.map((item, index) => item.mesh ? <MeshItem key={index} item={item} src={assetUrl(item.imageAssetId)}/> : <img key={index} className="visual-plugin-item" src={assetUrl(item.imageAssetId)} alt="" aria-hidden="true" draggable={false}
-      data-image-asset-id={item.imageAssetId}
-      style={{ width: item.width, height: item.height, opacity: item.alpha, transform: `matrix(${item.matrix.join(',')})` }}/>)}
+    {items.map((item, index) => item.mesh ? <MeshItem key={index} item={item} src={assetUrl(item.imageAssetId)}/> : <RegionItem key={index} item={item} src={assetUrl(item.imageAssetId)}/>)}
   </div>;
 }

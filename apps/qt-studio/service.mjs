@@ -36,8 +36,11 @@ export class QtStudioService {
   analysisJobs = new AnalysisJobs();
   goalSearchJobs = new GoalSearchJobs();
   goalComparisons = new GoalComparisons();
-  constructor({ runtimes = { web: path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore } = {}) {
+  /** shareViews: replies are serialized right away (the stdio protocol below), so the draft's
+   *  documents are not cloned into each reply (in-process callers keep their own copies). */
+  constructor({ runtimes = { web: path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore, shareViews = false } = {}) {
     this.runtimes = runtimes;
+    this.shareViews = shareViews;
     this.pluginStore = pluginStorePath(pluginStore);
     this.editor = new StudioEditor({ pluginStore: this.pluginStore });
   }
@@ -342,7 +345,7 @@ export class QtStudioService {
       }
       default: throw new Error(`알 수 없는 요청: ${method}`);
     }
-    return { ...this.editor.reply(), ...extra, assets: await this.assets(), localizationSources:extractMessages(contentFromDocuments(this.editor.documents)), plugins: await this.plugins() };
+    return { ...this.editor.reply(null, null, { shared: this.shareViews }), ...extra, assets: await this.assets(), localizationSources:extractMessages(contentFromDocuments(this.editor.documents)), plugins: await this.plugins() };
   }
   async debugSnapshot(revision) {
     this.editor.current(revision);
@@ -360,22 +363,22 @@ export class QtStudioService {
     if (!this.editor.root) return [];
     const root = await realpath(this.editor.root);
     const rows = this.editor.documents.flatMap(d => d.data?.assets ?? []);
-    const result = [];
-    for (const asset of rows) {
-      if (!['image','font'].includes(asset.kind)) continue;
+    // Checked concurrently (a large character has hundreds of part images), order kept.
+    const checked = await Promise.all(rows.map(async asset => {
+      if (!['image','font'].includes(asset.kind)) return null;
       try {
         const file = await realpath(path.resolve(root, asset.path));
         const relative = path.relative(root, file);
-        if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
-        await access(file); result.push({ ...asset, absolutePath: file });
-      } catch { /* The shared validator reports missing assets. */ }
-    }
-    return result;
+        if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+        await access(file); return { ...asset, absolutePath: file };
+      } catch { return null; /* The shared validator reports missing assets. */ }
+    }));
+    return checked.filter(Boolean);
   }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const service = new QtStudioService();
+  const service = new QtStudioService({ shareViews: true });
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of input) {
     let request;

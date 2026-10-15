@@ -686,3 +686,22 @@ offsets come from the rig and the clips.
 sine-like breath in three keys; default period 3200 ms) and `blink`
 (attachment swap open → half → closed → half → open with a 3–5 s idle gap) generate
 ordinary clips; they are editable data, not procedural runtime effects.
+
+## Large rigs (plugin 1.9.0)
+
+Measured on the deterministic stress rig (`core/tests/stress-rig.hpp`: 200 bones, 150 slots, 40
+grid meshes with 1680 vertices of which 1260 weighted, 30 clips / 9148 keys incl. a 3000-key clip,
+4 skins, 6 expressions, 6 IK constraints, event keys); `tests/plugins/cutout-perf.test.mjs`
+reports every layer and fails on ~3x regressions (core budgets in `core/tests/bench.hpp`).
+
+* **Compact frames** (engine CONTRACT.md §7): `init {frameFormats:[2]}` answers `frameFormat: 2`
+  and the mesh topology table; `frame {format:2, since}` answers fixed-point number arrays with
+  `0` for items unchanged since `since`. Both players use them; the documented items stay the
+  default for every other host. 146 KB → 39 KB per character and frame (a paused one: ~0.4 KB).
+* **Batched validation**: the `validate` op takes `controllers: [{data, pointer}]` and answers
+  `controllerDiagnostics` (one list each): the rig is validated and parsed once per pass (the
+  service also remembers the last results by rig text). `parseValidatedRig` skips the second
+  validation of data that was just validated.
+* Hosts pass large requests through Wasm heap memory (the runtime exports `stringToUTF8`,
+  `lengthBytesUTF8`, `UTF8ToString`): rigs above ~1 MB used to overflow the Wasm stack.
+* Plugin documents may be up to 8 MiB on disk (engine CONTRACT.md §3).

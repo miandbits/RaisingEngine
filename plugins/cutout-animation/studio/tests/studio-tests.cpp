@@ -9,6 +9,7 @@
 #include "cutout/editing.hpp"
 #include "dopesheet.hpp"
 #include "graph-editor.hpp"
+#include "../../core/tests/stress-rig.hpp"
 
 using namespace cutout_studio;
 using cutout::Json;
@@ -27,8 +28,14 @@ class MockHost : public raising::StudioHost {
   QString root;
 
   QJsonObject view() const override {
-    return {{"revision", revision}, {"documents", documents}, {"diagnostics", diagnostics()}, {"undo", !history.isEmpty()}, {"redo", !future.isEmpty()}, {"dirty", !history.isEmpty()}};
+    // Diagnostics are recomputed only when the documents change (a real host caches its view too),
+    // so the large-rig timings measure the panel rather than this mock's validation.
+    if (cachedRevision != revision || cachedDocuments != documents) { cachedDiagnostics = skipDiagnostics ? QJsonArray() : diagnostics(); cachedRevision = revision; cachedDocuments = documents; }
+    return {{"revision", revision}, {"documents", documents}, {"diagnostics", cachedDiagnostics}, {"undo", !history.isEmpty()}, {"redo", !future.isEmpty()}, {"dirty", !history.isEmpty()}};
   }
+  mutable int cachedRevision = -1;
+  bool skipDiagnostics = false;  // large-rig timings: the real host's diagnostics come with its reply
+  mutable QJsonArray cachedDocuments, cachedDiagnostics;
   QJsonArray diagnostics() const {
     QJsonArray out;
     std::map<std::string, std::shared_ptr<cutout::Rig>> rigs;
@@ -3370,6 +3377,157 @@ class StudioTests : public QObject {
     // Switching, full view, splitters and the launcher never issued an edit.
     QCOMPARE(host.edits, edits);
     QCOMPARE(host.revision, revision);
+  }
+
+  /**
+   * Large-rig editor timings (plugin 1.9.0): the generated 200-bone / 150-slot / 40-mesh / 30-clip
+   * character (core/tests/stress-rig.hpp, the same one the core and player benchmarks use) loaded
+   * into this host. Medians of a few runs; budgets are ~3x the development machine so a regression
+   * of the refresh paths fails here. CUTOUT_PERF_OUT=<json> writes the numbers for the perf report.
+   */
+  void largeRigPerformance() {
+    const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
+    const auto keepHistory = host.history, keepFuture = host.future;
+    const QString keepRig = panel->rigId(), keepClip = panel->clipId();
+    const auto keepMode = panel->mode();
+    auto restore = qScopeGuard([&] {
+      host.documents = keepDocuments; host.assetList = keepAssets; host.history = keepHistory; host.future = keepFuture; host.revision++;
+      plugin.viewChanged();
+      panel->selectRig(keepRig);
+      panel->selectClip(keepClip);
+      panel->setMode(keepMode);
+      pump();
+    });
+    const Json rigData = cutout_stress::rig();
+    // Direct Qt <-> core JSON conversion gives what the old text round trip gave (types included).
+    {
+      const QJsonObject qt = toQtObject(rigData);
+      QCOMPARE(QJsonDocument(qt).toJson(QJsonDocument::Compact), QJsonDocument::fromJson(QByteArray::fromStdString(rigData.dump())).toJson(QJsonDocument::Compact));
+      const Json back = toJson(qt), viaText = Json::parse(QJsonDocument(qt).toJson(QJsonDocument::Compact).toStdString());
+      QVERIFY(back == viaText && back.dump() == viaText.dump());
+      const Json mixed = {{"i", 3}, {"f", 2.5}, {"whole", 4.0}, {"neg", -0.0}, {"big", 1e20}, {"s", "한글"}, {"n", nullptr}, {"b", true}, {"a", Json::array({1, 2.25, Json::object()})}};
+      QCOMPARE(toJson(toQtObject(mixed)).dump(), Json::parse(QJsonDocument(toQtObject(mixed)).toJson(QJsonDocument::Compact).toStdString()).dump());
+      QVERIFY(toJson(toQtObject(mixed))["whole"].is_number_integer() && toJson(toQtObject(mixed))["f"].is_number_float());
+    }
+    // One small PNG per referenced image so the canvas draws real pictures (no external assets).
+    for (const auto& id : cutout_stress::imageIds(rigData)) {
+      const QString file = dir.filePath(qs(id) + ".png");
+      if (!QFileInfo::exists(file)) {
+        QImage img(32, 32, QImage::Format_ARGB32);
+        img.fill(QColor::fromHsv(int(qHash(qs(id)) % 360), 140, 220));
+        img.save(file);
+      }
+      host.assetList.append(QJsonObject{{"id", qs(id)}, {"kind", "image"}, {"path", "assets/" + qs(id) + ".png"}, {"absolutePath", file}});
+    }
+    auto envelope = [](const char* type, const char* id, const Json& data) {
+      return QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", "cutout-animation"}, {"type", type}, {"id", id}, {"data", toQtObject(data)}};
+    };
+    host.documents.append(QJsonObject{{"file", "plugins/cutout-animation/rig/stress.json"}, {"kind", "extension"}, {"data", envelope("rig", "stress", rigData)}});
+    host.documents.append(QJsonObject{{"file", "plugins/cutout-animation/controller/stress-main.json"}, {"kind", "extension"}, {"data", envelope("controller", "stress-main", cutout_stress::controller())}});
+    host.revision++;
+    host.skipDiagnostics = true;
+    auto keepDiagnostics = qScopeGuard([&] { host.skipDiagnostics = false; });
+    // Median of `runs` timings of body() (setup() before each run is not timed).
+    auto medianOf = [](int runs, const std::function<void()>& setup, const std::function<void()>& body) {
+      QVector<double> ms;
+      for (int i = 0; i < runs; i++) {
+        setup();
+        QElapsedTimer t;
+        t.start();
+        body();
+        ms << t.nsecsElapsed() / 1e6;
+      }
+      std::sort(ms.begin(), ms.end());
+      return ms[ms.size() / 2];
+    };
+    auto median = [&](int runs, const std::function<void()>& body) { return medianOf(runs, [] {}, body); };
+    QJsonObject out;
+    out["viewChangedFirstMs"] = median(1, [&] { plugin.viewChanged(); });
+    panel->selectRig("stress");
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("clip-0");
+    panel->selectItem("bone:head");
+    pump();
+    QCOMPARE(panel->rigId(), QString("stress"));
+    // A view whose documents are what the panel shows (the reply to its own edit): light refresh.
+    const int light = panel->lightRefreshes();
+    out["viewChangedMs"] = medianOf(5, [&] { host.revision++; (void)host.view(); }, [&] { plugin.viewChanged(); });
+    QVERIFY2(panel->lightRefreshes() - light >= 5, "unchanged documents refresh incrementally");
+    // A changed rig (another client / undo): conversion, parse and every widget rebuilt.
+    int bump = 0, full = 0;
+    out["fullRefreshMs"] = medianOf(3, [&] {
+      for (int i = 0; i < host.documents.size(); i++) {
+        QJsonObject doc = host.documents[i].toObject(), env = doc.value("data").toObject();
+        if (env.value("id") != "stress" || env.value("type") != "rig") continue;
+        QJsonObject data = env.value("data").toObject();
+        data["name"] = QString("Stress %1").arg(++bump);
+        env["data"] = data;
+        doc["data"] = env;
+        host.documents[i] = doc;
+      }
+      host.revision++;
+      (void)host.view();
+      full = panel->fullRefreshes();
+    }, [&] { plugin.viewChanged(); });
+    QVERIFY(panel->fullRefreshes() == full + 1);
+    out["canvasRepaintMs"] = median(9, [&] { panel->canvas()->repaint(); });
+    int keys = 0;
+    for (const auto& row : panel->dopesheet()->rows()) keys += row.times.size();
+    out["dopesheetKeys"] = keys;
+    QVERIFY2(keys >= 3000, qPrintable(QString::number(keys)));
+    out["dopesheetRepaintMs"] = median(9, [&] { panel->dopesheet()->repaint(); });
+    out["graphRepaintMs"] = median(9, [&] { panel->graph()->repaint(); });
+    // Edit gestures: the core op, the host edit and the refresh it causes (one edit each).
+    QVector<KeyRef> refs;
+    QVector<double> moveMs, keyMs;
+    for (int t = 0; t < 25; t++)
+      for (int k = 0; k < 20; k++) refs.push_back({qs("bone:" + cutout_stress::boneName({}, t)), "rotation", 200 * k});
+    // Timed: the gesture until its edit is applied and the panel shows it (the reply's refresh
+    // included). Checked after each run, untimed: exactly one accepted edit, documents valid.
+    int sign = 1, editsBefore = 0;
+    auto checkEdit = [&](const char* what) {
+      QVERIFY2(host.edits == editsBefore + 1 && host.lastError.isEmpty(), what);
+      for (const auto& d : host.diagnostics()) QVERIFY2(d.toObject().value("severity") != "error", what);
+      gestures++;
+    };
+    for (int run = 0; run < 3; run++) {
+      editsBefore = host.edits;
+      QElapsedTimer t;
+      t.start();
+      QVERIFY(panel->moveKeys(refs, 10 * sign));
+      pump();
+      moveMs << t.nsecsElapsed() / 1e6;
+      checkEdit("move 500 keys");
+      for (auto& r : refs) r.timeMs += 10 * sign;
+      sign = -sign;
+    }
+    panel->setAutoKey(true);
+    double value = 10;
+    for (int run = 0; run < 3; run++) {
+      editsBefore = host.edits;
+      QElapsedTimer t;
+      t.start();
+      setSpin("cutoutPropRotation", value += 3);
+      pump();
+      keyMs << t.nsecsElapsed() / 1e6;
+      checkEdit("key head rotation");
+    }
+    std::sort(moveMs.begin(), moveMs.end());
+    std::sort(keyMs.begin(), keyMs.end());
+    out["moveKeys500Ms"] = moveMs[1];
+    out["setKeyMs"] = keyMs[1];
+    qInfo("large rig: %s", QJsonDocument(out).toJson(QJsonDocument::Compact).constData());
+    if (const QString file = qEnvironmentVariable("CUTOUT_PERF_OUT"); !file.isEmpty()) {
+      QFile f(file);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write(QJsonDocument(out).toJson());
+    }
+    // ~3x the medians of the development machine (plugin 1.9.0, offscreen): before the
+    // incremental refresh a single key edit took ~450 ms and every view ~205 ms.
+    const QList<QPair<const char*, double>> budgets{{"viewChangedMs", 10}, {"fullRefreshMs", 200}, {"canvasRepaintMs", 30}, {"dopesheetRepaintMs", 30},
+                                                    {"graphRepaintMs", 10}, {"moveKeys500Ms", 300}, {"setKeyMs", 300}};
+    for (const auto& [name, budget] : budgets)
+      QVERIFY2(out.value(name).toDouble() <= budget, qPrintable(QString("%1 = %2 ms > budget %3 ms").arg(name).arg(out.value(name).toDouble()).arg(budget)));
   }
 
   void screenshot() {

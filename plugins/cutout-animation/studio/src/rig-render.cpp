@@ -5,8 +5,58 @@
 #include <QPainterPath>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace cutout_studio {
+cutout::Json toJsonValue(const QJsonValue& v) {
+  switch (v.type()) {
+    case QJsonValue::Bool: return v.toBool();
+    case QJsonValue::Double: {
+      const double d = v.toDouble();
+      if (!std::isfinite(d)) return nullptr;
+      // Qt keeps parsed integers as integers; an integral double printed without an exponent came
+      // back from the old text path as an integer too (keys' timeMs must stay integers).
+      if (std::trunc(d) == d && std::fabs(d) < 1e15) return int64_t(d);
+      return d;
+    }
+    case QJsonValue::String: return v.toString().toStdString();
+    case QJsonValue::Array: {
+      const QJsonArray a = v.toArray();
+      cutout::Json out = cutout::Json::array();
+      out.get_ref<cutout::Json::array_t&>().reserve(size_t(a.size()));
+      for (const auto& x : a) out.push_back(toJsonValue(x));
+      return out;
+    }
+    case QJsonValue::Object: {
+      const QJsonObject o = v.toObject();
+      cutout::Json out = cutout::Json::object();
+      for (auto it = o.begin(); it != o.end(); ++it) out[it.key().toStdString()] = toJsonValue(it.value());
+      return out;
+    }
+    default: return nullptr;
+  }
+}
+QJsonValue toQtValue(const cutout::Json& j) {
+  switch (j.type()) {
+    case cutout::Json::value_t::boolean: return j.get<bool>();
+    case cutout::Json::value_t::number_integer: return qint64(j.get<int64_t>());
+    case cutout::Json::value_t::number_unsigned: return j.get<uint64_t>() <= uint64_t(INT64_MAX) ? QJsonValue(qint64(j.get<uint64_t>())) : QJsonValue(double(j.get<uint64_t>()));
+    case cutout::Json::value_t::number_float: { const double d = j.get<double>(); return std::isfinite(d) ? QJsonValue(d) : QJsonValue(); }
+    case cutout::Json::value_t::string: return QString::fromStdString(j.get_ref<const std::string&>());
+    case cutout::Json::value_t::array: {
+      QJsonArray out;
+      for (const auto& x : j) out.append(toQtValue(x));
+      return out;
+    }
+    case cutout::Json::value_t::object: {
+      QJsonObject out;
+      for (auto it = j.begin(); it != j.end(); ++it) out.insert(QString::fromStdString(it.key()), toQtValue(it.value()));
+      return out;
+    }
+    default: return QJsonValue();
+  }
+}
+
 void ImageCache::setAssets(const QJsonArray& assets) {
   QHash<QString, QString> next;
   QStringList order;

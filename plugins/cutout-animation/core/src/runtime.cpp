@@ -617,8 +617,9 @@ std::vector<DrawItem> Instance::drawList() const {
     if (!att) continue;
     const Affine m = origin * pose.world[slot.boneIndex] * attachmentPlacement(*att);
     out.push_back({slot.id, att->imageAssetId, m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)});
-    if (!att->mesh) continue;
     DrawItem& item = out.back();
+    item.source = att;
+    if (!att->mesh) continue;
     item.positions = meshPositions(*rig_, pose, int(i), *att);
     for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig_->originX; item.positions[v + 1] -= rig_->originY; }  // = origin
     item.uvs = att->uvs;
