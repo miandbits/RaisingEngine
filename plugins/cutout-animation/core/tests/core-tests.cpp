@@ -3099,6 +3099,32 @@ int main(int argc, char** argv) {
     check(host.handle({{"op", "meshes"}})["meshEpoch"] != init["meshEpoch"], "loading a rig starts a new mesh epoch");
   });
 
+  test("atlas regions (plugin 1.9.0): validation and draw items naming the page sub-image", [] {
+    Json d = rigData();
+    d["attachments"][0]["atlas"] = {{"page", "cutout-atlas-1"}, {"x", 10}, {"y", 20}, {"width", 60}, {"height", 100}, {"trim", {{"x", 10}, {"y", 15}, {"width", 60}, {"height", 100}}}};
+    d["attachments"][1]["atlas"] = {{"page", "cutout-atlas-1"}, {"x", 80}, {"y", 20}, {"width", 60}, {"height", 60}};
+    check(validateRig(d).empty(), "valid regions");
+    auto bad = d;
+    bad["attachments"][0]["atlas"]["trim"]["width"] = 75;  // 10 + 75 > 80
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "trim outside the picture");
+    bad = d; bad["attachments"][1]["atlas"].erase("page");
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "page required");
+    bad = d; bad["attachments"][1]["atlas"]["width"] = 0;
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "positive size");
+    bad = meshParityRig(); bad["attachments"][0]["atlas"] = {{"page", "p"}, {"x", 0}, {"y", 0}, {"width", 10}, {"height", 10}, {"trim", {{"x", 0}, {"y", 0}, {"width", 5}, {"height", 5}}}};
+    check(hasCode(validateRig(bad), "ANIM_ATLAS"), "meshes keep their whole picture");
+    Instance plain(std::make_shared<const Rig>(parseRig("a", rigData()))), packed(std::make_shared<const Rig>(parseRig("a", d)));
+    const auto a = plain.drawList(), b = packed.drawList();
+    check(b[0].imageAssetId == "cutout-atlas-1" && b[0].hasRegion && b[0].region[0] == 10 && b[0].region[3] == 100 && b[0].width == 60 && b[0].height == 100, "page + region, trimmed size");
+    double ax, ay, bx, by;
+    a[0].matrix.apply(10, 15, ax, ay);
+    b[0].matrix.apply(0, 0, bx, by);
+    check(near(ax, bx) && near(ay, by), "the kept rectangle stays where it was");
+    check(b[1].hasRegion && b[1].width == a[1].width && near(b[1].matrix.e, a[1].matrix.e) && b[2].imageAssetId == a[2].imageAssetId && !b[2].hasRegion, "untrimmed region keeps its rectangle; unpacked parts unchanged");
+    const Json j = drawItemJson(b[0]);
+    check(j["region"] == Json::array({10, 20, 60, 100}) && !drawItemJson(a[0]).contains("region"), "documented items gain region only when packed");
+  });
+
   test("host op: validate checks every controller of a rig in one request", [] {
     Host host;
     Json bad = controllerData();

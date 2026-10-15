@@ -39,6 +39,19 @@ struct Slot { std::string id; std::string bone; std::optional<std::string> attac
 /** One bone's share of a weighted mesh vertex; `bind` indexes Attachment::binds. */
 struct Influence { int bind = -1; double weight = 0; };
 constexpr size_t MAX_MESH_VERTICES = 2048, MAX_MESH_TRIANGLES = 4096, MAX_INFLUENCES = 4;
+/**
+ * Atlas region (plugin 1.9.0, written by the export packer, never by authoring): the attachment's
+ * picture is the sub-image (x, y, width, height) of the image asset `page` (page pixels). `trim`
+ * (optional, regions only) is the rectangle of the attachment image (its own units) that sub-image
+ * shows; without it the sub-image is the whole picture. Draw items then name the page and carry
+ * the region; transparent pixels trimmed away are simply not drawn, so nothing renders differently.
+ */
+struct AtlasRegion {
+  std::string page;
+  double x = 0, y = 0, width = 0, height = 0;
+  bool trimmed = false;
+  double trimX = 0, trimY = 0, trimWidth = 0, trimHeight = 0;
+};
 struct Attachment {
   std::string slot, name, imageAssetId;
   Transform offset;       // placement of the image pivot in bone space
@@ -63,6 +76,7 @@ struct Attachment {
    *  author pinned (plugin 1.6.0 mesh edits keep pinned edges through re-triangulation). */
   size_t hull = 0;
   std::vector<int> edges;
+  std::optional<AtlasRegion> atlas;  // export-time atlas packing (plugin 1.9.0)
   size_t vertexCount() const { return vertices.size() / 2; }
 };
 

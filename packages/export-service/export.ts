@@ -94,6 +94,27 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     if (missing.length) throw new PluginError('PLUGIN_RUNTIME_MISSING', `플러그인 런타임이 없습니다: ${missing.join(', ')}. 내보내기를 중단했습니다.`);
     for (const file of extensions.files) if (!/^plugins\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(file.target) || /\.\./.test(file.target))
       throw new PluginError('PLUGIN_RUNTIME_MISSING', `잘못된 플러그인 런타임 경로: ${file.target}`);
+    // Images a plugin made for this export (atlas pages): plain PNG assets next to the project's.
+    for (const asset of extensions.assets ?? []) {
+      if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(asset.id) || asset.target !== `assets/${asset.id}.png` || content.assets.some(a => a.id === asset.id))
+        throw new PluginError('PLUGIN_SERVICE_ERROR', `잘못된 플러그인 내보내기 에셋: ${asset.id}`);
+      if (!capabilities.imageExtensions.includes('.png')) throw new Error(`${target} 플레이어가 PNG를 지원하지 않습니다: ${asset.id}`);
+    }
+  }
+  // Project images whose pixels a plugin moved into its export assets: their files are left out
+  // unless any other part of the content still names them (content.assets keeps listing them, so
+  // the snapshot and its fingerprint are unchanged).
+  const omitted = new Set<string>();
+  if (extensions?.replacedAssets?.length) {
+    const named = new Set<string>();
+    const walk = (value: unknown): void => {
+      if (typeof value === 'string') named.add(value);
+      else if (Array.isArray(value)) value.forEach(walk);
+      else if (value && typeof value === 'object') Object.values(value).forEach(walk);
+    };
+    const { assets: _list, assetHashes: _hashes, ...rest } = content as ContentSnapshot & Record<string, unknown>;
+    walk(rest);
+    for (const id of extensions.replacedAssets) if (!named.has(id)) omitted.add(id);
   }
   for (const asset of content.assets) {
     const supported = asset.kind === 'font' ? capabilities.fontExtensions??[] : asset.kind === 'image' ? capabilities.imageExtensions : capabilities.audioExtensions;
@@ -115,6 +136,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     const assets: Record<string, string> = Object.create(null) as Record<string, string>;
     for (const asset of content.assets) {
       if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(asset.id)) throw new Error(`유효하지 않은 에셋 ID: ${asset.id}`);
+      if (omitted.has(asset.id)) continue;
       const source = await realpath(path.resolve(projectRoot, asset.path));
       if (!inside(projectRoot, source) || !(await lstat(source)).isFile()) throw new Error(`프로젝트 밖의 에셋입니다: ${asset.id}`);
       const bytes = await readFile(source);
@@ -130,6 +152,11 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
       if (hash(bytes) !== file.sha256) throw new PluginError('PLUGIN_RUNTIME_MISSING', `준비 이후 플러그인 런타임 파일이 변경되었습니다: ${file.target}`);
       await mkdir(path.dirname(path.join(staging, file.target)), { recursive: true });
       await writeFile(path.join(staging, file.target), bytes, { flag: 'wx' });
+    }
+    if (extensions) for (const asset of extensions.assets ?? []) {
+      if (hash(asset.bytes) !== asset.sha256) throw new PluginError('PLUGIN_SERVICE_ERROR', `준비 이후 플러그인 내보내기 에셋이 변경되었습니다: ${asset.id}`);
+      await writeFile(path.join(staging, asset.target), asset.bytes, { flag: 'wx' });
+      assets[asset.id] = asset.target;
     }
     // `extensions` is omitted entirely for plugin-free games so their bundles stay byte-identical.
     const bundle: GameBundle = extensions ? { formatVersion: '1', content, assets, extensions: extensions.game } : { formatVersion: '1', content, assets };

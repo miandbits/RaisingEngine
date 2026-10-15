@@ -44,6 +44,11 @@ export class QtStudioService {
     this.pluginStore = pluginStorePath(pluginStore);
     this.editor = new StudioEditor({ pluginStore: this.pluginStore });
   }
+  /** The target player's capabilities.json visualFeatures (plugins prepare exports for them, e.g. atlases). */
+  async playerFeatures(target) {
+    const capabilities = await readFile(path.join(this.runtimes[target], 'capabilities.json'), 'utf8').then(JSON.parse).catch(() => ({}));
+    return Array.isArray(capabilities.visualFeatures) ? capabilities.visualFeatures : [];
+  }
   /** `plugins` member of every reply: store contents + this draft's lock resolution. */
   async plugins() { return this.editor.plugins(); }
   /** Lock changes are ordinary draft edits (undo/redo, save, conflict checks like any document). */
@@ -229,7 +234,7 @@ export class QtStudioService {
         this.editor.current(revision);
         const built = await this.editor.snapshot(revision);
         if (!built.ok) throw new Error('내보내기 스냅샷을 만들 수 없습니다.');
-        const extensions = await this.editor.exportExtensions(revision, built.snapshot, params.target);
+        const extensions = await this.editor.exportExtensions(revision, built.snapshot, params.target, await this.playerFeatures(params.target));
         const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root,
           destination: params.destination, target: params.target, runtimes: this.runtimes, extensions,
           beforePublish: async () => {
@@ -307,6 +312,7 @@ export class QtStudioService {
         const cache = path.join(engineRoot, '.cache/qt-render-preview');
         await mkdir(cache, { recursive: true });
         const run = await mkdtemp(path.join(cache, 'run-'));
+        // Play/preview runs skip export-only preparation (atlas packing): quick, and reports keep the part ids.
         const extensions = await this.editor.exportExtensions(revision, built.snapshot, 'windows');
         const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root,
           destination: path.join(run, 'game'), target: 'windows', runtimes: this.runtimes, extensions });

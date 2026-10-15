@@ -198,6 +198,32 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
 }
 
 /**
+ * Atlas region of one attachment (plugin 1.9.0, written by the export packer): a page id and a
+ * sub-image rectangle; `trim` (regions only) must lie inside the attachment image. Meshes keep
+ * their whole picture (uvs address it), so a trimmed mesh region is refused.
+ */
+void checkAtlas(Checker& c, const Json& a, const std::string& p) {
+  if (!a.is_object() || !a.contains("atlas")) return;
+  const Json& r = a.at("atlas");
+  const std::string ap = at(p, "atlas");
+  if (!r.is_object()) { c.error(ap, "ANIM_ATLAS", "atlas는 {page, x, y, width, height} 객체입니다."); return; }
+  const std::string page = text(r, "page");
+  if (page.empty() || page.size() > 64) c.error(at(ap, "page"), "ANIM_ATLAS", "atlas.page는 이미지 에셋 ID입니다.");
+  for (const char* k : {"x", "y"}) if (number(c, r, ap, k, 0) < 0) c.error(at(ap, k), "ANIM_ATLAS", "atlas 영역 좌표는 0 이상입니다.");
+  for (const char* k : {"width", "height"}) if (!(number(c, r, ap, k, 0) > 0)) c.error(at(ap, k), "ANIM_ATLAS", "atlas 영역 크기는 0보다 커야 합니다.");
+  if (!r.contains("trim")) return;
+  const Json& t = r.at("trim");
+  const std::string tp = at(ap, "trim");
+  if (text(a, "type") == "mesh") { c.error(tp, "ANIM_ATLAS", "메시 첨부의 atlas 영역은 그림 전체여야 합니다(trim 불가)."); return; }
+  if (!t.is_object()) { c.error(tp, "ANIM_ATLAS", "atlas.trim은 {x, y, width, height} 객체입니다."); return; }
+  const double x = number(c, t, tp, "x", 0), y = number(c, t, tp, "y", 0), w = number(c, t, tp, "width", 0), h = number(c, t, tp, "height", 0);
+  // The attachment size itself is reported by checkAttachment; here it only bounds the trim.
+  const double aw = finiteNumber(a.value("width", Json())) ? a.at("width").get<double>() : 0, ah = finiteNumber(a.value("height", Json())) ? a.at("height").get<double>() : 0, eps = 1e-6;
+  if (x < 0 || y < 0 || !(w > 0) || !(h > 0) || x + w > aw + eps || y + h > ah + eps)
+    c.error(tp, "ANIM_ATLAS", "atlas.trim은 첨부 그림(0..width, 0..height) 안의 영역입니다.");
+}
+
+/**
  * IK constraints (plugin 1.3.0): ids, chain shape, target placement, mix and dependencies.
  * A constraint moves every strict descendant of its chain bones; B depends on A when A moves
  * B's target or B's chain base. A dependency cycle can never be satisfied by any order
@@ -414,6 +440,7 @@ std::vector<Diagnostic> validateRig(const Json& data) {
   // One attachment entry (default list or a skin's list); `seen` holds the list's (slot, name) pairs.
   auto checkAttachment = [&](const Json& a, const std::string& p, std::set<SlotName>& seen) {
     if (const size_t n = checkMesh(c, a, p, parentOf)) meshCounts[{text(a, "slot"), text(a, "name")}].insert(n);
+    checkAtlas(c, a, p);
     const std::string slot = text(a, "slot"), name = text(a, "name");
     if (!slotIds.count(slot)) c.error(at(p, "slot"), "ANIM_SLOT_MISSING", "첨부가 없는 슬롯을 참조합니다: " + slot);
     if (name.empty()) c.error(at(p, "name"), "ANIM_ID_MISSING", "첨부 이름이 필요합니다.");
@@ -672,6 +699,17 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
     Attachment att; att.slot = a.at("slot"); att.name = a.at("name"); att.imageAssetId = a.at("imageAssetId");
     att.offset = readTransform(a); att.pivotX = a.value("pivotX", 0.5); att.pivotY = a.value("pivotY", 0.5);
     att.width = a.at("width"); att.height = a.at("height");
+    if (a.contains("atlas") && a.at("atlas").is_object()) {
+      const Json& r = a.at("atlas");
+      AtlasRegion region;
+      region.page = r.at("page"); region.x = r.value("x", 0.0); region.y = r.value("y", 0.0); region.width = r.at("width"); region.height = r.at("height");
+      if (r.contains("trim") && r.at("trim").is_object()) {
+        const Json& t = r.at("trim");
+        region.trimmed = true;
+        region.trimX = t.value("x", 0.0); region.trimY = t.value("y", 0.0); region.trimWidth = t.at("width"); region.trimHeight = t.at("height");
+      }
+      att.atlas = region;
+    }
     if (a.value("type", std::string()) != "mesh") return att;
     att.mesh = true;
     for (const auto& v : a.at("vertices")) att.vertices.push_back(v.get<double>());

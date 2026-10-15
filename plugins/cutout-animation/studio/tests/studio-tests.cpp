@@ -3379,6 +3379,45 @@ class StudioTests : public QObject {
     QCOMPARE(host.revision, revision);
   }
 
+  /** 내보내기 tab (plugin 1.9.0): atlas settings live in plugins/cutout-animation/settings/project.json;
+   *  every change is one edit (create, then replace), undo restores the widgets too. */
+  void exportAtlasSettings() {
+    auto settingsData = [&] {
+      for (const auto& v : host.documents)
+        if (v.toObject().value("file") == "plugins/cutout-animation/settings/project.json") return toJson(v.toObject().value("data").toObject().value("data").toObject());
+      return Json();
+    };
+    auto* enabled = find<QCheckBox>("cutoutAtlasEnabled");
+    auto* page = find<QComboBox>("cutoutAtlasPageSize");
+    auto* padding = find<QSpinBox>("cutoutAtlasPadding");
+    auto* trim = find<QCheckBox>("cutoutAtlasTrim");
+    QVERIFY(enabled && page && padding && trim && find<QLabel>("cutoutAtlasSummary"));
+    QVERIFY(!panel->hasSettingsDocument() && settingsData().is_null());
+    QVERIFY(enabled->isChecked() && trim->isChecked() && page->currentData().toInt() == 2048 && padding->value() == 2);
+    { const Json want = Json({{"enabled", true}, {"maxPageSize", 2048}, {"padding", 2}, {"trim", true}}); QVERIFY2(panel->atlasSettings() == want, panel->atlasSettings().dump().c_str()); }
+    QVERIFY(find<QLabel>("cutoutAtlasSummary")->text().contains("그림 "));
+    QVERIFY(gesture("atlas off", 1, [&] { enabled->click(); }));
+    QCOMPARE(host.lastEdit.value("type").toString(), QString("create"));
+    { const Json want = Json({{"schemaVersion", 1}, {"export", {{"atlas", {{"enabled", false}, {"maxPageSize", 2048}, {"padding", 2}, {"trim", true}}}}}}); QVERIFY2(settingsData() == want, settingsData().dump().c_str()); }
+    QVERIFY(panel->hasSettingsDocument() && !enabled->isChecked() && !page->isEnabled());
+    QVERIFY(gesture("atlas on", 1, [&] { enabled->click(); }));
+    QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
+    QVERIFY(gesture("4096 px pages", 1, [&] { page->setCurrentIndex(page->findData(4096)); Q_EMIT page->activated(page->currentIndex()); }));
+    { const Json want = Json(4096); QVERIFY2(settingsData()["export"]["atlas"]["maxPageSize"] == want, settingsData()["export"]["atlas"]["maxPageSize"].dump().c_str()); }
+    QVERIFY(gesture("padding 4", 1, [&] { padding->setValue(4); Q_EMIT padding->editingFinished(); }));
+    QVERIFY(gesture("no trimming", 1, [&] { trim->click(); }));
+    { const Json want = Json({{"enabled", true}, {"maxPageSize", 4096}, {"padding", 4}, {"trim", false}}); QVERIFY2(panel->atlasSettings() == want, panel->atlasSettings().dump().c_str()); }
+    QVERIFY(gesture("unchanged values issue nothing", 0, [&] { QVERIFY(!panel->setAtlasSettings(true, 4096, 4, false)); }));
+    QVERIFY(gesture("odd page size refused", 0, [&] { QVERIFY(!panel->setAtlasSettings(true, 3000, 2, true)); }));
+    undo();
+    QVERIFY(trim->isChecked() && padding->value() == 4);
+    for (int i = 0; i < 4; i++) undo();
+    QVERIFY(!panel->hasSettingsDocument() && enabled->isChecked() && page->currentData().toInt() == 2048);
+    redo();
+    QVERIFY(panel->hasSettingsDocument() && !enabled->isChecked());
+    undo();
+  }
+
   /**
    * Large-rig editor timings (plugin 1.9.0): the generated 200-bone / 150-slot / 40-mesh / 30-clip
    * character (core/tests/stress-rig.hpp, the same one the core and player benchmarks use) loaded

@@ -33,6 +33,8 @@ Json drawItemJson(const DrawItem& i) {
          {"width", i.width}, {"height", i.height}, {"alpha", i.alpha}};
   // ABI extension (CONTRACT.md §7, plugin-mesh-v1): mesh items add triangles; matrix stays the fallback rectangle.
   if (i.mesh()) j["mesh"] = {{"positions", i.positions}, {"uvs", i.uvs}, {"indices", i.indices}};
+  // Atlas (plugin-atlas-v1): the item's picture is this sub-image of imageAssetId.
+  if (i.hasRegion) j["region"] = {i.region[0], i.region[1], i.region[2], i.region[3]};
   return j;
 }
 
@@ -57,7 +59,7 @@ void appendFixed(std::string& out, double v, int decimals) {
 }
 
 namespace {
-/** One compact (format 2) item: [image, a, b, c, d, e, f, width, height, alpha(, null, meshId, positions)]. */
+/** One compact (format 2) item: [image, a, b, c, d, e, f, width, height, alpha(, region|null(, meshId, positions))]. */
 std::string encodeItem(const DrawItem& i, int mesh) {
   std::string s = "[";
   s += Json(i.imageAssetId).dump();
@@ -67,9 +69,15 @@ std::string encodeItem(const DrawItem& i, int mesh) {
   s += ','; appendFixed(s, i.width, 3);
   s += ','; appendFixed(s, i.height, 3);
   s += ','; appendFixed(s, i.alpha, 4);
+  if (i.hasRegion || i.mesh()) {
+    if (i.hasRegion) {
+      s += ",[";
+      for (int k = 0; k < 4; k++) { if (k) s += ','; appendFixed(s, i.region[k], 3); }
+      s += ']';
+    } else s += ",null";
+  }
   if (i.mesh()) {
-    // Slot 10 is reserved (null) so mesh fields keep their positions in later versions.
-    s += ",null," + std::to_string(mesh) + ",[";
+    s += ',' + std::to_string(mesh) + ",[";
     for (size_t k = 0; k < i.positions.size(); k++) { if (k) s += ','; appendFixed(s, i.positions[k], 3); }
     s += ']';
   }

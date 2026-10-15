@@ -619,6 +619,18 @@ std::vector<DrawItem> Instance::drawList() const {
     out.push_back({slot.id, att->imageAssetId, m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)});
     DrawItem& item = out.back();
     item.source = att;
+    if (att->atlas) {
+      // Packed picture: the page's sub-image; a trimmed region draws only the kept rectangle,
+      // placed where it was in the original image (the rest was fully transparent).
+      const AtlasRegion& r = *att->atlas;
+      item.imageAssetId = r.page;
+      item.hasRegion = true;
+      item.region[0] = r.x; item.region[1] = r.y; item.region[2] = r.width; item.region[3] = r.height;
+      if (r.trimmed && !att->mesh) {
+        item.matrix = m * Affine::compose(r.trimX, r.trimY, 0, 1, 1);
+        item.width = r.trimWidth; item.height = r.trimHeight;
+      }
+    }
     if (!att->mesh) continue;
     item.positions = meshPositions(*rig_, pose, int(i), *att);
     for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig_->originX; item.positions[v + 1] -= rig_->originY; }  // = origin

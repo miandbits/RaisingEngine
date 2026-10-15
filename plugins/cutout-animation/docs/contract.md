@@ -8,6 +8,7 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 * `plugins/cutout-animation/rig/<id>.json`: skeleton, parts, clips (`schema/rig.schema.json`)
 * `plugins/cutout-animation/controller/<id>.json`: game signal → clip bindings (`schema/controller.schema.json`)
+* `plugins/cutout-animation/settings/project.json`: export settings (plugin 1.9.0, `schema/settings.schema.json`)
 
 ## Coordinates and transforms
 
@@ -705,3 +706,41 @@ reports every layer and fails on ~3x regressions (core budgets in `core/tests/be
 * Hosts pass large requests through Wasm heap memory (the runtime exports `stringToUTF8`,
   `lengthBytesUTF8`, `UTF8ToString`): rigs above ~1 MB used to overflow the Wasm stack.
 * Plugin documents may be up to 8 MiB on disk (engine CONTRACT.md §3).
+
+## Settings document (plugin 1.9.0)
+
+`plugins/cutout-animation/settings/project.json` (type `settings`, id `project`, schema
+`schema/settings.schema.json`; any other id is warning `ANIM_SETTINGS_ID` and ignored). Absent =
+the defaults. It is project data (edited with ordinary edits, undoable, readable by MCP) and is
+never exported.
+
+```jsonc
+{ "schemaVersion": 1, "export": { "atlas": { "enabled": true, "maxPageSize": 2048, "padding": 2, "trim": true } } }
+```
+
+## Atlas packing on export (plugin 1.9.0)
+
+The service hook `prepareExport` (engine CONTRACT.md §10) packs every PNG that an exported rig
+draws (default attachments and skins) into pages of at most `maxPageSize` px when `enabled` and
+the target player advertises `plugin-atlas-v1`; other players (and exports whose caller passes no
+player features) keep separate files. Images that no rig draws are never read. Kept separate
+(`report.skipped`): non-PNG, 16-bit, interlaced or colour-managed (`gAMA`/`iCCP`/`cHRM`) PNGs and
+pictures larger than a page. Packing is deterministic (skyline, tallest first).
+
+* **Exact pixels**: a page holds byte copies of the pictures; around each one `padding` pixels
+  repeat its edge pixels, so linear filtering at a region's edge samples what the separate image
+  gave (its clamped edge). **Trimming** (`trim`, regions drawn at their own pixel size only: never
+  meshes, never pictures drawn scaled) drops fully transparent borders but keeps a 1 px
+  transparent ring, so edges still blend towards transparency exactly as before.
+* **Rig data**: each packed attachment gains `atlas: {page, x, y, width, height, trim?}` (schema
+  `$defs/attachment`): the picture is that sub-image of the page asset; `trim` is the rectangle
+  of the original picture it shows. Validation (`ANIM_ATLAS`): page id, non-negative position,
+  positive size, trim inside the picture, no trim on meshes.
+* **Draw items**: `imageAssetId` = the page, `region: [x, y, w, h]`; a trimmed region's matrix is
+  `matrix · translate(trim.x, trim.y)` with the trimmed width/height (the kept rectangle lands
+  where it was); meshes keep matrix, uvs and triangles (uvs address the sub-image).
+  `requiredHostFeatures` adds `plugin-atlas-v1` for such rigs.
+* **Export**: pages are `assets/cutout-atlas-<n>.png`; packed images' own files are left out
+  unless the content names them elsewhere (fewer files: the test fixture's 8 rig images become one
+  page). Screenshots with and without atlas differ by a mean of 0.0013/255 (native) and 0.004/255
+  (web) (`tests/plugins/cutout-atlas.test.mjs`).

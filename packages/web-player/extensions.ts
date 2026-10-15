@@ -7,7 +7,9 @@ export interface ExtensionPluginBundle { id: string; version?: string; abi: stri
 export interface ExtensionsBundle { version: 1; plugins: ExtensionPluginBundle[] }
 /** Mesh items (capability plugin-mesh-v1, CONTRACT.md §7): element-local triangles; `matrix` stays the undeformed fallback rectangle. */
 export interface ExtensionMesh { positions: number[]; uvs: number[]; indices: number[] }
-export interface ExtensionItem { imageAssetId: string; matrix: [number, number, number, number, number, number]; width: number; height: number; alpha: number; mesh?: ExtensionMesh }
+/** plugin-atlas-v1: the item's picture is the sub-image [x, y, width, height] (page pixels) of imageAssetId. */
+export type ExtensionRegion = [number, number, number, number];
+export interface ExtensionItem { imageAssetId: string; matrix: [number, number, number, number, number, number]; width: number; height: number; alpha: number; mesh?: ExtensionMesh; region?: ExtensionRegion }
 export interface ExtensionElement { plugin: string; type: string; ref: string; props?: Record<string, unknown> }
 /** Sound named by an `event` notification (CONTRACT.md §7 event payloads): volume 0..1, balance -1..1. */
 export interface ExtensionSound { asset: string; volume: number; balance: number }
@@ -30,7 +32,7 @@ const NO_ITEMS: readonly ExtensionItem[] = Object.freeze([]);
 const MAX_REQUEST_BYTES = 48 * 1024;
 // Through _malloc'd heap memory (no stack copy) a request may hold a large rig (`init`).
 const MAX_HEAP_REQUEST_BYTES = 64 * 1024 * 1024;
-type CompactItem = [string, number, number, number, number, number, number, number, number, number, null | undefined, number | undefined, number[] | undefined];
+type CompactItem = [string, number, number, number, number, number, number, number, number, number, ExtensionRegion | null | undefined, number | undefined, number[] | undefined];
 const MAX_RECENT_EVENTS = 32;
 const ENTRY = /^plugins\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[A-Za-z0-9._-]+\.mjs$/;
 
@@ -162,11 +164,11 @@ export class ExtensionHost {
       events: this.recentEvents, eventCount: this.eventCount, soundCount: this.soundCount, soundsDelivered: this.soundsDelivered, timing: { ...this.timing },
       plugins: [...this.plugins.values()].map(p => ({ id: p.id, version: p.version, available: p.available, error: p.error, diagnostics: p.diagnostics, frameFormat: p.frameFormat, heap: p.heap })),
       instances: [...this.mounts.values()].map(m => ({ instance: m.instance, plugin: m.plugin, available: m.mounted && this.available(m.plugin), error: m.error, element: m.spec,
-        items: m.items.map(i => ({ imageAssetId: i.imageAssetId, matrix: i.matrix, width: i.width, height: i.height, alpha: i.alpha, ...(i.mesh ? { mesh: i.mesh } : {}) })), state: described[m.plugin]?.[m.instance] ?? null })) };
+        items: m.items.map(i => ({ imageAssetId: i.imageAssetId, matrix: i.matrix, width: i.width, height: i.height, alpha: i.alpha, ...(i.mesh ? { mesh: i.mesh } : {}), ...(i.region ? { region: i.region } : {}) })), state: described[m.plugin]?.[m.instance] ?? null })) };
   }
   /**
-   * Compact frame (format 2, CONTRACT.md §7): [image, a..f, width, height, alpha(, null, meshId,
-   * positions)] per item, 0 = unchanged since frame `since`. Unchanged items keep their object (the
+   * Compact frame (format 2, CONTRACT.md §7): [image, a..f, width, height, alpha(, region|null(, meshId,
+   * positions))] per item, 0 = unchanged since frame `since`. Unchanged items keep their object (the
    * renderer skips them); mesh uvs/indices come from the topology cached at init.
    */
   private applyCompact(plugin: Plugin, mount: Mount, reply: Reply): void {
@@ -179,6 +181,7 @@ export class ExtensionHost {
       if (!Array.isArray(entry) || entry.length < 10 || typeof entry[0] !== 'string') continue;
       const e = entry as CompactItem;
       const item: ExtensionItem = { imageAssetId: e[0], matrix: [e[1], e[2], e[3], e[4], e[5], e[6]], width: e[7], height: e[8], alpha: e[9] };
+      if (Array.isArray(e[10]) && e[10].length === 4) item.region = e[10];
       if (e.length > 12 && typeof e[11] === 'number' && Array.isArray(e[12])) {
         const topology = plugin.meshes.get(e[11]);
         if (!topology) unknown.add(e[11]);

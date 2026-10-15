@@ -253,11 +253,14 @@ export class StudioEditor {
     const used = this.documents.filter(d => d.kind === 'extension').map(d => String((d.data as { plugin?: unknown })?.plugin ?? ''));
     return pluginStatus(this.pluginStore, lock, used);
   }
-  /** Runtime modules + documents for an export/preview of `content` (a snapshot of this draft at `revision`). */
-  async exportExtensions(revision: number, content: ContentSnapshot, target: 'windows' | 'web'): Promise<PreparedExtensions | null> {
+  /** Runtime modules + documents for an export/preview of `content` (a snapshot of this draft at `revision`).
+   *  `hostFeatures`: the target player's capabilities.json visualFeatures, so plugins can prepare
+   *  what it draws (cutout packs atlases only for players with plugin-atlas-v1); absent = unknown. */
+  async exportExtensions(revision: number, content: ContentSnapshot, target: 'windows' | 'web', hostFeatures?: readonly string[]): Promise<PreparedExtensions | null> {
     this.current(revision);
     const result = await exportBundle({ store: this.pluginStore, lock: this.documents.find(d => d.kind === 'pluginLock')?.data ?? null,
-      documents: structuredClone(this.documents), visual: content.project.visual, target });
+      documents: structuredClone(this.documents), visual: content.project.visual, target,
+      assets: { root: this.root, assets: content.assets, hashes: content.assetHashes }, ...(hostFeatures ? { hostFeatures } : {}) });
     this.current(revision);
     return result;
   }

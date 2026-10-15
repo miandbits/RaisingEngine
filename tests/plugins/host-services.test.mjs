@@ -25,7 +25,7 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   assert.deepEqual([reply.pluginInstalled.id, reply.pluginInstalled.version, reply.pluginInstalled.alreadyInstalled], ['cutout-animation', CUTOUT_VERSION, false]);
   const installed = reply.plugins.installed[0];
   assert.deepEqual(Object.keys(installed).sort(), ['directory', 'documentTypes', 'elementTypes', 'id', 'modules', 'name', 'version']);
-  assert.deepEqual(installed.documentTypes.map(t => t.type), ['rig', 'controller']);
+  assert.deepEqual(installed.documentTypes.map(t => t.type), ['rig', 'controller', 'settings']);
   assert.ok(installed.modules.some(m => m.role === 'runtime' && m.platform === 'web-wasm'));
 
   reply = await service.handle({ method: 'pluginEnable', params: { id: 'cutout-animation', revision: reply.view.revision } });

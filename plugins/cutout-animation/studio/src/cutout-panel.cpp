@@ -483,6 +483,7 @@ void CutoutPanel::buildUi() {
   bottomTabs_->setObjectName("cutoutBottomTabs");
   bottomTabs_->addTab(buildAnimateTab(), "애니메이션");
   bottomTabs_->addTab(buildControllerTab(), "게임 연결");
+  bottomTabs_->addTab(buildExportTab(), "내보내기");
   connect(bottomTabs_, &QTabWidget::currentChanged, this, [this](int index) {
     if (index == 1) ensurePreview();
     if (index == 1 || playing_) { lastTick_ = QDateTime::currentMSecsSinceEpoch(); timer_->start(); }
@@ -1875,6 +1876,93 @@ QWidget* CutoutPanel::buildAnimateTab() {
   return tab;
 }
 
+// ---------------------------------------------------------------- export settings (plugin 1.9.0)
+static const char* SETTINGS_FILE = "plugins/cutout-animation/settings/project.json";
+QWidget* CutoutPanel::buildExportTab() {
+  auto* tab = new QWidget;
+  tab->setObjectName("cutoutExportTab");
+  auto* form = new QFormLayout(tab);
+  atlasEnabled_ = new QCheckBox("내보낼 때 캐릭터 그림을 아틀라스로 묶기");
+  atlasEnabled_->setObjectName("cutoutAtlasEnabled");
+  atlasEnabled_->setToolTip("게임으로 내보낼 때 리그가 그리는 PNG를 큰 페이지 이미지 몇 장으로 합칩니다. 파일 수와 텍스처 전환이 줄고, 그려지는 픽셀은 같습니다.");
+  atlasPageSize_ = new QComboBox;
+  atlasPageSize_->setObjectName("cutoutAtlasPageSize");
+  for (int size : {512, 1024, 2048, 4096}) atlasPageSize_->addItem(QString("%1 × %1 px").arg(size), size);
+  atlasPageSize_->setToolTip("페이지 한 변의 최대 크기. 이보다 큰 그림은 따로 내보냅니다.");
+  atlasPadding_ = new QSpinBox;
+  atlasPadding_->setObjectName("cutoutAtlasPadding");
+  atlasPadding_->setRange(0, 8);
+  atlasPadding_->setSuffix(" px");
+  atlasPadding_->setToolTip("그림마다 둘레에 가장자리 픽셀을 반복해 넣는 폭. 축소·필터링 때 이웃 그림이 비치지 않게 합니다.");
+  atlasTrim_ = new QCheckBox("투명한 여백 잘라내기 (원래 크기로 그리는 조각)");
+  atlasTrim_->setObjectName("cutoutAtlasTrim");
+  atlasTrim_->setToolTip("완전히 투명한 테두리는 페이지에 넣지 않습니다. 위치는 그대로 유지되고 1 px 투명 테두리는 남깁니다. 메시와 크기를 바꿔 그리는 조각은 자르지 않습니다.");
+  atlasSummary_ = new QLabel;
+  atlasSummary_->setObjectName("cutoutAtlasSummary");
+  atlasSummary_->setWordWrap(true);
+  form->addRow(atlasEnabled_);
+  form->addRow("페이지 크기", atlasPageSize_);
+  form->addRow("여백", atlasPadding_);
+  form->addRow(atlasTrim_);
+  form->addRow(atlasSummary_);
+  for (auto* c : {atlasEnabled_, atlasTrim_}) connect(c, &QCheckBox::toggled, this, [this] { if (!filling_) commitExportSettings(); });
+  connect(atlasPageSize_, &QComboBox::activated, this, [this] { if (!filling_) commitExportSettings(); });
+  connect(atlasPadding_, &QSpinBox::editingFinished, this, [this] { if (!filling_) commitExportSettings(); });
+  return tab;
+}
+Json CutoutPanel::atlasSettings() const {
+  Json out = {{"enabled", true}, {"maxPageSize", 2048}, {"padding", 2}, {"trim", true}};
+  const Json stored = settings_ && settings_->data ? settings_->data->value("export", Json::object()).value("atlas", Json::object()) : Json::object();
+  if (stored.is_object()) for (auto it = stored.begin(); it != stored.end(); ++it) out[it.key()] = it.value();
+  return out;
+}
+void CutoutPanel::refreshExportSettings() {
+  if (!atlasEnabled_) return;
+  const Json s = atlasSettings();
+  const bool keep = filling_;
+  filling_ = true;
+  {
+    QSignalBlocker a(atlasEnabled_), b(atlasTrim_), c(atlasPageSize_), d(atlasPadding_);
+    atlasEnabled_->setChecked(s.value("enabled", true));
+    atlasTrim_->setChecked(s.value("trim", true));
+    atlasPageSize_->setCurrentIndex(std::max(0, atlasPageSize_->findData(s.value("maxPageSize", 2048))));
+    atlasPadding_->setValue(s.value("padding", 2));
+    for (QWidget* w : std::initializer_list<QWidget*>{atlasTrim_, atlasPageSize_, atlasPadding_}) w->setEnabled(s.value("enabled", true));
+  }
+  QSet<QString> seen;  // images the rigs draw (default attachments and skins): what packing would read
+  auto add = [&](const Json& list) { for (const auto& a : list) if (a.is_object() && !a.value("imageAssetId", std::string()).empty()) seen.insert(qs(a.value("imageAssetId", std::string()))); };
+  for (const auto& rig : rigs_) {
+    add(rig.data->value("attachments", Json::array()));
+    for (const auto& skin : rig.data->value("skins", Json::array())) if (skin.is_object()) add(skin.value("attachments", Json::array()));
+  }
+  const int images = int(seen.size());
+  atlasSummary_->setText(QString("리그가 그리는 그림 %1장이 대상입니다 (쓰이지 않는 그림은 묶지 않습니다). 설정은 %2에 저장되며, 문서가 없으면 기본값(켜짐, 2048 px, 여백 2 px, 잘라내기)을 씁니다.%3")
+                             .arg(images).arg(SETTINGS_FILE).arg(settings_ ? "" : " · 아직 설정 문서가 없습니다."));
+  filling_ = keep;
+}
+void CutoutPanel::commitExportSettings() {
+  if (!host_) return;
+  setAtlasSettings(atlasEnabled_->isChecked(), atlasPageSize_->currentData().toInt(), atlasPadding_->value(), atlasTrim_->isChecked());
+}
+bool CutoutPanel::setAtlasSettings(bool enabled, int maxPageSize, int padding, bool trim) {
+  if (!host_) return false;
+  if (!(maxPageSize == 512 || maxPageSize == 1024 || maxPageSize == 2048 || maxPageSize == 4096) || padding < 0 || padding > 8) {
+    setStatus("아틀라스 페이지 크기는 512·1024·2048·4096, 여백은 0..8 px입니다.", true);
+    refreshExportSettings();
+    return false;
+  }
+  Json data = settings_ && settings_->data ? *settings_->data : Json{{"schemaVersion", 1}};
+  data["export"]["atlas"] = {{"enabled", enabled}, {"maxPageSize", maxPageSize}, {"padding", padding}, {"trim", trim}};
+  if (settings_ && settings_->data && data == *settings_->data) return false;
+  QJsonObject edit;
+  if (settings_) edit = replaceEdit(*settings_, toQtObject(data));
+  else edit = {{"type", "create"}, {"file", SETTINGS_FILE},
+               {"data", QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", PLUGIN_ID}, {"type", "settings"}, {"id", "project"}, {"data", toQtObject(data)}}}};
+  if (!submit({edit})) { refreshExportSettings(); return false; }
+  setStatus(enabled ? QString("내보낼 때 그림을 %1 px 아틀라스 페이지로 묶습니다. 되돌리기: Ctrl+Z").arg(maxPageSize) : QString("내보낼 때 그림을 묶지 않습니다(개별 파일). 되돌리기: Ctrl+Z"));
+  return true;
+}
+
 QWidget* CutoutPanel::buildControllerTab() {
   auto* tab = new QWidget;
   tab->setObjectName("cutoutControllerTab");
@@ -2158,6 +2246,7 @@ void CutoutPanel::refreshFromView() {
   // from Qt JSON costs tens of ms); the accepted reply to our own edit is the data we sent.
   const QMap<QString, Doc> oldRigs = rigs_, oldControllers = controllers_;
   const QJsonArray oldCharacters = characters_;
+  settings_.reset();
   const bool ownEdit = inflight_ && revision == lastRevision_ + 1;
   rigs_.clear();
   controllers_.clear();
@@ -2168,6 +2257,11 @@ void CutoutPanel::refreshFromView() {
     if (doc.value("kind") == "character") { characters_.append(data); continue; }
     if (doc.value("kind") != "extension" || data.value("plugin") != PLUGIN_ID) continue;
     const QString type = data.value("type").toString(), id = data.value("id").toString();
+    if (type == "settings") {
+      // The one settings document (plugin 1.9.0); other ids are reported by the service and ignored.
+      if (id == "project") settings_ = Doc{doc.value("file").toString(), data, std::make_shared<const Json>(toJson(data.value("data").toObject())), 0};
+      continue;
+    }
     if (type != "rig" && type != "controller") continue;
     Doc d{doc.value("file").toString(), data, nullptr, 0};
     const QMap<QString, Doc>& old = type == "rig" ? oldRigs : oldControllers;
@@ -2191,6 +2285,7 @@ void CutoutPanel::refreshFromView() {
   // Incremental refresh: the shown documents (and the lists built from them) are unchanged, as for
   // the reply to our own edit, which was already displayed from inflight_: only the host-side state
   // (diagnostics) changed. Anything else rebuilds every widget as before.
+  refreshExportSettings();
   if (!dragged && !working_ && characters_ == oldCharacters && assets == shownAssets_ && displaySignature() == shownSignature_) {
     lightRefreshes_++;
     refreshDiagnostics();

@@ -50,6 +50,9 @@ struct Notification {
  * `positions` (x, y per vertex, same space as `matrix`'s output), `uvs` (0..1) and `indices`
  * (triangles); `matrix`/`width`/`height` stay the undeformed image rectangle as a fallback for
  * hosts without mesh support (ABI: CONTRACT.md §7, capability `plugin-mesh-v1`).
+ * Atlas (plugin 1.9.0, capability `plugin-atlas-v1`): `region` = the sub-image (x, y, w, h, page
+ * pixels) of `imageAssetId` that is the item's picture; matrix/width/height and mesh uvs address
+ * that sub-image exactly as they address a whole image without it.
  */
 struct DrawItem {
   std::string slot, imageAssetId;
@@ -57,6 +60,8 @@ struct DrawItem {
   double width = 0, height = 0, alpha = 1;
   std::vector<double> positions, uvs;
   std::vector<int> indices;
+  bool hasRegion = false;
+  double region[4] = {0, 0, 0, 0};
   const Attachment* source = nullptr;  // the drawn attachment (hosts key mesh topology by it)
   bool mesh() const { return !indices.empty(); }
 };

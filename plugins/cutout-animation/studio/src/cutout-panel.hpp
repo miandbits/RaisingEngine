@@ -313,6 +313,15 @@ class CutoutPanel : public QWidget {
   /** Current pose drawn contain-fit into `size` (dock launcher mini preview). */
   QImage thumbnail(const QSize& size);
 
+  // ---- Export settings (plugin 1.9.0): the project's settings document
+  // plugins/cutout-animation/settings/project.json (absent = defaults: atlas on, 2048 px pages,
+  // 2 px padding, trimming on). Each change is one edit: create the document, or replace it.
+  /** Atlas packing on export: enabled, largest page edge (512..4096), padding (0..8), trim. */
+  bool setAtlasSettings(bool enabled, int maxPageSize, int padding, bool trim);
+  /** The effective export.atlas settings (document over defaults). */
+  cutout::Json atlasSettings() const;
+  bool hasSettingsDocument() const { return settings_.has_value(); }
+
   // ---- State (automation / tests) ----
   QString rigId() const { return rigId_; }
   QString controllerId() const { return controllerId_; }
@@ -435,6 +444,12 @@ class CutoutPanel : public QWidget {
   QComboBox *pivotCombo_ = nullptr, *axesCombo_ = nullptr;
   QToolButton *compensateBonesButton_ = nullptr, *compensateImagesButton_ = nullptr, *selectMenuButton_ = nullptr;
   QCheckBox* relativeCheck_ = nullptr;
+  QCheckBox* atlasEnabled_ = nullptr;
+  QCheckBox* atlasTrim_ = nullptr;
+  QComboBox* atlasPageSize_ = nullptr;
+  QSpinBox* atlasPadding_ = nullptr;
+  QLabel* atlasSummary_ = nullptr;
+  std::optional<Doc> settings_;  // the settings document when the project has one
   QString createId_;  // id of the bone the create tool is drawing (stable across its previews)
   QMap<QString, QDoubleSpinBox*> props_;
   QComboBox* attachmentCombo_ = nullptr;
@@ -549,6 +564,9 @@ class CutoutPanel : public QWidget {
   QWidget* section(const QString& title, const char* name, QWidget* body);
   QWidget* buildAnimateTab();
   QWidget* buildControllerTab();
+  QWidget* buildExportTab();
+  void refreshExportSettings();
+  void commitExportSettings();
   QFrame* buildOnionSettings();
   void syncOnionUi();
   void onionFromUi();

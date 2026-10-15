@@ -86,9 +86,11 @@ void app.whenReady().then(async () => {
     if (selected.canceled || !selected.filePath) return editor.reply();
     const runtimeRoot = app.isPackaged ? path.join(process.resourcesPath, 'export-runtimes')
       : fileURLToPath(new URL('../../', import.meta.url));
-    const result = await exportGame({ content: built.snapshot, projectRoot: editor.root, destination: selected.filePath,
-      target, runtimes: { web: path.join(runtimeRoot, 'web'), windows: path.join(runtimeRoot, 'native-player-app') },
-      extensions: await editor.exportExtensions(revision, built.snapshot, target) });
+    const runtimes = { web: path.join(runtimeRoot, 'web'), windows: path.join(runtimeRoot, 'native-player-app') };
+    // The player's capabilities let plugins prepare what it can draw (e.g. cutout atlases).
+    const capabilities = await readFile(path.join(runtimes[target], 'capabilities.json'), 'utf8').then(text => JSON.parse(text) as { visualFeatures?: string[] }).catch(() => ({ visualFeatures: undefined }));
+    const result = await exportGame({ content: built.snapshot, projectRoot: editor.root, destination: selected.filePath, target, runtimes,
+      extensions: await editor.exportExtensions(revision, built.snapshot, target, Array.isArray(capabilities.visualFeatures) ? capabilities.visualFeatures : []) });
     return editor.reply(null, `게임을 내보냈습니다: ${result.directory}`);
   });
   handle('analysis:request', async (input: AnalysisRequest) => {

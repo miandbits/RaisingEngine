@@ -24,6 +24,7 @@ struct ExtensionDrawItem {
   std::string image;
   bool valid=true;  // a malformed matrix draws nothing
   double m[6]={1,0,0,1,0,0},w=0,h=0,alpha=1;
+  bool region=false; double r[4]={0,0,0,0};     // plugin-atlas-v1: the picture is this sub-image (page px)
   bool mesh=false; int mesh_id=-1;               // compact frames name the topology by id
   std::vector<double> positions;                  // element-local x, y per vertex
   std::shared_ptr<const ExtensionMeshTopology> topology;
@@ -59,7 +60,7 @@ struct CompactFrameReader {
   struct Entry { bool unchanged=false; ExtensionDrawItem item; };
   bool ok=false,other=false,has_items=false;int format=1;uint64_t epoch=0,frame=0;
   std::vector<Entry> entries;
-  int depth=0,field=0,sub=-1;std::string root_key;
+  int depth=0,field=0,sub=-1,region_at=0;std::string root_key;
   ExtensionDrawItem& item(){return entries.back().item;}
   bool number(double v,bool integer) {
     if(depth==1){if(root_key=="format")format=int(v);else if(root_key=="meshEpoch")epoch=uint64_t(v);else if(root_key=="frame")frame=uint64_t(v);return true;}
@@ -70,7 +71,7 @@ struct CompactFrameReader {
       else if(field==11){d.mesh=true;d.mesh_id=integer?int(v):-1;}else d.valid=false;
       field++;return true;
     }
-    if(depth==4){if(sub==12)item().positions.push_back(v);return true;}
+    if(depth==4){auto& d=item();if(sub==10){if(region_at<4)d.r[region_at++]=v;}else if(sub==12)d.positions.push_back(v);return true;}
     return true;
   }
   bool null(){if(depth==3)field++;else if(depth>3)item().valid=false;return true;}
@@ -86,11 +87,11 @@ struct CompactFrameReader {
   bool start_array(std::size_t n) {
     if(depth==1){if(root_key!="items"){other=true;return false;}depth=2;has_items=true;return true;}
     if(depth==2){depth=3;entries.emplace_back();field=0;return true;}
-    if(depth==3){sub=field==12?field:-1;if(sub<0)item().valid=false;if(sub==12&&n!=std::size_t(-1))item().positions.reserve(n);depth=4;return true;}
+    if(depth==3){sub=field==10||field==12?field:-1;if(sub<0)item().valid=false;region_at=0;if(sub==12&&n!=std::size_t(-1))item().positions.reserve(n);depth=4;return true;}
     other=true;return false;
   }
   bool end_array() {
-    if(depth==4){depth=3;field++;sub=-1;return true;}
+    if(depth==4){if(sub==10)item().region=region_at==4&&item().r[2]>0&&item().r[3]>0;depth=3;field++;sub=-1;return true;}
     if(depth==3){if(field<10)item().valid=false;depth=2;return true;}
     if(depth==2)depth=1;
     return true;
@@ -280,6 +281,7 @@ public:
       Json items=Json::array();
       for(const auto& item:m.items) {
         items.push_back({{"imageAssetId",item.image},{"matrix",{item.m[0],item.m[1],item.m[2],item.m[3],item.m[4],item.m[5]}},{"width",item.w},{"height",item.h},{"alpha",item.alpha}});
+        if(item.region)items.back()["region"]={item.r[0],item.r[1],item.r[2],item.r[3]};  // plugin-atlas-v1 sub-image
         if(item.mesh)items.back()["mesh"]={{"positions",item.positions},{"uvs",item.topology?item.topology->uvs:std::vector<double>()},{"indices",item.topology?item.topology->indices:std::vector<int>()}};  // plugin-mesh-v1 triangles
       }
       auto* p=plugin(m.plugin);
@@ -292,7 +294,7 @@ public:
       {"events",events},{"eventCount",event_count},{"soundCount",sound_count},
       {"timing",{{"frames",timing.frames},{"frameMs",timing.ms},{"lastFrameMs",timing.last_ms},{"bytes",timing.bytes},{"lastBytes",timing.last_bytes},{"requestMs",timing.request_ms},{"frameFormats",formats}}}};
   }
-  /** Documented item JSON (format 1) -> draw item; meshes validated here, once. */
+  /** Documented item JSON (format 1) -> draw item; meshes and regions validated here, once. */
   static ExtensionDrawItem decode_item(const Json& item) {
     ExtensionDrawItem d;
     if(!item.is_object())return d;
@@ -302,6 +304,7 @@ public:
     if(matrix.is_array()&&matrix.size()==6)for(int i=0;i<6;i++)d.m[i]=num(matrix[i],0);else d.valid=false;
     d.w=num(item.value("width",Json()),0);d.h=num(item.value("height",Json()),0);
     d.alpha=num(item.value("alpha",Json()),1);
+    read_region(item.value("region",Json()),d);
     if(item.contains("mesh")) {
       d.mesh=true;
       const auto& mesh=item.at("mesh");
@@ -330,13 +333,18 @@ private:
     for(int i:t.indices)if(i<0||size_t(i)>=n)return false;
     return positions.empty()||positions.size()==t.uvs.size();
   }
+  static void read_region(const Json& v,ExtensionDrawItem& d) {
+    if(!v.is_array()||v.size()!=4)return;
+    for(int i=0;i<4;i++){if(!v[i].is_number())return;d.r[i]=v[i].get<double>();}
+    d.region=d.r[2]>0&&d.r[3]>0;
+  }
   /** Documented items (format 1) or a refused frame: decoded from the JSON reply. */
   void apply_items(ExtensionMount& m,const Json& reply) {
     m.items.clear();m.frame=0;
     if(!reply.value("ok",false)||!reply.contains("items")||!reply.at("items").is_array())return;
     for(const auto& item:reply.at("items"))m.items.push_back(decode_item(item));
   }
-  /** Compact frame (format 2): [image, a..f, width, height, alpha(, null, meshId, positions)], 0 = unchanged. */
+  /** Compact frame (format 2): [image, a..f, width, height, alpha(, region|null(, meshId, positions))], 0 = unchanged. */
   void apply_compact(ExtensionPlugin& p,ExtensionMount& m,CompactFrameReader& reply) {
     if(reply.epoch!=p.mesh_epoch){p.meshes.clear();p.mesh_epoch=reply.epoch;}
     std::vector<ExtensionDrawItem> next;next.reserve(reply.entries.size());

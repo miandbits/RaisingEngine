@@ -5,10 +5,18 @@ import { open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
+import { ATLAS_DEFAULTS, attachmentsOf, buildAtlas, decodePng } from './atlas.mjs';
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RIG_SENTINEL = '#rig';
-
+/** The project's plugin settings document (plugin 1.9.0): plugins/cutout-animation/settings/project.json. */
+export const SETTINGS_ID = 'project';
+/** Export settings of a document set: the settings document's `export.atlas` over the defaults. */
+export function atlasSettings(documents) {
+  const doc = (Array.isArray(documents) ? documents : []).find(d => d?.type === 'settings' && d?.id === SETTINGS_ID);
+  const atlas = doc?.data?.export?.atlas;
+  return { ...ATLAS_DEFAULTS, ...(atlas && typeof atlas === 'object' ? atlas : {}) };
+}
 const SCALAR = new Set(['string', 'number', 'boolean']);
 
 /** Width/height from the PNG IHDR chunk, or null when the file is unreadable / not a PNG. */
@@ -203,6 +211,9 @@ export async function createService({ pluginDir, manifest }) {
       if (!reply.ok) { push(controller.file, '/data', 'ANIM_CORE', `컨트롤러를 검사할 수 없습니다: ${reply.error}`, [controller.id]); continue; }
       fromCore(controller, (reply.diagnostics ?? []).filter(d => d.code !== 'ANIM_RIG_MISSING'), true);
     }
+    // Settings (plugin 1.9.0): one document per project; the schema checks its fields.
+    for (const doc of documents.filter(d => d.type === 'settings'))
+      if (doc.id !== SETTINGS_ID) push(doc.file, '/id', 'ANIM_SETTINGS_ID', `설정 문서는 plugins/cutout-animation/settings/${SETTINGS_ID}.json 하나만 읽습니다. 이 문서는 쓰이지 않습니다.`, [doc.id], 'warning');
     for (const { file, pointer, element } of elements) {
       const ext = element?.extension ?? {};
       if (ext.type !== 'character') continue;
@@ -245,9 +256,48 @@ export async function createService({ pluginDir, manifest }) {
    * without meshes keeps exporting to older players.
    */
   function requiredHostFeatures(documents) {
-    const lists = d => [d?.data?.attachments, ...(Array.isArray(d?.data?.skins) ? d.data.skins.map(s => s?.attachments) : [])];
-    const mesh = (Array.isArray(documents) ? documents : []).some(d => d?.type === 'rig' && lists(d).some(list => Array.isArray(list) && list.some(a => a?.type === 'mesh')));
-    return mesh ? ['plugin-mesh-v1'] : [];
+    const rigs = (Array.isArray(documents) ? documents : []).filter(d => d?.type === 'rig');
+    const mesh = rigs.some(d => attachmentsOf(d.data).some(a => a.type === 'mesh'));
+    // Atlas regions (plugin 1.9.0) are written by prepareExport; players must draw sub-images.
+    const atlas = rigs.some(d => attachmentsOf(d.data).some(a => a.atlas));
+    return [...(mesh ? ['plugin-mesh-v1'] : []), ...(atlas ? ['plugin-atlas-v1'] : [])];
   }
-  return { validate, call, requiredHostFeatures };
+  /**
+   * Export hook (packages/plugin-host CONTRACT.md §10, plugin 1.9.0): packs every PNG the exported
+   * rigs draw into atlas pages (settings document `export.atlas`, on by default) and rewrites the
+   * attachments to name their page region. The settings document itself is not exported. Images
+   * that no rig draws are never read or packed; images that cannot be reproduced exactly stay
+   * separate (listed in `report.skipped`).
+   */
+  async function prepareExport({ documents, assets, readAsset, hostFeatures }) {
+    const exported = documents.filter(d => d.type !== 'settings');
+    const settings = atlasSettings(documents);
+    if (!settings.enabled) return { documents: exported, report: { atlas: false, reason: 'settings' } };
+    // Only a player known to draw regions gets pages; unknown or older players keep separate files.
+    if (!Array.isArray(hostFeatures) || !hostFeatures.includes('plugin-atlas-v1')) return { documents: exported, report: { atlas: false, reason: 'player' } };
+    const byId = new Map((assets ?? []).map(a => [a.id, a]));
+    const wanted = new Set();
+    for (const rig of exported.filter(d => d.type === 'rig')) for (const a of attachmentsOf(rig.data)) if (typeof a.imageAssetId === 'string') wanted.add(a.imageAssetId);
+    const images = new Map();
+    for (const id of [...wanted].sort()) {
+      const asset = byId.get(id);
+      if (!asset || asset.kind !== 'image') continue;
+      if (!/\.png$/i.test(asset.path ?? '')) { images.set(id, { reason: 'PNG가 아닌 이미지' }); continue; }
+      images.set(id, decodePng(Buffer.from(await readAsset(id))));
+    }
+    // Page asset ids never collide with the project's own assets.
+    const taken = new Set(byId.keys());
+    let next = 1;
+    const ids = [];
+    const pageId = index => { while (ids.length <= index) { let id; do id = `cutout-atlas-${next++}`; while (taken.has(id)); taken.add(id); ids.push(id); } return ids[index]; };
+    const atlas = buildAtlas({ documents: exported, images, settings, pageId });
+    if (!atlas.packed.length) return { documents: exported, report: { atlas: true, pages: 0, packed: [], skipped: atlas.skipped } };
+    return {
+      documents: atlas.documents,
+      assets: atlas.pages.map(p => ({ id: pageId(p.index), kind: 'image', extension: '.png', bytes: p.png })),
+      replacedAssets: atlas.packed,
+      report: { atlas: true, pages: atlas.pages.map(p => ({ id: pageId(p.index), width: p.width, height: p.height, bytes: p.png.length })), packed: atlas.packed, skipped: atlas.skipped },
+    };
+  }
+  return { validate, call, requiredHostFeatures, prepareExport };
 }
