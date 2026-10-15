@@ -432,4 +432,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.stdout.write(JSON.stringify({ id: request?.id ?? null, ...service.editor.reply(error.message), code: error.code ?? null, plugins: await service.plugins().catch(() => null) }) + '\n');
     }
   }
+  // The editor closed its end (quit, also after 「저장 안 함」): files imported for the unsaved draft go.
+  await service.editor.close();
 }

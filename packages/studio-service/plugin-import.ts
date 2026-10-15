@@ -4,6 +4,7 @@ import path from 'node:path';
 import { MAX_EDIT_BATCH, type PrimitiveEdit, type StudioEditor } from './editor.js';
 import { decodePng } from './png.js';
 import { publishImmutableAsset } from './immutable-asset.js';
+import { noteUnsavedAsset } from './unsaved-assets.js';
 import { PLUGIN_ID_PATTERN } from '../plugin-host/manifest.js';
 import { projectPluginService } from '../plugin-host/resolve.js';
 import { PluginError } from '../plugin-host/zip.js';
@@ -120,7 +121,10 @@ export async function importPluginContent(editor: StudioEditor, input: PluginImp
   if (additions.length) {
     const directory = await realpath(path.join(root, 'assets'));
     if (!inside(root, directory)) throw new Error('프로젝트 밖의 에셋 경로입니다.');
-    for (const image of images) if (additions.some(a => a.id === image.id)) await publishImmutableAsset(directory, `${image.id}.png`, image.bytes);
+    for (const image of images) if (additions.some(a => a.id === image.id)) {
+      const created = await publishImmutableAsset(directory, `${image.id}.png`, image.bytes);
+      await noteUnsavedAsset(root, path.join(directory, `${image.id}.png`), image.bytes, created);
+    }
   }
   // Async decoding/storage cannot overwrite a newer draft or an externally changed project.
   await editor.assertDiskUnchanged(); current();

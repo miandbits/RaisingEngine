@@ -10,6 +10,7 @@ import { pluginStatus, type PluginStatus } from '../plugin-host/resolve.js';
 import type { ContentSnapshot } from '../core/model.js';
 import { ProjectConflict, projectVersion } from '../project-service/version.js';
 import { validateProject } from '../validation/index.js';
+import { releaseUnsavedAssets } from './unsaved-assets.js';
 import type { Diagnostic, DocumentKind, Json, LoadedProject, ProjectDocument } from '../validation/model.js';
 import type { ExportTarget } from '../export-service/model.js';
 
@@ -129,6 +130,10 @@ export class StudioEditor {
       if (fileHash(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) !== doc.version) throw new Error(`읽는 동안 변경되었습니다: ${doc.file}`);
       baseline.set(doc.file, fileHash(bytes));
     }
+    // The draft being replaced is discarded: its unsaved imported files go (see unsaved-assets.ts),
+    // and so do the leftovers of editors that ended without closing (a crash, a killed process).
+    if (this.root && !this.readOnly) await releaseUnsavedAssets(this.root).catch(() => []);
+    if (!readOnly && this.root !== resolved) await releaseUnsavedAssets(resolved).catch(() => []);
     this.root = resolved; this.readOnly = readOnly;
     this.documents = loaded.documents.map(({ file, kind, data }) => ({ file, kind, data }));
     this.original = sourceKey(this.documents); this.baseline = baseline;
@@ -137,6 +142,13 @@ export class StudioEditor {
     this.revision++;
     await this.validate(this.revision);
     return this.reply(null, recovered ? '중단된 저장을 이전 상태로 복구했습니다.' : null);
+  }
+
+  /** Ends the session: the saved project stays, files imported only for the unsaved draft are removed. Returns them. */
+  async close(): Promise<string[]> {
+    const root = this.root, readOnly = this.readOnly;
+    if (!root || readOnly) return [];
+    return releaseUnsavedAssets(root).catch(() => []);
   }
 
   edit(edit: Edit, revision: number): StudioReply {
