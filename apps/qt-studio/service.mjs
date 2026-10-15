@@ -14,6 +14,7 @@ import { mkdir, mkdtemp, realpath, access, readFile, writeFile } from 'node:fs/p
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StudioEditor } from '../../dist/packages/studio-service/editor.js';
+import { detachProject } from '../../dist/packages/project-service/snapshot.js';
 import { importPng } from '../../dist/packages/studio-service/images.js';
 import { importSprites } from '../../dist/packages/studio-service/sprites.js';
 import { importFont } from '../../dist/packages/studio-service/fonts.js';
@@ -289,7 +290,8 @@ export class QtStudioService {
         if (!built.ok) throw new Error('미리보기 스냅샷을 만들 수 없습니다.');
         const hasScene = Object.hasOwn(params, 'scene');
         if (hasScene) {
-          const candidate = structuredClone(this.editor.loaded());
+          // Shares the (lazy) source locations: the scene check's diagnostics keep exact lines.
+          const candidate = detachProject(this.editor.loaded());
           const project = candidate.documents.find(document => document.kind === 'project');
           if (!project?.data.visual) throw new Error('장면 미리보기에는 화면 구성이 필요합니다.');
           project.data.visual.defaultScene = structuredClone(params.scene);

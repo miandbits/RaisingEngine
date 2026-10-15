@@ -22,12 +22,21 @@ export function canonicalJson(value: unknown): string {
 }
 const hash = (input: string | Buffer) => createHash('sha256').update(input).digest('hex');
 
-export async function buildSnapshot(loaded: LoadedProject): Promise<SnapshotResult> {
-  // Detach before awaiting validation: subsequent editor changes cannot alter this snapshot. Source
-  // locations depend only on a document's text and never change, so they are shared, not cloned
-  // (a large plugin document has ~100k of them, possibly still unbuilt: see parseDocument).
-  const detached: LoadedProject = structuredClone({ ...loaded, documents: loaded.documents.map(({ locations: _locations, ...document }) => document) }) as LoadedProject;
+/**
+ * A deep copy of a loaded project that later editor changes (or the caller's own edits) cannot alter.
+ * Source locations depend only on a document's text and never change, so they are shared, not
+ * cloned: a large plugin document has ~100k of them, possibly still unbuilt (see parseDocument),
+ * and a structured clone of an unbuilt location map would be empty.
+ */
+export function detachProject(loaded: LoadedProject): LoadedProject {
+  const detached = structuredClone({ ...loaded, documents: loaded.documents.map(({ locations: _locations, ...document }) => document) }) as LoadedProject;
   detached.documents = detached.documents.map((document, i) => ({ ...document, locations: loaded.documents[i]!.locations }));
+  return detached;
+}
+
+export async function buildSnapshot(loaded: LoadedProject): Promise<SnapshotResult> {
+  // Detach before awaiting validation: subsequent editor changes cannot alter this snapshot.
+  const detached = detachProject(loaded);
   const validation = await validateProject(detached);
   if (!validation.valid) return { ok: false, diagnostics: validation.diagnostics };
   const documents = validation.structuredDocuments;

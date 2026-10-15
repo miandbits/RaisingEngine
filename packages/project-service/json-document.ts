@@ -8,19 +8,33 @@ export interface ParseResult { document?: ProjectDocument; diagnostics: Diagnost
  * Source locations computed on first use. A document the editor serialized itself (JSON.stringify)
  * cannot have syntax errors or duplicate keys, so only a diagnostic that needs a line/column pays
  * for the full tree walk; on a large plugin document (a 2.7 MiB rig) that walk dominated every edit.
+ * A real Map (entries filled in when built) with only #private state: documents stay
+ * structuredClone-safe (callers clone loaded projects; a clone is a plain Map of the entries built
+ * so far, so callers that need exact locations share this object instead, see buildSnapshot).
  */
-class LazyLocations implements ReadonlyMap<string, SourceLocation> {
-  private built: ReadonlyMap<string, SourceLocation> | null = null;
-  constructor(private readonly file: string, private readonly kind: DocumentKind, private readonly source: string) {}
-  private get map(): ReadonlyMap<string, SourceLocation> { return this.built ??= parseDocument(this.file, this.kind, this.source).document?.locations ?? new Map(); }
-  get size(): number { return this.map.size; }
-  get(key: string): SourceLocation | undefined { return this.map.get(key); }
-  has(key: string): boolean { return this.map.has(key); }
-  forEach(callback: (value: SourceLocation, key: string, map: ReadonlyMap<string, SourceLocation>) => void, thisArg?: unknown): void { this.map.forEach(callback, thisArg); }
-  entries(): MapIterator<[string, SourceLocation]> { return this.map.entries(); }
-  keys(): MapIterator<string> { return this.map.keys(); }
-  values(): MapIterator<SourceLocation> { return this.map.values(); }
-  [Symbol.iterator](): MapIterator<[string, SourceLocation]> { return this.map[Symbol.iterator](); }
+class LazyLocations extends Map<string, SourceLocation> {
+  #built = false;
+  readonly #file: string;
+  readonly #kind: DocumentKind;
+  readonly #source: string;
+  constructor(file: string, kind: DocumentKind, source: string) { super(); this.#file = file; this.#kind = kind; this.#source = source; }
+  protected get source(): string { return this.#source; }
+  protected get built(): boolean { return this.#built; }
+  protected build(): this {
+    if (!this.#built) {
+      this.#built = true;
+      parseDocument(this.#file, this.#kind, this.#source).document?.locations.forEach((location, pointer) => super.set(pointer, location));
+    }
+    return this;
+  }
+  override get size(): number { return this.build() && super.size; }
+  override get(key: string): SourceLocation | undefined { return this.build() && super.get(key); }
+  override has(key: string): boolean { return this.build() && super.has(key); }
+  override forEach(callback: (value: SourceLocation, key: string, map: Map<string, SourceLocation>) => void, thisArg?: unknown): void { this.build(); super.forEach(callback, thisArg); }
+  override entries(): MapIterator<[string, SourceLocation]> { return this.build() && super.entries(); }
+  override keys(): MapIterator<string> { return this.build() && super.keys(); }
+  override values(): MapIterator<SourceLocation> { return this.build() && super.values(); }
+  override [Symbol.iterator](): MapIterator<[string, SourceLocation]> { return this.build() && super[Symbol.iterator](); }
 }
 /**
  * Locations in the editor's own serialization (JSON.stringify(value, null, 2) + newline) computed
@@ -28,74 +42,68 @@ class LazyLocations implements ReadonlyMap<string, SourceLocation> {
  * so a node's line is its container's line + 1 + the lines of the siblings before it, and its column
  * is the indent (+ the quoted key and ": " for members). One diagnostic on a 2.7 MiB rig resolves
  * a path in microseconds instead of walking ~100k nodes; iteration falls back to the full map.
+ * The per-node caches are #private WeakMaps: never own properties a structured clone could reach.
  */
-class PrettyLocations implements ReadonlyMap<string, SourceLocation> {
-  private value: Json | undefined;
-  private lineStarts: number[] | null = null;
-  private readonly lines = new WeakMap<object, number>();
-  private readonly before = new WeakMap<object, number[]>();
-  private readonly memberIndex = new WeakMap<object, Map<string, number>>();
-  private readonly full: LazyLocations;
-  constructor(file: string, kind: DocumentKind, private readonly source: string) { this.full = new LazyLocations(file, kind, source); }
-  private linesOf(v: Json): number {
+class PrettyLocations extends LazyLocations {
+  #value: Json | undefined;
+  #lineStarts: number[] | null = null;
+  readonly #lines = new WeakMap<object, number>();
+  readonly #before = new WeakMap<object, number[]>();
+  readonly #memberIndex = new WeakMap<object, Map<string, number>>();
+  #linesOf(v: Json): number {
     if (v === null || typeof v !== 'object') return 1;
-    let n = this.lines.get(v);
+    let n = this.#lines.get(v);
     if (n === undefined) {
       const children = Array.isArray(v) ? v : Object.values(v);
       n = children.length ? 2 : 1;
-      for (const c of children) n += this.linesOf(c);
-      this.lines.set(v, n);
+      for (const c of children) n += this.#linesOf(c);
+      this.#lines.set(v, n);
     }
     return n;
   }
-  private beforeOf(v: object): number[] {
-    let prefix = this.before.get(v);
+  #beforeOf(v: object): number[] {
+    let prefix = this.#before.get(v);
     if (!prefix) {
       prefix = [];
       let sum = 0;
-      for (const c of Array.isArray(v) ? v as Json[] : Object.values(v) as Json[]) { prefix.push(sum); sum += this.linesOf(c); }
-      this.before.set(v, prefix);
+      for (const c of Array.isArray(v) ? v as Json[] : Object.values(v) as Json[]) { prefix.push(sum); sum += this.#linesOf(c); }
+      this.#before.set(v, prefix);
     }
     return prefix;
   }
-  private resolve(pointer: string): SourceLocation | undefined {
+  #resolve(pointer: string): SourceLocation | undefined {
     // A private parse of the same text: validators may mutate the document's own data.
-    this.value ??= JSON.parse(this.source) as Json;
-    let node: Json = this.value, line = 1, column = 1, depth = 0;
+    this.#value ??= JSON.parse(this.source) as Json;
+    let node: Json = this.#value, line = 1, column = 1, depth = 0;
     if (pointer !== '') {
       if (!pointer.startsWith('/')) return undefined;
       for (const raw of pointer.slice(1).split('/')) {
         const part = raw.replace(/~1/g, '/').replace(/~0/g, '~');
         if (Array.isArray(node)) {
           if (!/^(0|[1-9][0-9]*)$/.test(part) || Number(part) >= node.length) return undefined;
-          line += 1 + this.beforeOf(node)[Number(part)]!;
+          line += 1 + this.#beforeOf(node)[Number(part)]!;
           column = 2 * (depth + 1) + 1;
           node = node[Number(part)]!;
         } else if (node !== null && typeof node === 'object') {
           if (!Object.hasOwn(node, part)) return undefined;
-          let index = this.memberIndex.get(node);
-          if (!index) this.memberIndex.set(node, index = new Map(Object.keys(node).map((k, i) => [k, i])));
-          line += 1 + this.beforeOf(node)[index.get(part)!]!;
+          let index = this.#memberIndex.get(node);
+          if (!index) this.#memberIndex.set(node, index = new Map(Object.keys(node).map((k, i) => [k, i])));
+          line += 1 + this.#beforeOf(node)[index.get(part)!]!;
           column = 2 * (depth + 1) + JSON.stringify(part).length + 3;
           node = node[part]!;
         } else return undefined;
         depth++;
       }
     }
-    if (!this.lineStarts) {
-      this.lineStarts = [0];
-      for (let at = this.source.indexOf('\n'); at >= 0; at = this.source.indexOf('\n', at + 1)) this.lineStarts.push(at + 1);
+    if (!this.#lineStarts) {
+      this.#lineStarts = [0];
+      for (let at = this.source.indexOf('\n'); at >= 0; at = this.source.indexOf('\n', at + 1)) this.#lineStarts.push(at + 1);
     }
-    return { offset: (this.lineStarts[line - 1] ?? 0) + column - 1, line, column };
+    return { offset: (this.#lineStarts[line - 1] ?? 0) + column - 1, line, column };
   }
-  get size(): number { return this.full.size; }
-  get(key: string): SourceLocation | undefined { return this.resolve(key); }
-  has(key: string): boolean { return this.resolve(key) !== undefined; }
-  forEach(callback: (value: SourceLocation, key: string, map: ReadonlyMap<string, SourceLocation>) => void, thisArg?: unknown): void { this.full.forEach(callback, thisArg); }
-  entries(): MapIterator<[string, SourceLocation]> { return this.full.entries(); }
-  keys(): MapIterator<string> { return this.full.keys(); }
-  values(): MapIterator<SourceLocation> { return this.full.values(); }
-  [Symbol.iterator](): MapIterator<[string, SourceLocation]> { return this.full[Symbol.iterator](); }
+  // Point lookups never build the full map; once iteration built it, its entries answer directly.
+  override get(key: string): SourceLocation | undefined { return this.built ? super.get(key) : this.#resolve(key); }
+  override has(key: string): boolean { return this.built ? super.has(key) : this.#resolve(key) !== undefined; }
 }
 const MAX_DEPTH = 128;
 function deeperThan(value: Json, limit: number): boolean {
