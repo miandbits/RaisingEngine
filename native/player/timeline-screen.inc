@@ -13,7 +13,7 @@
     return out+"</div>";
   }
   std::string timeline_overlay() {
-    if(!game.timeline_active())return "";
+    if(!game.timeline_active()||game.timeline_plan.contains("resultPlayback"))return "";
     const auto& plan=game.timeline_plan;const auto& cursor=game.timeline_cursor;
     const bool completed=cursor.value("completed",false),paused=cursor.value("paused",false);
     const auto& clip=plan.at("clips").at(std::min(cursor.at("clipIndex").get<size_t>(),plan.at("clips").size()-1));

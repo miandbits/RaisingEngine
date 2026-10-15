@@ -26,6 +26,7 @@ export interface TimelineClip {
 export interface TimelinePlan {
   resultRevision: number; activityId: string; timelineId: string;
   clips: TimelineClip[]; totalDurationMs: number;
+  resultPlayback?: {title:string; rows:{label:string; before:number; after:number}[]};
 }
 export interface TimelineCursor {
   resultRevision: number; activityId: string; timelineId: string;
@@ -56,7 +57,17 @@ export function planActivityTimeline(content:ContentSnapshot,state:RunState):Tim
   const result=state.lastActivityResult;
   if(state.phase!=='activity-result'||!result)return null;
   const visual=content.project.visual,binding=visual?.activityTimelines?.find(x=>x.activityId===result.activityId);
-  if(!binding)return null;
+  if(!binding){
+    const config=visual?.resultPlayback;if(!config)return null;
+    const rows=result.changes.filter(c=>c.kind==='numeric'&&c.delta!==0).map(c=>{
+      if(c.kind!=='numeric')throw new Error('Expected numeric change');
+      const actor='actorId'in c.target?String(c.target.actorId):'';
+      return {label:(actor?`${content.characters.find(x=>x.id===actor)?.name??actor} / `:'')+targetLabel(content,c.target),before:c.before,after:c.after};
+    });
+    const clips=[config.leadInMs,...rows.map(()=>config.changeMs),config.holdMs].map((durationMs,index):TimelineClip=>({id:`result-${index}`,clipId:`result-${index}`,durationMs,text:'',transition:'none',day:null}));
+    const activity=content.activities.find(x=>x.id===result.activityId)?.label??result.activityId;
+    return {resultRevision:state.stateRevision,activityId:result.activityId,timelineId:'inline-result',clips,totalDurationMs:clips.reduce((sum,c)=>sum+c.durationMs,0),resultPlayback:{title:activity+(result.success?` · ${result.success.passed?'성공':'실패'}`:''),rows}};
+  }
   const timelineId=result.success?(result.success.passed?binding.successTimelineId:binding.failureTimelineId)??binding.timelineId:binding.timelineId;
   const timeline=visual?.timelines?.find(x=>x.id===timelineId);if(!timeline?.clips.length)return null;
   const days:(number|null)[]=[null];
@@ -72,6 +83,17 @@ export function planActivityTimeline(content:ContentSnapshot,state:RunState):Tim
     clips.push({id:`${day===null?'once':`day-${day}`}__${clip.id}`,clipId:clip.id,durationMs:clip.durationMs,...(clip.imageAssetId?{imageAssetId:clip.imageAssetId}:{}),...(clip.stage?{stage:clip.stage}:{}),text:(clip.text??'').replace(/\{(activity|outcome|day|changes)\}/g,(_,key:string)=>tokens[key]!),transition:clip.transition??'none',day});
   }
   return {resultRevision:state.stateRevision,activityId:result.activityId,timelineId,clips,totalDurationMs:clips.reduce((sum,x)=>sum+x.durationMs,0)};
+}
+
+/** Animate display values only; committed simulation state is never rewritten. */
+export function resultPlaybackText(plan:TimelinePlan,cursor:TimelineCursor):string|null {
+  const playback=plan.resultPlayback;if(!playback)return null;
+  const lines=playback.rows.map((row,index)=>{
+    const progress=cursor.completed||cursor.clipIndex>index+1?1:cursor.clipIndex===index+1?Math.min(1,cursor.elapsedMs/plan.clips[index+1]!.durationMs):0;
+    const delta=Math.trunc((row.after-row.before)*progress),value=row.before+delta;
+    return `${row.label}  ${row.before} → ${value}  (${delta>=0?'+':''}${delta})`;
+  });
+  return [playback.title,...(lines.length?lines:['능력 변화 없음'])].join('\n');
 }
 
 export function createTimelineCursor(plan:TimelinePlan):TimelineCursor {

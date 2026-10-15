@@ -11,7 +11,7 @@ export function TimelineOverlay({timeline,generation,busy,act,save,load}:{timeli
     const timer=setTimeout(()=>act({type:'timelineTick',deltaMs:100}),100);
     return()=>clearTimeout(timer);
   },[cursor,busy,act]);
-  if(!timeline)return null;
+  if(!timeline||timeline.plan.resultPlayback)return null;
   const {plan}=timeline,clip=plan.clips[Math.min(timeline.cursor.clipIndex,plan.clips.length-1)];
   if(!clip)return null;
   const elapsedMs=cursor!.completed?clip.durationMs:cursor!.elapsedMs;

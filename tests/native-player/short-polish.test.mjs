@@ -18,7 +18,7 @@ function route(content,kind,evidence){
   function checkpoint(id,image=false){expected[id]=structuredClone(session.state);steps.push({checkpoint:id,...(image?{screenshot:resolve(evidence,kind+'-'+id+'.png')}:{})});}
   function action(command,clicks){steps.push(...clicks);send(command);settle();}
   function restore(command,clicks,id){const saved=structuredClone(session);steps.push({key:'F5'});checkpoint(id+'-saved',true);action(command,clicks);checkpoint(id+'-changed');steps.push({key:'F9'});session=saved;checkpoint(id+'-restored');restores.push(id);}
-  function stories(){let guard=0;while(session.state.phase==='narrative'){const n=node();assert.ok(n);const choice=n.type==='choice'?(kind==='survival'?'register':'decline'):null;const command=choice?{type:'choose',choiceId:choice}:{type:'advanceNarrative'},clicks=[{click:choice?'choose-'+choice:'advance'}];if(session.state.periodIndex===0&&n.type==='choice')restore(command,clicks,'promise');action(command,clicks);if(++guard>30)assert.fail('story limit');}}
+  function stories(){let guard=0;while(session.state.phase==='narrative'){const n=node();assert.ok(n);steps.push({timelineAdvanceMs:10000},{scheduleAdvanceMs:5000});checkpoint(`story-paused-${session.state.stateRevision}`);const choice=n.type==='choice'?(kind==='survival'?'register':'decline'):null;const command=choice?{type:'choose',choiceId:choice}:{type:'advanceNarrative'},clicks=[{click:choice?'choose-'+choice:'advance'}];if(session.state.periodIndex===0&&n.type==='choice')restore(command,clicks,'promise');action(command,clicks);if(++guard>30)assert.fail('story limit');}}
   checkpoint('started',true);
   steps.push({extensionAdvanceMs:1200},{checkpoint:'breathing',screenshot:resolve(evidence,kind+'-breathing.png')});
   steps.push({resize:{width:960,height:540}},{checkpoint:'small',screenshot:resolve(evidence,kind+'-small.png')},{resize:{width:1600,height:900}},{checkpoint:'large',screenshot:resolve(evidence,kind+'-large.png')},{resize:{width:1280,height:720}});
@@ -27,12 +27,13 @@ function route(content,kind,evidence){
     const plan=kind==='survival'?(month===0?['study','rest','study']:['study','rest','work']):['rest','rest','rest'];
     action({type:'setSchedule',activityIds:plan},[...plan.map((value,i)=>({select:'plan-'+i,value})),{click:'advance'}]);
     for(let slot=0;slot<3;slot++){
-      action({type:'executeActivity'},[{click:'advance'}]);checkpoint(`month-${month}-slot-${slot}`,month===0);
-      if(month===0&&slot===0){steps.push({extensionAdvanceMs:700});restore({type:'acknowledgeResult'},[{click:'advance'}],'training');}
-      if(month===0&&slot===1)restore({type:'acknowledgeResult'},[{click:'advance'}],'midpoint');
+      action({type:'executeActivity'},[{scheduleAdvanceMs:750}]);checkpoint(`month-${month}-slot-${slot}`,month===0);
+      if(month===0&&slot===0){steps.push({timelineAdvanceMs:1200});restore({type:'acknowledgeResult'},[{timelineAdvanceMs:60000},{scheduleAdvanceMs:750}],'training');}
+      if(month===0&&slot===1)restore({type:'acknowledgeResult'},[{timelineAdvanceMs:60000},{scheduleAdvanceMs:750}],'midpoint');
       const sdId=`sd-${month}-${slot}`;
       steps.push({checkpoint:sdId+'-base'},{extensionAdvanceMs:plan[slot]==='study'?1200:plan[slot]==='work'?320:1800},{checkpoint:sdId+'-motion',screenshot:resolve(evidence,kind+'-'+sdId+'.png')});
-      action({type:'acknowledgeResult'},[{click:'advance'}]);stories();
+      steps.push({timelineAdvanceMs:60000},{checkpoint:sdId+'-complete'});
+      action({type:'acknowledgeResult'},[{scheduleAdvanceMs:750}]);stories();
     }
   }
   checkpoint('finished',true);assert.equal(session.state.phase,'finished');assert.equal(session.state.endingId,kind==='survival'?'certified':'ordinary');
@@ -44,10 +45,10 @@ test('polished short: real animation plugin, both endings and save/resume', {tim
   const loaded=await loadProject(project);const built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot;assert.equal(content.project.gameId,'last-grandson');assert.equal(content.project.visual.screens.length,4);
   const root=await mkdtemp(resolve('.cache/short-native-')),game=resolve(root,'game'),evidence=resolve('.cache/short-polish');await mkdir(evidence,{recursive:true});
-  const capabilities=JSON.parse(await readFile(resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-short','capabilities.json'),'utf8'));
+  const capabilities=JSON.parse(await readFile(resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-auto-result','capabilities.json'),'utf8'));
   const extensions=await exportBundle({lock:loaded.documents.find(d=>d.kind==='pluginLock')?.data,documents:loaded.documents,visual:content.project.visual,target:'windows',assets:{root:project,assets:content.assets,hashes:content.assetHashes},hostFeatures:capabilities.visualFeatures});
   assert.ok(extensions);
-  await exportGame({extensions,content,projectRoot:project,destination:game,target:'windows',runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-short'),web:resolve('dist/web')}});
+  await exportGame({extensions,content,projectRoot:project,destination:game,target:'windows',runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-auto-result'),web:resolve('dist/web')}});
   await writeFile(resolve(evidence,'game-path.txt'),game);
   for(const kind of ['survival','farewell']){
     const plan=route(content,kind,evidence),script=resolve(evidence,kind+'-steps.json'),report=resolve(evidence,kind+'-native-report.json'),save=resolve(evidence,kind+'-save.json');
@@ -73,6 +74,9 @@ test('polished short: real animation plugin, both endings and save/resume', {tim
       assert.ok(sd(base).items.length>0,'SD stage has actual draw items');
       assert.ok(!JSON.stringify(base.texts).includes('이번 달, 무엇을 지킬 것인가'),'result hides planning prompt');
       assert.ok(!base.elements.some(e=>/^plan-/.test(e.id)),'result has no schedule selectors');
+      assert.ok(!base.elements.some(e=>e.id==='advance'),'automatic results do not require confirmation');
+      assert.ok(base.timeline.plan.resultPlayback,'inline stat animation is active');
+      assert.equal(ui(`sd-${month}-${slot}-complete`).timeline.cursor.completed,true);
     }
     assert.ok(animation('started').items.length>0,'SD stage stays mounted while planning');
     assert.equal(animation('started').state.tracks[0].clip,'rest');
@@ -80,6 +84,9 @@ test('polished short: real animation plugin, both endings and save/resume', {tim
     // serials are also internal. Expression/clip selection persists across restore.
     for(const id of plan.restores){const before=ui(id+'-saved').extensions.instances,after=ui(id+'-restored').extensions.instances;assert.deepEqual(before.map(i=>({instance:i.instance,expression:i.state.activeExpression,clips:i.state.tracks.map(t=>t.clip)})),after.map(i=>({instance:i.instance,expression:i.state.activeExpression,clips:i.state.tracks.map(t=>t.clip)})),'animation selection restores '+id);}
     assert.equal(animation('training-restored').state.tracks[0].timeMs,0,'decorative SD loops restart when restored');
+    assert.deepEqual(ui('training-saved').timeline,ui('training-restored').timeline,'partial stat display resumes at the saved cursor');
+    assert.deepEqual(ui('training-saved').texts.result,ui('training-restored').texts.result,'partial displayed numbers restore');
+    if(kind==='survival'){assert.match(ui('training-saved').texts.result,/27/);assert.match(ui('training-saved').texts.result,/\(-3\)/);assert.match(ui('month-0-slot-0').texts.result,/\(\+0\)/);}
     for(const id of ['small','large']){assert.equal(ui(id).screenId,'schedule');assert.ok(ui(id).elements.find(e=>e.id==='advance')?.enabled);assert.equal(animation(id).available,true);}
     assert.ok(JSON.stringify(ui('started').texts).includes('기력 25'),'selected activity description visible');
     for(const [id,expected]of Object.entries(plan.expected))assert.deepEqual(state(id),expected,kind+' '+id);
@@ -88,4 +95,9 @@ test('polished short: real animation plugin, both endings and save/resume', {tim
     const again=spawnSync(resolve(game,'RaisingPlayer.exe'),['--bundle',game,'--save',save,'--automation',restart,'--report',reloadReport,'--hidden'],{encoding:'utf8',windowsHide:true,timeout:30000});assert.equal(again.status,0,again.stderr);
     const loaded=JSON.parse(await readFile(reloadReport,'utf8'));assert.equal(loaded.ok,true);assert.deepEqual(loaded.steps.find(s=>s.command.checkpoint==='reopened').ui.state,plan.expected.finished);
   }
+  // Exercise the actual wall clock as well: one plan click, no result clicks.
+  const realtime=resolve(evidence,'auto-realtime.json'),realtimeReport=resolve(evidence,'auto-realtime-report.json');
+  await writeFile(realtime,JSON.stringify([{click:'start'},...['study','rest','study'].map((value,i)=>({select:'plan-'+i,value})),{click:'advance'},{timelineRealtime:true},{waitFrames:1600},{checkpoint:'event-paused',screenshot:resolve(evidence,'auto-event-paused.png')}]));
+  const played=spawnSync(resolve(game,'RaisingPlayer.exe'),['--bundle',game,'--save',resolve(root,'realtime-save.json'),'--automation',realtime,'--report',realtimeReport,'--hidden'],{encoding:'utf8',windowsHide:true,timeout:60000});assert.equal(played.status,0,played.stderr);
+  const stopped=JSON.parse(await readFile(realtimeReport,'utf8'));assert.equal(stopped.ok,true);assert.equal(stopped.final.state.phase,'narrative');assert.equal(stopped.final.state.periodIndex,0);assert.equal(stopped.final.state.attributes.skill,12);assert.equal(stopped.final.timeline,null);
 });

@@ -30,10 +30,32 @@ inline std::string timeline_tokens(const std::string& source,const std::map<std:
   std::string result;size_t position=0;
   while(position<source.size()){const auto start=source.find('{',position);if(start==std::string::npos){result+=source.substr(position);break;}result+=source.substr(position,start-position);const auto end=source.find('}',start);if(end==std::string::npos){result+=source.substr(start);break;}const auto found=tokens.find(source.substr(start+1,end-start-1));result+=found==tokens.end()?source.substr(start,end-start+1):found->second;position=end+1;}return result;
 }
+inline Json plan_result_playback(const Json& content,const Json& state,const Json& config) {
+  const auto& result=state.at("lastActivityResult");Json rows=Json::array(),clips=Json::array();
+  for(const auto& change:result.at("changes"))if(change.value("kind","")=="numeric"&&change.value("delta",0)!=0){
+    const auto& target=change.at("target");std::string label=timeline_target_label(content,target);
+    if(target.contains("actorId")){std::string actor=target.at("actorId");for(const auto& c:content.at("characters"))if(c.at("id")==target.at("actorId"))actor=c.value("name",actor);label=actor+" / "+label;}
+    rows.push_back({{"label",label},{"before",change.at("before")},{"after",change.at("after")}});
+  }
+  int64_t total=0;for(size_t i=0;i<rows.size()+2;i++){const int duration=config.at(i==0?"leadInMs":i==rows.size()+1?"holdMs":"changeMs");total+=duration;const auto id="result-"+std::to_string(i);clips.push_back({{"id",id},{"clipId",id},{"durationMs",duration},{"text",""},{"transition","none"},{"day",nullptr}});}
+  std::string title=result.at("activityId");for(const auto& a:content.at("activities"))if(a.at("id")==result.at("activityId"))title=a.value("label",title);
+  if(!result.at("success").is_null())title+=result.at("success").value("passed",false)?" · 성공":" · 실패";
+  return {{"resultRevision",state.at("stateRevision")},{"activityId",result.at("activityId")},{"timelineId","inline-result"},{"clips",clips},{"totalDurationMs",total},{"resultPlayback",{{"title",title},{"rows",rows}}}};
+}
+inline std::string result_playback_text(const Json& plan,const Json& cursor) {
+  if(!plan.contains("resultPlayback"))return "";
+  const auto& playback=plan.at("resultPlayback");std::string text=playback.at("title");const auto& rows=playback.at("rows");
+  for(size_t i=0;i<rows.size();i++){
+    const auto& row=rows.at(i);const int index=cursor.at("clipIndex");const double progress=cursor.value("completed",false)||index>int(i+1)?1:index==int(i+1)?std::min(1.0,cursor.at("elapsedMs").get<double>()/plan.at("clips").at(i+1).at("durationMs").get<double>()):0;
+    const int64_t before=row.at("before"),after=row.at("after"),delta=static_cast<int64_t>((after-before)*progress);
+    text+="\n"+row.at("label").get<std::string>()+"  "+std::to_string(before)+" → "+std::to_string(before+delta)+"  ("+(delta>=0?"+":"")+std::to_string(delta)+")";
+  }
+  if(rows.empty())text+="\n능력 변화 없음";return text;
+}
 inline Json plan_activity_timeline(const Json& content,const Json& state) {
   if(state.is_null()||state.value("phase","")!="activity-result"||state.value("lastActivityResult",Json()).is_null())return nullptr;
   const auto result=state.at("lastActivityResult"),visual=content.at("project").value("visual",Json::object());Json binding=nullptr;
-  for(const auto& candidate:visual.value("activityTimelines",Json::array()))if(candidate.at("activityId")==result.at("activityId")){binding=candidate;break;}if(binding.is_null())return nullptr;
+  for(const auto& candidate:visual.value("activityTimelines",Json::array()))if(candidate.at("activityId")==result.at("activityId")){binding=candidate;break;}if(binding.is_null())return visual.contains("resultPlayback")?plan_result_playback(content,state,visual.at("resultPlayback")):Json();
   auto timelineId=binding.at("timelineId");const auto success=result.value("success",Json());if(!success.is_null())timelineId=binding.value(success.value("passed",false)?"successTimelineId":"failureTimelineId",timelineId);
   Json timeline=nullptr;for(const auto& candidate:visual.value("timelines",Json::array()))if(candidate.at("id")==timelineId){timeline=candidate;break;}if(timeline.is_null()||timeline.at("clips").empty())return nullptr;
   std::vector<int> days={0};if(binding.value("repeat","once")=="logicalDays") {

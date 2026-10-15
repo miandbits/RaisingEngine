@@ -8,6 +8,7 @@ import type { ReadonlyDesign, Element, ScreenId } from '../../../packages/visual
 import { VisualSurface, isVisible, type VisualContext } from './VisualSurface.js';
 import { systemsScreens } from '../../../packages/visual/systems-screens.js';
 import {TimelineOverlay} from './TimelineOverlay.js';
+import {resultPlaybackText} from '../../../packages/visual/timeline.js';
 
 export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,sound,muted,preview,error,notice}: {
   view:PlayerView;design:ReadonlyDesign;busy:boolean;plan:string[];onPlan:(value:string[])=>void;
@@ -85,6 +86,8 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   const itemName=(id:string)=>view.gameplayDefinition?.items.find(item=>item.id===id)?.name??id;
   const context:VisualContext={activeDietId:s?.gameplay?.dietId??null,systems:view.systems,items:view.gameplayDefinition?.items??[],gameplay:view.gameplay,location:view.gameplay?.location.name??'',relationships:view.characters.flatMap(c=>c.relationships.map(r=>({id:`${c.id}-${r.id}`,characterId:c.id,relationshipId:r.id,name:c.name,label:r.label,value:s?.relationships[c.id]?.[r.id]??view.initialState.relationships?.[c.id]?.[r.id]??r.initial,min:r.min,max:r.max}))),title:view.title,description:view.description,calendar:view.time?`${view.time.year}년 ${view.time.month}월 · ${periodLabel(view.time.periodInMonth,view.periodsPerMonth??3)}`:'',ending:view.endingLabel??'',speaker:node?.type==='dialogue'&&node.speakerId?view.characters.find(c=>c.id===node.speakerId)?.name??'이야기':view.storyLabel??'이야기',story:node?.type==='dialogue'?node.text:node?.type==='choice'?node.prompt:'',phase:node?.type==='choice'?'choice':node?.type==='dialogue'?'dialogue':s?.phase??'title',background:s?s.presentation.backgroundAssetId:design.defaultScene?.backgroundAssetId??null,portraits,stats:view.attributes.map(a=>({...a,value:s?.attributes[a.id]??view.initialState.attributes?.[a.id]??a.initial})),activities:view.activities,plan,period:view.time?.periodInMonth??0,choices:view.narrative?.choices??[],result:result?`${view.activities.find(a=>a.id===result.activityId)?.label??''} 완료${result.success?` · ${result.success.passed?'성공':'실패'}`:''}\n`+result.changes.filter(c=>c.kind==='numeric'&&c.delta!==0).map(c=>c.kind==='numeric'?`${c.target.kind==='attribute'?attributeName(c.target.attributeId):c.target.kind==='inventory'?itemName(c.target.itemId):'관계'} ${c.delta>0?'+':''}${c.delta}`:'').join(' · '):''};
   if(noNumericChanges)context.result+='능력 변화 없음';
+  if(s?.phase==='ready'&&view.schedulePlayback==='continuous'&&design.resultPlayback&&!error)context.phase='auto-ready';
+  if(view.timeline?.plan.resultPlayback)context.result=resultPlaybackText(view.timeline.plan,view.timeline.cursor)??context.result;
   context.portraitTransforms=portraitTransforms;
   if(view.time)context.calendarTime={year:view.time.year,month:view.time.month};
   context.planningKey=`${view.generation}:${Math.floor((s?.periodIndex??0)/(view.periodsPerMonth??3))}`;context.scheduleCommitted=!!s?.schedule;context.periodsPerMonth=view.periodsPerMonth??3;context.schedulePlayback=view.schedulePlayback??'manual';

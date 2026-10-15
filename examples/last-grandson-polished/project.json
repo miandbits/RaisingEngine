@@ -627,7 +627,8 @@
             "borderColor": "#c5a16b",
             "hoverFill": "#45655e",
             "pressedFill": "#172e2d",
-            "autoLabel": true
+            "autoLabel": true,
+            "visibleWhen": "planning"
           },
           {
             "id": "goal",
@@ -1038,6 +1039,12 @@
     ],
     "defaultScene": {
       "musicAssetId": "winter-motif"
+    },
+    "resultPlayback": {
+      "leadInMs": 800,
+      "changeMs": 800,
+      "holdMs": 1000
     }
-  }
+  },
+  "schedulePlayback": "continuous"
 }

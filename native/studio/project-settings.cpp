@@ -1,6 +1,7 @@
 #include "studio.hpp"
 #include <QStandardPaths>
 #include <QDialog>
+#include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
@@ -47,6 +48,12 @@ void StudioWindow::editProjectSettings() {
   auto duration=new QSpinBox;duration->setObjectName("projectDurationMonths");duration->setRange(1,1200);duration->setSuffix(tr("개월"));duration->setValue(project.value("durationMonths").toInt(12));form->addRow(tr("전체 육성 기간"),duration);
   auto periods=new QSpinBox;periods->setObjectName("projectPeriodsPerMonth");periods->setRange(1,12);periods->setValue(project.value("periodsPerMonth").toInt(3));form->addRow(tr("월별 일정 칸 수"),periods);
   auto playback=new QComboBox;playback->setObjectName("projectSchedulePlayback");playback->addItem(tr("일정마다 확인"),"manual");playback->addItem(tr("월 일정 연속 진행"),"continuous");playback->setCurrentIndex(playback->findData(project.value("schedulePlayback").toString("manual")));form->addRow(tr("일정 진행 방식"),playback);
+  auto resultPage=new QWidget;auto resultForm=new QFormLayout(resultPage);tabs->addTab(resultPage,tr("활동 결과 연출"));
+  const auto resultConfig=project.value("visual").toObject().value("resultPlayback").toObject();
+  auto resultEnabled=new QCheckBox(tr("SD 화면에서 능력치 변화를 차례로 표시"));resultEnabled->setObjectName("projectResultPlayback");resultEnabled->setChecked(!resultConfig.isEmpty());resultForm->addRow(resultEnabled);
+  auto timing=[&](const char* key,const QString& label,int initial,int minimum){auto field=new QSpinBox;field->setObjectName(QString("projectResult-")+key);field->setRange(minimum,10000);field->setSuffix(" ms");field->setValue(resultConfig.value(key).toInt(initial));field->setEnabled(resultEnabled->isChecked());connect(resultEnabled,&QCheckBox::toggled,field,&QWidget::setEnabled);resultForm->addRow(label,field);return field;};
+  auto lead=timing("leadInMs",tr("동작 먼저 보여주기"),800,1),change=timing("changeMs",tr("능력치 한 항목 변화 시간"),800,100),hold=timing("holdMs",tr("마지막 수치 유지"),1000,1);
+  auto resultHelp=new QLabel(tr("화면의 결과 위젯에 실제 확정된 수치를 순서대로 표시합니다. 기본 탭에서 월 일정 연속 진행을 선택하면 연출 후 다음 활동으로 이동하며 사건·선택지에서는 멈춥니다. 별도로 연결한 활동 타임라인이 있으면 그 연출이 우선합니다."));resultHelp->setWordWrap(true);resultForm->addRow(resultHelp);
   auto calendar=new QLabel;calendar->setObjectName("projectCalendarSummary");calendar->setWordWrap(true);form->addRow(calendar);
   auto updateCalendar=[=]{const int last=month->value()-1+duration->value()-1;calendar->setText(tr("마지막 일정: %1년 %2월 · 총 %3기간\n연속 진행은 결과 연출 후 다음 일정으로 이어집니다. 대화·선택·전투는 입력을 기다립니다.\n일정 칸 수 변경은 사건의 기간 번호를 자동 수정하지 않습니다. 새 게임으로 확인하세요.").arg(year->value()+last/12).arg(last%12+1).arg(duration->value()*periods->value()));};
   for(auto spin:{year,month,duration,periods})connect(spin,qOverload<int>(&QSpinBox::valueChanged),&dialog,updateCalendar);updateCalendar();
@@ -66,6 +73,7 @@ void StudioWindow::editProjectSettings() {
   if(dialog.exec()!=QDialog::Accepted)return;
   project["title"]=title->text().trimmed();project["gameId"]=id->text();project["description"]=description->toPlainText();project["startYear"]=year->value();project["startMonth"]=month->value();project["durationMonths"]=duration->value();project["protagonistId"]=protagonist->currentData().toString();project["defaultEndingId"]=ending->currentData().toString();
   project["periodsPerMonth"]=periods->value();if(playback->currentData()=="manual"&&!project.contains("schedulePlayback"))project.remove("schedulePlayback");else project["schedulePlayback"]=playback->currentData().toString();
+  if(resultEnabled->isChecked()||!resultConfig.isEmpty()){auto visual=project.value("visual").toObject();if(resultEnabled->isChecked())visual["resultPlayback"]=QJsonObject{{"leadInMs",lead->value()},{"changeMs",change->value()},{"holdMs",hold->value()}};else visual.remove("resultPlayback");project["visual"]=visual;}
   auto nextInitial=initial,nextAttributes=initialAttributes;for(auto it=initialFields.begin();it!=initialFields.end();++it)if(it.value()->value()!=it.value()->property("originalValue").toInt())nextAttributes[it.key()]=it.value()->value();nextInitial["attributes"]=nextAttributes;project["initialState"]=nextInitial;
   replaceProject(project);
 }

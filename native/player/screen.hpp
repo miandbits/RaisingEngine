@@ -287,6 +287,7 @@ public:
     const auto phase = game.state.value("phase", "planning");
     if (phase == "narrative") return narrative().at("node").value("type", "") == "choice" ? "choice" : "dialogue";
     if (phase == "activity-result") return "result";
+    if (phase == "ready" && game.continuous() && game.content.at("project").at("visual").contains("resultPlayback") && game.message.empty()) return "auto-ready";
     if (phase == "finished") return "finished";
     if (phase == "battle" || phase == "expedition") return phase;
     return "planning";
@@ -693,6 +694,7 @@ public:
     }
     if(kind=="inventory"&&!gp.is_null()) {if(gp.at("inventory").empty())out="<p class=\"muted\">가방이 비어 있습니다.</p>";for(const auto& item:gp.at("inventory"))out+="<div class=\"row\">"+item_icon(item.value("id",""))+escape(item.value("name",""))+" <b>× "+std::to_string(item.value("quantity",0))+"</b></div>";}
     if(kind=="interactions"&&!gp.is_null())for(const auto& interaction:gp.at("interactions"))out+=item_icon(interaction.value("itemId",""))+button("interact-"+interaction.value("id",""),interaction.value("name",""),{{"type","interact"},{"interactionId",interaction.at("id")}},interaction.value("enabled",false),interaction.value("reason",Json()).is_string()?interaction.at("reason").get<std::string>():"");
+    if(kind=="result"&&game.timeline_active()&&game.timeline_plan.contains("resultPlayback"))return "<div data-result-playback=\"true\" style=\"white-space:pre-wrap;line-height:38px;\">"+escape(result_playback_text(game.timeline_plan,game.timeline_cursor))+"</div>";
     if(kind=="result"&&!game.state.is_null()&&!game.state.at("lastActivityResult").is_null()&&game.state.at("lastActivityResult").contains("actorResults")) {
       for(const auto& actor:game.state.at("lastActivityResult").at("actorResults")) {
         std::string name=actor.value("characterId","");for(const auto& c:display_content.at("characters"))if(c.at("id")==actor.at("characterId"))name=c.value("name",name);

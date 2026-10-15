@@ -132,7 +132,8 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
     const active=elements.filter(e=>!e.hidden&&(e.opacity??1)!==0&&(e.visibleWhen??'always')==='always');
     const has=(kind:string,action?:string)=>active.some(e=>e.kind===kind&&(!action||e.action===action));
     if((id==='title'||id==='ending')&&!has('button','start'))ctx.report(doc,p,'UI_NAVIGATION','이 화면에는 항상 표시되는 새 게임 버튼이 필요합니다.');
-    if((id==='schedule'||id==='story')&&!has('button','advance'))ctx.report(doc,p,'UI_NAVIGATION','이 화면에는 항상 표시되는 진행 버튼이 필요합니다.');
+    const autoPlanButton=id==='schedule'&&root.schedulePlayback==='continuous'&&elements.some(e=>e.kind==='button'&&e.action==='advance'&&!e.hidden&&Number(e.opacity??1)>0&&e.visibleWhen==='planning');
+    if((id==='schedule'||id==='story')&&!has('button','advance')&&!autoPlanButton)ctx.report(doc,p,'UI_NAVIGATION','이 화면에는 진행 버튼이 필요합니다. 자동 일정은 계획 중 표시되는 버튼을 사용할 수 있습니다.');
     if(id==='schedule'&&!elements.some(e=>e.kind==='schedule'&&!e.hidden&&Number(e.opacity??1)>0&&['always','planning'].includes((e.visibleWhen??'always') as string)))ctx.report(doc,p,'UI_NAVIGATION','일정 화면에는 일정을 선택할 요소가 필요합니다.');
     if(id==='story')for(const kind of ['dialogue','choices'])if(!elements.some(e=>e.kind===kind&&!e.hidden&&Number(e.opacity??1)>0&&['always',kind==='choices'?'choice':'dialogue'].includes((e.visibleWhen??'always') as string)))ctx.report(doc,p,'UI_NAVIGATION',`대화 화면에는 ${kind==='choices'?'선택지':'대사'} 요소가 필요합니다.`);
   }

@@ -62,6 +62,12 @@ public:
   }
   void update_timeline_visual() {
     if(!document||!game.timeline_active())return;
+    if(game.timeline_plan.contains("resultPlayback")){
+      Rml::ElementList elements;document->GetElementsByTagName(elements,"div");
+      const auto text=result_playback_text(game.timeline_plan,game.timeline_cursor);
+      for(auto* element:elements)if(element->GetAttribute<bool>("data-result-playback",false)&&element->GetAttribute<std::string>("data-result-text","")!=text){element->SetInnerRML(escape(text));element->SetAttribute("data-result-text",text);}
+      return;
+    }
     const auto& cursor=game.timeline_cursor;const auto& clips=game.timeline_plan.at("clips");
     const auto& clip=clips.at(std::min(cursor.at("clipIndex").get<size_t>(),clips.size()-1));
     const double opacity=cursor.value("completed",false)||clip.value("transition","none")!="fade"?1:std::min(1.0,cursor.at("elapsedMs").get<double>()/std::min(300.0,clip.at("durationMs").get<double>()));
@@ -622,6 +628,7 @@ int main(int argc,char** argv) {
           if(command.contains("waitFrames"))wait_frames=command.at("waitFrames").get<int>();
           if(command.contains("timelineRealtime")){app.timeline_manual_clock=!command.at("timelineRealtime").get<bool>();app.extension_dt=0;}
           if(command.contains("timelineAdvanceMs")){app.advance_timeline_clock(command.at("timelineAdvanceMs").get<double>());app.advance_extensions(command.at("timelineAdvanceMs").get<double>());}
+          if(command.contains("scheduleAdvanceMs")){double remaining=command.at("scheduleAdvanceMs").get<double>();if(!std::isfinite(remaining)||remaining<0||remaining>60000)throw std::runtime_error("Invalid schedule clock delta");while(remaining>0){const double delta=std::min(250.0,remaining);app.advance_schedule_clock(delta);remaining-=delta;}}
           // Presentation-only clock step for extensions (deterministic under the manual automation clock).
           if(command.contains("extensionAdvanceMs"))for(int i=0,n=command.value("extensionSteps",1);i<std::max(1,n);i++)app.advance_extensions(command.at("extensionAdvanceMs").get<double>()/std::max(1,n));
           if(command.contains("resize")){const auto size=command.at("resize");SDL_SetWindowSize(window,size.at("width"),size.at("height"));}

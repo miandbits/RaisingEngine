@@ -12365,6 +12365,14 @@ export interface VisualDesign {
     }[];
   }[];
   /**
+   * Show committed activity changes sequentially inside result widgets. Existing authored activity timelines take precedence.
+   */
+  resultPlayback?: {
+    leadInMs: number;
+    changeMs: number;
+    holdMs: number;
+  };
+  /**
    * @maxItems 500
    */
   timelines?: {

@@ -145,6 +145,17 @@
         ]
       }
     },
+    "resultPlayback": {
+      "description": "Show committed activity changes sequentially inside result widgets. Existing authored activity timelines take precedence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leadInMs", "changeMs", "holdMs"],
+      "properties": {
+        "leadInMs": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "changeMs": {"type": "integer", "minimum": 100, "maximum": 10000},
+        "holdMs": {"type": "integer", "minimum": 1, "maximum": 10000}
+      }
+    },
     "timelines": {
       "type": "array",
       "maxItems": 500,
