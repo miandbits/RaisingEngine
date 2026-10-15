@@ -4,7 +4,8 @@ import type {Stats} from 'node:fs';
 import path from 'node:path';
 /** The writer boundary permits deterministic disk-failure testing with a real temporary file. */
 type AssetWriter=(file:FileHandle,bytes:Buffer)=>Promise<void>;
-export async function publishImmutableAsset(directory:string,name:string,bytes:Buffer,write:AssetWriter=(file,data)=>file.writeFile(data)){
+/** Returns true when this call created the file (false: an identical file was already there). */
+export async function publishImmutableAsset(directory:string,name:string,bytes:Buffer,write:AssetWriter=(file,data)=>file.writeFile(data)):Promise<boolean>{
   if(path.basename(name)!==name||!/^[-a-zA-Z0-9_.]+$/.test(name)||name==='.'||name==='..')throw new Error('올바르지 않은 에셋 파일 이름입니다.');
   const canonical=await realpath(directory),destination=path.join(canonical,name),temporary=path.join(canonical,`.sprite-stage-${randomUUID()}.tmp`);
   let handle:FileHandle|undefined,owned:Stats|undefined;
@@ -13,10 +14,11 @@ export async function publishImmutableAsset(directory:string,name:string,bytes:B
     await write(handle,bytes);await handle.sync();await handle.close();handle=undefined;
     // link is an atomic, no-overwrite publication of an already complete file.
     // Unlike rename, it cannot replace another import's existing destination.
-    try{await link(temporary,destination);}catch(error){
+    try{await link(temporary,destination);return true;}catch(error){
       if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;
       const actual=await realpath(destination);
       if(path.dirname(actual)!==canonical||!(await readFile(actual)).equals(bytes))throw new Error('같은 이름의 다른 파일 또는 외부 링크가 있습니다.');
+      return false;
     }
   }finally{
     await handle?.close();

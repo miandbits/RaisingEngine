@@ -4,6 +4,7 @@ import path from 'node:path';
 import type {StudioEditor} from './editor.js';
 import {decodePng,encodeRgbaPng} from './png.js';
 import {publishImmutableAsset} from './immutable-asset.js';
+import {noteUnsavedAsset} from './unsaved-assets.js';
 export interface SpriteRegion {x:number;y:number;width:number;height:number}
 export interface SpriteImportInput {filePath:string;prefix:string;regions:SpriteRegion[];colorKey?:{color:string;tolerance:number};expectedVersion?:string}
 export interface SpriteFrame {id:string;path:string;region:SpriteRegion;width:number;height:number}
@@ -47,7 +48,8 @@ export async function importSprites(editor:StudioEditor,input:SpriteImportInput,
     if(existing){if(existing.kind!=='image'||existing.path!==file.path)throw new Error(`이미 사용 중인 에셋 ID입니다: ${file.id}`);}
     else additions.push({id:file.id,kind:'image',path:file.path});
   }
-  for(const file of files)await publishImmutableAsset(directory,path.basename(file.path),file.bytes);
+  // Manifest assets are recorded until saved (a discarded draft removes them); the import record is not an asset.
+  for(const file of files){const created=await publishImmutableAsset(directory,path.basename(file.path),file.bytes);if(file.id)await noteUnsavedAsset(root,path.join(directory,path.basename(file.path)),file.bytes,created);}
   // Async extraction/storage cannot overwrite a newer draft or externally changed manifest.
   await editor.assertDiskUnchanged();current();
   if(additions.length)editor.edit({type:'replace',file:manifest.file,data:{...data,assets:[...data.assets,...additions]}},revision);

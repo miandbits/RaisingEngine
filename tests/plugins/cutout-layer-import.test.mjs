@@ -125,6 +125,56 @@ test('rendered setup frame equals the composited PSD (Wasm core draw list)', asy
   assert.ok(maxDifference(await renderSetup(closed, pngs), flattenImage(W, H, variant)) <= 1, 'eyes closed variant');
 });
 
+test('bone direction (1.14.0): toward the only child, the pictures or up; lengths; render unchanged; none; re-import keeps bones', async () => {
+  // An arm whose [pivot] is the shoulder and whose picture hangs down-right; a torso with one child
+  // group (neck → aims at it); a hat group without a marker (origin = its centre → up).
+  const layers = [
+    { name: 'torso', children: [
+      { name: 'chest', x: 50, y: 100, ...block(40, 60, [180, 60, 40]) },
+      { name: 'neck', children: [{ name: 'collar', x: 60, y: 84, ...block(20, 12, [90, 90, 200]) }, { name: '[pivot]', x: 68, y: 94, ...block(4, 4, [255, 0, 255]), ignoreInComposite: true }] },
+      { name: '[pivot]', x: 68, y: 156, ...block(4, 4, [255, 0, 255]), ignoreInComposite: true },
+    ] },
+    { name: 'arm', children: [
+      { name: 'sleeve', x: 92, y: 104, ...block(30, 30, [60, 140, 60]) },
+      { name: '[pivot]', x: 90, y: 102, ...block(4, 4, [255, 0, 255]), ignoreInComposite: true },
+    ] },
+    { name: 'hat', children: [{ name: 'cap', x: 50, y: 10, ...block(40, 24, [250, 220, 0]) }] },
+  ];
+  const psd = readPsd(writePsd({ width: W, height: H, layers }));
+  const source = { ...psd, file: '/art/aim.psd' };
+  const { rig, images, report } = planImport({ source, options: importOptions({}) });
+  const bone = id => rig.bones.find(b => b.id === id);
+  assert.equal(bone('root').rotation, undefined, 'the root keeps the character axis');
+  assert.equal(bone('torso').rotation, -90, 'one child bone straight above: aims at it (snapped)');
+  assert.equal(bone('torso').length, 62, 'length = distance to the child origin (158 → 96)');
+  assert.equal(bone('neck').rotation, undefined, 'a child of a rotated parent: local 0 = still up');
+  assert.ok(bone('neck').length > 0);
+  const arm = bone('arm');
+  assert.ok(arm.rotation > 30 && arm.rotation < 60, `the sleeve hangs down-right: ${arm.rotation}`);
+  assert.ok(arm.length > 35 && arm.length < 46, `reaches the far corner of the sleeve: ${arm.length}`);
+  assert.equal(bone('hat').rotation, -90, 'no marker, no child: straight up');
+  assert.equal(bone('hat').length, 13, 'half the picture height (24 + 2 ring)');
+  const flat = []; const walk = l => { for (const n of l) { flat.push(n); if (n.children) walk(n.children); } }; walk(report.layers);
+  assert.deepEqual(flat.find(n => n.name === 'torso').direction, { angle: -90, length: 62, from: 'child' });
+  assert.equal(flat.find(n => n.name === 'arm').direction.from, 'content');
+  assert.equal(report.options.boneDirection, 'auto');
+  // The pictures are counter-rotated: the setup frame is still the PSD, pixel for pixel.
+  const pngs = new Map(images.map(i => [i.id, i.bytes]));
+  assert.ok(maxDifference(await renderSetup(rig, pngs), flattenImage(W, H, layers)) <= 1, 'aimed bones draw the same picture');
+  // `none` = the 1.11.0 mapping (axis-aligned, no length).
+  const plain = planImport({ source, options: importOptions({ boneDirection: 'none' }), dryRun: true }).rig;
+  assert.ok(plain.bones.every(b => b.rotation === undefined && b.length === undefined));
+  assert.equal(plain.attachments.find(a => a.slot === 'sleeve').rotation, undefined);
+  assert.throws(() => importOptions({ boneDirection: 'sideways' }), /boneDirection/);
+  // Re-import onto a rig whose arm bone was re-aimed by hand: kept as is; a new group gets aimed.
+  const existing = structuredClone(rig);
+  existing.bones.find(b => b.id === 'arm').rotation = 10;
+  const more = [...layers, { name: 'tail', children: [{ name: 'tip', x: 20, y: 150, ...block(30, 10, [10, 10, 10]) }, { name: '[pivot]', x: 48, y: 153, ...block(4, 4, [255, 0, 255]), ignoreInComposite: true }] }];
+  const again = planImport({ source: { ...readPsd(writePsd({ width: W, height: H, layers: more })), file: '/art/aim.psd' }, options: importOptions({}), existing, dryRun: true }).rig;
+  assert.equal(again.bones.find(b => b.id === 'arm').rotation, 10, 'kept bones keep their rig work');
+  assert.equal(again.bones.find(b => b.id === 'tail').rotation, 180, 'the new tail aims left, at its picture');
+});
+
 test('PNG folder: layout.json positions, groups, hidden and order; plain folders with sub-folders', async () => {
   const dir = await temp('png-layers');
   const pic = (w, h, rgb) => { const b = block(w, h, rgb), px = Buffer.alloc(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px.set(b.pixel(x, y), (y * w + x) * 4); return encodePng(w, h, px); };

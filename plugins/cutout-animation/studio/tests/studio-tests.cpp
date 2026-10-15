@@ -348,7 +348,7 @@ class StudioTests : public QObject {
       for (auto* b : page->findChildren<QAbstractButton*>()) {
         if (!b->objectName().startsWith("cutout") || !(qobject_cast<QPushButton*>(b) || qobject_cast<QToolButton*>(b))) continue;
         bool otherMode = false;
-        for (QWidget* p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || (p->property("cutoutModeRow").isValid() && p->isHidden());
+        for (QWidget* p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || ((p->property("cutoutModeRow").isValid() || p->property("cutoutConditionalRow").isValid()) && p->isHidden());
         if (!otherMode) widgets << b;
       }
       for (auto* l : page->findChildren<QAbstractItemView*>()) if (l->objectName().startsWith("cutout")) widgets << l;
@@ -579,6 +579,39 @@ class StudioTests : public QObject {
     QVERIFY(gesture("rotation spin", 1, [&] { setSpin("cutoutPropRotation", 30); }));
     QCOMPARE(rig()["bones"][2]["rotation"].get<double>(), 30.0);
     QVERIFY(gesture("focus-out without change", 0, [&] { Q_EMIT find<QDoubleSpinBox>("cutoutPropRotation")->editingFinished(); }));
+  }
+
+  /** A wheel over a value field that was not clicked scrolls the page; it never edits (plugin 1.14.0). */
+  void wheelNeedsFocus() {
+    host.mainWindow.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    panel->selectItem("bone:arm");
+    pump();
+    auto* spin = find<QDoubleSpinBox>("cutoutPropRotation");
+    auto* preset = find<QComboBox>("cutoutPhysicsPreset");
+    QVERIFY(spin && preset);
+    const double before = spin->value();
+    const int index = preset->currentIndex(), edits = host.edits;
+    panel->canvas()->setFocus();
+    pump();
+    wheel(spin, QPointF(spin->width() / 2.0, spin->height() / 2.0), 3, Qt::NoModifier);
+    wheel(preset, QPointF(preset->width() / 2.0, preset->height() / 2.0), -2, Qt::NoModifier);
+    pump();
+    QCOMPARE(spin->value(), before);
+    QCOMPARE(preset->currentIndex(), index);
+    QCOMPARE(spin->focusPolicy(), Qt::StrongFocus);  // a wheel never focuses it either
+    QVERIFY(!spin->hasFocus());
+    QCOMPARE(host.edits, edits);
+    // Clicked / tabbed into: the wheel steps the value as usual.
+    spin->setFocus();
+    pump();
+    QVERIFY(spin->hasFocus());
+    wheel(spin, QPointF(spin->width() / 2.0, spin->height() / 2.0), 1, Qt::NoModifier);
+    QVERIFY(spin->value() != before);
+    spin->setValue(before);
+    panel->canvas()->setFocus();
+    pump();
+    QCOMPARE(rig()["bones"][2].value("rotation", 0.0), before);
   }
 
   void drawOrder() {
@@ -3676,6 +3709,19 @@ class StudioTests : public QObject {
       QCOMPARE(next.uiScale(), 1.5);
       next.detachHost();
     }
+    // 자동 (plugin 1.14.0): forgets the saved choice and follows the screen again.
+    QVERIFY(!panel->uiScaleAuto() && !find<QAction>("cutoutUiScaleAuto")->isChecked());
+    find<QAction>("cutoutUiScaleAuto")->trigger();
+    pump();
+    QVERIFY(panel->uiScaleAuto() && find<QAction>("cutoutUiScaleAuto")->isChecked() && !find<QAction>("cutoutUiScaleHuge")->isChecked());
+    QVERIFY(!QSettings().contains("plugins/cutout-animation/view/uiScale"));
+    { const QScreen* s = panel->screen(); QCOMPARE(panel->uiScale(), CutoutPanel::defaultUiScale(s->size(), s->devicePixelRatio(), s->logicalDotsPerInch())); }
+    QVERIFY2(panel->status().contains("자동"), qPrintable(panel->status()));
+    { CutoutPanel next(&host); QVERIFY(next.uiScaleAuto()); next.detachHost(); }
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleLargePlugin")->trigger();
+    QVERIFY(!panel->uiScaleAuto() && panel->uiScale() == 1.25);
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleAutoPlugin")->trigger();
+    QVERIFY(panel->uiScaleAuto());
     panel->setUiScale(1.0);
     QCOMPARE(host.edits, edits);  // editor-only
   }
@@ -3933,6 +3979,7 @@ class StudioTests : public QObject {
       auto* target = d->findChild<QComboBox*>("cutoutLayerImportTarget");
       auto* warnings = d->findChild<QListWidget*>("cutoutLayerImportWarnings");
       if (!tree || !id || !target || !warnings || !d->findChild<QComboBox*>("cutoutLayerImportOrigin") || !d->findChild<QCheckBox*>("cutoutLayerImportTrim") ||
+          !d->findChild<QCheckBox*>("cutoutLayerImportAimBones") || !d->findChild<QCheckBox*>("cutoutLayerImportAimBones")->isChecked() ||
           !d->findChild<QDoubleSpinBox*>("cutoutLayerImportScale") || !d->findChild<QLabel*>("cutoutLayerImportSummary")) return false;
       shown = id->text() == "psdhero" && target->currentData().toString().isEmpty() && warnings->count() == 1 && warnings->item(0)->text().contains("마스크");
       // Photoshop order: front first, so Head (key 1) is the first row and body (key 0) the second.
@@ -3960,6 +4007,7 @@ class StudioTests : public QObject {
     QCOMPARE(sent.value("exclude").toArray(), QJsonArray{"1.1"});
     QCOMPARE(sent.value("origin").toString(), QString("bottom-center"));
     QVERIFY(sent.value("trim").toBool() && sent.value("scale").toDouble() == 1 && !sent.contains("rig"));
+    QCOMPARE(sent.value("boneDirection").toString(), QString("auto"));  // plugin 1.14.0 default
     QCOMPARE(panel->rigId(), QString("psdhero"));
     QVERIFY2(panel->status().contains("가져옴") && panel->status().contains("Ctrl+Z"), qPrintable(panel->status()));
     { const Json r = host.data("rig", "psdhero"); QCOMPARE(int(r["attachments"].size()), 3); QVERIFY(!host.data("controller", "psdhero").is_null()); }
@@ -4393,8 +4441,10 @@ class StudioTests : public QObject {
     QVERIFY(gesture("다시 놓기", 0, [&] { click("cutoutPhysicsReset"); }));
     QVERIFY(panel->physicsSim().settles >= 2);
     click("cutoutPlay");  // stop
+    QCOMPARE(find<QToolButton>("cutoutPhysicsPreview")->text(), QString("● 재생 중 물리: 켜짐"));  // plugin 1.14.0: state in words
     QVERIFY(gesture("preview off", 0, [&] { click("cutoutPhysicsPreview"); }));
     QVERIFY(!panel->physicsPreview());
+    QCOMPARE(find<QToolButton>("cutoutPhysicsPreview")->text(), QString("○ 재생 중 물리: 꺼짐"));
     click("cutoutPlay");
     panel->advancePlayback(100);
     QVERIFY(!panel->physicsRunning());
@@ -4410,6 +4460,20 @@ class StudioTests : public QObject {
     QVERIFY(gesture("delete physics", 1, [&] { click("cutoutDeletePhysics"); }));
     QCOMPARE(data()["physics"].size(), size_t(1));
     QVERIFY(timesOfRig(data(), "wave", "physics:tip-sway", "mix").isEmpty());
+    // Plugin 1.14.0: a point bone under physics gets a hint and a one-click 본 방향 맞추기.
+    QVERIFY(find<QWidget>("cutoutPhysicsBoneHint")->isHidden());  // c2 has a length
+    panel->selectItem("bone:c2");
+    QVERIFY(gesture("c2 becomes a point bone", 1, [&] { setSpin("cutoutPropLength", 0); }));
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectPhysics("c2-physics");
+    pump();
+    QVERIFY(!find<QWidget>("cutoutPhysicsBoneHint")->isHidden());
+    QVERIFY2(find<QLabel>("cutoutPhysicsBoneHintText")->text().contains("c2"), qPrintable(find<QLabel>("cutoutPhysicsBoneHintText")->text()));
+    QVERIFY(gesture("물리 탭의 본 방향 맞추기", 1, [&] { click("cutoutPhysicsOrientBone"); }));
+    QVERIFY(panel->mode() == CutoutPanel::Mode::Setup);
+    { const cutout::Rig r = cutout::parseRig("swing", data()); QVERIFY(r.bones[size_t(r.boneIndex("c2"))].length > 0); }
+    pump();
+    QVERIFY(find<QWidget>("cutoutPhysicsBoneHint")->isHidden());
     for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
     panel->selectRig(keepRig);
     pump();

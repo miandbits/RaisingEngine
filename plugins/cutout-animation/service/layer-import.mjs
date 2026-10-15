@@ -186,6 +186,46 @@ function placement(boneWorld, cx, cy, scale) {
   return out;
 }
 
+/** Bounds (rig px) of a group's pictures, its own and its descendants'. */
+function rectsBounds(rects, scale) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rects) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.width); y1 = Math.max(y1, r.y + r.height); }
+  return Number.isFinite(x0) ? { x0: x0 * scale, y0: y0 * scale, x1: x1 * scale, y1: y1 * scale } : null;
+}
+const normalizeDegrees = d => { let a = ((d + 180) % 360 + 360) % 360 - 180; return Math.abs(a + 180) < 1e-9 ? 180 : a; };
+/**
+ * Direction and length of a new bone (plugin 1.14.0, `boneDirection: "auto"`), so physics and IK
+ * stretch work on an imported rig without rig work: toward its only child bone (length = the
+ * distance), else toward the centre of its pictures (length = how far they reach along that
+ * line), else straight up (length = half the pictures' height). Within 4° of an axis it snaps.
+ */
+function boneAim(g, children) {
+  const o = g.world;
+  let from = 'up', dx = 0, dy = -1, length = 0;
+  const b = g.bounds;
+  if (children.length === 1) {
+    const c = children[0].world, d = Math.hypot(c.x - o.x, c.y - o.y);
+    if (d >= 1) { from = 'child'; dx = (c.x - o.x) / d; dy = (c.y - o.y) / d; length = d; }
+  }
+  if (from === 'up' && b) {
+    const cx = (b.x0 + b.x1) / 2 - o.x, cy = (b.y0 + b.y1) / 2 - o.y, d = Math.hypot(cx, cy);
+    const size = Math.max(b.x1 - b.x0, b.y1 - b.y0);
+    if (d >= Math.max(1, size * 0.1)) { from = 'content'; dx = cx / d; dy = cy / d; }
+  }
+  let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  const snapped = Math.round(angle / 90) * 90;
+  if (Math.abs(angle - snapped) <= 4) angle = normalizeDegrees(snapped);
+  if (from !== 'child' && b) {
+    const r = angle * Math.PI / 180, ux = Math.cos(r), uy = Math.sin(r);
+    // The farthest picture corner along the bone, measured from the origin.
+    length = Math.max(0, ...[[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]].map(([x, y]) => (x - o.x) * ux + (y - o.y) * uy));
+  } else if (from === 'child') {
+    const r = angle * Math.PI / 180;
+    length = Math.abs((children[0].world.x - o.x) * Math.cos(r) + (children[0].world.y - o.y) * Math.sin(r));
+  }
+  return { angle, length, from };
+}
+
 /** Pixel bounds (alpha > 0) of an RGBA layer, or null when fully transparent. */
 function alphaBounds(width, height, rgba) {
   let x0 = width, y0 = height, x1 = -1, y1 = -1;
@@ -220,7 +260,9 @@ export function importOptions(payload = {}) {
   if (p.trim !== undefined && typeof p.trim !== 'boolean') fail('trim은 true/false입니다.');
   if (p.exclude !== undefined && !(Array.isArray(p.exclude) && p.exclude.every(k => typeof k === 'string'))) fail('exclude는 레이어 키 문자열 배열입니다.');
   for (const k of ['id', 'rig', 'name']) if (p[k] !== undefined && typeof p[k] !== 'string') fail(`${k}는 문자열입니다.`);
-  return { origin, scale, trim: p.trim !== false, exclude: new Set(p.exclude ?? []) };
+  const boneDirection = p.boneDirection ?? 'auto';
+  if (!['auto', 'none'].includes(boneDirection)) fail('boneDirection은 auto 또는 none입니다.');
+  return { origin, scale, trim: p.trim !== false, exclude: new Set(p.exclude ?? []), boneDirection };
 }
 
 // ------------------------------------------------------------------ mapping
@@ -320,26 +362,38 @@ export function planImport({ source, options, existing = null, rigName = '', dry
   const world = setupWorld(rig);
   const boneIds = new Set([rootId]), existingBones = new Set(rig.bones.map(b => b.id));
   let boneN = 0;
+  const made = [];
   for (const g of groups) {
     if (!g.rects.length && !g.marker) { g.item.role = 'empty-group'; g.item.warnings.push('그림이 없는 그룹이라 본을 만들지 않습니다.'); continue; }
     g.id = unique(toId(g.text, null) ?? `bone-${++boneN}`, boneIds);
     let parent = g.parent;
     while (parent && !parent.id) parent = parent.parent;
     g.parentId = parent ? parent.id : rootId;
-    let at = g.marker;
-    if (!at) {
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const r of g.rects) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.width); y1 = Math.max(y1, r.y + r.height); }
-      at = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
-    }
-    g.world = { x: round(at.x * scale), y: round(at.y * scale) };
+    g.bounds = rectsBounds(g.rects, scale);
+    const at = g.marker ? { x: g.marker.x * scale, y: g.marker.y * scale } : { x: (g.bounds.x0 + g.bounds.x1) / 2, y: (g.bounds.y0 + g.bounds.y1) / 2 };
+    g.world = { x: round(at.x), y: round(at.y) };
     g.item.bone = g.id;
     if (existingBones.has(g.id)) { changes.bones.kept.push(g.id); g.item.status = 'kept'; continue; }
+    existingBones.add(g.id);
+    made.push(g);
+  }
+  // New bones only (groups come parents first): kept bones keep their rig work on re-import.
+  for (const g of made) {
     const parentWorld = world.get(g.parentId) ?? IDENTITY, inv = invert(parentWorld) ?? IDENTITY;
     const x = inv[0] * g.world.x + inv[2] * g.world.y + inv[4], y = inv[1] * g.world.x + inv[3] * g.world.y + inv[5];
-    rig.bones.push({ id: g.id, parent: g.parentId, x: round(x), y: round(y) });
-    world.set(g.id, mul(parentWorld, compose(x, y, 0, 1, 1)));
-    existingBones.add(g.id);
+    const bone = { id: g.id, parent: g.parentId, x: round(x), y: round(y) };
+    let rotation = 0;
+    if (options.boneDirection === 'auto') {
+      const aim = boneAim(g, groups.filter(c => c.id && c.parentId === g.id));
+      // Local rotation = the aim's screen angle minus the parent's (a parent may be rotated too).
+      rotation = round(normalizeDegrees(aim.angle - Math.atan2(parentWorld[1], parentWorld[0]) * 180 / Math.PI));
+      if (rotation !== 0) bone.rotation = rotation;
+      const sx = Math.hypot(parentWorld[0], parentWorld[1]) || 1;
+      if (aim.length > 0) bone.length = Math.round(aim.length / sx * 100) / 100;
+      g.item.direction = { angle: round(aim.angle), length: bone.length ?? 0, from: aim.from };
+    }
+    rig.bones.push(bone);
+    world.set(g.id, mul(parentWorld, compose(x, y, rotation, 1, 1)));
     changes.bones.added.push(g.id);
     g.item.status = 'add';
   }
@@ -457,7 +511,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
   const hidden = pictures.filter(p => p.slot.setup !== p).length;
   const report = {
     source: { format: source.format, file: path.basename(source.file), width: source.width, height: source.height },
-    options: { origin, scale, trim: options.trim, exclude: [...options.exclude] },
+    options: { origin, scale, trim: options.trim, exclude: [...options.exclude], boneDirection: options.boneDirection },
     canvas: rig.canvas, layers, warnings, changes,
     summary: { bones: changes.bones.added.length, slots: slots.length, attachments: pictures.length, hidden, images: dryRun ? null : images.size,
       added: changes.attachments.added.length, updated: changes.attachments.updated.length, unchanged: changes.attachments.unchanged.length },

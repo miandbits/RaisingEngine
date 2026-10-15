@@ -258,6 +258,8 @@ class CutoutPanel : public QWidget {
   bool deletePhysics();
   bool keyPhysicsMix();                                 // 혼합 키: the sampled mix at the playhead
   bool selectPhysicsBone();
+  /** 본 방향 맞추기 for the selected constraint's point bone (plugin 1.14.0): Setup mode, one edit. */
+  bool orientPhysicsBone();
   void setPhysicsPreview(bool on);                      // 재생 중 물리 (editor-only, QSettings-free)
   bool physicsPreview() const { return physicsPreview_; }
   void setPhysicsEnvironment(double wind, double gravity);  // preview wind / gravity (px/s^2)
@@ -405,6 +407,9 @@ class CutoutPanel : public QWidget {
   void setUiScale(double scale);
   double uiScale() const { return ui_; }
   void stepUiScale(int delta);  // Ctrl+= / Ctrl+- inside the workspace (one preset up / down)
+  /** 자동 (plugin 1.14.0): forget the saved choice, use the screen's default again. */
+  void setUiScaleAuto();
+  bool uiScaleAuto() const { return !uiScaleChosen_; }
   /** Command palette (Ctrl+K / F1): every button, menu command and page of the workspace by its
    *  Korean name, group or shortcut. Running one is what clicking it does (one edit when it edits). */
   struct Command { QString id, name, group, shortcut, tip; bool enabled = true; };
@@ -654,6 +659,9 @@ class CutoutPanel : public QWidget {
   QToolButton* physicsPreviewButton_ = nullptr;
   QDoubleSpinBox *physicsWindSpin_ = nullptr, *physicsGravitySpin_ = nullptr;
   QLabel* physicsInfo_ = nullptr;
+  QWidget* physicsBoneHint_ = nullptr;  // a point bone swings about +x: offer 본 방향 맞추기 (1.14.0)
+  QLabel* physicsBoneHintText_ = nullptr;
+  void showPhysicsPreviewState();       // 재생 중 물리 켜짐 / 꺼짐 on the button (1.14.0)
   QVector<QWidget*> physicsEditors_, physicsAnimateTools_;
   QWidget* buildPhysics();
   void refreshPhysics();

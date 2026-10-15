@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { StudioEditor } from './editor.js';
+import { noteUnsavedAsset } from './unsaved-assets.js';
 
 /** Import immutable PNG bytes, then register them through the shared draft/history. */
 export async function importPng(editor: StudioEditor, source: string, revision: number): Promise<string> {
@@ -32,11 +33,13 @@ export async function importPng(editor: StudioEditor, source: string, revision: 
     return id;
   }
   const destination = path.join(directory, `${id}.png`);
-  try { await writeFile(destination, bytes, { flag: 'wx' }); }
+  let created = false;
+  try { await writeFile(destination, bytes, { flag: 'wx' }); created = true; }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     if (path.dirname(await realpath(destination)) !== directory || !(await readFile(destination)).equals(bytes)) throw new Error('같은 이름의 다른 에셋 파일이 있습니다.');
   }
+  await noteUnsavedAsset(root, destination, bytes, created);
   editor.current(revision);
   editor.edit({type:'replace',file:manifest.file,data:{...data,assets:[...data.assets,{id,kind:'image',path:assetPath}]}},revision);
   return id;

@@ -141,8 +141,12 @@ QWidget* CutoutPanel::buildPhysics() {
   physicsPreviewButton_->setText("재생 중 물리");
   physicsPreviewButton_->setCheckable(true);
   physicsPreviewButton_->setChecked(physicsPreview_);
+  // On / off must read at a glance (a checked tool button barely differs from a plain one).
+  physicsPreviewButton_->setStyleSheet("QToolButton:checked{background:#2f6f4f;color:#ffffff;border:1px solid #4fa37a;border-radius:3px;}"
+                                       "QToolButton:!checked{color:#c9a46a;}");
   physicsPreviewButton_->setToolTip("애니메이션 미리 보기 재생(▶) 중에 물리를 계산해 보여 줍니다. 재생 헤드를 끌어 움직일 때(스크럽)는 계산하지 않습니다(편집기 전용).");
-  connect(physicsPreviewButton_, &QToolButton::toggled, this, [this](bool on) { if (!filling_) setPhysicsPreview(on); });
+  connect(physicsPreviewButton_, &QToolButton::toggled, this, [this](bool on) { showPhysicsPreviewState(); if (!filling_) setPhysicsPreview(on); });
+  showPhysicsPreviewState();
   auto envSpin = [&](const char* name, const QString& tip) {
     auto* s = new QDoubleSpinBox;
     s->setObjectName(name);
@@ -198,12 +202,32 @@ QWidget* CutoutPanel::buildPhysics() {
   connect(physicsResetOnStart_, &QCheckBox::clicked, this, [this](bool on) { if (!filling_) setPhysicsResetOnStart(on); });
   form->addRow("다시 정착", physicsResetOnStart_);
   physicsEditors_ << physicsResetOnStart_ << preset << remove << rename;
+  physicsBoneHint_ = new QWidget;
+  physicsBoneHint_->setObjectName("cutoutPhysicsBoneHint");
+  physicsBoneHint_->setProperty("cutoutConditionalRow", true);  // shown only for a point bone (layout checks skip it hidden)
+  {
+    auto* row = new QHBoxLayout(physicsBoneHint_);
+    row->setContentsMargins(0, 0, 0, 0);
+    physicsBoneHintText_ = new QLabel;
+    physicsBoneHintText_->setObjectName("cutoutPhysicsBoneHintText");
+    physicsBoneHintText_->setWordWrap(true);
+    physicsBoneHintText_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    physicsBoneHintText_->setStyleSheet("color:#e0b050;");
+    auto* fix = new QPushButton("본 방향 맞추기");
+    fix->setObjectName("cutoutPhysicsOrientBone");
+    fix->setToolTip("이 물리의 본을 자식 본이나 그림 쪽으로 돌리고 길이를 넣습니다(조립 모드로 바꿔 실행, 화면의 그림과 애니메이션은 그대로).");
+    connect(fix, &QPushButton::clicked, this, [this] { orientPhysicsBone(); });
+    row->addWidget(physicsBoneHintText_, 1);
+    row->addWidget(fix);
+  }
+  physicsBoneHint_->hide();
   physicsInfo_ = new QLabel;
   physicsInfo_->setObjectName("cutoutPhysicsInfo");
   physicsInfo_->setWordWrap(true);
   physicsInfo_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   physicsInfo_->setStyleSheet("color:#a7b4c2;");
   formLayout->addLayout(form);
+  formLayout->addWidget(physicsBoneHint_);
   formLayout->addWidget(physicsInfo_);
   formLayout->addStretch();
   layout->addWidget(tools);
@@ -266,6 +290,7 @@ void CutoutPanel::refreshPhysics() {
   {
     QSignalBlocker b1(physicsPreviewButton_), b2(physicsWindSpin_), b3(physicsGravitySpin_);
     physicsPreviewButton_->setChecked(physicsPreview_);
+    showPhysicsPreviewState();
     physicsWindSpin_->setValue(physicsWind_);
     physicsGravitySpin_->setValue(physicsGravity_);
   }
@@ -294,6 +319,31 @@ void CutoutPanel::refreshPhysicsInfo() {
     }
   }
   physicsInfo_->setText(info);
+  // A point bone (no length) swings about its own +x axis with a 50 px lever: hair hanging down
+  // from a bone that points right tilts sideways under gravity. Offer to aim it (plugin 1.14.0).
+  QString hint;
+  if (k && index >= 0) {
+    const auto& c = rig_->physics[size_t(index)];
+    const auto& bone = rig_->bones[size_t(c.bone)];
+    if (bone.length <= 0 && (c.rotate > 0 || c.scaleX > 0))
+      hint = QString("본 「%1」은 길이가 없는 점 본이라 오른쪽(+x) 방향, 지렛대 50px로 흔들립니다. 머리카락·치마처럼 매달린 부위는 본이 그 부위 쪽을 향해야 "
+                     "중력·바람에 자연스럽게 움직입니다.").arg(qs(bone.id));
+  }
+  physicsBoneHintText_->setText(hint);
+  physicsBoneHint_->setVisible(!hint.isEmpty());
+}
+void CutoutPanel::showPhysicsPreviewState() {
+  if (!physicsPreviewButton_) return;
+  const bool on = physicsPreviewButton_->isChecked();
+  physicsPreviewButton_->setText(on ? "● 재생 중 물리: 켜짐" : "○ 재생 중 물리: 꺼짐");
+}
+bool CutoutPanel::orientPhysicsBone() {
+  const Json* k = currentPhysics();
+  if (!k) { setStatus("먼저 물리를 고르세요.", true); return false; }
+  const QString bone = qs(k->value("bone", std::string()));
+  if (mode_ == Mode::Animate) setMode(Mode::Setup);  // bone direction is setup data
+  selectItem("bone:" + bone);
+  return orientBones();
 }
 bool CutoutPanel::addPhysics(const QString& preset) {
   if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }

@@ -8,7 +8,7 @@ const char* const ORIGINS[][2] = {{"bottom-center", "아래 가운데 (발 사�
 }  // namespace
 
 QJsonObject LayerImportChoice::payload() const {
-  QJsonObject p{{"file", file}, {"origin", origin}, {"trim", trim}, {"scale", scale}, {"exclude", QJsonArray::fromStringList(exclude)}};
+  QJsonObject p{{"file", file}, {"origin", origin}, {"trim", trim}, {"scale", scale}, {"boneDirection", aimBones ? "auto" : "none"}, {"exclude", QJsonArray::fromStringList(exclude)}};
   if (target.isEmpty()) p["id"] = id;
   else p["rig"] = target;
   return p;
@@ -60,6 +60,11 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
   trim_ = new QCheckBox("투명 여백 잘라내기");
   trim_->setObjectName("cutoutLayerImportTrim");
   trim_->setChecked(choice.trim);
+  aimBones_ = new QCheckBox("본 방향·길이 자동 (흔들림 물리·IK 늘이기용)");
+  aimBones_->setObjectName("cutoutLayerImportAimBones");
+  aimBones_->setChecked(choice.aimBones);
+  aimBones_->setToolTip("새 본을 그 그룹의 자식 본(하나일 때) 또는 그림 쪽으로 향하게 하고, 그림 끝까지의 길이를 줍니다(없으면 위쪽).\n"
+                        "그림은 반대로 돌려 붙여 PSD와 똑같이 보입니다. 끄면 1.11.0처럼 모든 본이 오른쪽(+x)을 향하고 길이가 없습니다.\n다시 가져올 때 이미 있는 본은 바꾸지 않습니다.");
   scale_ = new QDoubleSpinBox;
   scale_->setObjectName("cutoutLayerImportScale");
   scale_->setRange(0.05, 4);
@@ -72,6 +77,7 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
   form->addRow("원점", origin_);
   form->addRow("배율", scale_);
   form->addRow(QString(), trim_);
+  form->addRow(QString(), aimBones_);
   layout->addLayout(form);
   connect(target_, &QComboBox::currentIndexChanged, this, [this] { id_->setEnabled(target_->currentData().toString().isEmpty()); });
   id_->setEnabled(choice.target.isEmpty());
@@ -115,7 +121,7 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
   buttons->button(QDialogButtonBox::Ok)->setText("가져오기");
   auto* again = buttons->addButton("미리 보기 갱신", QDialogButtonBox::ActionRole);
   again->setObjectName("cutoutLayerImportRefresh");
-  again->setToolTip("빼기·원점·배율·잘라내기를 바꾼 뒤 본·슬롯 배치를 다시 계산해 봅니다.");
+  again->setToolTip("빼기·원점·배율·잘라내기·본 방향을 바꾼 뒤 본·슬롯 배치를 다시 계산해 봅니다.");
   connect(again, &QPushButton::clicked, this, [this] { refresh(); });
   connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -175,6 +181,7 @@ void LayerImportDialog::collect() {
   choice_.id = id_->text().trimmed();
   choice_.origin = origin_->currentData().toString();
   choice_.trim = trim_->isChecked();
+  choice_.aimBones = aimBones_->isChecked();
   choice_.scale = scale_->value();
   choice_.exclude.clear();
   QTreeWidgetItemIterator it(tree_);
