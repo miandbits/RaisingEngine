@@ -42,4 +42,5 @@ private:
   void addChild();
   void removeChild();
   void moveChild(int offset);
+  QWidget *quickEditor();
 };

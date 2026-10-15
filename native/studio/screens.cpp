@@ -111,6 +111,7 @@ void StudioWindow::closeScreen(int index) {
 void StudioWindow::createScreen(bool duplicate) {
   if (bridge.busy() || projectData().isEmpty())
     return;
+  if (!projectData().contains("visual")) { initializeStarterScreens(); return; }
   auto project = projectData();
   auto visual = project["visual"].toObject();
   auto screens = visual["screens"].toArray();

@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stamina",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 25
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stress",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": -15
+      }
+    }
+  ],
+  "costs": [],
+  "description": "기력 25를 회복하고 한독을 15 낮춘다. 휴식만으로 막힌 혈맥이 열리지는 않는다.",
+  "formatVersion": "0.1.0",
+  "id": "rest",
+  "label": "운기조식",
+  "requirements": {
+    "op": "always"
+  }
+}

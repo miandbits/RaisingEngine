@@ -305,8 +305,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   canvas->pluginPlaceholder = [this](const QJsonObject &e) { return plugins->placeholder(e); };
   canvas->pluginPaint = [this](QPainter *painter, const QJsonObject &e, const QRectF &rect) { return plugins->paint(painter, e, rect); };
   centerLayout->addWidget(canvas, 1);
-  emptyDocument = new QLabel(tr("열린 화면이 없습니다\n\n프로젝트에서 화면을 "
-                                "더블클릭하거나 ‘＋ 새 화면’을 선택하세요."));
+  emptyDocument = new QLabel(tr("<h2>작은 게임부터 만들어 보세요</h2>"
+      "활동·사건·엔딩은 <b>콘텐츠</b>에서, 게임 화면은 <b>＋ 새 화면</b>에서 만듭니다.<br><br>"
+      "<a href='start' style='color:#85caff'>처음 만드는 게임 · 제작 순서 열기</a><br><br>"
+      "최소 프로젝트는 제작 순서에서 기본 플레이 화면을 생성한 뒤 실행하세요."));
+  emptyDocument->setTextInteractionFlags(Qt::LinksAccessibleByMouse|Qt::LinksAccessibleByKeyboard);
+  connect(emptyDocument,&QLabel::linkActivated,this,[this]{showGettingStarted();});
   emptyDocument->setAlignment(Qt::AlignCenter);
   emptyDocument->setStyleSheet("color:#a9bbc9;font-size:16px;");
   centerLayout->addWidget(emptyDocument, 1);
@@ -740,10 +744,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
           [this](const QString &q) {
             for (int i = 0; i < contentList->count(); ++i) {
               auto item = contentList->item(i);
-              item->setHidden(!item->text().contains(q, Qt::CaseInsensitive));
+              item->setHidden(!(item->text()+" "+item->data(Qt::UserRole).toString()).contains(q, Qt::CaseInsensitive));
             }
           });
   auto contentMenu = menuBar()->addMenu(tr("콘텐츠"));
+  contentMenu->addAction(tr("처음 만드는 게임 · 제작 순서…"),this,&StudioWindow::showGettingStarted)->setObjectName("showGettingStarted");
+  contentMenu->addAction(tr("기본 플레이 화면 생성…"),this,&StudioWindow::initializeStarterScreens)->setObjectName("initializeStarterScreens");
   contentMenu->addAction(tr("콘텐츠 일괄 정리…"),this,&StudioWindow::organizeContent)->setObjectName("organizeContent");
   contentMenu->addAction(tr("숙련 단계 활동 만들기…"), this, &StudioWindow::createProgressionActivity)->setObjectName("progressionAuthoringAction");
   for (const auto &p :

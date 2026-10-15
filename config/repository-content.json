@@ -7,6 +7,7 @@
     "examples/academy-journey",
     "examples/academy-adventure",
     "examples/starlight-three-months",
+    "examples/last-grandson",
     "examples/genre-suite"
   ],
   "testFixtureRoot": "tests/fixtures/projects",

@@ -11,6 +11,7 @@ These projects are independent of locally installed reference games. No extracte
 | `academy-adventure` | Exploration and gameplay systems |
 | `genre-suite` | Six short genre templates |
 | `starlight-three-months` | Three-month integrated pilot with recorded ending routes |
+| `last-grandson` | GUI-authored two-month wuxia story; two endings and save/resume verification |
 
 Copy a sample into a new `projects/<your-game>` folder through the editor before modifying it. `projects/` is ignored and belongs to the user. The old local copies remain in place; opening this directory does not migrate or overwrite their saves or editor state.
 

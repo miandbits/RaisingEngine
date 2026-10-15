@@ -30,6 +30,11 @@ class StudioTests : public QObject {
   Q_OBJECT
 private slots:
   void projectManagerRoundtrip();
+  void designerQuickRules();
+  void designerSmallGameAuthoring();
+  void designerSampleCleanup();
+  void designerSmallGamePlay();
+  void designerPublishSample();
   void rosterAuthoringRoundtrip();
   void rosterPlayIntegration();
   void characterStateAuthoringRoundtrip();
@@ -958,5 +963,6 @@ private slots:
 #include "plugin-test.inc"
 #include "cutout-e2e-test.inc"
 #include "project-manager-test.inc"
+#include "designer-pilot-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"

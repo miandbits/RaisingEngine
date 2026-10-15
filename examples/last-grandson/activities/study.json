@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "skill",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 12
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stress",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 5
+      }
+    }
+  ],
+  "costs": [
+    {
+      "amount": 6,
+      "attributeId": "money"
+    },
+    {
+      "amount": 10,
+      "attributeId": "stamina"
+    }
+  ],
+  "description": "약값 6·기력 10을 써서 내공 12를 얻는다. 무리한 수련으로 한독이 5 오른다.",
+  "formatVersion": "0.1.0",
+  "id": "study",
+  "label": "서고의 비급 수련",
+  "requirements": {
+    "op": "always"
+  }
+}

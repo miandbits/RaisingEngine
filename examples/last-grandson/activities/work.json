@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "money",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 12
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stress",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 8
+      }
+    }
+  ],
+  "costs": [
+    {
+      "amount": 10,
+      "attributeId": "stamina"
+    }
+  ],
+  "description": "기력 10을 써서 약값 12를 번다. 찬바람을 맞아 한독이 8 오른다.",
+  "formatVersion": "0.1.0",
+  "id": "work",
+  "label": "약방 심부름",
+  "requirements": {
+    "op": "always"
+  }
+}

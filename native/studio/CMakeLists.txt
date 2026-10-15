@@ -7,6 +7,7 @@ add_library(studio-ui STATIC goal-impact.cpp goal-compare.cpp goal-search.cpp go
 target_link_libraries(studio-ui PUBLIC Qt6::Widgets)
 target_sources(studio-ui PRIVATE condition-preview.cpp)
 target_sources(studio-ui PRIVATE project-manager.cpp)
+target_sources(studio-ui PRIVATE logic-quick.cpp getting-started.cpp)
 target_include_directories(studio-ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 if(MSVC)
   target_compile_options(studio-ui PUBLIC /utf-8 /W4)

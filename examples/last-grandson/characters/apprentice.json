@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../packages/schema/character.schema.json",
+  "description": "가문에서 쓸모없다며 멸시받는 시한부 막내손자. 아직 자신이 살고 싶은 이유를 놓지 않았다.",
+  "formatVersion": "0.1.0",
+  "id": "apprentice",
+  "name": "남궁설",
+  "portraits": {},
+  "relationships": []
+}

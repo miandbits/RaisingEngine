@@ -1,0 +1,363 @@
+{
+  "$schema": "../../packages/schema/project.schema.json",
+  "defaultEndingId": "ordinary",
+  "description": "남궁가에서 천대받는 막내 남궁설. 태어날 때부터 막힌 혈맥과 한독 때문에 남은 시간은 두 달뿐이다. 비급 수련으로 내공을 쌓고 약방 심부름으로 약값을 벌며 운기조식으로 기력을 지켜라. 노인의 약속을 받아들이고 마지막 날 내공 30·기력 20·신뢰 1 이상을 갖추면 운명을 넘어설 수 있다.",
+  "durationMonths": 2,
+  "formatVersion": "0.1.0",
+  "gameId": "last-grandson",
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "startMonth": 1,
+  "startYear": 1,
+  "title": "잔설 아래 막내손자",
+  "visual": {
+    "components": [
+      {
+        "elements": [
+          {
+            "action": "save",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "save",
+            "kind": "button",
+            "radius": 8,
+            "text": "기록",
+            "width": 128,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "action": "load",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "load",
+            "kind": "button",
+            "radius": 8,
+            "text": "이어가기",
+            "width": 144,
+            "x": 144,
+            "y": 0
+          }
+        ],
+        "height": 48,
+        "id": "save-controls",
+        "label": "공용 저장·불러오기",
+        "width": 288
+      }
+    ],
+    "height": 720,
+    "screens": [
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 44,
+            "height": 100,
+            "id": "title",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 150
+          },
+          {
+            "binding": "description",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 210,
+            "id": "description",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 270
+          },
+          {
+            "action": "start",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "start",
+            "kind": "button",
+            "radius": 8,
+            "text": "이야기 시작",
+            "width": 300,
+            "x": 80,
+            "y": 570
+          },
+          {
+            "action": "load",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "load",
+            "kind": "button",
+            "radius": 8,
+            "text": "불러오기",
+            "width": 220,
+            "x": 420,
+            "y": 570
+          }
+        ],
+        "id": "title",
+        "label": "타이틀"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 30,
+            "height": 64,
+            "id": "title",
+            "kind": "text",
+            "width": 780,
+            "x": 24,
+            "y": 24
+          },
+          {
+            "binding": "calendar",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 64,
+            "id": "calendar",
+            "kind": "text",
+            "width": 280,
+            "x": 24,
+            "y": 104
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 450,
+            "id": "stats",
+            "kind": "stats",
+            "width": 280,
+            "x": 24,
+            "y": 190
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 240,
+            "id": "schedule",
+            "kind": "schedule",
+            "visibleWhen": "planning",
+            "width": 910,
+            "x": 330,
+            "y": 120
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 220,
+            "id": "result",
+            "kind": "result",
+            "visibleWhen": "result",
+            "width": 910,
+            "x": 330,
+            "y": 380
+          },
+          {
+            "action": "advance",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "advance",
+            "kind": "button",
+            "radius": 8,
+            "text": "다음 진행",
+            "width": 350,
+            "x": 890,
+            "y": 640
+          }
+        ],
+        "id": "schedule",
+        "label": "일정·활동 결과"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "binding": "speaker",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 56,
+            "id": "speaker",
+            "kind": "text",
+            "width": 900,
+            "x": 64,
+            "y": 130
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 220,
+            "id": "dialogue",
+            "kind": "dialogue",
+            "width": 1152,
+            "x": 64,
+            "y": 210
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 140,
+            "id": "choices",
+            "kind": "choices",
+            "visibleWhen": "choice",
+            "width": 1152,
+            "x": 64,
+            "y": 450
+          },
+          {
+            "action": "advance",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "advance",
+            "kind": "button",
+            "radius": 8,
+            "text": "계속",
+            "width": 220,
+            "x": 1010,
+            "y": 640
+          }
+        ],
+        "id": "story",
+        "label": "대화·선택지"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 32,
+            "height": 80,
+            "id": "title",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 150
+          },
+          {
+            "binding": "ending",
+            "color": "#e9e3d5",
+            "fontSize": 40,
+            "height": 160,
+            "id": "ending",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 290
+          },
+          {
+            "action": "start",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "start",
+            "kind": "button",
+            "radius": 8,
+            "text": "다시 시작",
+            "width": 380,
+            "x": 450,
+            "y": 560
+          }
+        ],
+        "id": "ending",
+        "label": "엔딩"
+      }
+    ],
+    "width": 1280
+  }
+}

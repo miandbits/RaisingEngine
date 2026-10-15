@@ -36,6 +36,7 @@ LogicEditor::LogicEditor(QJsonValue value,QString kind,QJsonObject ctx,QWidget *
   auto row=new QHBoxLayout;for(auto spec:QList<QPair<QString,QString>>{{"logicAdd",tr("하위 항목 추가")},{"logicRemove",tr("선택 항목 삭제")},{"logicUp",tr("위로")},{"logicDown",tr("아래로")}}){auto b=new QPushButton(spec.second);b->setObjectName(spec.first);row->addWidget(b);if(spec.first=="logicAdd")connect(b,&QPushButton::clicked,this,[this]{addChild();});else if(spec.first=="logicRemove")connect(b,&QPushButton::clicked,this,[this]{removeChild();});else connect(b,&QPushButton::clicked,this,[this,spec]{moveChild(spec.first=="logicUp"?-1:1);});}outer->addLayout(row);
   error=new QLabel;error->setObjectName("logicError");error->setWordWrap(true);outer->addWidget(error);auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);outer->addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,this,[this]{const auto problem=validationError(root,rootKind,"/");if(!problem.isEmpty()){error->setText(problem);return;}accept();});connect(buttons,&QDialogButtonBox::rejected,this,&QDialog::reject);
   connect(tree,&QTreeWidget::currentItemChanged,this,[this]{editSelected();});refresh();
+  if (rootKind == "condition" || rootKind == "effects") outer->insertWidget(1, quickEditor());
 }
 QJsonValue LogicEditor::node(const QStringList &path)const{return at(root,path);}
 void LogicEditor::update(const QStringList &path,QJsonValue value){root=replaced(root,path,value);refresh(path);}

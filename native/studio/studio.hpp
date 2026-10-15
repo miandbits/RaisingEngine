@@ -215,6 +215,8 @@ private:
   void play();
   void chooseProject(bool create);
   void newProjectWizard();
+  void showGettingStarted();
+  void initializeStarterScreens();
   void editProjectSettings();
   void receivePlayer();
   bool mayDiscard();

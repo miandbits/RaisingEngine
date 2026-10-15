@@ -243,7 +243,7 @@ void StudioWindow::refreshContent() {
     item->setData(Qt::UserRole, doc["file"].toString());
     item->setToolTip(doc["file"].toString());
     item->setHidden(
-        search && !item->text().contains(search->text(), Qt::CaseInsensitive));
+        search && !(item->text()+" "+doc["file"].toString()).contains(search->text(), Qt::CaseInsensitive));
     if (doc["file"] == selected)
       contentList->setCurrentItem(item);
   }
@@ -258,7 +258,7 @@ void StudioWindow::refreshContent() {
     auto item = new QListWidgetItem(text, contentList);
     item->setData(Qt::UserRole, doc["file"].toString());
     item->setToolTip(doc["file"].toString());
-    item->setHidden(search && !item->text().contains(search->text(), Qt::CaseInsensitive));
+    item->setHidden(search && !(item->text()+" "+doc["file"].toString()).contains(search->text(), Qt::CaseInsensitive));
     if (doc["file"] == selected) contentList->setCurrentItem(item);
   }
 }
@@ -305,6 +305,7 @@ void StudioWindow::editContent() {
   else
     label->hide();
   auto description = new QPlainTextEdit(data.value("description").toString());
+  description->setObjectName("contentDescription");
   description->setMaximumHeight(100);
   if (data.contains("description"))
     form->addRow(tr("설명"), description);

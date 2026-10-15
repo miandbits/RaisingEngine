@@ -1,0 +1,107 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "exam-invitation",
+  "label": "버려진 아이에게 내민 손",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "registration",
+      "speakerId": "mentor",
+      "text": "사람들은 남궁가의 막내가 봄을 보지 못할 거라 했다. 진 노인은 약봉지를 내밀었다. '설아, 네 혈맥은 두 달 뒤 닫힌다. 하지만 네가 스스로 쌓은 내공이라면 길을 낼 수 있어. 약값 다섯 냥을 맡기고, 마지막 날 다시 오겠느냐?'",
+      "type": "dialogue"
+    },
+    {
+      "choices": [
+        {
+          "effects": [
+            {
+              "op": "add",
+              "target": {
+                "attributeId": "money",
+                "kind": "attribute"
+              },
+              "value": {
+                "op": "literal",
+                "value": -5
+              }
+            },
+            {
+              "flagId": "registered",
+              "op": "setFlag",
+              "value": true
+            },
+            {
+              "op": "add",
+              "target": {
+                "characterId": "mentor",
+                "kind": "relationship",
+                "relationshipId": "trust"
+              },
+              "value": {
+                "op": "literal",
+                "value": 1
+              }
+            }
+          ],
+          "id": "register",
+          "next": "end",
+          "requirements": {
+            "comparator": "gte",
+            "left": {
+              "op": "read",
+              "target": {
+                "attributeId": "money",
+                "kind": "attribute"
+              }
+            },
+            "op": "compare",
+            "right": {
+              "op": "literal",
+              "value": 5
+            }
+          },
+          "text": "약값 5를 맡기고, 살아서 돌아오겠다고 약속한다."
+        },
+        {
+          "effects": [],
+          "id": "decline",
+          "next": "end",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "남의 도움은 받지 않겠다며 돌아선다."
+        }
+      ],
+      "id": "registration",
+      "prompt": "진 노인의 손을 잡을까?",
+      "type": "choice"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 50,
+  "requirements": {
+    "comparator": "gte",
+    "left": {
+      "op": "read",
+      "target": {
+        "attributeId": "skill",
+        "kind": "attribute"
+      }
+    },
+    "op": "compare",
+    "right": {
+      "op": "literal",
+      "value": 0
+    }
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 0
+  }
+}
