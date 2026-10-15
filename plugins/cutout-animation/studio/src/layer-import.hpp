@@ -26,6 +26,7 @@ struct LayerImportChoice {
   QString id;      // id of a new character (rig + controller)
   QString origin = "bottom-center";
   bool trim = true;
+  bool aimBones = true;  // boneDirection "auto" (plugin 1.14.0): new bones point along their part
   double scale = 1;
   QStringList exclude;  // report layer keys left out
   QJsonObject payload() const;
@@ -56,6 +57,7 @@ class LayerImportDialog : public QDialog {
   QComboBox *target_ = nullptr, *origin_ = nullptr;
   QLineEdit* id_ = nullptr;
   QCheckBox* trim_ = nullptr;
+  QCheckBox* aimBones_ = nullptr;
   QDoubleSpinBox* scale_ = nullptr;
   QTreeWidget* tree_ = nullptr;
   QListWidget* warnings_ = nullptr;

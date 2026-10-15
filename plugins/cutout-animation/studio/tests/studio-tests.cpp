@@ -3933,6 +3933,7 @@ class StudioTests : public QObject {
       auto* target = d->findChild<QComboBox*>("cutoutLayerImportTarget");
       auto* warnings = d->findChild<QListWidget*>("cutoutLayerImportWarnings");
       if (!tree || !id || !target || !warnings || !d->findChild<QComboBox*>("cutoutLayerImportOrigin") || !d->findChild<QCheckBox*>("cutoutLayerImportTrim") ||
+          !d->findChild<QCheckBox*>("cutoutLayerImportAimBones") || !d->findChild<QCheckBox*>("cutoutLayerImportAimBones")->isChecked() ||
           !d->findChild<QDoubleSpinBox*>("cutoutLayerImportScale") || !d->findChild<QLabel*>("cutoutLayerImportSummary")) return false;
       shown = id->text() == "psdhero" && target->currentData().toString().isEmpty() && warnings->count() == 1 && warnings->item(0)->text().contains("마스크");
       // Photoshop order: front first, so Head (key 1) is the first row and body (key 0) the second.
@@ -3960,6 +3961,7 @@ class StudioTests : public QObject {
     QCOMPARE(sent.value("exclude").toArray(), QJsonArray{"1.1"});
     QCOMPARE(sent.value("origin").toString(), QString("bottom-center"));
     QVERIFY(sent.value("trim").toBool() && sent.value("scale").toDouble() == 1 && !sent.contains("rig"));
+    QCOMPARE(sent.value("boneDirection").toString(), QString("auto"));  // plugin 1.14.0 default
     QCOMPARE(panel->rigId(), QString("psdhero"));
     QVERIFY2(panel->status().contains("가져옴") && panel->status().contains("Ctrl+Z"), qPrintable(panel->status()));
     { const Json r = host.data("rig", "psdhero"); QCOMPARE(int(r["attachments"].size()), 3); QVERIFY(!host.data("controller", "psdhero").is_null()); }

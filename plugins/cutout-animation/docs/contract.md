@@ -911,12 +911,21 @@ is ordinary schemaVersion 1 data plus editor metadata.
 * **Payload**: `file`, `id` (new character, default from the file name; an existing rig or
   controller id is refused) **or** `rig` (re-import onto that rig), `name?`, `origin?`
   (`bottom-center` default, `center`, `top-center`, `top-left`, `{x, y}` in document px),
-  `trim?` (default true), `scale?` (0.05..4, default 1), `exclude?` (report layer keys).
+  `trim?` (default true), `scale?` (0.05..4, default 1), `exclude?` (report layer keys),
+  `boneDirection?` (`auto` default, `none` = the 1.11.0 mapping; plugin 1.14.0).
 * **Mapping** (new character): canvas = document size × scale, root bone `root` at the origin;
   a top-level `[pivot]` layer's centre overrides the origin.
   * group → bone (id from the name, nested groups = child bones, local = world − parent); origin =
     the centre of a `[pivot]` / `[bone]` / `#pivot` marker layer inside it (not imported as a
     picture), else the centre of its content. A group without pictures makes no bone.
+  * bone direction (`boneDirection: "auto"`, plugin 1.14.0; new bones only, never the root): the
+    bone's x axis points at its only child bone (length = the distance along it), else at the
+    centre of the group's pictures (own and descendants'), else straight up (origin at that
+    centre); length = how far the pictures reach along the axis (farthest bounds corner). Angles
+    within 4° of an axis snap to it. `rotation` is local (aim − parent world angle), `length` in
+    the parent's scale. Attachments are placed through the rotated bone (their `rotation` is the
+    opposite), so the setup frame is unchanged. Report layers of bones carry
+    `direction: {angle, length, from: child | content | up}`. `none`: rotation 0, no length.
   * layer → region attachment, picture trimmed to its pixels (alpha > 0) plus a 1 px transparent
     ring (linear filtering at the edge blends to transparency like the document), placed with
     pivot 0.5 at its centre in the bone's space; `scale` ≠ 1 sets the attachment scale (the
@@ -967,7 +976,7 @@ is ordinary schemaVersion 1 data plus editor metadata.
 * Editor: `PSD 가져오기…` (character row `cutoutImportLayers`, plugin menu
   `cutoutImportLayersAction`, command palette) → file → preview → dialog
   `cutoutLayerImportDialog` (`cutoutLayerImportSource`, `…Target` new / update, `…Id`, `…Origin`,
-  `…Scale`, `…Trim`, layer tree `…Tree` with include boxes and bone/slot/attachment/status columns,
+  `…Scale`, `…Trim`, `…AimBones` (boneDirection), layer tree `…Tree` with include boxes and bone/slot/attachment/status columns,
   `…Warnings`, `…Summary`, `…Refresh` = preview again) → `가져오기` = one edit (one Ctrl+Z). The
   file the selected character was imported from defaults to updating it.
 
