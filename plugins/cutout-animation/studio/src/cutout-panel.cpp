@@ -608,6 +608,17 @@ bool CutoutPanel::eventFilter(QObject* watched, QEvent* event) {
       return true;
     }
   }
+  if (watched == tree_ && (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)) {
+    // The focused hierarchy owns Ctrl+A / Ctrl+Shift+A (bones, not its own select-all of parts;
+    // there the selection command wins over the host's workspace toggle, which the canvas keeps)
+    // and not the host's workspace toggle).
+    auto* key = static_cast<QKeyEvent*>(event);
+    if (key->key() == Qt::Key_A && (key->modifiers() & Qt::ControlModifier) && !(key->modifiers() & Qt::AltModifier)) {
+      event->accept();
+      if (event->type() == QEvent::KeyPress) { if (key->modifiers() & Qt::ShiftModifier) selectChildren(); else selectAllBones(); }
+      return true;
+    }
+  }
   if (event->type() == QEvent::KeyPress) {
     auto* key = static_cast<QKeyEvent*>(event);
     if (key->key() == Qt::Key_Tab && !(key->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier))) {
@@ -1067,8 +1078,16 @@ QWidget* CutoutPanel::buildWorkspace() {
     if (refKind(dragged) == "bone") requestReparent(refId(dragged), bone);
     else if (refKind(dragged) == "slot" && !bone.isEmpty()) requestSlotBone(refId(dragged), bone);
   };
-  connect(tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* item) {
-    if (!filling_ && item) selectItem(item->data(0, Qt::UserRole).toString());
+  // Ctrl/Shift+click selects several bones/parts (plugin 1.7.0): the tree's selection is the
+  // panel's multi-selection, its current item the primary one.
+  tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+  tree_->installEventFilter(this);  // Ctrl+A = all bones, Ctrl+Shift+A = children (not the workspace toggle)
+  connect(tree_, &QTreeWidget::itemSelectionChanged, this, [this] {
+    if (filling_) return;
+    QStringList refs;
+    for (auto* item : tree_->selectedItems()) refs << item->data(0, Qt::UserRole).toString();
+    QTreeWidgetItem* current = tree_->currentItem();
+    setSelection(refs, current && current->isSelected() ? current->data(0, Qt::UserRole).toString() : QString());
   });
   connect(tree_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* item, int column) {
     if (filling_ || column != 1) return;
@@ -1231,8 +1250,75 @@ QWidget* CutoutPanel::buildWorkspace() {
     try { dragPreview_ = cutout::applyEdit(working_ ? *working_ : committedRig(), op).data; } catch (const std::exception&) { return; }
     rebuildDisplay(false);
   };
+  canvas_->onToggleSelect = [this](const QString& ref) { toggleSelected(ref); };
+  canvas_->onBoxSelect = [this](const QStringList& refs, bool add) {
+    if (add) addToSelection(refs);
+    else setSelection(refs);
+    setStatus(refs.isEmpty() ? QString("상자 안에 본이 없습니다.") : QString("상자 선택: 본 %1개 (선택 %2개)").arg(refs.size()).arg(selectedItems().size()));
+  };
+  canvas_->onSelectAll = [this] { selectAllBones(); };
   connect(fit, &QToolButton::clicked, canvas_, &RigCanvas::fitToCanvas);
+  // Second row (plugin 1.7.0, editor-only options): selection commands, the pivot of a
+  // multi-bone rotate/scale, setup-pose compensation and the axis space of the numeric fields.
+  auto* transformTools = toolRow("cutoutTransformTools");
+  selectMenuButton_ = new QToolButton;
+  selectMenuButton_->setObjectName("cutoutSelectMenu");
+  selectMenuButton_->setText("선택 ▾");
+  selectMenuButton_->setPopupMode(QToolButton::InstantPopup);
+  selectMenuButton_->setToolTip("Ctrl/Shift+클릭 = 여러 개 고르기 · 이동 도구로 빈 곳을 끌면 상자 선택(Ctrl/Shift = 더하기)\n"
+                                "캔버스·계층에서 Ctrl+A = 모든 본 · 계층에서 Ctrl+Shift+A = 고른 본의 자식 본까지\n"
+                                "(캔버스의 Ctrl+Shift+A는 작업 공간 전환 그대로)");
+  auto* selectMenu = new QMenu(selectMenuButton_);
+  auto menuAction = [&](const char* name, const QString& text, std::function<void()> fn) {
+    QAction* a = selectMenu->addAction(text);
+    a->setObjectName(name);
+    connect(a, &QAction::triggered, this, std::move(fn));
+  };
+  menuAction("cutoutSelectChildren", "자식 본까지 선택 (계층: Ctrl+Shift+A)", [this] { selectChildren(); });
+  menuAction("cutoutSelectAllBones", "모든 본 선택\tCtrl+A", [this] { selectAllBones(); });
+  menuAction("cutoutSelectNone", "선택 해제", [this] { selectItem(QString()); });
+  selectMenuButton_->setMenu(selectMenu);
+  transformTools->addWidget(selectMenuButton_);
+  transformTools->addSeparator();
+  transformTools->addWidget(new QLabel("중심 "));
+  pivotCombo_ = new QComboBox;
+  pivotCombo_->setObjectName("cutoutPivotMode");
+  pivotCombo_->addItem("각자 원점", int(Pivot::Origin));
+  pivotCombo_->addItem("선택 중심", int(Pivot::Centroid));
+  pivotCombo_->setToolTip("여러 본을 돌리거나 크기를 바꿀 때의 중심: 각 본이 자기 원점을 중심으로(연결된 본은 함께 휘어짐) /\n"
+                          "고른 본 원점들의 가운데를 중심으로 한 덩어리처럼. 이동은 언제나 맨 위의 고른 본만 옮깁니다.");
+  connect(pivotCombo_, &QComboBox::activated, this, [this] { setPivotMode(Pivot(pivotCombo_->currentData().toInt())); });
+  transformTools->addWidget(pivotCombo_);
+  auto toggle = [&](const char* name, const QString& text, const QString& tip, bool images) {
+    auto* b = new QToolButton;
+    b->setObjectName(name);
+    b->setText(text);
+    b->setCheckable(true);
+    b->setToolTip(tip);
+    connect(b, &QToolButton::toggled, this, [this, images](bool on) {
+      setCompensation(images ? compensateBones_ : on, images ? on : compensateImages_);
+    });
+    transformTools->addWidget(b);
+    return b;
+  };
+  compensateBonesButton_ = toggle("cutoutCompensateBones", "본 보정", "켜면 조립 모드에서 본을 옮기거나 돌려도 고르지 않은 자식 본은 화면의 자리에 그대로 있습니다(Spine 본 보정).\n"
+                                  "기본 자세만 바꿉니다: 애니메이션 모드의 키에는 적용되지 않습니다.", false);
+  compensateImagesButton_ = toggle("cutoutCompensateImages", "이미지 보정", "켜면 조립 모드에서 본을 옮기거나 돌려도 그 본에 붙은 그림(모든 스킨)은 화면의 자리에 그대로 있습니다(Spine 이미지 보정).\n"
+                                   "기본 자세만 바꿉니다.", true);
+  transformTools->addWidget(spacer());
+  transformTools->addWidget(new QLabel("숫자 축 "));
+  axesCombo_ = new QComboBox;
+  axesCombo_->setObjectName("cutoutAxesMode");
+  axesCombo_->addItem("로컬", int(cutout::Axes::Local));
+  axesCombo_->addItem("부모", int(cutout::Axes::Parent));
+  axesCombo_->addItem("월드", int(cutout::Axes::World));
+  axesCombo_->setToolTip("속성 칸의 X·Y·회전을 보여 주고 입력받는 공간 (저장은 언제나 로컬):\n"
+                         "로컬 = 저장된 값(부모 기준) · 부모 = 부모 원점에서 부모 축 방향 px와 부모 축에서 잰 각도 · 월드 = 캐릭터 화면 좌표와 화면 각도.\n"
+                         "크기는 언제나 로컬입니다.");
+  connect(axesCombo_, &QComboBox::activated, this, [this] { setAxes(cutout::Axes(axesCombo_->currentData().toInt())); });
+  transformTools->addWidget(axesCombo_);
   middleLayout->addWidget(tools);
+  middleLayout->addWidget(transformTools);
   middleLayout->addWidget(canvas_, 1);
   middle->setMinimumWidth(240);
 
@@ -1288,7 +1374,13 @@ QWidget* CutoutPanel::buildWorkspace() {
   deltaButton_->setToolTip("조립 모드에서 바꾼 기본 자세 변화량을 이 본의 기존 키에 더합니다.");
   deltaButton_->hide();
   connect(deltaButton_, &QPushButton::clicked, this, [this] { applySetupDeltaToKeys(); });
+  relativeCheck_ = new QCheckBox("상대값 입력");
+  relativeCheck_->setObjectName("cutoutPropRelative");
+  relativeCheck_->setToolTip("켜면 본 칸에 입력한 값을 고른 본마다 지금 값에 더합니다(여러 본을 같은 만큼 옮기기·돌리기).\n"
+                             "끄면 입력한 값이 고른 모든 본의 값이 됩니다. 값이 서로 다르면 칸에 —가 보입니다.");
+  connect(relativeCheck_, &QCheckBox::toggled, this, [this](bool on) { setRelativeEdit(on); });
   rightLayout->addWidget(selectionLabel_);
+  rightLayout->addWidget(relativeCheck_);
   rightLayout->addLayout(form);
   rightLayout->addWidget(keyButton_);
   auto* keyRow = new QHBoxLayout;
@@ -1481,7 +1573,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   keyRow->addSeparator();
   auto* copyPoseButton = new QPushButton("포즈 복사");
   copyPoseButton->setObjectName("cutoutCopyPose");
-  copyPoseButton->setToolTip("고른 본과 그 자식 본(없으면 모든 본)의 현재 자세를 복사합니다.");
+  copyPoseButton->setToolTip("고른 본들(조각은 그 본, 없으면 모든 본)의 현재 자세를 복사합니다. 팔·다리 전체는 「선택 ▾ › 자식 본까지 선택」 뒤에 복사하세요.");
   connect(copyPoseButton, &QPushButton::clicked, this, [this] { copyPose(); });
   keyRow->addWidget(copyPoseButton);
   keyRow->addWidget(toolButton("포즈 붙여넣기", "cutoutPastePose", "복사한 자세를 재생 헤드 시간에 키로 넣습니다(다른 클립에도 됩니다).", [this] { pastePose(); }));
@@ -1497,7 +1589,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   dopesheet_->onPreset = [this](const QString& preset) { applyPreset(preset); };
   dopesheet_->onCommand = [this](const QString& command) { keyCommand(command); };
   dopesheet_->onStep = [this](int steps) { stepPlayhead(steps); };
-  dopesheet_->onRowSelected = [this](int row) {
+  dopesheet_->onRowSelected = [this](int row, bool add) {
     if (row < 0 || row >= dopesheet_->rows().size()) return;
     // The rig expression row has no canvas item: show the expression list instead.
     if (dopesheet_->rows()[row].target == "rig") { if (lookTabs_) lookTabs_->setCurrentIndex(1); return; }
@@ -1508,7 +1600,10 @@ QWidget* CutoutPanel::buildAnimateTab() {
       selectItem(QString());
       return;
     }
-    selectItem(dopesheet_->rows()[row].target);
+    // Ctrl/Shift on a row adds its bone/part to the canvas selection (shared editor selection).
+    const QString target = dopesheet_->rows()[row].target;
+    if (add && !selection_.isEmpty()) { if (!selectedItems().contains(target)) addToSelection({target}); }
+    else selectItem(target);
   };
   auto* scroll = new QScrollArea;
   scroll->setObjectName("cutoutDopesheetScroll");
@@ -1954,6 +2049,11 @@ void CutoutPanel::rebuildDisplay(bool full) {
     }
     const QString kind = refKind(selection_), id = refId(selection_);
     if (!selection_.isEmpty() && !findIn(data, kind == "bone" ? "bones" : "slots", ss(id))) selection_.clear();
+    // Deleted (or undone) items leave the multi-selection; the primary falls back to the last one left.
+    selected_.erase(std::remove_if(selected_.begin(), selected_.end(), [&](const QString& r) {
+      return !findIn(data, refKind(r) == "bone" ? "bones" : "slots", ss(refId(r)));
+    }), selected_.end());
+    if (selection_.isEmpty() && !selected_.isEmpty()) selection_ = selected_.last();
     refreshCharacters();
     refreshDiagnostics();
     refreshTree();
@@ -2048,9 +2148,8 @@ void CutoutPanel::refreshTree() {
   };
   for (int i = 0; i < tree_->topLevelItemCount(); i++) visible(tree_->topLevelItem(i));
   tree_->expandAll();
-  QTreeWidgetItemIterator it(tree_);
-  for (; *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == selection_) { tree_->setCurrentItem(*it); break; }
   filling_ = false;
+  syncSelectionWidgets();
 }
 
 void CutoutPanel::refreshDrawOrder() {
@@ -2112,15 +2211,31 @@ void CutoutPanel::refreshProperties() {
   attachmentCombo_->clear();
   attachmentCombo_->setEnabled(false);
   QString label = "선택 없음 · 캔버스나 트리에서 본(◉) 또는 조각(▣)을 고르세요.";
-  if (kind == "bone" && rig_) {
-    const int i = rig_->boneIndex(ss(id));
-    if (i >= 0) {
-      const cutout::Transform t = animate && size_t(i) < pose.bones.size() ? pose.bones[size_t(i)] : rig_->bones[size_t(i)].setup;
-      values = {{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}, {"length", rig_->bones[size_t(i)].length}};
-      for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) enabled[p] = true;
-      enabled["length"] = !animate;  // setup data, never keyed
-      label = QString("본 %1%2").arg(id, animate ? QString(" · %1ms 자세").arg(playheadMs_) : QString(" · 기본 자세"));
+  // Bone fields edit every selected bone (plugin 1.7.0): shared values in the chosen axes, "—"
+  // where they differ (absolute input), 0 in relative input mode.
+  const QStringList bones = selectedBones();
+  const bool boneFields = rig_ && !bones.isEmpty() && (kind == "bone" || bones.size() > 1);
+  QSet<QString> mixed;
+  if (boneFields) {
+    const auto setupWorld = animate ? std::map<std::string, cutout::Affine>() : cutout::setupWorld(data);
+    QMap<QString, QVector<double>> all;
+    for (const QString& b : bones) {
+      const int i = rig_->boneIndex(ss(b));
+      if (i < 0) continue;
+      const cutout::Transform t = shownBone(i, pose, setupWorld);
+      for (auto [p, v] : {std::pair{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}, {"length", rig_->bones[size_t(i)].length}}) all[p] << v;
     }
+    for (auto it = all.begin(); it != all.end(); ++it) {
+      values[it.key()] = it.value().value(0);
+      const double tolerance = 0.5 * std::pow(10.0, -props_.value(it.key())->decimals());
+      for (double v : it.value()) if (std::fabs(v - it.value().value(0)) >= tolerance) mixed.insert(it.key());
+    }
+    for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) enabled[p] = true;
+    enabled["length"] = !animate;  // setup data, never keyed
+    const QString when = animate ? QString(" · %1ms 자세").arg(playheadMs_) : QString(" · 기본 자세");
+    label = bones.size() == 1 ? QString("본 %1%2").arg(bones[0], when) : QString("본 %1개 · %2%3").arg(bones.size()).arg(bones.join(", "), when);
+    if (axes_ != cutout::Axes::Local) label += axes_ == cutout::Axes::World ? " · 월드 축" : " · 부모 축";
+    if (relative_) label += " · 상대값 입력";
   } else if (kind == "slot" && rig_) {
     const int i = rig_->slotIndex(ss(id));
     if (i >= 0) {
@@ -2146,9 +2261,16 @@ void CutoutPanel::refreshProperties() {
   }
   for (auto it = props_.begin(); it != props_.end(); ++it) {
     QSignalBlocker block(it.value());
-    it.value()->setValue(values.value(it.key(), 0));
-    it.value()->setProperty("shown", it.value()->value());
-    it.value()->setEnabled(enabled.value(it.key()));
+    QDoubleSpinBox* spin = it.value();
+    const bool relative = relative_ && boneFields, isMixed = boneFields && !relative && mixed.contains(it.key());
+    // Relative input shows the delta (0); a negative length delta must be typeable.
+    if (it.key() == "length") spin->setMinimum(relative ? -100000 : 0);
+    // Mixed values: the spin box shows its special text "—" at its minimum value.
+    spin->setSpecialValueText(isMixed ? QString("—") : QString());
+    spin->setValue(relative ? 0 : isMixed ? spin->minimum() : values.value(it.key(), 0));
+    spin->setProperty("shown", spin->value());
+    spin->setProperty("mixed", isMixed);
+    spin->setEnabled(enabled.value(it.key()));
   }
   selectionLabel_->setText(label);
   (void)data;
@@ -2156,6 +2278,7 @@ void CutoutPanel::refreshProperties() {
   const QString state = keyState();
   keyButton_->setProperty("keyState", state);
   keyButton_->setEnabled(animate && (!selection_.isEmpty() || working_));
+  keyButton_->setToolTip(selectedItems().size() > 1 ? QString("고른 %1개(본: 위치·회전·크기, 조각: 그림)를 이 시간에 모두 키로 넣습니다.").arg(selectedItems().size()) : QString());
   keyButton_->setText(state == "modified" ? "◆ 변경됨 · 키 추가 (K)" : state == "keyed" ? "◆ 키 있음 · 다시 키 (K)" : "◇ 키 추가 (K)");
   keyButton_->setStyleSheet(state == "modified" ? "background:#f59e0b;color:#111;font-weight:bold;" : state == "keyed" ? "background:#16a34a;color:white;" : "");
   discardButton_->setEnabled(working_.has_value());
@@ -2238,6 +2361,8 @@ void CutoutPanel::refreshDopesheet() {
     timeView_->setLoop(loop.first, loop.second);
   }
   dopesheet_->setRows(rows, duration);
+  const QStringList selectedRefs = selectedItems();
+  dopesheet_->setHighlightTargets(QSet<QString>(selectedRefs.begin(), selectedRefs.end()));
   playheadMs_ = std::clamp(playheadMs_, 0, duration);
   playheadExact_ = std::clamp(playheadExact_, 0.0, double(duration));
   timeView_->setPlayhead(playheadMs_);
@@ -2499,6 +2624,8 @@ void CutoutPanel::updateCanvas() {
   if (!canvas_) return;
   canvas_->setHiddenSlots(hidden_);
   canvas_->setSelection(selection_);
+  const QStringList refs = selectedItems();
+  canvas_->setMultiSelection(QSet<QString>(refs.begin(), refs.end()));
   canvas_->setMessage(rigId_.isEmpty() ? "캐릭터가 없습니다. 「새 캐릭터」를 눌러 시작하세요."
                                        : !rigError_.isEmpty() ? "리그 데이터 오류: " + rigError_ : QString());
   canvas_->setScene(rig_, currentPose());
@@ -2776,6 +2903,114 @@ void CutoutPanel::selectController(const QString& id) {
   rebuildDisplay();
 }
 void CutoutPanel::selectItem(const QString& ref) {
+  selected_.clear();
+  setSelection(ref.isEmpty() ? QStringList() : QStringList{ref}, ref);
+}
+QStringList CutoutPanel::selectedItems() const {
+  // selected_ only counts while it holds the primary item: code that assigns selection_ directly
+  // (a new bone, a refused gesture restoring the old one) gets a plain single selection.
+  if (selection_.isEmpty()) return {};
+  return selected_.contains(selection_) ? selected_ : QStringList{selection_};
+}
+QStringList CutoutPanel::selectedBones(bool partsAsBones) const {
+  const Json& data = displayData();
+  QSet<QString> ids;
+  for (const QString& ref : selectedItems()) {
+    if (refKind(ref) == "bone") ids.insert(refId(ref));
+    else if (partsAsBones && refKind(ref) == "slot")
+      if (const Json* s = findIn(data, "slots", ss(refId(ref)))) ids.insert(qs(s->value("bone", std::string())));
+  }
+  QStringList out;  // rig (array) order
+  for (const auto& b : listOf(data, "bones")) if (ids.contains(qs(b.value("id", std::string())))) out << qs(b.value("id", std::string()));
+  return out;
+}
+void CutoutPanel::toggleSelected(const QString& ref) {
+  QStringList refs = selectedItems();
+  if (refs.contains(ref)) {
+    refs.removeAll(ref);
+    setSelection(refs, selection_ == ref ? refs.value(refs.size() - 1) : selection_);
+  } else {
+    refs << ref;
+    setSelection(refs, ref);
+  }
+}
+void CutoutPanel::addToSelection(const QStringList& add) {
+  setSelection(selectedItems() + add, selection_.isEmpty() ? add.value(0) : selection_);
+}
+bool CutoutPanel::selectChildren() {
+  const QStringList roots = selectedBones();
+  if (roots.isEmpty()) { setStatus("자식 본을 고를 본을 먼저 선택하세요.", true); return false; }
+  QStringList bones = roots;
+  for (int i = 0; i < bones.size(); i++)
+    for (const auto& b : listOf(displayData(), "bones"))
+      if (b.contains("parent") && b.at("parent").is_string() && qs(b.at("parent").get<std::string>()) == bones[i] && !bones.contains(qs(b.value("id", std::string()))))
+        bones << qs(b.value("id", std::string()));
+  QStringList refs = selectedItems();
+  int added = 0;
+  for (const QString& b : bones) if (!refs.contains("bone:" + b)) { refs << "bone:" + b; added++; }
+  setSelection(refs, selection_);
+  setStatus(added ? QString("자식 본 %1개를 선택에 더했습니다 (본 %2개).").arg(added).arg(selectedBones().size()) : QString("고른 본에 더할 자식 본이 없습니다."));
+  return added > 0;
+}
+bool CutoutPanel::selectAllBones() {
+  QStringList refs;
+  for (const auto& b : listOf(displayData(), "bones")) refs << "bone:" + qs(b.value("id", std::string()));
+  if (refs.isEmpty()) return false;
+  selected_.clear();
+  setSelection(refs, refs.contains(selection_) ? selection_ : refs.first());
+  setStatus(QString("모든 본 %1개를 선택했습니다.").arg(refs.size()));
+  return true;
+}
+void CutoutPanel::setPivotMode(Pivot pivot) {
+  pivot_ = pivot;
+  if (pivotCombo_) { QSignalBlocker block(pivotCombo_); pivotCombo_->setCurrentIndex(pivotCombo_->findData(int(pivot))); }
+}
+void CutoutPanel::setAxes(cutout::Axes axes) {
+  axes_ = axes;
+  if (axesCombo_) { QSignalBlocker block(axesCombo_); axesCombo_->setCurrentIndex(axesCombo_->findData(int(axes))); }
+  refreshProperties();
+}
+void CutoutPanel::setRelativeEdit(bool on) {
+  relative_ = on;
+  if (relativeCheck_) { QSignalBlocker block(relativeCheck_); relativeCheck_->setChecked(on); }
+  refreshProperties();
+}
+void CutoutPanel::setCompensation(bool bones, bool images) {
+  compensateBones_ = bones;
+  compensateImages_ = images;
+  for (auto [button, on] : {std::pair{compensateBonesButton_, bones}, std::pair{compensateImagesButton_, images}})
+    if (button) { QSignalBlocker block(button); button->setChecked(on); }
+}
+void CutoutPanel::syncSelectionWidgets() {
+  const QStringList refs = selectedItems();
+  const QSet<QString> set(refs.begin(), refs.end());
+  const bool wasFilling = filling_;
+  filling_ = true;
+  {
+    QSignalBlocker b1(tree_), b2(drawOrder_);
+    tree_->clearSelection();
+    QTreeWidgetItem* current = nullptr;
+    for (QTreeWidgetItemIterator it(tree_); *it; ++it) {
+      const QString ref = (*it)->data(0, Qt::UserRole).toString();
+      if (ref == selection_) current = *it;
+      if (set.contains(ref)) (*it)->setSelected(true);
+    }
+    if (current) tree_->setCurrentItem(current, 0, QItemSelectionModel::NoUpdate);
+    else tree_->selectionModel()->setCurrentIndex(QModelIndex(), QItemSelectionModel::NoUpdate);
+    tree_->viewport()->update();
+    drawOrder_->setCurrentItem(nullptr);
+    for (int i = 0; i < drawOrder_->count(); i++) if ("slot:" + drawOrder_->item(i)->data(Qt::UserRole).toString() == selection_) drawOrder_->setCurrentRow(i);
+  }
+  filling_ = wasFilling;
+  if (canvas_) canvas_->setMultiSelection(set);
+  if (dopesheet_) dopesheet_->setHighlightTargets(set);
+}
+void CutoutPanel::setSelection(const QStringList& refsIn, const QString& primaryIn) {
+  QStringList refs;
+  for (const QString& r : selected_) if (refsIn.contains(r) && !refs.contains(r)) refs << r;  // keep the pick order
+  for (const QString& r : refsIn) if (!r.isEmpty() && !refs.contains(r)) refs << r;
+  const QString ref = refs.contains(primaryIn) ? primaryIn : refs.value(refs.size() - 1);
+  selected_ = refs;
   selection_ = ref;
   // Picking a chain or target bone shows its IK (the current one when it already uses the bone).
   if (refKind(ref) == "bone") {
@@ -2788,16 +3023,7 @@ void CutoutPanel::selectItem(const QString& ref) {
     if (!current || !uses(*current))
       for (const auto& k : listOf(displayData(), "ik")) if (uses(k)) { ikId_ = qs(k.value("id", std::string())); break; }
   }
-  {
-    QSignalBlocker b1(tree_), b2(drawOrder_);
-    filling_ = true;
-    QTreeWidgetItemIterator it(tree_);
-    tree_->setCurrentItem(nullptr);
-    for (; *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == ref) { tree_->setCurrentItem(*it); break; }
-    drawOrder_->setCurrentItem(nullptr);
-    for (int i = 0; i < drawOrder_->count(); i++) if ("slot:" + drawOrder_->item(i)->data(Qt::UserRole).toString() == ref) drawOrder_->setCurrentRow(i);
-    filling_ = false;
-  }
+  syncSelectionWidgets();
   refreshProperties();
   refreshGraph();
   updateCanvas();
@@ -3064,7 +3290,19 @@ QPointF CutoutPanel::manipulationOrigin(const QString& ref) const {
   }
   const int bi = rig_->boneIndex(ss(bone));
   if (bi < 0 || size_t(bi) >= pose.world.size()) return {};
+  // A group turn (선택 중심) measures its angle around the selected bones' centroid.
+  if (const QStringList bones = dragBones("bone:" + bone); pivot_ == Pivot::Centroid && bones.size() > 1 && (kind == "bone" || mode_ == Mode::Animate)) {
+    QPointF c;
+    for (const QString& b : bones) if (const int i = rig_->boneIndex(ss(b)); i >= 0) c += QPointF(pose.world[size_t(i)].e, pose.world[size_t(i)].f) / double(bones.size());
+    return c;
+  }
   return {pose.world[size_t(bi)].e, pose.world[size_t(bi)].f};
+}
+QStringList CutoutPanel::dragBones(const QString& ref) const {
+  // Dragging a selected bone transforms the whole (bone) selection; anything else drags alone.
+  const QString bone = refId(ref);
+  const QStringList bones = selectedBones(mode_ == Mode::Animate);
+  return bones.contains(bone) ? bones : QStringList{bone};
 }
 
 std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
@@ -3142,32 +3380,39 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   }
   const int bi = rig.boneIndex(ss(id));
   if (bi < 0) return {};
+  // One core transformBones per gesture (plugin 1.7.0), for one bone or the whole selection, so
+  // the LLM `edit` op does exactly what a canvas drag does.
+  const QStringList bones = dragBones("bone:" + id);
+  const bool group = pivot_ == Pivot::Centroid && bones.size() > 1;
   const cutout::Transform cur = pose.bones[size_t(bi)];
   const int parent = rig.bones[size_t(bi)].parentIndex;
   const cutout::Affine pw = parent >= 0 ? pose.world[size_t(parent)] : cutout::Affine{};
-  QMap<QString, double> values;
+  Json change = Json::object();
   if (d.tool == RigCanvas::Move) {
-    const auto inv = pw.inverse();
-    if (!inv) return {};
-    double lx, ly;
-    inv->apply(pose.world[size_t(bi)].e + delta.x(), pose.world[size_t(bi)].f + delta.y(), lx, ly);
-    values = {{"x", lx}, {"y", ly}};
+    if (delta.isNull()) return {};
+    change = {{"x", delta.x()}, {"y", delta.y()}};
   } else if (d.tool == RigCanvas::Rotate) {
-    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1;
-    values = {{"rotation", snap(cur.rotation + sign * d.angle)}};
+    // Shift snaps the grabbed bone's own rotation to 15° (a group: the turn itself).
+    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1, turn = group ? snap(d.angle) : sign * (snap(cur.rotation + sign * d.angle) - cur.rotation);
+    if (std::fabs(turn) < 1e-9) return {};
+    change = {{"rotation", turn}};
   } else {
-    values = {{"scaleX", cur.scaleX * ratio}, {"scaleY", cur.scaleY * ratio}};
+    if (std::fabs(ratio - 1) < 1e-12 || std::fabs(ratio) < 1e-9) return {};
+    change = {{"scaleX", ratio}, {"scaleY", ratio}};
   }
-  std::vector<Json> ops;
-  if (!animate) {
-    Json op = {{"op", "setBone"}, {"bone", ss(id)}};
-    for (auto it = values.begin(); it != values.end(); ++it) op[ss(it.key())] = it.value();
-    ops.push_back(op);
+  std::vector<std::string> ids;
+  for (const QString& b : bones) ids.push_back(ss(b));
+  Json op = {{"op", "transformBones"}, {"bones", ids}, {"delta", change}};
+  if (group) op["pivot"] = "centroid";
+  if (animate) {
+    op["clip"] = ss(clipId_);
+    op["timeMs"] = playheadMs_;
   } else {
-    for (auto it = values.begin(); it != values.end(); ++it)
-      ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", "bone:" + ss(id)}, {"property", ss(it.key())}, {"timeMs", playheadMs_}, {"value", it.value()}});
+    // Compensation is a setup-pose operation (Spine): the Animate drag never sends it.
+    if (compensateBones_) op["compensateBones"] = true;
+    if (compensateImages_) op["compensateImages"] = true;
   }
-  return ops;
+  return {op};
 }
 
 void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
@@ -3206,14 +3451,19 @@ void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
     else selection_ = before;
     return;
   }
-  // Remember setup deltas of keyed bones so the user can rebase existing keys explicitly.
-  if (mode_ == Mode::Setup && ops[0].value("op", std::string()) == "setBone") {
-    const std::string bone = ops[0].value("bone", std::string());
+  // Remember setup deltas of a dragged (single) keyed bone so the user can rebase its keys explicitly.
+  if (mode_ == Mode::Setup && ops[0].value("op", std::string()) == "transformBones" && ops[0].at("bones").size() == 1) {
+    const std::string bone = ops[0].at("bones")[0].get<std::string>();
     const Json* before = findIn(dragBase_, "bones", bone);
     Json delta = Json::object();
-    for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"})
-      if (ops[0].contains(p) && before) delta[p] = ops[0].at(p).get<double>() - before->value(p, std::string(p).rfind("scale", 0) == 0 ? 1.0 : 0.0);
-    if (runOps(ops, false)) { lastSetupDelta_ = SetupDelta{qs(bone), delta}; refreshModeUi(); }
+    const bool ok = runOps(ops, false, [&](const cutout::EditResult& r) {
+      const Json* after = findIn(r.data, "bones", bone);
+      for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) {
+        const double def = std::string(p).rfind("scale", 0) == 0 ? 1.0 : 0.0;
+        if (after && before && std::fabs(after->value(p, def) - before->value(p, def)) > 1e-9) delta[p] = after->value(p, def) - before->value(p, def);
+      }
+    });
+    if (ok && !delta.empty()) { lastSetupDelta_ = SetupDelta{qs(bone), delta}; refreshModeUi(); }
     return;
   }
   runOps(ops, mode_ == Mode::Animate);
@@ -3226,20 +3476,11 @@ void CutoutPanel::commitProperty(const QString& property, double value) {
   if (spin && std::fabs(value - shown) < 0.5 * std::pow(10.0, -spin->decimals())) return;  // focus-out without change
   const QString kind = refKind(selection_), id = refId(selection_);
   const bool animate = mode_ == Mode::Animate;
-  if (kind == "bone" && property == "length") {
-    if (animate) { setStatus("본 길이는 조립 모드에서 바꿉니다(키가 아닙니다).", true); refreshProperties(); return; }
-    runOps({{{"op", "setBone"}, {"bone", ss(id)}, {"length", value}}}, false);
+  if (property != "alpha" && property != "pivotX" && property != "pivotY" && !selectedBones().isEmpty() && (kind == "bone" || selectedBones().size() > 1)) {
+    commitBoneProperty(property, value);
     return;
   }
-  if (kind == "bone") {
-    if (animate) {
-      if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return; }
-      runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", ss(property)}, {"timeMs", playheadMs_}, {"value", value}}}, true);
-    } else if (runOps({{{"op", "setBone"}, {"bone", ss(id)}, {ss(property), value}}}, false)) {
-      lastSetupDelta_ = SetupDelta{id, Json{{ss(property), value - shown}}};
-      refreshModeUi();
-    }
-  } else if (kind == "slot") {
+  if (kind == "slot") {
     if (property == "alpha") {
       if (animate) runOps({{{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", "alpha"}, {"timeMs", playheadMs_}, {"value", value}}}, true);
       else runOps({{{"op", "setSlot"}, {"slot", ss(id)}, {"alpha", value}}}, false);
@@ -3251,6 +3492,103 @@ void CutoutPanel::commitProperty(const QString& property, double value) {
       runOps({{{"op", "setSkinAttachment"}, {"skin", ss(skin)}, {"slot", ss(id)}, {"name", ss(name)}, {ss(property), value}}}, false);
     else runOps({{{"op", "setAttachment"}, {"slot", ss(id)}, {"name", ss(name)}, {ss(property), value}}}, false);
   }
+}
+cutout::Transform CutoutPanel::shownBone(int i, const cutout::Pose& pose, const std::map<std::string, cutout::Affine>& setupWorld) const {
+  const auto& b = rig_->bones[size_t(i)];
+  const bool animate = mode_ == Mode::Animate;
+  const cutout::Transform local = animate && size_t(i) < pose.bones.size() ? pose.bones[size_t(i)] : b.setup;
+  cutout::Affine parent;
+  if (b.parentIndex >= 0) {
+    // Setup: the stored FK setup world (what setBone `axes` converts with); Animate: the pose shown.
+    if (animate) { if (size_t(b.parentIndex) < pose.world.size()) parent = pose.world[size_t(b.parentIndex)]; }
+    else if (auto it = setupWorld.find(rig_->bones[size_t(b.parentIndex)].id); it != setupWorld.end()) parent = it->second;
+  }
+  return cutout::toAxes(local, parent, axes_);
+}
+/**
+ * A bone field typed for the selected bones (one edit). Setup: setBone per bone, parents first, in
+ * axes_ (core converts with the current setup world, so a moved parent is taken into account) and
+ * with the compensation flags. Animate: setKey per bone and channel; world/parent values convert
+ * through the parent's world as it will be after the parents' own new values.
+ */
+void CutoutPanel::commitBoneProperty(const QString& property, double value) {
+  const bool animate = mode_ == Mode::Animate;
+  QStringList bones = selectedBones();
+  if (!rig_ || bones.isEmpty()) return;
+  // Parents first (evaluation order).
+  QHash<QString, int> rank;
+  for (size_t k = 0; k < rig_->evalOrder.size(); k++) rank[qs(rig_->bones[size_t(rig_->evalOrder[k])].id)] = int(k);
+  std::sort(bones.begin(), bones.end(), [&](const QString& a, const QString& b) { return rank.value(a) < rank.value(b); });
+  const QString single = bones.size() == 1 ? bones[0] : QString();
+  std::vector<Json> ops;
+  if (property == "length") {
+    if (animate) { setStatus("본 길이는 조립 모드에서 바꿉니다(키가 아닙니다).", true); refreshProperties(); return; }
+    for (const QString& b : bones)
+      ops.push_back({{"op", "setBone"}, {"bone", ss(b)}, {"length", std::max(0.0, relative_ ? rig_->bones[size_t(rig_->boneIndex(ss(b)))].length + value : value)}});
+    runOps(ops, false);
+    return;
+  }
+  if (animate && clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return; }
+  auto field = [&](cutout::Transform& t) -> double& {
+    return property == "x" ? t.x : property == "y" ? t.y : property == "rotation" ? t.rotation : property == "scaleX" ? t.scaleX : t.scaleY;
+  };
+  const bool spatial = axes_ != cutout::Axes::Local && (property == "x" || property == "y" || property == "rotation");
+  const cutout::Pose pose = currentPose(false);
+  const std::string axesName = axes_ == cutout::Axes::World ? "world" : axes_ == cutout::Axes::Parent ? "parent" : "local";
+  if (!animate) {
+    const auto setupWorld = cutout::setupWorld(displayData());
+    for (const QString& b : bones) {
+      cutout::Transform shown = shownBone(rig_->boneIndex(ss(b)), pose, setupWorld);
+      Json op = {{"op", "setBone"}, {"bone", ss(b)}, {ss(property), relative_ ? field(shown) + value : value}};
+      if (spatial) op["axes"] = axesName;
+      if (compensateBones_) op["compensateBones"] = true;
+      if (compensateImages_) op["compensateImages"] = true;
+      ops.push_back(op);
+    }
+    const Json before = single.isEmpty() ? Json() : *findIn(displayData(), "bones", ss(single));
+    std::optional<Json> after;
+    if (runOps(ops, false, [&](const cutout::EditResult& r) { if (const Json* b = findIn(r.data, "bones", ss(single))) after = *b; }) && after) {
+      // Remember the setup change of one bone so its existing keys can be rebased explicitly.
+      Json delta = Json::object();
+      for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) {
+        const double def = std::string(p).rfind("scale", 0) == 0 ? 1.0 : 0.0, d = after->value(p, def) - before.value(p, def);
+        if (std::fabs(d) > 1e-9) delta[p] = d;
+      }
+      if (!delta.empty()) { lastSetupDelta_ = SetupDelta{single, delta}; refreshModeUi(); }
+    }
+    return;
+  }
+  // Animate: walk parents first; a changed bone's subtree gets its new world matrices so the
+  // conversion of a selected descendant sees where its parent will be.
+  std::vector<cutout::Affine> world = pose.world;
+  std::vector<char> dirty(rig_->bones.size(), 0);
+  QSet<int> chosen;
+  for (const QString& b : bones) chosen.insert(rig_->boneIndex(ss(b)));
+  for (int i : rig_->evalOrder) {
+    const int p = rig_->bones[size_t(i)].parentIndex;
+    const cutout::Affine pw = p >= 0 ? world[size_t(p)] : cutout::Affine{};
+    if (chosen.contains(i)) {
+      const cutout::Transform local = pose.bones[size_t(i)];
+      cutout::Transform before = cutout::toAxes(local, p >= 0 ? pose.world[size_t(p)] : cutout::Affine{}, axes_), shown = cutout::toAxes(local, pw, axes_);
+      field(shown) = relative_ ? field(before) + value : value;
+      const auto back = cutout::fromAxes(shown, pw, axes_, local);
+      if (!back) { setStatus("부모 본의 크기가 0이라 이 축으로 바꿀 수 없습니다.", true); refreshProperties(); return; }
+      const std::string target = "bone:" + rig_->bones[size_t(i)].id;
+      auto key = [&](const char* prop, double v) {
+        ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", target}, {"property", prop}, {"timeMs", playheadMs_}, {"value", v}});
+      };
+      if (spatial && property != "rotation") { key("x", back->x); key("y", back->y); }
+      else if (spatial) key("rotation", back->rotation);
+      else { cutout::Transform next = *back; key(property.toUtf8().constData(), field(next)); }
+      world[size_t(i)] = pw * cutout::Affine::compose(back->x, back->y, back->rotation, back->scaleX, back->scaleY);
+      dirty[size_t(i)] = 1;
+    } else if (p >= 0 && dirty[size_t(p)]) {
+      const cutout::Transform& t = pose.local(size_t(i));
+      world[size_t(i)] = pw * cutout::Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+      dirty[size_t(i)] = 1;
+    }
+  }
+  runOps(ops, true);
 }
 void CutoutPanel::commitAttachmentChoice() {
   if (filling_ || refKind(selection_) != "slot") return;
@@ -3275,21 +3613,25 @@ bool CutoutPanel::keySelected() {
   if (!rig_ || selection_.isEmpty() || refKind(selection_) == "rig") { setStatus("키를 넣을 본이나 조각을 선택하세요(표정은 「표정 키」).", true); return false; }
   if (meshEdit_ != MeshEdit::Off && !meshSlot().isEmpty()) return keyDeform();  // editing a mesh: K keys its shape
   const cutout::Pose pose = currentPose(false);
-  const QString kind = refKind(selection_), id = refId(selection_);
   std::vector<Json> ops;
-  auto key = [&](const char* prop, const Json& v) {
-    ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(selection_)}, {"property", prop}, {"timeMs", playheadMs_}, {"value", v}});
-  };
-  if (kind == "bone") {
-    const int i = rig_->boneIndex(ss(id));
-    if (i < 0) return false;
-    const auto& t = pose.bones[size_t(i)];
-    key("x", t.x); key("y", t.y); key("rotation", t.rotation); key("scaleX", t.scaleX); key("scaleY", t.scaleY);
-  } else {
-    const int i = rig_->slotIndex(ss(id));
-    if (i < 0) return false;
-    key("attachment", pose.attachments[size_t(i)] ? Json(*pose.attachments[size_t(i)]) : Json(nullptr));
+  // Every selected item (plugin 1.7.0): bones key their 5 channels, parts their shown image. One edit.
+  for (const QString& ref : selectedItems()) {
+    const QString kind = refKind(ref), id = refId(ref);
+    auto key = [&](const char* prop, const Json& v) {
+      ops.push_back({{"op", "setKey"}, {"clip", ss(clipId_)}, {"target", ss(ref)}, {"property", prop}, {"timeMs", playheadMs_}, {"value", v}});
+    };
+    if (kind == "bone") {
+      const int i = rig_->boneIndex(ss(id));
+      if (i < 0) continue;
+      const auto& t = pose.bones[size_t(i)];
+      key("x", t.x); key("y", t.y); key("rotation", t.rotation); key("scaleX", t.scaleX); key("scaleY", t.scaleY);
+    } else if (kind == "slot") {
+      const int i = rig_->slotIndex(ss(id));
+      if (i < 0) continue;
+      key("attachment", pose.attachments[size_t(i)] ? Json(*pose.attachments[size_t(i)]) : Json(nullptr));
+    }
   }
+  if (ops.empty()) return false;
   return runOps(ops, false);
 }
 bool CutoutPanel::discardPending() {
@@ -3616,17 +3958,10 @@ bool CutoutPanel::duplicateKeys() {
 }
 bool CutoutPanel::copyPose() {
   if (!rigDoc()) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
-  // The selected bone with all of its children (a whole limb), or the whole skeleton.
+  // Exactly the selected bones (a part counts as its bone; 자식 본까지 선택 adds a whole limb), or
+  // the whole skeleton when nothing is selected.
   std::vector<std::string> bones;
-  if (const QString root = selectedBone(); !root.isEmpty()) {
-    bones.push_back(ss(root));
-    for (size_t i = 0; i < bones.size(); i++)
-      for (const auto& b : listOf(displayData(), "bones")) {
-        const std::string id = b.value("id", std::string());
-        if (b.contains("parent") && b.at("parent").is_string() && b.at("parent").get<std::string>() == bones[i] && std::find(bones.begin(), bones.end(), id) == bones.end())
-          bones.push_back(id);
-      }
-  }
+  for (const QString& b : selectedBones(true)) bones.push_back(ss(b));
   Json op = {{"op", "copyPose"}};
   if (!bones.empty()) op["bones"] = bones;
   const bool animated = mode_ == Mode::Animate && !clipId_.isEmpty();

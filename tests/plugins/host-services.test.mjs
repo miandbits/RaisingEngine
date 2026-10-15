@@ -92,6 +92,20 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   assert.ok(outline.every((v, i) => v >= 0 && v <= (i % 2 ? 60 : 40)) && outline.some((v, i) => i % 2 === 0 && v < 4) && outline.some((v, i) => i % 2 === 0 && v > 36), 'outline hugs the ellipse');
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'autoOutline', slot: 'torso' } } } });
   assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /mask/);
+  // Multi-bone transforms (plugin 1.7.0): the canvas gesture's op on the LLM path. Turning root by
+  // 90° with bone compensation leaves body where it was (its local turns the other way).
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: {
+    op: 'transformBones', bones: ['root'], delta: { rotation: 90 }, compensateBones: true } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.bones, ['root']);
+  assert.deepEqual(reply.pluginResult.rig.bones, [{ id: 'root', parent: null, x: 0, y: 0, rotation: 90 }, { id: 'body', parent: 'root', x: -100, y: 0, rotation: -90 }]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: {
+    op: 'transformBones', bones: ['body'], delta: { y: -4 }, clip: 'idle', timeMs: 500 } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual(reply.pluginResult.rig.clips[0].tracks.map(t => [t.property, t.keys.find(k => k.timeMs === 500)?.value]), [['y', -108], ['x', 0]]);
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: {
+    op: 'setBone', bone: 'body', axes: 'world', x: 30, y: -50 } } } });
+  assert.deepEqual([reply.pluginResult.ok, reply.pluginResult.rig.bones[1].x, reply.pluginResult.rig.bones[1].y], [true, 30, -50]);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });

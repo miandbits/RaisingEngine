@@ -3,6 +3,7 @@
 // locally; each reports ONE commit on release (move/scale/delete of the whole selection),
 // which the panel turns into one core edit op, so undo/redo and LLM ops stay identical.
 #pragma once
+#include <QSet>
 #include <QWidget>
 #include <functional>
 #include <optional>
@@ -70,7 +71,11 @@ class Dopesheet : public QWidget {
   std::function<void(const QString& command)> onCommand;
   /** Arrow keys: step the playhead by `steps` (Shift = 10 steps). */
   std::function<void(int steps)> onStep;
-  std::function<void(int row)> onRowSelected;
+  /** Row header / key click; add = Ctrl or Shift held (the target joins the canvas selection). */
+  std::function<void(int row, bool add)> onRowSelected;
+  /** Targets ("bone:<id>", "slot:<id>") of the editor selection: their row labels are marked. */
+  void setHighlightTargets(const QSet<QString>& targets) { if (targets != highlighted_) { highlighted_ = targets; update(); } }
+  const QSet<QString>& highlightTargets() const { return highlighted_; }
 
  protected:
   void paintEvent(QPaintEvent*) override;
@@ -90,6 +95,7 @@ class Dopesheet : public QWidget {
   struct Hit { int row = -1; QVector<int> times; };  // a lone key or a cluster
   TimeView* view_ = nullptr;
   QVector<Row> rows_;
+  QSet<QString> highlighted_;
   Drag drag_ = Drag::None;
   QPointF pressPos_, lastPos_;
   int pressTime10_ = 0, pressTime1_ = 0, delta_ = 0, pivot_ = 0, edge_ = 0;

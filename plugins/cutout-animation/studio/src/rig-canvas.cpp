@@ -542,7 +542,7 @@ void RigCanvas::outlineSlot(QPainter& p, int si) const {
 // Hover cue: a thin light outline (part) or ring (handle) on what a click would pick, so a
 // crosshair over an image visibly wins before the press.
 void RigCanvas::paintHover(QPainter& p) {
-  if (hoverRef_.isEmpty() || hoverRef_ == selection_ || drag_ || panning_) return;
+  if (hoverRef_.isEmpty() || isSelected(hoverRef_) || drag_ || panning_ || band_) return;
   const QString id = hoverRef_.section(':', 1);
   p.setPen(QPen(QColor(255, 255, 255, 200), 1.5));
   p.setBrush(Qt::NoBrush);
@@ -563,7 +563,7 @@ void RigCanvas::paintBones(QPainter& p) {
     const auto& w = pose_.world[i];
     const QPointF at = rigToWidget(QPointF(w.e, w.f));
     const QString ref = "bone:" + qs(rig_->bones[i].id);
-    const bool selected = ref == selection_, hovered = ref == hoverRef_ && !drag_;
+    const bool selected = isSelected(ref), hovered = ref == hoverRef_ && !drag_;
     const int parent = rig_->bones[i].parentIndex;
     if (parent >= 0) {
       // A child starting at its parent's tip needs no link (the bodies already join).
@@ -639,13 +639,19 @@ void RigCanvas::paintEvent(QPaintEvent*) {
     if (pose_.world.size() == rig_->bones.size()) {
       // Selected part outline.
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
-      for (size_t i = 0; i < rig_->slots.size(); i++) if ("slot:" + qs(rig_->slots[i].id) == selection_) outlineSlot(p, int(i));
+      for (size_t i = 0; i < rig_->slots.size(); i++) if (isSelected("slot:" + qs(rig_->slots[i].id))) outlineSlot(p, int(i));
       paintIk(p);
       paintBones(p);
     }
     if (pose_.world.size() == rig_->bones.size()) paintHover(p);
     paintMesh(p);
     paintOutline(p);
+    if (band_) {
+      p.setPen(QPen(SELECT_COLOR, 1, Qt::DashLine));
+      p.setBrush(QColor(255, 211, 77, 30));
+      p.drawRect(band_->normalized());
+      p.setBrush(Qt::NoBrush);
+    }
     if (drag_ && drag_->moved && (drag_->tool == Rotate || drag_->tool == Scale)) {
       p.setPen(QPen(SELECT_COLOR, 1, Qt::DotLine));
       p.drawLine(rigToWidget(drag_->origin), rigToWidget(drag_->current));
@@ -678,7 +684,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
                  : meshMode_ == MeshVertices ? QString("메시 정점: 클릭·Shift+클릭 선택 · 빈 곳 끌기 상자 선택 · 정점 끌기로 이동") + (animate_ ? " (K로 변형 키)" : " · Delete 정점 삭제")
                        : meshMode_ == MeshWeights ? QString("웨이트 칠하기: 끌어서 붓으로 칠함 · 색 = 고른 본의 웨이트(파랑 0 → 빨강 1)")
                        : tool_ == Create ? QString("본 만들기: 끌어서 고른 본의 자식 본(길이·방향) · 클릭 = 점 본 · 본 원점 클릭 = 부모 고르기 · Shift 15° 스냅")
-                                         : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Shift 미세 조정/15° 스냅 · Alt+클릭 겹친 항목 차례로").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
+                                         : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Ctrl/Shift+클릭 여러 개 선택 · 빈 곳 끌기 상자 선택 · 끄는 중 Shift 미세 조정/15° 스냅 · Alt+클릭 겹친 항목 차례로").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
   // What a click would pick (handles beat images): named so an overlap is never a surprise.
   const QString kind = hoverRef_.startsWith("slot:") ? "조각" : rig_ && isIkTarget(rig_->boneIndex(ss(hoverRef_.section(':', 1)))) ? "IK 대상" : "본";
   if (!hoverRef_.isEmpty()) hint = QString("가리킴: %1 %2 · ").arg(kind, hoverRef_.section(':', 1)) + hint;
@@ -715,12 +721,26 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
     update();
     return;
   }
+  // Multi-selection (plugin 1.7.0): Ctrl/Shift+click toggles an item; with the Move tool a press
+  // on empty space starts a box selection (Ctrl/Shift = add), so left-drag no longer pans there.
+  const bool adding = e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
+  if (tool_ != Pivot && adding && !hit.isEmpty()) { if (onToggleSelect) onToggleSelect(hit); return; }
+  if (tool_ == Move && hit.isEmpty()) {
+    band_ = QRectF(e->position(), e->position());
+    bandAdd_ = adding;
+    update();
+    return;
+  }
   // Move picks what is under the cursor; rotate/scale keep working on the selection unless a
   // bone handle is clicked, so a drag that starts over another image still turns the chosen bone.
   QString target = selection_;
   if (tool_ == Move) target = hit;
   else if (tool_ != Pivot && !hit.isEmpty() && (hit.startsWith("bone:") || selection_.isEmpty())) target = hit;
-  if (target != selection_ && onSelect) onSelect(target);
+  // A press on a member of a multi-selection keeps the whole selection (the drag moves all of
+  // it); a plain click there (no drag) keeps only that item, on release.
+  pendingSingle_.clear();
+  if (multi_.size() > 1 && multi_.contains(target)) pendingSingle_ = target;
+  else if (target != selection_ && onSelect) onSelect(target);
   if (tool_ == Pivot && selection_.isEmpty() && !hit.isEmpty()) return;  // first click only selects
   if (target.isEmpty()) {
     panning_ = true; panStart_ = e->position(); panOrigin_ = pan_;
@@ -742,6 +762,7 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
   update();
 }
 void RigCanvas::mouseMoveEvent(QMouseEvent* e) {
+  if (band_) { band_->setBottomRight(e->position()); update(); return; }
   if (panning_) {
     pan_ = panOrigin_ + (e->position() - panStart_);
     autoFit_ = false;
@@ -764,6 +785,16 @@ void RigCanvas::mouseMoveEvent(QMouseEvent* e) {
   update();
 }
 void RigCanvas::mouseReleaseEvent(QMouseEvent* e) {
+  if (band_) {
+    const QRectF r = band_->normalized();
+    band_.reset();
+    // A click (no drag) on empty space clears the selection; a real box selects the bones inside.
+    if (r.width() + r.height() <= 4) { if (!bandAdd_ && onSelect) onSelect(QString()); }
+    else if (onBoxSelect) onBoxSelect(bonesIn(r), bandAdd_);
+    updateHover(e->position(), e->modifiers() & Qt::AltModifier);
+    update();
+    return;
+  }
   if (panning_) { panning_ = false; return; }
   if (meshGesture_ != MeshGesture::None) { meshRelease(e->position()); return; }
   if (!drag_) return;
@@ -773,6 +804,8 @@ void RigCanvas::mouseReleaseEvent(QMouseEvent* e) {
   drag_.reset();
   // Pivot placement and bone creation are clicks too; other tools commit only real drags (a click just selects).
   if ((d.moved || d.tool == Pivot || d.tool == Create) && onDrag) onDrag(d, true);
+  else if (!d.moved && !pendingSingle_.isEmpty() && onSelect) onSelect(pendingSingle_);
+  pendingSingle_.clear();
   updateHover(e->position(), e->modifiers() & Qt::AltModifier);
   update();
 }
@@ -807,6 +840,7 @@ void RigCanvas::keyPressEvent(QKeyEvent* e) {
   if (meshMode_ == MeshVertices && (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) && onMeshDelete) { onMeshDelete(); return; }
   const int tools[] = {Qt::Key_V, Qt::Key_R, Qt::Key_S, Qt::Key_P, Qt::Key_C};
   for (int i = 0; i < TOOL_COUNT; i++) if (e->key() == tools[i] && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) { if (onTool) onTool(i); return; }
+  if (e->key() == Qt::Key_A && e->modifiers() == Qt::ControlModifier && onSelectAll) { onSelectAll(); return; }
   if (e->key() == Qt::Key_K && onKey) { onKey(); return; }
   if (e->key() == Qt::Key_O && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier)) && onOnion) { onOnion(); return; }
   if (e->key() == Qt::Key_F) { fitToCanvas(); return; }
@@ -816,6 +850,23 @@ void RigCanvas::keyPressEvent(QKeyEvent* e) {
 void RigCanvas::keyReleaseEvent(QKeyEvent* e) {
   if (e->key() == Qt::Key_Alt && hoverInside_) { updateHover(hoverAt_, false); return; }
   QWidget::keyReleaseEvent(e);
+}
+// Ctrl+A (all bones) belongs to the focused canvas. Ctrl+Shift+A is deliberately left to the host:
+// it is the workspace toggle, which must work from the canvas (it has the focus in the workspace);
+// 자식 본까지 선택 is Ctrl+Shift+A in the hierarchy and the 선택 menu.
+bool RigCanvas::event(QEvent* e) {
+  if (e->type() == QEvent::ShortcutOverride) {
+    auto* k = static_cast<QKeyEvent*>(e);
+    if (k->key() == Qt::Key_A && k->modifiers() == Qt::ControlModifier) { e->accept(); return true; }
+  }
+  return QWidget::event(e);
+}
+QStringList RigCanvas::bonesIn(const QRectF& r) const {
+  QStringList out;
+  if (!rig_ || pose_.world.size() != rig_->bones.size()) return out;
+  for (size_t i = 0; i < rig_->bones.size(); i++)
+    if (r.contains(rigToWidget(QPointF(pose_.world[i].e, pose_.world[i].f)))) out << "bone:" + qs(rig_->bones[i].id);
+  return out;
 }
 void RigCanvas::leaveEvent(QEvent*) {
   hoverInside_ = false;

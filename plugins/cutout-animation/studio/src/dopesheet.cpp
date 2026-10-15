@@ -166,6 +166,8 @@ void Dopesheet::paintEvent(QPaintEvent*) {
   for (int r = 0; r < rows_.size(); r++) {
     const int y = rowTop(r);
     p.fillRect(QRect(0, y, width(), ROW), r % 2 ? QColor("#22282f") : QColor("#262c33"));
+    // Rows of the canvas/tree selection (plugin 1.7.0, shared editor selection) are marked.
+    if (highlighted_.contains(rows_[r].target)) p.fillRect(QRect(0, y, LABEL, ROW), QColor(255, 211, 77, 48));
     p.setPen(QColor("#d0d6dc"));
     p.drawText(QRect(6, y, LABEL - 10, ROW), Qt::AlignLeft | Qt::AlignVCenter, fontMetrics().elidedText(rows_[r].label, Qt::ElideMiddle, LABEL - 10));
   }
@@ -309,7 +311,7 @@ void Dopesheet::mousePressEvent(QMouseEvent* e) {
     const int r = rowAt(int(pos.y()));
     if (r < 0) return;
     if (ctrl || shift) view_->add(rowKeys(r)); else view_->setSelection(rowKeys(r));
-    if (onRowSelected) onRowSelected(r);
+    if (onRowSelected) onRowSelected(r, ctrl || shift);
     return;
   }
   const Hit hit = hitAt(pos);
@@ -325,7 +327,7 @@ void Dopesheet::mousePressEvent(QMouseEvent* e) {
     // Column: every key at that time across all rows.
     const QVector<KeyRef> column = keysAt(pickInCluster(hit).timeMs);
     if (ctrl || shift) view_->add(column); else view_->setSelection(column);
-    if (onRowSelected) onRowSelected(hit.row);
+    if (onRowSelected) onRowSelected(hit.row, ctrl || shift);
     return;
   }
   if (ctrl) {
@@ -345,7 +347,7 @@ void Dopesheet::mousePressEvent(QMouseEvent* e) {
   else if (hit.times.size() > 1 || !view_->isSelected(ref)) view_->setSelection({ref});  // cluster click cycles
   else if (view_->selection().size() > 1) pendingSingle_ = ref;  // click (no drag) on a selected key keeps only it
   drag_ = Drag::Keys;
-  if (onRowSelected) onRowSelected(hit.row);
+  if (onRowSelected) onRowSelected(hit.row, ctrl || shift);
 }
 void Dopesheet::mouseMoveEvent(QMouseEvent* e) {
   const QPointF pos = e->position();

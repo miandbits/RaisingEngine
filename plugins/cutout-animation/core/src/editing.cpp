@@ -418,17 +418,206 @@ void addBone(EditResult& r, const Json& op) {
   arr(d, "bones").push_back(b);
   r.affected.push_back("bone:" + id);
 }
+/** `axes` of setBone (plugin 1.7.0): the space its x/y/rotation are given in. */
+Axes axesOf(const Json& op) {
+  if (!has(op, "axes")) return Axes::Local;
+  const auto a = op.at("axes").is_string() ? parseAxes(op.at("axes").get<Str>()) : std::nullopt;
+  if (!a) throw EditError("axes는 local, parent, world 중 하나입니다.");
+  return *a;
+}
+bool flag(const Json& op, const char* k) { return has(op, k) && op.at(k) == true; }
+/**
+ * Bone / image compensation (plugin 1.7.0, Spine "보정", setup pose only): the bones in `changed`
+ * got new setup transforms; their direct children that are not in `keep` (the selection, which
+ * moves on purpose) get local = newParentWorld^-1 · oldWorld, so they (and everything below them)
+ * stay where they were, and with `images` every attachment of their slots (default and skins) is
+ * re-placed the same way. `before` is the data before the change. Values use the fine rounding:
+ * the drawn result must stay within 1e-6 px.
+ */
+void compensate(EditResult& r, const Json& before, const std::set<Str>& changed, const std::set<Str>& keep, bool bones, bool images) {
+  if ((!bones && !images) || changed.empty()) return;
+  Json& d = r.data;
+  const auto oldWorld = setupWorld(before), newWorld = setupWorld(d);
+  bool skewed = false, keyed = false;
+  auto rebase = [&](const Str& parent, const Affine& oldInParent, const Transform& hint) {
+    double skew = 0;
+    const Transform t = decomposeNear(inverseOr(newWorld.at(parent), "본") * oldWorld.at(parent) * oldInParent, hint, &skew);
+    skewed = skewed || skew > 1e-6;
+    return t;
+  };
+  if (bones)
+    for (auto& c : arr(d, "bones")) {
+      const Str id = c.value("id", Str()), parent = parentOf(c);
+      if (!changed.count(parent) || keep.count(id) || !oldWorld.count(parent) || !newWorld.count(parent)) continue;
+      writeT(c, rebase(parent, local(readT(c)), readT(c)), fine);
+      keyed = keyed || targetHasKeys(d, "bone:" + id);
+      for (const auto& e : listOr(d, "expressions")) keyed = keyed || (e.contains("bones") && e.at("bones").is_object() && e.at("bones").contains(id));
+      r.affected.push_back("bone:" + id);
+    }
+  if (images) {
+    std::map<Str, Str> slotBone;
+    for (const auto& s : arr(d, "slots")) if (changed.count(s.value("bone", Str()))) slotBone[s.value("id", Str())] = s.value("bone", Str());
+    auto place = [&](Json& list) {
+      for (auto& a : list) {
+        if (!a.is_object() || !slotBone.count(a.value("slot", Str()))) continue;
+        const Str b = slotBone[a.value("slot", Str())];
+        if (!oldWorld.count(b) || !newWorld.count(b)) continue;
+        writeT(a, rebase(b, local(readT(a)), readT(a)), fine);
+        r.affected.push_back("slot:" + a.value("slot", Str()));
+      }
+    };
+    place(arr(d, "attachments"));
+    if (d.contains("skins") && d["skins"].is_array())
+      for (auto& sk : d["skins"]) if (sk.is_object() && sk.contains("attachments") && sk["attachments"].is_array()) place(sk["attachments"]);
+  }
+  if (skewed) warn(r, "ANIM_COMPENSATE_SKEW", "", "비균일 크기 때문에 보정한 자식·그림에 기울임이 생겨 조금 달라질 수 있습니다.");
+  if (keyed) warn(r, "ANIM_COMPENSATE_KEYS", "", "보정한 자식 본의 기존 키·표정 값은 이전 기본 자세 기준입니다(보정은 기본 자세만 바꿉니다).");
+}
 void setBone(EditResult& r, const Json& op) {
   const Str id = reqStr(op, "bone");
+  const bool compBones = flag(op, "compensateBones"), compImages = flag(op, "compensateImages");
+  const Json before = compBones || compImages ? r.data : Json();
   Json& b = bone(r.data, id);
   Transform t = readT(b);
-  t.x = num(op, "x", t.x); t.y = num(op, "y", t.y); t.rotation = num(op, "rotation", t.rotation);
+  if (const Axes axes = axesOf(op); axes != Axes::Local && (has(op, "x") || has(op, "y") || has(op, "rotation"))) {
+    // Values given in parent/world axes are converted through the parent's setup world.
+    const Str parent = parentOf(b);
+    const Affine pw = parent.empty() ? Affine{} : setupWorld(r.data).at(parent);
+    Transform shown = toAxes(t, pw, axes);
+    shown.x = num(op, "x", shown.x); shown.y = num(op, "y", shown.y); shown.rotation = num(op, "rotation", shown.rotation);
+    const auto back = fromAxes(shown, pw, axes, t);
+    if (!back) throw EditError("부모 본의 크기가 0이라 " + optStr(op, "axes") + " 값으로 바꿀 수 없습니다.");
+    t.x = back->x; t.y = back->y; t.rotation = back->rotation;
+  } else { t.x = num(op, "x", t.x); t.y = num(op, "y", t.y); t.rotation = num(op, "rotation", t.rotation); }
   t.scaleX = num(op, "scaleX", t.scaleX); t.scaleY = num(op, "scaleY", t.scaleY);
   writeT(b, t);
   const bool hadLength = boneLength(b) > 0;
   writeLook(b, op);
   if (!hadLength && boneLength(bone(r.data, id)) > 0) pinLimbTips(r, id);
+  compensate(r, before, {id}, {id}, compBones, compImages);
   r.affected.push_back("bone:" + id);
+}
+/**
+ * transformBones {bones, delta: {x?, y?, rotation?, scaleX?, scaleY?}, space?, pivot?, clip?, timeMs?,
+ * compensateBones?, compensateImages?} (plugin 1.7.0): one gesture on a bone selection; the canvas
+ * drag of a selection (one bone or many) and the LLM share it.
+ * - x/y: a translation in rig px (`space` "world", default) or added to the local x/y ("parent").
+ *   Only the topmost selected bones move: a selected descendant already follows its parent.
+ * - rotation (degrees, clockwise on screen) / scaleX, scaleY (factors) about `pivot`:
+ *   "origin" (default): every selected bone turns / scales about its own origin (local rotation
+ *   += δ, a mirrored parent flips the sign; local scale ×= f), so a selected chain curls;
+ *   "centroid" (the mean of the selected bones' origins) or {x, y} (rig px): the topmost bones turn
+ *   as a group (origins rotated / scaled about the pivot in rig axes, rotation += δ, scale ×= f).
+ * Values come from the pose shown (FK + IK, no expressions); with `clip` + `timeMs` the result is
+ * keyed there (x+y, rotation, scaleX+scaleY: the channel groups that change), otherwise the setup
+ * pose is edited. compensateBones / compensateImages keep unselected children / attached images in
+ * place (setup pose only; with a clip they are ignored, warning ANIM_COMPENSATE_SETUP_ONLY).
+ * extra.bones = the bones that changed.
+ */
+void setKey(EditResult& r, const Json& op);
+void transformBones(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  if (!has(op, "bones") || !op.at("bones").is_array() || op.at("bones").empty()) throw EditError("bones는 바꿀 본 ID 배열입니다.");
+  std::vector<Str> ids;
+  for (const auto& v : op.at("bones")) {
+    const Str id = v.is_string() ? v.get<Str>() : Str();
+    bone(d, id);
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+  }
+  const std::set<Str> selected(ids.begin(), ids.end());
+  const Json delta = has(op, "delta") ? op.at("delta") : Json::object();
+  if (!delta.is_object()) throw EditError("delta는 {x, y, rotation, scaleX, scaleY} 객체입니다.");
+  const double dx = num(delta, "x", 0), dy = num(delta, "y", 0), dr = num(delta, "rotation", 0), fx = num(delta, "scaleX", 1), fy = num(delta, "scaleY", 1);
+  if (fx == 0 || fy == 0) throw EditError("크기 배율은 0이 될 수 없습니다.");
+  const Str space = optStr(op, "space", "world");
+  if (space != "world" && space != "parent") throw EditError("space는 world 또는 parent입니다.");
+  Rig rig;
+  try { rig = parseRig("transform", d); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+  for (auto& c : rig.clips) c.loop = false;  // a key at the clip's end samples the end pose, not time 0
+  const bool animate = has(op, "clip");
+  int64_t t = 0;
+  if (animate) {
+    t = ms(op, "timeMs");
+    const Json& c = clip(d, reqStr(op, "clip"));
+    if (t < 0 || t > c.value("durationMs", int64_t(0))) throw EditError("키 시간이 클립 범위 밖입니다.");
+  }
+  Look look;
+  look.expressions = false;  // keyable values, as the properties panel shows them
+  const Pose pose = samplePose(rig, animate ? rig.clipIndex(optStr(op, "clip")) : -1, double(t), look);
+  auto parentWorld = [&](int i) { const int p = rig.bones[size_t(i)].parentIndex; return p >= 0 ? pose.world[size_t(p)] : Affine{}; };
+  // Pivot: each bone's own origin, the selection centroid, or a rig-space point.
+  bool group = false;
+  double cx = 0, cy = 0;
+  if (has(op, "pivot") && op.at("pivot").is_object()) { group = true; cx = num(op.at("pivot"), "x", 0); cy = num(op.at("pivot"), "y", 0); }
+  else if (const Str pivot = optStr(op, "pivot", "origin"); pivot == "centroid") {
+    group = true;
+    for (const Str& id : ids) { const auto& w = pose.world[size_t(rig.boneIndex(id))]; cx += w.e / double(ids.size()); cy += w.f / double(ids.size()); }
+  } else if (pivot != "origin") throw EditError("pivot은 origin, centroid 또는 {x, y}입니다.");
+  auto topmost = [&](int i) {
+    for (int p = rig.bones[size_t(i)].parentIndex, guard = 0; p >= 0 && guard++ < int(rig.bones.size()); p = rig.bones[size_t(p)].parentIndex)
+      if (selected.count(rig.bones[size_t(p)].id)) return false;
+    return true;
+  };
+  struct Change { Str id; Transform next; bool moved, turned, scaled; };
+  std::vector<Change> changes;
+  for (const Str& id : ids) {
+    const int i = rig.boneIndex(id);
+    const bool top = topmost(i);
+    if (group && !top) continue;  // follows its selected ancestor as part of the group
+    const Transform cur = pose.bones[size_t(i)];
+    Transform next = cur;
+    const Affine pw = parentWorld(i);
+    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1;
+    next.rotation += sign * dr;
+    next.scaleX *= fx;
+    next.scaleY *= fy;
+    double wx = pose.world[size_t(i)].e, wy = pose.world[size_t(i)].f;
+    if (group) {
+      // The origin turns and scales about the pivot in rig axes.
+      const double ox = (wx - cx) * fx, oy = (wy - cy) * fy, cs = std::cos(dr * PI / 180), sn = std::sin(dr * PI / 180);
+      wx = cx + cs * ox - sn * oy;
+      wy = cy + sn * ox + cs * oy;
+    }
+    const bool translate = top && (dx != 0 || dy != 0);
+    if (translate && space == "world") { wx += dx; wy += dy; }
+    if (group || (translate && space == "world")) {
+      const auto inv = pw.inverse();
+      if (!inv) throw EditError("본 「" + id + "」의 부모 크기가 0이라 옮길 수 없습니다.");
+      inv->apply(wx, wy, next.x, next.y);
+    }
+    if (translate && space == "parent") { next.x += dx; next.y += dy; }
+    const bool moved = translate || std::fabs(next.x - cur.x) > 1e-9 || std::fabs(next.y - cur.y) > 1e-9;
+    const bool turned = dr != 0, scaled = fx != 1 || fy != 1;
+    if (moved || turned || scaled) changes.push_back({id, next, moved, turned, scaled});
+  }
+  if (changes.empty()) throw EditError("바뀐 본이 없습니다(delta가 비어 있습니다).");
+  const bool compBones = flag(op, "compensateBones"), compImages = flag(op, "compensateImages");
+  std::vector<Str> changed;
+  if (animate) {
+    if (compBones || compImages) warn(r, "ANIM_COMPENSATE_SETUP_ONLY", "", "본·이미지 보정은 조립(기본 자세)에서만 적용됩니다. 키에는 적용하지 않았습니다.");
+    const Str clipId = reqStr(op, "clip");
+    for (const auto& c : changes) {
+      auto key = [&](const char* prop, double v) { setKey(r, {{"clip", clipId}, {"target", "bone:" + c.id}, {"property", prop}, {"timeMs", t}, {"value", v}}); };
+      if (c.moved) { key("x", c.next.x); key("y", c.next.y); }
+      if (c.turned) key("rotation", c.next.rotation);
+      if (c.scaled) { key("scaleX", c.next.scaleX); key("scaleY", c.next.scaleY); }
+      changed.push_back(c.id);
+    }
+  } else {
+    const Json before = compBones || compImages ? d : Json();
+    for (const auto& c : changes) {
+      Json& b = bone(d, c.id);
+      Transform s = readT(b);
+      if (c.moved) { s.x = c.next.x; s.y = c.next.y; }
+      if (c.turned) s.rotation = c.next.rotation;
+      if (c.scaled) { s.scaleX = c.next.scaleX; s.scaleY = c.next.scaleY; }
+      writeT(b, s);
+      r.affected.push_back("bone:" + c.id);
+      changed.push_back(c.id);
+    }
+    compensate(r, before, std::set<Str>(changed.begin(), changed.end()), selected, compBones, compImages);
+  }
+  r.extra["bones"] = changed;
 }
 void reparentBone(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -2812,7 +3001,7 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     return;
   }
   static const std::map<Str, void (*)(EditResult&, const Json&)> simple = {
-    {"addBone", addBone}, {"setBone", setBone}, {"reparentBone", reparentBone}, {"setPivot", setPivot}, {"deleteBone", deleteBone},
+    {"addBone", addBone}, {"setBone", setBone}, {"transformBones", transformBones}, {"reparentBone", reparentBone}, {"setPivot", setPivot}, {"deleteBone", deleteBone},
     {"addPart", addPart}, {"setSlot", setSlot}, {"setAttachment", setAttachment}, {"deleteSlot", deleteSlot}, {"moveSlot", moveSlot},
     {"setKey", setKey}, {"deleteKey", deleteKey}, {"moveKey", moveKey}, {"setInterp", setInterp}, {"setCurve", setCurve},
     {"moveKeys", moveKeys}, {"scaleKeys", scaleKeys}, {"deleteKeys", deleteKeys}, {"copyKeys", copyKeys}, {"pasteKeys", pasteKeys},
@@ -2888,6 +3077,57 @@ Transform decompose(const Affine& m, double* skew) {
     *skew = std::fabs(m.c + std::sin(r) * t.scaleY) + std::fabs(m.d - std::cos(r) * t.scaleY);
   }
   return t;
+}
+
+std::optional<Axes> parseAxes(const std::string& name) {
+  if (name == "local") return Axes::Local;
+  if (name == "parent") return Axes::Parent;
+  if (name == "world") return Axes::World;
+  return std::nullopt;
+}
+namespace {
+/** Bring `deg` within ±180 of `near` (rotation fields interpolate numerically: no 360 jumps). */
+double unwrapNear(double deg, double near) {
+  while (deg - near > 180) deg -= 360;
+  while (deg - near < -180) deg += 360;
+  return deg;
+}
+double parentAngle(const Affine& p) { return std::atan2(p.b, p.a) * 180 / PI; }
+double parentSign(const Affine& p) { return p.a * p.d - p.b * p.c < 0 ? -1 : 1; }
+}  // namespace
+Transform toAxes(const Transform& t, const Affine& parent, Axes axes) {
+  if (axes == Axes::Local) return t;
+  Transform out = t;
+  double wx, wy;
+  parent.apply(t.x, t.y, wx, wy);
+  // The bone's +x axis (before its own scale) on screen: the world rotation a user sees.
+  const double r = t.rotation * PI / 180, dx = parent.a * std::cos(r) + parent.c * std::sin(r), dy = parent.b * std::cos(r) + parent.d * std::sin(r);
+  const double pa = parentAngle(parent), world = unwrapNear(std::atan2(dy, dx) * 180 / PI, pa + parentSign(parent) * t.rotation);
+  if (axes == Axes::World) { out.x = wx; out.y = wy; out.rotation = world; return out; }
+  // Parent: offset from the parent origin along the parent's (unscaled) axes, angle from its +x.
+  const double ox = wx - parent.e, oy = wy - parent.f, c = std::cos(pa * PI / 180), s = std::sin(pa * PI / 180);
+  out.x = c * ox + s * oy;
+  out.y = -s * ox + c * oy;
+  out.rotation = world - pa;
+  return out;
+}
+std::optional<Transform> fromAxes(const Transform& shown, const Affine& parent, Axes axes, const Transform& hint) {
+  if (axes == Axes::Local) return shown;
+  const auto inv = parent.inverse();
+  if (!inv) return std::nullopt;
+  double wx = shown.x, wy = shown.y, world = shown.rotation;
+  if (axes == Axes::Parent) {
+    const double pa = parentAngle(parent), c = std::cos(pa * PI / 180), s = std::sin(pa * PI / 180);
+    wx = parent.e + c * shown.x - s * shown.y;
+    wy = parent.f + s * shown.x + c * shown.y;
+    world = shown.rotation + pa;
+  }
+  Transform out = shown;
+  inv->apply(wx, wy, out.x, out.y);
+  // The local direction that the parent maps onto the shown world direction.
+  const double r = world * PI / 180, dx = inv->a * std::cos(r) + inv->c * std::sin(r), dy = inv->b * std::cos(r) + inv->d * std::sin(r);
+  out.rotation = unwrapNear(std::atan2(dy, dx) * 180 / PI, hint.rotation);
+  return out;
 }
 
 std::map<std::string, Affine> setupWorld(const Json& rig) {

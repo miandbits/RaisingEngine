@@ -79,6 +79,57 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * Editor-only visibility (eye icon) is never stored. Hiding a part in the game is
   `attachment: null` or `alpha: 0`, both keyable.
 
+## Multi-bone selection, compensation and axis spaces (plugin 1.7.0)
+
+* No data change: selection, pivot mode, axis mode, relative input and the compensation toggles
+  are editor state (never stored). 1.7.0 adds edit ops and op flags only; every document plays
+  as before.
+* `transformBones {bones, delta: {x?, y?, rotation?, scaleX?, scaleY?}, space? = "world",
+  pivot? = "origin", clip?, timeMs?, compensateBones?, compensateImages?}` — one canvas gesture on
+  a bone selection (one bone or many; the LLM `edit` op gets the same op):
+  * `x`/`y`: a translation in rig px (`space: "world"`) or added to the local x/y (`"parent"`).
+    Only the **topmost** selected bones move (a selected descendant already follows its parent).
+  * `rotation` (degrees, clockwise on screen) and `scaleX`/`scaleY` (factors) about the pivot.
+    `pivot: "origin"`: every selected bone turns/scales about its own origin (local rotation
+    += δ, flipped under a mirrored parent; local scale ×= f), so a selected chain curls (Spine).
+    `pivot: "centroid"` (mean of the selected bones' origins) or `{x, y}` (rig px): the topmost
+    selected bones turn as one piece — their origins rotate/scale about the pivot in rig axes,
+    rotation += δ, scale ×= f; selected descendants follow unchanged.
+  * Values come from the pose the editor shows (forward kinematics + IK, no expressions). With
+    `clip` + `timeMs` the result is keyed (x+y, rotation, scaleX+scaleY: the channel groups that
+    change; existing keys keep their interpolation), otherwise the setup pose changes.
+    `extra.bones` lists the bones that changed. Refused: no/unknown bones, empty delta, zero scale
+    factor, unknown `pivot`/`space`, key time out of range.
+* **Compensation** (Spine "본 보정 / 이미지 보정", **setup pose only**): `compensateBones` /
+  `compensateImages` on `setBone` and `transformBones`. After the bones change, every direct
+  child bone that is not itself selected gets `local = newParentWorld⁻¹ · oldWorld` (so it and
+  its whole subtree stay put), and every attachment of the changed bones' slots — default list
+  and every skin — is re-placed the same way (offset x/y/rotation/scale). Values are rounded to
+  1e-9 so world poses stay within 1e-6. Keys and expression overrides are **not** rewritten
+  (they are absolute values in the old frame: warning `ANIM_COMPENSATE_KEYS`); non-uniform scale
+  can only be approximated (decomposition drops skew: `ANIM_COMPENSATE_SKEW`). With `clip` the
+  flags are ignored with warning `ANIM_COMPENSATE_SETUP_ONLY` (Spine compensates setup only; an
+  animator moving a parent wants the children to follow).
+* **Axis spaces** (`cutout::toAxes` / `fromAxes`; `setBone {axes: "local" | "parent" |
+  "world"}`): values are always stored local; `axes` only says in which space `x`/`y`/`rotation`
+  are given (channels left out keep their shown value; scale is always local).
+  * local: as stored (x/y in the parent's space, rotation relative to the parent).
+  * world: x/y = the origin in rig px, rotation = the on-screen angle of the bone's +x axis
+    (`parentWorld · R(rotation) · (1, 0)`), kept within ±180° of the parent angle + local value.
+  * parent: x/y = the origin's offset from the parent origin along the parent's **unscaled**
+    axes (px), rotation = the angle from the parent's +x axis — equal to local under an unscaled
+    parent. `setBone` converts with the setup world as it is at that op, so a `batch` processing
+    parents first sees each moved parent. Singular parent = refused.
+* Editor: Ctrl/Shift+click (canvas, hierarchy, dopesheet row) toggles items; with the Move tool a
+  drag on empty space is a box selection of bone origins (Ctrl/Shift adds; a click on empty space
+  clears; right/middle drag still pans); Ctrl+A (canvas or hierarchy) = all bones, Ctrl+Shift+A
+  (hierarchy only: on the canvas it stays the host's workspace toggle) = add every descendant of
+  the selected bones; both are also in the `선택 ▾` menu. Pressing a member of a multi-selection drags all
+  of it (`transformBones`), a plain click on it keeps only it. The numeric fields edit every
+  selected bone (one batch of `setBone` parents first, or `setKey` in Animate), show `—` where
+  values differ, and either set (absolute) or add (`상대값 입력`) the typed value. `K` keys every
+  selected bone (5 channels) and part (attachment); pose copy takes exactly the selected bones.
+
 ## Skins (plugin 1.2.0)
 
 * `skins: [{id, name?, attachments: [<attachment>]}]` — outfit/variant sets. Skin attachments

@@ -851,9 +851,14 @@ class StudioTests : public QObject {
     QVERIFY(!keyOf("joy", "bone:arm", "rotation", 400).is_null() && !keyOf("joy", "bone:arm", "rotation", 420).is_null());
     QCOMPARE(panel->clipboardKeys(), 2);
 
-    // Pose copy/paste: head + its child arm at joy 600 ms become keys at timing 4000 ms.
+    // Pose copy/paste: head + its child arm at joy 600 ms become keys at timing 4000 ms. The copy
+    // takes exactly the selection (plugin 1.7.0): one bone alone, then 자식 본까지 (hierarchy Ctrl+Shift+A).
     panel->selectItem("bone:head");
     panel->setPlayhead(600);
+    QVERIFY(gesture("copy pose of one bone (no edit)", 0, [&] { click("cutoutCopyPose"); }));
+    QVERIFY(panel->status().contains("본 1개"));
+    QTest::keyClick(find<QTreeWidget>("cutoutBoneTree"), Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);  // hierarchy: 자식 본까지
+    QCOMPARE(panel->selectedBones(), QStringList({"head", "arm"}));
     QVERIFY(gesture("copy pose (no edit)", 0, [&] { click("cutoutCopyPose"); }));
     QVERIFY(panel->status().contains("본 2개"));
     const auto parsed = cutout::parseRig("hero", rig());
@@ -1616,7 +1621,7 @@ class StudioTests : public QObject {
     QVERIFY(panel->dopesheet()->rows()[rowOf("ik:elbow-ik", "mix")].label.contains("혼합"));
     // Clicking an IK row shows its constraint (IK page) and its mix curve in the graph.
     panel->dopesheet()->selectKey(rowOf("ik:elbow-ik", "mix"), 100);
-    panel->dopesheet()->onRowSelected(rowOf("ik:elbow-ik", "mix"));
+    panel->dopesheet()->onRowSelected(rowOf("ik:elbow-ik", "mix"), false);
     pump();
     QVERIFY(panel->selection().isEmpty() && panel->ikId() == "elbow-ik");
     QCOMPARE(find<QTabWidget>("cutoutLookTabs")->currentIndex(), 2);
@@ -2515,6 +2520,327 @@ class StudioTests : public QObject {
     for (int i = host.edits - editsBefore; i > 0; i--) undo();
     QVERIFY(rig() == start);
     panel->setTool(RigCanvas::Move);
+  }
+
+  // Multi-selection (plugin 1.7.0): Ctrl/Shift/box selection shared by canvas, tree, properties
+  // and dopesheet; one transformBones edit per multi-bone drag (own origins or the centroid),
+  // compensation toggles, mixed/relative/world fields, multi K and pose copy, undo/redo.
+  void multiSelectionAndCompensation() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+    panel->setTool(RigCanvas::Move);
+    pump();
+    RigCanvas* canvas = panel->canvas();
+    auto* tree = find<QTreeWidget>("cutoutBoneTree");
+    canvas->fitToCanvas();
+    pump();
+    const Json start = rig();
+    const int editsBefore = host.edits;
+    constexpr double PI = 3.14159265358979323846;
+    auto boneOf = [&](const char* id) { const Json data = rig(); for (const auto& b : data["bones"]) if (b["id"] == id) return b; return Json(); };
+    auto widgetOf = [&](const char* id) { return canvas->rigToWidget(world(id)); };
+    auto press = [&](QPointF at, Qt::KeyboardModifiers mods) {
+      QMouseEvent p(QEvent::MouseButtonPress, at, canvas->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, mods);
+      QCoreApplication::sendEvent(canvas, &p);
+      QMouseEvent r(QEvent::MouseButtonRelease, at, canvas->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, mods);
+      QCoreApplication::sendEvent(canvas, &r);
+    };
+    auto boxDrag = [&](QPointF from, QPointF to, Qt::KeyboardModifiers mods) {
+      QMouseEvent p(QEvent::MouseButtonPress, from, canvas->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, mods);
+      QCoreApplication::sendEvent(canvas, &p);
+      for (int i = 1; i <= 4; i++) {
+        const QPointF at = from + (to - from) * (i / 4.0);
+        QMouseEvent m(QEvent::MouseMove, at, canvas->mapToGlobal(at), Qt::NoButton, Qt::LeftButton, mods);
+        QCoreApplication::sendEvent(canvas, &m);
+      }
+      QVERIFY(canvas->boxSelecting());
+      QMouseEvent r(QEvent::MouseButtonRelease, to, canvas->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, mods);
+      QCoreApplication::sendEvent(canvas, &r);
+    };
+    auto empty = [&](QPointF at) { return canvas->hitCandidates(at).isEmpty() && canvas->rect().contains(at.toPoint()); };
+    // An arc of `degrees` around `center` (widget px) starting where nothing is pickable.
+    auto arc = [&](QPointF center, double degrees) {
+      double a0 = 0;
+      for (int k = 0; k < 24; k++) {
+        a0 = k * PI / 12;
+        bool ok = true;
+        for (int i = 0; i <= 8 && ok; i++) {
+          const double a = a0 + i * degrees * PI / 180 / 8;
+          ok = canvas->rect().contains((center + QPointF(std::cos(a), std::sin(a)) * 70).toPoint());
+        }
+        if (ok && empty(center + QPointF(std::cos(a0), std::sin(a0)) * 70)) break;
+      }
+      const QPointF from = center + QPointF(std::cos(a0), std::sin(a0)) * 70;
+      mouse(canvas, QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
+      for (int i = 1; i <= 8; i++) {
+        const double a = a0 + i * degrees * PI / 180 / 8;
+        mouse(canvas, QEvent::MouseMove, center + QPointF(std::cos(a), std::sin(a)) * 70, Qt::NoButton, Qt::LeftButton);
+      }
+      const double a = a0 + degrees * PI / 180;
+      mouse(canvas, QEvent::MouseButtonRelease, center + QPointF(std::cos(a), std::sin(a)) * 70, Qt::NoButton, Qt::NoButton);
+    };
+    auto treeClick = [&](const QString& ref, Qt::KeyboardModifiers mods) {
+      for (QTreeWidgetItemIterator it(tree); *it; ++it)
+        if ((*it)->data(0, Qt::UserRole).toString() == ref) {
+          tree->scrollToItem(*it);
+          const QRect r = tree->visualItemRect(*it);
+          QTest::mouseClick(tree->viewport(), Qt::LeftButton, mods, QPoint(r.left() + 16, r.center().y()));
+          return;
+        }
+      QFAIL(qPrintable("no tree item " + ref));
+    };
+    auto treeSelected = [&] {
+      QStringList refs;
+      for (auto* item : tree->selectedItems()) refs << item->data(0, Qt::UserRole).toString();
+      std::sort(refs.begin(), refs.end());
+      return refs;
+    };
+    auto sorted = [](QStringList l) { std::sort(l.begin(), l.end()); return l; };
+
+    // Three bones away from the character: ma (with child mb) and mc, all under root.
+    panel->selectItem("bone:root");
+    answers = {"ma"};
+    QVERIFY(gesture("add ma", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("ma x", 1, [&] { setSpin("cutoutPropX", -150); }));
+    QVERIFY(gesture("ma y", 1, [&] { setSpin("cutoutPropY", -170); }));
+    QVERIFY(gesture("ma rotation", 1, [&] { setSpin("cutoutPropRotation", 20); }));
+    answers = {"mb"};
+    QVERIFY(gesture("add mb", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("mb x", 1, [&] { setSpin("cutoutPropX", 60); }));
+    QVERIFY(gesture("mb y", 1, [&] { setSpin("cutoutPropY", 0); }));
+    panel->selectItem("bone:root");
+    answers = {"mc"};
+    QVERIFY(gesture("add mc", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("mc x", 1, [&] { setSpin("cutoutPropX", 150); }));
+    QVERIFY(gesture("mc y", 1, [&] { setSpin("cutoutPropY", -170); }));
+    canvas->fitToCanvas();
+    pump();
+    for (const char* id : {"ma", "mb", "mc"})
+      QVERIFY2(canvas->pick(widgetOf(id), false) == QString("bone:") + id, qPrintable(QString(id) + " not pickable at its origin: " + canvas->pick(widgetOf(id), false)));
+
+    // (1) Canvas Ctrl/Shift+click, tree Ctrl+click: one selection everywhere, no edits.
+    QVERIFY(gesture("click + ctrl/shift click", 0, [&] {
+      press(widgetOf("ma"), Qt::NoModifier);
+      press(widgetOf("mc"), Qt::ControlModifier);
+    }));
+    QCOMPARE(sorted(panel->selectedItems()), QStringList({"bone:ma", "bone:mc"}));
+    QCOMPARE(panel->selection(), QString("bone:mc"));
+    QCOMPARE(treeSelected(), QStringList({"bone:ma", "bone:mc"}));
+    QVERIFY(canvas->isSelected("bone:ma") && canvas->isSelected("bone:mc") && !canvas->isSelected("bone:mb"));
+    QVERIFY(panel->dopesheet()->highlightTargets().contains("bone:ma") && panel->dopesheet()->highlightTargets().contains("bone:mc"));
+    QVERIFY(find<QLabel>("cutoutSelectionLabel")->text().startsWith("본 2개"));
+    treeClick("bone:mb", Qt::ControlModifier);
+    QCOMPARE(sorted(panel->selectedItems()), QStringList({"bone:ma", "bone:mb", "bone:mc"}));
+    QCOMPARE(panel->selection(), QString("bone:mb"));
+    QVERIFY(canvas->isSelected("bone:mb"));
+    press(widgetOf("mb"), Qt::ShiftModifier);  // Shift+click toggles it off again
+    QCOMPARE(sorted(panel->selectedItems()), QStringList({"bone:ma", "bone:mc"}));
+    QCOMPARE(treeSelected(), QStringList({"bone:ma", "bone:mc"}));
+    press(widgetOf("ma"), Qt::NoModifier);  // a plain click on a member keeps only it
+    QCOMPARE(panel->selectedItems(), QStringList({"bone:ma"}));
+
+    // (2) Box selection (Move tool, drag on empty space); Shift adds; an empty click clears.
+    {
+      const QPointF a = widgetOf("ma"), b = widgetOf("mb");
+      const QRectF box = QRectF(a, b).normalized().adjusted(-14, -14, 14, 14);
+      QPointF from, to;
+      for (const auto& [p, q] : {std::pair{box.topLeft(), box.bottomRight()}, {box.bottomRight(), box.topLeft()}, {box.topRight(), box.bottomLeft()}, {box.bottomLeft(), box.topRight()}})
+        if (empty(p)) { from = p; to = q; break; }
+      QVERIFY2(!from.isNull(), "no free corner for the box");
+      QVERIFY(gesture("box select ma + mb", 0, [&] { boxDrag(from, to, Qt::NoModifier); }));
+      QCOMPARE(sorted(panel->selectedItems()), QStringList({"bone:ma", "bone:mb"}));
+      const QPointF c = widgetOf("mc");
+      QPointF cf;
+      for (const QPointF& p : {c + QPointF(-16, -16), c + QPointF(16, 16), c + QPointF(16, -16), c + QPointF(-16, 16)}) if (empty(p)) { cf = p; break; }
+      QVERIFY(!cf.isNull());
+      QVERIFY(gesture("shift box adds mc", 0, [&] { boxDrag(cf, c + (c - cf), Qt::ShiftModifier); }));
+      QCOMPARE(sorted(panel->selectedItems()), QStringList({"bone:ma", "bone:mb", "bone:mc"}));
+      QVERIFY(gesture("click on empty clears", 0, [&] { press(from, Qt::NoModifier); }));
+      QVERIFY(panel->selectedItems().isEmpty() && tree->selectedItems().isEmpty());
+    }
+    // Ctrl+A on the canvas and in the hierarchy, the 선택 menu: bones only (no parts).
+    QTest::keyClick(canvas, Qt::Key_A, Qt::ControlModifier);
+    QCOMPARE(panel->selectedBones().size(), int(rig()["bones"].size()));
+    QCOMPARE(panel->selectedItems().size(), int(rig()["bones"].size()));
+    panel->selectItem("");
+    QTest::keyClick(tree, Qt::Key_A, Qt::ControlModifier);
+    QCOMPARE(panel->selectedItems().size(), int(rig()["bones"].size()));
+    QCOMPARE(int(tree->selectedItems().size()), int(rig()["bones"].size()));
+    panel->selectItem("bone:ma");
+    find<QAction>("cutoutSelectChildren")->trigger();
+    QCOMPARE(panel->selectedBones(), QStringList({"ma", "mb"}));
+
+    // (3) Multi-rotate about each origin: ONE transformBones edit turns ma and mc by the same angle.
+    panel->setSelection({"bone:ma", "bone:mc"}, "bone:ma");
+    panel->setTool(RigCanvas::Rotate);
+    pump();
+    const Json beforeRotate = rig();
+    QVERIFY(gesture("multi rotate (own origins)", 1, [&] { arc(widgetOf("ma"), 30); }));
+    {
+      const double ra = boneOf("ma").value("rotation", 0.0) - 20, rc = boneOf("mc").value("rotation", 0.0);
+      QVERIFY2(std::fabs(ra - 30) < 0.5 && std::fabs(ra - rc) < 1e-6, qPrintable(QString("%1 %2").arg(ra).arg(rc)));
+      QVERIFY(boneOf("mb") == [&] { for (const auto& b : beforeRotate["bones"]) if (b["id"] == "mb") return b; return Json(); }());
+      QCOMPARE(boneOf("ma")["x"].get<double>(), -150.0);  // own origin: nothing moved
+    }
+    undo();
+    QVERIFY(rig() == beforeRotate);
+    redo();
+    QVERIFY(rig() != beforeRotate);
+    undo();
+
+    // (4) Centroid pivot (toolbar): the pair turns as one piece around the middle of their origins.
+    auto* pivot = find<QComboBox>("cutoutPivotMode");
+    pivot->setCurrentIndex(1);
+    Q_EMIT pivot->activated(1);
+    QCOMPARE(int(panel->pivotMode()), int(CutoutPanel::Pivot::Centroid));
+    {
+      const QPointF a0 = world("ma"), c0 = world("mc"), mid = (a0 + c0) / 2;
+      QVERIFY(gesture("multi rotate (centroid)", 1, [&] { arc(canvas->rigToWidget(mid), 90); }));
+      const double turn = (boneOf("ma").value("rotation", 0.0) - 20) * PI / 180;
+      QVERIFY2(std::fabs(turn - PI / 2) < 0.01, qPrintable(QString::number(turn)));
+      QCOMPARE(boneOf("mc").value("rotation", 0.0), boneOf("ma").value("rotation", 0.0) - 20);
+      auto turned = [&](QPointF p) { const QPointF v = p - mid; return mid + QPointF(v.x() * std::cos(turn) - v.y() * std::sin(turn), v.x() * std::sin(turn) + v.y() * std::cos(turn)); };
+      const QPointF a1 = world("ma"), c1 = world("mc");
+      QVERIFY2(QLineF(a1, turned(a0)).length() < 1e-3 && QLineF(c1, turned(c0)).length() < 1e-3, qPrintable(QString("%1,%2").arg(a1.x()).arg(a1.y())));
+      QVERIFY(QLineF((a1 + c1) / 2, mid).length() < 1e-3);
+      QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
+    }
+    undo();
+    pivot->setCurrentIndex(0);
+    Q_EMIT pivot->activated(0);
+    panel->setTool(RigCanvas::Move);
+
+    // (5) Compensation toggles (setup pose): moving ma keeps its child mb where it was.
+    QVERIFY(!panel->compensateBones() && !panel->compensateImages());
+    click("cutoutCompensateBones");
+    QVERIFY(panel->compensateBones());
+    panel->selectItem("bone:ma");
+    pump();
+    {
+      const auto w0 = cutout::setupWorld(rig());
+      const QPointF at = widgetOf("ma");
+      QVERIFY(gesture("drag ma with bone compensation", 1, [&] { drag(canvas, at, at + QPointF(30, 18)); }));
+      const auto w1 = cutout::setupWorld(rig());
+      QVERIFY(std::hypot(w1.at("ma").e - w0.at("ma").e, w1.at("ma").f - w0.at("ma").f) > 10);
+      const auto& b0 = w0.at("mb");
+      const auto& b1 = w1.at("mb");
+      for (double d : {b0.a - b1.a, b0.b - b1.b, b0.c - b1.c, b0.d - b1.d, b0.e - b1.e, b0.f - b1.f}) QVERIFY2(std::fabs(d) < 1e-6, qPrintable(QString::number(d)));
+      undo();
+    }
+    // Images: head carries the eyes part; with 이미지 보정 too, turning head moves neither its
+    // child arm nor the eyes image (draw list unchanged for them).
+    click("cutoutCompensateImages");
+    QVERIFY(panel->compensateImages());
+    panel->selectItem("bone:head");
+    panel->setTool(RigCanvas::Rotate);
+    pump();
+    {
+      const auto drawBefore = drawList();
+      const auto w0 = cutout::setupWorld(rig());
+      QVERIFY(gesture("rotate head with both compensations", 1, [&] { arc(widgetOf("head"), 25); }));
+      QVERIFY(std::fabs(boneOf("head").value("rotation", 0.0) - [&] { for (const auto& b : start["bones"]) if (b["id"] == "head") return b.value("rotation", 0.0); return 0.0; }()) > 5);
+      const auto w1 = cutout::setupWorld(rig());
+      QVERIFY(std::fabs(w1.at("arm").e - w0.at("arm").e) < 1e-6 && std::fabs(w1.at("arm").a - w0.at("arm").a) < 1e-6);
+      const auto drawAfter = drawList();
+      QCOMPARE(drawAfter.size(), drawBefore.size());
+      for (size_t i = 0; i < drawAfter.size(); i++)
+        if (drawAfter[i].slot == "eyes") QVERIFY(std::fabs(drawAfter[i].matrix.e - drawBefore[i].matrix.e) < 1e-6 && std::fabs(drawAfter[i].matrix.a - drawBefore[i].matrix.a) < 1e-6);
+      undo();
+    }
+    // Off again: the head turn carries the eyes along (the toggle really did the work).
+    click("cutoutCompensateBones");
+    click("cutoutCompensateImages");
+    QVERIFY(!panel->compensateBones() && !panel->compensateImages());
+    {
+      const auto drawBefore = drawList();
+      QVERIFY(gesture("rotate head without compensation", 1, [&] { arc(widgetOf("head"), 25); }));
+      bool moved = false;
+      const auto drawAfter = drawList();
+      for (size_t i = 0; i < drawAfter.size(); i++) if (drawAfter[i].slot == "eyes") moved = moved || std::fabs(drawAfter[i].matrix.a - drawBefore[i].matrix.a) > 1e-3;
+      QVERIFY(moved);
+      undo();
+    }
+    panel->setTool(RigCanvas::Move);
+
+    // (6) Fields of a multi-selection: mixed "—", absolute, relative, world axes; one edit each.
+    panel->setSelection({"bone:ma", "bone:mc"}, "bone:ma");
+    pump();
+    auto* spinX = find<QDoubleSpinBox>("cutoutPropX");
+    QVERIFY(spinX->property("mixed").toBool() && spinX->text() == "—");
+    QVERIFY(!find<QDoubleSpinBox>("cutoutPropY")->property("mixed").toBool());
+    QCOMPARE(find<QDoubleSpinBox>("cutoutPropY")->value(), -170.0);
+    QVERIFY(gesture("absolute X for both", 1, [&] { setSpin("cutoutPropX", 10); }));
+    QCOMPARE(boneOf("ma")["x"].get<double>(), 10.0);
+    QCOMPARE(boneOf("mc")["x"].get<double>(), 10.0);
+    QVERIFY(!spinX->property("mixed").toBool() && spinX->value() == 10.0);
+    click("cutoutPropRelative");
+    QVERIFY(panel->relativeEdit() && spinX->value() == 0);
+    QVERIFY(gesture("relative rotation +12 for both", 1, [&] { setSpin("cutoutPropRotation", 12); }));
+    QCOMPARE(boneOf("ma")["rotation"].get<double>(), 32.0);
+    QCOMPARE(boneOf("mc")["rotation"].get<double>(), 12.0);
+    click("cutoutPropRelative");
+    auto* axes = find<QComboBox>("cutoutAxesMode");
+    axes->setCurrentIndex(2);
+    Q_EMIT axes->activated(2);
+    QCOMPARE(int(panel->axes()), int(cutout::Axes::World));
+    panel->setSelection({"bone:ma", "bone:mb"}, "bone:mb");
+    pump();
+    QVERIFY(std::fabs(find<QDoubleSpinBox>("cutoutPropX")->value() - world("mb").x()) < 0.01 || find<QDoubleSpinBox>("cutoutPropX")->property("mixed").toBool());
+    QVERIFY(gesture("world X = 300 for a parent and its child", 1, [&] { setSpin("cutoutPropX", 300); }));
+    QVERIFY2(std::fabs(world("ma").x() - 300) < 1e-4 && std::fabs(world("mb").x() - 300) < 1e-4, qPrintable(QString("%1 %2").arg(world("ma").x()).arg(world("mb").x())));
+    axes->setCurrentIndex(0);
+    Q_EMIT axes->activated(0);
+
+    // (7) Animate: K keys every selected bone (one edit); the drag of a selection keys all of it.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("joy");
+    panel->setPlayhead(200);
+    panel->setSelection({"bone:ma", "bone:mc"}, "bone:mc");
+    pump();
+    QVERIFY(gesture("K keys both bones", 1, [&] { QTest::keyClick(canvas, Qt::Key_K); }));
+    for (const char* target : {"bone:ma", "bone:mc"})
+      for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) QVERIFY2(!keyOf("joy", target, p, 200).is_null(), target);
+    QVERIFY(keyOf("joy", "bone:mb", "x", 200).is_null());
+    panel->setAutoKey(true);
+    click("cutoutCompensateBones");  // ignored in Animate (setup-pose compensation only)
+    {
+      const Json bonesBefore = rig()["bones"];
+      const QPointF at = widgetOf("mc");
+      QVERIFY(gesture("drag the selection (auto key)", 1, [&] { drag(canvas, at, at + QPointF(0, 24)); }));
+      QVERIFY(rig()["bones"] == bonesBefore);
+      QVERIFY(keyOf("joy", "bone:ma", "y", 200)["value"].get<double>() > boneOf("ma")["y"].get<double>() + 5);
+      QVERIFY(keyOf("joy", "bone:mc", "y", 200)["value"].get<double>() > boneOf("mc")["y"].get<double>() + 5);
+      QVERIFY(keyOf("joy", "bone:mb", "y", 200).is_null());
+    }
+    click("cutoutCompensateBones");
+    panel->setAutoKey(false);
+    // (8) Pose copy takes the multi-selection: exactly ma and mc arrive at timing 4000 ms.
+    QVERIFY(gesture("copy pose of the selection (no edit)", 0, [&] { click("cutoutCopyPose"); }));
+    QVERIFY(panel->status().contains("본 2개"));
+    panel->selectClip("timing");
+    panel->setPlayhead(4000);
+    QVERIFY(gesture("paste pose", 1, [&] { click("cutoutPastePose"); }));
+    QVERIFY(!keyOf("timing", "bone:ma", "y", 4000).is_null() && !keyOf("timing", "bone:mc", "y", 4000).is_null() && track("timing", "bone:mb", "y") == nullptr);
+    // Dopesheet: Ctrl on a row adds its bone to the selection.
+    panel->selectItem("bone:ma");
+    const int row = rowOf("bone:mc", "y");
+    QVERIFY(row >= 0);
+    panel->dopesheet()->onRowSelected(row, true);
+    QCOMPARE(sorted(panel->selectedItems()), QStringList({"bone:ma", "bone:mc"}));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->selectItem("");
+    if (const QString evidence = qEnvironmentVariable("CUTOUT_STUDIO_EVIDENCE"); !evidence.isEmpty()) {
+      panel->setSelection({"bone:ma", "bone:mb", "bone:mc"});
+      pump();
+      QVERIFY(panel->window()->grab().save(evidence + "/studio-multi-select.png"));
+      panel->selectItem("");
+    }
+    for (int i = 0; i < host.edits - editsBefore && rig() != start; i++) undo();
+    QVERIFY(rig() == start);
   }
 
   // Mesh repaint budget (plugin 1.6.0): a 2048-triangle mesh (32x32 grid over a 512x512 image)

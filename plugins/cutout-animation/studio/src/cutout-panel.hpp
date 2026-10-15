@@ -76,7 +76,30 @@ class CutoutPanel : public QWidget {
   // ---- Navigation (openEditor, diagnostics click, automation) ----
   void selectRig(const QString& id);
   void selectController(const QString& id);
-  void selectItem(const QString& ref);  // "bone:<id>" | "slot:<id>" | ""
+  void selectItem(const QString& ref);  // "bone:<id>" | "slot:<id>" | "" (a single selection)
+  // ---- Multi-selection (plugin 1.7.0, editor-only state shared by canvas, tree, properties and the
+  // dopesheet rows): selection() is the primary item (last picked: gizmo, slot fields, graph),
+  // selectedItems() every selected bone/part in pick order.
+  void setSelection(const QStringList& refs, const QString& primary = QString());
+  void toggleSelected(const QString& ref);         // Ctrl/Shift+click on canvas or tree
+  void addToSelection(const QStringList& refs);
+  QStringList selectedItems() const;
+  /** Selected bone ids (rig order); Animate: a selected part counts as its bone (it is moved through it). */
+  QStringList selectedBones(bool partsAsBones = false) const;
+  bool selectChildren();  // 자식 본까지 선택 (menu; Ctrl+Shift+A in the hierarchy): every descendant bone added
+  bool selectAllBones();  // 모든 본 선택 (menu; Ctrl+A on canvas / hierarchy)
+  /** Transform options (editor-only): pivot of multi-bone rotate/scale, axis space of the numeric
+   *  fields, relative field input and setup-pose compensation (core flags compensateBones/Images). */
+  enum class Pivot { Origin = 0, Centroid = 1 };
+  void setPivotMode(Pivot pivot);
+  Pivot pivotMode() const { return pivot_; }
+  void setAxes(cutout::Axes axes);
+  cutout::Axes axes() const { return axes_; }
+  void setRelativeEdit(bool on);
+  bool relativeEdit() const { return relative_; }
+  void setCompensation(bool bones, bool images);
+  bool compensateBones() const { return compensateBones_; }
+  bool compensateImages() const { return compensateImages_; }
   void selectClip(const QString& id);
   void setMode(Mode mode);
   void setPlayhead(int ms);
@@ -134,7 +157,7 @@ class CutoutPanel : public QWidget {
    *  one target goes onto the selected bone/part when that is another target of the same kind. */
   bool pasteKeys();
   bool duplicateKeys();  // selection copied to the playhead (clipboard untouched)
-  /** Pose of the selected bone and its children (all bones when none is selected) at the playhead. */
+  /** Pose of the selected bones (all bones when none is selected) at the playhead. */
   bool copyPose();
   bool pastePose();      // copied pose as keys at the playhead of the current clip
   void stepPlayhead(int steps);  // by the step field (10 ms default)
@@ -303,6 +326,10 @@ class CutoutPanel : public QWidget {
   QString rigId_, controllerId_, selection_, clipId_, status_;
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)
+  QStringList selected_;                      // multi-selection; only meaningful while it holds selection_
+  Pivot pivot_ = Pivot::Origin;
+  cutout::Axes axes_ = cutout::Axes::Local;
+  bool relative_ = false, compensateBones_ = false, compensateImages_ = false;
   Mode mode_ = Mode::Setup;
   int playheadMs_ = 0, lastRevision_ = -1;
   double playheadExact_ = 0;
@@ -351,6 +378,9 @@ class CutoutPanel : public QWidget {
   QListWidget* drawOrder_ = nullptr;
   RigCanvas* canvas_ = nullptr;
   QToolButton* toolButtons_[RigCanvas::TOOL_COUNT] = {};
+  QComboBox *pivotCombo_ = nullptr, *axesCombo_ = nullptr;
+  QToolButton *compensateBonesButton_ = nullptr, *compensateImagesButton_ = nullptr, *selectMenuButton_ = nullptr;
+  QCheckBox* relativeCheck_ = nullptr;
   QString createId_;  // id of the bone the create tool is drawing (stable across its previews)
   QMap<QString, QDoubleSpinBox*> props_;
   QComboBox* attachmentCombo_ = nullptr;
@@ -502,6 +532,11 @@ class CutoutPanel : public QWidget {
   int boneIndex(const QString& id) const;
   QString selectedBone() const;  // bone of the selection (slot -> its bone)
   QPointF manipulationOrigin(const QString& ref) const;
+  QStringList dragBones(const QString& ref) const;  // the bones a drag of `ref` transforms
+  /** Shown x/y/rotation/scale of bone `index` in axes_ (setup: FK setup world; Animate: the pose). */
+  cutout::Transform shownBone(int index, const cutout::Pose& pose, const std::map<std::string, cutout::Affine>& setupWorld) const;
+  void commitBoneProperty(const QString& property, double value);
+  void syncSelectionWidgets();  // tree / draw order / canvas / dopesheet marks from selected_
   std::vector<cutout::Json> dragOps(const RigCanvas::Drag& drag) const;
   void onCanvasDrag(const RigCanvas::Drag& drag, bool finished);
   void commitProperty(const QString& property, double value);

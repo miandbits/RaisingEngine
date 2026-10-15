@@ -2604,6 +2604,180 @@ int main(int argc, char** argv) {
     check(polygonProblem(box).empty() && insidePolygon(box, 5.5, 10.5) && insidePolygon(box, 49.5, 29.5) && std::fabs(polygonArea(box, box.size() / 2)) < 46.0 * 21 + 50, "rectangle traced around its pixels");
   });
 
+  // ---- Multi-bone selection: transformBones, compensation, axis spaces (plugin 1.7.0) ----
+  auto chainRig = [] {
+    return Json::parse(R"({
+      "schemaVersion": 1,
+      "canvas": {"width": 400, "height": 400, "originX": 200, "originY": 380},
+      "bones": [
+        {"id": "root", "parent": null, "x": 200, "y": 300},
+        {"id": "arm", "parent": "root", "x": 20, "y": -100, "rotation": 30, "length": 40},
+        {"id": "fore", "parent": "arm", "x": 40, "y": 0, "rotation": 20, "length": 30},
+        {"id": "hand", "parent": "fore", "x": 30, "y": 0},
+        {"id": "leg", "parent": "root", "x": -30, "y": 20, "rotation": 90}
+      ],
+      "slots": [{"id": "sleeve", "bone": "arm", "attachment": "sleeve"}, {"id": "glove", "bone": "hand", "attachment": "glove"}],
+      "attachments": [
+        {"slot": "sleeve", "name": "sleeve", "imageAssetId": "img-sleeve", "width": 40, "height": 20, "x": 10, "y": 3, "rotation": 5},
+        {"slot": "glove", "name": "glove", "imageAssetId": "img-glove", "width": 10, "height": 10}
+      ],
+      "skins": [{"id": "armor", "attachments": [{"slot": "sleeve", "name": "sleeve", "imageAssetId": "img-plate", "width": 40, "height": 20, "x": -4, "y": 1, "scaleX": 1.2, "scaleY": 1.2}]}],
+      "clips": [{"id": "wave", "durationMs": 1000, "loop": true, "tracks": [
+        {"target": "bone:fore", "property": "rotation", "keys": [{"timeMs": 0, "value": 20}, {"timeMs": 1000, "value": 60}]}]}]
+    })");
+  };
+  auto angleOf = [](const Affine& m) { return std::atan2(m.b, m.a) * 180 / 3.14159265358979323846; };
+  auto sameWorld = [](const Affine& a, const Affine& b, double eps) {
+    return near(a.a, b.a, eps) && near(a.b, b.b, eps) && near(a.c, b.c, eps) && near(a.d, b.d, eps) && near(a.e, b.e, eps) && near(a.f, b.f, eps);
+  };
+  // World placement of attachment (slot, skin) in the setup pose: bone world * offset.
+  auto placed = [](const Json& d, const std::string& slot, const std::string& skin) {
+    const Json* list = &d["attachments"];
+    if (!skin.empty()) for (const auto& s : d["skins"]) if (s["id"] == skin) list = &s["attachments"];
+    std::string boneId;
+    for (const auto& s : d["slots"]) if (s["id"] == slot) boneId = s["bone"];
+    for (const auto& a : *list)
+      if (a["slot"] == slot)
+        return setupWorld(d).at(boneId) * Affine::compose(a.value("x", 0.0), a.value("y", 0.0), a.value("rotation", 0.0), a.value("scaleX", 1.0), a.value("scaleY", 1.0));
+    return Affine{};
+  };
+
+  test("transformBones: translation moves only the topmost selected bones, in world px", [&] {
+    const Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"fore", "arm"}}, {"delta", {{"x", 10}, {"y", -5}}}});
+    const auto w0 = setupWorld(d), w1 = setupWorld(r.data);
+    check(near(w1.at("arm").e - w0.at("arm").e, 10) && near(w1.at("arm").f - w0.at("arm").f, -5), "arm origin moved by the world delta");
+    check(near(w1.at("fore").e - w0.at("fore").e, 10) && near(w1.at("fore").f - w0.at("fore").f, -5) && r.data["bones"][2] == d["bones"][2], "fore follows its parent, its own data untouched");
+    check(r.extra["bones"] == Json::array({"arm"}) && r.affected == std::vector<std::string>{"bone:arm"}, "only arm changed");
+    auto p = applyEdit(d, {{"op", "transformBones"}, {"bones", {"fore"}}, {"delta", {{"x", 3}}}, {"space", "parent"}});
+    check(near(p.data["bones"][2]["x"].get<double>(), 43) && near(p.data["bones"][2]["y"].get<double>(), 0), "space parent adds to the local x/y");
+    check(validateRig(r.data).empty(), "valid");
+  });
+
+  test("transformBones: rotation about each origin curls a selected chain (mirrors flip the sign)", [&] {
+    Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "fore"}}, {"delta", {{"rotation", 15}}}});
+    check(near(r.data["bones"][1]["rotation"].get<double>(), 45) && near(r.data["bones"][2]["rotation"].get<double>(), 35), "both +15 (local)");
+    const auto w0 = setupWorld(d), w1 = setupWorld(r.data);
+    check(near(w1.at("arm").e, w0.at("arm").e) && near(w1.at("arm").f, w0.at("arm").f), "arm turns about its own origin");
+    check(near(angleOf(w1.at("fore")) - angleOf(w0.at("fore")), 30), "fore turned twice on screen (curl)");
+    d["bones"][0]["scaleX"] = -1;  // mirrored root: the on-screen turn still follows the delta
+    auto m = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 15}}}});
+    check(near(m.data["bones"][1]["rotation"].get<double>(), 15), "mirrored parent: local -15");
+    const auto m0 = setupWorld(d), m1 = setupWorld(m.data);
+    double turn = angleOf(m1.at("arm")) - angleOf(m0.at("arm"));
+    while (turn > 180) turn -= 360;
+    while (turn < -180) turn += 360;
+    check(near(turn, 15, 1e-5), "mirrored parent: +15 on screen (" + std::to_string(turn) + ")");
+    auto s = applyEdit(chainRig(), {{"op", "transformBones"}, {"bones", {"arm", "leg"}}, {"delta", {{"scaleX", 2}, {"scaleY", 0.5}}}});
+    check(near(s.data["bones"][1]["scaleX"].get<double>(), 2) && near(s.data["bones"][4]["scaleY"].get<double>(), 0.5) && s.data["bones"][1]["x"] == 20, "scale about each origin: local factors, origins stay");
+  });
+
+  test("transformBones: centroid / point pivot turns the topmost bones as a group", [&] {
+    const Json d = chainRig();
+    const auto w0 = setupWorld(d);
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "leg", "hand"}}, {"delta", {{"rotation", 30}}}, {"pivot", "centroid"}});
+    const auto w1 = setupWorld(r.data);
+    const double cx = (w0.at("arm").e + w0.at("leg").e + w0.at("hand").e) / 3, cy = (w0.at("arm").f + w0.at("leg").f + w0.at("hand").f) / 3;
+    auto turned = [&](const std::string& id) {
+      const double c = std::cos(3.14159265358979323846 / 6), s = std::sin(3.14159265358979323846 / 6), x = w0.at(id).e - cx, y = w0.at(id).f - cy;
+      return near(w1.at(id).e, cx + c * x - s * y, 1e-5) && near(w1.at(id).f, cy + s * x + c * y, 1e-5) && near(angleOf(w1.at(id)) - angleOf(w0.at(id)), 30, 1e-5);
+    };
+    check(turned("arm") && turned("leg") && turned("hand"), "every selected bone turned rigidly about the centroid");
+    check(r.data["bones"][3] == d["bones"][3] && r.extra["bones"] == Json::array({"arm", "leg"}), "hand (under selected arm) follows, not edited");
+    auto p = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 90}, {"scaleX", 2}, {"scaleY", 2}}}, {"pivot", {{"x", 200}, {"y", 300}}}});
+    const auto wp = setupWorld(p.data);
+    // arm origin (220, 200) relative to (200, 300) = (20, -100); scaled 2 and turned 90 deg clockwise -> (200, 40).
+    check(near(wp.at("arm").e, 400, 1e-5) && near(wp.at("arm").f, 340, 1e-5) && near(p.data["bones"][1]["scaleX"].get<double>(), 2), "explicit pivot with scale");
+  });
+
+  test("transformBones in a clip keys the changed channel groups, setup untouched", [&] {
+    const Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "transformBones"}, {"bones", {"fore"}}, {"delta", {{"rotation", 10}}}, {"clip", "wave"}, {"timeMs", 500}});
+    const Json& tracks = r.data["clips"][0]["tracks"];
+    check(tracks.size() == 1 && tracks[0]["keys"].size() == 3 && near(tracks[0]["keys"][1]["value"].get<double>(), 50), "rotation key = sampled 40 + 10");
+    check(r.data["bones"] == d["bones"], "setup pose unchanged");
+    auto g = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "leg"}}, {"delta", {{"rotation", 20}}}, {"pivot", "centroid"}, {"clip", "wave"}, {"timeMs", 0},
+                           {"compensateBones", true}});
+    size_t keys = 0;
+    for (const auto& t : g.data["clips"][0]["tracks"]) keys += t["target"] != "bone:fore";
+    check(keys == 6 && hasCode(g.diagnostics, "ANIM_COMPENSATE_SETUP_ONLY") && g.data["bones"] == d["bones"], "group turn keys x, y, rotation of both bones; compensation ignored with a warning");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"fore"}}, {"delta", {{"x", 1}}}, {"clip", "wave"}, {"timeMs", 2000}}), "time out of range refused");
+  });
+
+  test("compensation keeps children and images in place (setBone and transformBones)", [&] {
+    const Json d = chainRig();
+    const auto w0 = setupWorld(d);
+    auto b = applyEdit(d, {{"op", "setBone"}, {"bone", "arm"}, {"rotation", 75}, {"x", 5}, {"compensateBones", true}});
+    auto w1 = setupWorld(b.data);
+    check(sameWorld(w1.at("fore"), w0.at("fore"), 1e-6) && sameWorld(w1.at("hand"), w0.at("hand"), 1e-6) && !sameWorld(w1.at("arm"), w0.at("arm"), 1e-3), "setBone: children stay, the bone moved");
+    check(!sameWorld(placed(b.data, "sleeve", ""), placed(d, "sleeve", ""), 1e-3), "images follow without compensateImages");
+    auto i = applyEdit(d, {{"op", "setBone"}, {"bone", "arm"}, {"rotation", 75}, {"scaleX", 1.5}, {"scaleY", 1.5}, {"compensateImages", true}});
+    check(sameWorld(placed(i.data, "sleeve", ""), placed(d, "sleeve", ""), 1e-6) && sameWorld(placed(i.data, "sleeve", "armor"), placed(d, "sleeve", "armor"), 1e-6), "compensateImages: default and skin attachments stay");
+    check(!sameWorld(setupWorld(i.data).at("fore"), w0.at("fore"), 1e-3), "children follow without compensateBones");
+    // A group turn + scale of arm and leg with both flags: every unselected child and image stays.
+    auto t = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "leg"}}, {"delta", {{"rotation", -40}, {"scaleX", 1.25}, {"scaleY", 1.25}, {"x", 12}}}, {"pivot", "centroid"},
+                           {"compensateBones", true}, {"compensateImages", true}});
+    const auto w2 = setupWorld(t.data);
+    check(!sameWorld(w2.at("arm"), w0.at("arm"), 1e-3) && sameWorld(w2.at("fore"), w0.at("fore"), 1e-6) && sameWorld(w2.at("hand"), w0.at("hand"), 1e-6) &&
+          sameWorld(placed(t.data, "sleeve", ""), placed(d, "sleeve", ""), 1e-6) && sameWorld(placed(t.data, "sleeve", "armor"), placed(d, "sleeve", "armor"), 1e-6) &&
+          sameWorld(placed(t.data, "glove", ""), placed(d, "glove", ""), 1e-6), "transformBones: world pose of children and images unchanged within 1e-6");
+    check(validateRig(t.data).empty() && !hasCode(t.diagnostics, "ANIM_COMPENSATE_SKEW"), "valid, no skew (uniform scale)");
+    // A selected child is moved on purpose: it is not compensated.
+    auto s = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm", "fore"}}, {"delta", {{"rotation", 10}}}, {"compensateBones", true}});
+    check(!sameWorld(setupWorld(s.data).at("fore"), w0.at("fore"), 1e-3) && sameWorld(setupWorld(s.data).at("hand"), w0.at("hand"), 1e-6), "selected fore turns, its unselected child hand stays");
+    // Keys of a compensated child are absolute values of the old frame: warned.
+    auto k = applyEdit(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 10}}}, {"compensateBones", true}});
+    check(hasCode(k.diagnostics, "ANIM_COMPENSATE_KEYS"), "fore has rotation keys: warning");
+    auto n = applyEdit(d, {{"op", "setBone"}, {"bone", "arm"}, {"scaleX", 2}, {"compensateBones", true}});
+    check(hasCode(n.diagnostics, "ANIM_COMPENSATE_SKEW"), "non-uniform scale under a turned child: skew warning");
+  });
+
+  test("axis spaces: world/parent values round-trip and setBone axes", [&] {
+    const std::vector<Affine> parents = {Affine{}, Affine::compose(30, -12, 37, 1, 1), Affine::compose(-5, 8, -110, 2.5, 0.4), Affine::compose(10, 10, 200, -1, 1),
+                                         Affine::compose(1, 2, 15, -0.7, -1.9)};
+    const std::vector<Transform> locals = {{0, 0, 0, 1, 1}, {12, -7, 45, 1, 1}, {-40, 3, 395, 1.5, -2}, {0.5, 100, -170, 0.2, 0.2}};
+    bool roundTrip = true, worldOk = true, parentOk = true;
+    for (const auto& p : parents)
+      for (const auto& t : locals)
+        for (Axes a : {Axes::Local, Axes::Parent, Axes::World}) {
+          const Transform shown = toAxes(t, p, a);
+          const auto back = fromAxes(shown, p, a, t);
+          roundTrip = roundTrip && back && near(back->x, t.x, 1e-9) && near(back->y, t.y, 1e-9) && near(back->rotation, t.rotation, 1e-9) && back->scaleX == t.scaleX && back->scaleY == t.scaleY;
+          if (a == Axes::World) {
+            const Affine w = p * Affine::compose(t.x, t.y, t.rotation, 1, 1);
+            const double turn = std::fmod(std::fabs(shown.rotation - angleOf(w)), 360.0);
+            worldOk = worldOk && near(shown.x, w.e, 1e-9) && near(shown.y, w.f, 1e-9) && (near(turn, 0, 1e-9) || near(turn, 360, 1e-9));
+          }
+          if (a == Axes::Parent && std::fabs(std::hypot(p.a, p.b) - 1) < 1e-12 && std::fabs(std::hypot(p.c, p.d) - 1) < 1e-12 && p.a * p.d - p.b * p.c > 0)
+            parentOk = parentOk && near(shown.x, t.x, 1e-9) && near(shown.y, t.y, 1e-9) && near(shown.rotation, t.rotation, 1e-9);
+        }
+    check(roundTrip, "fromAxes(toAxes(t)) == t (local, parent, world; rotated, scaled, mirrored parents)");
+    check(worldOk, "world = rig-space origin and on-screen angle");
+    check(parentOk, "parent = local under an unscaled parent");
+    check(!fromAxes({1, 2, 3, 1, 1}, Affine{0, 0, 0, 0, 0, 0}, Axes::World, {}).has_value(), "singular parent");
+    check(parseAxes("world") == Axes::World && !parseAxes("screen"), "parseAxes");
+    const Json d = chainRig();
+    auto r = applyEdit(d, {{"op", "setBone"}, {"bone", "fore"}, {"axes", "world"}, {"x", 150}, {"y", 120}, {"rotation", 0}});
+    const Affine w = setupWorld(r.data).at("fore");
+    check(near(w.e, 150, 1e-5) && near(w.f, 120, 1e-5) && near(angleOf(w), 0, 1e-5), "setBone axes world: origin and angle land in rig space");
+    auto px = applyEdit(d, {{"op", "setBone"}, {"bone", "fore"}, {"axes", "parent"}, {"x", 50}});
+    check(near(px.data["bones"][2]["x"].get<double>(), 50) && near(px.data["bones"][2]["y"].get<double>(), 0), "setBone axes parent (unscaled parent) = local");
+    check(refused(d, {{"op", "setBone"}, {"bone", "fore"}, {"axes", "screen"}, {"x", 1}}), "bad axes refused");
+  });
+
+  test("transformBones refusals", [&] {
+    const Json d = chainRig();
+    check(refused(d, {{"op", "transformBones"}, {"delta", {{"x", 1}}}}) && refused(d, {{"op", "transformBones"}, {"bones", Json::array()}, {"delta", {{"x", 1}}}}), "bones required");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"nope"}}, {"delta", {{"x", 1}}}}), "unknown bone");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"scaleX", 0}}}}), "zero scale");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"rotation", 1}}}, {"pivot", "middle"}}), "bad pivot");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"x", 1}}}, {"space", "local"}}), "bad space");
+    check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", Json::object()}}), "empty delta");
+    auto b = applyEdit(d, {{"op", "batch"}, {"operations", {{{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"x", 1}}}}, {{"op", "transformBones"}, {"bones", {"leg"}}, {"delta", {{"x", 1}}}}}}});
+    check(b.extra["bones"] == Json::array({"leg"}) && b.affected.size() == 2, "batchable");
+  });
+
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;
 }

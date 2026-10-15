@@ -45,6 +45,14 @@ class RigCanvas : public QWidget {
   void setImages(ImageCache* images) { images_ = images; }
   void setHiddenSlots(const QSet<QString>& hidden) { hidden_ = hidden; refreshHover(); update(); }
   void setSelection(const QString& ref) { selection_ = ref; refreshHover(); update(); }
+  /** Multi-selection (plugin 1.7.0): every selected ref is highlighted; setSelection() stays the
+   *  primary item (its gizmo, Alt-cycling start). Editor-only, owned by the panel. */
+  void setMultiSelection(const QSet<QString>& refs) { multi_ = refs; update(); }
+  bool isSelected(const QString& ref) const { return !ref.isEmpty() && (ref == selection_ || multi_.contains(ref)); }
+  /** Box selection in progress (widget px, Move tool drag on empty space). */
+  bool boxSelecting() const { return band_.has_value(); }
+  /** Bones whose origin lies inside `widgetRect` (rig order). */
+  QStringList bonesIn(const QRectF& widgetRect) const;
   void setTool(int tool) { tool_ = tool; update(); }
   int tool() const { return tool_; }
   void setAnimateMode(bool animate) { animate_ = animate; update(); }
@@ -136,6 +144,12 @@ class RigCanvas : public QWidget {
   std::function<void()> onMeshDelete;
 
   std::function<void(const QString&)> onSelect;
+  /** Ctrl/Shift+click on an item: toggle it in the multi-selection (no drag starts). */
+  std::function<void(const QString& ref)> onToggleSelect;
+  /** Box select released: `refs` = bones inside; add = Ctrl/Shift held at the press. */
+  std::function<void(const QStringList& refs, bool add)> onBoxSelect;
+  /** Ctrl+A (all bones) while the canvas has focus (Ctrl+Shift+A stays the host's workspace toggle). */
+  std::function<void()> onSelectAll;
   std::function<QPointF(const QString&)> originOf;
   std::function<void(const Drag&, bool finished)> onDrag;
   std::function<void(int)> onTool;
@@ -158,6 +172,7 @@ class RigCanvas : public QWidget {
   void keyPressEvent(QKeyEvent*) override;
   void keyReleaseEvent(QKeyEvent*) override;
   void leaveEvent(QEvent*) override;
+  bool event(QEvent*) override;
 
  private:
   std::shared_ptr<const cutout::Rig> rig_;
@@ -165,6 +180,10 @@ class RigCanvas : public QWidget {
   ImageCache* images_ = nullptr;
   QSet<QString> hidden_;
   QString selection_, message_;
+  QSet<QString> multi_;
+  std::optional<QRectF> band_;  // box selection (widget px)
+  bool bandAdd_ = false;
+  QString pendingSingle_;       // press on a member of a multi-selection: a click (no drag) keeps only it
   int tool_ = Move;
   bool animate_ = false, autoFit_ = true;
   double zoom_ = 1;
