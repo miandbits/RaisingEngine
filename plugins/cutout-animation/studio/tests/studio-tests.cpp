@@ -261,6 +261,43 @@ class StudioTests : public QObject {
     return out;
   }
   static QSet<KeyRef> asSet(const QVector<KeyRef>& keys) { return QSet<KeyRef>(keys.begin(), keys.end()); }
+  /** Each look tab in turn: its buttons and lists are shown, unclipped by the page or by a scroll
+   *  area's viewport (what the user sees without scrolling), and the page itself never scrolls. */
+  QStringList lookPageProblems() {
+    QStringList problems;
+    auto* tabs = find<QTabWidget>("cutoutLookTabs");
+    const int keep = tabs->currentIndex();
+    for (int t = 0; t < tabs->count(); t++) {
+      tabs->setCurrentIndex(t);
+      pump();
+      QWidget* page = tabs->widget(t);
+      if (qobject_cast<QAbstractScrollArea*>(page)) problems << page->objectName() + " scrolls as a whole";
+      QList<QWidget*> widgets;
+      // Action buttons (form check boxes are values) except the rows the other mode uses.
+      for (auto* b : page->findChildren<QAbstractButton*>()) {
+        if (!b->objectName().startsWith("cutout") || !(qobject_cast<QPushButton*>(b) || qobject_cast<QToolButton*>(b))) continue;
+        bool otherMode = false;
+        for (QWidget* p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || (p->property("cutoutModeRow").isValid() && p->isHidden());
+        if (!otherMode) widgets << b;
+      }
+      for (auto* l : page->findChildren<QAbstractItemView*>()) if (l->objectName().startsWith("cutout")) widgets << l;
+      if (widgets.size() < 4) problems << page->objectName() + QString(" has %1 controls").arg(widgets.size());
+      for (QWidget* w : widgets) {
+        const QString what = page->objectName() + "/" + w->objectName();
+        if (!w->isVisible()) { problems << what + " hidden"; continue; }
+        const QRect r(w->mapTo(page, QPoint(0, 0)), w->size());
+        if (qobject_cast<QAbstractButton*>(w) && w->width() < w->sizeHint().width()) problems << what + QString(" squeezed to %1 < %2").arg(w->width()).arg(w->sizeHint().width());
+        if (!page->rect().contains(r) || r.height() < qMin(w->minimumSizeHint().height(), 20)) problems << what + QString(" clipped %1,%2 %3x%4 in %5x%6").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).arg(page->width()).arg(page->height());
+        for (QWidget* p = w->parentWidget(); p && p != page; p = p->parentWidget())
+          if (auto* scroll = qobject_cast<QScrollArea*>(p)) {
+            const QRect inView(w->mapTo(scroll->viewport(), QPoint(0, 0)), w->size());
+            if (!scroll->viewport()->rect().contains(inView)) problems << what + " scrolled out of " + scroll->objectName();
+          }
+      }
+    }
+    tabs->setCurrentIndex(keep);
+    return problems;
+  }
 
  private Q_SLOTS:
   void initTestCase() {
@@ -1655,7 +1692,7 @@ class StudioTests : public QObject {
     // Every splitter child keeps its minimum and nothing leaves the window, from a small
     // 1280x720 laptop to a 5120x1440 ultrawide and a very tall portrait screen.
     int sideWidth = -1;
-    for (const QSize size : {QSize(1280, 720), QSize(3840, 1080), QSize(5120, 1440), QSize(1080, 1920)}) {
+    for (const QSize size : {QSize(1280, 720), QSize(1920, 1080), QSize(3840, 1080), QSize(5120, 1440), QSize(1080, 1920), QSize(1440, 2560)}) {
       host.mainWindow.resize(size);
       pump();
       QTest::qWait(30);
@@ -1680,6 +1717,16 @@ class StudioTests : public QObject {
         QVERIFY2(panel->rect().contains(QRect(w->mapTo(panel, QPoint(0, 0)), w->size())), qPrintable(at + name + " cut off"));
       }
       QVERIFY(panel->canvas()->width() >= 200 && panel->canvas()->height() >= 150);
+      // Every page of 스킨 · 표정 · IK · 메시 shows its list and all its buttons by default.
+      for (const auto mode : {CutoutPanel::Mode::Setup, CutoutPanel::Mode::Animate}) {
+        panel->setMode(mode);
+        pump();
+        const QStringList clipped = lookPageProblems();
+        QVERIFY2(clipped.isEmpty(), qPrintable(at + (mode == CutoutPanel::Mode::Setup ? "setup: " : "animate: ") + clipped.join(" | ")));
+      }
+      panel->setMode(CutoutPanel::Mode::Setup);
+      find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+      pump();
       // Side panels keep their width on wide screens: the canvas gets the extra space.
       if (size.width() >= 3840) {
         if (sideWidth < 0) sideWidth = panel->leftPane()->width();
@@ -1689,6 +1736,34 @@ class StudioTests : public QObject {
     }
     host.mainWindow.resize(1700, 1200);
     pump();
+    // A layout saved by plugin <= 1.4.0 (no version, right column starving the look pages) comes
+    // back as the defaults; the same state saved by this version is restored as is.
+    {
+      auto* right = find<QSplitter>("cutoutRightSplitter");
+      const QList<int> defaults = right->sizes();
+      right->setSizes({5000, 1, 1});
+      pump();
+      const QList<int> starved = right->sizes();
+      QVERIFY2(starved[1] < defaults[1] - 100, qPrintable(QString("%1 vs %2").arg(starved[1]).arg(defaults[1])));
+      QSettings q;
+      q.beginGroup("plugins/cutout-animation/layout");
+      q.setValue("cutoutRightSplitter", right->saveState());
+      q.setValue("version", 1);
+      right->setSizes(defaults);
+      q.sync();
+      panel->restoreLayout();
+      pump();
+      QCOMPARE(right->sizes(), defaults);
+      QVERIFY(lookPageProblems().isEmpty());
+      q.setValue("version", 2);
+      q.sync();
+      panel->restoreLayout();
+      pump();
+      QCOMPARE(right->sizes(), starved);
+      QVERIFY2(lookPageProblems().isEmpty(), "even at its minimum the look section keeps its buttons");
+      right->setSizes(defaults);
+      panel->saveLayout();
+    }
     // Tab on the canvas / dopesheet = full view (side panels hidden); Tab in a form field still
     // moves the focus. Presentation only.
     const int canvasWidth = panel->canvas()->width();

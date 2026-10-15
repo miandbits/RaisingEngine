@@ -31,6 +31,7 @@ class QLineEdit;
 class QListWidget;
 class QMimeData;
 class QPushButton;
+class QScrollArea;
 class QScrollBar;
 class QSpinBox;
 class QSplitter;
@@ -300,7 +301,7 @@ class CutoutPanel : public QWidget {
   std::optional<SetupDelta> lastSetupDelta_;
 
   // widgets
-  QSplitter *mainSplit_ = nullptr, *workspaceSplit_ = nullptr, *leftSplit_ = nullptr, *rightSplit_ = nullptr, *timelineAreaSplit_ = nullptr;
+  QSplitter *outerSplit_ = nullptr, *mainSplit_ = nullptr, *workspaceSplit_ = nullptr, *leftSplit_ = nullptr, *rightSplit_ = nullptr, *timelineAreaSplit_ = nullptr;
   QWidget *leftPane_ = nullptr, *rightPane_ = nullptr;
   QToolButton* fullViewButton_ = nullptr;
   QList<QToolButton*> sections_;  // collapsible section headers (objectName "<section>Toggle")
@@ -365,6 +366,7 @@ class CutoutPanel : public QWidget {
   QDoubleSpinBox *brushWeight_ = nullptr, *brushStrength_ = nullptr, *brushRadius_ = nullptr;
   QLabel* meshInfo_ = nullptr;
   QVector<QWidget*> meshTools_, meshSetupTools_, meshAnimateTools_;
+  QVector<QWidget*> meshModeRows_;  // button rows shown in one mode only (property cutoutModeRow)
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;
@@ -376,6 +378,9 @@ class CutoutPanel : public QWidget {
   void buildUi();
   QWidget* buildCharacters();
   QWidget* buildLooks();
+  static constexpr int LIST_MIN_HEIGHT = 40;  // look-page lists/tables: ~2 rows, never 0
+  QWidget* lookPage(const char* name);        // fixed (non-scrolling) page of the look tabs
+  QScrollArea* formScroll(const char* name, QWidget* inner);
   void refreshLooks();
   QWidget* buildIk();
   void refreshIk();

@@ -237,6 +237,10 @@ void CutoutPanel::detachHost() {
 // ---------------------------------------------------------------- UI build
 namespace {
 constexpr const char* LAYOUT_GROUP = "plugins/cutout-animation/layout";
+/** Bumped when saved splitter states can no longer be trusted: v1 (plugin <= 1.4.0) put the right
+ *  column under the canvas only and could give the look pages so little height that their
+ *  buttons were scrolled away. */
+constexpr int LAYOUT_VERSION = 2;
 /** Tool row that never forces the panel wider: what does not fit goes behind its » button. */
 QToolBar* toolRow(const char* name) {
   auto* bar = new QToolBar;
@@ -253,19 +257,43 @@ QWidget* spacer() {
   w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   return w;
 }
+/** Action-button row of the look pages. Unlike toolRow it never hides a button behind », so
+ *  the widest row (in the host's font) is the right pane's minimum width. */
+QWidget* buttonRow(const char* name) {
+  auto* row = new QWidget;
+  row->setObjectName(name);
+  row->setProperty("cutoutRow", true);
+  row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+  auto* layout = new QHBoxLayout(row);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(3);
+  layout->addStretch();
+  return row;
+}
+void addToRow(QWidget* row, QWidget* w) {
+  auto* layout = static_cast<QHBoxLayout*>(row->layout());
+  layout->insertWidget(layout->count() - 1, w);  // before the trailing stretch
+}
+/** Wrapped hint text that may shrink to nothing: when the page is short, lists and buttons win. */
+class HintLabel : public QLabel {
+ public:
+  QSize minimumSizeHint() const override { return {0, 0}; }
+};
 }  // namespace
 
 // Spine-like single layout, the same in the host workspace and in an old host's dock:
 //   mode bar (always visible)
-//   [ left: 계층 / 그리기 순서 / 캐릭터 | center: tools + canvas | right: 속성 · 키 / 스킨 · 표정 · IK / 진단 ]
-//   [ bottom tabs: 애니메이션 (clips | transport + dopesheet/graph | mix) · 게임 연결 ]
+//   [ [ left: 계층 / 그리기 순서 / 캐릭터 | center: tools + canvas ]            | right (full height):
+//     [ bottom tabs: 애니메이션 (clips | transport + dopesheet/graph | mix) · 게임 연결 ] |   속성 · 키 / 스킨 · 표정 · IK · 메시 / 진단 ]
 // Every pane is a splitter child with a small minimum: lists scroll and tool rows overflow
-// instead of imposing a large minimum height/width on the window.
+// instead of imposing a large minimum height/width on the window (the look pages' button rows
+// are the exception: they set the right column's minimum so no button is ever hidden).
 void CutoutPanel::buildUi() {
   // Compact rows (cascades over the host theme): a 1280x720 window must hold canvas, side
   // panels and the timeline at their minimum sizes.
   setStyleSheet("QToolBar{padding:0;spacing:3px;border:0}"
-                "QToolBar QPushButton,QToolBar QToolButton,#cutoutClipsPane QPushButton,#cutoutMixPane QPushButton{padding:3px 8px}"
+                "QToolBar QPushButton,QToolBar QToolButton,#cutoutClipsPane QPushButton,#cutoutMixPane QPushButton,"
+                "QWidget[cutoutRow=\"true\"] QPushButton,QWidget[cutoutRow=\"true\"] QToolButton{padding:3px 8px}"
                 "QToolBar QSpinBox,QToolBar QComboBox{padding:2px;min-height:18px}"
                 "QToolButton[cutoutSection=\"true\"]{padding:2px 4px;font-weight:bold}"
                 "QTabBar::tab{padding:4px 12px}");
@@ -326,7 +354,18 @@ void CutoutPanel::buildUi() {
   mainSplit_->setStretchFactor(0, 3);
   mainSplit_->setStretchFactor(1, 2);
   mainSplit_->setSizes({600, 400});
-  root->addWidget(mainSplit_, 1);
+  // The right column (속성 · 키 / 스킨 · 표정 · IK · 메시 / 진단) spans the full height beside
+  // canvas and timeline: under the canvas only it got a third of a 1280x720 window, too little
+  // for the look pages' buttons. It keeps its width on wide screens.
+  outerSplit_ = new QSplitter(Qt::Horizontal);
+  outerSplit_->setObjectName("cutoutOuterSplitter");
+  outerSplit_->setChildrenCollapsible(false);
+  outerSplit_->addWidget(mainSplit_);
+  outerSplit_->addWidget(rightPane_);
+  outerSplit_->setStretchFactor(0, 1);
+  outerSplit_->setStretchFactor(1, 0);
+  outerSplit_->setSizes({1300, 330});
+  root->addWidget(outerSplit_, 1);
   statusLabel_ = new QLabel;
   statusLabel_->setObjectName("cutoutStatus");
   statusLabel_->setWordWrap(true);
@@ -391,6 +430,7 @@ QWidget* CutoutPanel::section(const QString& title, const char* name, QWidget* b
 void CutoutPanel::saveLayout() const {
   QSettings q;
   q.beginGroup(LAYOUT_GROUP);
+  q.setValue("version", LAYOUT_VERSION);
   for (QSplitter* s : splitters()) q.setValue(s->objectName(), s->saveState());
   QStringList collapsed;
   for (QToolButton* head : sections_) if (!head->isChecked()) collapsed << head->objectName();
@@ -400,8 +440,12 @@ void CutoutPanel::restoreLayout() {
   restoringLayout_ = true;
   QSettings q;
   q.beginGroup(LAYOUT_GROUP);
-  for (QSplitter* s : splitters())
-    if (q.contains(s->objectName())) s->restoreState(q.value(s->objectName()).toByteArray());
+  // Splitter states of an older layout come back as the defaults (collapsed sections are kept):
+  // v1 states hold three panes in the workspace splitter and right-column sizes that could
+  // starve the look pages. The next save writes the current version.
+  if (q.value("version", 1).toInt() >= LAYOUT_VERSION)
+    for (QSplitter* s : splitters())
+      if (q.contains(s->objectName())) s->restoreState(q.value(s->objectName()).toByteArray());
   const QStringList collapsed = q.value("collapsed").toStringList();
   for (QToolButton* head : sections_) head->setChecked(!collapsed.contains(head->objectName()));
   restoringLayout_ = false;
@@ -477,51 +521,42 @@ QWidget* CutoutPanel::buildCharacters() {
   return section("캐릭터 · 게임 연결", "cutoutSectionCharacters", body);
 }
 
-// Skins (outfits) and expressions: one tabbed section. Pages scroll so the section never forces
-// the left pane taller than a 1280x720 window allows.
+// Skins (outfits), expressions, IK and meshes: one tabbed section. Every page keeps its action
+// buttons in fixed rows above/below its list (never inside a scrolling area, never behind a »
+// overflow), and the page's minimum height (rows + small lists) is what the section asks of the
+// right splitter, so the buttons stay reachable on every window from 1280x720 up. Only secondary
+// values (IK settings, mesh grid and brush) scroll.
 QWidget* CutoutPanel::buildLooks() {
   lookTabs_ = new QTabWidget;
   lookTabs_->setObjectName("cutoutLookTabs");
   lookTabs_->setDocumentMode(true);
-  auto page = [](const char* name) {
-    auto* inner = new QWidget;
-    auto* layout = new QVBoxLayout(inner);
-    layout->setContentsMargins(0, 2, 0, 0);
-    layout->setSpacing(2);
-    auto* scroll = new QScrollArea;
-    scroll->setObjectName(name);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setWidget(inner);
-    scroll->setMinimumHeight(30);
-    return std::pair<QScrollArea*, QVBoxLayout*>{scroll, layout};
-  };
-  auto button = [this](QToolBar* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
+  auto button = [this](QWidget* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
     auto* b = new QPushButton(text);
     b->setObjectName(name);
     b->setToolTip(tip);
     connect(b, &QPushButton::clicked, this, [fn] { fn(); });
-    row->addWidget(b);
+    addToRow(row, b);
   };
   auto list = [](const char* name, const QString& tip) {
     auto* l = new QListWidget;
     l->setObjectName(name);
     l->setToolTip(tip);
-    l->setMinimumHeight(24);
+    l->setMinimumHeight(LIST_MIN_HEIGHT);
     l->setIconSize(QSize(20, 20));
     return l;
   };
-  auto [skinPage, skins] = page("cutoutSkinPage");
+  QWidget* skinPage = lookPage("cutoutSkinPage");
+  auto* skins = static_cast<QVBoxLayout*>(skinPage->layout());
   skinList_ = list("cutoutSkinList", "고른 스킨(의상)이 캔버스 미리 보기에 입혀집니다(편집기 전용, 저장되지 않음).\n클립은 그림 이름만 키로 쓰므로 스킨을 바꿔도 같은 애니메이션이 그대로 재생됩니다.");
   connect(skinList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
     if (!filling_ && item) setPreviewSkin(item->data(Qt::UserRole).toString());
   });
-  auto* skinTools = toolRow("cutoutSkinTools");
+  QWidget* skinTools = buttonRow("cutoutSkinTools");
   button(skinTools, "새 스킨", "cutoutNewSkin", "빈 스킨을 만듭니다. 캔버스의 조각에 PNG를 끌어 놓으면 이 스킨의 그림이 됩니다.", [this] { return newSkin(); });
   button(skinTools, "복제", "cutoutDuplicateSkin", "고른 스킨을 복사합니다(색만 다른 의상 등).", [this] { return duplicateSkin(); });
   button(skinTools, "이름 변경", "cutoutRenameSkin", "스킨 ID를 바꿉니다. 게임 연결의 기본 스킨·연결 규칙도 함께 바뀝니다.", [this] { return renameSkin(); });
   button(skinTools, "삭제", "cutoutDeleteSkin", "고른 스킨을 삭제합니다(게임 연결에서 쓰는 곳도 함께 지움).", [this] { return deleteSkin(); });
-  skinHint_ = new QLabel;
+  skinHint_ = new HintLabel;
   skinHint_->setObjectName("cutoutSkinHint");
   skinHint_->setWordWrap(true);
   skinHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -533,35 +568,38 @@ QWidget* CutoutPanel::buildLooks() {
   connect(skinAttachments_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
     if (!filling_ && item) selectItem("slot:" + item->data(Qt::UserRole).toString());
   });
-  auto* attachmentTools = toolRow("cutoutSkinAttachmentTools");
-  button(attachmentTools, "그림 지정…", "cutoutSkinAssign", "고른 조각에 이 스킨의 그림(프로젝트 이미지 또는 PNG)을 지정합니다.", [this] { return assignSkinImageInteractive(); });
+  QWidget* attachmentTools = buttonRow("cutoutSkinAttachmentTools");
+  button(attachmentTools, "그림 지정…", "cutoutSkinAssign", "고른 조각(트리·캔버스·이 목록)에 이 스킨의 그림(프로젝트 이미지 또는 PNG)을 지정합니다.", [this] { return assignSkinImageInteractive(); });
   button(attachmentTools, "빼기", "cutoutSkinRemoveAttachment", "이 스킨에서 그림을 빼면 그 조각은 기본 첨부를 보여 줍니다.", [this] { return removeSkinAttachment(); });
-  skins->addWidget(skinList_, 1);
   skins->addWidget(skinTools);
-  skins->addWidget(skinHint_);
-  skins->addWidget(skinAttachments_, 1);
+  skins->addWidget(skinList_, 1);
   skins->addWidget(attachmentTools);
+  skins->addWidget(skinAttachments_, 1);
+  skins->addWidget(skinHint_);
 
-  auto [expressionPage, expressions] = page("cutoutExpressionPage");
+  QWidget* expressionPage = lookPage("cutoutExpressionPage");
+  auto* expressions = static_cast<QVBoxLayout*>(expressionPage->layout());
   expressionList_ = list("cutoutExpressionList", "고른 표정을 캔버스에 미리 봅니다(편집기 전용). 표정은 기본 동작(트랙 0) 위, 레이어(눈깜빡임 등) 아래에 겹칩니다.");
   connect(expressionList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
     if (!filling_ && item) setPreviewExpression(item->data(Qt::UserRole).toString());
   });
-  auto* expressionTools = toolRow("cutoutExpressionTools");
+  QWidget* expressionTools = buttonRow("cutoutExpressionTools");
   button(expressionTools, "현재 상태로 표정 만들기", "cutoutCaptureExpression",
          "애니메이션 모드에서 눈·입 그림이나 본을 바꾼 뒤(K로 키를 넣기 전에) 누르면, 바뀐 부분만 새 표정이 됩니다.\n바꾼 것이 없으면 이 시간 자세가 기본 자세와 다른 부분을 담습니다.", [this] { return captureExpression(); });
   button(expressionTools, "다시 담기", "cutoutRecaptureExpression", "고른 표정을 지금 상태로 덮어씁니다(이름 유지).", [this] { return recaptureExpression(); });
-  button(expressionTools, "이름 변경", "cutoutRenameExpression", "표정 ID를 바꿉니다. 표정 키와 게임 연결도 함께 바뀝니다.", [this] { return renameExpression(); });
-  button(expressionTools, "삭제", "cutoutDeleteExpression", "고른 표정과 그 표정 키를 삭제합니다(게임 연결에서 쓰는 곳도 함께 지움).", [this] { return deleteExpression(); });
+  QWidget* expressionEdit = buttonRow("cutoutExpressionEditTools");
+  button(expressionEdit, "이름 변경", "cutoutRenameExpression", "표정 ID를 바꿉니다. 표정 키와 게임 연결도 함께 바뀝니다.", [this] { return renameExpression(); });
+  button(expressionEdit, "삭제", "cutoutDeleteExpression", "고른 표정과 그 표정 키를 삭제합니다(게임 연결에서 쓰는 곳도 함께 지움).", [this] { return deleteExpression(); });
   expressionTable_ = new QTableWidget(0, 2);
   expressionTable_->setObjectName("cutoutExpressionTable");
   expressionTable_->setHorizontalHeaderLabels({"대상", "표정 값"});
   expressionTable_->horizontalHeader()->setStretchLastSection(true);
   expressionTable_->verticalHeader()->hide();
-  expressionTable_->setMinimumHeight(40);
+  expressionTable_->setMinimumHeight(LIST_MIN_HEIGHT);
   expressionTable_->setToolTip("조각: 표정이 바꿀 그림(— = 표정에 넣지 않음, 숨김 = 감춤) · 본: rotation=10, y=-3 처럼 덮을 값(비우면 뺌)");
-  expressions->addWidget(expressionList_, 1);
   expressions->addWidget(expressionTools);
+  expressions->addWidget(expressionEdit);
+  expressions->addWidget(expressionList_, 1);
   expressions->addWidget(expressionTable_, 2);
   lookTabs_->addTab(skinPage, "스킨");
   lookTabs_->addTab(expressionPage, "표정");
@@ -570,20 +608,43 @@ QWidget* CutoutPanel::buildLooks() {
   lookTabs_->addTab(buildMesh(), "메시");
   return section("스킨 · 표정 · IK · 메시", "cutoutSectionLooks", lookTabs_);
 }
-
-// Meshes (plugin 1.4.0): convert the selected part, edit its vertices, weights and deform keys.
-// The page acts on the attachment the part shows now (the preview skin's own when it has one).
-QWidget* CutoutPanel::buildMesh() {
-  auto* inner = new QWidget;
-  auto* layout = new QVBoxLayout(inner);
+QWidget* CutoutPanel::lookPage(const char* name) {
+  auto* page = new QWidget;
+  page->setObjectName(name);
+  auto* layout = new QVBoxLayout(page);
   layout->setContentsMargins(0, 2, 0, 0);
   layout->setSpacing(2);
-  auto button = [this](QToolBar* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
+  return page;
+}
+QScrollArea* CutoutPanel::formScroll(const char* name, QWidget* inner) {
+  // Secondary values only: the page's buttons and list never live in here. No minimum: at the
+  // smallest window the buttons and the list win, the values scroll (or wait for more height).
+  auto* scroll = new QScrollArea;
+  scroll->setObjectName(name);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  scroll->setWidget(inner);
+  scroll->setMinimumHeight(1);
+  return scroll;
+}
+// Meshes (plugin 1.4.0): convert the selected part, edit its vertices, weights and deform keys.
+// The page acts on the attachment the part shows now (the preview skin's own when it has one).
+// Rows that only one mode can use are hidden in the other mode (refreshMesh), which keeps the
+// page's minimum at three button rows.
+QWidget* CutoutPanel::buildMesh() {
+  QWidget* page = lookPage("cutoutMeshPage");
+  auto* layout = static_cast<QVBoxLayout*>(page->layout());
+  auto* inner = new QWidget;
+  auto* formLayout = new QVBoxLayout(inner);
+  formLayout->setContentsMargins(0, 0, 0, 0);
+  formLayout->setSpacing(2);
+  auto button = [this](QWidget* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
     auto* b = new QPushButton(text);
     b->setObjectName(name);
     b->setToolTip(tip);
     connect(b, &QPushButton::clicked, this, [fn] { fn(); });
-    row->addWidget(b);
+    addToRow(row, b);
     return b;
   };
   meshInfo_ = new QLabel;
@@ -591,7 +652,7 @@ QWidget* CutoutPanel::buildMesh() {
   meshInfo_->setWordWrap(true);
   meshInfo_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   meshInfo_->setStyleSheet("color:#a7b4c2;");
-  auto* convertRow = toolRow("cutoutMeshConvertTools");
+  QWidget* convertRow = buttonRow("cutoutMeshConvertTools");
   meshRows_ = new QSpinBox;
   meshRows_->setObjectName("cutoutMeshRows");
   meshRows_->setRange(1, 40);
@@ -608,14 +669,15 @@ QWidget* CutoutPanel::buildMesh() {
   meshTrim_->setObjectName("cutoutMeshTrim");
   meshTrim_->setChecked(true);
   meshTrim_->setToolTip("그림이 없는(완전히 투명한) 칸은 메시에서 뺍니다.");
-  convertRow->addWidget(meshRows_);
-  convertRow->addWidget(meshCols_);
-  convertRow->addWidget(meshTrim_);
-  auto* convertTools = toolRow("cutoutMeshConvertButtons");
-  QPushButton* convert = button(convertTools, "메시로 변환", "cutoutConvertMesh", "조립 모드: 고른 조각의 그림을 격자 메시로 바꿉니다. 모양은 그대로이고, 정점을 옮기거나 본 웨이트를 주면 휘어집니다.",
+  addToRow(convertRow, meshRows_);
+  addToRow(convertRow, meshCols_);
+  addToRow(convertRow, meshTrim_);
+  QWidget* convertTools = buttonRow("cutoutMeshConvertButtons");
+  convertTools->setProperty("cutoutModeRow", "setup");
+  QPushButton* convert = button(convertTools, "메시로 변환", "cutoutConvertMesh", "조립 모드: 고른 조각의 그림을 격자 메시로 바꿉니다(격자 크기는 아래). 모양은 그대로이고, 정점을 옮기거나 본 웨이트를 주면 휘어집니다.",
                                 [this] { return convertToMesh(meshRows_->value(), meshCols_->value(), meshTrim_->isChecked()); });
   QPushButton* revert = button(convertTools, "이미지로 되돌리기", "cutoutConvertRegion", "메시를 지우고 보통 그림(사각형)으로 되돌립니다. 이 메시의 변형 키도 지워집니다.", [this] { return convertToRegion(); });
-  auto* modeRow = toolRow("cutoutMeshModes");
+  QWidget* modeRow = buttonRow("cutoutMeshModes");
   auto mode = [&](const QString& text, const char* name, const QString& tip, MeshEdit m) {
     auto* b = new QToolButton;
     b->setObjectName(name);
@@ -623,17 +685,18 @@ QWidget* CutoutPanel::buildMesh() {
     b->setToolTip(tip);
     b->setCheckable(true);
     connect(b, &QToolButton::clicked, this, [this, b, m] { setMeshEdit(b->isChecked() ? m : MeshEdit::Off); });
-    modeRow->addWidget(b);
+    addToRow(modeRow, b);
     return b;
   };
   meshVerticesButton_ = mode("정점 편집", "cutoutMeshVertices", "캔버스에서 정점을 클릭·상자로 골라 끕니다.\n조립 모드: 메시 모양(그림은 제자리) · 애니메이션 모드: 이 시간의 변형(K로 키).", MeshEdit::Vertices);
   meshWeightsButton_ = mode("웨이트 칠하기", "cutoutMeshWeights", "조립 모드: 캔버스를 끌어 고른 본의 웨이트를 칠합니다(색: 파랑 0 → 빨강 1).", MeshEdit::Weights);
   meshBones_ = new QListWidget;
   meshBones_->setObjectName("cutoutMeshBones");
-  meshBones_->setMinimumHeight(24);
+  meshBones_->setMinimumHeight(LIST_MIN_HEIGHT);
   meshBones_->setToolTip("자동 웨이트에 쓸 본 · 체크한 본들 가운데 가까운 1~4개가 정점을 움직입니다.");
-  auto* weightTools = toolRow("cutoutMeshWeightTools");
-  QPushButton* autoButton = button(weightTools, "자동 웨이트", "cutoutMeshAutoWeights", "체크한 본(없으면 조각의 본과 그 부모·자식)까지의 거리로 웨이트를 자동으로 줍니다. 부드럽게 이어지고 합은 1입니다.", [this] { return autoWeights(); });
+  QWidget* weightTools = buttonRow("cutoutMeshWeightTools");
+  weightTools->setProperty("cutoutModeRow", "setup");
+  QPushButton* autoButton = button(weightTools, "자동 웨이트", "cutoutMeshAutoWeights", "아래 목록에서 체크한 본(없으면 조각의 본과 그 부모·자식)까지의 거리로 웨이트를 자동으로 줍니다. 부드럽게 이어지고 합은 1입니다.", [this] { return autoWeights(); });
   QPushButton* unbind = button(weightTools, "웨이트 해제", "cutoutMeshUnbind", "웨이트를 지웁니다. 메시는 다시 조각의 본만 따라갑니다(모양은 그대로).", [this] { return unbindMesh(); });
   auto* form = new QFormLayout;
   form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
@@ -660,53 +723,53 @@ QWidget* CutoutPanel::buildMesh() {
   form->addRow("웨이트", brushWeight_);
   form->addRow("세기", brushStrength_);
   form->addRow("붓 크기", brushRadius_);
-  auto* deformTools = toolRow("cutoutMeshDeformTools");
+  QWidget* deformTools = buttonRow("cutoutMeshDeformTools");
+  deformTools->setProperty("cutoutModeRow", "animate");
   QPushButton* deformKey = button(deformTools, "변형 키", "cutoutMeshDeformKey", "애니메이션 모드: 지금 보이는 메시 변형을 이 시간의 키로 넣습니다(K와 같음).", [this] { return keyDeform(); });
   QPushButton* deformDelete = button(deformTools, "변형 키 삭제", "cutoutMeshDeleteDeform", "애니메이션 모드: 이 시간의 변형 키를 지웁니다.", [this] { return deleteDeformKey(); });
-  layout->addWidget(meshInfo_);
-  layout->addWidget(convertRow);
+  // Fixed: the mode's action rows and the bone list. Scrolling: state text, grid size, brush.
   layout->addWidget(convertTools);
   layout->addWidget(modeRow);
-  layout->addWidget(new QLabel("자동 웨이트에 쓸 본"));
-  layout->addWidget(meshBones_, 1);
   layout->addWidget(weightTools);
-  layout->addLayout(form);
   layout->addWidget(deformTools);
+  layout->addWidget(meshBones_, 2);
+  formLayout->addWidget(meshInfo_);
+  formLayout->addWidget(convertRow);
+  formLayout->addLayout(form);
+  formLayout->addStretch();
+  layout->addWidget(formScroll("cutoutMeshFormScroll", inner), 3);
+  meshModeRows_ = {convertTools, weightTools, deformTools};
   meshSetupTools_ = {meshRows_, meshCols_, meshTrim_, convert};
   meshTools_ = {revert, meshVerticesButton_, meshWeightsButton_, meshBones_, autoButton, unbind, brushBone_, brushWeight_, brushStrength_, brushRadius_};
   meshAnimateTools_ = {deformKey, deformDelete};
-  auto* scroll = new QScrollArea;
-  scroll->setObjectName("cutoutMeshPage");
-  scroll->setWidgetResizable(true);
-  scroll->setFrameShape(QFrame::NoFrame);
-  scroll->setWidget(inner);
-  scroll->setMinimumHeight(30);
-  return scroll;
+  return page;
 }
 
 // IK constraints (plugin 1.3.0): the list, chain tools and the selected constraint's values, as the
-// "IK" page of the 스킨 · 표정 · IK section (it scrolls like the look pages).
+// "IK" page of the 스킨 · 표정 · IK · 메시 section.
 QWidget* CutoutPanel::buildIk() {
+  QWidget* page = lookPage("cutoutIkPage");
+  auto* layout = static_cast<QVBoxLayout*>(page->layout());
   auto* inner = new QWidget;
-  auto* layout = new QVBoxLayout(inner);
-  layout->setContentsMargins(0, 2, 0, 0);
-  layout->setSpacing(2);
-  auto button = [this](QToolBar* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
+  auto* formLayout = new QVBoxLayout(inner);
+  formLayout->setContentsMargins(0, 0, 0, 0);
+  formLayout->setSpacing(2);
+  auto button = [this](QWidget* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
     auto* b = new QPushButton(text);
     b->setObjectName(name);
     b->setToolTip(tip);
     connect(b, &QPushButton::clicked, this, [fn] { fn(); });
-    row->addWidget(b);
+    addToRow(row, b);
     return b;
   };
   ikList_ = new QListWidget;
   ikList_->setObjectName("cutoutIkList");
-  ikList_->setMinimumHeight(24);
+  ikList_->setMinimumHeight(LIST_MIN_HEIGHT);
   ikList_->setToolTip("IK 제약 · 캔버스의 대상 본(✛)을 끌면 팔·다리가 따라옵니다. 고른 제약의 사슬은 캔버스에 주황색으로 강조됩니다.");
   connect(ikList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
     if (!filling_ && item) selectIk(item->data(Qt::UserRole).toString());
   });
-  auto* tools = toolRow("cutoutIkTools");
+  QWidget* tools = buttonRow("cutoutIkTools");
   button(tools, "팔·다리 IK", "cutoutNewIk", "선택한 본(아래팔·정강이처럼 사슬의 끝)과 그 부모로 두 본 IK를 만들고, 손·발 자리에 대상 본(✛)을 만듭니다.\n끝점은 선택한 본의 첫 자식 본(손·발)입니다.", [this] { return newIk(false); });
   button(tools, "조준 IK", "cutoutNewAimIk", "선택한 본의 x축(→)이 대상 본을 향하게 하는 한 본 IK를 만듭니다(눈·머리·무기 조준).", [this] { return newIk(true); });
   button(tools, "이름 변경", "cutoutRenameIk", "IK ID를 바꿉니다. 이 IK의 키(혼합·굽힘)도 함께 바뀝니다.", [this] { return renameIk(); });
@@ -746,7 +809,7 @@ QWidget* CutoutPanel::buildIk() {
   form->addRow("혼합 (mix)", ikMix_);
   form->addRow("굽힘", ikBend_);
   form->addRow("순서", ikOrder_);
-  auto* keyTools = toolRow("cutoutIkKeyTools");
+  QWidget* keyTools = buttonRow("cutoutIkKeyTools");
   QPushButton* key = button(keyTools, "IK 키", "cutoutIkKey", "애니메이션 모드: 이 시간에 고른 IK의 혼합·굽힘 키를 넣습니다.", [this] { return keyIk(); });
   button(keyTools, "대상 선택", "cutoutIkSelectTarget", "고른 IK의 대상 본을 선택합니다(캔버스에서 끌어 옮기기).", [this] { return selectIkTarget(); });
   QPushButton* bake = button(keyTools, "IK 결과를 키로 굽기", "cutoutBakeIk", "애니메이션 모드: IK가 만든 회전을 이 시간의 회전 키로 넣고 혼합을 0으로 키합니다.\n그 뒤로는 키(FK)로 다듬습니다.", [this] { return bakeIk(); });
@@ -755,20 +818,17 @@ QWidget* CutoutPanel::buildIk() {
   ikInfo_->setWordWrap(true);
   ikInfo_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   ikInfo_->setStyleSheet("color:#a7b4c2;");
-  layout->addWidget(ikList_, 1);
+  // Fixed: chain tools above the list, key tools below it; the constraint's values scroll.
   layout->addWidget(tools);
-  layout->addLayout(form);
+  layout->addWidget(ikList_, 2);
   layout->addWidget(keyTools);
-  layout->addWidget(ikInfo_);
+  formLayout->addLayout(form);
+  formLayout->addWidget(ikInfo_);
+  formLayout->addStretch();
+  layout->addWidget(formScroll("cutoutIkFormScroll", inner), 3);
   ikEditors_ = {ikTarget_, ikMix_, ikBend_, ikOrder_};
   ikAnimateTools_ = {key, bake};
-  auto* scroll = new QScrollArea;
-  scroll->setObjectName("cutoutIkPage");
-  scroll->setWidgetResizable(true);
-  scroll->setFrameShape(QFrame::NoFrame);
-  scroll->setWidget(inner);
-  scroll->setMinimumHeight(30);
-  return scroll;
+  return page;
 }
 
 QWidget* CutoutPanel::buildWorkspace() {
@@ -1007,7 +1067,7 @@ QWidget* CutoutPanel::buildWorkspace() {
   diagnostics_ = new QListWidget;
   diagnostics_->setObjectName("cutoutDiagnostics");
   diagnostics_->setToolTip("검증 결과 · 클릭하면 해당 항목을 선택합니다.");
-  diagnostics_->setMinimumHeight(40);
+  diagnostics_->setMinimumHeight(40);  // small by default (the list scrolls), see rightSplit_
   diagnostics_->setTextElideMode(Qt::ElideMiddle);
   connect(diagnostics_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
     onDiagnosticClicked(item->data(Qt::UserRole).toString(), item->data(Qt::UserRole + 1).toString());
@@ -1020,18 +1080,23 @@ QWidget* CutoutPanel::buildWorkspace() {
   // already holds three sections at the 1280x720 minimum.
   rightSplit_->addWidget(buildLooks());
   rightSplit_->addWidget(section("진단", "cutoutSectionDiagnostics", diagnostics_));
-  rightSplit_->setSizes({520, 320, 160});
+  // Extra height goes to properties and the look pages; diagnostics stay a small strip (its
+  // list scrolls) unless the user drags it taller.
+  rightSplit_->setStretchFactor(0, 2);
+  rightSplit_->setStretchFactor(1, 3);
+  rightSplit_->setStretchFactor(2, 0);
+  rightSplit_->setSizes({400, 480, 80});
   rightPane_ = rightSplit_;
-  rightPane_->setMinimumWidth(210);
+  // No explicit minimum width: the widest look-page button row (in the host's font) is the
+  // minimum, so no button is ever squeezed or hidden.
 
   workspaceSplit_->addWidget(leftPane_);
   workspaceSplit_->addWidget(middle);
-  workspaceSplit_->addWidget(rightPane_);
-  // Only the canvas stretches: on a very wide screen the side panels keep their width.
+  // Only the canvas stretches: on a very wide screen the left panel keeps its width. The right
+  // column is not in here: buildUi puts it beside canvas + timeline, at full height.
   workspaceSplit_->setStretchFactor(0, 0);
   workspaceSplit_->setStretchFactor(1, 1);
-  workspaceSplit_->setStretchFactor(2, 0);
-  workspaceSplit_->setSizes({260, 1000, 290});
+  workspaceSplit_->setSizes({260, 1000});
   return workspaceSplit_;
 }
 
@@ -1391,7 +1456,15 @@ QWidget* CutoutPanel::buildControllerTab() {
   connect(layerRemove, &QPushButton::clicked, this, [this] { removeLayer(); });
   layerButtons->addWidget(layerAdd);
   layerButtons->addWidget(layerRemove);
-  layers->addWidget(new QLabel("레이어 (트랙 1..15, 예: 눈깜빡임)"));
+  // Captions wrap (ignored width): the right column now sits beside this tab, so its minimum
+  // width must stay small enough for a 1080 px wide portrait window.
+  auto caption = [](const QString& text) {
+    auto* label = new QLabel(text);
+    label->setWordWrap(true);
+    label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    return label;
+  };
+  layers->addWidget(caption("레이어 (트랙 1..15, 예: 눈깜빡임)"));
   layers->addWidget(layerTable_, 1);
   layers->addLayout(layerButtons);
   auto* bindings = new QVBoxLayout;
@@ -1411,7 +1484,7 @@ QWidget* CutoutPanel::buildControllerTab() {
   bindingButtons->addWidget(bindingAdd);
   bindingButtons->addWidget(bindingRemove);
   bindingButtons->addStretch();
-  bindings->addWidget(new QLabel("게임 신호 → 클립 연결 (트랙마다 위에서 처음 맞는 연결이 실행됩니다)"));
+  bindings->addWidget(caption("게임 신호 → 클립 연결 (트랙마다 위에서 처음 맞는 연결이 실행됩니다)"));
   bindings->addWidget(bindingTable_, 1);
   bindings->addLayout(bindingButtons);
   tables->addLayout(layers, 1);
@@ -3947,6 +4020,7 @@ void CutoutPanel::refreshMesh() {
     brushBone_->setCurrentIndex(std::max(0, at));
   }
   for (QWidget* w : meshSetupTools_) w->setEnabled(part && !animate);
+  for (QWidget* row : meshModeRows_) row->setVisible(row->property("cutoutModeRow").toString() == (animate ? "animate" : "setup"));
   for (QWidget* w : meshTools_) w->setEnabled(mesh && (!animate || w == meshVerticesButton_));
   for (QWidget* w : meshAnimateTools_) w->setEnabled(mesh && animate);
   meshVerticesButton_->setChecked(meshEdit_ == MeshEdit::Vertices);
