@@ -8,6 +8,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseDocument } from '../../dist/packages/project-service/json-document.js';
 import { loadProject } from '../../dist/packages/project-service/loader.js';
+import { buildSnapshot, detachProject } from '../../dist/packages/project-service/snapshot.js';
+import { validateProject } from '../../dist/packages/validation/index.js';
 import { StudioEditor } from '../../dist/packages/studio-service/editor.js';
 import { addCutout, envelope, lock, newProject, serialize } from './host-helpers.mjs';
 import { stressRig } from './stress-fixture.mjs';
@@ -86,4 +88,29 @@ test('drafts are immutable values: untouched documents are shared, views are det
   assert.equal(editor.view().dirty, true);
   editor.edit({ type: 'replace', file: RIG, data: rig.data }, editor.revision);
   assert.equal(editor.view().dirty, false, 'back to the saved content');
+});
+
+test('everything the editor hands out stays structuredClone-safe (lazy locations are plain Maps)', async () => {
+  const root = await newProject();
+  await addCutout(root);
+  const editor = new StudioEditor({ pluginStore: null });
+  await editor.open(root);
+  const rig = structuredClone(editor.documents.find(d => d.file === RIG).data);
+  rig.data.name = 'edited';
+  editor.edit({ type: 'replace', file: RIG, data: rig }, editor.revision);
+  // Callers (Qt preview, Electron IPC, MCP) clone these: no WeakMap, class state or getter may leak.
+  for (const value of [editor.loaded(), editor.view(), editor.reply(), editor.view({ shared: true }), await buildSnapshot(editor.loaded())]) structuredClone(value);
+  const loaded = editor.loaded(), doc = loaded.documents.find(d => d.file === RIG);
+  const pointer = '/data/name', exact = parseDocument(RIG, 'extension', JSON.stringify(rig, null, 2) + '\n').document.locations.get(pointer);
+  assert.ok(doc.locations instanceof Map);
+  assert.equal(JSON.stringify(doc.locations), '{}', 'no private state serialized');
+  // A clone carries the entries built so far; detachProject shares the locations, so they stay exact.
+  const detached = detachProject(loaded);
+  assert.equal(detached.documents.find(d => d.file === RIG).locations, doc.locations);
+  assert.deepEqual(detached.documents.find(d => d.file === RIG).locations.get(pointer), exact);
+  detached.documents.find(d => d.file === RIG).data.data.name = 'detached';
+  assert.equal(doc.data.data.name, 'edited', 'detached data is a copy');
+  assert.ok((await validateProject(detached)).diagnostics.every(d => d.severity !== 'error'));
+  assert.equal(doc.locations.size, [...doc.locations].length, 'iteration builds the full map');
+  assert.deepEqual(structuredClone(doc.locations).get(pointer), exact, 'a clone of a built map is exact');
 });
