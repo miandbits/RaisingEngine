@@ -335,6 +335,35 @@ class SkinImageDialog : public QDialog {
 };
 
 // ============================================================================
+namespace {
+/**
+ * Wheel events over an unfocused spin box or combo box of `panel` go to the widget's parent (the
+ * scroll area scrolls); once the field has keyboard focus (clicked, tabbed into) the wheel steps
+ * its value as usual. Fields get Qt::StrongFocus so a wheel never focuses them.
+ */
+class WheelGuard : public QObject {
+ public:
+  explicit WheelGuard(QWidget* panel) : QObject(panel), panel_(panel) {}
+  bool eventFilter(QObject* watched, QEvent* event) override {
+    if (event->type() != QEvent::Wheel || !watched->isWidgetType()) return false;
+    QWidget* field = static_cast<QWidget*>(watched);
+    // The spin box's line edit or the combo's view also see the wheel: act on the field itself.
+    while (field && !qobject_cast<QAbstractSpinBox*>(field) && !qobject_cast<QComboBox*>(field)) {
+      if (field == panel_) return false;
+      field = field->parentWidget();
+    }
+    if (!field || !panel_->isAncestorOf(field)) return false;
+    if (field->focusPolicy() == Qt::WheelFocus) field->setFocusPolicy(Qt::StrongFocus);
+    if (field->hasFocus() || (qobject_cast<QComboBox*>(field) && static_cast<QComboBox*>(field)->view()->isVisible())) return false;
+    if (QWidget* parent = field->parentWidget()) QCoreApplication::sendEvent(parent, event);
+    return true;
+  }
+
+ private:
+  QWidget* panel_;
+};
+}  // namespace
+
 CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(parent), host_(host) {
   setObjectName("cutoutPanel");
   onion_ = OnionSettings::load();
@@ -353,6 +382,11 @@ CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(p
   timer_->setInterval(16);
   connect(timer_, &QTimer::timeout, this, [this] { tick(); });
   buildUi();
+  // A wheel over a value field or list box that was not clicked scrolls the page instead of
+  // changing the value (rolling over 복원력 used to turn 60 into 10 unnoticed). Fields created
+  // later (property pages are rebuilt) are covered too: the guard is app-wide but only acts on
+  // this panel's widgets, and it goes away with the panel.
+  qApp->installEventFilter(new WheelGuard(this));
 }
 CutoutPanel::~CutoutPanel() = default;
 bool CutoutPanel::runPartDialog(PartChoice& choice) {
@@ -761,7 +795,20 @@ void CutoutPanel::setUiScale(double scale) {
   applyUiScale();  // also when unchanged: the host font may have changed since
   QString label = QString::number(int(std::lround(scale * 100))) + "%";
   for (const auto& c : uiScales()) if (std::fabs(c.scale - scale) < 1e-6) label = QString("%1 (%2)").arg(c.label, label);
-  setStatus(QString("작업 공간 글자 크기: %1 · Ctrl+= 크게 · Ctrl+- 작게 · Ctrl+0 보통 (이 컴퓨터에만 저장)").arg(label));
+  setStatus(QString("작업 공간 글자 크기: %1 · Ctrl+= 크게 · Ctrl+- 작게 · Ctrl+0 보통 · 보기 ▾에서 「자동」 (이 컴퓨터에만 저장)").arg(label));
+}
+void CutoutPanel::setUiScaleAuto() {
+  // Plugin 1.14.0: back to the screen's default (no saved choice), as on first start.
+  uiScaleChosen_ = false;
+  QSettings q;
+  q.beginGroup(VIEW_GROUP);
+  q.remove("uiScale");
+  const QScreen* s = screen() ? screen() : QGuiApplication::primaryScreen();
+  ui_ = s ? defaultUiScale(s->size(), s->devicePixelRatio(), s->logicalDotsPerInch()) : 1.0;
+  applyUiScale();
+  QString label = QString::number(int(std::lround(ui_ * 100))) + "%";
+  for (const auto& c : uiScales()) if (std::fabs(c.scale - ui_) < 1e-6) label = QString("%1 (%2)").arg(c.label, label);
+  setStatus(QString("작업 공간 글자 크기: 자동 — 이 화면에서는 %1. 화면이 바뀌면 다시 맞춥니다 (보기 ▾ › 작업 공간 글자 크기).").arg(label));
 }
 void CutoutPanel::stepUiScale(int delta) {
   const auto& v = uiScales();
@@ -806,7 +853,7 @@ void CutoutPanel::applyUiScale() {
   dopesheet_->setRows(dopesheet_->rows(), timeView_->duration());  // row height -> its minimum height
   graph_->update();
   refreshModeUi();  // the banner's own style sheet
-  for (QAction* a : uiScaleActions_) a->setChecked(std::fabs(a->data().toDouble() - u) < 1e-6);
+  for (QAction* a : uiScaleActions_) a->setChecked(a->data().toDouble() < 0 ? !uiScaleChosen_ : uiScaleChosen_ && std::fabs(a->data().toDouble() - u) < 1e-6);
   // Rows got wider: an automatic layout is recomputed, a user layout widened where needed.
   if (autoLayout_) applyDefaultLayout();
   else sanitizeLayout();
@@ -834,6 +881,14 @@ void CutoutPanel::buildViewMenu() {
   sizes->setObjectName("cutoutUiScaleMenu");
   auto* group = new QActionGroup(sizes);
   group->setExclusive(true);
+  QAction* automatic = action(sizes, "자동 (화면에 맞춤)", "cutoutUiScaleAuto", QString(), [this] { setUiScaleAuto(); });
+  automatic->setProperty("cutoutGroup", "작업 공간 글자 크기");
+  automatic->setToolTip("저장한 크기를 지우고 처음처럼 화면 크기·배율에 맞춥니다.");
+  automatic->setCheckable(true);
+  automatic->setData(-1.0);
+  group->addAction(automatic);
+  uiScaleActions_ << automatic;
+  sizes->addSeparator();
   for (const auto& c : uiScales()) {
     const double scale = c.scale;
     QAction* a = action(sizes, QString("%1 (%2%)").arg(c.label).arg(int(std::lround(scale * 100))), c.objectName, QString(), [this, scale] { setUiScale(scale); });

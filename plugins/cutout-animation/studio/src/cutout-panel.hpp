@@ -405,6 +405,9 @@ class CutoutPanel : public QWidget {
   void setUiScale(double scale);
   double uiScale() const { return ui_; }
   void stepUiScale(int delta);  // Ctrl+= / Ctrl+- inside the workspace (one preset up / down)
+  /** 자동 (plugin 1.14.0): forget the saved choice, use the screen's default again. */
+  void setUiScaleAuto();
+  bool uiScaleAuto() const { return !uiScaleChosen_; }
   /** Command palette (Ctrl+K / F1): every button, menu command and page of the workspace by its
    *  Korean name, group or shortcut. Running one is what clicking it does (one edit when it edits). */
   struct Command { QString id, name, group, shortcut, tip; bool enabled = true; };

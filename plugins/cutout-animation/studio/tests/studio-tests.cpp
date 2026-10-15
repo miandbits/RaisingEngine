@@ -581,6 +581,39 @@ class StudioTests : public QObject {
     QVERIFY(gesture("focus-out without change", 0, [&] { Q_EMIT find<QDoubleSpinBox>("cutoutPropRotation")->editingFinished(); }));
   }
 
+  /** A wheel over a value field that was not clicked scrolls the page; it never edits (plugin 1.14.0). */
+  void wheelNeedsFocus() {
+    host.mainWindow.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    panel->selectItem("bone:arm");
+    pump();
+    auto* spin = find<QDoubleSpinBox>("cutoutPropRotation");
+    auto* preset = find<QComboBox>("cutoutPhysicsPreset");
+    QVERIFY(spin && preset);
+    const double before = spin->value();
+    const int index = preset->currentIndex(), edits = host.edits;
+    panel->canvas()->setFocus();
+    pump();
+    wheel(spin, QPointF(spin->width() / 2.0, spin->height() / 2.0), 3, Qt::NoModifier);
+    wheel(preset, QPointF(preset->width() / 2.0, preset->height() / 2.0), -2, Qt::NoModifier);
+    pump();
+    QCOMPARE(spin->value(), before);
+    QCOMPARE(preset->currentIndex(), index);
+    QCOMPARE(spin->focusPolicy(), Qt::StrongFocus);  // a wheel never focuses it either
+    QVERIFY(!spin->hasFocus());
+    QCOMPARE(host.edits, edits);
+    // Clicked / tabbed into: the wheel steps the value as usual.
+    spin->setFocus();
+    pump();
+    QVERIFY(spin->hasFocus());
+    wheel(spin, QPointF(spin->width() / 2.0, spin->height() / 2.0), 1, Qt::NoModifier);
+    QVERIFY(spin->value() != before);
+    spin->setValue(before);
+    panel->canvas()->setFocus();
+    pump();
+    QCOMPARE(rig()["bones"][2].value("rotation", 0.0), before);
+  }
+
   void drawOrder() {
     panel->selectItem("slot:eyes");
     QVERIFY(gesture("already front", 0, [&] { click("cutoutDrawDown"); }));
@@ -3676,6 +3709,19 @@ class StudioTests : public QObject {
       QCOMPARE(next.uiScale(), 1.5);
       next.detachHost();
     }
+    // 자동 (plugin 1.14.0): forgets the saved choice and follows the screen again.
+    QVERIFY(!panel->uiScaleAuto() && !find<QAction>("cutoutUiScaleAuto")->isChecked());
+    find<QAction>("cutoutUiScaleAuto")->trigger();
+    pump();
+    QVERIFY(panel->uiScaleAuto() && find<QAction>("cutoutUiScaleAuto")->isChecked() && !find<QAction>("cutoutUiScaleHuge")->isChecked());
+    QVERIFY(!QSettings().contains("plugins/cutout-animation/view/uiScale"));
+    { const QScreen* s = panel->screen(); QCOMPARE(panel->uiScale(), CutoutPanel::defaultUiScale(s->size(), s->devicePixelRatio(), s->logicalDotsPerInch())); }
+    QVERIFY2(panel->status().contains("자동"), qPrintable(panel->status()));
+    { CutoutPanel next(&host); QVERIFY(next.uiScaleAuto()); next.detachHost(); }
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleLargePlugin")->trigger();
+    QVERIFY(!panel->uiScaleAuto() && panel->uiScale() == 1.25);
+    host.mainWindow.findChild<QAction*>("cutoutUiScaleAutoPlugin")->trigger();
+    QVERIFY(panel->uiScaleAuto());
     panel->setUiScale(1.0);
     QCOMPARE(host.edits, edits);  // editor-only
   }

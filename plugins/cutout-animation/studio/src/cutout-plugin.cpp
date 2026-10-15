@@ -38,6 +38,10 @@ void CutoutStudioPlugin::activate(raising::StudioHost* host) {
     add("명령 찾기… (Ctrl+K)", "cutoutCommandPaletteMenuAction", [this] { showDock(); panel_->showCommandPalette(); });
     sizeMenu_ = menu->addMenu("작업 공간 글자 크기");
     sizeMenu_->setObjectName("cutoutUiScalePluginMenu");
+    QAction* automatic = sizeMenu_->addAction("자동 (화면에 맞춤)");
+    automatic->setObjectName("cutoutUiScaleAutoPlugin");
+    QObject::connect(automatic, &QAction::triggered, panel_, [this] { panel_->setUiScaleAuto(); });
+    sizeMenu_->addSeparator();
     for (const auto& c : CutoutPanel::uiScales()) {
       const double scale = c.scale;
       QAction* a = sizeMenu_->addAction(QString("%1 (%2%)").arg(c.label).arg(int(std::lround(scale * 100))));
