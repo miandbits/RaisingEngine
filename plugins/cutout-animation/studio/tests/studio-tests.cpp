@@ -1893,6 +1893,189 @@ class StudioTests : public QObject {
     QCOMPARE(qs(barOf(rig())["type"].get<std::string>()), QString("mesh"));
   }
 
+  // Canvas hit priority (Spine-like, one hit test for click, drag and hover): handles — an IK
+  // crosshair, bone origins, mesh vertices in vertex mode — beat the image parts under them; a part
+  // away from handles still drags; Alt+click walks the stack; editor-hidden parts are never picked.
+  void canvasHitPriority() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+    panel->setTool(RigCanvas::Move);
+    pump();
+    RigCanvas* canvas = panel->canvas();
+    const Json start = rig();
+    const int editsBefore = host.edits;
+    const double zoom = canvas->rigToWidget(QPointF(1, 0)).x() - canvas->rigToWidget(QPointF(0, 0)).x();
+    auto attachmentOf = [&](const char* slot) { const Json data = rig(); for (const auto& a : data["attachments"]) if (a["slot"] == slot) return a; return Json(); };
+    auto bonesOf = [&] { return rig()["bones"]; };
+    auto refsAt = [&](QPointF at) { QStringList refs; for (const auto& h : canvas->hitCandidates(at)) if (h.vertex < 0 && !refs.contains(h.ref)) refs << h.ref; return refs; };
+    auto hover = [&](QPointF at, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+      QMouseEvent e(QEvent::MouseMove, at, canvas->mapToGlobal(at), Qt::NoButton, Qt::NoButton, mods);
+      QCoreApplication::sendEvent(canvas, &e);
+      return canvas->hoverRef();
+    };
+    // Setup x/y of a bone so its origin lands on `at` (rig space): one property edit per axis.
+    auto place = [&](const std::string& bone, QPointF at) {
+      std::string parent;
+      const Json data = rig();
+      for (const auto& b : data["bones"]) if (b["id"] == bone && b.contains("parent")) parent = b["parent"].get<std::string>();
+      double lx = at.x(), ly = at.y();
+      if (!parent.empty()) cutout::setupWorld(data).at(parent).inverse()->apply(at.x(), at.y(), lx, ly);
+      panel->selectItem(qs("bone:" + bone));
+      pump();
+      // One gesture each: the second commit must see the first one's result.
+      if (!gesture("place x", 1, [&] { setSpin("cutoutPropX", lx); }) || !gesture("place y", 1, [&] { setSpin("cutoutPropY", ly); })) return false;
+      const bool ok = std::hypot(world(bone).x() - at.x(), world(bone).y() - at.y()) < 0.05;
+      if (!ok) qWarning("place %s at %g,%g (local %g,%g): now %g,%g (status %s)", bone.c_str(), at.x(), at.y(), lx, ly, world(bone).x(), world(bone).y(), qPrintable(panel->status()));
+      return ok;
+    };
+    QPointF center;
+    {
+      const cutout::Rig r = cutout::parseRig("hero", rig());
+      const cutout::Pose pose = cutout::samplePose(r, -1, 0);
+      const cutout::Attachment* att = nullptr;
+      const auto m = attachmentMatrix(r, pose, r.slotIndex("body"), &att);
+      QVERIFY(att);
+      center = canvas->rigToWidget(qtTransform(m).map(QPointF(att->width / 2, att->height / 2)));  // widget px
+    }
+    // A hand bone over the body with an aim IK; its crosshair also sits on the body.
+    panel->selectItem("bone:root");
+    answers = {"hit-hand"};
+    QVERIFY(gesture("add hand bone", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(place("hit-hand", canvas->widgetToRig(center + QPointF(0, -18))));
+    panel->selectItem("bone:hit-hand");
+    QVERIFY(gesture("aim IK on the hand", 1, [&] { click("cutoutNewAimIk"); }));
+    std::string target;
+    {
+      const Json data = rig();
+      for (const auto& k : data["ik"]) if (k["bones"] == Json::array({"hit-hand"})) target = k["target"].get<std::string>();
+    }
+    QVERIFY(!target.empty());
+    const QString targetRef = qs("bone:" + target);
+    QVERIFY(place(target, canvas->widgetToRig(center + QPointF(0, 14))));
+
+    // (4) Alt+click walks the stack under the cursor (crosshair -> body -> ... -> crosshair);
+    // a plain click picks the handle again. Clicks select only: no edits.
+    panel->selectItem("");
+    pump();
+    const QPointF stack = canvas->rigToWidget(world(target));
+    const QStringList refs = refsAt(stack);
+    QVERIFY2(refs.size() >= 2 && refs[0] == targetRef && refs.contains("slot:body"), qPrintable(refs.join(", ")));
+    QCOMPARE(canvas->pick(stack, false), targetRef);
+    QCOMPARE(hover(stack, Qt::AltModifier), refs[1]);  // the Alt pick is previewed too
+    for (int i = 1; i <= refs.size(); i++) {
+      QVERIFY(gesture("alt-click cycles", 0, [&] { tap(canvas, stack, Qt::AltModifier); }));
+      QCOMPARE(panel->selection(), refs[i % refs.size()]);
+    }
+    QVERIFY(gesture("alt-click once more", 0, [&] { tap(canvas, stack, Qt::AltModifier); }));
+    QCOMPARE(panel->selection(), refs[1 % refs.size()]);
+    QVERIFY(gesture("plain click", 0, [&] { tap(canvas, stack); }));
+    QCOMPARE(panel->selection(), targetRef);
+    // A point on the body away from every handle (only the body under it; handles move below).
+    auto findBodyOnly = [&] {
+      for (int dy = -36; dy <= 36; dy += 4)
+        for (int dx = -16; dx <= 16; dx += 4)
+          if (const auto hits = canvas->hitCandidates(center + QPointF(dx, dy)); hits.size() == 1 && hits[0].ref == "slot:body") return center + QPointF(dx, dy);
+      return QPointF(-1, -1);
+    };
+    QPointF bodyOnly = findBodyOnly();
+    QVERIFY(bodyOnly.x() >= 0);
+    // (5) Editor-hidden parts (eye toggle) are never picked, hovered or cycled to.
+    auto setEye = [&](bool visible) {
+      for (QTreeWidgetItemIterator it(find<QTreeWidget>("cutoutBoneTree")); *it; ++it)
+        if ((*it)->data(0, Qt::UserRole).toString() == "slot:body") { (*it)->setCheckState(1, visible ? Qt::Checked : Qt::Unchecked); break; }
+      pump();
+    };
+    setEye(false);
+    QVERIFY(canvas->hitCandidates(bodyOnly).isEmpty());
+    QVERIFY(!refsAt(stack).contains("slot:body"));
+    QCOMPARE(hover(bodyOnly), QString());
+    panel->selectItem("");
+    QVERIFY(gesture("click a hidden part", 0, [&] { tap(canvas, bodyOnly); }));
+    QCOMPARE(panel->selection(), QString());
+    QVERIFY(gesture("alt-click over a hidden part", 0, [&] { tap(canvas, stack, Qt::AltModifier); tap(canvas, stack, Qt::AltModifier); }));
+    QVERIFY(panel->selection() != "slot:body");
+    setEye(true);
+    // (1) The reported case: target NOT selected, press on the crosshair's ring (9 px from its
+    // centre, over the body image) and drag: the target moves, one edit, the body is untouched.
+    panel->selectItem("");
+    pump();
+    const QPointF ring = canvas->rigToWidget(world(target)) + QPointF(9, 0);
+    QCOMPARE(canvas->hitTest(ring, false), QString("slot:body"));  // the image is right under it
+    QCOMPARE(canvas->hitTest(ring), targetRef);
+    QCOMPARE(canvas->hitCandidates(ring).first().rank, int(RigCanvas::HitIkTarget));
+    QCOMPARE(hover(ring), targetRef);  // hover shows what the press will pick
+    {
+      const Json body = attachmentOf("body");
+      const QPointF before = world(target);
+      QVERIFY(gesture("drag the unselected crosshair over the body", 1, [&] { drag(canvas, ring, ring + QPointF(24, 16)); }));
+      QVERIFY(attachmentOf("body") == body);
+      QCOMPARE(panel->selection(), targetRef);
+      const QPointF moved = world(target) - before;
+      QVERIFY2(std::hypot(moved.x() - 24 / zoom, moved.y() - 16 / zoom) < 1, qPrintable(QString("%1,%2").arg(moved.x()).arg(moved.y())));
+    }
+    // (3) A bone origin handle beats the part under it (5 px off the origin).
+    panel->selectItem("");
+    pump();
+    {
+      const QPointF at = canvas->rigToWidget(world("hit-hand")) + QPointF(4, 3);
+      QCOMPARE(canvas->hitTest(at, false), QString("slot:body"));
+      QCOMPARE(canvas->hitTest(at), QString("bone:hit-hand"));
+      const Json body = attachmentOf("body");
+      const QPointF before = world("hit-hand");
+      QVERIFY(gesture("drag the bone origin over the body", 1, [&] { drag(canvas, at, at + QPointF(0, -12)); }));
+      QVERIFY(attachmentOf("body") == body);
+      QCOMPARE(panel->selection(), QString("bone:hit-hand"));
+      QVERIFY(std::fabs(world("hit-hand").y() - before.y() + 12 / zoom) < 1);
+    }
+    bodyOnly = findBodyOnly();
+    QVERIFY(bodyOnly.x() >= 0);
+    // (2) A press on the part away from handles still selects and drags the part.
+    panel->selectItem("");
+    pump();
+    QCOMPARE(hover(bodyOnly), QString("slot:body"));
+    {
+      const Json bones = bonesOf();
+      const double x0 = attachmentOf("body").value("x", 0.0);
+      QVERIFY(gesture("drag the part", 1, [&] { drag(canvas, bodyOnly, bodyOnly + QPointF(20, 0)); }));
+      QCOMPARE(panel->selection(), QString("slot:body"));
+      QVERIFY(attachmentOf("body").value("x", 0.0) > x0 + 5);
+      QVERIFY(bonesOf() == bones);
+    }
+    // (6) Mesh vertex mode: a vertex wins over a bone handle and the mesh part on the same spot.
+    QPointF vertex;
+    {
+      panel->selectItem("slot:bar");
+      panel->setMeshEdit(CutoutPanel::MeshEdit::Vertices);
+      pump();
+      const QVector<QPointF> pts = canvas->meshVertices();
+      QVERIFY(pts.size() > 5);
+      panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+      QVERIFY(place("mesh-lower", pts[5]));  // the unweighted mesh only follows mesh-upper: it stays put
+      vertex = canvas->rigToWidget(pts[5]);
+    }
+    panel->selectItem("slot:bar");
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Vertices);
+    pump();
+    QCOMPARE(canvas->meshMode(), int(RigCanvas::MeshVertices));
+    {
+      const auto hits = canvas->hitCandidates(vertex);
+      QVERIFY(!hits.isEmpty() && hits[0].vertex == 5 && hits[0].rank == RigCanvas::HitVertex);
+      QVERIFY(std::any_of(hits.begin(), hits.end(), [](const RigCanvas::Hit& h) { return h.ref == "bone:mesh-lower"; }));
+    }
+    QVERIFY(gesture("vertex beats bone handle", 0, [&] { tap(canvas, vertex); }));
+    QCOMPARE(panel->selectedVertices(), QVector<int>({5}));
+    QCOMPARE(panel->selection(), QString("slot:bar"));
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+    pump();
+    QCOMPARE(canvas->hitTest(vertex), QString("bone:mesh-lower"));  // out of vertex mode the handle wins
+    for (int i = host.edits - editsBefore; i > 0; i--) undo();
+    QVERIFY(rig() == start);
+  }
+
   void paintElementDrawsPixels() {
     QImage img(300, 450, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);
