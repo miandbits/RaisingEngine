@@ -235,6 +235,18 @@ class StudioTests : public QObject {
     for (const auto& c : keep["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property) return &t;
     return nullptr;
   }
+  /** keyOf / timesOf for another character's rig data. */
+  static Json keyOfRig(const Json& data, const char* clip, const char* target, const char* property, int ms) {
+    for (const auto& c : data["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property)
+      for (const auto& k : t["keys"]) if (k["timeMs"] == ms) return k;
+    return Json();
+  }
+  static QVector<int> timesOfRig(const Json& data, const char* clip, const char* target, const char* property) {
+    QVector<int> out;
+    for (const auto& c : data["clips"]) if (c["id"] == clip) for (const auto& t : c["tracks"]) if (t["target"] == target && t["property"] == property)
+      for (const auto& k : t["keys"]) out << k["timeMs"].get<int>();
+    return out;
+  }
   Json keyOf(const char* clip, const char* target, const char* property, int ms) const {
     if (const Json* t = track(clip, target, property))
       for (const auto& k : (*t)["keys"]) if (k["timeMs"] == ms) return k;
@@ -4008,6 +4020,211 @@ class StudioTests : public QObject {
    * into this host. Medians of a few runs; budgets are ~3x the development machine so a regression
    * of the refresh paths fails here. CUTOUT_PERF_OUT=<json> writes the numbers for the perf report.
    */
+  /**
+   * Clipping and image sequences (plugin 1.12.0) on a character of their own: a clip polygon drawn
+   * with the outline tool, its end slot, redraw, Esc, delete; a sequence from PNG files (numeric
+   * file order), frame reorder / remove / append / size refusal, setup frame, keys with modes and
+   * the dopesheet row, preview playback; undo/redo. Every gesture is one edit; the canvas preview
+   * clips and swaps frames like the runtimes.
+   */
+  void clippingAndSequences() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "masked"); };
+    // Copies first: a range-for over a member of a temporary would read freed memory.
+    auto attachment = [&](const char* slot) { const Json d = data(); for (const auto& a : d["attachments"]) if (a["slot"] == slot) return a; return Json(); };
+    auto slotIds = [&] { const Json d = data(); QStringList ids; for (const auto& s : d["slots"]) ids << qs(s["id"].get<std::string>()); return ids; };
+    answers = {"masked"};
+    QVERIFY(gesture("new masked character", 1, [&] { click("cutoutNewCharacter"); }));
+    QCOMPARE(panel->rigId(), QString("masked"));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    QVERIFY(gesture("card part", 1, [&] { panel->importAndAddPart(png("clip-card", QSize(80, 60), QColor("#d1495b")), "card", "card", "root"); }));
+    QVERIFY(gesture("top part", 1, [&] { panel->importAndAddPart(png("clip-top", QSize(40, 40), QColor("#00798c")), "top", "top", "root"); }));
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutClippingPage"));
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    pump();
+    // The root sits at (256, 720): the card covers x 216..296. The clip keeps its left half.
+    const std::vector<QPointF> square = {{200, 680}, {256, 680}, {256, 760}, {200, 760}};
+    auto drawPolygon = [&](const std::vector<QPointF>& points) {
+      for (const QPointF& p : points) tap(canvas, canvas->rigToWidget(p));
+      const QPointF last = canvas->rigToWidget(points.back());
+      QMouseEvent dbl(QEvent::MouseButtonDblClick, last, canvas->mapToGlobal(last), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(canvas, &dbl);
+      mouse(canvas, QEvent::MouseButtonRelease, last, Qt::LeftButton, Qt::NoButton);
+    };
+    panel->selectItem("slot:card");
+    pump();
+    QVERIFY(find<QWidget>("cutoutClippingCreate")->isEnabled() && !find<QWidget>("cutoutClippingRedraw")->isEnabled());
+    QVERIFY(gesture("clipping: Esc cancels", 0, [&] {
+      click("cutoutClippingCreate");
+      QVERIFY(canvas->outlineDrawing());
+      tap(canvas, canvas->rigToWidget(square[0]));
+      QTest::keyClick(canvas, Qt::Key_Escape);
+    }));
+    QVERIFY(!canvas->outlineDrawing());
+    QVERIFY(gesture("draw a clipping polygon", 1, [&] { click("cutoutClippingCreate"); drawPolygon(square); }));
+    QCOMPARE(slotIds(), QStringList({"card-clip", "card", "top"}));
+    Json clip = attachment("card-clip");
+    QCOMPARE(qs(clip["type"].get<std::string>()), QString("clipping"));
+    QCOMPARE(qs(clip["end"].get<std::string>()), QString("card"));
+    QCOMPARE(clip["vertices"].size(), size_t(8));
+    QVERIFY2(std::fabs(clip["vertices"][0].get<double>() + 56) < 0.5 && std::fabs(clip["vertices"][1].get<double>() + 40) < 0.5, clip["vertices"].dump().c_str());
+    QCOMPARE(panel->clipSlot(), QString("card-clip"));
+    QCOMPARE(find<QListWidget>("cutoutClippingList")->count(), 1);
+    QVERIFY(!canvas->outlineDrawing());
+    // The runtime draw list and the canvas renderer agree: the card shows only left of x = 256.
+    auto render = [&] {
+      const cutout::Rig parsed = cutout::parseRig("masked", data());
+      QImage img(512, 768, QImage::Format_ARGB32_Premultiplied);
+      img.fill(Qt::transparent);
+      QPainter p(&img);
+      drawRig(p, parsed, cutout::samplePose(parsed, -1, 0), panel->images());
+      p.end();
+      return img;
+    };
+    {
+      const QImage img = render();
+      QVERIFY2(qAlpha(img.pixel(236, 720)) > 200 && qAlpha(img.pixel(276, 720)) == 0, "canvas: clipped right half");
+      cutout::Instance inst(std::make_shared<const cutout::Rig>(cutout::parseRig("masked", data())));
+      const auto items = inst.drawList();
+      QVERIFY(items.size() == 2 && items[0].slot == "card" && items[0].clipped && !items[1].clipped);
+      double maxX = -1e9;
+      for (size_t v = 0; v < items[0].positions.size(); v += 2) maxX = std::max(maxX, items[0].positions[v]);
+      QVERIFY2(std::fabs(maxX) < 0.5, qPrintable(QString::number(maxX)));  // instance space: origin (256, 720) -> 0
+    }
+    // 끝 조각: the clip range grows over the top part.
+    auto* end = find<QComboBox>("cutoutClippingEnd");
+    QVERIFY(end->isEnabled() && end->findData("top") >= 0);
+    QVERIFY(gesture("clip end = top", 1, [&] { end->setCurrentIndex(end->findData("top")); Q_EMIT end->activated(end->currentIndex()); }));
+    QCOMPARE(qs(attachment("card-clip")["end"].get<std::string>()), QString("top"));
+    QVERIFY2(qAlpha(render().pixel(266, 720)) == 0, "the top part is clipped too");
+    undo();
+    QCOMPARE(qs(attachment("card-clip")["end"].get<std::string>()), QString("card"));
+    redo();
+    QCOMPARE(qs(attachment("card-clip")["end"].get<std::string>()), QString("top"));
+    // 모양 다시 그리기: a triangle replaces the square (one edit).
+    panel->selectItem("slot:card-clip");
+    pump();
+    QVERIFY(find<QWidget>("cutoutClippingRedraw")->isEnabled());
+    QVERIFY(gesture("redraw clipping", 1, [&] { click("cutoutClippingRedraw"); drawPolygon({{180, 650}, {300, 650}, {240, 780}}); }));
+    QCOMPARE(attachment("card-clip")["vertices"].size(), size_t(6));
+    // A polygon crossing itself is refused (no edit) and the tool stays on to try again.
+    QVERIFY(gesture("bow tie refused", 0, [&] { click("cutoutClippingRedraw"); drawPolygon({{200, 680}, {256, 760}, {256, 680}, {200, 760}}); }));
+    QVERIFY(canvas->outlineDrawing());
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!canvas->outlineDrawing());
+
+    // ---- sequences
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutSequencePage"));
+    const QStringList files = {png("seq-10", QSize(40, 40), QColor("#edae49")), png("seq-2", QSize(40, 40), QColor("#66a182")), png("seq-1", QSize(40, 40), QColor("#2e4057"))};
+    QStringList nextFiles = files;
+    panel->askSequenceFiles = [&] { return nextFiles; };
+    panel->selectItem("slot:top");
+    pump();
+    const int importsBefore = host.imports;
+    QVERIFY(gesture("sequence from PNGs", 1, [&] { click("cutoutSequenceImport"); pump(); }));
+    QCOMPARE(host.imports - importsBefore, 3);
+    Json top = attachment("top");
+    QVERIFY2(top["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2", "img-seq-10"}), top["sequence"]["frames"].dump().c_str());  // numeric file order
+    QCOMPARE(qs(top["imageAssetId"].get<std::string>()), QString("img-seq-1"));
+    QCOMPARE(panel->sequenceSlot(), QString("top"));
+    auto* frames = find<QListWidget>("cutoutSequenceFrames");
+    QCOMPARE(frames->count(), 3);
+    frames->setCurrentRow(2);
+    QVERIFY(gesture("frame up", 1, [&] { click("cutoutSequenceUp"); }));
+    QVERIFY2(attachment("top")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-10", "img-seq-2"}), attachment("top")["sequence"]["frames"].dump().c_str());
+    QCOMPARE(frames->currentRow(), 1);
+    frames->setCurrentRow(1);
+    QVERIFY(gesture("frame remove", 1, [&] { click("cutoutSequenceRemoveFrame"); }));
+    QVERIFY2(attachment("top")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2"}), attachment("top")["sequence"]["frames"].dump().c_str());
+    nextFiles = {png("seq-3", QSize(40, 40), QColor("#d1495b"))};
+    QVERIFY(gesture("frames appended", 1, [&] { click("cutoutSequenceAddFrames"); pump(); }));
+    QVERIFY2(attachment("top")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2", "img-seq-3"}), attachment("top")["sequence"]["frames"].dump().c_str());
+    nextFiles = {png("seq-big", QSize(50, 40), QColor("#d1495b"))};
+    QVERIFY(gesture("other frame size refused", 0, [&] { click("cutoutSequenceAddFrames"); pump(); }));
+    QVERIFY2(panel->status().contains("크기"), qPrintable(panel->status()));
+    auto* setupFrame = find<QSpinBox>("cutoutSequenceSetup");
+    QVERIFY(gesture("setup frame 2", 1, [&] { setupFrame->setValue(2); Q_EMIT setupFrame->editingFinished(); }));
+    QCOMPARE(attachment("top")["sequence"]["setupIndex"].get<int>(), 2);
+    {
+      const cutout::Rig parsed = cutout::parseRig("masked", data());
+      QCOMPARE(qs(cutout::attachmentImage(cutout::samplePose(parsed, -1, 0), parsed.slotIndex("top"), *parsed.attachment("top", "top"))), QString("img-seq-3"));
+    }
+    // Keys: pingpong from frame 0, 50 ms frames at 0 ms; the dopesheet shows a 시퀀스 row.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("idle");
+    panel->setPlayhead(0);
+    panel->selectItem("slot:top");
+    pump();
+    QVERIFY(find<QWidget>("cutoutSequenceKeyTools")->isVisible() && find<QWidget>("cutoutSequenceKey")->isEnabled());
+    auto* mode = find<QComboBox>("cutoutSequenceMode");
+    mode->setCurrentIndex(mode->findData("pingpong"));
+    find<QSpinBox>("cutoutSequenceIndex")->setValue(0);
+    find<QDoubleSpinBox>("cutoutSequenceDelay")->setValue(50);
+    QVERIFY(gesture("sequence key", 1, [&] { click("cutoutSequenceKey"); }));
+    QVERIFY(keyOfRig(data(), "idle", "slot:top", "sequence", 0) == Json({{"timeMs", 0}, {"mode", "pingpong"}, {"index", 0}, {"delay", 50}}));
+    const int row = rowOf("slot:top", "sequence");
+    QVERIFY(row >= 0 && panel->dopesheet()->rows()[row].label.contains("시퀀스") && panel->dopesheet()->rows()[row].attachment);
+    {
+      // Scrubbing shows the frame the players show: 150 ms -> index 3 -> pingpong 1 (img-seq-2).
+      const cutout::Rig parsed = cutout::parseRig("masked", data());
+      const int slot = parsed.slotIndex("top");
+      QCOMPARE(qs(cutout::attachmentImage(cutout::samplePose(parsed, parsed.clipIndex("idle"), 150), slot, *parsed.attachment("top", "top"))), QString("img-seq-2"));
+      QCOMPARE(qs(cutout::attachmentImage(cutout::samplePose(parsed, parsed.clipIndex("idle"), 100), slot, *parsed.attachment("top", "top"))), QString("img-seq-3"));
+    }
+    // Preview playback (editor-only): the same frame rule from the fields.
+    panel->setManualClock(true);
+    QVERIFY(gesture("sequence preview", 0, [&] { panel->setSequencePreview(true); panel->advanceSequencePreview(150); }));
+    QVERIFY(panel->sequencePreviewPlaying());
+    QCOMPARE(panel->sequencePreviewFrame(), 1);
+    panel->advanceSequencePreview(50);
+    QCOMPARE(panel->sequencePreviewFrame(), 0);
+    panel->setSequencePreview(false);
+    panel->setManualClock(false);
+    // The key's fields come back when the playhead sits on it; another key, then delete it.
+    panel->setPlayhead(400);
+    mode->setCurrentIndex(mode->findData("once"));
+    QVERIFY(gesture("second sequence key", 1, [&] { click("cutoutSequenceKey"); }));
+    panel->setPlayhead(0);
+    pump();
+    QCOMPARE(mode->currentData().toString(), QString("pingpong"));
+    QCOMPARE(find<QDoubleSpinBox>("cutoutSequenceDelay")->value(), 50.0);
+    panel->setPlayhead(400);
+    QVERIFY(gesture("delete sequence key", 1, [&] { click("cutoutSequenceDeleteKey"); }));
+    QCOMPARE(timesOfRig(data(), "idle", "slot:top", "sequence"), QVector<int>({0}));
+    // Multi-key ops move sequence keys like any other (dopesheet selection).
+    QVERIFY(gesture("move sequence key", 1, [&] { panel->moveKeys({{"slot:top", "sequence", 0}}, 200); }));
+    QCOMPARE(timesOfRig(data(), "idle", "slot:top", "sequence"), QVector<int>({200}));
+    // 시퀀스 해제 removes frames and keys; undo brings both back.
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->selectItem("slot:top");
+    pump();
+    QVERIFY(gesture("clear sequence", 1, [&] { click("cutoutSequenceClear"); }));
+    QVERIFY(!attachment("top").contains("sequence") && timesOfRig(data(), "idle", "slot:top", "sequence").isEmpty());
+    undo();
+    QCOMPARE(attachment("top")["sequence"]["frames"].size(), size_t(3));
+    QCOMPARE(timesOfRig(data(), "idle", "slot:top", "sequence"), QVector<int>({200}));
+    redo();
+    QVERIFY(!attachment("top").contains("sequence"));
+    undo();
+    // No part selected: the frames become a new part on the selected bone (one edit).
+    panel->selectItem("bone:root");
+    pump();
+    nextFiles = {files[2], files[1]};
+    QVERIFY(gesture("sequence as a new part", 1, [&] { click("cutoutSequenceImport"); pump(); }));
+    QCOMPARE(panel->selection(), QString("slot:img-seq-1"));
+    QVERIFY2(attachment("img-seq-1")["sequence"]["frames"] == Json::array({"img-seq-1", "img-seq-2"}), attachment("img-seq-1")["sequence"]["frames"].dump().c_str());
+    // 클리핑 삭제: the whole parts show again.
+    panel->selectItem("slot:card-clip");
+    pump();
+    QVERIFY(gesture("delete clipping", 1, [&] { click("cutoutClippingDelete"); }));
+    QVERIFY(!slotIds().contains("card-clip"));
+    QVERIFY(qAlpha(render().pixel(276, 720)) > 200);
+    for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
+    panel->selectRig(keepRig);
+    pump();
+  }
+
   void largeRigPerformance() {
     const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
     const auto keepHistory = host.history, keepFuture = host.future;

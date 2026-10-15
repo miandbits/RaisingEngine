@@ -113,10 +113,20 @@ QVector<QPointF> meshPoints(const cutout::Rig& rig, const cutout::Pose& pose, in
   for (size_t v = 0; v + 1 < pos.size(); v += 2) points << QPointF(pos[v], pos[v + 1]);
   return points;
 }
+QPolygonF clipPolygon(const cutout::Rig& rig, const cutout::Pose& pose, int i) {
+  const cutout::Attachment* att = nullptr;
+  attachmentMatrix(rig, pose, i, &att);
+  QPolygonF out;
+  if (!att || !att->clipping) return out;
+  const auto pos = cutout::meshPositions(rig, pose, i, *att);
+  for (size_t v = 0; v + 1 < pos.size(); v += 2) out << QPointF(pos[v], pos[v + 1]);
+  return out;
+}
 QRectF attachmentBounds(const cutout::Rig& rig, const cutout::Pose& pose, int i) {
   const cutout::Attachment* att = nullptr;
   const cutout::Affine m = attachmentMatrix(rig, pose, i, &att);
   if (!att) return {};
+  if (att->clipping) return clipPolygon(rig, pose, i).boundingRect();
   if (!att->mesh) return qtTransform(m).mapRect(QRectF(0, 0, att->width, att->height));
   return QPolygonF(meshPoints(rig, pose, i)).boundingRect();
 }
@@ -270,27 +280,42 @@ void drawRig(QPainter& p, const cutout::Rig& rig, const cutout::Pose& pose, Imag
   const double baseOpacity = p.opacity();
   p.setRenderHint(QPainter::SmoothPixmapTransform, true);
   p.setRenderHint(QPainter::Antialiasing, true);
+  int clipEnd = -1;  // >= 0 while a clip range is open (the painter state was saved for it)
   for (size_t i = 0; i < rig.slots.size(); i++) {
-    if (hidden.contains(qs(rig.slots[i].id))) continue;
+    const bool shown = !hidden.contains(qs(rig.slots[i].id));
     const cutout::Attachment* att = nullptr;
     const cutout::Affine m = attachmentMatrix(rig, pose, int(i), &att);
     const double alpha = i < pose.alpha.size() ? std::clamp(pose.alpha[i], 0.0, 1.0) : 1.0;
-    if (!att || alpha <= 0) continue;
-    p.setOpacity(baseOpacity * alpha);
-    if (att->mesh) {
-      drawMesh(p, base, meshPoints(rig, pose, int(i)), *att, images.image(qs(att->imageAssetId)));
-      continue;
+    if (shown && att && att->clipping) {
+      // Same rules as cutout::drawItems: alpha does not matter, no nesting, end slot inclusive.
+      if (clipEnd < 0) {
+        QPainterPath path;
+        path.addPolygon(clipPolygon(rig, pose, int(i)));
+        path.closeSubpath();
+        p.save();
+        p.setTransform(base);
+        p.setClipPath(path, Qt::IntersectClip);
+        clipEnd = att->clipEndIndex >= 0 ? att->clipEndIndex : int(rig.slots.size()) - 1;
+      }
+    } else if (shown && att && alpha > 0) {
+      p.setOpacity(baseOpacity * alpha);
+      // Sequences (plugin 1.12.0): the frame the pose shows (clip time picks it while scrubbing).
+      const QImage img = images.image(qs(cutout::attachmentImage(pose, int(i), *att)));
+      if (att->mesh) drawMesh(p, base, meshPoints(rig, pose, int(i)), *att, img);
+      else {
+        p.setTransform(qtTransform(m) * base);
+        const QRectF target(0, 0, att->width, att->height);
+        if (!img.isNull()) p.drawImage(target, img);
+        else {
+          p.fillRect(target, QBrush(QColor(200, 80, 80, 90), Qt::BDiagPattern));
+          p.setPen(QPen(QColor(220, 90, 90), 0));
+          p.drawRect(target);
+        }
+      }
     }
-    p.setTransform(qtTransform(m) * base);
-    const QRectF target(0, 0, att->width, att->height);
-    const QImage img = images.image(qs(att->imageAssetId));
-    if (!img.isNull()) p.drawImage(target, img);
-    else {
-      p.fillRect(target, QBrush(QColor(200, 80, 80, 90), Qt::BDiagPattern));
-      p.setPen(QPen(QColor(220, 90, 90), 0));
-      p.drawRect(target);
-    }
+    if (clipEnd >= 0 && int(i) >= clipEnd) { p.restore(); clipEnd = -1; }
   }
+  if (clipEnd >= 0) p.restore();
   p.setTransform(base);
   p.setOpacity(baseOpacity);
 }

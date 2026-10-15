@@ -89,6 +89,7 @@ std::string encodeItem(const DrawItem& i, int mesh) {
 void Host::resetMeshes() {
   meshList_.clear();
   meshIds_.clear();
+  dynamicIds_.clear();
   meshEpoch_++;
   // Stable ids for the init lifetime: rigs by id, then each rig's default list and skins in order.
   for (const auto& [id, rig] : rigs_) {
@@ -99,12 +100,24 @@ void Host::resetMeshes() {
 int Host::meshId(const std::shared_ptr<const Rig>& rig, const Attachment* a) {
   auto it = meshIds_.find(a);
   if (it != meshIds_.end()) return it->second;
-  meshList_.push_back({rig, a});
+  meshList_.push_back({rig, a, {}, {}});
   return meshIds_[a] = int(meshList_.size() - 1);
+}
+int Host::dynamicMeshId(const DrawItem& item) {
+  // Exact bytes as the key: equal topology (a clip that did not move relative to its parts) keeps its id.
+  std::string key(reinterpret_cast<const char*>(item.uvs.data()), item.uvs.size() * sizeof(double));
+  key.append(reinterpret_cast<const char*>(item.indices.data()), item.indices.size() * sizeof(int));
+  auto it = dynamicIds_.find(key);
+  if (it != dynamicIds_.end()) return it->second;
+  meshList_.push_back({nullptr, nullptr, item.uvs, item.indices});
+  return dynamicIds_[key] = int(meshList_.size() - 1);
 }
 Json Host::meshTable(const Json& ids) {
   Json out = Json::array();
-  auto entry = [&](size_t id) { const Attachment* a = meshList_[id].second; return Json{{"id", id}, {"uvs", a->uvs}, {"indices", a->triangles}}; };
+  auto entry = [&](size_t id) {
+    const MeshEntry& e = meshList_[id];
+    return e.attachment ? Json{{"id", id}, {"uvs", e.attachment->uvs}, {"indices", e.attachment->triangles}} : Json{{"id", id}, {"uvs", e.uvs}, {"indices", e.indices}};
+  };
   if (ids.is_array()) {
     for (const auto& v : ids) if (v.is_number_integer() && v.get<int64_t>() >= 0 && size_t(v.get<int64_t>()) < meshList_.size()) out.push_back(entry(size_t(v.get<int64_t>())));
   } else for (size_t i = 0; i < meshList_.size(); i++) out.push_back(entry(i));
@@ -113,6 +126,10 @@ Json Host::meshTable(const Json& ids) {
 std::string Host::frameCompact(const std::string& id, uint64_t since) {
   auto* inst = instance(id);
   if (!inst) throw std::runtime_error("unknown instance: " + id);
+  // Moving clips add a topology per frame: restart the table (new epoch: hosts drop their cache and
+  // fetch what they miss) before it grows without bound. Only between frames, so a reply never
+  // mixes ids of two epochs; cached items (delta "0") would name old ids, so they go too.
+  if (dynamicIds_.size() > MAX_DYNAMIC_MESHES) { resetMeshes(); frames_.clear(); }
   const Affine place = placement(id, inst->rig());
   FrameCache& cache = frames_[id];
   // Delta only against the frame the host says it holds; anything else gets every item.
@@ -127,7 +144,7 @@ std::string Host::frameCompact(const std::string& id, uint64_t since) {
       const double x = item.positions[v], y = item.positions[v + 1];
       place.apply(x, y, item.positions[v], item.positions[v + 1]);
     }
-    std::string e = encodeItem(item, item.mesh() ? meshId(inst->sharedRig(), item.source) : -1);
+    std::string e = encodeItem(item, !item.mesh() ? -1 : item.clipped ? dynamicMeshId(item) : meshId(inst->sharedRig(), item.source));
     if (k) out += ',';
     out += delta && k < cache.items.size() && cache.items[k] == e ? std::string("0") : e;
     encoded.push_back(std::move(e));
@@ -145,8 +162,12 @@ Json poseJson(const Rig& rig, const Pose& pose) {
     bones[rig.bones[i].id] = {{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY},
                               {"world", {w.a, w.b, w.c, w.d, w.e, w.f}}};
   }
-  for (size_t i = 0; i < rig.slots.size(); i++)
+  for (size_t i = 0; i < rig.slots.size(); i++) {
     slots[rig.slots[i].id] = {{"attachment", pose.attachments[i] ? Json(*pose.attachments[i]) : Json(nullptr)}, {"alpha", pose.alpha[i]}};
+    // Sequences (plugin 1.12.0): the frame index the shown attachment draws; absent otherwise.
+    const Attachment* a = pose.attachments[i] ? rig.attachment(rig.slots[i].id, *pose.attachments[i], pose.skin) : nullptr;
+    if (a && a->sequence()) slots[rig.slots[i].id]["sequence"] = attachmentFrame(pose, int(i), *a);
+  }
   Json out = {{"bones", bones}, {"slots", slots},
               {"skin", pose.skin >= 0 && pose.skin < int(rig.skins.size()) ? Json(rig.skins[size_t(pose.skin)].id) : Json(nullptr)},
               {"expression", pose.expression >= 0 && pose.expression < int(rig.expressions.size()) ? Json(rig.expressions[size_t(pose.expression)].id) : Json(nullptr)}};

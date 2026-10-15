@@ -532,12 +532,26 @@ void RigCanvas::outlineSlot(QPainter& p, int si) const {
   const cutout::Attachment* att = nullptr;
   const auto m = attachmentMatrix(*rig_, pose_, si, &att);
   if (!att) return;
+  if (att->clipping) { p.drawPolygon(viewTransform().map(clipPolygon(*rig_, pose_, si))); return; }
   if (att->mesh) {
     const QVector<QPointF> pts = meshPoints(*rig_, pose_, si);
     for (const auto& [a, b] : meshOutline(att->triangles)) if (a < pts.size() && b < pts.size()) p.drawLine(rigToWidget(pts[a]), rigToWidget(pts[b]));
     return;
   }
   p.drawPolygon((qtTransform(m) * viewTransform()).map(QPolygonF(QRectF(0, 0, att->width, att->height))));
+}
+/** Clip polygons of the shown clipping slots (plugin 1.12.0): magenta dashes, so the area a clip
+ *  keeps is visible even where nothing is drawn yet; the selected one is drawn by outlineSlot. */
+void RigCanvas::paintClips(QPainter& p) {
+  if (!showClips_ || pose_.world.size() != rig_->bones.size()) return;
+  p.setBrush(Qt::NoBrush);
+  for (size_t i = 0; i < rig_->slots.size(); i++) {
+    if (hidden_.contains(qs(rig_->slots[i].id))) continue;
+    const QPolygonF polygon = clipPolygon(*rig_, pose_, int(i));
+    if (polygon.size() < 3) continue;
+    p.setPen(QPen(QColor(255, 122, 217, 220), 1.25 * ui_, Qt::DashDotLine));
+    p.drawPolygon(viewTransform().map(polygon));
+  }
 }
 // Hover cue: a thin light outline (part) or ring (handle) on what a click would pick, so a
 // crosshair over an image visibly wins before the press.
@@ -636,6 +650,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
     p.setPen(QPen(QColor("#8fd18f"), 1, Qt::DashLine));
     p.drawLine(o - QPointF(12 * ui_, 0), o + QPointF(12 * ui_, 0));
     p.drawLine(o - QPointF(0, 12 * ui_), o + QPointF(0, 12 * ui_));
+    paintClips(p);
     if (pose_.world.size() == rig_->bones.size()) {
       // Selected part outline.
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));

@@ -8,6 +8,9 @@ import { inflateSync } from 'node:zlib';
 import { ATLAS_DEFAULTS, attachmentsOf, buildAtlas, decodePng } from './atlas.mjs';
 import { importLayers } from './layer-import.mjs';
 
+/** Image ids an attachment draws: its picture and, for sequences (plugin 1.12.0), every frame. */
+const drawnImages = a => [...new Set([a?.imageAssetId, ...(Array.isArray(a?.sequence?.frames) ? a.sequence.frames : [])].filter(id => typeof id === 'string' && id))];
+
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RIG_SENTINEL = '#rig';
 /** The project's plugin settings document (plugin 1.9.0): plugins/cutout-animation/settings/project.json. */
@@ -163,7 +166,7 @@ export async function createService({ pluginDir, manifest }) {
     const referenced = new Set();
     for (const rig of rigs.values())
       for (const list of [rig.data.attachments, ...(Array.isArray(rig.data.skins) ? rig.data.skins.map(s => s?.attachments) : [])])
-        for (const a of Array.isArray(list) ? list : []) { const asset = images.get(a?.imageAssetId); if (asset?.kind === 'image' && asset.absolutePath) referenced.add(asset.absolutePath); }
+        for (const a of Array.isArray(list) ? list : []) for (const id of drawnImages(a)) { const asset = images.get(id); if (asset?.kind === 'image' && asset.absolutePath) referenced.add(asset.absolutePath); }
     const sizes = new Map(await Promise.all([...referenced].map(async file => [file, await pngSize(file)])));
 
     const controllersOf = id => [...controllers.values()].filter(c => c.data?.rig === id);
@@ -186,6 +189,18 @@ export async function createService({ pluginDir, manifest }) {
         const size = sizes.get(asset.absolutePath);
         if (size && (size.width !== attachment.width || size.height !== attachment.height))
           push(rig.file, `${pointer}/width`, 'ANIM_IMAGE_SIZE_MISMATCH', `첨부 크기 ${attachment.width}×${attachment.height}가 PNG '${id}'의 실제 크기 ${size.width}×${size.height}와 다릅니다.`, [rig.id, id], 'warning');
+        // Sequence frames (plugin 1.12.0) share the attachment's placement and uvs: one size for all.
+        const frames = Array.isArray(attachment?.sequence?.frames) ? attachment.sequence.frames : [];
+        for (const [f, frameId] of frames.entries()) {
+          if (f === 0 || typeof frameId !== 'string' || !frameId) continue;  // frame 0 = imageAssetId (checked above / by the core)
+          const framePointer = `${pointer}/sequence/frames/${f}`, frameAsset = images.get(frameId);
+          if (!frameAsset || frameAsset.kind !== 'image') { push(rig.file, framePointer, 'ANIM_IMAGE_MISSING', frameAsset ? `에셋 '${frameId}'는 이미지가 아닙니다.` : `시퀀스 프레임 이미지 '${frameId}'가 없습니다.`, [rig.id, frameId]); continue; }
+          if (!frameAsset.absolutePath) continue;
+          if (!sizes.has(frameAsset.absolutePath)) sizes.set(frameAsset.absolutePath, await pngSize(frameAsset.absolutePath));
+          const frameSize = sizes.get(frameAsset.absolutePath);
+          if (size && frameSize && (frameSize.width !== size.width || frameSize.height !== size.height))
+            push(rig.file, framePointer, 'ANIM_SEQUENCE_FRAME_SIZE', `시퀀스 프레임 '${frameId}'(${frameSize.width}×${frameSize.height})의 크기가 첫 프레임 '${id}'(${size.width}×${size.height})와 다릅니다. 모든 프레임을 같은 크기로 저장하세요.`, [rig.id, frameId]);
+        }
       }
     }
     // Event sounds (plugin 1.8.0): `audio` of a definition must name an audio asset.
@@ -268,7 +283,8 @@ export async function createService({ pluginDir, manifest }) {
    */
   function requiredHostFeatures(documents) {
     const rigs = (Array.isArray(documents) ? documents : []).filter(d => d?.type === 'rig');
-    const mesh = rigs.some(d => attachmentsOf(d.data).some(a => a.type === 'mesh'));
+    // Clipping (plugin 1.12.0) cuts the parts it clips into mesh items: the same capability.
+    const mesh = rigs.some(d => attachmentsOf(d.data).some(a => a.type === 'mesh' || a.type === 'clipping'));
     // Atlas regions (plugin 1.9.0) are written by prepareExport; players must draw sub-images.
     const atlas = rigs.some(d => attachmentsOf(d.data).some(a => a.atlas));
     return [...(mesh ? ['plugin-mesh-v1'] : []), ...(atlas ? ['plugin-atlas-v1'] : [])];
@@ -288,7 +304,7 @@ export async function createService({ pluginDir, manifest }) {
     if (!Array.isArray(hostFeatures) || !hostFeatures.includes('plugin-atlas-v1')) return { documents: exported, report: { atlas: false, reason: 'player' } };
     const byId = new Map((assets ?? []).map(a => [a.id, a]));
     const wanted = new Set();
-    for (const rig of exported.filter(d => d.type === 'rig')) for (const a of attachmentsOf(rig.data)) if (typeof a.imageAssetId === 'string') wanted.add(a.imageAssetId);
+    for (const rig of exported.filter(d => d.type === 'rig')) for (const a of attachmentsOf(rig.data)) for (const id of drawnImages(a)) wanted.add(id);
     const images = new Map();
     for (const id of [...wanted].sort()) {
       const asset = byId.get(id);

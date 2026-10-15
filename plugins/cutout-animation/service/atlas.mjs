@@ -203,11 +203,13 @@ export function buildAtlas({ documents, images, settings, pageId }) {
   const options = { ...ATLAS_DEFAULTS, ...settings };
   const size = options.maxPageSize, padding = options.padding;
   const rigs = documents.filter(d => d.type === 'rig');
-  const uses = new Map();  // image id -> attachments using it
-  for (const rig of rigs) for (const a of attachmentsOf(rig.data)) if (typeof a.imageAssetId === 'string' && a.imageAssetId) {
-    if (!uses.has(a.imageAssetId)) uses.set(a.imageAssetId, []);
-    uses.get(a.imageAssetId).push(a);
-  }
+  const uses = new Map();  // image id -> attachments using it (sequence frames count as the attachment's picture)
+  for (const rig of rigs) for (const a of attachmentsOf(rig.data))
+    for (const id of new Set([a.imageAssetId, ...(Array.isArray(a.sequence?.frames) ? a.sequence.frames : [])])) {
+      if (typeof id !== 'string' || !id) continue;
+      if (!uses.has(id)) uses.set(id, []);
+      uses.get(id).push(a);
+    }
   const skipped = [], cells = [];
   for (const id of [...uses.keys()].sort()) {
     const image = images.get(id);
@@ -234,7 +236,13 @@ export function buildAtlas({ documents, images, settings, pageId }) {
   const rewritten = documents.map(d => {
     if (d.type !== 'rig') return d;
     const data = structuredClone(d.data);
-    for (const a of attachmentsOf(data)) if (regions[a.imageAssetId]) a.atlas = structuredClone(regions[a.imageAssetId]);
+    for (const a of attachmentsOf(data)) {
+      if (regions[a.imageAssetId]) a.atlas = structuredClone(regions[a.imageAssetId]);
+      // Sequences (plugin 1.12.0): one region per frame (null = that frame keeps its own file);
+      // runtimes draw a sequence only from these, frame 0 included.
+      const frames = Array.isArray(a.sequence?.frames) ? a.sequence.frames : [];
+      if (frames.some(id => regions[id])) a.sequence.atlas = frames.map(id => regions[id] ? structuredClone(regions[id]) : null);
+    }
     return { ...d, data };
   });
   return { documents: rewritten, pages: pages.map(p => ({ index: p.index, width: p.width, height: p.height, png: encodePng(p.width, p.height, p.rgba) })),

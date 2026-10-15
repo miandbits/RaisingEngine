@@ -466,7 +466,18 @@ Json outlineParityScript() {
 }
 }  // namespace
 
+#include "clip-sequence-tests.hpp"
+
 int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--clip-parity") {
+    // Native reference for clipping + sequence draw lists, compact frames and samples (plugin 1.12.0).
+    Host host;
+    Json replies = Json::array();
+    const Json script = clipseq::clipParityScript();
+    for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
   if (argc > 1 && std::string(argv[1]) == "--stress-rig") {
     // The generated large character for the node/player/service benchmarks (plugin 1.9.0).
     const Json rig = cutout_stress::rig();
@@ -3133,6 +3144,8 @@ int main(int argc, char** argv) {
     check(r["ok"] == true && r["diagnostics"].empty() && r["controllerDiagnostics"].size() == 2, "rig once, one list per controller");
     check(r["controllerDiagnostics"][0].empty() && r["controllerDiagnostics"][1][0]["code"] == "ANIM_CLIP_UNKNOWN" && r["controllerDiagnostics"][1][0]["pointer"] == "/data/defaultClip", "clip names checked against the rig");
   });
+
+  clipseq::run();
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;

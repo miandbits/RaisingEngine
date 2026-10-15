@@ -209,9 +209,10 @@ before anything is written.
 **Compact frames** (ABI extension, still `raising-extension-1`; plugins and hosts that do not use it
 keep the documented items above, both directions stay compatible). A host lists the formats it
 reads in `init`: `{op:"init", documents, frameFormats:[2]}`; a plugin that writes them answers
-`{…, frameFormat:2, meshEpoch, meshes:[{id, uvs, indices}]}` (the topology of every mesh it may
-draw, fixed for the init lifetime) and an older plugin simply ignores the field, so the host keeps
-format 1. Then `{op:"frame", instance, format:2, since?}` answers
+`{…, frameFormat:2, meshEpoch, meshes:[{id, uvs, indices}]}` (the topology of every mesh its
+documents draw; an id keeps its topology within one `meshEpoch`, but later frames may name further
+ids, e.g. meshes a plugin cuts per frame, and a reply may start a new `meshEpoch`) and an older
+plugin simply ignores the field, so the host keeps format 1. Then `{op:"frame", instance, format:2, since?}` answers
 `{ok:true, format:2, meshEpoch, frame, items:[…]}` where each item is an array
 `[imageAssetId, a, b, c, d, e, f, width, height, alpha]`, extended by `region` (`[x, y, w, h]` or
 `null`, see atlases below) and, for a mesh, `meshId, [x, y, …]` (element-local positions; uvs and

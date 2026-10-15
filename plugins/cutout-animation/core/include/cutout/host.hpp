@@ -26,8 +26,14 @@ class Host {
   std::map<std::string, FrameCache> frames_;
   uint64_t frameSerial_ = 0, meshEpoch_ = 1;
   // Entries keep their rig alive, so an id never points at freed (or reused) attachment memory.
-  std::vector<std::pair<std::shared_ptr<const Rig>, const Attachment*>> meshList_;
+  // Clipped items (plugin 1.12.0) have per-frame topology: interned by content (attachment null),
+  // and once more than MAX_DYNAMIC_MESHES pile up the table restarts under a new epoch.
+  struct MeshEntry { std::shared_ptr<const Rig> rig; const Attachment* attachment = nullptr; std::vector<double> uvs; std::vector<int> indices; };
+  static constexpr size_t MAX_DYNAMIC_MESHES = 4096;
+  std::vector<MeshEntry> meshList_;
   std::map<const Attachment*, int> meshIds_;
+  std::map<std::string, int> dynamicIds_;
+  int dynamicMeshId(const DrawItem& item);
   Affine placement(const std::string& instance, const Rig& rig) const;
   void resetMeshes();
   int meshId(const std::shared_ptr<const Rig>& rig, const Attachment* attachment);

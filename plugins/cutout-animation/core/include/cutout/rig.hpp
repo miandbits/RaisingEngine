@@ -77,17 +77,45 @@ struct Attachment {
   size_t hull = 0;
   std::vector<int> edges;
   std::optional<AtlasRegion> atlas;  // export-time atlas packing (plugin 1.9.0)
+  /**
+   * Clipping (plugin 1.12.0, `type: "clipping"`, Spine semantics): no picture. `vertices` is the
+   * clip polygon (x, y pairs placed like mesh vertices: slot bone · offset, or weighted with
+   * `binds`/`weights`, deform keys apply), and the slots after this one up to and including
+   * `clipEnd` (draw order) are drawn only inside it. Inside an active clip range another clipping
+   * attachment is ignored (no nesting).
+   */
+  bool clipping = false;
+  std::string clipEnd;
+  int clipEndIndex = -1;
+  /**
+   * Image sequence (plugin 1.12.0, `sequence`): `frames` are image assets of the same size (frame
+   * 0 = imageAssetId); a slot's sequence keys pick the frame, `setupIndex` without keys.
+   * `frameAtlas` (export only) holds each frame's atlas region (nullopt = its own image).
+   */
+  std::vector<std::string> frames;
+  std::vector<std::optional<AtlasRegion>> frameAtlas;
+  int setupIndex = 0;
+  bool sequence() const { return !frames.empty(); }
   size_t vertexCount() const { return vertices.size() / 2; }
 };
 
 /** Expression is the rig-level track `{"target":"rig","property":"expression"}` (step only).
  *  Mix / BendPositive key IK constraints: `{"target":"ik:<id>"}` (bend is step only, value bool).
- *  Deform keys mesh vertex offsets: `{"target":"slot:<id>","property":"deform","attachment":"<name>"}`. */
-enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive, Deform };
+ *  Deform keys mesh vertex offsets: `{"target":"slot:<id>","property":"deform","attachment":"<name>"}`.
+ *  Sequence keys (plugin 1.12.0) pick the frame of the slot's sequence attachment: `{"target":"slot:<id>","property":"sequence"}`. */
+enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive, Deform, Sequence };
+/** Sequence key playback (plugin 1.12.0, Spine SequenceMode): hold shows `index`; the others
+ *  advance one frame per `delay` ms from the key's time (reverse modes count from the last frame). */
+enum class SequenceMode { Hold, Once, Loop, Pingpong, OnceReverse, LoopReverse, PingpongReverse };
+const char* sequenceModeName(SequenceMode mode);
+std::optional<SequenceMode> parseSequenceMode(const std::string& name);
+constexpr size_t MAX_SEQUENCE_FRAMES = 256, MAX_CLIP_VERTICES = 256;
 enum class Interp { Step, Linear, Bezier };
 /** `curve` is used only when interp is Bezier (segment from this key to the next).
- *  Deform keys carry `offsets` (dx, dy per vertex, image pixels) instead of `value`. */
-struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; std::vector<double> offsets; };
+ *  Deform keys carry `offsets` (dx, dy per vertex, image pixels) instead of `value`.
+ *  Sequence keys (step): `value` = the frame index, `mode` and `delay` (ms per frame). */
+struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> name; Interp interp = Interp::Linear; Curve curve = LINEAR_CURVE; std::vector<double> offsets;
+             SequenceMode mode = SequenceMode::Hold; double delay = 0; };
 /** bone=false + rig=true: the rig expression track (target "", targetIndex -1, key.name = expression id).
  *  bone=false + ik=true: an IK constraint track (target = constraint id, targetIndex = Rig::ik index;
  *  bendPositive keys carry value 1/0). Deform tracks are slot tracks naming `attachment`. */

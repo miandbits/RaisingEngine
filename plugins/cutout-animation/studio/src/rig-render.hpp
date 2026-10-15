@@ -54,13 +54,20 @@ cutout::Affine attachmentMatrix(const cutout::Rig& rig, const cutout::Pose& pose
 /** Rig-space vertices of the mesh shown on `slotIndex` (cutout::meshPositions: skinned after IK,
  *  deform applied); empty when the slot shows a region or nothing. */
 QVector<QPointF> meshPoints(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex, const cutout::Attachment** attachment = nullptr);
-/** Rig-space bounds of what the slot draws (mesh vertices or the region rectangle); empty when hidden. */
+/** Rig-space bounds of what the slot draws (mesh vertices or the region rectangle; a clipping
+ *  attachment's polygon); empty when hidden. */
 QRectF attachmentBounds(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex);
+/** Rig-space clip polygon of the clipping attachment shown on `slotIndex` (plugin 1.12.0; bone,
+ *  weights and deform keys applied, like the runtimes); empty when the slot shows anything else. */
+QPolygonF clipPolygon(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex);
 /** Outline of a mesh: edges used by exactly one triangle (pairs of vertex indices). */
 QVector<QPair<int, int>> meshOutline(const std::vector<int>& triangles);
 /** Weight of `bone` on vertex `vertex` (unweighted meshes: 1 on the slot bone). */
 double vertexWeight(const cutout::Rig& rig, int slotIndex, const cutout::Attachment& attachment, size_t vertex, int bone);
-/** Draw back->front on the painter's current transform (rig space). Missing images draw a hatched box. */
+/** Draw back->front on the painter's current transform (rig space). Missing images draw a hatched box.
+ *  Sequences show the pose's frame; a clipping slot clips the slots of its range to its polygon
+ *  (a painter clip path: the same area the runtimes' triangle clipping keeps). A hidden clipping
+ *  slot (editor eye toggle) clips nothing, so the whole parts can be seen while editing. */
 void drawRig(QPainter& painter, const cutout::Rig& rig, const cutout::Pose& pose, ImageCache& images, const QSet<QString>& hiddenSlots = {});
 /** Runtime element placement: contain-fit the authoring canvas into `box`, centered, props scale/flipX. Rig space -> box. */
 QTransform elementPlacement(const cutout::Rig& rig, const QRectF& box, double scale, bool flipX);

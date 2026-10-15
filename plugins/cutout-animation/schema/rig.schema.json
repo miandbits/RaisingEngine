@@ -141,17 +141,20 @@
               "type": "object", "additionalProperties": false, "required": ["target", "property", "keys"],
               "properties": {
                 "target": { "description": "bone:<id>, slot:<id>, rig (property expression, step keys of expression ids / null) or ik:<id> (mix 0..1, bendPositive step bool).", "type": "string", "pattern": "^(?:(bone|slot|ik):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
-                "property": { "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive", "deform"] },
+                "property": { "description": "sequence (plugin 1.12.0): slot tracks picking frames of the slot's sequence attachment (step keys {mode, index, delay}).", "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive", "deform", "sequence"] },
                 "attachment": { "description": "Deform tracks (plugin 1.4.0): the slot's mesh attachment whose vertices the keys offset.", "$ref": "#/$defs/name" },
                 "keys": {
                   "type": "array", "maxItems": 4096,
                   "items": {
                     "type": "object", "additionalProperties": false, "required": ["timeMs"],
-                    "anyOf": [{ "required": ["value"] }, { "required": ["offsets"] }],
+                    "anyOf": [{ "required": ["value"] }, { "required": ["offsets"] }, { "required": ["mode"] }, { "required": ["index"] }],
                     "properties": {
                       "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
                       "value": { "anyOf": [{ "type": "number" }, { "$ref": "#/$defs/name" }, { "type": "null" }, { "type": "boolean" }] },
                       "offsets": { "description": "Deform keys (plugin 1.4.0): dx, dy per mesh vertex in image pixels, added to the setup vertices.", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+                      "mode": { "description": "Sequence keys (plugin 1.12.0): hold shows `index`; the others advance one frame per `delay` ms from the key (Spine SequenceMode). Default hold.", "enum": ["hold", "once", "loop", "pingpong", "onceReverse", "loopReverse", "pingpongReverse"] },
+                      "index": { "description": "Sequence keys: the frame the key starts at (0-based; reverse modes count from the last frame).", "type": "integer", "minimum": 0, "maximum": 255 },
+                      "delay": { "description": "Sequence keys: ms per frame (default 100).", "type": "number", "exclusiveMinimum": 0, "maximum": 60000 },
                       "interp": { "description": "Segment from this key to the next. Default linear; attachment keys are always step.", "enum": ["step", "linear", "bezier"] },
                       "curve": {
                         "description": "Bezier handles [x1, y1, x2, y2] for interp bezier, normalized to the segment: x = fraction of segment time, y = fraction of the value change (may overshoot).",
@@ -201,7 +204,10 @@
   },
   "$defs": {
     "attachment": {
-      "type": "object", "additionalProperties": false, "required": ["slot", "name", "imageAssetId", "width", "height"],
+      "type": "object", "additionalProperties": false, "required": ["slot", "name"],
+      "if": { "required": ["type"], "properties": { "type": { "const": "clipping" } } },
+      "then": { "required": ["vertices", "end"] },
+      "else": { "required": ["imageAssetId", "width", "height"] },
       "properties": {
         "slot": { "$ref": "#/$defs/id" },
         "name": { "$ref": "#/$defs/name" },
@@ -213,8 +219,18 @@
         "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
         "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
         "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
-        "type": { "description": "region (default: the image rectangle) or mesh (plugin 1.4.0). Semantics in docs/contract.md.", "enum": ["region", "mesh"] },
-        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices).", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "type": { "description": "region (default: the image rectangle), mesh (plugin 1.4.0) or clipping (plugin 1.12.0: no picture; the slots after it through `end` draw only inside its polygon). Semantics in docs/contract.md.", "enum": ["region", "mesh", "clipping"] },
+        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices). Clipping: the clip polygon (3..256 points, simple, concave allowed) in the slot bone's space (through x..scaleY).", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "end": { "description": "Clipping (plugin 1.12.0): the last slot (draw order, inclusive) the polygon clips; must come after the clipping slot.", "$ref": "#/$defs/id" },
+        "sequence": {
+          "description": "Image sequence (plugin 1.12.0): frames of one size drawn with this attachment's placement (imageAssetId = frames[0]); slot sequence keys pick the frame, setupIndex without keys. atlas: written by the export packer, one region (or null) per frame.",
+          "type": "object", "additionalProperties": false, "required": ["frames"],
+          "properties": {
+            "frames": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "type": "string", "minLength": 1, "maxLength": 64 } },
+            "setupIndex": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "atlas": { "type": "array", "maxItems": 256, "items": { "anyOf": [{ "type": "null" }, { "type": "object" }] } }
+          }
+        },
         "uvs": { "description": "Mesh: texture coordinates 0..1, u, v per vertex.", "type": "array", "maxItems": 4096, "items": { "type": "number", "minimum": 0, "maximum": 1 } },
         "triangles": { "description": "Mesh: vertex index triples (1..4096 triangles).", "type": "array", "maxItems": 12288, "items": { "type": "integer", "minimum": 0, "maximum": 2047 } },
         "hull": { "description": "Mesh, editor only: the first `hull` vertices are the outline polygon in order (re-triangulation source, plugin 1.6.0).", "type": "integer", "minimum": 0, "maximum": 2048 },

@@ -141,6 +141,9 @@ class RigCanvas : public QWidget {
   const QPolygonF& outlinePreview() const { return outlinePreview_; }
   std::function<void(const QPolygonF& rigPoints)> onMeshOutline;
   std::function<void()> onOutlineCancel;
+  /** Clipping polygons (plugin 1.12.0): every shown clipping slot's outline, dashed (editor-only toggle). */
+  void setShowClipOutlines(bool on) { showClips_ = on; update(); }
+  bool showClipOutlines() const { return showClips_; }
   /** 정점 추가: a click (rig space); 가장자리 추가: a drag from vertex `a` to vertex `b`. */
   std::function<void(const QPointF& rigPoint)> onMeshAddVertex;
   std::function<void(int a, int b)> onMeshAddEdge;
@@ -239,6 +242,8 @@ class RigCanvas : public QWidget {
   void paintMesh(QPainter& p);
   void paintGhosts(QPainter& p);
   void paintIk(QPainter& p);
+  bool showClips_ = true;
+  void paintClips(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;
 };
 }  // namespace cutout_studio

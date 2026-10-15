@@ -1,4 +1,5 @@
 #include "cutout/runtime.hpp"
+#include "cutout/clipping.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -64,6 +65,45 @@ std::vector<double> sampleDeform(const Track& track, double t) {
   for (size_t i = 0; i < out.size(); i++) out[i] = a.offsets[i] + (b.offsets[i] - a.offsets[i]) * f;
   return out;
 }
+/** Sequence keys (plugin 1.12.0): the last key at or before t sets the state; before the first
+ *  key the slot shows its attachment's setupIndex (Spine semantics). */
+static SequenceState sampleSequence(const Track& track, double t) {
+  SequenceState s;
+  for (const auto& k : track.keys) {
+    if (double(k.timeMs) > t) break;
+    s.keyed = true; s.mode = k.mode; s.index = int(k.value); s.delay = k.delay > 0 ? k.delay : 100; s.elapsedMs = t - double(k.timeMs);
+  }
+  return s;
+}
+int sequenceFrame(const SequenceState& s, size_t countIn, int setupIndex) {
+  if (countIn == 0) return 0;
+  const int64_t count = int64_t(countIn), last = count - 1;
+  if (!s.keyed) return int(std::clamp<int64_t>(setupIndex, 0, last));
+  int64_t index = s.index;
+  // Frames advanced since the key; the epsilon keeps exact multiples of the delay on the new frame
+  // despite a rounded quotient (83.333.. ms frames at 250 ms are frame 3, not 2.999..).
+  if (s.mode != SequenceMode::Hold) index += int64_t(std::floor(std::max(0.0, s.elapsedMs) / s.delay + 1e-6));
+  switch (s.mode) {
+    case SequenceMode::Hold: break;
+    case SequenceMode::Once: index = std::min(last, index); break;
+    case SequenceMode::Loop: index %= count; break;
+    case SequenceMode::Pingpong: {
+      const int64_t n = 2 * count - 2;
+      index = n == 0 ? 0 : index % n;
+      if (index >= count) index = n - index;
+      break;
+    }
+    case SequenceMode::OnceReverse: index = std::max<int64_t>(last - index, 0); break;
+    case SequenceMode::LoopReverse: index = last - index % count; break;
+    case SequenceMode::PingpongReverse: {
+      const int64_t n = 2 * count - 2;
+      index = n == 0 ? 0 : (index + last) % n;
+      if (index >= count) index = n - index;
+      break;
+    }
+  }
+  return int(std::clamp<int64_t>(index, 0, last));
+}
 static std::optional<std::string> sampleAttachment(const Track& track, double t) {
   const auto& keys = track.keys;
   const Key* chosen = &keys.front();
@@ -101,6 +141,7 @@ static Pose setupPose(const Rig& rig) {
   for (const auto& b : rig.bones) pose.bones.push_back(b.setup);
   for (const auto& s : rig.slots) { pose.attachments.push_back(s.attachment); pose.alpha.push_back(s.alpha); }
   for (const auto& k : rig.ik) { pose.ikMix.push_back(k.mix); pose.ikBend.push_back(k.bendPositive); }
+  pose.sequence.assign(rig.slots.size(), SequenceState{});
   return pose;
 }
 static void computeWorld(const Rig& rig, Pose& pose) {
@@ -131,6 +172,7 @@ static void applyClip(const Rig& rig, const Clip& clip, double t, Pose& pose) {
     if (tr.bone) { auto& value = field(pose.bones[tr.targetIndex], tr.property); value = sampleTrack(tr, t, value); }
     else if (tr.property == Property::Deform) { if (!tr.keys.empty()) pose.deform[{tr.targetIndex, tr.attachment}] = sampleDeform(tr, t); }
     else if (tr.property == Property::Alpha) pose.alpha[tr.targetIndex] = sampleTrack(tr, t, pose.alpha[tr.targetIndex]);
+    else if (tr.property == Property::Sequence) { if (!tr.keys.empty() && size_t(tr.targetIndex) < pose.sequence.size()) pose.sequence[tr.targetIndex] = sampleSequence(tr, t); }
     else if (!tr.keys.empty()) pose.attachments[tr.targetIndex] = sampleAttachment(tr, t);
   }
   (void)rig;
@@ -152,8 +194,8 @@ static Pose blend(const Pose& a, const Pose& b, double alpha) {
   }
   for (auto& [key, to] : out.deform)
     if (!a.deform.count(key)) for (double& v : to) v *= alpha;
-  // Attachments (and the IK bend direction) cannot interpolate: switch halfway through the mix.
-  if (alpha < 0.5) { out.attachments = a.attachments; out.ikBend = a.ikBend; }
+  // Attachments, sequence frames and the IK bend direction cannot interpolate: switch halfway through the mix.
+  if (alpha < 0.5) { out.attachments = a.attachments; out.ikBend = a.ikBend; out.sequence = a.sequence; }
   return out;
 }
 
@@ -573,7 +615,7 @@ const std::vector<double>* deformOf(const Pose& pose, int slot, const Attachment
 }
 std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, const Attachment& a) {
   std::vector<double> out;
-  if (!a.mesh || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
+  if ((!a.mesh && !a.clipping) || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
   const std::vector<double>* d = deformOf(pose, slot, a);
   const Affine rigid = pose.world[size_t(rig.slots[size_t(slot)].boneIndex)] * attachmentPlacement(a);
   // world(bone) · bind per influencing bone, once per call rather than once per vertex.
@@ -606,39 +648,70 @@ Affine meshVertexMatrix(const Rig& rig, const Pose& pose, int slot, const Attach
   return m;
 }
 
-std::vector<DrawItem> Instance::drawList() const {
-  const Pose pose = this->pose();
+// ---- Sequences and clipping (plugin 1.12.0) ----
+int attachmentFrame(const Pose& pose, int slot, const Attachment& a) {
+  if (!a.sequence()) return 0;
+  const SequenceState state = slot >= 0 && size_t(slot) < pose.sequence.size() ? pose.sequence[size_t(slot)] : SequenceState{};
+  return sequenceFrame(state, a.frames.size(), a.setupIndex);
+}
+const std::string& attachmentImage(const Pose& pose, int slot, const Attachment& a) {
+  return a.sequence() ? a.frames[size_t(attachmentFrame(pose, slot, a))] : a.imageAssetId;
+}
+const std::optional<AtlasRegion>& attachmentAtlas(const Pose& pose, int slot, const Attachment& a) {
+  static const std::optional<AtlasRegion> none;
+  if (!a.sequence()) return a.atlas;
+  // Packed sequences carry one region per frame; frame 0's `atlas` alone would draw the wrong frame.
+  const size_t f = size_t(attachmentFrame(pose, slot, a));
+  return f < a.frameAtlas.size() ? a.frameAtlas[f] : none;
+}
+std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose) {
   std::vector<DrawItem> out;
-  const Affine origin = Affine::compose(-rig_->originX, -rig_->originY, 0, 1, 1);
-  for (size_t i = 0; i < rig_->slots.size(); i++) {
-    const auto& slot = rig_->slots[i];
-    if (!pose.attachments[i] || pose.alpha[i] <= 0 || slot.boneIndex < 0) continue;
-    const Attachment* att = rig_->attachment(slot.id, *pose.attachments[i], pose.skin);
-    if (!att) continue;
-    const Affine m = origin * pose.world[slot.boneIndex] * attachmentPlacement(*att);
-    out.push_back({slot.id, att->imageAssetId, m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)});
-    DrawItem& item = out.back();
-    item.source = att;
-    if (att->atlas) {
-      // Packed picture: the page's sub-image; a trimmed region draws only the kept rectangle,
-      // placed where it was in the original image (the rest was fully transparent).
-      const AtlasRegion& r = *att->atlas;
-      item.imageAssetId = r.page;
-      item.hasRegion = true;
-      item.region[0] = r.x; item.region[1] = r.y; item.region[2] = r.width; item.region[3] = r.height;
-      if (r.trimmed && !att->mesh) {
-        item.matrix = m * Affine::compose(r.trimX, r.trimY, 0, 1, 1);
-        item.width = r.trimWidth; item.height = r.trimHeight;
+  const Affine origin = Affine::compose(-rig.originX, -rig.originY, 0, 1, 1);
+  std::optional<ClipRegion> clip;
+  int clipEnd = -1;
+  for (size_t i = 0; i < rig.slots.size(); i++) {
+    const auto& slot = rig.slots[i];
+    const Attachment* att = pose.attachments[i] && slot.boneIndex >= 0 ? rig.attachment(slot.id, *pose.attachments[i], pose.skin) : nullptr;
+    if (att && att->clipping) {
+      // A clip range starts here (alpha does not matter); one inside an active range is ignored.
+      if (!clip) {
+        std::vector<double> polygon = meshPositions(rig, pose, int(i), *att);
+        for (size_t v = 0; v + 1 < polygon.size(); v += 2) { polygon[v] -= rig.originX; polygon[v + 1] -= rig.originY; }
+        clip = clipRegion(polygon);
+        clipEnd = att->clipEndIndex >= 0 ? att->clipEndIndex : int(rig.slots.size()) - 1;
       }
+    } else if (att && pose.alpha[i] > 0) {
+      const Affine m = origin * pose.world[slot.boneIndex] * attachmentPlacement(*att);
+      DrawItem item{slot.id, attachmentImage(pose, int(i), *att), m, att->width, att->height, std::clamp(pose.alpha[i], 0.0, 1.0)};
+      item.source = att;
+      if (const auto& atlas = attachmentAtlas(pose, int(i), *att)) {
+        // Packed picture: the page's sub-image; a trimmed region draws only the kept rectangle,
+        // placed where it was in the original image (the rest was fully transparent).
+        const AtlasRegion& r = *atlas;
+        item.imageAssetId = r.page;
+        item.hasRegion = true;
+        item.region[0] = r.x; item.region[1] = r.y; item.region[2] = r.width; item.region[3] = r.height;
+        if (r.trimmed && !att->mesh) {
+          item.matrix = m * Affine::compose(r.trimX, r.trimY, 0, 1, 1);
+          item.width = r.trimWidth; item.height = r.trimHeight;
+        }
+      }
+      if (att->mesh) {
+        item.positions = meshPositions(rig, pose, int(i), *att);
+        for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig.originX; item.positions[v + 1] -= rig.originY; }  // = origin
+        item.uvs = att->uvs;
+        item.indices = att->triangles;
+      }
+      if (clip) clipItem(item, *clip, out);
+      else out.push_back(std::move(item));
     }
-    if (!att->mesh) continue;
-    item.positions = meshPositions(*rig_, pose, int(i), *att);
-    for (size_t v = 0; v + 1 < item.positions.size(); v += 2) { item.positions[v] -= rig_->originX; item.positions[v + 1] -= rig_->originY; }  // = origin
-    item.uvs = att->uvs;
-    item.indices = att->triangles;
+    // The end slot is inclusive and ends the range whether or not it drew anything.
+    if (clip && int(i) >= clipEnd) clip.reset();
   }
   return out;
 }
+
+std::vector<DrawItem> Instance::drawList() const { return drawItems(*rig_, pose()); }
 
 std::vector<Notification> Instance::takeNotifications() {
   std::vector<Notification> out(pending_.begin(), pending_.end());

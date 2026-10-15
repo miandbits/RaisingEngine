@@ -30,7 +30,7 @@ QString capital(const QString& s) { return s.left(1).toUpper() + s.mid(1); }
 const char* NUMERIC_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "alpha", "mix"};
 QString propertyLabel(const QString& property) {
   static const QMap<QString, QString> names = {{"x", "X"}, {"y", "Y"}, {"rotation", "회전"}, {"scaleX", "크기 X"}, {"scaleY", "크기 Y"}, {"alpha", "투명도"}, {"attachment", "그림"},
-                                               {"mix", "혼합"}, {"bendPositive", "굽힘"}};
+                                               {"mix", "혼합"}, {"bendPositive", "굽힘"}, {"sequence", "시퀀스"}};
   return names.value(property, property);
 }
 std::string interpOf(const Json& key) { return key.contains("interp") && key.at("interp").is_string() ? key.at("interp").get<std::string>() : "linear"; }
@@ -1390,7 +1390,10 @@ QWidget* CutoutPanel::buildLooks() {
   lookTabs_->addTab(buildIk(), "IK");
   lookTabs_->addTab(buildMesh(), "메시");
   lookTabs_->addTab(buildEvents(), "이벤트");
-  return section("스킨 · 표정 · IK · 메시 · 이벤트", "cutoutSectionLooks", lookTabs_);
+  // Clipping and sequences (plugin 1.12.0): pages of the same section, like IK and meshes.
+  lookTabs_->addTab(buildClipping(), "클리핑");
+  lookTabs_->addTab(buildSequence(), "시퀀스");
+  return section("스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스", "cutoutSectionLooks", lookTabs_);
 }
 QWidget* CutoutPanel::lookPage(const char* name) {
   auto* page = new QWidget;
@@ -2019,8 +2022,9 @@ QWidget* CutoutPanel::buildWorkspace() {
   canvas_->onDropImage = [this](const QMimeData* mime, const QString& slot) { dropImages(mime, slot); };
   canvas_->onMeshSelect = [this](const QVector<int>& vertices, bool add) { selectVertices(vertices, add); };
   canvas_->onMeshDrag = [this](const QPointF& delta, bool finished) { onMeshDrag(delta, finished); };
-  canvas_->onMeshOutline = [this](const QPolygonF& points) { outlineFromCanvas(points); };
-  canvas_->onOutlineCancel = [this] { outlineSlot_.clear(); setStatus("윤곽 그리기를 취소했습니다."); refreshMesh(); };
+  // One outline tool, two uses: a mesh outline, or a clip polygon (plugin 1.12.0, outlineForClip_).
+  canvas_->onMeshOutline = [this](const QPolygonF& points) { if (outlineForClip_) clippingFromCanvas(points); else outlineFromCanvas(points); };
+  canvas_->onOutlineCancel = [this] { outlineSlot_.clear(); outlineForClip_ = false; setStatus("윤곽 그리기를 취소했습니다."); refreshMesh(); refreshClipping(); };
   canvas_->onMeshAddVertex = [this](const QPointF& at) { addVertexAt(at); };
   canvas_->onMeshAddEdge = [this](int a, int b) { addMeshEdge(a, b); };
   canvas_->onMeshDelete = [this] { deleteVertices(); };
@@ -2420,6 +2424,12 @@ QWidget* CutoutPanel::buildAnimateTab() {
     if (dopesheet_->rows()[row].events) { if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutEventPage")); return; }
     // The rig expression row has no canvas item: show the expression list instead.
     if (dopesheet_->rows()[row].target == "rig") { if (lookTabs_) lookTabs_->setCurrentIndex(1); return; }
+    // A sequence row (plugin 1.12.0): its part, and the 시퀀스 page with the key fields.
+    if (dopesheet_->rows()[row].property == "sequence") {
+      selectItem(dopesheet_->rows()[row].target);
+      if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutSequencePage"));
+      return;
+    }
     // An IK row: its constraint in the IK page; no canvas selection, so the graph shows its mix curve.
     if (refKind(dopesheet_->rows()[row].target) == "ik") {
       if (lookTabs_) lookTabs_->setCurrentIndex(2);
@@ -3291,6 +3301,8 @@ void CutoutPanel::refreshProperties() {
   filling_ = false;
   refreshIk();  // mix/bend shown at the playhead follow every pose change
   refreshMesh();
+  refreshClipping();
+  refreshSequence();
 }
 
 QString CutoutPanel::keyState() const {
@@ -3339,7 +3351,7 @@ void CutoutPanel::refreshDopesheet() {
       Dopesheet::Row row;
       row.target = qs(t.value("target", std::string()));
       row.property = uiProperty(t);
-      row.attachment = row.property == "attachment" || row.property == "expression" || row.property == "bendPositive";  // all switch (step)
+      row.attachment = row.property == "attachment" || row.property == "expression" || row.property == "bendPositive" || row.property == "sequence";  // all switch (step)
       row.label = row.target == "rig" ? QString("표정 (리그)")
                   : refKind(row.target) == "ik" ? QString("IK %1 %2").arg(refId(row.target), propertyLabel(row.property))
                   : row.property.startsWith("deform:") ? QString("%1 변형 (%2)").arg(refId(row.target), row.property.mid(7))
@@ -5820,13 +5832,14 @@ void CutoutPanel::refreshMesh() {
   int si = -1;
   const cutout::Attachment* att = nullptr;
   Json fields;
-  const bool part = meshTarget(si, att, fields), mesh = part && att->mesh, animate = mode_ == Mode::Animate;
+  // A clip slot (plugin 1.12.0) has no picture: the mesh tools leave it alone (its outline is still drawn).
+  const bool target = meshTarget(si, att, fields), part = target && !att->clipping, mesh = part && att->mesh, animate = mode_ == Mode::Animate;
   const QString key = part ? qs(fields.dump()) : QString();
   if (key != meshSelectionKey_) { meshSelection_.clear(); meshSelectionKey_ = key; }
   if (mesh) for (auto it = meshSelection_.begin(); it != meshSelection_.end();) it = *it >= int(att->vertexCount()) ? meshSelection_.erase(it) : std::next(it);
   if (!mesh || (animate && meshEdit_ == MeshEdit::Weights)) meshEdit_ = MeshEdit::Off;
   // Outline drawing belongs to one part in setup mode: another selection or Animate ends it.
-  if (!outlineSlot_.isEmpty() && (animate || !part || refId(selection_) != outlineSlot_)) outlineSlot_.clear();
+  if (!outlineSlot_.isEmpty() && (animate || !target || refId(selection_) != outlineSlot_)) { outlineSlot_.clear(); outlineForClip_ = false; }
   // Bone lists: rebuilt for another part (checks are editor state of this part's next auto weights).
   if (meshBones_->property("key").toString() != key || meshBones_->count() != int(rig_ ? rig_->bones.size() : 0)) {
     QSignalBlocker block(meshBones_);
@@ -5882,7 +5895,7 @@ void CutoutPanel::refreshMesh() {
     if (pinned) info += QString(" · 고정 가장자리 %1").arg(pinned);
     if (animate) info += " · 애니메이션 모드: 정점을 끌면 이 시간의 변형이 됩니다(K로 키).";
   }
-  if (!outlineSlot_.isEmpty()) info = QString("윤곽 그리기 중: 「%1」 둘레를 클릭하세요. 첫 점 클릭·더블클릭·Enter = 메시 만들기, Esc = 취소.").arg(outlineSlot_);
+  if (!outlineSlot_.isEmpty() && !outlineForClip_) info = QString("윤곽 그리기 중: 「%1」 둘레를 클릭하세요. 첫 점 클릭·더블클릭·Enter = 메시 만들기, Esc = 취소.").arg(outlineSlot_);
   meshInfo_->setText(info);
   if (canvas_) {
     canvas_->setMeshEdit(int(meshEdit_), mesh ? refId(selection_) : QString(), meshSelection_,
@@ -6146,6 +6159,7 @@ bool CutoutPanel::beginOutline() {
   Json fields;
   if (!meshTarget(si, att, fields)) { setStatus("윤곽을 그릴 조각(▣)을 먼저 고르세요.", true); return false; }
   outlineSlot_ = refId(selection_);
+  outlineForClip_ = false;
   meshEdit_ = MeshEdit::Off;  // the new outline replaces the shape: vertex handles would only get in the way
   refreshMesh();
   if (canvas_) canvas_->setFocus(Qt::OtherFocusReason);

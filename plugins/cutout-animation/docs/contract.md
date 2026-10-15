@@ -836,3 +836,97 @@ is ordinary schemaVersion 1 data plus editor metadata.
   `…Scale`, `…Trim`, layer tree `…Tree` with include boxes and bone/slot/attachment/status columns,
   `…Warnings`, `…Summary`, `…Refresh` = preview again) → `가져오기` = one edit (one Ctrl+Z). The
   file the selected character was imported from defaults to updating it.
+
+## Clipping (plugin 1.12.0)
+
+Spine clipping attachments: a polygon that hides everything of a slot range outside it.
+
+* **Data**: an attachment (default list or a skin) `type: "clipping"` with `vertices: [x, y, …]`
+  (3..256 points, a simple polygon, convex or concave) and `end: <slot id>`. No picture:
+  `imageAssetId`, `width`, `height`, `pivotX/Y`, `uvs`, `triangles`, `hull`, `edges`, `atlas`,
+  `sequence` are not used (`ANIM_CLIP_UNUSED` warning). The polygon is placed like a mesh: points
+  in the slot bone's space through the attachment's `x, y, rotation, scaleX, scaleY` (pivot and
+  size are 0), or `weights` (1..4 bones per point, bind pose = setup pose, exactly the mesh rules);
+  deform keys (`property: "deform"`, `attachment` = the clip's name, offsets per point) move it.
+* **Range**: when a slot shows a clipping attachment, the slots after it in draw order up to and
+  including `end` draw only inside the polygon. The clipping slot itself draws nothing and its
+  alpha does not matter. The range ends at `end` even when that slot shows nothing. A clipping
+  attachment inside an active range is ignored (no nesting, as in Spine).
+* **Runtime** (`cutout::drawItems`, every player): each drawn item of the range is cut on the CPU.
+  The polygon is ear-clipped and merged into convex parts (Hertel–Mehlhorn, so concave polygons
+  work); every item triangle (a region = its two-triangle quad over uvs 0..1 of its picture or
+  atlas sub-image) inside one part is kept, others are cut against each part (Sutherland–Hodgman,
+  uvs interpolated linearly). Results: an item entirely inside stays exactly as it was (a region
+  stays a region, a mesh keeps its topology id); an item entirely outside is dropped; otherwise
+  the item becomes a mesh item (`positions`, `uvs`, `indices`; matrix/size/region unchanged as the
+  fallback rectangle) with shared vertices deduplicated, split into several items of at most 2048
+  vertices / 4096 triangles. Hosts therefore need nothing beyond `plugin-mesh-v1`
+  (`requiredHostFeatures` lists it for rigs with a clipping attachment). Positions are snapped to
+  1/4096 px before cutting, the cut uses plain IEEE arithmetic (sqrt, no libm) and every
+  intersection is computed from its segment's endpoints in one canonical order: native and Wasm
+  emit bit-identical triangles, and two triangles sharing an edge get the same cut points.
+* **Compact frames**: a clipped item's topology changes with the pose, so its mesh id is interned
+  by content (`uvs` + `indices`) instead of by attachment: an unmoved clip keeps its id, a moving
+  one adds ids that hosts fetch with `meshes` like any unknown id. After 4096 such topologies the
+  plugin restarts the table under a new `meshEpoch` (between frames), which hosts already handle.
+* **Validation**: `ANIM_CLIP_END` (missing, unknown, not after the clipping slot),
+  `ANIM_CLIP_VERTICES` (pairs, 3..256), `ANIM_CLIP_POLYGON` (`polygonProblem`: crossing or
+  touching edges, spikes, no area), weights as meshes (`ANIM_MESH_WEIGHTS`, …). A pose may still
+  fold a weighted polygon over itself: the runtime then fans what ear clipping cannot cut
+  (bounded, deterministic).
+* **Editing ops**: `addClipping {slot (new), bone?, before? | index?, name? ("clip"), vertices |
+  worldVertices (rig px at the setup pose), end? (= before)}`, `setClipping {slot, name?, skin?,
+  vertices? | worldVertices?, end?}` (a new point count drops weights and the polygon's deform
+  keys). `deleteSlot` of a range's end moves `end` to the slot below; a range that becomes empty
+  deletes the clipping slot too (`ANIM_CLIP_REMOVED`). `moveSlot` that would put `end` before the
+  clip is refused (`ANIM_CLIP_END`).
+* **Editor** (page `클리핑`, `cutoutClippingPage`): `클리핑 만들기` (`cutoutClippingCreate`) draws
+  the polygon with the outline tool over the selected part (clicks; first point / double-click /
+  Enter closes, Esc cancels) → `addClipping` (new slot `<part>-clip` right below the part, end =
+  the part); `모양 다시 그리기` (`cutoutClippingRedraw`) → `setClipping`; `끝 조각`
+  (`cutoutClippingEnd`) → `setClipping {end}`; `클리핑 삭제` (`cutoutClippingDelete`); the list
+  `cutoutClippingList` (clip slot · first → end); `윤곽 보기` (`cutoutClippingOutlines`, dashed
+  polygons on the canvas, editor-only). The canvas clips with a painter clip path from the same
+  core polygon (`drawRig`); a clipping slot hidden with the eye toggle clips nothing.
+
+## Image sequences (plugin 1.12.0)
+
+Spine sequences: one attachment shows one of several same-size pictures, picked by keys.
+
+* **Data**: a region or mesh attachment may have `sequence: {frames: [imageAssetId…], setupIndex?,
+  atlas?}`: 1..256 image assets of the attachment's size (`imageAssetId` must be `frames[0]`,
+  `ANIM_SEQUENCE_IMAGE`; the service checks every frame's PNG size against the first,
+  `ANIM_SEQUENCE_FRAME_SIZE`, and that it is an image, `ANIM_IMAGE_MISSING`). All frames share the
+  placement (and a mesh's uvs/triangles). `setupIndex` (default 0) is shown without keys.
+* **Keys**: slot track `{target: "slot:<id>", property: "sequence", keys: [{timeMs, mode, index,
+  delay}]}`, step only (`ANIM_INTERP`); `mode` = `hold` (default) | `once` | `loop` | `pingpong`
+  | `onceReverse` | `loopReverse` | `pingpongReverse` (`ANIM_SEQUENCE_KEY`), `index` (start frame,
+  default 0, below the slot's largest frame count: `ANIM_SEQUENCE_INDEX`), `delay` (ms per frame,
+  default 100, > 0: `ANIM_SEQUENCE_DELAY`). The slot must have a sequence attachment
+  (`ANIM_SEQUENCE_TARGET`).
+* **Frame rule** (`cutout::sequenceFrame`, Spine `SequenceTimeline`): before the clip's first key
+  the frame is `setupIndex`; afterwards from the last key at or before the clip time `t`:
+  `i = index + floor((t − key.timeMs) / delay + 1e-6)` (hold: `i = index`), then with `n` frames:
+  once `min(i, n−1)`, loop `i mod n`, pingpong `i mod (2n−2)` mirrored above `n−1`, onceReverse
+  `max(n−1−i, 0)`, loopReverse `n−1 − i mod n`, pingpongReverse `(i + n−1) mod (2n−2)` mirrored;
+  clamped to `0..n−1`. The epsilon keeps exact multiples on the new frame despite rounding
+  (83.33 ms frames at 250 ms = frame 3). Clip time is the looping/clamped time like every track, so
+  a looping clip restarts the sequence. Cross-fades switch the frame halfway, like attachments.
+* **Draw items**: `imageAssetId` = the shown frame; packed sequences use `sequence.atlas[frame]`
+  (written by the export packer: one region per frame, `null` = that frame kept its own file; the
+  attachment's own `atlas` is not used for sequences). `sample` reports `slots[id].sequence` (the
+  frame index) for slots showing a sequence.
+* **Editing ops**: `setSequence {slot, name?, skin?, frames ([] / null removes), setupIndex?,
+  width?, height?}`; keys with `setKey {…, property: "sequence", mode?, index?, delay?}`; the
+  multi-key ops (move, scale, delete, copy, paste) carry `mode`/`index`/`delay`. Fewer frames clamp
+  key indices (`ANIM_SEQUENCE_INDEX_CLAMPED`); removing the last sequence of a slot removes its
+  sequence keys (`ANIM_SEQUENCE_KEYS_REMOVED`).
+* **Editor** (page `시퀀스`, `cutoutSequencePage`): `PNG로 시퀀스…` (`cutoutSequenceImport`: PNG
+  files in natural name order → one edit on the selected part, or a new part on the selected bone),
+  `프레임 추가…` (`cutoutSequenceAddFrames`), `시퀀스 해제` (`cutoutSequenceClear`), frame list
+  `cutoutSequenceFrames` with `▲`/`▼`/`빼기` (`cutoutSequenceUp`/`Down`/`RemoveFrame`), `기본
+  프레임` (`cutoutSequenceSetup`), preview playback `▶ 미리보기` (`cutoutSequencePlay`, editor-only)
+  with `재생 방식` / `시작 프레임` / `프레임 간격` (`cutoutSequenceMode`/`Index`/`Delay`), and in
+  Animate mode `시퀀스 키` / `키 삭제` (`cutoutSequenceKey` / `DeleteKey`) at the playhead; the
+  dopesheet shows a `<slot> 시퀀스` row (step keys). The canvas draws the pose's frame while
+  scrubbing (`attachmentImage`).

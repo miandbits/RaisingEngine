@@ -63,8 +63,17 @@ struct DrawItem {
   bool hasRegion = false;
   double region[4] = {0, 0, 0, 0};
   const Attachment* source = nullptr;  // the drawn attachment (hosts key mesh topology by it)
+  /** Clipping (plugin 1.12.0): the triangles were cut by a clip polygon this frame, so uvs and
+   *  indices are the item's own (compact frames intern them instead of keying `source`). */
+  bool clipped = false;
   bool mesh() const { return !indices.empty(); }
 };
+
+/** Sequence playback state of one slot (plugin 1.12.0): the last sequence key at or before the
+ *  sampled time (`keyed` false = none: the attachment's setupIndex) and the ms since that key. */
+struct SequenceState { bool keyed = false; SequenceMode mode = SequenceMode::Hold; int index = 0; double elapsedMs = 0, delay = 100; };
+/** Frame of a `count`-frame sequence shown for `state` (Spine SequenceTimeline rules, 0..count-1). */
+int sequenceFrame(const SequenceState& state, size_t count, int setupIndex);
 
 /**
  * Pose: channel values plus the skin its attachment names resolve in (-1 = default list only)
@@ -82,6 +91,7 @@ struct Pose {
   std::vector<double> ikMix; std::vector<char> ikBend;
   std::vector<Transform> applied;
   std::map<std::pair<int, std::string>, std::vector<double>> deform;
+  std::vector<SequenceState> sequence;  // per slot (plugin 1.12.0)
   const Transform& local(size_t bone) const { return applied.size() > bone ? applied[bone] : bones[bone]; }
 };
 /** Skin/expression for samplePose. expressions=false skips every expression (raw clip values);
@@ -184,4 +194,18 @@ std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, co
  * canvas drag into image-space vertex moves and deform offsets.
  */
 Affine meshVertexMatrix(const Rig& rig, const Pose& pose, int slot, const Attachment& attachment, size_t vertex);
+
+// ---- Sequences and clipping (plugin 1.12.0) ----
+/** Frame index `attachment` shows on slot `slot` in `pose` (0 without a sequence). */
+int attachmentFrame(const Pose& pose, int slot, const Attachment& attachment);
+/** Image asset the slot draws for `attachment` in `pose`: its sequence frame, else imageAssetId. */
+const std::string& attachmentImage(const Pose& pose, int slot, const Attachment& attachment);
+/** The atlas region of that picture (export only): the frame's for sequences, else `atlas`. */
+const std::optional<AtlasRegion>& attachmentAtlas(const Pose& pose, int slot, const Attachment& attachment);
+/**
+ * Draw items of `pose` in instance space (rig origin at 0, 0) back to front: what
+ * Instance::drawList returns. Clipping attachments start a clip range; items inside it are cut
+ * to the clip polygon (clipItem) and become mesh items, items outside keep their shape.
+ */
+std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose);
 }  // namespace cutout

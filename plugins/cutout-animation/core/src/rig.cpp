@@ -107,8 +107,13 @@ const Json& arrayOr(const Json& obj, const char* key) {
  */
 size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map<std::string, std::string>& parentOf) {
   const std::string type = text(a, "type");
-  if (a.contains("type") && type != "region" && type != "mesh") { c.error(at(p, "type"), "ANIM_MESH_TYPE", "첨부 종류(type)는 region 또는 mesh입니다."); return 0; }
-  if (type != "mesh") {
+  if (a.contains("type") && type != "region" && type != "mesh" && type != "clipping") { c.error(at(p, "type"), "ANIM_MESH_TYPE", "첨부 종류(type)는 region, mesh 또는 clipping입니다."); return 0; }
+  const bool clipping = type == "clipping";
+  if (clipping) {
+    // Clipping (plugin 1.12.0): a polygon, no picture. Image fields would silently do nothing.
+    for (const char* k : {"uvs", "triangles", "hull", "edges", "imageAssetId", "width", "height", "pivotX", "pivotY", "sequence", "atlas"})
+      if (a.contains(k)) { c.warn(at(p, k), "ANIM_CLIP_UNUSED", std::string("클리핑 첨부에는 쓰이지 않는 값입니다: ") + k); break; }
+  } else if (type != "mesh") {
     for (const char* k : {"vertices", "uvs", "triangles", "hull", "edges", "weights"})
       if (a.contains(k)) { c.warn(at(p, k), "ANIM_MESH_UNUSED", std::string("region 첨부의 메시 값은 쓰이지 않습니다: ") + k); break; }
     return 0;
@@ -123,13 +128,25 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
     return &list;
   };
   size_t coords = 0, uvCount = 0;
+  if (clipping && !a.contains("vertices")) { c.error(at(p, "vertices"), "ANIM_CLIP_VERTICES", "클리핑 첨부에는 다각형 정점(vertices)이 필요합니다."); return 0; }
   numbers("vertices", coords);
   const size_t n = coords / 2;
-  if (ok && (coords % 2 || n < 3 || n > MAX_MESH_VERTICES)) {
+  if (clipping) {
+    if (ok && (coords % 2 || n < 3 || n > MAX_CLIP_VERTICES)) {
+      c.error(at(p, "vertices"), "ANIM_CLIP_VERTICES", "클리핑 다각형 정점은 x, y 쌍으로 3.." + std::to_string(MAX_CLIP_VERTICES) + "개입니다.");
+      ok = false;
+    } else if (ok) {
+      // Self-intersecting clip polygons have no inside/outside every runtime would agree on.
+      std::vector<double> polygon;
+      for (const auto& v : a.at("vertices")) polygon.push_back(v.get<double>());
+      if (const std::string problem = polygonProblem(polygon); !problem.empty()) { c.error(at(p, "vertices"), "ANIM_CLIP_POLYGON", "클리핑 다각형이 올바르지 않습니다: " + problem); ok = false; }
+    }
+  } else if (ok && (coords % 2 || n < 3 || n > MAX_MESH_VERTICES)) {
     c.error(at(p, "vertices"), "ANIM_MESH_VERTICES", "메시 정점은 x, y 쌍으로 3.." + std::to_string(MAX_MESH_VERTICES) + "개입니다.");
     ok = false;
   }
-  if (const Json* uvs = numbers("uvs", uvCount); uvs && ok) {
+  if (clipping) {}
+  else if (const Json* uvs = numbers("uvs", uvCount); uvs && ok) {
     if (uvCount != coords) { c.error(at(p, "uvs"), "ANIM_MESH_UVS", "uvs 개수가 정점 수와 다릅니다(정점마다 u, v)."); ok = false; }
     else
       for (size_t i = 0; i < uvCount; i++)
@@ -148,10 +165,12 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
       }
     return true;
   };
-  if (!a.contains("triangles")) { c.error(at(p, "triangles"), "ANIM_MESH_TRIANGLES", "메시에는 triangles(삼각형 정점 번호)가 필요합니다."); ok = false; }
+  if (clipping) {}
+  else if (!a.contains("triangles")) { c.error(at(p, "triangles"), "ANIM_MESH_TRIANGLES", "메시에는 triangles(삼각형 정점 번호)가 필요합니다."); ok = false; }
   else if (!indexList("triangles", 3, MAX_MESH_TRIANGLES, "ANIM_MESH_TRIANGLES")) ok = false;
-  const bool edgesOk = a.contains("edges") && indexList("edges", 2, 0, "ANIM_MESH_EDGES");  // editor-only outline: never blocks drawing
-  if (a.contains("hull") && (!a.at("hull").is_number_integer() || a.at("hull").get<int64_t>() < 0 || a.at("hull").get<int64_t>() > int64_t(n)))
+  const bool edgesOk = !clipping && a.contains("edges") && indexList("edges", 2, 0, "ANIM_MESH_EDGES");  // editor-only outline: never blocks drawing
+  if (clipping) {}
+  else if (a.contains("hull") && (!a.at("hull").is_number_integer() || a.at("hull").get<int64_t>() < 0 || a.at("hull").get<int64_t>() > int64_t(n)))
     c.error(at(p, "hull"), "ANIM_MESH_HULL", "hull(외곽 정점 수)은 0..정점 수 정수입니다.");
   else if (ok && a.contains("hull")) {
     // Outline the mesh edits (plugin 1.6.0) re-triangulate from: warnings only, drawing never uses it.
@@ -202,10 +221,13 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
  * sub-image rectangle; `trim` (regions only) must lie inside the attachment image. Meshes keep
  * their whole picture (uvs address it), so a trimmed mesh region is refused.
  */
+void checkRegion(Checker& c, const Json& a, const Json& r, const std::string& ap);
 void checkAtlas(Checker& c, const Json& a, const std::string& p) {
   if (!a.is_object() || !a.contains("atlas")) return;
-  const Json& r = a.at("atlas");
-  const std::string ap = at(p, "atlas");
+  checkRegion(c, a, a.at("atlas"), at(p, "atlas"));
+}
+/** One atlas region `r` (at pointer `ap`) of attachment `a`: an attachment's own or a sequence frame's. */
+void checkRegion(Checker& c, const Json& a, const Json& r, const std::string& ap) {
   if (!r.is_object()) { c.error(ap, "ANIM_ATLAS", "atlas는 {page, x, y, width, height} 객체입니다."); return; }
   const std::string page = text(r, "page");
   if (page.empty() || page.size() > 64) c.error(at(ap, "page"), "ANIM_ATLAS", "atlas.page는 이미지 에셋 ID입니다.");
@@ -221,6 +243,46 @@ void checkAtlas(Checker& c, const Json& a, const std::string& p) {
   const double aw = finiteNumber(a.value("width", Json())) ? a.at("width").get<double>() : 0, ah = finiteNumber(a.value("height", Json())) ? a.at("height").get<double>() : 0, eps = 1e-6;
   if (x < 0 || y < 0 || !(w > 0) || !(h > 0) || x + w > aw + eps || y + h > ah + eps)
     c.error(tp, "ANIM_ATLAS", "atlas.trim은 첨부 그림(0..width, 0..height) 안의 영역입니다.");
+}
+
+/**
+ * Image sequence of one attachment (plugin 1.12.0): frames (image asset ids, frame 0 =
+ * imageAssetId), setupIndex and the export-time per-frame atlas regions. Returns the frame count
+ * sequence keys are checked against (0 = no usable sequence). Equal frame sizes are a property of
+ * the PNG files: the service checks them (ANIM_SEQUENCE_FRAME_SIZE).
+ */
+size_t checkSequence(Checker& c, const Json& a, const std::string& p) {
+  if (!a.is_object() || !a.contains("sequence")) return 0;
+  const Json& q = a.at("sequence");
+  const std::string sp = at(p, "sequence");
+  if (text(a, "type") == "clipping") { c.error(sp, "ANIM_SEQUENCE_TYPE", "클리핑 첨부에는 시퀀스를 쓸 수 없습니다."); return 0; }
+  if (!q.is_object()) { c.error(sp, "ANIM_SEQUENCE_FRAMES", "sequence는 {frames, setupIndex?} 객체입니다."); return 0; }
+  const Json frames = q.contains("frames") ? q.at("frames") : Json();
+  if (!frames.is_array() || frames.empty() || frames.size() > MAX_SEQUENCE_FRAMES) {
+    c.error(at(sp, "frames"), "ANIM_SEQUENCE_FRAMES", "시퀀스 프레임(frames)은 이미지 에셋 ID 1.." + std::to_string(MAX_SEQUENCE_FRAMES) + "개입니다.");
+    return 0;
+  }
+  for (size_t i = 0; i < frames.size(); i++)
+    if (!frames[i].is_string() || frames[i].get_ref<const std::string&>().empty() || frames[i].get_ref<const std::string&>().size() > 64) {
+      c.error(at(at(sp, "frames"), i), "ANIM_SEQUENCE_FRAMES", "시퀀스 프레임은 이미지 에셋 ID입니다.");
+      return 0;
+    }
+  // Frame 0 is the attachment's own picture: tools that know nothing of sequences still show it.
+  if (text(a, "imageAssetId") != frames[0].get<std::string>())
+    c.error(at(p, "imageAssetId"), "ANIM_SEQUENCE_IMAGE", "시퀀스 첨부의 imageAssetId는 첫 프레임(frames[0])과 같아야 합니다.");
+  const size_t n = frames.size();
+  if (q.contains("setupIndex") && (!q.at("setupIndex").is_number_integer() || q.at("setupIndex").get<int64_t>() < 0 || q.at("setupIndex").get<int64_t>() >= int64_t(n)))
+    c.error(at(sp, "setupIndex"), "ANIM_SEQUENCE_INDEX", "기본 프레임(setupIndex)은 0.." + std::to_string(n - 1) + " 정수입니다.");
+  if (q.contains("atlas")) {
+    const Json& list = q.at("atlas");
+    if (!list.is_array() || list.size() != n) c.error(at(sp, "atlas"), "ANIM_ATLAS", "sequence.atlas는 프레임마다 영역(또는 null) 하나씩입니다.");
+    else
+      for (size_t i = 0; i < n; i++)
+        if (!list[i].is_null()) checkRegion(c, a, list[i], at(at(sp, "atlas"), i));
+  }
+  for (auto it = q.begin(); it != q.end(); ++it)
+    if (it.key() != "frames" && it.key() != "setupIndex" && it.key() != "atlas") { c.warn(at(sp, it.key()), "ANIM_SEQUENCE_UNUSED", "시퀀스에 쓰이지 않는 값입니다: " + it.key()); break; }
+  return n;
 }
 
 /**
@@ -352,12 +414,26 @@ const char* propertyName(Property p) {
     case Property::ScaleX: return "scaleX"; case Property::ScaleY: return "scaleY";
     case Property::Alpha: return "alpha"; case Property::Attachment: return "attachment"; case Property::Expression: return "expression";
     case Property::Mix: return "mix"; case Property::BendPositive: return "bendPositive"; case Property::Deform: return "deform";
+    case Property::Sequence: return "sequence";
   }
   return "";
 }
+const char* sequenceModeName(SequenceMode m) {
+  switch (m) {
+    case SequenceMode::Hold: return "hold"; case SequenceMode::Once: return "once"; case SequenceMode::Loop: return "loop";
+    case SequenceMode::Pingpong: return "pingpong"; case SequenceMode::OnceReverse: return "onceReverse"; case SequenceMode::LoopReverse: return "loopReverse";
+    case SequenceMode::PingpongReverse: return "pingpongReverse";
+  }
+  return "hold";
+}
+std::optional<SequenceMode> parseSequenceMode(const std::string& n) {
+  for (auto m : {SequenceMode::Hold, SequenceMode::Once, SequenceMode::Loop, SequenceMode::Pingpong, SequenceMode::OnceReverse, SequenceMode::LoopReverse, SequenceMode::PingpongReverse})
+    if (n == sequenceModeName(m)) return m;
+  return std::nullopt;
+}
 std::optional<Property> parseProperty(const std::string& n) {
   for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment, Property::Expression,
-                 Property::Mix, Property::BendPositive, Property::Deform})
+                 Property::Mix, Property::BendPositive, Property::Deform, Property::Sequence})
     if (n == propertyName(p)) return p;
   return std::nullopt;
 }
@@ -427,26 +503,39 @@ std::vector<Diagnostic> validateRig(const Json& data) {
   // Slots and attachments.
   const auto& slots = arrayOr(data, "slots");
   std::set<std::string> slotIds;
+  std::map<std::string, size_t> slotOrder;  // draw order index (clipping ranges, plugin 1.12.0)
   for (size_t i = 0; i < slots.size(); i++) {
     const std::string p = at("/slots", i), id = text(slots[i], "id"), bone = text(slots[i], "bone");
     if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "슬롯 ID가 필요합니다.");
     else if (!slotIds.insert(id).second) c.error(at(p, "id"), "ANIM_DUP_ID", "중복된 슬롯 ID: " + id);
+    else slotOrder[id] = i;
     if (!parentOf.count(bone)) c.error(at(p, "bone"), "ANIM_BONE_MISSING", "슬롯이 없는 본을 참조합니다: " + bone);
     const double alpha = number(c, slots[i], p, "alpha", 1);
     if (alpha < 0 || alpha > 1) c.error(at(p, "alpha"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
   }
   using SlotName = std::pair<std::string, std::string>;
-  std::map<SlotName, std::set<size_t>> meshCounts;  // vertex counts of the usable meshes named (slot, name), any list
+  std::map<SlotName, std::set<size_t>> meshCounts;  // vertex counts of the usable meshes (and clip polygons) named (slot, name), any list
+  std::map<std::string, std::set<size_t>> sequenceCounts;  // slot -> frame counts of its sequence attachments (plugin 1.12.0)
   // One attachment entry (default list or a skin's list); `seen` holds the list's (slot, name) pairs.
   auto checkAttachment = [&](const Json& a, const std::string& p, std::set<SlotName>& seen) {
     if (const size_t n = checkMesh(c, a, p, parentOf)) meshCounts[{text(a, "slot"), text(a, "name")}].insert(n);
-    checkAtlas(c, a, p);
     const std::string slot = text(a, "slot"), name = text(a, "name");
     if (!slotIds.count(slot)) c.error(at(p, "slot"), "ANIM_SLOT_MISSING", "첨부가 없는 슬롯을 참조합니다: " + slot);
     if (name.empty()) c.error(at(p, "name"), "ANIM_ID_MISSING", "첨부 이름이 필요합니다.");
     else if (!seen.insert({slot, name}).second) c.error(at(p, "name"), "ANIM_DUP_ID", "같은 슬롯에 중복된 첨부 이름: " + name);
-    if (text(a, "imageAssetId").empty()) c.error(at(p, "imageAssetId"), "ANIM_IMAGE_MISSING", "첨부에 이미지가 지정되지 않았습니다.");
     checkTransform(c, a, p);
+    if (text(a, "type") == "clipping") {
+      // Clip range (plugin 1.12.0): from the next slot through `end`, which must come later in draw order.
+      const std::string end = text(a, "end");
+      if (!a.contains("end") || end.empty()) c.error(at(p, "end"), "ANIM_CLIP_END", "클리핑 첨부에는 끝 슬롯(end)이 필요합니다.");
+      else if (!slotOrder.count(end)) c.error(at(p, "end"), "ANIM_CLIP_END", "클리핑 끝 슬롯이 없습니다: " + end);
+      else if (slotOrder.count(slot) && slotOrder[end] <= slotOrder[slot]) c.error(at(p, "end"), "ANIM_CLIP_END", "클리핑 끝 슬롯은 그리는 순서에서 클리핑 슬롯 「" + slot + "」보다 뒤(위)에 있어야 합니다: " + end);
+      return;
+    }
+    if (a.contains("end")) c.warn(at(p, "end"), "ANIM_CLIP_UNUSED", "end는 클리핑 첨부에만 씁니다.");
+    checkAtlas(c, a, p);
+    if (const size_t frames = checkSequence(c, a, p)) sequenceCounts[slot].insert(frames);
+    if (text(a, "imageAssetId").empty()) c.error(at(p, "imageAssetId"), "ANIM_IMAGE_MISSING", "첨부에 이미지가 지정되지 않았습니다.");
     for (const char* k : {"pivotX", "pivotY"}) number(c, a, p, k, 0.5);
     for (const char* k : {"width", "height"}) if (number(c, a, p, k, 0) <= 0) c.error(at(p, k), "ANIM_IMAGE_SIZE", "이미지 크기는 0보다 커야 합니다.");
   };
@@ -550,8 +639,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0, isRig = target == "rig", isIk = target.rfind("ik:", 0) == 0;
       const std::string targetId = isIk ? target.substr(3) : target.size() > 5 ? target.substr(5) : "";
       if (!property) { c.error(at(tp, "property"), "ANIM_PROPERTY", "알 수 없는 트랙 속성: " + propertyText); continue; }
-      const bool deform = *property == Property::Deform;
-      const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment || deform;
+      const bool deform = *property == Property::Deform, sequence = *property == Property::Sequence;
+      const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment || deform || sequence;
       const bool ikProperty = *property == Property::Mix || *property == Property::BendPositive;
       if (isRig != (*property == Property::Expression))
         c.error(at(tp, "property"), "ANIM_PROPERTY", isRig ? "rig 트랙의 속성은 expression뿐입니다." : "expression 속성은 rig 트랙에만 씁니다.");
@@ -575,6 +664,12 @@ std::vector<Diagnostic> validateRig(const Json& data) {
           if (deformCounts->size() > 1) c.warn(at(tp, "attachment"), "ANIM_MESH_DEFORM_SKIN", "같은 이름의 메시들의 정점 수가 달라, 키와 정점 수가 맞는 메시에만 변형이 적용됩니다: " + deformName);
         }
       } else if (track.contains("attachment")) c.warn(at(tp, "attachment"), "ANIM_MESH_UNUSED", "attachment는 변형(deform) 트랙에만 씁니다.");
+      // Sequence tracks (plugin 1.12.0) pick frames of whichever sequence attachment the slot shows.
+      size_t maxFrames = 0;
+      if (sequence && isSlot && slotIds.count(targetId)) {
+        if (!sequenceCounts.count(targetId)) c.error(at(tp, "target"), "ANIM_SEQUENCE_TARGET", "시퀀스 트랙의 슬롯에 시퀀스 첨부가 없습니다: " + targetId);
+        else maxFrames = *sequenceCounts[targetId].rbegin();
+      }
       if (!targets.insert(target + "#" + propertyText + (deform ? "#" + deformName : "")).second) c.error(tp, "ANIM_DUP_TRACK", "같은 대상·속성 트랙이 중복됩니다.");
       const auto& keys = arrayOr(track, "keys");
       if (keys.empty()) c.warn(at(tp, "keys"), "ANIM_EMPTY_TRACK", "키가 없는 트랙입니다.");
@@ -592,9 +687,19 @@ std::vector<Diagnostic> validateRig(const Json& data) {
         if (!interp.empty() && interp != "step" && interp != "linear" && interp != "bezier") c.error(at(kp(), "interp"), "ANIM_INTERP", "보간은 step, linear, bezier 중 하나입니다.");
         else if (interp == "bezier" && (*property == Property::Attachment || *property == Property::Expression || *property == Property::BendPositive))
           c.error(at(kp(), "interp"), "ANIM_INTERP", "첨부·표정·IK 굽힘 키는 항상 계단(step) 전환입니다.");
+        else if (sequence && !interp.empty() && interp != "step") c.error(at(kp(), "interp"), "ANIM_INTERP", "시퀀스 키는 항상 계단(step) 전환입니다.");
         if (interp == "bezier") checkCurve(c, key, kp);
         else if (key.contains("curve")) c.warn(at(kp(), "curve"), "ANIM_CURVE_UNUSED", "bezier가 아닌 키의 curve는 쓰이지 않습니다.");
-        if (deform) {
+        if (sequence) {
+          // Step keys {mode, index, delay}; the frame follows from the clip time (Spine semantics).
+          if (key.contains("mode") && (!key.at("mode").is_string() || !parseSequenceMode(key.at("mode").get<std::string>())))
+            c.error(at(kp(), "mode"), "ANIM_SEQUENCE_KEY", "시퀀스 재생 방식(mode)은 hold, once, loop, pingpong, onceReverse, loopReverse, pingpongReverse 중 하나입니다.");
+          if (key.contains("index") && (!key.at("index").is_number_integer() || key.at("index").get<int64_t>() < 0 || (maxFrames && key.at("index").get<int64_t>() >= int64_t(maxFrames))))
+            c.error(at(kp(), "index"), "ANIM_SEQUENCE_INDEX", "시퀀스 프레임 번호(index)는 0.." + std::to_string(maxFrames ? maxFrames - 1 : 0) + " 정수입니다.");
+          if (key.contains("delay") && (!finiteNumber(key.at("delay")) || !(key.at("delay").get<double>() > 0) || key.at("delay").get<double>() > 60000))
+            c.error(at(kp(), "delay"), "ANIM_SEQUENCE_DELAY", "시퀀스 프레임 간격(delay)은 0보다 크고 60000ms 이하입니다.");
+          if (key.contains("value")) c.warn(at(kp(), "value"), "ANIM_SEQUENCE_UNUSED", "시퀀스 키는 value 대신 mode·index·delay를 씁니다.");
+        } else if (deform) {
           const Json offsets = key.contains("offsets") ? key.at("offsets") : Json();
           bool finite = offsets.is_array();
           for (size_t i = 0; finite && i < offsets.size(); i++) finite = finiteNumber(offsets[i]);
@@ -695,28 +800,46 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
     const int p = rig.bones[size_t(i)].parentIndex;
     setupWorld[size_t(i)] = p < 0 ? local : setupWorld[size_t(p)] * local;
   }
-  auto readAttachment = [&](const Json& a) {
-    Attachment att; att.slot = a.at("slot"); att.name = a.at("name"); att.imageAssetId = a.at("imageAssetId");
-    att.offset = readTransform(a); att.pivotX = a.value("pivotX", 0.5); att.pivotY = a.value("pivotY", 0.5);
-    att.width = a.at("width"); att.height = a.at("height");
-    if (a.contains("atlas") && a.at("atlas").is_object()) {
-      const Json& r = a.at("atlas");
-      AtlasRegion region;
-      region.page = r.at("page"); region.x = r.value("x", 0.0); region.y = r.value("y", 0.0); region.width = r.at("width"); region.height = r.at("height");
-      if (r.contains("trim") && r.at("trim").is_object()) {
-        const Json& t = r.at("trim");
-        region.trimmed = true;
-        region.trimX = t.value("x", 0.0); region.trimY = t.value("y", 0.0); region.trimWidth = t.at("width"); region.trimHeight = t.at("height");
-      }
-      att.atlas = region;
+  auto readRegion = [](const Json& r) {
+    AtlasRegion region;
+    region.page = r.at("page"); region.x = r.value("x", 0.0); region.y = r.value("y", 0.0); region.width = r.at("width"); region.height = r.at("height");
+    if (r.contains("trim") && r.at("trim").is_object()) {
+      const Json& t = r.at("trim");
+      region.trimmed = true;
+      region.trimX = t.value("x", 0.0); region.trimY = t.value("y", 0.0); region.trimWidth = t.at("width"); region.trimHeight = t.at("height");
     }
-    if (a.value("type", std::string()) != "mesh") return att;
-    att.mesh = true;
+    return region;
+  };
+  auto readAttachment = [&](const Json& a) {
+    const std::string type = a.value("type", std::string());
+    Attachment att; att.slot = a.at("slot"); att.name = a.at("name"); att.imageAssetId = a.value("imageAssetId", std::string());
+    att.offset = readTransform(a); att.pivotX = a.value("pivotX", 0.5); att.pivotY = a.value("pivotY", 0.5);
+    att.width = a.value("width", 0.0); att.height = a.value("height", 0.0);
+    if (type == "clipping") {
+      // No picture: the placement is the offset alone (no size, no pivot), vertices in that space.
+      att.clipping = true;
+      att.pivotX = att.pivotY = 0;
+      att.width = att.height = 0;
+      att.clipEnd = a.at("end").get<std::string>();
+      att.clipEndIndex = rig.slotIndex(att.clipEnd);
+    }
+    if (!att.clipping && a.contains("atlas") && a.at("atlas").is_object()) att.atlas = readRegion(a.at("atlas"));
+    if (!att.clipping && a.contains("sequence") && a.at("sequence").is_object()) {
+      const Json& q = a.at("sequence");
+      for (const auto& f : q.at("frames")) att.frames.push_back(f.get<std::string>());
+      att.setupIndex = q.value("setupIndex", 0);
+      if (q.contains("atlas") && q.at("atlas").is_array())
+        for (const auto& r : q.at("atlas")) att.frameAtlas.push_back(r.is_object() ? std::optional<AtlasRegion>(readRegion(r)) : std::nullopt);
+    }
+    if (type != "mesh" && !att.clipping) return att;
+    att.mesh = !att.clipping;
     for (const auto& v : a.at("vertices")) att.vertices.push_back(v.get<double>());
-    for (const auto& v : a.at("uvs")) att.uvs.push_back(v.get<double>());
-    for (const auto& v : a.at("triangles")) att.triangles.push_back(v.get<int>());
-    if (a.contains("hull")) att.hull = a.at("hull").get<size_t>();
-    if (a.contains("edges")) for (const auto& v : a.at("edges")) att.edges.push_back(v.get<int>());
+    if (att.mesh) {
+      for (const auto& v : a.at("uvs")) att.uvs.push_back(v.get<double>());
+      for (const auto& v : a.at("triangles")) att.triangles.push_back(v.get<int>());
+      if (a.contains("hull")) att.hull = a.at("hull").get<size_t>();
+      if (a.contains("edges")) for (const auto& v : a.at("edges")) att.edges.push_back(v.get<int>());
+    }
     if (!a.contains("weights")) return att;
     const int slot = rig.slotIndex(att.slot);
     const int slotBone = slot >= 0 ? rig.slots[size_t(slot)].boneIndex : -1;
@@ -803,7 +926,12 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
       if (track.property == Property::Deform) track.attachment = t.at("attachment").get<std::string>();
       for (const auto& k : arrayOr(t, "keys")) {
         Key key; key.timeMs = k.at("timeMs");
-        if (track.property == Property::Deform) {
+        if (track.property == Property::Sequence) {
+          key.interp = Interp::Step;
+          key.value = double(k.value("index", int64_t(0)));
+          key.mode = parseSequenceMode(k.value("mode", std::string("hold"))).value_or(SequenceMode::Hold);
+          key.delay = k.value("delay", 100.0);
+        } else if (track.property == Property::Deform) {
           for (const auto& v : k.at("offsets")) key.offsets.push_back(v.get<double>());
           const std::string interp = text(k, "interp");
           key.interp = interp == "step" ? Interp::Step : interp == "bezier" ? Interp::Bezier : Interp::Linear;

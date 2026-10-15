@@ -273,6 +273,42 @@ class CutoutPanel : public QWidget {
   bool addMeshEdge(int a, int b);                      // 가장자리 추가: pin an inside edge
   bool removeMeshEdge();                               // 가장자리 삭제: the pinned edge between the 2 selected vertices
   bool retriangulateMesh();                            // 다시 삼각분할
+  // ---- Clipping (plugin 1.12.0, setup mode; the 클리핑 page). A clip slot shows a clipping
+  // attachment: the parts after it through its end slot draw only inside its polygon (players cut
+  // their triangles, the canvas clips the painter: the same area). Every gesture is ONE core edit.
+  /** 클리핑 만들기: the outline tool draws the polygon for the selected part; closing it adds a clip
+   *  slot right below that part (addClipping, end = the part). */
+  bool beginClipping();
+  bool redrawClipping();                                    // 모양 다시 그리기: a new polygon for the selected clip slot
+  /** The closed canvas polygon (rig space) -> addClipping / setClipping, whichever was started. */
+  bool clippingFromCanvas(const QPolygonF& rigPoints);
+  bool addClipping(const QString& part, const QPolygonF& rigPoints);  // without the canvas (palette, automation)
+  bool setClipEnd(const QString& endSlot);                  // 끝 조각 of the selected clip slot
+  bool deleteClipping();                                    // 클리핑 삭제: the selected clip slot
+  QString clipSlot() const;                                 // the selection when it shows a clipping attachment
+  void setClipOutlines(bool on);                            // 윤곽 보기 (editor-only)
+  // ---- Image sequences (plugin 1.12.0; the 시퀀스 page) on the selected part's shown attachment
+  // (the preview skin's own entry when it provides it). Frames are image assets of one size.
+  std::function<QStringList()> askSequenceFiles;            // PNG files in frame order (empty = cancel)
+  bool importSequenceInteractive();                         // PNG로 시퀀스…: the files replace the frames
+  bool addSequenceFramesInteractive();                      // 프레임 추가…: the files are appended
+  /** importImage each file (asset gestures), then ONE edit: the frames of the selected part, or a
+   *  new part on the selected bone when no part is selected. */
+  bool importSequence(const QStringList& files, bool append = false);
+  bool setSequenceFrames(const QStringList& assetIds, int setupIndex = -1);
+  bool moveSequenceFrame(int from, int to);                 // ▲ / ▼ (frame list reorder)
+  bool removeSequenceFrame(int index);                      // 프레임 빼기
+  bool clearSequence();                                     // 시퀀스 해제 (frame 0 stays the picture; keys go)
+  bool setSequenceSetupFrame(int index);                    // 기본 프레임
+  bool keySequence();                                       // 시퀀스 키: mode/index/delay fields at the playhead
+  bool keySequence(const QString& mode, int index, double delayMs);
+  bool deleteSequenceKey();                                 // the sequence key at the playhead
+  /** Page preview (editor-only): the frames played with the mode/index/delay fields. */
+  void setSequencePreview(bool playing);
+  bool sequencePreviewPlaying() const;
+  int sequencePreviewFrame() const { return sequencePreviewFrame_; }
+  void advanceSequencePreview(double dtMs);                 // the preview timer's step (automation drives it)
+  QString sequenceSlot() const;                             // the selected part when its shown attachment has frames
   // ---- Onion skin + motion trail (editor-only: QSettings, never an edit or a clip event)
   struct GhostInfo { double timeMs = 0; int offset = 0; double alpha = 0; QColor tint; bool committed = false; };
   const OnionSettings& onionSettings() const { return onion_; }
@@ -611,6 +647,30 @@ class CutoutPanel : public QWidget {
   std::vector<double> previewOutline_;                   // image px, for outlinePreviewKey_
   const AlphaMask* alphaMaskOf(const cutout::Attachment& attachment);
   void refreshOutlinePreview();
+  // clipping + sequences (plugin 1.12.0, editor state only)
+  bool outlineForClip_ = false;  // the outline being drawn is a clip polygon (outlineSlot_ = the part, or the clip slot to redraw)
+  QListWidget* clippingList_ = nullptr;
+  QComboBox* clippingEnd_ = nullptr;
+  QLabel* clippingInfo_ = nullptr;
+  QToolButton* clippingOutlines_ = nullptr;
+  QPushButton *clippingCreate_ = nullptr, *clippingRedraw_ = nullptr, *clippingDelete_ = nullptr;
+  QListWidget* sequenceFrames_ = nullptr;
+  QLabel *sequenceInfo_ = nullptr, *sequencePreview_ = nullptr;
+  QSpinBox *sequenceSetup_ = nullptr, *sequenceIndex_ = nullptr;
+  QComboBox* sequenceMode_ = nullptr;
+  QDoubleSpinBox* sequenceDelay_ = nullptr;
+  QToolButton* sequencePlay_ = nullptr;
+  QTimer* sequenceTimer_ = nullptr;
+  double sequencePreviewMs_ = 0;
+  int sequencePreviewFrame_ = 0;
+  QVector<QWidget*> sequencePartTools_, sequenceFrameTools_, sequenceKeyTools_;
+  QWidget* buildClipping();
+  void refreshClipping();
+  QWidget* buildSequence();
+  void refreshSequence();
+  void showSequenceFrame();
+  /** importImage `files` one after another; `done` gets the asset ids (empty on the first failure). */
+  void importImages(QStringList files, QStringList ids, std::function<void(const QStringList&)> done);
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;

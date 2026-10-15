@@ -84,6 +84,13 @@ struct EditResult {
  * {clip, name, timeMs}. The multi-key ops (moveKeys scaleKeys deleteKeys copyKeys pasteKeys) take event
  * keys as refs {target: "event", property: <name>, timeMs}; event keys collide only with a key of the
  * same name at the same time.
+ * Clipping (plugin 1.12.0): addClipping {slot (new), bone?, before? | index?, name? ("clip"), vertices
+ * (bone px) | worldVertices (rig px, setup pose), end? (= before)} inserts a slot showing a clipping
+ * attachment; setClipping {slot, name?, skin?, vertices? | worldVertices?, end?}; deleteSlot of a clip
+ * range's end moves it to the slot below (an emptied range removes the clipping).
+ * Sequences (plugin 1.12.0): setSequence {slot, name?, skin?, frames (image ids; [] / null = remove),
+ * setupIndex?, width?, height?}; keys setKey {target: "slot:<id>", property: "sequence", mode? (hold),
+ * index? (0), delay? (100 ms)} (step only; copy/paste carry mode/index/delay).
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */
