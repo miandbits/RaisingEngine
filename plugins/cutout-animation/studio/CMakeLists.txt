@@ -21,4 +21,6 @@ target_link_libraries(cutout-studio PRIVATE cutout_studio_obj)
 set_target_properties(cutout-studio PROPERTIES PREFIX "" OUTPUT_NAME "cutout-studio")
 
 add_executable(cutout-studio-tests tests/studio-tests.cpp)
-target_link_libraries(cutout-studio-tests PRIVATE cutout_studio_obj Qt6::Test)
+# GuiPrivate (tests only): QWindowSystemInterface delivers real, spontaneous input events.
+find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+target_link_libraries(cutout-studio-tests PRIVATE cutout_studio_obj Qt6::Test Qt6::GuiPrivate)
