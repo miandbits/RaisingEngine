@@ -1,0 +1,50 @@
+name: Goal route regression
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_NATIVE_TRANSPORT: process
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build headless services and C++ runtime
+        run: npm run build:headless
+      - name: Test approval and failure semantics
+        run: npm run test:regression
+      - name: Check committed pilot routes and approved expectations
+        if: ${{ !cancelled() && success() }}
+        run: npm run check:regression -- projects/starlight-three-months --runtime-policy verify-replay --timeout-ms 300000 --report-dir .cache/ci-goal-regression
+      - name: Publish readable summary
+        if: always()
+        shell: bash
+        run: |
+          if test -f .cache/ci-goal-regression/summary.md; then
+            cat .cache/ci-goal-regression/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Route regression did not finish. Inspect build/test logs; no passing result was produced.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload reports (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goal-regression-reports
+          path: |
+            .cache/ci-goal-regression/
+            .cache/goal-regression-cli-*/reports/
+          if-no-files-found: warn
+          retention-days: 14

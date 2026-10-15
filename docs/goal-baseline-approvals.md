@@ -55,3 +55,6 @@ Qt `goalSaveImpact`는 실제 검사 결과 창에서 승인 사유 입력 → �
 기존 승인 파일은 그대로 읽으며 `partials`, 이력의 `previousSelection`·`selection`을 선택적으로 확장했다. 부분 승인 중 새 기준 파일은 만들지 않는다. 승인 이력과 정확한 차이 자료는 프로젝트의 `.approvals` 파일에 보존한다. 변경 목록은 2000개 항목까지이며 제한 초과 시 검사 오류로 알린다. 잘린 목록을 정상 검사로 승인하지 않는다.
 
 `tests/analysis/goal-partial.test.mjs`는 종류별 선택, 남은 회귀, 중복/임의/읽기 전용 항목 거부, 저장 후 재시작, 부분 이력·원본 복원, 재변경 회귀 및 그래프 이동을 검증한다. Qt `goalPartialApproval`은 실제 체크 목록과 승인·복원 버튼으로 같은 흐름을 확인한다. 증거는 `docs/evidence/goal-partial/`에 저장한다.
+# CLI 및 CI
+
+저장한 승인 기준은 [CLI·GitHub Actions 검증](goal-regression-ci.md)에서도 사용합니다. 승인 기록과 원본 기준 파일을 콘텐츠와 함께 커밋하세요.

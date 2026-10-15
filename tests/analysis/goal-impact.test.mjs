@@ -6,7 +6,7 @@ import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 import {saveGoalRoute,listGoalRoutes} from '../../apps/qt-studio/goal-routes.mjs';
 import {checkGoalImpacts} from '../../apps/qt-studio/goal-impact.mjs';
 
-async function setup(){const root=await mkdtemp(path.resolve('.cache/goal-impact-'));await cp(path.resolve('projects/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});const service=new QtStudioService();await service.handle({method:'open',params:{root}});const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,root,...params}});return {root,service,call};}
+async function setup(){const root=await mkdtemp(path.resolve('.cache/goal-impact-'));await cp(path.resolve('projects/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).some(part=>['.studio','baselines'].includes(part))});const service=new QtStudioService();await service.handle({method:'open',params:{root}});const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,root,...params}});return {root,service,call};}
 test('saving automatically reports unchanged, costs, effects and missing baselines; graph opens exact result and stale links reject',{timeout:120000},async()=>{
  const {root,service,call}=await setup(),original=JSON.parse(await readFile(path.join(root,'playtests/routes/ordinary.json'),'utf8'));
  const route={...original,id:'impact-meal',name:'저장 비교 · 생활 경로',checkpoints:[],commands:[{type:'navigate',screenId:'home'},{type:'executeAction',actionId:'action-1',quantity:1},...original.commands]};await saveGoalRoute(root,route);

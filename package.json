@@ -8,6 +8,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "build:headless": "node scripts/generate-types.mjs && tsc -p tsconfig.json && node scripts/copy-schemas.mjs && node scripts/build-native.mjs",
+    "check:regression": "node scripts/check-goal-regression.mjs",
+    "test:regression": "node --test --test-concurrency=1 tests/analysis/goal-regression-cli.test.mjs",
     "build:qt-studio": "node scripts/build-qt-studio.mjs",
     "studio:qt": "node scripts/start-qt-studio.mjs",
     "test:qt-studio": "node scripts/test-qt-studio.mjs",

@@ -63,7 +63,8 @@ function summarize(pair){
     beforeReached:pair.left.reached,afterReached:pair.right.reached,failure:pair.right.failure,unexecuted:pair.right.unexecuted,
     valueChanges:[...values.values()].slice(0,40),valueChangeCount:values.size,relatedRuleChanges:[...rules.values()].slice(0,40),ruleChangeCount:rules.size};
 }
-export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000}={}){
+export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000,runtimePolicy='strict'}={}){
+  if(!['strict','verify-replay'].includes(runtimePolicy))throw Error('지원하지 않는 런타임 검사 정책입니다.');
   const started=Date.now(),routes=await listGoalRoutes(root),baselines=await listGoalBaselines(root),runtime=await runtimeIdentity(),selection=await goalBaselineSelection(root,baselines);
   const report={version:1,id:randomUUID(),createdAt:new Date().toISOString(),fingerprint:content.contentFingerprint,testedRevision:revision,runtime,selectionRevision:selection.revision,routesDigest:routeDigest(routes.map(e=>e.route??{file:path.basename(e.file),error:e.error})),rows:[],baselineErrors:baselines.filter(b=>b.error),stale:false};
   for(const entry of routes){
@@ -76,7 +77,17 @@ export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000}={
     if(Date.now()-started>=timeoutMs){report.rows.push({...row,status:'incomplete',error:'저장 비교 시간 제한에 도달했습니다. 다음 저장에서 다시 검사하세요.'});continue;}
     try{
       const baseline=await readGoalBaseline(root,baselineInfo.id);row.baselineChecksum=baseline.checksum;
-      const pair=await compareGoalBaseline(content,baseline,runtime,route,Math.max(1,timeoutMs-(Date.now()-started)));report.rows.push({...row,...applyGoalPartial(summarize(pair),reviewGoalItems(pair,selection.partials[route.id]))});
+      let comparisonRuntime=runtime;
+      if(runtimePolicy==='verify-replay'&&runtime!==baseline.runtime){
+        // A different build may reuse approvals only after reproducing the immutable
+        // original trace, including rule observations. Never rewrite the baseline.
+        const replay=await compareGoalBaseline(baseline.content,baseline,runtime,undefined,Math.max(1,timeoutMs-(Date.now()-started)));
+        const verified=replay.firstStateDifference===null&&replay.firstCheckDifference===null&&replay.firstCommandDifference===null&&replay.right.reached===baseline.trace.reached&&!replay.right.failure&&!replay.right.unexecuted;
+        row.runtimeVerification={status:verified?'verified':'mismatch',baseline:baseline.runtime,current:runtime,firstStateDifference:replay.firstStateDifference,firstCheckDifference:replay.firstCheckDifference};
+        if(!verified){report.rows.push({...row,status:'error',error:'현재 런타임이 원본 기준의 실행 결과를 재현하지 못했습니다.'});continue;}
+        comparisonRuntime=baseline.runtime;
+      }
+      const pair=await compareGoalBaseline(content,baseline,comparisonRuntime,route,Math.max(1,timeoutMs-(Date.now()-started)));report.rows.push({...row,...applyGoalPartial(summarize(pair),reviewGoalItems(pair,selection.partials[route.id]))});
     }catch(e){report.rows.push({...row,status:/시간|60초/.test(e.message)?'incomplete':'error',error:e.message});}
   }
   report.counts=Object.fromEntries(['failed','changed','unchanged','missing-baseline','error','incomplete'].map(s=>[s,report.rows.filter(r=>r.status===s).length]));
