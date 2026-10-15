@@ -10,6 +10,7 @@
 #include <QSignalBlocker>
 #include <memory>
 #include <QFileDialog>
+#include <QCheckBox>
 
 namespace {
 QString impactValue(QJsonValue v){if(v.isDouble())return QString::number(v.toDouble(),'g',12);if(v.isString())return v.toString();if(v.isNull()||v.isUndefined())return QObject::tr("없음");if(v.isBool())return v.toBool()?"true":"false";return QString::fromUtf8(v.isArray()?QJsonDocument(v.toArray()).toJson(QJsonDocument::Compact):QJsonDocument(v.toObject()).toJson(QJsonDocument::Compact));}

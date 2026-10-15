@@ -5,7 +5,7 @@ void StudioWindow::goalCiDialog(){
   dialog->setWindowTitle(tr("CI 경로 보고서 · 원인 확인과 재검증"));dialog->resize(1220,780);
   QPointer<QDialog> guard(dialog);const auto root=view.value("root");
   auto ci=std::make_shared<QJsonObject>(),local=std::make_shared<QJsonObject>();
-  auto box=new QVBoxLayout(dialog);auto help=new QLabel(tr("GitHub Actions의 goal-regression-reports를 풀고 report.json을 여세요. CI 결과는 원본으로 보존합니다. 현재 프로젝트를 재검증한 그래프에서 원인을 확인하고 부분 승인·기준 복원을 수행하세요."));help->setWordWrap(true);box->addWidget(help);
+  auto box=new QVBoxLayout(dialog);auto help=new QLabel(tr("GitHub Actions 실행을 선택하면 보고서를 자동으로 가져옵니다. CI 원본과 현재 프로젝트의 재검증 결과를 비교하고, 그래프에서 원인 확인·부분 승인·기준 복원을 수행하세요. GitHub CLI의 기존 로그인을 사용합니다."));help->setWordWrap(true);box->addWidget(help);
   auto filebar=new QHBoxLayout;box->addLayout(filebar);auto file=new QLineEdit;file->setObjectName("goalCiFile");file->setPlaceholderText(tr("다운로드한 report.json 경로"));filebar->addWidget(file,1);
   auto browse=new QPushButton(tr("파일 선택…"));filebar->addWidget(browse);auto open=new QPushButton(tr("보고서 열기"));open->setObjectName("goalCiLoad");filebar->addWidget(open);
   auto notice=new QLabel(tr("보고서를 선택하세요."));notice->setObjectName("goalCiNotice");notice->setTextFormat(Qt::PlainText);notice->setWordWrap(true);box->addWidget(notice);
@@ -22,6 +22,7 @@ void StudioWindow::goalCiDialog(){
     graph->setEnabled(fresh&&current.contains("baselineId")&&QStringList{"changed","failed","unchanged"}.contains(current.value("status").toString()));
     QJsonObject source;if(table->currentRow()>=0)source=table->item(table->currentRow(),0)->data(Qt::UserRole+1).toJsonObject();
     QStringList lines{tr("CI 원본 · %1").arg(ci->value("sourceFile").toString()),tr("원본 보고서 SHA-256 · %1").arg(ci->value("checksum").toString())};
+    auto origin=ci->value("origin").toObject();if(!origin.isEmpty()){auto run=origin.value("run").toObject();lines.prepend(tr("GitHub · %1 · 실행 #%2 · %3\n%4\n%5").arg(origin.value("repository").toString()).arg(run.value("number").toInt()).arg(run.value("sha").toString(),run.value("url").toString(),origin.value("primary").toBool()?tr("프로젝트 회귀 보고서"):tr("테스트/기타 보고서 — 의도한 실패 사례를 포함할 수 있습니다.")));}
     for(const auto& pair:QList<QPair<QString,QJsonObject>>{{tr("CI 원본"),source},{tr("현재 로컬 재검증"),current}}){
       auto r=pair.second;lines<<""<<pair.first+" · "+impactStatus(r.value("status").toString());
       if(r.contains("error"))lines<<r.value("error").toString();
@@ -64,5 +65,6 @@ void StudioWindow::goalCiDialog(){
   auto openGraph=[=,this]{if(bridge.busy()||!graph->isEnabled())return;goalCompareDialog({},{{"impactReportId",local->value("id")},{"impactRow",selectedLocal()}});};connect(graph,&QPushButton::clicked,dialog,openGraph);connect(table,&QTableWidget::cellDoubleClicked,dialog,[=](int,int){openGraph();});
   connect(this,&StudioWindow::goalImpactReady,dialog,[=](QJsonObject report){if(ci->isEmpty())return;*local=report;render();});
   connect(this,&StudioWindow::updated,dialog,[=,this]{if(root!=view.value("root")){dialog->close();return;}if(!local->isEmpty()&&local->value("viewRevision")!=view.value("revision")){(*local)["stale"]=true;graph->setEnabled(false);notice->setText(tr("초안이 변경되었습니다. 저장한 뒤 현재 프로젝트 재검증을 실행하세요. CI 원본은 유지됩니다."));}});
+  #include "goal-github-controls.inc"
   dialog->show();
 }

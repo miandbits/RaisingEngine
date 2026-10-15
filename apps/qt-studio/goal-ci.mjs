@@ -13,15 +13,20 @@ export class GoalCiReports {
     if (typeof file !== 'string' || !path.isAbsolute(file)) throw Error('CI report.json의 절대 경로를 지정하세요.');
     const sourceFile = await realpath(file), info = await stat(sourceFile);
     if (!info.isFile() || info.size > 16 * 1024 * 1024) throw Error('CI 보고서는 16 MiB 이하의 JSON 파일이어야 합니다.');
-    const bytes = await readFile(sourceFile), report = JSON.parse(bytes.toString('utf8'));
-    if (report.version !== 1 || report.kind !== 'goal-regression' || typeof report.ok !== 'boolean' || !Array.isArray(report.rows) || report.rows.length > 128 || !Array.isArray(report.errors)) throw Error('지원하지 않는 CI 경로 보고서입니다. CLI report.json을 선택하세요.');
+    return this.openBytes(editor, await readFile(sourceFile), revision, sourceFile);
+  }
+  openBytes(editor, bytes, revision, sourceFile, origin) {
+    editor.current(revision);
+    if (!Buffer.isBuffer(bytes) || bytes.length > 16 * 1024 * 1024) throw Error('CI 보고서는 16 MiB 이하이어야 합니다.');
+    const report = JSON.parse(bytes.toString('utf8'));
+    if (!plain(report) || report.version !== 1 || report.kind !== 'goal-regression' || typeof report.ok !== 'boolean' || !Array.isArray(report.rows) || report.rows.length > 128 || !Array.isArray(report.errors)) throw Error('지원하지 않는 CI 경로 보고서입니다. CLI report.json을 선택하세요.');
     const ids = new Set();
     for (const row of report.rows) {
       if (!plain(row) || !statuses.has(row.status) || (row.routeId !== undefined && (typeof row.routeId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(row.routeId) || ids.has(row.routeId)))) throw Error('CI 보고서의 경로 행이 손상되었거나 중복되었습니다.');
       if (row.routeId) ids.add(row.routeId);
     }
     editor.current(revision);
-    this.current = {id: randomUUID(), root: editor.root, sourceFile, checksum: createHash('sha256').update(bytes).digest('hex'), report};
+    this.current = {id: randomUUID(), root: editor.root, sourceFile, origin, checksum: createHash('sha256').update(bytes).digest('hex'), report};
     return this.describe();
   }
   describe(local) {
@@ -34,7 +39,7 @@ export class GoalCiReports {
     }
     // Imported file paths, report IDs and change-item IDs are never used for
     // execution, graph authorization or approvals. Only local replays may do so.
-    return {id: c.id, sourceFile: c.sourceFile, checksum: c.checksum, source: r, matches: !!local && !reasons.length, reasons};
+    return {id: c.id, sourceFile: c.sourceFile, origin: c.origin, checksum: c.checksum, source: r, matches: !!local && !reasons.length, reasons};
   }
   async recheck(editor, content, revision, id) {
     if (!this.current || this.current.id !== id || this.current.root !== editor.root) throw Error('CI 보고서 세션이 만료되었습니다. 다시 여세요.');

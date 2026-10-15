@@ -1,4 +1,5 @@
 import {GoalCiReports} from './goal-ci.mjs';
+import {GitHubGoalReports} from './goal-github.mjs';
 import {runGoalRegression} from './goal-regression.mjs';
 import {changeGoalBaseline} from './goal-approvals.mjs';
 import {resolveGoalImpact} from './goal-impact.mjs';
@@ -40,6 +41,7 @@ export class QtStudioService {
   goalSearchJobs = new GoalSearchJobs();
   goalComparisons = new GoalComparisons();
   goalCiReports = new GoalCiReports();
+  goalGitHub = new GitHubGoalReports();
   /** shareViews: replies are serialized right away (the stdio protocol below), so the draft's
    *  documents are not cloned into each reply (in-process callers keep their own copies). */
   constructor({ runtimes = { web: path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore, shareViews = false } = {}) {
@@ -88,6 +90,20 @@ export class QtStudioService {
       case 'goalSearchStart': {
         const content=await this.debugSnapshot(params.revision);
         extra={goalSearch:await this.goalSearchJobs.start(this.editor.root,content,params.revision,params)};break;
+      }
+      case 'goalGitHubDefaults': {
+        extra={goalGitHub:await this.goalGitHub.defaults(this.editor.root)};break;
+      }
+      case 'goalGitHubRuns': {
+        this.editor.current(params.revision);
+        extra={goalGitHub:await this.goalGitHub.list(this.editor.root,params)};break;
+      }
+      case 'goalGitHubReports': {
+        this.editor.current(params.revision);
+        extra={goalGitHub:await this.goalGitHub.reports(this.editor.root,params.listingId,params.runId)};break;
+      }
+      case 'goalGitHubOpen': {
+        extra={goalCi:this.goalGitHub.open(this.editor,this.goalCiReports,params.revision,params.bundleId,params.reportId)};break;
       }
       case 'goalCiOpen': {
         extra={goalCi:await this.goalCiReports.open(this.editor,params.file,params.revision)};break;
