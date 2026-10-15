@@ -45,6 +45,7 @@ private slots:
   void goalSaveImpact();
   void goalPartialApproval();
   void goalGraphApproval();
+  void goalCiReview();
   void benchmarkAuthoringSuite();
   void benchmarkPlayAndAssurance();
   void directionAuthoringRoundtrip();
@@ -931,6 +932,7 @@ private slots:
 #include "goal-impact-test.inc"
 #include "goal-partial-test.inc"
 #include "goal-review-graph-test.inc"
+#include "goal-ci-test.inc"
 #include "screen-settings-test.inc"
 #include "user-fields-test.inc"
 #include "text-binding-batch-test.inc"

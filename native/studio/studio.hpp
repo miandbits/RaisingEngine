@@ -193,6 +193,7 @@ private:
   void goalSearchDialog(QJsonObject source = {});
   void goalCompareDialog(QString jobId = {}, QJsonObject impactLink = {});
   void goalImpactDialog(QJsonObject report = {});
+  void goalCiDialog();
   void acceptGoalImpact(QJsonObject report);
   void acceptGoalReport(QJsonObject report);
   QDockWidget *ruleDebugDock=nullptr;

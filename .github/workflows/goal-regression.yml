@@ -46,6 +46,7 @@ jobs:
           path: |
             .cache/ci-goal-regression/
             .cache/goal-regression-cli-*/reports/
+            .cache/goal-ci-*/reports/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

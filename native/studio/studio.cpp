@@ -166,6 +166,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("제작 시험 검증…"),this,&StudioWindow::runAssuranceDialog)->setObjectName("runAssurance");
   designMenu->addAction(tr("목표 경로 기록 · 회귀 검사…"),this,&StudioWindow::goalRoutesDialog)->setObjectName("goalRoutes");
   designMenu->addAction(tr("저장 기준 비교 결과…"),this,[this]{goalImpactDialog();})->setObjectName("goalImpact");
+  designMenu->addAction(tr("CI 경로 보고서 열기…"),this,[this]{goalCiDialog();})->setObjectName("goalCiOpen");
   designMenu->addAction(tr("연출 작업실…"),this,&StudioWindow::editDirection)->setObjectName("editDirection");
   designMenu->addAction(tr("다인 전투 · 탐험 · 성장…"),this,&StudioWindow::editTactics)->setObjectName("editTactics");
   designMenu->addAction(tr("UI 조합 · 중첩 / 배치 / 선택 / 모달…"),this,&StudioWindow::editUiComposition)->setObjectName("editUiComposition");

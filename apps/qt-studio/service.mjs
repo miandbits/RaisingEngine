@@ -1,3 +1,5 @@
+import {GoalCiReports} from './goal-ci.mjs';
+import {runGoalRegression} from './goal-regression.mjs';
 import {changeGoalBaseline} from './goal-approvals.mjs';
 import {resolveGoalImpact} from './goal-impact.mjs';
 import {createBenchmarkProject} from './benchmarks.mjs';
@@ -37,6 +39,7 @@ export class QtStudioService {
   analysisJobs = new AnalysisJobs();
   goalSearchJobs = new GoalSearchJobs();
   goalComparisons = new GoalComparisons();
+  goalCiReports = new GoalCiReports();
   /** shareViews: replies are serialized right away (the stdio protocol below), so the draft's
    *  documents are not cloned into each reply (in-process callers keep their own copies). */
   constructor({ runtimes = { web: path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore, shareViews = false } = {}) {
@@ -86,6 +89,13 @@ export class QtStudioService {
         const content=await this.debugSnapshot(params.revision);
         extra={goalSearch:await this.goalSearchJobs.start(this.editor.root,content,params.revision,params)};break;
       }
+      case 'goalCiOpen': {
+        extra={goalCi:await this.goalCiReports.open(this.editor,params.file,params.revision)};break;
+      }
+      case 'goalCiRecheck': {
+        const content=await this.debugSnapshot(params.revision);
+        extra=await this.goalCiReports.recheck(this.editor,content,params.revision,params.id);break;
+      }
       case 'goalBaselineApprovePartial':
       case 'goalBaselineApprove':
       case 'goalBaselineRestore': {
@@ -93,9 +103,9 @@ export class QtStudioService {
         const resolved=await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);
         if(['goalBaselineApprove','goalBaselineApprovePartial'].includes(method)&&resolved.row.status!=='changed')throw Error('목표에 도달한 변경 경로만 승인할 수 있습니다.');
         if(method==='goalBaselineRestore'&&!params.baselineId&&!params.restoreReview)throw Error('되돌릴 기준을 선택하세요.');
-        const entry=await changeGoalBaseline(this.editor.root,{expectedRevision:resolved.report.selectionRevision,route:resolved.route,baseline:resolved.baseline,content,reportId:resolved.report.id,name:params.name,note:params.note,restoreId:method==='goalBaselineRestore'?params.baselineId:undefined,restoreReview:method==='goalBaselineRestore'?params.restoreReview:undefined,itemIds:method==='goalBaselineApprovePartial'?(params.itemIds??[]):undefined,validate:async()=>{this.editor.current(params.revision);await this.editor.assertDiskUnchanged();await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);}});
+        const entry=await changeGoalBaseline(this.editor.root,{comparisonRuntime:resolved.row.comparisonRuntime,expectedRevision:resolved.report.selectionRevision,route:resolved.route,baseline:resolved.baseline,content,reportId:resolved.report.id,name:params.name,note:params.note,restoreId:method==='goalBaselineRestore'?params.baselineId:undefined,restoreReview:method==='goalBaselineRestore'?params.restoreReview:undefined,itemIds:method==='goalBaselineApprovePartial'?(params.itemIds??[]):undefined,validate:async()=>{this.editor.current(params.revision);await this.editor.assertDiskUnchanged();await resolveGoalImpact(this.editor.root,content,params.impactReportId,params.impactRow);}});
         extra={goalApproval:entry};
-        try{const report=await checkGoalImpacts(this.editor.root,content,params.revision);extra.goalImpact=await publishGoalImpacts(this.editor,content,params.revision,report);}
+        try{const policy=resolved.report.runtimePolicy??'strict';const report=resolved.report.kind==='goal-regression'?await runGoalRegression(this.editor.root,{runtimePolicy:policy}):await checkGoalImpacts(this.editor.root,content,params.revision,{runtimePolicy:policy});report.testedRevision=params.revision;extra.goalImpact=await publishGoalImpacts(this.editor,content,params.revision,report);}
         catch(error){extra.goalImpact={rows:[],error:'기준 변경은 완료되었으나 재검사에 실패했습니다: '+error.message,stale:true,complete:false};}
         break;
       }

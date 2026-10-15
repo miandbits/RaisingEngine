@@ -36,7 +36,7 @@ async function writeLedger(dir,ledger){
   try{await writeFile(temp,text,{flag:'wx'});await rename(temp,path.join(dir,'.approvals'));}finally{await unlink(temp).catch(()=>{});}
 }
 // Serialize selection changes, retain immutable snapshots, and compare the exact reviewed selection.
-export async function changeGoalBaseline(root,{expectedRevision,route,baseline,content,reportId,name,note='',restoreId,restoreReview,itemIds,validate}){
+export async function changeGoalBaseline(root,{expectedRevision,route,baseline,content,reportId,name,note='',restoreId,restoreReview,itemIds,comparisonRuntime,validate}){
   if(typeof note!=='string'||note.length>2000)throw Error('승인 사유는 2000자 이내로 입력하세요.');
   const dir=await directory(root),lock=path.join(dir,'.review-lock');
   await writeFile(lock,'',{flag:'wx'}).catch(()=>{throw Error('다른 창에서 기준을 변경 중입니다. 결과를 새로 불러오세요.');});
@@ -53,7 +53,7 @@ export async function changeGoalBaseline(root,{expectedRevision,route,baseline,c
     }else if(restoreId){next=await readGoalBaseline(root,restoreId);kind='restore';}
     else if(itemIds!==undefined){
       if(!Array.isArray(itemIds)||!itemIds.length||new Set(itemIds).size!==itemIds.length)throw Error('승인할 변경 항목을 중복 없이 선택하세요.');
-      const pair=await compareGoalBaseline(content,baseline,await runtimeIdentity(),route);
+      const pair=await compareGoalBaseline(content,baseline,comparisonRuntime??await runtimeIdentity(),route);
       if(!pair.right.reached||pair.right.failure||pair.right.unexecuted)throw Error('목표에 도달하지 못한 경로는 부분 승인할 수 없습니다.');
       const items=reviewGoalItems(pair,previousSelection.accepted);
       const chosen=itemIds.map(id=>items.find(i=>i.id===id));

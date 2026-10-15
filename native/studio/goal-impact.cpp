@@ -9,6 +9,7 @@
 #include <QComboBox>
 #include <QSignalBlocker>
 #include <memory>
+#include <QFileDialog>
 
 namespace {
 QString impactValue(QJsonValue v){if(v.isDouble())return QString::number(v.toDouble(),'g',12);if(v.isString())return v.toString();if(v.isNull()||v.isUndefined())return QObject::tr("없음");if(v.isBool())return v.toBool()?"true":"false";return QString::fromUtf8(v.isArray()?QJsonDocument(v.toArray()).toJson(QJsonDocument::Compact):QJsonDocument(v.toObject()).toJson(QJsonDocument::Compact));}
@@ -54,3 +55,4 @@ void StudioWindow::goalImpactDialog(QJsonObject initial){
   connect(this,&StudioWindow::goalImpactReady,dialog,render);connect(this,&StudioWindow::updated,dialog,[=,this]{if(root!=view.value("root"))dialog->close();else if(current->contains("viewRevision")&&current->value("viewRevision")!=view.value("revision")){(*current)["stale"]=true;summary->setText(tr("초안이 변경되었습니다. 아래는 이전 저장 결과입니다. 다시 저장해 검사하세요."));selection();}});
   dialog->show();if(!initial.isEmpty())render(initial);else if(!lastGoalImpact.isEmpty()){auto cached=lastGoalImpact;if(cached.value("viewRevision")!=view.value("revision"))cached["stale"]=true;render(cached);}else reload->click();
 }
+#include "goal-ci-dialog.inc"

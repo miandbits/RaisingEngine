@@ -1,3 +1,4 @@
+import {compareReviewedBaseline} from './goal-reviewed.mjs';
 import {goalReviewGraph} from './goal-review-graph.mjs';
 import {goalBaselineSelection} from './goal-approvals.mjs';
 import {resolveGoalImpact,routeDigest} from './goal-impact.mjs';
@@ -14,12 +15,15 @@ export class GoalComparisons {
     if(params.baselineId||impact){
       this.current=null;
       const baseline=impact?.baseline??await readGoalBaseline(editor.root,params.baselineId);
-      const pair=await compareGoalBaseline(content,baseline,await runtimeIdentity(),impact?.route);
+      const actualRuntime=await runtimeIdentity();
+      const compared=await compareReviewedBaseline(content,baseline,actualRuntime,impact?.route,60000,impact?.report.runtimePolicy??'strict');
+      if(!compared.pair)throw Error('현재 런타임이 원본 기준을 재현하지 못했습니다. 다시 검사하세요.');
+      const pair=compared.pair;
       editor.current(params.revision);await editor.assertDiskUnchanged();
       const selection=impact?await goalBaselineSelection(editor.root):null;
       if(impact&&selection.revision!==impact.report.selectionRevision)throw Error('검사 이후 활성 기준이 변경되었습니다. 다시 검사하세요.');
       const review=impact?{...goalReviewGraph(pair,selection.partials[impact.route.id]),reportId:impact.report.id,rowIndex:params.impactRow,selectionRevision:selection.revision,routeId:impact.route.id,routeDigest:impact.row.routeDigest,guardrails:impact.row.flags,activePartialCount:(selection.partials[impact.route.id]??[]).length,history:impact.row.reviewHistory??[],baselines:impact.row.baselineHistory??[],canApprove:impact.row.status==='changed'&&impact.row.afterReached}:null;
-      const id=randomUUID();this.current={id,root:editor.root,revision:params.revision,pair,historical:true,review};
+      const id=randomUUID();this.current={id,root:editor.root,revision:params.revision,pair,historical:true,review,actualRuntime};
       return {id,root:editor.root,revision:params.revision,...historicalSummary(pair),...(review?{review:{...review,steps:undefined}}:{}),...(impact?{jumpStep:impact.row.firstDifference??0,impactReportId:params.impactReportId}:{} )};
     }
     const entries=await listGoalRoutes(editor.root),find=id=>{const route=entries.find(e=>e.route?.id===id)?.route;if(!route)throw Error(`등록 경로가 없습니다: ${id}`);return route;};
@@ -44,7 +48,7 @@ export class GoalComparisons {
   async step(editor,params){
     const cache=this.current;if(!cache||cache.id!==params.comparisonId||cache.root!==editor.root)throw Error('비교 스냅샷이 만료되었습니다. 다시 불러오세요.');
     let stale=cache.revision!==editor.revision;
-    if(cache.review){stale ||= cache.review.selectionRevision!==(await goalBaselineSelection(editor.root)).revision;const route=(await listGoalRoutes(editor.root)).find(e=>e.route?.id===cache.review.routeId)?.route;stale ||= !route||routeDigest(route)!==cache.review.routeDigest||await runtimeIdentity()!==cache.pair.runtime;try{await editor.assertDiskUnchanged();}catch{stale=true;}}
+    if(cache.review){stale ||= cache.review.selectionRevision!==(await goalBaselineSelection(editor.root)).revision;const route=(await listGoalRoutes(editor.root)).find(e=>e.route?.id===cache.review.routeId)?.route;stale ||= !route||routeDigest(route)!==cache.review.routeDigest||await runtimeIdentity()!==(cache.actualRuntime??cache.pair.runtime);try{await editor.assertDiskUnchanged();}catch{stale=true;}}
     return {id:cache.id,revision:cache.revision,stale,...(cache.review?{review:{rows:cache.review.steps[params.rightStep??0]??[],aligned:(params.leftStep??0)===(params.rightStep??0),canApprove:!stale&&cache.review.canApprove}}:{}),fingerprint:cache.pair.content.contentFingerprint,...(cache.historical?historicalStep:compareGoalStep)(cache.pair,params.leftStep??0,params.rightStep??0)};
   }
 }
