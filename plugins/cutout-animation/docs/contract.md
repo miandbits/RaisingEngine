@@ -400,10 +400,13 @@ through a damped spring. **Presentation only**: never in saves, never a signal, 
   Mix|Limit|Teleport|StepHz` and `cutoutPhysicsResetOnStart` (one edit each; Animate mode keys
   the mix, K commits), `cutoutPhysicsKey` (혼합 키), `cutoutRenamePhysics`,
   `cutoutPhysicsSelectBone`, and the editor-only preview controls `cutoutPhysicsPreview` (재생 중
-  물리), `cutoutPhysicsWind`, `cutoutPhysicsGravity`, `cutoutPhysicsReset` (다시 놓기),
+  물리; plugin 1.14.0 labels it `● 재생 중 물리: 켜짐` / `○ 재생 중 물리: 꺼짐`), `cutoutPhysicsWind`, `cutoutPhysicsGravity`, `cutoutPhysicsReset` (다시 놓기),
   `cutoutPhysicsInfo`. Preview playback simulates with the same `runPhysics` (fixed steps in
   clip time, settled at the start, restarted on a playhead jump); scrubbing shows the plain clip
-  pose. The canvas marks physics bones with a teal spring ring at their tip and, while
+  pose. Plugin 1.14.0: when the selected constraint swings rotate/scaleX on a point bone (no
+  length: +x axis, 50 px lever), `cutoutPhysicsBoneHint` (`…BoneHintText`) says so and
+  `cutoutPhysicsOrientBone` runs 본 방향 맞추기 (`orientBones`) on that bone in Setup mode (one
+  edit). The canvas marks physics bones with a teal spring ring at their tip and, while
   simulating, a dashed tether from the unsimulated tip.
 
 ## Mesh attachments and weights (plugin 1.4.0)
@@ -636,7 +639,12 @@ through a damped spring. **Presentation only**: never in saves, never a signal, 
     workspace text over the host font, plus icons, row paddings, the dopesheet row height,
     ruler and label column, graph key/handle radii, canvas gizmos and their pick radii. Absent,
     the default comes from the screen: 1.25 (short side >= 1400) or 1.5 (>= 2000) at 100 %
-    Windows scaling when the width keeps 1280 logical px per step, else 1.
+    Windows scaling when the width keeps 1280 logical px per step, else 1. Plugin 1.14.0:
+    `자동 (화면에 맞춤)` (`cutoutUiScaleAuto`, plugin menu `cutoutUiScaleAutoPlugin`) removes
+    `view/uiScale` and returns to that default.
+  * Plugin 1.14.0: a wheel over a spin box or combo box of the workspace that has no keyboard
+    focus goes to its parent (the page scrolls) and never changes the value; fields use
+    `Qt::StrongFocus`, so the wheel steps a value only after a click or Tab into it.
   * The first-run hint strip (`view/hintDismissed`) and the command palette (Ctrl+K / F1: every
     workspace button, menu command and page by name, group or shortcut; running one is the
     same as clicking it, so an editing command is exactly one edit) are presentation only.
