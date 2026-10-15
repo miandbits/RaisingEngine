@@ -122,6 +122,8 @@ class BoneTree : public QTreeWidget {
 };
 
 // Image part picker: project images (or import a PNG), slot id, attachment name, bone.
+// Picking an image fills 조각 ID only while it is empty or still the previous automatic value:
+// a prefilled (selected part) or typed id is never overwritten; 첨부 이름 is never touched.
 class PartDialog : public QDialog {
  public:
   PartDialog(QWidget* parent, ImageCache& images, const QStringList& bones, const QStringList& slots, CutoutPanel::PartChoice& choice)
@@ -165,18 +167,22 @@ class PartDialog : public QDialog {
     layout->addLayout(form);
     layout->addWidget(hint);
     layout->addWidget(buttons);
+    // The list takes the focus first and makes its first row current by itself: that must not
+    // count as a choice of the slot either.
+    autoSlot_ = choice.slot.trimmed().isEmpty();
     connect(assets_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
-      if (item && (slot_->currentText().isEmpty() || autoSlot_)) {
-        slot_->setCurrentText(qs(cutout::slugId(ss(item->text()), "part")));
-        autoSlot_ = true;
-      }
+      if (!item || !(autoSlot_ || slot_->currentText().trimmed().isEmpty())) return;
+      filling_ = true;
+      slot_->setCurrentText(qs(cutout::slugId(ss(item->data(Qt::UserRole).toString()), "part")));
+      filling_ = false;
+      autoSlot_ = true;
     });
-    connect(slot_, &QComboBox::editTextChanged, this, [this] { if (!assets_->signalsBlocked()) autoSlot_ = false; });
+    connect(slot_, &QComboBox::editTextChanged, this, [this](const QString& text) { if (!filling_) autoSlot_ = text.trimmed().isEmpty(); });
     connect(import, &QPushButton::clicked, this, [this] {
       const QString file = QFileDialog::getOpenFileName(this, "PNG 가져오기", QString(), "PNG 이미지 (*.png)");
       if (file.isEmpty()) return;
       choice_.importFile = file;
-      if (slot_->currentText().isEmpty()) slot_->setCurrentText(qs(cutout::slugId(ss(QFileInfo(file).completeBaseName()), "part")));
+      if (autoSlot_ || slot_->currentText().trimmed().isEmpty()) slot_->setCurrentText(qs(cutout::slugId(ss(QFileInfo(file).completeBaseName()), "part")));
       finish();
     });
     connect(buttons, &QDialogButtonBox::accepted, this, [this] {
@@ -199,7 +205,132 @@ class PartDialog : public QDialog {
   QListWidget* assets_;
   QComboBox *slot_, *bone_;
   QLineEdit* name_;
-  bool autoSlot_ = true;
+  bool autoSlot_ = true, filling_ = false;
+};
+
+// 그림 지정… of a skin: which existing part (slot, never free text) and which of its attachment
+// names get which image. The image list only chooses the image: slot and name stay as set.
+class SkinImageDialog : public QDialog {
+ public:
+  using Preview = std::function<QImage(const QString& slot, const QString& name, const QString& assetId, const QSize& size)>;
+  SkinImageDialog(QWidget* parent, ImageCache& images, const QVector<CutoutPanel::SkinSlotInfo>& slots, CutoutPanel::SkinImageChoice& choice, Preview preview)
+      : QDialog(parent), choice_(choice), slots_(slots), preview_(std::move(preview)) {
+    setObjectName("cutoutSkinImageDialog");
+    setWindowTitle("스킨 그림 지정 — " + choice.skin);
+    auto* layout = new QVBoxLayout(this);
+    auto* form = new QFormLayout;
+    slot_ = new QComboBox;
+    slot_->setObjectName("cutoutSkinImageSlot");
+    slot_->setToolTip("그림을 바꿀 조각 · 트리나 캔버스에서 고른 조각(본을 골랐으면 그 본의 첫 조각)으로 시작합니다.");
+    for (const auto& s : slots_) slot_->addItem(QString("▣ %1 · %2").arg(s.slot, s.bone), s.slot);
+    name_ = new QComboBox;
+    name_->setObjectName("cutoutSkinImageName");
+    name_->setEditable(true);
+    name_->setInsertPolicy(QComboBox::NoInsert);
+    name_->setToolTip("이 조각의 첨부 이름 · 지금 보이는 이름으로 시작합니다.\n새 이름을 입력하면 이 스킨에만 있는 새 그림(예: 겨울 옷의 다른 입 모양)이 됩니다.");
+    name_->lineEdit()->setPlaceholderText("새 이름 입력 가능");
+    form->addRow("조각", slot_);
+    form->addRow("첨부 이름", name_);
+    assets_ = new QListWidget;
+    assets_->setObjectName("cutoutSkinImageAssets");
+    assets_->setIconSize(QSize(40, 40));
+    for (const QString& id : images.imageAssetIds()) {
+      auto* item = new QListWidgetItem(QIcon(images.path(id)), id, assets_);
+      item->setData(Qt::UserRole, id);
+      const QSize size = images.pixelSize(id);
+      item->setToolTip(images.path(id) + (size.isValid() ? QString("\n%1×%2").arg(size.width()).arg(size.height()) : QString()));
+    }
+    auto* import = new QPushButton("PNG 가져오기…");
+    import->setObjectName("cutoutSkinImageImport");
+    import->setToolTip("PNG를 프로젝트 이미지로 가져와 고른 조각·이름에 바로 지정합니다.");
+    previewLabel_ = new QLabel;
+    previewLabel_->setObjectName("cutoutSkinImagePreview");
+    previewLabel_->setFixedSize(160, 200);
+    previewLabel_->setAlignment(Qt::AlignCenter);
+    previewLabel_->setWordWrap(true);
+    previewLabel_->setStyleSheet("background:#1e2329;border:1px solid #46515f;color:#a7b4c2;");
+    previewLabel_->setToolTip("결과 미리 보기: 이 스킨을 입고 고른 조각이 이 이름을 보여 줄 때");
+    auto* body = new QHBoxLayout;
+    auto* left = new QVBoxLayout;
+    left->addWidget(new QLabel("프로젝트 이미지"));
+    left->addWidget(assets_, 1);
+    left->addWidget(import);
+    body->addLayout(left, 1);
+    body->addWidget(previewLabel_, 0, Qt::AlignTop);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Ok)->setObjectName("cutoutSkinImageOk");
+    layout->addLayout(form);
+    layout->addLayout(body, 1);
+    layout->addWidget(buttons);
+    slot_->setCurrentIndex(std::max(0, slot_->findData(choice.slot)));
+    fillNames(choice.name);
+    connect(slot_, &QComboBox::currentIndexChanged, this, [this] { fillNames(QString()); });
+    connect(name_, &QComboBox::currentTextChanged, this, [this] { updatePreview(); });
+    connect(assets_, &QListWidget::currentItemChanged, this, [this] { updatePreview(); });
+    connect(import, &QPushButton::clicked, this, [this] {
+      const QString file = QFileDialog::getOpenFileName(this, "PNG 가져오기", QString(), "PNG 이미지 (*.png)");
+      if (file.isEmpty()) return;
+      choice_.importFile = file;
+      finish();
+    });
+    connect(buttons, &QDialogButtonBox::accepted, this, [this] {
+      if (!assets_->currentItem()) { QMessageBox::information(this, windowTitle(), "이미지를 고르거나 PNG를 가져오세요."); return; }
+      if (name_->currentText().trimmed().isEmpty()) { QMessageBox::information(this, windowTitle(), "첨부 이름을 고르거나 입력하세요."); return; }
+      choice_.assetId = assets_->currentItem()->data(Qt::UserRole).toString();
+      finish();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    resize(520, 460);
+  }
+
+ private:
+  /** Names of the chosen slot; `prefer` (else the name the slot shows now) is selected. */
+  void fillNames(const QString& prefer) {
+    const CutoutPanel::SkinSlotInfo* info = currentSlot();
+    {
+      QSignalBlocker block(name_);
+      name_->clear();
+      if (info) name_->addItems(info->names);
+      const QString pick = !prefer.isEmpty() ? prefer : info ? info->shown : QString();
+      const int i = name_->findText(pick);
+      if (i >= 0) name_->setCurrentIndex(i);
+      else name_->setEditText(pick);
+    }
+    // The skin's current image of that (slot, name), when it has one, is where the list starts.
+    if (info && info->images.contains(name_->currentText())) {
+      QSignalBlocker quiet(assets_);
+      for (int r = 0; r < assets_->count(); r++)
+        if (assets_->item(r)->data(Qt::UserRole).toString() == info->images.value(name_->currentText())) assets_->setCurrentRow(r);
+    }
+    updatePreview();
+  }
+  const CutoutPanel::SkinSlotInfo* currentSlot() const {
+    const QString id = slot_->currentData().toString();
+    for (const auto& s : slots_) if (s.slot == id) return &s;
+    return nullptr;
+  }
+  void updatePreview() {
+    QListWidgetItem* item = assets_->currentItem();
+    if (!preview_ || !item || slot_->currentData().toString().isEmpty()) {
+      previewLabel_->setPixmap(QPixmap());
+      previewLabel_->setText("이미지를 고르면 결과가 보입니다");
+      return;
+    }
+    const QImage img = preview_(slot_->currentData().toString(), name_->currentText().trimmed(), item->data(Qt::UserRole).toString(), previewLabel_->size() - QSize(4, 4));
+    previewLabel_->setText(QString());
+    previewLabel_->setPixmap(QPixmap::fromImage(img));
+  }
+  void finish() {
+    choice_.slot = slot_->currentData().toString();
+    choice_.name = name_->currentText().trimmed();
+    accept();
+  }
+  CutoutPanel::SkinImageChoice& choice_;
+  QVector<CutoutPanel::SkinSlotInfo> slots_;
+  Preview preview_;
+  QComboBox *slot_, *name_;
+  QListWidget* assets_;
+  QLabel* previewLabel_;
 };
 
 // ============================================================================
@@ -214,20 +345,27 @@ CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(p
   askConfirm = [this](const QString& title, const QString& text) {
     return QMessageBox::question(this, title, text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
   };
-  askPart = [this](PartChoice& choice) {
-    QStringList bones, slots;
-    const Json data = displayData();
-    for (const auto& b : listOf(data, "bones")) bones << qs(b.value("id", std::string()));
-    for (const auto& s : listOf(data, "slots")) slots << qs(s.value("id", std::string()));
-    PartDialog dialog(this, images_, bones, slots, choice);
-    return dialog.exec() == QDialog::Accepted;
-  };
+  askPart = [this](PartChoice& choice) { return runPartDialog(choice); };
+  askSkinImage = [this](SkinImageChoice& choice) { return runSkinImageDialog(choice); };
   timer_ = new QTimer(this);
   timer_->setInterval(16);
   connect(timer_, &QTimer::timeout, this, [this] { tick(); });
   buildUi();
 }
 CutoutPanel::~CutoutPanel() = default;
+bool CutoutPanel::runPartDialog(PartChoice& choice) {
+  QStringList bones, slots;
+  const Json data = displayData();
+  for (const auto& b : listOf(data, "bones")) bones << qs(b.value("id", std::string()));
+  for (const auto& s : listOf(data, "slots")) slots << qs(s.value("id", std::string()));
+  PartDialog dialog(this, images_, bones, slots, choice);
+  return dialog.exec() == QDialog::Accepted;
+}
+bool CutoutPanel::runSkinImageDialog(SkinImageChoice& choice) {
+  SkinImageDialog dialog(this, images_, skinSlots(), choice,
+                         [this](const QString& slot, const QString& name, const QString& asset, const QSize& size) { return skinImagePreview(slot, name, asset, size); });
+  return dialog.exec() == QDialog::Accepted;
+}
 void CutoutPanel::detachHost() {
   timer_->stop();
   playing_ = false;
@@ -3672,11 +3810,11 @@ bool CutoutPanel::assignSkinImage(const QString& slot, const QString& assetId, c
   selection_ = before;
   return false;
 }
-void CutoutPanel::importAndAssignSkinImage(const QString& file, const QString& slot) {
+void CutoutPanel::importAndAssignSkinImage(const QString& file, const QString& slot, const QString& name) {
   if (busy()) return;
   QPointer<CutoutPanel> self(this);
   inSubmit_ = true;
-  host_->request("importImage", {{"file", file}}, [self, slot](QJsonObject reply) {
+  host_->request("importImage", {{"file", file}}, [self, slot, name](QJsonObject reply) {
     if (!self) return;
     const QString id = reply.value("importedAssetId").toString();
     if (!reply.value("error").toString().isEmpty() || id.isEmpty()) {
@@ -3684,23 +3822,74 @@ void CutoutPanel::importAndAssignSkinImage(const QString& file, const QString& s
       return;
     }
     // Next turn: the host is idle again and assets() includes the image (same as importAndAddPart).
-    QTimer::singleShot(0, self, [self, id, slot] {
+    QTimer::singleShot(0, self, [self, id, slot, name] {
       if (!self || !self->host_) return;
       self->images_.setAssets(self->host_->assets());
-      self->assignSkinImage(slot, id);
+      self->assignSkinImage(slot, id, name);
     });
   });
   inSubmit_ = false;
 }
 bool CutoutPanel::assignSkinImageInteractive() {
   if (previewSkin_.isEmpty()) { setStatus("먼저 스킨을 고르거나 만드세요(「새 스킨」).", true); return false; }
-  PartChoice choice;
-  choice.slot = refKind(selection_) == "slot" ? refId(selection_) : QString();
-  choice.bone = selectedBone();
-  if (!askPart || !askPart(choice)) return false;
-  if (choice.slot.isEmpty()) { setStatus("그림을 넣을 조각 ID를 고르세요.", true); return false; }
-  if (!choice.importFile.isEmpty()) { importAndAssignSkinImage(choice.importFile, choice.slot); return true; }
+  const QVector<SkinSlotInfo> slots = skinSlots();
+  if (slots.isEmpty()) { setStatus("그림을 바꿀 조각이 없습니다. 먼저 「이미지 조각 추가…」로 조각을 만드세요.", true); return false; }
+  SkinImageChoice choice;
+  choice.skin = previewSkin_;
+  // The selected part, else the first part (draw order) on the selected bone, else the first part.
+  if (refKind(selection_) == "slot") choice.slot = refId(selection_);
+  else if (const QString bone = selectedBone(); !bone.isEmpty())
+    for (const auto& s : slots) if (s.bone == bone) { choice.slot = s.slot; break; }
+  if (choice.slot.isEmpty() || std::none_of(slots.begin(), slots.end(), [&](const SkinSlotInfo& s) { return s.slot == choice.slot; })) choice.slot = slots[0].slot;
+  for (const auto& s : slots) if (s.slot == choice.slot) choice.name = s.shown;
+  if (!askSkinImage || !askSkinImage(choice)) return false;
+  if (choice.slot.isEmpty() || !rig_ || rig_->slotIndex(ss(choice.slot)) < 0) { setStatus("그림을 넣을 조각을 고르세요.", true); return false; }
+  if (!choice.importFile.isEmpty()) { importAndAssignSkinImage(choice.importFile, choice.slot, choice.name); return true; }
   return assignSkinImage(choice.slot, choice.assetId, choice.name);
+}
+QVector<CutoutPanel::SkinSlotInfo> CutoutPanel::skinSlots() const {
+  QVector<SkinSlotInfo> out;
+  const Json data = displayData();
+  const cutout::Pose pose = currentPose(false);
+  const Json* skin = findIn(data, "skins", ss(previewSkin_));
+  for (const auto& s : listOf(data, "slots")) {
+    SkinSlotInfo info;
+    info.slot = qs(s.value("id", std::string()));
+    info.bone = qs(s.value("bone", std::string()));
+    info.names = slotNames(data, ss(info.slot));
+    // The name shown right now (setup, or the keyed one at the playhead): what 그림 지정 replaces.
+    const int si = rig_ ? rig_->slotIndex(ss(info.slot)) : -1;
+    if (si >= 0 && size_t(si) < pose.attachments.size() && pose.attachments[size_t(si)]) info.shown = qs(*pose.attachments[size_t(si)]);
+    else if (s.contains("attachment") && s.at("attachment").is_string()) info.shown = qs(s.at("attachment").get<std::string>());
+    if (skin)
+      for (const auto& a : listOf(*skin, "attachments"))
+        if (qs(a.value("slot", std::string())) == info.slot) info.images[qs(a.value("name", std::string()))] = qs(a.value("imageAssetId", std::string()));
+    out << info;
+  }
+  return out;
+}
+QImage CutoutPanel::skinImagePreview(const QString& slot, const QString& name, const QString& assetId, const QSize& size) {
+  QImage img(size, QImage::Format_ARGB32_Premultiplied);
+  img.fill(Qt::transparent);
+  const QSize pixels = images_.pixelSize(assetId);
+  if (size.isEmpty() || previewSkin_.isEmpty() || name.isEmpty() || !pixels.isValid()) return img;
+  // What confirming would commit (the same core op), drawn with that name shown: never sent.
+  std::shared_ptr<const cutout::Rig> rig;
+  try {
+    const Json op = {{"op", "setSkinAttachment"}, {"skin", ss(previewSkin_)}, {"slot", ss(slot)}, {"name", ss(name)}, {"imageAssetId", ss(assetId)}, {"width", pixels.width()}, {"height", pixels.height()}};
+    rig = std::make_shared<const cutout::Rig>(cutout::parseRig(ss(rigId_), cutout::applyEdit(displayData(), op).data));
+  } catch (const std::exception&) { return img; }
+  cutout::Look look = lookFor(*rig);
+  look.expressions = false;
+  cutout::Pose pose = mode_ == Mode::Animate ? cutout::samplePose(*rig, rig->clipIndex(ss(clipId_)), playheadExact_, look) : cutout::samplePose(*rig, -1, 0, look);
+  const int si = rig->slotIndex(ss(slot));
+  if (si >= 0 && size_t(si) < pose.attachments.size()) pose.attachments[size_t(si)] = ss(name);
+  QPainter p(&img);
+  p.setRenderHint(QPainter::Antialiasing);
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+  p.setTransform(elementPlacement(*rig, QRectF(QPointF(0, 0), QSizeF(size)), 1, false));
+  drawRig(p, *rig, pose, images_, hidden_);
+  return img;
 }
 bool CutoutPanel::removeSkinAttachment() {
   QListWidgetItem* item = skinAttachments_ ? skinAttachments_->currentItem() : nullptr;

@@ -60,6 +60,11 @@ class CutoutPanel : public QWidget {
  public:
   enum class Mode { Setup, Animate };
   struct PartChoice { QString assetId, importFile, slot, name, bone; };
+  /** 스킨 그림 지정: `slot` is always an existing slot; the image never changes slot or name. */
+  struct SkinImageChoice { QString skin, slot, name, assetId, importFile; };
+  /** A slot as the skin-image dialog lists it: names it can show, the one shown now, and the
+   *  previewed skin's current image per name. */
+  struct SkinSlotInfo { QString slot, bone, shown; QStringList names; QMap<QString, QString> images; };
   explicit CutoutPanel(raising::StudioHost* host, QWidget* parent = nullptr);
   ~CutoutPanel() override;
 
@@ -152,8 +157,13 @@ class CutoutPanel : public QWidget {
   /** Image `assetId` for `slot` in the preview skin, as attachment `name` (default: the name shown now). */
   bool assignSkinImage(const QString& slot, const QString& assetId, const QString& name = QString());
   /** importImage (asset gesture) then assignSkinImage (edit gesture). */
-  void importAndAssignSkinImage(const QString& file, const QString& slot);
-  bool assignSkinImageInteractive();  // 그림 지정…: image picker for the selected part
+  void importAndAssignSkinImage(const QString& file, const QString& slot, const QString& name = QString());
+  /** 그림 지정…: the skin-image dialog, prefilled with the selected part (a selected bone: its
+   *  first part in draw order) and the name it shows now. */
+  bool assignSkinImageInteractive();
+  QVector<SkinSlotInfo> skinSlots() const;
+  /** The current pose with `assetId` as the preview skin's (slot, name), that name shown. */
+  QImage skinImagePreview(const QString& slot, const QString& name, const QString& assetId, const QSize& size);
   bool removeSkinAttachment();        // selected entry of the skin's attachment list
   /** Drop of PNG files / an asset id onto part `slot` ("" = selected part): goes into the preview skin. */
   bool dropImages(const QMimeData* mime, const QString& slot);
@@ -253,6 +263,10 @@ class CutoutPanel : public QWidget {
   std::function<QString(const QString& title, const QString& label, const QString& value)> askText;
   std::function<bool(const QString& title, const QString& text)> askConfirm;
   std::function<bool(PartChoice&)> askPart;
+  std::function<bool(SkinImageChoice&)> askSkinImage;
+  // The real dialogs behind askPart / askSkinImage (modal; tests drive them with timers).
+  bool runPartDialog(PartChoice& choice);
+  bool runSkinImageDialog(SkinImageChoice& choice);
 
  protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
