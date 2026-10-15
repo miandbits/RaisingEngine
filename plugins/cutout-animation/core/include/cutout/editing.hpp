@@ -76,6 +76,14 @@ struct EditResult {
  * own origin, or the topmost ones as a group about the pivot (one canvas gesture = one op).
  * setBone also takes `axes` (local | parent | world, see toAxes) and the compensation flags:
  * unselected children / the bone's images keep their setup world pose (setup only: Spine semantics).
+ * Events (plugin 1.8.0): definitions addEventDef {name, int?, float?, string?, audio?, volume?, balance?}
+ * (the first one also defines every name keys already use: extra.defined) setEventDef {event, ...same,
+ * null removes} renameEventDef {event, name} (every key follows) deleteEventDef {event, force?} (keys
+ * using it refuse without force); keys setEventKey {clip, timeMs, name, newName?, int?, float?, string?}
+ * (creates or edits; null drops an override) moveEventKey {clip, name, fromMs, toMs} deleteEventKey
+ * {clip, name, timeMs}. The multi-key ops (moveKeys scaleKeys deleteKeys copyKeys pasteKeys) take event
+ * keys as refs {target: "event", property: <name>, timeMs}; event keys collide only with a key of the
+ * same name at the same time.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

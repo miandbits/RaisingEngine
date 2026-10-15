@@ -140,6 +140,15 @@ export async function createService({ pluginDir, manifest }) {
           push(rig.file, `${pointer}/width`, 'ANIM_IMAGE_SIZE_MISMATCH', `첨부 크기 ${attachment.width}×${attachment.height}가 PNG '${id}'의 실제 크기 ${size.width}×${size.height}와 다릅니다.`, [rig.id, id], 'warning');
       }
     }
+    // Event sounds (plugin 1.8.0): `audio` of a definition must name an audio asset.
+    for (const rig of rigs.values())
+      for (const [i, event] of (Array.isArray(rig.data.events) ? rig.data.events : []).entries()) {
+        const id = event?.audio;
+        if (typeof id !== 'string' || !id) continue;
+        const asset = images.get(id);
+        if (!asset || asset.kind !== 'audio')
+          push(rig.file, `/data/events/${i}/audio`, 'ANIM_EVENT_AUDIO', asset ? `에셋 '${id}'는 오디오가 아닙니다.` : `오디오 에셋 '${id}'가 없습니다. 에셋 목록에 소리 파일을 등록하세요.`, [rig.id, id]);
+      }
     for (const controller of controllers.values()) {
       const rigId = controller.data.rig, rig = rigs.get(rigId);
       if (typeof rigId === 'string' && !rig) push(controller.file, '/data/rig', 'ANIM_RIG_MISSING', `리그 '${rigId}'가 없습니다. plugins/cutout-animation/rig/${rigId}.json을 만드세요.`, [controller.id, rigId]);

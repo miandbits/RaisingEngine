@@ -271,6 +271,34 @@ class CutoutPanel : public QWidget {
   const QPolygonF& trailPoints() const { return trailPoints_; }
   const QPolygonF& trailKeyPoints() const { return trailKeys_; }
   const QVector<int>& trailKeyTimes() const { return trailKeyTimes_; }
+  // ---- Clip events (plugin 1.8.0). Definitions live in the rig (`events`), keys in the clips; every
+  // change is one core edit (addEventDef, renameEventDef, setEventKey, moveKeys...).
+  /** The event key dialog's fields: name plus the key's own payload (nullopt = the definition's value). */
+  struct EventKeyChoice { QString name; std::optional<qint64> intValue; std::optional<double> floatValue; std::optional<QString> stringValue; };
+  std::function<bool(EventKeyChoice&)> askEventKey;  // injectable; the default runs runEventKeyDialog
+  bool runEventKeyDialog(EventKeyChoice& choice);
+  QString eventId() const { return eventId_; }        // definition shown in the 이벤트 page
+  bool selectEvent(const QString& name);
+  bool newEvent();     // 새 이벤트 (asks a name)
+  bool renameEvent();  // keys of every clip follow
+  bool deleteEvent();  // asks first when keys use it (then they go too)
+  /** Default payload of the shown definition: field int | float | string | audio | volume | balance;
+   *  a null value (or 0 / "" / no sound) removes the field. */
+  bool setEventField(const QString& field, const cutout::Json& value);
+  /** 이벤트 키: a key of `name` (default: the shown definition; none and no definitions: asks a
+   *  name) at `ms` (-1 = the playhead) of the current clip. */
+  bool addEventKey(int ms = -1, const QString& name = QString());
+  /** Rename / override one key's payload (setEventKey with newName): one edit. */
+  bool editEventKey(const KeyRef& key, const EventKeyChoice& choice);
+  bool editEventKeyInteractive(const KeyRef& key = KeyRef());  // empty: the first selected event key
+  /** Preview event log (editor only): one line per event fired by preview playback (each pass
+   *  once; scrubbing never fires) and by the game-connection preview instance. */
+  QStringList eventLog() const { return eventLog_; }
+  void clearEventLog();
+  /** Advance preview playback by dtMs (the timer's tick does this with wall-clock time). */
+  void advancePlayback(double dtMs);
+  /** Automation: the timer stops advancing playback; advancePlayback drives it. */
+  void setManualClock(bool on) { manualClock_ = on; }
   /** Fire a signal into the local preview instance (never the game). Returns matched binding ids. */
   QStringList previewSignal(const QString& name, const QMap<QString, QString>& params);
   // ---- Layout (editor-only presentation: QSettings plugins/cutout-animation/layout, never an edit)
@@ -326,6 +354,9 @@ class CutoutPanel : public QWidget {
   QString rigId_, controllerId_, selection_, clipId_, status_;
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)
+  QString eventId_;                           // event definition shown in the 이벤트 page (editor state)
+  QStringList eventLog_;                      // preview event log (editor only)
+  bool manualClock_ = false;
   QStringList selected_;                      // multi-selection; only meaningful while it holds selection_
   Pivot pivot_ = Pivot::Origin;
   cutout::Axes axes_ = cutout::Axes::Local;
@@ -422,6 +453,16 @@ class CutoutPanel : public QWidget {
   QSpinBox* ikOrder_ = nullptr;
   QDoubleSpinBox* ikAimAxis_ = nullptr;
   QLabel* ikInfo_ = nullptr;
+  // events (plugin 1.8.0)
+  QListWidget *eventList_ = nullptr, *eventLogList_ = nullptr;
+  QSpinBox* eventInt_ = nullptr;
+  QDoubleSpinBox *eventFloat_ = nullptr, *eventVolume_ = nullptr, *eventBalance_ = nullptr;
+  QLineEdit* eventString_ = nullptr;
+  QComboBox* eventAudio_ = nullptr;
+  QLabel *eventInfo_ = nullptr, *eventFlash_ = nullptr;
+  QWidget* eventKeyTools_ = nullptr;
+  QVector<QWidget*> eventEditors_;
+  QPushButton* graphFitValues_ = nullptr;
   QVector<QWidget*> ikEditors_, ikAnimateTools_, ikAimTools_;
   // meshes (editor state: mode, vertex selection and brush never reach documents)
   MeshEdit meshEdit_ = MeshEdit::Off;
@@ -465,6 +506,12 @@ class CutoutPanel : public QWidget {
   void refreshLooks();
   QWidget* buildIk();
   void refreshIk();
+  QWidget* buildEvents();
+  void refreshEvents();
+  const cutout::Json* currentEvent() const;  // eventId_ in displayData()
+  /** Log the clip events with times in [from, to) (`toInclusive`: also at `to`, a non-looping end). */
+  void firePlaybackEvents(double from, double to, bool toInclusive);
+  void logEvent(const QString& source, const QString& clip, double timeMs, const QString& name, const cutout::Json& payload);
   QWidget* buildMesh();
   void refreshMesh();
   /** The edited mesh: slot index, attachment, and op fields {slot, name, skin?} (false = none). */

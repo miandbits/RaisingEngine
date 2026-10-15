@@ -110,6 +110,22 @@
         }
       }
     },
+    "events": {
+      "description": "Event definitions (plugin 1.8.0, Spine-like). Optional; once present every clip event key must name one. int/float/string are the default payload of its keys; audio names an audio asset a host may play when the event fires. Presentation only: never a controller binding signal.",
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name"],
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "int": { "type": "integer", "minimum": -2147483647, "maximum": 2147483647 },
+          "float": { "type": "number", "minimum": -1000000, "maximum": 1000000 },
+          "string": { "type": "string", "maxLength": 1000 },
+          "audio": { "description": "Audio asset id (kind audio, checked by the service).", "type": "string", "minLength": 1, "maxLength": 64 },
+          "volume": { "description": "0..1, default 1 (with audio).", "type": "number", "minimum": 0, "maximum": 1 },
+          "balance": { "description": "-1 (left) .. 1 (right), default 0 (with audio).", "type": "number", "minimum": -1, "maximum": 1 }
+        }
+      }
+    },
     "clips": {
       "type": "array", "maxItems": 256,
       "items": {
@@ -154,7 +170,12 @@
             "type": "array", "maxItems": 256,
             "items": {
               "type": "object", "additionalProperties": false, "required": ["timeMs", "name"],
-              "properties": { "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 }, "name": { "$ref": "#/$defs/name" } }
+              "properties": {
+                "timeMs": { "type": "integer", "minimum": 0, "maximum": 600000 }, "name": { "$ref": "#/$defs/name" },
+                "int": { "description": "Overrides the definition's int (plugin 1.8.0).", "type": "integer", "minimum": -2147483647, "maximum": 2147483647 },
+                "float": { "description": "Overrides the definition's float.", "type": "number", "minimum": -1000000, "maximum": 1000000 },
+                "string": { "description": "Overrides the definition's string.", "type": "string", "maxLength": 1000 }
+              }
             }
           }
         }

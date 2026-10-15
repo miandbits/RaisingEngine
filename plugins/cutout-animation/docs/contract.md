@@ -547,9 +547,57 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   * Deleting a slot or bone also removes its skin attachments and expression entries.
 * Rotation interpolates numerically (no shortest-path wrapping): 0→350 turns 350°.
 * Times are integer milliseconds, strictly increasing per track, within `0..durationMs`.
-* Events: `{timeMs, name}`. An event fires once per occurrence in the half-open interval
-  `[previous, current)` of clip time; for one-shot clips an event exactly at the end fires
-  with completion.
+* Events: `{timeMs, name, int?, float?, string?}`. An event fires once per occurrence in the
+  half-open interval `[previous, current)` of clip time; for one-shot clips an event exactly at
+  the end fires with completion (a looping clip never fires an event at exactly `durationMs`).
+  Seeking (editor scrubbing) never fires events. See "Clip events" below for definitions and
+  payloads.
+
+## Clip events (plugin 1.8.0)
+
+Spine-like event definitions at the rig level, all optional (rigs without them load and play as
+in 1.7):
+
+```json
+"events": [{"name": "footstep", "int": 1, "float": 0.5, "string": "left", "audio": "sfx-step", "volume": 0.8, "balance": -0.2}],
+"clips": [{"id": "walk", "...": "...", "events": [{"timeMs": 0, "name": "footstep"}, {"timeMs": 300, "name": "footstep", "string": "right"}]}]
+```
+
+* Definition: `name` (`$defs/name`, unique), default payload `int` (32-bit integer), `float`
+  (finite, |v| <= 1e6), `string` (<= 1000 bytes), and `audio` (an asset id of kind audio) with
+  `volume` 0..1 (default 1) and `balance` -1 (left)..1 (right) (default 0). Defaults (0, 0, "",
+  1, 0) are not stored by the editing ops. Volume/balance without audio warn
+  (`ANIM_EVENT_AUDIO_UNUSED`).
+* Keys: `name` plus optional `int` / `float` / `string` overriding the definition (audio, volume
+  and balance always come from the definition). Once `events` holds at least one definition every
+  key must name one (`ANIM_EVENT_UNKNOWN`); without definitions any name is valid (1.7 rigs).
+* Validation codes: `ANIM_EVENT_NAME` (definition name format), `ANIM_DUP_ID` (definition),
+  `ANIM_EVENT_PAYLOAD` (int/float/string types, volume/balance ranges), `ANIM_EVENT_AUDIO`
+  (core: not a non-empty id; service: the asset is missing or not of kind audio),
+  `ANIM_EVENT_TIME` (key time not an integer in `0..durationMs`), `ANIM_EVENT_UNKNOWN`,
+  `ANIM_EVENT_DUPLICATE` (warning: the same name twice at one time; both fire, editing ops
+  address the first).
+* Notification (`kind: "event"`, op `update`/`notifications`): `{kind, track, clip, serial, name}`
+  plus the resolved payload — only the fields that are set: `int`, `float`, `string` (key
+  override, else definition) and, when the definition has a sound, `audio`, `volume`, `balance`.
+  A rig without payloads produces exactly the 1.7 shape. Deterministic: the same notifications
+  (payload included) at any frame pacing.
+* **Presentation only.** Controller bindings react to game signals only; they never match clip
+  events, and events never reach game rules, costs or RNG. Playing `audio` is the host's job
+  (packages/plugin-host/CONTRACT.md §7): the native player plays it through its sound-effect path
+  (miniaudio volume/pan) and the web player through `HTMLAudioElement` (balance via a Web Audio
+  stereo panner), both only while sound is on; both report the newest 32 events with payload
+  (`extensions.events`) for automation. Other hosts may ignore sounds and read the payload only.
+* Editing ops (one gesture = one op): `addEventDef {name, int?, float?, string?, audio?, volume?,
+  balance?}` (the first definition also defines every name keys already use: `extra.defined`),
+  `setEventDef {event, ...}` (null removes a field), `renameEventDef {event, name}` (keys in every
+  clip follow: `extra.renamedKeys`), `deleteEventDef {event, force?}` (refused while keys use it;
+  force deletes them: `extra.removedKeys`), `setEventKey {clip, timeMs, name, newName?, int?,
+  float?, string?}` (creates or edits; null drops an override; `extra.keys`), `moveEventKey {clip,
+  name, fromMs, toMs}`, `deleteEventKey {clip, name, timeMs}`. The multi-key ops `moveKeys`,
+  `scaleKeys`, `deleteKeys`, `copyKeys`, `pasteKeys` take event keys as refs `{target: "event",
+  property: <name>, timeMs}` next to track keys; an event key collides only with a key of the same
+  name at the same time (different events may share a time). `setInterp`/`setCurve` refuse them.
 
 ## Playback (per instance)
 
@@ -562,8 +610,8 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   explicit) is > 0, the old entry keeps animating and is cross-faded linearly; attachments
   switch at the halfway point. Events and completions of the outgoing entry are suppressed.
 * Notifications: `start`, `interrupt` (replaced), `end` (no longer applied), `complete`
-  (every loop boundary with loop index; once for one-shots), `event`. Each is emitted once
-  per entry `serial`; hosts never need deduplication.
+  (every loop boundary with loop index; once for one-shots), `event` (with its payload, plugin
+  1.8.0). Each is emitted once per entry `serial`; hosts never need deduplication.
 * One-shot `then`: `default` (track 0 → controller default clip; other tracks stop),
   `hold` (stay on the last frame), `stop` (mix out to lower tracks/setup).
 * `update(dt)` clamps dt to 0..10 s; a long pause completes loops instead of replaying them.
@@ -571,7 +619,8 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 ## Controller bindings and game signals
 
 Signals are derived **only from committed game transitions** (one call per command), never
-from frames. Hosts call the core's `observe` op; all hosts use the same C++ derivation.
+from frames. Clip events are not signals: a binding can never depend on an animation event
+(game logic stays independent of presentation timing). Hosts call the core's `observe` op; all hosts use the same C++ derivation.
 
 | Signal | Params | When |
 |---|---|---|

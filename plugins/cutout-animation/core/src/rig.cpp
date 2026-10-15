@@ -75,6 +75,23 @@ void checkCurve(Checker& c, const Json& key, const std::string& kp) {
     if (i % 2 == 1 && (x < CURVE_Y_MIN || x > CURVE_Y_MAX)) c.error(at(p, i), "ANIM_CURVE", "curve의 값 손잡이(y)는 -4..5이어야 합니다.");
   }
 }
+/** Event/attachment name: the schema's $defs/name ([A-Za-z0-9][A-Za-z0-9_-]*, <= 64). */
+bool eventName(const std::string& n) {
+  if (n.empty() || n.size() > 64 || !std::isalnum(static_cast<unsigned char>(n[0]))) return false;
+  for (char ch : n) if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '_' && ch != '-') return false;
+  return true;
+}
+constexpr int64_t EVENT_INT_LIMIT = 2147483647;
+constexpr size_t EVENT_STRING_LIMIT = 1000;
+/** int / float / string payload fields of an event definition or key (plugin 1.8.0). */
+void checkPayload(Checker& c, const Json& e, const std::string& p) {
+  if (!e.is_object()) return;
+  if (e.contains("int") && (!e.at("int").is_number_integer() || e.at("int").get<int64_t>() > EVENT_INT_LIMIT || e.at("int").get<int64_t>() < -EVENT_INT_LIMIT))
+    c.error(at(p, "int"), "ANIM_EVENT_PAYLOAD", "이벤트 int 값은 32비트 정수입니다.");
+  if (e.contains("float") && !finiteNumber(e.at("float"))) c.error(at(p, "float"), "ANIM_EVENT_PAYLOAD", "이벤트 float 값은 유한한 숫자입니다.");
+  if (e.contains("string") && (!e.at("string").is_string() || e.at("string").get_ref<const std::string&>().size() > EVENT_STRING_LIMIT))
+    c.error(at(p, "string"), "ANIM_EVENT_PAYLOAD", "이벤트 string 값은 1000바이트 이하의 문자열입니다.");
+}
 const Json& arrayOr(const Json& obj, const char* key) {
   static const Json empty = Json::array();
   return obj.is_object() && obj.contains(key) && obj.at(key).is_array() ? obj.at(key) : empty;
@@ -322,6 +339,7 @@ int Rig::clipIndex(const std::string& id) const { for (size_t i = 0; i < clips.s
 int Rig::skinIndex(const std::string& id) const { for (size_t i = 0; i < skins.size(); i++) if (skins[i].id == id) return int(i); return -1; }
 int Rig::expressionIndex(const std::string& id) const { for (size_t i = 0; i < expressions.size(); i++) if (expressions[i].id == id) return int(i); return -1; }
 int Rig::ikIndex(const std::string& id) const { for (size_t i = 0; i < ik.size(); i++) if (ik[i].id == id) return int(i); return -1; }
+int Rig::eventIndex(const std::string& name) const { for (size_t i = 0; i < events.size(); i++) if (events[i].name == name) return int(i); return -1; }
 const Attachment* Rig::attachment(const std::string& slot, const std::string& name, int skin) const {
   if (skin >= 0 && skin < int(skins.size()))
     for (const auto& a : skins[size_t(skin)].attachments) if (a.slot == slot && a.name == name) return &a;
@@ -462,6 +480,25 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     else if (e.is_object() && e.contains("bones")) c.error(at(p, "bones"), "ANIM_STRUCTURE", "표정 bones는 객체입니다.");
   }
 
+  // Event definitions (plugin 1.8.0): once any exist, every clip event key must name one.
+  const auto& eventDefs = arrayOr(data, "events");
+  std::set<std::string> eventNames;
+  for (size_t i = 0; i < eventDefs.size(); i++) {
+    const auto& e = eventDefs[i];
+    const std::string p = at("/events", i), name = text(e, "name");
+    if (!e.is_object()) { c.error(p, "ANIM_STRUCTURE", "이벤트 정의는 객체입니다."); continue; }
+    if (!eventName(name)) c.error(at(p, "name"), "ANIM_EVENT_NAME", "이벤트 이름은 영문·숫자로 시작하고 영문·숫자·_·-만 씁니다(64자 이하): " + name);
+    else if (!eventNames.insert(name).second) c.error(at(p, "name"), "ANIM_DUP_ID", "중복된 이벤트 이름: " + name);
+    checkPayload(c, e, p);
+    if (e.contains("audio") && (!e.at("audio").is_string() || e.at("audio").get_ref<const std::string&>().empty() || e.at("audio").get_ref<const std::string&>().size() > 64))
+      c.error(at(p, "audio"), "ANIM_EVENT_AUDIO", "이벤트 소리(audio)는 오디오 에셋 ID입니다.");
+    const double volume = number(c, e, p, "volume", 1), balance = number(c, e, p, "balance", 0);
+    if (volume < 0 || volume > 1) c.error(at(p, "volume"), "ANIM_EVENT_PAYLOAD", "이벤트 음량(volume)은 0..1입니다.");
+    if (balance < -1 || balance > 1) c.error(at(p, "balance"), "ANIM_EVENT_PAYLOAD", "이벤트 좌우(balance)는 -1..1입니다.");
+    if (!e.contains("audio") && (e.contains("volume") || e.contains("balance")))
+      c.warn(p, "ANIM_EVENT_AUDIO_UNUSED", "소리(audio)가 없는 이벤트의 음량·좌우 값은 쓰이지 않습니다: " + name);
+  }
+
   // Clips.
   const auto& clips = arrayOr(data, "clips");
   std::set<std::string> clipIds;
@@ -550,11 +587,19 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       }
     }
     const auto& events = arrayOr(clip, "events");
+    std::set<std::pair<int64_t, std::string>> seenEvents;
     for (size_t ei = 0; ei < events.size(); ei++) {
-      const std::string ep = at(at(p, "events"), ei);
-      if (!events[ei].contains("timeMs") || !events[ei].at("timeMs").is_number_integer() || events[ei].at("timeMs").get<int64_t>() < 0 || (duration > 0 && events[ei].at("timeMs").get<int64_t>() > duration))
-        c.error(at(ep, "timeMs"), "ANIM_KEY_TIME_RANGE", "이벤트 시간이 클립 범위를 벗어났습니다.");
-      if (text(events[ei], "name").empty()) c.error(at(ep, "name"), "ANIM_ID_MISSING", "이벤트 이름이 필요합니다.");
+      const std::string ep = at(at(p, "events"), ei), name = text(events[ei], "name");
+      const bool timed = events[ei].is_object() && events[ei].contains("timeMs") && events[ei].at("timeMs").is_number_integer();
+      if (!timed || events[ei].at("timeMs").get<int64_t>() < 0 || (duration > 0 && events[ei].at("timeMs").get<int64_t>() > duration))
+        c.error(at(ep, "timeMs"), "ANIM_EVENT_TIME", "이벤트 시간이 클립 범위(0..길이, 정수 ms)를 벗어났습니다.");
+      if (name.empty()) { c.error(at(ep, "name"), "ANIM_ID_MISSING", "이벤트 이름이 필요합니다."); continue; }
+      if (!eventNames.empty() && !eventNames.count(name))
+        c.error(at(ep, "name"), "ANIM_EVENT_UNKNOWN", "정의되지 않은 이벤트입니다(리그 이벤트 목록에 추가하세요): " + name);
+      checkPayload(c, events[ei], ep);
+      // Two keys of one name at one time both fire; editing ops address the first of them.
+      if (timed && !seenEvents.insert({events[ei].at("timeMs").get<int64_t>(), name}).second)
+        c.warn(ep, "ANIM_EVENT_DUPLICATE", "같은 시간에 같은 이벤트가 두 번 있습니다: " + name);
     }
   }
   // A skin that cannot resolve a shown name (neither it nor the default list has it) draws
@@ -691,6 +736,15 @@ Rig parseRig(const std::string& id, const Json& data) {
   }
   for (size_t i = 0; i < rig.ik.size(); i++) rig.ikOrder.push_back(int(i));
   std::stable_sort(rig.ikOrder.begin(), rig.ikOrder.end(), [&](int a, int b) { return rig.ik[size_t(a)].order < rig.ik[size_t(b)].order; });
+  for (const auto& e : arrayOr(data, "events")) {
+    EventDef d; d.name = e.at("name");
+    if (e.contains("int")) d.intValue = e.at("int").get<int64_t>();
+    if (e.contains("float")) d.floatValue = e.at("float").get<double>();
+    if (e.contains("string")) d.stringValue = e.at("string").get<std::string>();
+    if (e.contains("audio")) d.audio = e.at("audio").get<std::string>();
+    d.volume = e.value("volume", 1.0); d.balance = e.value("balance", 0.0);
+    rig.events.push_back(d);
+  }
   for (const auto& c : arrayOr(data, "clips")) {
     Clip clip; clip.id = c.at("id"); clip.name = c.value("name", clip.id); clip.durationMs = c.at("durationMs"); clip.loop = c.value("loop", true);
     for (const auto& t : arrayOr(c, "tracks")) {
@@ -720,7 +774,23 @@ Rig parseRig(const std::string& id, const Json& data) {
       }
       clip.tracks.push_back(track);
     }
-    for (const auto& e : arrayOr(c, "events")) clip.events.push_back({e.at("timeMs").get<int64_t>(), e.at("name").get<std::string>()});
+    for (const auto& e : arrayOr(c, "events")) {
+      ClipEvent ev{e.at("timeMs").get<int64_t>(), e.at("name").get<std::string>()};
+      // Payload: the definition's defaults, the key's own int/float/string win (Spine semantics).
+      const int def = rig.eventIndex(ev.name);
+      if (def >= 0) {
+        const EventDef& d = rig.events[size_t(def)];
+        if (d.intValue) ev.payload["int"] = *d.intValue;
+        if (d.floatValue) ev.payload["float"] = *d.floatValue;
+        if (d.stringValue) ev.payload["string"] = *d.stringValue;
+      }
+      for (const char* k : {"int", "float", "string"}) if (e.contains(k)) ev.payload[k] = e.at(k);
+      if (def >= 0 && rig.events[size_t(def)].audio) {
+        const EventDef& d = rig.events[size_t(def)];
+        ev.payload["audio"] = *d.audio; ev.payload["volume"] = d.volume; ev.payload["balance"] = d.balance;
+      }
+      clip.events.push_back(ev);
+    }
     rig.clips.push_back(clip);
   }
   if (data.contains("mix") && data.at("mix").is_object()) {

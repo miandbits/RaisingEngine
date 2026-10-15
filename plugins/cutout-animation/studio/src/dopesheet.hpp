@@ -27,6 +27,10 @@ class Dopesheet : public QWidget {
     QStringList interps;            // per key: "linear" | "step" | "bezier"
     QVector<cutout::Curve> curves;  // per key, used when interps[i] == "bezier"
     bool attachment = false;
+    /** The clip event row (plugin 1.8.0, target "event"): `names` holds each key's event name,
+     *  which is also its KeyRef property, so several events may share a time in one row. */
+    bool events = false;
+    QStringList names;
   };
   /** Row height, selection strip (extent + scale handles) and the key distance below which keys cluster. */
   static constexpr int ROW = 20, STRIP = 10, CLUSTER_PX = 7;
@@ -45,7 +49,11 @@ class Dopesheet : public QWidget {
   /** Select exactly one key (row < 0 clears the selection). */
   void selectKey(int row, int ms);
   QVector<KeyRef> selectedKeys() const { return view_->selection(); }
-  KeyRef refOf(int row, int ms) const { return {rows_[row].target, rows_[row].property, ms}; }
+  /** Ref of the key at `ms` in `row` (event rows: the first key there). */
+  KeyRef refOf(int row, int ms) const;
+  /** Ref of key index `i` of `row` (event rows name the event as the property). */
+  KeyRef keyRef(int row, int i) const { return {rows_[row].target, rows_[row].names.isEmpty() ? rows_[row].property : rows_[row].names.value(i), rows_[row].times[i]}; }
+  int eventRow() const;  // -1 when the rows have no event row
   QVector<KeyRef> rowKeys(int row) const;
   QVector<KeyRef> keysAt(int ms) const;  // column: every key at that time
   QVector<KeyRef> allKeys() const;
@@ -73,6 +81,10 @@ class Dopesheet : public QWidget {
   std::function<void(int steps)> onStep;
   /** Row header / key click; add = Ctrl or Shift held (the target joins the canvas selection). */
   std::function<void(int row, bool add)> onRowSelected;
+  /** Event row: add an event key at `ms` (context menu, double-click on empty space). */
+  std::function<void(int ms)> onAddEvent;
+  /** Event row: edit that key's name/payload (double-click, context menu). */
+  std::function<void(const KeyRef& key)> onEditEvent;
   /** Targets ("bone:<id>", "slot:<id>") of the editor selection: their row labels are marked. */
   void setHighlightTargets(const QSet<QString>& targets) { if (targets != highlighted_) { highlighted_ = targets; update(); } }
   const QSet<QString>& highlightTargets() const { return highlighted_; }
@@ -92,7 +104,7 @@ class Dopesheet : public QWidget {
  private:
   static constexpr int LABEL = TimeView::LABEL, RULER = TimeView::RULER;
   enum class Drag { None, Pan, Scrub, LoopIn, LoopOut, Keys, ScaleLeft, ScaleRight, Band };
-  struct Hit { int row = -1; QVector<int> times; };  // a lone key or a cluster
+  struct Hit { int row = -1; QVector<int> keys; };  // key indices (sorted by time) of a lone key or a cluster
   TimeView* view_ = nullptr;
   QVector<Row> rows_;
   QSet<QString> highlighted_;
@@ -112,8 +124,9 @@ class Dopesheet : public QWidget {
   Hit hitAt(QPointF p) const;
   KeyRef pickInCluster(const Hit& hit) const;
   bool selectionExtent(int& lo, int& hi) const;  // over the selected keys' committed times
-  int shownTime(int row, int t) const;           // drag/scale preview of a key time
+  int shownTime(int row, int i) const;           // drag/scale preview of key i's time
   QVector<QVector<int>> groups(const QVector<int>& times) const;
   void paintSegments(QPainter& p, const Row& row, const QVector<int>& times, int y) const;
+  void paintEventLabels(QPainter& p, int r, const QVector<int>& shown, const QVector<int>& order) const;
 };
 }  // namespace cutout_studio

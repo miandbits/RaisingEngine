@@ -196,6 +196,16 @@ Hosts must call `observe` exactly once per submitted command (after the reply), 
 command order, and never from frame callbacks. `update` uses wall-clock presentation
 time and is never consulted by game logic. Hosts ignore notifications for gameplay.
 
+**Event notifications and sounds** (ABI extension, still `raising-extension-1`): `update` replies
+`{notifications: {<instance>: [{kind, …}]}}`. An entry with `kind: "event"` may carry a payload
+next to its `name` (`int`, `float`, `string`, and `audio` = an audio asset id with `volume` 0..1
+and `balance` -1..1, defaults 1 / 0). Hosts keep the newest 32 event entries (plus `instance`,
+`plugin`, `clockMs`) for reports (`extensions.events`, `eventCount`, `soundCount`) and MAY play
+`audio` as a one-shot effect through their normal sound path while unmuted (native: miniaudio
+volume/pan, report `audio.extensionSounds`; web: `HTMLAudioElement.volume`, balance through a
+Web Audio stereo panner). A missing or undecodable file is counted, never an error of the game.
+Playing sounds is the host's job: plugins only name them, and nothing here reaches game state.
+
 ## 8. Save data
 
 `playerPresentation.extensions` (optional) = `{ "<pluginId>": <saveAll state> }`.

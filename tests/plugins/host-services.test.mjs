@@ -106,6 +106,15 @@ test('Qt service: plugins in every reply, install, undoable enable/disable via t
   reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: {
     op: 'setBone', bone: 'body', axes: 'world', x: 30, y: -50 } } } });
   assert.deepEqual([reply.pluginResult.ok, reply.pluginResult.rig.bones[1].x, reply.pluginResult.rig.bones[1].y], [true, 30, -50]);
+  // Clip events (plugin 1.8.0): definition + payload override keys on the LLM path, then a refused
+  // undefined name; the notification of the sample instance carries the payload.
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: rigData(), operation: { op: 'batch', operations: [
+    { op: 'addEventDef', name: 'step', int: 1, audio: 'sfx-step' }, { op: 'setEventKey', clip: 'idle', timeMs: 500, name: 'step', int: 3 }] } } } });
+  assert.equal(reply.pluginResult.ok, true, reply.pluginResult.error);
+  assert.deepEqual([reply.pluginResult.rig.events, reply.pluginResult.rig.clips[0].events], [[{ name: 'step', int: 1, audio: 'sfx-step' }], [{ timeMs: 500, name: 'step', int: 3 }]]);
+  const evented = reply.pluginResult.rig;
+  reply = await service.handle({ method: 'pluginCall', params: { plugin: 'cutout-animation', op: 'edit', payload: { rig: evented, operation: { op: 'setEventKey', clip: 'idle', timeMs: 100, name: 'jump' } } } });
+  assert.equal(reply.pluginResult.ok, false); assert.match(reply.pluginResult.error, /정의되지 않은 이벤트/);
   reply = await service.handle({ method: 'pluginStatus', params: {} });
   assert.equal(reply.plugins.project[0].state, 'active');
 });

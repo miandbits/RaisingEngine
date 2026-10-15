@@ -139,6 +139,34 @@ Json lookScript() {
     {{"op", "setSkin"}, {"instance", "a"}, {"skin", ""}}, frame,
   });
 }
+/** rigData() + event definitions with payloads (plugin 1.8.0): `step` has an int, string and audio
+ *  default, `hit` a float; the walk clip keys both (one key overrides the int) and loops. */
+Json eventRig() {
+  Json d = rigData();
+  d["events"] = Json::parse(R"([
+    {"name": "step", "int": 1, "string": "left", "audio": "sfx-step", "volume": 0.5, "balance": -0.25},
+    {"name": "hit", "float": 2.5},
+    {"name": "breath"}, {"name": "peak"}, {"name": "done"}
+  ])");
+  d["clips"].push_back(Json::parse(R"({"id": "walk", "durationMs": 400, "loop": true, "tracks": [],
+    "events": [{"timeMs": 0, "name": "step"}, {"timeMs": 100, "name": "hit", "string": "fist"}, {"timeMs": 200, "name": "step", "int": 2, "string": "right"}]})"));
+  return d;
+}
+/** Host op script of the native/Wasm event parity check (tests/plugins/cutout-event-parity.test.mjs):
+ *  loops of the walk clip at uneven frame steps, a one-shot with events at its end, payloads. */
+Json eventScript() {
+  const Json controller = Json::parse(R"({"schemaVersion": 1, "rig": "hero", "defaultClip": "walk", "layers": [], "bindings": [
+    {"id": "cheer", "signal": "actionResult", "match": {"outcome": "success"}, "clip": "joy", "then": "default"}]})");
+  const Json element = {{"type", "character"}, {"ref", "walker"}, {"width", 200}, {"height", 300}, {"props", Json::object()}};
+  Json script = Json::array({
+    {{"op", "init"}, {"documents", Json::array({{{"type", "rig"}, {"id", "hero"}, {"data", eventRig()}}, {{"type", "controller"}, {"id", "walker"}, {"data", controller}}})}},
+    {{"op", "mount"}, {"instance", "a"}, {"element", element}},
+  });
+  for (double dt : {16.0, 84.0, 0.5, 99.5, 250.0, 950.0}) script.push_back({{"op", "update"}, {"dtMs", dt}});
+  script.push_back({{"op", "signal"}, {"instance", "a"}, {"name", "actionResult"}, {"params", {{"outcome", "success"}}}});
+  for (double dt : {150.0, 50.0, 200.0, 33.0}) script.push_back({{"op", "update"}, {"dtMs", dt}});
+  return script;
+}
 /**
  * Two-bone arm for IK (plugin 1.3.0): root -> upper (shoulder) -> lower (elbow, 50 px) -> hand
  * (wrist, 50 px); target `t` hangs from the root. `ik` holds one constraint `arm` on [upper, lower].
@@ -470,6 +498,14 @@ int main(int argc, char** argv) {
     const Json script = outlineParityScript();
     for (const auto& op : script) replies.push_back(host.handle(op));
     std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--event-parity") {
+    // Native reference for event notifications with payloads (replayed through the Wasm runtime).
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : eventScript()) replies.push_back(host.handle(op));
+    std::cout << Json({{"script", eventScript()}, {"replies", replies}}).dump() << "\n";
     return 0;
   }
   if (argc > 1 && std::string(argv[1]) == "--look-parity") {
@@ -2776,6 +2812,178 @@ int main(int argc, char** argv) {
     check(refused(d, {{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", Json::object()}}), "empty delta");
     auto b = applyEdit(d, {{"op", "batch"}, {"operations", {{{"op", "transformBones"}, {"bones", {"arm"}}, {"delta", {{"x", 1}}}}, {{"op", "transformBones"}, {"bones", {"leg"}}, {"delta", {{"x", 1}}}}}}});
     check(b.extra["bones"] == Json::array({"leg"}) && b.affected.size() == 2, "batchable");
+  });
+
+  // ---- Clip events (plugin 1.8.0) ----
+  test("event definitions validate names, payload types and key names", [] {
+    check(validateRig(eventRig()).empty(), "event fixture validates");
+    check(validateRig(rigData()).empty(), "keys without definitions stay valid (any name)");
+    auto with = [](const std::function<void(Json&)>& edit) { Json d = eventRig(); edit(d); return validateRig(d); };
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][0]["name"] = "jump"; }), "ANIM_EVENT_UNKNOWN"), "undefined key name once definitions exist");
+    check(hasCode(with([](Json& d) { d["events"][0]["int"] = 1.5; }), "ANIM_EVENT_PAYLOAD"), "int must be an integer");
+    check(hasCode(with([](Json& d) { d["events"][0]["int"] = int64_t(1) << 40; }), "ANIM_EVENT_PAYLOAD"), "int is 32-bit");
+    check(hasCode(with([](Json& d) { d["events"][1]["float"] = "2"; }), "ANIM_EVENT_PAYLOAD"), "float must be a number");
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][1]["string"] = 3; }), "ANIM_EVENT_PAYLOAD"), "key string override must be a string");
+    check(hasCode(with([](Json& d) { d["events"][0]["audio"] = ""; }), "ANIM_EVENT_AUDIO"), "audio is an asset id");
+    check(hasCode(with([](Json& d) { d["events"][0]["volume"] = 1.5; }), "ANIM_EVENT_PAYLOAD"), "volume 0..1");
+    check(hasCode(with([](Json& d) { d["events"][0]["balance"] = -2; }), "ANIM_EVENT_PAYLOAD"), "balance -1..1");
+    check(hasCode(with([](Json& d) { d["events"][1]["volume"] = 0.2; }), "ANIM_EVENT_AUDIO_UNUSED"), "volume without audio warns");
+    check(hasCode(with([](Json& d) { d["events"][1]["name"] = "step"; }), "ANIM_DUP_ID"), "duplicate definition");
+    check(hasCode(with([](Json& d) { d["events"][1]["name"] = "a b"; }), "ANIM_EVENT_NAME"), "definition name format");
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][1]["timeMs"] = 401; }), "ANIM_EVENT_TIME"), "key past the clip end");
+    check(hasCode(with([](Json& d) { d["clips"][3]["events"][1]["timeMs"] = 1.5; }), "ANIM_EVENT_TIME"), "fractional key time");
+    const auto dup = with([](Json& d) { d["clips"][3]["events"].push_back({{"timeMs", 0}, {"name", "step"}}); });
+    check(hasCode(dup, "ANIM_EVENT_DUPLICATE") && !hasCode(dup, "ANIM_EVENT_UNKNOWN"), "same key twice only warns");
+  });
+
+  test("event payload: definition defaults, key overrides, notification JSON", [] {
+    const Rig r = parseRig("hero", eventRig());
+    const auto& walk = r.clips[size_t(r.clipIndex("walk"))];
+    check(walk.events[0].payload == Json({{"int", 1}, {"string", "left"}, {"audio", "sfx-step"}, {"volume", 0.5}, {"balance", -0.25}}), "defaults of the definition");
+    check(walk.events[1].payload == Json({{"float", 2.5}, {"string", "fist"}}), "key string added to a float definition");
+    check(walk.events[2].payload["int"] == 2 && walk.events[2].payload["string"] == "right" && walk.events[2].payload["audio"] == "sfx-step", "key overrides int/string, audio stays");
+    Instance inst(std::make_shared<const Rig>(r));
+    inst.play(0, "walk");
+    inst.takeNotifications();
+    inst.update(250);
+    std::vector<Json> events;
+    for (const auto& n : inst.takeNotifications()) if (n.kind == "event") events.push_back(n.toJson());
+    check(events.size() == 3, "0, 100 and 200 ms fire once each");
+    check(events.size() == 3 && events[0] == Json({{"kind", "event"}, {"track", 0}, {"clip", "walk"}, {"serial", 1}, {"name", "step"}, {"int", 1}, {"string", "left"},
+                                                   {"audio", "sfx-step"}, {"volume", 0.5}, {"balance", -0.25}}), "notification carries the payload");
+    check(events.size() == 3 && events[2]["int"] == 2 && events[2]["string"] == "right", "override reaches the notification");
+    // Without definitions/payloads the plugin 1.7 notification shape is unchanged.
+    Instance old(rig());
+    old.play(0, "idle");
+    old.takeNotifications();
+    old.update(1);
+    const auto n = old.takeNotifications();
+    check(n.size() == 1 && n[0].toJson() == Json({{"kind", "event"}, {"track", 0}, {"clip", "idle"}, {"serial", 1}, {"name", "breath"}}), "backward compatible JSON");
+    // Scrubbing (seek) never fires events.
+    Instance scrub(std::make_shared<const Rig>(r));
+    scrub.play(0, "walk");
+    scrub.takeNotifications();
+    scrub.seek(0, 350);
+    check(scrub.takeNotifications().empty(), "seek fires nothing");
+  });
+
+  test("event notifications are deterministic across frame pacing", [] {
+    auto run = [](const std::vector<double>& pattern) {
+      Instance inst(std::make_shared<const Rig>(parseRig("hero", eventRig())));
+      inst.play(0, "walk");
+      std::vector<std::string> log;
+      double t = 0; size_t i = 0;
+      while (t < 2000) {
+        const double step = pattern[i++ % pattern.size()];
+        inst.update(step); t += step;
+        for (const auto& n : inst.takeNotifications()) log.push_back(n.toJson().dump());
+      }
+      return log;
+    };
+    const auto a = run({31.25}), b = run({7.8125}), c = run({7.8125, 23.4375, 15.625, 15.625});
+    check(a == b && b == c, "same payload notifications at 32/128 fps and uneven frames");
+    size_t steps = 0;
+    for (const auto& line : a) steps += line.find("\"name\":\"step\"") != std::string::npos;
+    check(steps == 10, "2 steps per 400 ms loop over 2000 ms");
+  });
+
+  test("edit event definitions: add, set, rename (keys follow), delete", [&] {
+    // The first definition also defines the names keys already use: the rig stays valid.
+    auto a = applyEdit(rigData(), {{"op", "addEventDef"}, {"name", "step"}, {"int", 3}, {"audio", "sfx-step"}, {"volume", 0.8}});
+    check(a.extra["defined"] == Json::array({"breath", "peak", "done"}), "used names defined");
+    check(a.data["events"].size() == 4 && a.data["events"][3] == Json({{"name", "step"}, {"int", 3}, {"audio", "sfx-step"}, {"volume", 0.8}}), "definition stored");
+    check(!hasErrors(a.diagnostics), "valid after the first definition");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "step"}}), "duplicate refused");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "bad name"}}), "name format refused");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "x"}, {"int", 1.5}}), "int payload type refused");
+    check(refused(a.data, {{"op", "addEventDef"}, {"name", "x"}, {"volume", 2}}), "volume range refused");
+    auto s = applyEdit(a.data, {{"op", "setEventDef"}, {"event", "step"}, {"int", nullptr}, {"string", "L"}, {"volume", 1}, {"balance", 0.5}});
+    check(s.data["events"][3] == Json({{"name", "step"}, {"string", "L"}, {"audio", "sfx-step"}, {"balance", 0.5}}), "null removes, volume 1 is the default");
+    auto keyed = applyEdit(s.data, {{"op", "setEventKey"}, {"clip", "idle"}, {"timeMs", 500}, {"name", "step"}});
+    keyed = applyEdit(keyed.data, {{"op", "setEventKey"}, {"clip", "joy"}, {"timeMs", 100}, {"name", "step"}, {"int", 7}});
+    auto rn = applyEdit(keyed.data, {{"op", "renameEventDef"}, {"event", "step"}, {"name", "foot"}});
+    check(rn.extra["renamedKeys"] == 2 && rn.data["events"][3]["name"] == "foot", "renamed with its keys");
+    check(rn.data["clips"][0]["events"][1] == Json({{"timeMs", 500}, {"name", "foot"}}) && rn.data["clips"][2]["events"][0] == Json({{"timeMs", 100}, {"name", "foot"}, {"int", 7}}),
+          "keys in every clip follow, payload kept");
+    check(refused(rn.data, {{"op", "renameEventDef"}, {"event", "foot"}, {"name", "peak"}}), "rename onto another definition refused");
+    check(refused(rn.data, {{"op", "deleteEventDef"}, {"event", "foot"}}), "delete refused while keys use it");
+    auto del = applyEdit(rn.data, {{"op", "deleteEventDef"}, {"event", "foot"}, {"force", true}});
+    check(del.extra["removedKeys"] == 2 && del.data["clips"][0]["events"].size() == 1 && del.data["clips"][2]["events"].size() == 2, "force removes its keys");
+    auto empty = applyEdit(rigData(), {{"op", "addEventDef"}, {"name", "solo"}});
+    for (const char* n : {"breath", "peak", "done"}) empty = applyEdit(empty.data, {{"op", "deleteEventDef"}, {"event", n}, {"force", true}});
+    empty = applyEdit(empty.data, {{"op", "deleteEventDef"}, {"event", "solo"}});
+    check(!empty.data.contains("events") && !empty.data["clips"][0].contains("events"), "last definition removes the list (keys free again)");
+  });
+
+  test("edit event keys: set, override, rename, move, delete", [&] {
+    const Json d = eventRig();
+    auto add = applyEdit(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 300}, {"name", "hit"}, {"float", 4}});
+    const Json& ev = add.data["clips"][3]["events"];
+    check(ev.size() == 4 && ev[3] == Json({{"timeMs", 300}, {"name", "hit"}, {"float", 4}}), "new key sorted by time with its override");
+    check(add.extra["keys"] == Json::array({{{"target", "event"}, {"property", "hit"}, {"timeMs", 300}}}), "extra.keys ref");
+    check(refused(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 50}, {"name", "jump"}}), "undefined name refused");
+    check(refused(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 401}, {"name", "hit"}}), "time range refused");
+    auto edit = applyEdit(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 200}, {"name", "step"}, {"int", nullptr}, {"string", "R"}});
+    check(edit.data["clips"][3]["events"][2] == Json({{"timeMs", 200}, {"name", "step"}, {"string", "R"}}), "null drops the int override");
+    auto renamed = applyEdit(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 100}, {"name", "hit"}, {"newName", "step"}});
+    check(renamed.data["clips"][3]["events"][1]["name"] == "step" && renamed.data["clips"][3]["events"][1]["string"] == "fist", "one key renamed, payload kept");
+    check(refused(d, {{"op", "setEventKey"}, {"clip", "walk"}, {"timeMs", 100}, {"name", "hit"}, {"newName", "jump"}}), "rename to an undefined name refused");
+    auto mv = applyEdit(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "step"}, {"fromMs", 200}, {"toMs", 50}});
+    check(mv.data["clips"][3]["events"][1] == Json({{"timeMs", 50}, {"name", "step"}, {"int", 2}, {"string", "right"}}), "moved and re-sorted");
+    check(refused(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "step"}, {"fromMs", 200}, {"toMs", 0}}), "same-name collision refused");
+    auto shared = applyEdit(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "hit"}, {"fromMs", 100}, {"toMs", 200}});
+    check(shared.data["clips"][3]["events"].size() == 3, "different events may share a time");
+    check(refused(d, {{"op", "moveEventKey"}, {"clip", "walk"}, {"name", "hit"}, {"fromMs", 150}, {"toMs", 200}}), "missing key refused");
+    auto rm = applyEdit(d, {{"op", "deleteEventKey"}, {"clip", "walk"}, {"name", "hit"}, {"timeMs", 100}});
+    check(rm.data["clips"][3]["events"].size() == 2, "deleted");
+    auto last = applyEdit(rigData(), {{"op", "deleteEventKey"}, {"clip", "idle"}, {"name", "breath"}, {"timeMs", 0}});
+    check(!last.data["clips"][0].contains("events"), "empty events list removed");
+    check(applyEdit(rigData(), {{"op", "setEventKey"}, {"clip", "idle"}, {"timeMs", 300}, {"name", "anything"}}).data["clips"][0]["events"].size() == 2, "no definitions: any valid name");
+  });
+
+  test("multi-key ops take event refs with track keys", [&] {
+    Json d = eventRig();
+    d["clips"][3]["tracks"] = Json::parse(R"([{"target": "bone:body", "property": "x", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 200, "value": 5}]}])");
+    const Json mixed = Json::array({{{"target", "bone:body"}, {"property", "x"}, {"timeMs", 0}}, {{"target", "event"}, {"property", "step"}, {"timeMs", 0}},
+                                    {{"target", "event"}, {"property", "hit"}, {"timeMs", 100}}});
+    auto mv = applyEdit(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", mixed}, {"deltaMs", 50}});
+    const Json& ev = mv.data["clips"][3]["events"];
+    check(ev[0] == Json({{"timeMs", 50}, {"name", "step"}}) && ev[1]["timeMs"] == 150 && ev[2]["timeMs"] == 200, "events moved with the bone key, sorted");
+    check(mv.data["clips"][3]["tracks"][0]["keys"][0]["timeMs"] == 50 && mv.extra["keys"].size() == 3, "bone key moved too, refs reported");
+    check(refused(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", mixed}, {"deltaMs", 200}}), "step 0 -> 200 hits the other step key");
+    check(refused(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", mixed}, {"deltaMs", -1}}), "range refused");
+    auto clamp = applyEdit(d, {{"op", "moveKeys"}, {"clip", "walk"}, {"keys", Json::array({mixed[2]})}, {"deltaMs", 900}, {"clamp", true}});
+    check(clamp.extra["deltaMs"] == 300 && clamp.data["clips"][3]["events"][2]["timeMs"] == 400, "clamp stops at the clip end");
+    const Json steps = Json::array({{{"target", "event"}, {"property", "step"}, {"timeMs", 0}}, {{"target", "event"}, {"property", "step"}, {"timeMs", 200}}});
+    auto sc = applyEdit(d, {{"op", "scaleKeys"}, {"clip", "walk"}, {"keys", steps}, {"factor", 1.5}});
+    check(sc.data["clips"][3]["events"][2] == Json({{"timeMs", 300}, {"name", "step"}, {"int", 2}, {"string", "right"}}), "scaled about the first key");
+    auto del = applyEdit(d, {{"op", "deleteKeys"}, {"clip", "walk"}, {"keys", mixed}});
+    check(del.data["clips"][3]["events"].size() == 1 && del.data["clips"][3]["tracks"][0]["keys"].size() == 1, "mixed delete");
+    auto board = applyEdit(d, {{"op", "copyKeys"}, {"clip", "walk"}, {"keys", Json::array({mixed[2], steps[1]})}}).extra["clipboard"];
+    check(board["fromMs"] == 100 && board["keys"].size() == 2 && board["keys"][1] == Json({{"target", "event"}, {"property", "step"}, {"offsetMs", 100}, {"int", 2}, {"string", "right"}}),
+          "clipboard carries event payload overrides");
+    auto pasted = applyEdit(d, {{"op", "pasteKeys"}, {"clip", "idle"}, {"timeMs", 600}, {"keys", board["keys"]}});
+    check(pasted.data["clips"][0]["events"].size() == 3 && pasted.data["clips"][0]["events"][2] == Json({{"timeMs", 700}, {"name", "step"}, {"int", 2}, {"string", "right"}}), "pasted into another clip");
+    // Pasting over the same key replaces its payload.
+    auto over = applyEdit(d, {{"op", "pasteKeys"}, {"clip", "walk"}, {"timeMs", 0}, {"keys", Json::array({{{"target", "event"}, {"property", "step"}, {"offsetMs", 0}, {"float", 1}}})}});
+    check(over.data["clips"][3]["events"].size() == 3 && over.data["clips"][3]["events"][0] == Json({{"timeMs", 0}, {"name", "step"}, {"float", 1}}), "same key overwritten");
+    check(refused(d, {{"op", "setInterp"}, {"clip", "walk"}, {"target", "event"}, {"property", "step"}, {"timeMs", 0}, {"interp", "step"}}), "event keys have no interpolation");
+    // Batch of event ops = one edit (LLM/MCP path), undo is the host's.
+    auto b = applyEdit(rigData(), {{"op", "batch"}, {"operations", {{{"op", "addEventDef"}, {"name", "cue"}, {"string", "x"}},
+                                                                     {{"op", "setEventKey"}, {"clip", "joy"}, {"timeMs", 300}, {"name", "cue"}}}}});
+    check(b.data["clips"][2]["events"].size() == 3 && !hasErrors(b.diagnostics), "batchable");
+    check(applyEdit(rigData(), {{"op", "setClip"}, {"clip", "joy"}, {"durationMs", 300}, {"trim", true}}).data["clips"][2]["events"].size() == 1, "clip trim drops later events");
+  });
+
+  test("host op: update notifications carry the event payload", [] {
+    Host host;
+    Json replies = Json::array();
+    for (const auto& op : eventScript()) replies.push_back(host.handle(op));
+    size_t events = 0, audio = 0;
+    for (const auto& r : replies)
+      if (r.contains("notifications") && r["notifications"].contains("a"))
+        for (const auto& n : r["notifications"]["a"]) if (n["kind"] == "event") { events++; audio += n.contains("audio"); }
+    check(events == 14 && audio == 8, "walk loops + joy events through the generic update op");
   });
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";

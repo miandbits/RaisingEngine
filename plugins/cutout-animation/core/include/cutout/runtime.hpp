@@ -39,6 +39,9 @@ struct Notification {
   std::string clip, name;
   uint64_t serial = 0;  // unique per started entry within an instance
   int64_t loop = 0;     // completed loop index for `complete`
+  /** `event` only (plugin 1.8.0): the key's resolved payload (int, float, string, audio, volume,
+   *  balance; only fields that are set), merged into toJson() next to `name`. */
+  Json payload = Json::object();
   Json toJson() const;
 };
 

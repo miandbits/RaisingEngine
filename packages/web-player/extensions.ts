@@ -9,6 +9,8 @@ export interface ExtensionsBundle { version: 1; plugins: ExtensionPluginBundle[]
 export interface ExtensionMesh { positions: number[]; uvs: number[]; indices: number[] }
 export interface ExtensionItem { imageAssetId: string; matrix: [number, number, number, number, number, number]; width: number; height: number; alpha: number; mesh?: ExtensionMesh }
 export interface ExtensionElement { plugin: string; type: string; ref: string; props?: Record<string, unknown> }
+/** Sound named by an `event` notification (CONTRACT.md §7 event payloads): volume 0..1, balance -1..1. */
+export interface ExtensionSound { asset: string; volume: number; balance: number }
 export interface ExtensionMountSpec { type: string; ref: string; width: number; height: number; props: Record<string, unknown> }
 interface WasmExtensionModule { cwrap(name: string, returns: string | null, args: string[]): (...args: unknown[]) => unknown }
 type Request = (json: string) => string;
@@ -19,6 +21,7 @@ export type ModuleImporter = (url: string) => Promise<{ default?: unknown }>;
 // Emscripten cwrap copies string arguments onto the module stack (64 KiB by default).
 const NO_ITEMS: readonly ExtensionItem[] = Object.freeze([]);
 const MAX_REQUEST_BYTES = 48 * 1024;
+const MAX_RECENT_EVENTS = 32;
 const ENTRY = /^plugins\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[A-Za-z0-9._-]+\.mjs$/;
 
 export class ExtensionHost {
@@ -28,6 +31,9 @@ export class ExtensionHost {
   preserved: Record<string, unknown> = {};
   pendingRestore: Record<string, unknown> | null = null;
   observations = 0; clockMs = 0; lastObserve: unknown = null;
+  /** `event` notifications of update replies (newest last) and the sounds they named: presentation only. */
+  recentEvents: Record<string, unknown>[] = []; eventCount = 0; soundCount = 0; soundsDelivered = 0;
+  private soundListener: ((sound: ExtensionSound) => void) | null = null;
   private readonly listeners = new Set<() => void>();
 
   /** Loads every declared plugin; any failure degrades that plugin to placeholder mode. */
@@ -58,6 +64,8 @@ export class ExtensionHost {
   available(id: string): boolean { return this.plugins.get(id)?.available === true; }
   pluginError(id: string): string { return this.plugins.get(id)?.error ?? '플러그인이 없습니다.'; }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  /** The player's audio output for event sounds; null (muted) drops them. */
+  setSoundListener(listener: ((sound: ExtensionSound) => void) | null): void { this.soundListener = listener; }
 
   /** Mounts or keeps an instance; re-mounting the same element keeps its playback state. */
   acquire(instance: string, element: ExtensionElement, width: number, height: number): boolean {
@@ -91,7 +99,7 @@ export class ExtensionHost {
     for (const mount of [...this.mounts.values()]) if (mount.released) { this.unmount(mount); this.mounts.delete(mount.instance); }
     if (this.pendingRestore) { const saved = this.pendingRestore; this.pendingRestore = null; this.restore(saved); }
     const dt = Math.min(10000, Math.max(0, dtMs)); this.clockMs += dt;
-    for (const plugin of this.plugins.values()) if (plugin.available) this.call(plugin, { op: 'update', dtMs: dt });
+    for (const plugin of this.plugins.values()) if (plugin.available) this.collectEvents(plugin.id, this.call(plugin, { op: 'update', dtMs: dt }));
     for (const mount of this.mounts.values()) {
       const plugin = this.plugins.get(mount.plugin);
       if (!mount.mounted || !plugin?.available) { mount.items = NO_ITEMS; continue; }
@@ -128,9 +136,30 @@ export class ExtensionHost {
     const described: Record<string, Record<string, unknown>> = {};
     for (const plugin of this.plugins.values()) if (plugin.available) described[plugin.id] = (this.call(plugin, { op: 'describeAll' }).instances ?? {}) as Record<string, unknown>;
     return { active: this.active, observations: this.observations, clockMs: this.clockMs, lastObserve: this.lastObserve,
+      events: this.recentEvents, eventCount: this.eventCount, soundCount: this.soundCount, soundsDelivered: this.soundsDelivered,
       plugins: [...this.plugins.values()].map(p => ({ id: p.id, version: p.version, available: p.available, error: p.error, diagnostics: p.diagnostics })),
       instances: [...this.mounts.values()].map(m => ({ instance: m.instance, plugin: m.plugin, available: m.mounted && this.available(m.plugin), error: m.error, element: m.spec,
         items: m.items.map(i => ({ imageAssetId: i.imageAssetId, matrix: i.matrix, width: i.width, height: i.height, alpha: i.alpha, ...(i.mesh ? { mesh: i.mesh } : {}) })), state: described[m.plugin]?.[m.instance] ?? null })) };
+  }
+  /** update reply {notifications: {instance: [..]}}: keeps `event` entries with their payload. */
+  private collectEvents(pluginId: string, reply: Reply): void {
+    const notes = reply.notifications;
+    if (!notes || typeof notes !== 'object') return;
+    for (const [instance, list] of Object.entries(notes as Record<string, unknown>)) {
+      if (!Array.isArray(list)) continue;
+      for (const n of list as Record<string, unknown>[]) {
+        if (!n || typeof n !== 'object' || n.kind !== 'event') continue;
+        this.recentEvents.push({ ...n, instance, plugin: pluginId, clockMs: this.clockMs });
+        if (this.recentEvents.length > MAX_RECENT_EVENTS) this.recentEvents.shift();
+        this.eventCount++;
+        if (typeof n.audio !== 'string' || !n.audio) continue;
+        const number = (v: unknown, fallback: number, lo: number, hi: number) => typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+        this.soundCount++;
+        if (!this.soundListener) continue;
+        this.soundsDelivered++;
+        try { this.soundListener({ asset: n.audio, volume: number(n.volume, 1, 0, 1), balance: number(n.balance, 0, -1, 1) }); } catch { /* audio never stops presentation */ }
+      }
+    }
   }
   private init(plugin: Plugin): boolean {
     const reply = this.call(plugin, { op: 'init', documents: plugin.documents });

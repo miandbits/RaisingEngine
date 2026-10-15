@@ -86,6 +86,13 @@ test('cutout service diagnostics surface with plugin file and /data pointers', a
   assert.ok(codes(editor).includes(`warning:ANIM_IMAGE_SIZE_MISMATCH:${RIG}/data/attachments/0/width`));
   assert.equal(codes(editor).some(c => c.startsWith(`error:ANIM_IMAGE_MISSING:${RIG}`)), false);
 
+  // Event sounds (plugin 1.8.0): a definition's audio must be an audio asset (here an image).
+  const sound = structuredClone(fixed); sound.data.events = [{ name: 'step', audio: 'hero-torso', volume: 0.5 }];
+  sound.data.clips[0].events = [{ timeMs: 0, name: 'step', int: 2 }];
+  editor.edit({ type: 'replace', file: RIG, data: sound }, editor.revision); await editor.validate(editor.revision);
+  assert.ok(codes(editor).includes(`error:ANIM_EVENT_AUDIO:${RIG}/data/events/0/audio`), codes(editor).join(' | '));
+  assert.equal(codes(editor).some(c => c.includes('SCHEMA_INVALID')), false, 'events and key payloads are schema-valid');
+
   // Plugin JSON schema failures are structural: reported under /data and they block save.
   const invalid = structuredClone(fixed); invalid.data.unexpected = true;
   editor.edit({ type: 'replace', file: RIG, data: invalid }, editor.revision); await editor.validate(editor.revision);

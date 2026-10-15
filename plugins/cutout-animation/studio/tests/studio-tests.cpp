@@ -2843,6 +2843,256 @@ class StudioTests : public QObject {
     QVERIFY(rig() == start);
   }
 
+  // Clip events (plugin 1.8.0): the dopesheet 이벤트 row, the 이벤트 page (definitions with payload
+  // and sound), key editing (add / popover / drag / Delete) and the preview log.
+  void clipEvents() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectItem("");
+    pump();
+    answers = {"cue"};
+    QVERIFY(gesture("new clip for events", 1, [&] { click("cutoutNewClip"); }));
+    QCOMPARE(panel->clipId(), QString("cue"));
+    QVERIFY(gesture("clip duration 800", 1, [&] { auto* s = find<QSpinBox>("cutoutClipDuration"); s->setValue(800); Q_EMIT s->editingFinished(); }));
+    auto events = [&]() { const Json r = rig(); for (const auto& c : r["clips"]) if (c["id"] == "cue") return c.value("events", Json::array()); return Json::array(); };
+    Dopesheet* sheet = panel->dopesheet();
+    const int er = sheet->eventRow();
+    QVERIFY(er >= 0 && sheet->rows()[er].label == "이벤트" && sheet->rows()[er].times.isEmpty());  // the row is there before any key
+    auto* tabs = find<QTabWidget>("cutoutLookTabs");
+    QWidget* page = find<QWidget>("cutoutEventPage");
+    QVERIFY(page && tabs->indexOf(page) >= 0);
+    // No definitions yet: 이벤트 키 asks a name, any valid name works.
+    panel->setPlayhead(100);
+    answers = {"footstep"};
+    QVERIFY(gesture("event key without definitions", 1, [&] { click("cutoutAddEventKey"); }));
+    QVERIFY(events() == Json::array({{{"timeMs", 100}, {"name", "footstep"}}}));
+    QCOMPARE(panel->timeView()->selection(), (QVector<KeyRef>{{"event", "footstep", 100}}));
+    QCOMPARE(sheet->rows()[sheet->eventRow()].names, QStringList({"footstep"}));
+    // The first definition also defines the name keys already use.
+    answers = {"hit"};
+    QVERIFY(gesture("new event definition", 1, [&] { click("cutoutNewEvent"); }));
+    QVERIFY(rig()["events"] == Json::array({{{"name", "footstep"}}, {{"name", "hit"}}}));
+    QCOMPARE(panel->eventId(), QString("hit"));
+    QCOMPARE(find<QListWidget>("cutoutEventList")->count(), 2);
+    // Payload defaults and the sound: one edit per field.
+    QVERIFY(gesture("event int", 1, [&] { auto* s = find<QSpinBox>("cutoutEventInt"); s->setValue(5); Q_EMIT s->editingFinished(); }));
+    QVERIFY(gesture("event string", 1, [&] { auto* e = find<QLineEdit>("cutoutEventString"); e->setText("punch"); Q_EMIT e->editingFinished(); }));
+    host.assetList.append(QJsonObject{{"id", "sfx-hit"}, {"kind", "audio"}, {"path", "assets/hit.wav"}});
+    panel->refreshFromView();
+    pump();
+    auto* audio = find<QComboBox>("cutoutEventAudio");
+    QVERIFY(!find<QDoubleSpinBox>("cutoutEventVolume")->isEnabled());  // no sound yet
+    QVERIFY(gesture("event sound", 1, [&] { const int i = audio->findData("sfx-hit"); QVERIFY(i > 0); audio->setCurrentIndex(i); Q_EMIT audio->activated(i); }));
+    QVERIFY(find<QDoubleSpinBox>("cutoutEventVolume")->isEnabled());
+    QVERIFY(gesture("event volume", 1, [&] { setSpin("cutoutEventVolume", 0.5); }));
+    QVERIFY(gesture("event int back to 0 removes it", 1, [&] { auto* s = find<QSpinBox>("cutoutEventInt"); s->setValue(0); Q_EMIT s->editingFinished(); }));
+    QVERIFY(rig()["events"][1] == Json({{"name", "hit"}, {"string", "punch"}, {"audio", "sfx-hit"}, {"volume", 0.5}}));
+    QVERIFY(gesture("same value: no edit", 0, [&] { auto* e = find<QLineEdit>("cutoutEventString"); Q_EMIT e->editingFinished(); }));
+    // Context menu on the event row adds the shown definition at the clicked time.
+    QVERIFY(gesture("context menu: add event here", 1, [&] { contextPick(sheet, QPoint(sheet->timeToX(200), sheet->rowCenterY(er)), "cutoutEventAddHere"); }));
+    QVERIFY(events()[1] == Json({{"timeMs", 200}, {"name", "hit"}}));
+    QVERIFY(gesture("double-click on empty event row adds", 1, [&] {
+      const QPointF at(sheet->timeToX(500), sheet->rowCenterY(er));
+      mouse(sheet, QEvent::MouseButtonDblClick, at, Qt::LeftButton, Qt::LeftButton);
+      mouse(sheet, QEvent::MouseButtonRelease, at, Qt::LeftButton, Qt::NoButton);
+    }));
+    QVERIFY(events().size() == 3 && events()[2] == Json({{"timeMs", 500}, {"name", "hit"}}));
+    QVERIFY(gesture("undefined name refused", 0, [&] { QVERIFY(!panel->addEventKey(300, "jump")); }));
+    QVERIFY(panel->status().contains("정의되지 않은"));
+    QVERIFY(gesture("same key twice refused", 0, [&] { QVERIFY(!panel->addEventKey(200, "hit")); }));
+    // Payload override and rename of one key through the popover (askEventKey = the real dialog).
+    std::optional<CutoutPanel::EventKeyChoice> scripted;
+    QString offered;
+    panel->askEventKey = [&](CutoutPanel::EventKeyChoice& c) {
+      if (!scripted) return panel->runEventKeyDialog(c);
+      offered = c.name;
+      c = *scripted;
+      return true;
+    };
+    scripted = CutoutPanel::EventKeyChoice{"hit", 9, std::nullopt, std::nullopt};
+    QVERIFY(gesture("key int override", 1, [&] { QVERIFY(panel->editEventKeyInteractive({"event", "hit", 200})); }));
+    QVERIFY(offered == "hit" && events()[1] == Json({{"timeMs", 200}, {"name", "hit"}, {"int", 9}}));
+    scripted.reset();
+    QString defaultsShown;
+    bool prefilled = false;
+    onDialog("cutoutEventKeyDialog", [&](QDialog* d) {
+      defaultsShown = d->findChild<QLabel*>("cutoutEventKeyDefaults")->text();
+      prefilled = d->findChild<QCheckBox*>("cutoutEventKeyIntOn")->isChecked() && d->findChild<QSpinBox*>("cutoutEventKeyInt")->value() == 9;
+      d->findChild<QCheckBox*>("cutoutEventKeyIntOn")->setChecked(false);  // back to the definition's value
+      d->findChild<QCheckBox*>("cutoutEventKeyStringOn")->setChecked(true);
+      d->findChild<QLineEdit*>("cutoutEventKeyString")->setText("kick");
+      d->findChild<QComboBox*>("cutoutEventKeyName")->setCurrentText("footstep");
+      return true;
+    });
+    QVERIFY(gesture("double-click pin: popover rename + string override", 1, [&] {
+      const QPointF at(sheet->timeToX(200), sheet->rowCenterY(er));
+      mouse(sheet, QEvent::MouseButtonPress, at, Qt::LeftButton, Qt::LeftButton);
+      mouse(sheet, QEvent::MouseButtonRelease, at, Qt::LeftButton, Qt::NoButton);
+      mouse(sheet, QEvent::MouseButtonDblClick, at, Qt::LeftButton, Qt::LeftButton);
+      mouse(sheet, QEvent::MouseButtonRelease, at, Qt::LeftButton, Qt::NoButton);
+    }));
+    QVERIFY2(prefilled && defaultsShown.contains("punch") && defaultsShown.contains("sfx-hit"), qPrintable(defaultsShown));
+    QVERIFY2(events()[1] == Json({{"timeMs", 200}, {"name", "footstep"}, {"string", "kick"}}), events().dump().c_str());
+    QCOMPARE(panel->timeView()->selection(), (QVector<KeyRef>{{"event", "footstep", 200}}));
+    // Two names share one row; a drag moves the pin (one moveKeys edit), Delete removes it.
+    QCOMPARE(sheet->rows()[sheet->eventRow()].names, QStringList({"footstep", "footstep", "hit"}));
+    QVERIFY(gesture("drag event key", 1, [&] { drag(sheet, QPointF(sheet->timeToX(500), sheet->rowCenterY(er)), QPointF(sheet->timeToX(560), sheet->rowCenterY(er))); }));
+    QVERIFY(events()[2] == Json({{"timeMs", 560}, {"name", "hit"}}));
+    QCOMPARE(panel->timeView()->selection(), (QVector<KeyRef>{{"event", "hit", 560}}));
+    QVERIFY(gesture("drag onto a same-name key refused", 0, [&] {
+      drag(sheet, QPointF(sheet->timeToX(200), sheet->rowCenterY(er)), QPointF(sheet->timeToX(100), sheet->rowCenterY(er)));
+    }));
+    QCOMPARE(events()[1]["timeMs"].get<int>(), 200);
+    // Mixed selection: a bone key and an event key move together in one edit.
+    panel->setPlayhead(300);
+    panel->selectItem("bone:head");
+    QVERIFY(gesture("bone key in cue", 1, [&] { setSpin("cutoutPropRotation", 12); if (!panel->hasPending()) return; click("cutoutKeyButton"); }));
+    panel->timeView()->setSelection({{"bone:head", "rotation", 300}, {"event", "hit", 560}});
+    QVERIFY(gesture("move mixed keys", 1, [&] { QVERIFY(panel->moveKeys(panel->timeView()->selection(), 40)); }));
+    QVERIFY(events()[2]["timeMs"] == 600 && keyOf("cue", "bone:head", "rotation", 340).is_object());
+    panel->timeView()->setSelection({{"event", "hit", 600}});
+    sheet->setFocus();
+    QVERIFY(gesture("Delete event key", 1, [&] { QTest::keyClick(sheet, Qt::Key_Delete); }));
+    QCOMPARE(events().size(), size_t(2));
+    // Rename the definition: keys of every clip follow; undo / redo restore exactly.
+    panel->selectEvent("footstep");
+    answers = {"step"};
+    const Json beforeRename = rig();
+    QVERIFY(gesture("rename event definition", 1, [&] { click("cutoutRenameEvent"); }));
+    QVERIFY(rig()["events"][0]["name"] == "step" && events()[0]["name"] == "step" && events()[1]["name"] == "step");
+    undo();
+    QVERIFY(rig() == beforeRename);
+    redo();
+    QVERIFY(events()[1] == Json({{"timeMs", 200}, {"name", "step"}, {"string", "kick"}}));
+    QCOMPARE(panel->eventId(), QString("step"));
+
+    // Preview log: playback fires each event once per pass, scrubbing never does.
+    QVERIFY(gesture("event at the clip end", 1, [&] { QVERIFY(panel->addEventKey(800, "hit")); }));
+    panel->setManualClock(true);
+    panel->clearEventLog();
+    find<QCheckBox>("cutoutLoopPreview")->setChecked(true);
+    panel->setPlayhead(0);
+    QVERIFY(gesture("loop playback, two passes", 0, [&] {
+      click("cutoutPlay");
+      for (int i = 0; i < 16; i++) panel->advancePlayback(100);  // 1600 ms = exactly two passes
+    }));
+    const QStringList twice = panel->eventLog();
+    QCOMPARE(twice.size(), 4);  // 100, 200 per pass; the 800 ms end event never fires while looping
+    QVERIFY2(twice[0].contains("cue 100ms · step") && twice[1].contains("cue 200ms · step (\"kick\")") && twice[2].contains("100ms") && twice[3].contains("200ms"), qPrintable(twice.join(" | ")));
+    QVERIFY(find<QListWidget>("cutoutEventLog")->count() == 4 && find<QLabel>("cutoutEventFlash")->text().contains("step"));
+    click("cutoutPlay");  // stop
+    QVERIFY(gesture("scrubbing fires nothing", 0, [&] {
+      for (int t : {100, 200, 150, 800, 0}) panel->setPlayhead(t);
+      drag(sheet, QPointF(sheet->timeToX(50), 8), QPointF(sheet->timeToX(250), 8));  // ruler scrub
+      panel->advancePlayback(500);                                                        // stopped: no time passes
+    }));
+    QCOMPARE(panel->eventLog().size(), 4);
+    find<QCheckBox>("cutoutLoopPreview")->setChecked(false);
+    panel->setPlayhead(700);
+    click("cutoutPlay");
+    for (int i = 0; i < 4; i++) panel->advancePlayback(50);
+    QVERIFY(!find<QPushButton>("cutoutPlay")->isChecked());  // stopped at the end
+    QVERIFY2(panel->eventLog().size() == 5 && panel->eventLog().last().contains("800ms · hit (\"punch\" · 🔊 sfx-hit)"), qPrintable(panel->eventLog().join(" | ")));
+    find<QCheckBox>("cutoutLoopPreview")->setChecked(true);
+    panel->setManualClock(false);
+    // Delete the definition: asked first because keys use it, then they go too.
+    panel->selectEvent("hit");
+    QVERIFY(gesture("delete event definition with keys", 1, [&] { click("cutoutDeleteEvent"); }));
+    QVERIFY(rig()["events"] == Json::array({{{"name", "step"}}}) && events().size() == 2);
+    panel->askEventKey = [this](CutoutPanel::EventKeyChoice& c) { return panel->runEventKeyDialog(c); };
+    if (const QString evidence = qEnvironmentVariable("CUTOUT_STUDIO_EVIDENCE"); !evidence.isEmpty()) {
+      tabs->setCurrentWidget(page);
+      pump();
+      QVERIFY(panel->window()->grab().save(evidence + "/studio-events.png"));
+    }
+    panel->selectClip("joy");
+    panel->setMode(CutoutPanel::Mode::Setup);
+  }
+
+  // Graph value axis (plugin 1.8.0): Ctrl+Shift+wheel / Alt+wheel zoom at the cursor, middle-drag
+  // vertical pan, 값 맞춤; the time zoom is untouched and keys stay draggable at any zoom.
+  void graphValueZoom() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("joy");
+    panel->selectItem("bone:head");
+    click("cutoutViewBoth");
+    pump();
+    GraphEditor* graph = panel->graph();
+    const int rot = graph->channelIndex("bone:head", "rotation");
+    QVERIFY(rot >= 0 && graph->channels()[rot].keys.size() >= 2);
+    click("cutoutGraphFitValues");
+    QVERIFY(!graph->valuesZoomed());
+    const double pxPerMs = panel->timeView()->pxPerMs(), scroll = panel->timeView()->scrollMs();
+    const QPointF key = graph->keyPoint(rot, 1);
+    const auto [lo0, hi0] = graph->valueRange(rot);
+    const double under = graph->yToValue(rot, key.y());
+    auto near = [](double a, double b) { return std::fabs(a - b) <= 1e-9 * std::max(1.0, std::fabs(b)); };
+    QVERIFY(gesture("Ctrl+Shift+wheel value zoom", 0, [&] { wheel(graph, QPointF(key.x() + 30, key.y()), 1, Qt::ControlModifier | Qt::ShiftModifier); }));
+    auto [lo1, hi1] = graph->valueRange(rot);
+    QVERIFY2(near(hi1 - lo1, (hi0 - lo0) / 1.25) && near(graph->yToValue(rot, key.y()), under), qPrintable(QString("%1..%2 -> %3..%4").arg(lo0).arg(hi0).arg(lo1).arg(hi1)));
+    QVERIFY(graph->valuesZoomed());
+    QVERIFY(gesture("Alt+wheel value zoom (horizontal delta)", 0, [&] {
+      QWheelEvent e(QPointF(key.x() + 30, key.y()), graph->mapToGlobal(QPointF(key.x() + 30, key.y())), QPoint(), QPoint(120, 0), Qt::NoButton, Qt::AltModifier, Qt::NoScrollPhase, false);
+      QCoreApplication::sendEvent(graph, &e);
+    }));
+    auto [lo2, hi2] = graph->valueRange(rot);
+    QVERIFY(near(hi2 - lo2, (hi0 - lo0) / 1.5625) && near(graph->yToValue(rot, key.y()), under));
+    QVERIFY(gesture("Alt+wheel out", 0, [&] { wheel(graph, QPointF(key.x() + 30, key.y()), -1, Qt::AltModifier); }));
+    auto [lo3, hi3] = graph->valueRange(rot);
+    QVERIFY(near(hi3 - lo3, hi1 - lo1) && near(graph->yToValue(rot, key.y()), under));
+    QCOMPARE(panel->timeView()->pxPerMs(), pxPerMs);  // the shared time axis never moved
+    // Middle-drag 30 px down: the value under the cursor follows it.
+    const double y0 = graph->height() / 2.0, v0 = graph->yToValue(rot, y0);
+    QVERIFY(gesture("middle-drag vertical pan", 0, [&] {
+      const QPointF from(key.x() + 40, y0);
+      mouse(graph, QEvent::MouseButtonPress, from, Qt::MiddleButton, Qt::MiddleButton);
+      mouse(graph, QEvent::MouseMove, from + QPointF(0, 30), Qt::NoButton, Qt::MiddleButton);
+      mouse(graph, QEvent::MouseButtonRelease, from + QPointF(0, 30), Qt::MiddleButton, Qt::NoButton);
+    }));
+    QVERIFY(near(graph->yToValue(rot, y0 + 30), v0));
+    auto [lo4, hi4] = graph->valueRange(rot);
+    QVERIFY(near(hi4 - lo4, hi3 - lo3) && near(panel->timeView()->scrollMs(), scroll));
+    // A key drag at this zoom: the value is read with the zoomed mapping; the zoom survives the commit.
+    const int ms = graph->channels()[rot].keys[1].timeMs;
+    const QPointF at = graph->keyPoint(rot, 1);
+    graph->setSelectedKeys({});
+    const double expected = std::round(graph->yToValue(rot, at.y() - 20) * 1e4) / 1e4;
+    QVERIFY(gesture("key drag at value zoom", 1, [&] { drag(graph, at, at + QPointF(0, -20)); }));
+    QVERIFY2(std::fabs(keyOf("joy", "bone:head", "rotation", ms)["value"].get<double>() - expected) < 1e-9, keyOf("joy", "bone:head", "rotation", ms).dump().c_str());
+    QVERIFY(graph->valuesZoomed() && graph->valueRange(rot) == std::make_pair(lo4, hi4));
+    QVERIFY(std::fabs(graph->keyPoint(rot, 1).y() - (at.y() - 20)) < 0.5);  // the key stays under the cursor
+    // A handle drag at this zoom commits exactly the curve the zoomed mapping predicts.
+    graph->setSelectedKeys({{"bone:head", "rotation", ms}});
+    pump();
+    if (const auto handle = graph->handlePoint(rot, 1, GraphEditor::Side::Out)) {
+      const QPointF drop = *handle + QPointF(10, 6);
+      const cutout::Curve curve = graph->curveForHandle(rot, 1, GraphEditor::Side::Out, drop);
+      QVERIFY(gesture("handle drag at value zoom", 1, [&] { drag(graph, *handle, drop); }));
+      const Json k = keyOf("joy", "bone:head", "rotation", ms);
+      for (size_t i = 0; i < 4; i++) QVERIFY2(std::fabs(k["curve"][i].get<double>() - curve[i]) < 1e-9, k.dump().c_str());
+      undo();
+    }
+    undo();
+    QVERIFY(graph->valuesZoomed());  // undo rebuilt the same channels: the view stays
+    redo();
+    undo();
+    // Normalized channels zoom together: each keeps its own value under the cursor.
+    find<QCheckBox>("cutoutGraphNormalize")->setChecked(true);
+    QVERIFY(!graph->valuesZoomed());
+    QVector<double> before;
+    for (int c = 0; c < int(graph->channels().size()); c++) before << graph->yToValue(c, key.y());
+    wheel(graph, QPointF(key.x(), key.y()), 2, Qt::ControlModifier | Qt::ShiftModifier);
+    for (int c = 0; c < int(graph->channels().size()); c++) QVERIFY(near(graph->yToValue(c, key.y()), before[c]));
+    find<QCheckBox>("cutoutGraphNormalize")->setChecked(false);
+    wheel(graph, QPointF(key.x(), key.y()), 3, Qt::AltModifier);
+    QVERIFY(gesture("값 맞춤", 0, [&] { click("cutoutGraphFitValues"); }));
+    QVERIFY(!graph->valuesZoomed() && graph->valueRange(rot) == std::make_pair(lo0, hi0));
+    panel->setMode(CutoutPanel::Mode::Setup);
+  }
+
   // Mesh repaint budget (plugin 1.6.0): a 2048-triangle mesh (32x32 grid over a 512x512 image)
   // drawn offscreen at 1.6x, undeformed (one textured fill) and deformed (per-triangle textured
   // brushes, no clip paths). The rigid fill must also look like the plain region it replaces.

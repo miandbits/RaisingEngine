@@ -62,6 +62,13 @@ test('native player draws extension items, binds committed actions to clips and 
   for(const [a,b] of peak.items.map((item,i)=>[item.matrix,(r.instance('joy').items[i]).matrix]))assert.notDeepEqual(a,b,'joy pose differs from rest pose');
   near(peak.items[1].matrix,(await reference([100,100,100,100,100,300],5)).find(i=>i.imageAssetId==='anim-face').matrix,'joy parity');
   assert.equal(track(r.instance('back-to-idle'),0).clip,'idle','one-shot returns to the controller default clip');
+  // Clip event (plugin 1.8.0): reported with its payload; its sound goes to the player's audio once.
+  const fired=r.ui('back-to-idle').extensions;
+  assert.equal(r.ui('joy-300').extensions.eventCount,0,'the 300 ms event fires on the following advance (half-open interval)');
+  assert.deepEqual(fired.events.map(e=>[e.instance,e.plugin,e.clip,e.name,e.int,e.string,e.audio,e.volume,e.balance]),[[INSTANCE,'cutout-animation','joy','cheer',7,'peak','anim-cheer',0.5,0.25]]);
+  assert.deepEqual([fired.eventCount,fired.soundCount],[1,1]);
+  const sound=r.ui('back-to-idle').audio;
+  assert.deepEqual([sound.extensionSounds+sound.extensionSoundErrors,sound.extensionSoundMissing],[1,0],JSON.stringify(sound));
   // Save carries opaque plugin state; load restores the one-shot at its saved time.
   const saved=JSON.parse(await readFile(r.save,'utf8'));
   const state=saved.playerPresentation.extensions['cutout-animation'];

@@ -348,6 +348,7 @@ CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(p
   };
   askPart = [this](PartChoice& choice) { return runPartDialog(choice); };
   askSkinImage = [this](SkinImageChoice& choice) { return runSkinImageDialog(choice); };
+  askEventKey = [this](EventKeyChoice& choice) { return runEventKeyDialog(choice); };
   timer_ = new QTimer(this);
   timer_->setInterval(16);
   connect(timer_, &QTimer::timeout, this, [this] { tick(); });
@@ -757,7 +758,8 @@ QWidget* CutoutPanel::buildLooks() {
   // IK and meshes share the section as more pages: one more section would not fit the 1280x720 minimum.
   lookTabs_->addTab(buildIk(), "IK");
   lookTabs_->addTab(buildMesh(), "메시");
-  return section("스킨 · 표정 · IK · 메시", "cutoutSectionLooks", lookTabs_);
+  lookTabs_->addTab(buildEvents(), "이벤트");
+  return section("스킨 · 표정 · IK · 메시 · 이벤트", "cutoutSectionLooks", lookTabs_);
 }
 QWidget* CutoutPanel::lookPage(const char* name) {
   auto* page = new QWidget;
@@ -948,6 +950,122 @@ QWidget* CutoutPanel::buildMesh() {
   meshTools_ = {revert, meshVerticesButton_, meshWeightsButton_, meshBones_, autoButton, unbind, brushBone_, brushWeight_, brushStrength_, brushRadius_,
                 meshSelectTool_, meshAddVertexTool_, meshAddEdgeTool_, deleteVertex, removeEdge, retriangulate};
   meshAnimateTools_ = {deformKey, deformDelete};
+  return page;
+}
+
+// Clip events (plugin 1.8.0): the rig's event definitions (default payload, optional sound), the
+// key tools of the dopesheet's 이벤트 row and the preview log, as the "이벤트" page of the look section.
+// Events are presentation only: controller bindings react to game signals, never to clip events.
+QWidget* CutoutPanel::buildEvents() {
+  QWidget* page = lookPage("cutoutEventPage");
+  auto* layout = static_cast<QVBoxLayout*>(page->layout());
+  auto* inner = new QWidget;
+  auto* formLayout = new QVBoxLayout(inner);
+  formLayout->setContentsMargins(0, 0, 0, 0);
+  formLayout->setSpacing(2);
+  auto button = [this](QWidget* row, const QString& text, const char* name, const QString& tip, std::function<bool()> fn) {
+    auto* b = new QPushButton(text);
+    b->setObjectName(name);
+    b->setToolTip(tip);
+    connect(b, &QPushButton::clicked, this, [fn] { fn(); });
+    addToRow(row, b);
+    return b;
+  };
+  eventList_ = new QListWidget;
+  eventList_->setObjectName("cutoutEventList");
+  eventList_->setMinimumHeight(LIST_MIN_HEIGHT);
+  eventList_->setToolTip("이벤트 정의 · 키의 기본 값(int·float·string)과 소리를 정합니다. 정의가 하나라도 있으면 키는 정의된 이름만 쓸 수 있습니다.\n"
+                         "이벤트는 표시 전용입니다: 게임 연결 규칙은 게임 신호에만 반응하고 이벤트를 받지 않습니다.");
+  connect(eventList_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* item) {
+    if (!filling_ && item) selectEvent(item->data(Qt::UserRole).toString());
+  });
+  QWidget* tools = buttonRow("cutoutEventTools");
+  button(tools, "새 이벤트", "cutoutNewEvent", "이벤트 정의를 만듭니다(발소리, 효과, 타격 판정 표시 등). 첫 정의는 키가 이미 쓰는 이름도 함께 정의합니다.", [this] { return newEvent(); });
+  button(tools, "이름 변경", "cutoutRenameEvent", "이벤트 이름을 바꿉니다. 모든 클립의 그 이벤트 키도 함께 바뀝니다.", [this] { return renameEvent(); });
+  button(tools, "삭제", "cutoutDeleteEvent", "이벤트 정의를 삭제합니다(그 이벤트 키도 함께, 먼저 묻습니다).", [this] { return deleteEvent(); });
+  eventKeyTools_ = buttonRow("cutoutEventKeyTools");
+  eventKeyTools_->setProperty("cutoutModeRow", "animate");
+  button(eventKeyTools_, "이벤트 키", "cutoutEventKeyAdd", "고른 이벤트를 재생 헤드 시간에 키로 넣습니다(도프시트 「이벤트」 행: 오른쪽 클릭 · 빈 곳 더블클릭도 됩니다).", [this] { return addEventKey(); });
+  button(eventKeyTools_, "키 편집…", "cutoutEventKeyEdit", "도프시트에서 고른 이벤트 키의 이름과 값(int·float·string 덮어쓰기)을 바꿉니다(이벤트 키 더블클릭).", [this] { return editEventKeyInteractive(); });
+  auto* form = new QFormLayout;
+  form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  eventInt_ = new QSpinBox;
+  eventInt_->setObjectName("cutoutEventInt");
+  eventInt_->setRange(-2147483647, 2147483647);
+  eventInt_->setKeyboardTracking(false);
+  connect(eventInt_, &QSpinBox::editingFinished, this, [this] {
+    if (!filling_ && eventInt_->value() != eventInt_->property("shown").toInt()) setEventField("int", eventInt_->value());
+  });
+  eventFloat_ = new QDoubleSpinBox;
+  eventFloat_->setObjectName("cutoutEventFloat");
+  eventFloat_->setRange(-1e6, 1e6);
+  eventFloat_->setDecimals(4);
+  eventFloat_->setKeyboardTracking(false);
+  connect(eventFloat_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (!filling_ && std::fabs(eventFloat_->value() - eventFloat_->property("shown").toDouble()) > 5e-5) setEventField("float", eventFloat_->value());
+  });
+  eventString_ = new QLineEdit;
+  eventString_->setObjectName("cutoutEventString");
+  eventString_->setMaxLength(1000);
+  connect(eventString_, &QLineEdit::editingFinished, this, [this] {
+    if (!filling_ && eventString_->text() != eventString_->property("shown").toString()) setEventField("string", ss(eventString_->text()));
+  });
+  eventAudio_ = new QComboBox;
+  eventAudio_->setObjectName("cutoutEventAudio");
+  eventAudio_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  eventAudio_->setMinimumContentsLength(6);
+  eventAudio_->setToolTip("이벤트가 일어날 때 플레이어가 재생할 수 있는 소리(프로젝트 오디오 에셋). 재생은 플레이어(호스트)의 몫입니다.");
+  connect(eventAudio_, &QComboBox::activated, this, [this] { if (!filling_) setEventField("audio", ss(eventAudio_->currentData().toString())); });
+  eventVolume_ = new QDoubleSpinBox;
+  eventVolume_->setObjectName("cutoutEventVolume");
+  eventVolume_->setRange(0, 1);
+  eventVolume_->setDecimals(2);
+  eventVolume_->setSingleStep(0.05);
+  eventVolume_->setKeyboardTracking(false);
+  connect(eventVolume_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (!filling_ && std::fabs(eventVolume_->value() - eventVolume_->property("shown").toDouble()) > 5e-3) setEventField("volume", eventVolume_->value());
+  });
+  eventBalance_ = new QDoubleSpinBox;
+  eventBalance_->setObjectName("cutoutEventBalance");
+  eventBalance_->setRange(-1, 1);
+  eventBalance_->setDecimals(2);
+  eventBalance_->setSingleStep(0.1);
+  eventBalance_->setKeyboardTracking(false);
+  eventBalance_->setToolTip("-1 = 왼쪽, 0 = 가운데, 1 = 오른쪽");
+  connect(eventBalance_, &QDoubleSpinBox::editingFinished, this, [this] {
+    if (!filling_ && std::fabs(eventBalance_->value() - eventBalance_->property("shown").toDouble()) > 5e-3) setEventField("balance", eventBalance_->value());
+  });
+  form->addRow("int", eventInt_);
+  form->addRow("float", eventFloat_);
+  form->addRow("string", eventString_);
+  form->addRow("소리", eventAudio_);
+  form->addRow("음량", eventVolume_);
+  form->addRow("좌우", eventBalance_);
+  eventInfo_ = new QLabel;
+  eventInfo_->setObjectName("cutoutEventInfo");
+  eventInfo_->setWordWrap(true);
+  eventInfo_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  eventInfo_->setStyleSheet("color:#a7b4c2;");
+  QWidget* logTools = buttonRow("cutoutEventLogTools");
+  auto* logLabel = new QLabel("미리 보기 로그");
+  logLabel->setToolTip("재생(▶)과 게임 연결 미리 보기에서 일어난 이벤트 · 시간 이동(스크럽)은 이벤트를 일으키지 않습니다.");
+  addToRow(logTools, logLabel);
+  button(logTools, "지우기", "cutoutEventLogClear", "미리 보기 로그를 비웁니다.", [this] { clearEventLog(); return true; });
+  eventLogList_ = new QListWidget;
+  eventLogList_->setObjectName("cutoutEventLog");
+  eventLogList_->setMinimumHeight(LIST_MIN_HEIGHT);
+  eventLogList_->setToolTip(logLabel->toolTip());
+  // Fixed: definition tools above the list, key tools and the log below; the values scroll.
+  layout->addWidget(tools);
+  layout->addWidget(eventList_, 2);
+  layout->addWidget(eventKeyTools_);
+  formLayout->addLayout(form);
+  formLayout->addWidget(eventInfo_);
+  formLayout->addStretch();
+  layout->addWidget(formScroll("cutoutEventFormScroll", inner), 2);
+  layout->addWidget(logTools);
+  layout->addWidget(eventLogList_, 1);
+  eventEditors_ = {eventInt_, eventFloat_, eventString_, eventAudio_, eventVolume_, eventBalance_};
   return page;
 }
 
@@ -1508,6 +1626,11 @@ QWidget* CutoutPanel::buildAnimateTab() {
   transport->addWidget(new QLabel("속도"));
   transport->addWidget(speedCombo_);
   QAction* transportStretch = transport->addWidget(spacer());  // the view buttons go before it
+  eventFlash_ = new QLabel;
+  eventFlash_->setObjectName("cutoutEventFlash");
+  eventFlash_->setStyleSheet("color:#f472b6;font-weight:bold;");
+  eventFlash_->setToolTip("재생 중 마지막으로 일어난 이벤트 (전체 로그: 「이벤트」 페이지)");
+  transport->addWidget(eventFlash_);
   transport->addWidget(timeLabel_);
   // One time view for both views: zoom, scroll, playhead, loop range and key selection.
   timeView_ = new TimeView(this);
@@ -1578,6 +1701,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   keyRow->addWidget(copyPoseButton);
   keyRow->addWidget(toolButton("포즈 붙여넣기", "cutoutPastePose", "복사한 자세를 재생 헤드 시간에 키로 넣습니다(다른 클립에도 됩니다).", [this] { pastePose(); }));
   keyRow->addSeparator();
+  keyRow->addWidget(toolButton("이벤트 키", "cutoutAddEventKey", "「이벤트」 페이지에서 고른 이벤트를 재생 헤드 시간에 키로 넣습니다(정의가 없으면 이름을 묻습니다).\n도프시트 「이벤트」 행: 오른쪽 클릭 · 빈 곳 더블클릭으로도 넣고, 끌어서 옮기고, Delete로 지웁니다.", [this] { addEventKey(); }));
   keyRow->addWidget(toolButton("표정 키", "cutoutKeyExpression", "「스킨 · 표정」에서 고른 표정(없으면 표정 없음)을 재생 헤드 시간에 키로 넣습니다(계단 전환).\n도프시트의 「표정」 행에 보입니다.", [this] { keyExpression(); }));
 
   dopesheet_ = new Dopesheet;
@@ -1589,8 +1713,12 @@ QWidget* CutoutPanel::buildAnimateTab() {
   dopesheet_->onPreset = [this](const QString& preset) { applyPreset(preset); };
   dopesheet_->onCommand = [this](const QString& command) { keyCommand(command); };
   dopesheet_->onStep = [this](int steps) { stepPlayhead(steps); };
+  dopesheet_->onAddEvent = [this](int ms) { addEventKey(ms); };
+  dopesheet_->onEditEvent = [this](const KeyRef& key) { editEventKeyInteractive(key); };
   dopesheet_->onRowSelected = [this](int row, bool add) {
     if (row < 0 || row >= dopesheet_->rows().size()) return;
+    // The event row has no canvas item either: its definitions are the 이벤트 page.
+    if (dopesheet_->rows()[row].events) { if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutEventPage")); return; }
     // The rig expression row has no canvas item: show the expression list instead.
     if (dopesheet_->rows()[row].target == "rig") { if (lookTabs_) lookTabs_->setCurrentIndex(1); return; }
     // An IK row: its constraint in the IK page; no canvas selection, so the graph shows its mix curve.
@@ -1632,11 +1760,16 @@ QWidget* CutoutPanel::buildAnimateTab() {
   graphNormalize_->setObjectName("cutoutGraphNormalize");
   graphNormalize_->setToolTip("값 범위가 다른 채널(회전 각도와 크기 등)을 각자 높이에 맞춰 모양을 비교합니다.");
   presetRow->addWidget(graphNormalize_);
+  graphFitValues_ = new QPushButton("값 맞춤");
+  graphFitValues_->setObjectName("cutoutGraphFitValues");
+  graphFitValues_->setToolTip("보이는 채널의 값이 모두 들어오도록 세로(값) 축을 맞춥니다(값 확대·이동을 되돌림). 시간 축은 그대로입니다.");
+  presetRow->addWidget(graphFitValues_);
   graph_ = new GraphEditor;
   graph_->setTimeView(timeView_);
   graph_->setToolTip("키 드래그: 위아래 = 값, 좌우 = 시간(Alt: 둘 다, Shift: 1ms) · 고른 키의 손잡이를 끌어 곡선 조절\n"
                      "Ctrl+클릭: 토글 · Shift+클릭: 추가 · 빈 곳 드래그: 상자 선택 · Ctrl+A: 모두 · 빈 곳 클릭: 시간 이동\n"
-                     "Ctrl+휠: 시간 확대 · 휠/가운데 버튼 드래그: 시간 이동 · 오른쪽 클릭: 프리셋 · 범례 클릭: 채널 숨김");
+                     "Ctrl+휠: 시간 확대 · Ctrl+Shift+휠 또는 Alt+휠: 값 확대(커서 기준) · 휠: 시간 이동 · 가운데 버튼 드래그: 시간·값 이동\n"
+                     "「값 맞춤」: 값 축 되돌리기 · 오른쪽 클릭: 프리셋 · 범례 클릭: 채널 숨김");
   graph_->onScrub = [this](int ms) { setPlayhead(ms); };
   graph_->onMoveKey = [this](const GraphEditor::KeyRef& k, int to, double value) { return moveGraphKey(k.target, k.property, k.timeMs, to, value); };
   graph_->onMoveKeys = [this](const QVector<KeyRef>& keys, int delta, const QHash<KeyRef, double>& values) { return moveKeys(keys, delta, values); };
@@ -1646,6 +1779,7 @@ QWidget* CutoutPanel::buildAnimateTab() {
   graph_->onCommand = [this](const QString& command) { keyCommand(command); };
   graph_->onStep = [this](int steps) { stepPlayhead(steps); };
   connect(graphNormalize_, &QCheckBox::toggled, graph_, &GraphEditor::setNormalized);
+  connect(graphFitValues_, &QPushButton::clicked, graph_, &GraphEditor::fitValues);
   graphLayout->addWidget(presetRow);
   graphLayout->addWidget(graph_, 1);
   // Short timeline areas: show the dopesheet, the graph, or both stacked (same time axis).
@@ -2064,6 +2198,7 @@ void CutoutPanel::rebuildDisplay(bool full) {
     refreshMix();
     refreshController();
     refreshLooks();
+    refreshEvents();
     refreshModeUi();
   }
   refreshProperties();
@@ -2345,6 +2480,17 @@ void CutoutPanel::refreshDopesheet() {
       }
       rows << row;
     }
+    // Clip events (plugin 1.8.0): one row, always there so keys can be added on it. Sorted by
+    // time (older documents may not be); the event name is each key's ref property.
+    Dopesheet::Row events;
+    events.target = "event";
+    events.label = "이벤트";
+    events.events = true;
+    QVector<std::pair<int, QString>> keys;
+    for (const auto& e : listOf(*clip, "events")) keys.push_back({int(e.value("timeMs", int64_t(0))), qs(e.value("name", std::string()))});
+    std::stable_sort(keys.begin(), keys.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [t, name] : keys) { events.times << t; events.names << name; events.step << true; events.interps << "step"; events.curves << cutout::LINEAR_CURVE; }
+    rows << events;
   }
   // Another clip (or character): its own fitted zoom and remembered preview loop range.
   const QString viewClip = rigId_ + "/" + clipId_;
@@ -2387,7 +2533,7 @@ void CutoutPanel::syncTimeScroll() {
 QString CutoutPanel::graphTarget() const {
   if (!selection_.isEmpty()) return selection_;
   const int row = dopesheet_->selectedRow();
-  return row >= 0 && row < dopesheet_->rows().size() ? dopesheet_->rows()[row].target : QString();
+  return row >= 0 && row < dopesheet_->rows().size() && !dopesheet_->rows()[row].events ? dopesheet_->rows()[row].target : QString();
 }
 void CutoutPanel::refreshGraph() {
   // Numeric tracks of the selected bone/slot in the current clip, one colored channel each.
@@ -2611,6 +2757,7 @@ void CutoutPanel::refreshModeUi() {
   for (QWidget* w : {static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(playButton_), static_cast<QWidget*>(graph_)}) w->setEnabled(animate);
   for (QPushButton* b : presetButtons_) b->setEnabled(animate);
   for (QWidget* w : timelineTools_) w->setEnabled(animate);
+  if (eventKeyTools_) eventKeyTools_->setVisible(animate);  // event keys live in clips (Animate)
   autoKeyCheck_->setEnabled(animate);
   if (canvas_) canvas_->setAnimateMode(animate);
   bool keyed = false;
@@ -3822,7 +3969,7 @@ bool CutoutPanel::applyPreset(const QString& preset) {
   const QVector<KeyRef> keys = timeView_->selection();  // shared by dopesheet and graph
   std::vector<Json> ops;
   for (const auto& k : keys)
-    if (k.property != "attachment" && k.property != "expression" && k.property != "bendPositive") {
+    if (k.target != "event" && k.property != "attachment" && k.property != "expression" && k.property != "bendPositive") {
       Json op = {{"op", "setInterp"}, {"clip", ss(clipId_)}, {"target", ss(k.target)}, {"timeMs", k.timeMs}, {"interp", ss(preset)}};
       putProperty(op, k.property);
       ops.push_back(op);
@@ -5196,6 +5343,293 @@ bool CutoutPanel::retriangulateMesh() {
   return true;
 }
 
+// ---------------------------------------------------------------- clip events (plugin 1.8.0)
+namespace {
+/** "int 3 · float 2.5 · "left" · 🔊 sfx-step" of a definition, key or notification payload. */
+QString payloadText(const Json& p) {
+  QStringList parts;
+  if (p.contains("int") && p.at("int").is_number()) parts << QString("int %1").arg(p.at("int").get<qint64>());
+  if (p.contains("float") && p.at("float").is_number()) parts << QString("float %1").arg(p.at("float").get<double>());
+  if (p.contains("string") && p.at("string").is_string()) parts << QString("\"%1\"").arg(qs(p.at("string").get<std::string>()));
+  if (p.contains("audio") && p.at("audio").is_string()) parts << "🔊 " + qs(p.at("audio").get<std::string>());
+  return parts.join(" · ");
+}
+}  // namespace
+
+const Json* CutoutPanel::currentEvent() const {
+  for (const auto& e : listOf(displayData(), "events")) if (qs(e.value("name", std::string())) == eventId_) return &e;
+  return nullptr;
+}
+void CutoutPanel::refreshEvents() {
+  if (!eventList_) return;
+  filling_ = true;
+  const Json data = displayData();
+  const Json& defs = listOf(data, "events");
+  if (!currentEvent()) eventId_ = defs.empty() ? QString() : qs(defs.front().value("name", std::string()));
+  {
+    QSignalBlocker block(eventList_);
+    eventList_->clear();
+    for (const auto& e : defs) {
+      const QString name = qs(e.value("name", std::string())), payload = payloadText(e);
+      auto* item = new QListWidgetItem(payload.isEmpty() ? name : name + " · " + payload, eventList_);
+      item->setData(Qt::UserRole, name);
+      if (name == eventId_) eventList_->setCurrentItem(item);
+    }
+  }
+  const Json* def = currentEvent();
+  auto number = [&](const char* k, double fallback) { return def && def->contains(k) && def->at(k).is_number() ? def->at(k).get<double>() : fallback; };
+  eventInt_->setValue(int(number("int", 0)));
+  eventInt_->setProperty("shown", eventInt_->value());
+  eventFloat_->setValue(number("float", 0));
+  eventFloat_->setProperty("shown", eventFloat_->value());
+  eventString_->setText(def ? qs(def->value("string", std::string())) : QString());
+  eventString_->setProperty("shown", eventString_->text());
+  eventVolume_->setValue(number("volume", 1));
+  eventVolume_->setProperty("shown", eventVolume_->value());
+  eventBalance_->setValue(number("balance", 0));
+  eventBalance_->setProperty("shown", eventBalance_->value());
+  {
+    // Project audio assets; a sound id the project no longer has stays visible (and diagnosed).
+    QSignalBlocker block(eventAudio_);
+    eventAudio_->clear();
+    eventAudio_->addItem("(소리 없음)", QString());
+    const QString audio = def ? qs(def->value("audio", std::string())) : QString();
+    if (host_)
+      for (const auto& v : host_->assets()) {
+        const QJsonObject a = v.toObject();
+        if (a.value("kind").toString() == "audio") eventAudio_->addItem(a.value("id").toString(), a.value("id").toString());
+      }
+    if (!audio.isEmpty() && eventAudio_->findData(audio) < 0) eventAudio_->addItem(audio + " (없는 에셋)", audio);
+    eventAudio_->setCurrentIndex(std::max(0, eventAudio_->findData(audio)));
+  }
+  const bool sound = def && def->contains("audio");
+  for (QWidget* w : eventEditors_) w->setEnabled(def && ((w != eventVolume_ && w != eventBalance_) || sound));
+  int keys = 0, inClip = 0;
+  for (const auto& c : listOf(data, "clips"))
+    for (const auto& k : listOf(c, "events")) {
+      const bool hit = def ? qs(k.value("name", std::string())) == eventId_ : true;
+      keys += hit;
+      inClip += hit && qs(c.value("id", std::string())) == clipId_;
+    }
+  eventInfo_->setText(defs.empty()
+      ? QString("정의 없음: 키는 아무 이름이나 쓸 수 있습니다(지금 키 %1개). 「새 이벤트」로 정의를 만들면 값과 소리를 정할 수 있습니다.").arg(keys)
+      : QString("「%1」 키 %2개 (이 클립 %3개) · 0 / 빈 값은 저장하지 않습니다(키가 덮어쓰지 않으면 0, \"\"로 전달).").arg(eventId_).arg(keys).arg(inClip));
+  eventKeyTools_->setVisible(mode_ == Mode::Animate);
+  {
+    QSignalBlocker block(eventLogList_);
+    if (eventLogList_->count() != eventLog_.size()) {
+      eventLogList_->clear();
+      eventLogList_->addItems(eventLog_);
+      eventLogList_->scrollToBottom();
+    }
+  }
+  filling_ = false;
+}
+bool CutoutPanel::selectEvent(const QString& name) {
+  bool found = false;
+  for (const auto& e : listOf(displayData(), "events")) found |= qs(e.value("name", std::string())) == name;
+  if (!found) { setStatus("없는 이벤트입니다: " + name, true); return false; }
+  eventId_ = name;
+  refreshEvents();
+  return true;
+}
+bool CutoutPanel::newEvent() {
+  if (!rigDoc()) { setStatus("먼저 캐릭터를 만드세요.", true); return false; }
+  QStringList names;
+  for (const auto& e : listOf(displayData(), "events")) names << qs(e.value("name", std::string()));
+  QString suggestion = "event";
+  for (int n = 2; names.contains(suggestion); n++) suggestion = QString("event%1").arg(n);
+  const QString name = askText("새 이벤트", "이벤트 이름 (영문·숫자·_·-, 예: footstep, hit)", suggestion);
+  if (name.isEmpty()) return false;
+  QString defined;
+  if (!runOps({{{"op", "addEventDef"}, {"name", ss(name)}}}, false, [&](const cutout::EditResult& r) {
+        eventId_ = name;
+        QStringList also;
+        for (const auto& n : r.extra.value("defined", Json::array())) also << qs(n.get<std::string>());
+        defined = also.join(", ");
+      }))
+    return false;
+  setStatus(QString("이벤트 「%1」를 만들었습니다%2. 애니메이션 모드에서 「이벤트 키」로 클립에 넣으세요.").arg(name, defined.isEmpty() ? QString() : " (키가 쓰던 " + defined + "도 정의)"));
+  return true;
+}
+bool CutoutPanel::renameEvent() {
+  if (!currentEvent()) { setStatus("이름을 바꿀 이벤트를 고르세요.", true); return false; }
+  const QString name = askText("이벤트 이름 변경", "새 이름 (모든 클립의 이 이벤트 키도 함께 바뀝니다)", eventId_);
+  if (name.isEmpty() || name == eventId_) return false;
+  qint64 renamed = 0;
+  if (!runOps({{{"op", "renameEventDef"}, {"event", ss(eventId_)}, {"name", ss(name)}}}, false, [&](const cutout::EditResult& r) {
+        eventId_ = name;
+        renamed = r.extra.value("renamedKeys", 0);
+      }))
+    return false;
+  setStatus(QString("이벤트 이름을 「%1」로 바꿨습니다(키 %2개 함께). 되돌리기: Ctrl+Z").arg(name).arg(renamed));
+  return true;
+}
+bool CutoutPanel::deleteEvent() {
+  if (!currentEvent()) { setStatus("삭제할 이벤트를 고르세요.", true); return false; }
+  int used = 0;
+  for (const auto& c : listOf(displayData(), "clips")) for (const auto& k : listOf(c, "events")) used += qs(k.value("name", std::string())) == eventId_;
+  if (used && !askConfirm("이벤트 삭제", QString("이벤트 「%1」를 쓰는 키가 %2개 있습니다. 키까지 함께 삭제할까요?").arg(eventId_).arg(used))) return false;
+  const QString name = eventId_;
+  if (!runOps({{{"op", "deleteEventDef"}, {"event", ss(name)}, {"force", used > 0}}}, false, [&](const cutout::EditResult&) { eventId_.clear(); })) return false;
+  setStatus(QString("이벤트 「%1」%2를 삭제했습니다. 되돌리기: Ctrl+Z").arg(name, used ? QString("와 키 %1개").arg(used) : QString()));
+  return true;
+}
+bool CutoutPanel::setEventField(const QString& field, const Json& value) {
+  if (!currentEvent()) { setStatus("값을 정할 이벤트를 고르세요.", true); refreshEvents(); return false; }
+  // Spine-like defaults are not stored: 0, "" and "no sound" remove the field.
+  const bool empty = value.is_null() || (value.is_number() && (field == "int" || field == "float") && value.get<double>() == 0) ||
+                     (value.is_string() && value.get<std::string>().empty());
+  const bool ok = runOps({{{"op", "setEventDef"}, {"event", ss(eventId_)}, {ss(field), empty ? Json(nullptr) : value}}}, false);
+  if (!ok) refreshEvents();
+  return ok;
+}
+bool CutoutPanel::addEventKey(int ms, const QString& nameIn) {
+  if (refusePending()) return false;
+  if (mode_ != Mode::Animate || clipId_.isEmpty()) { setStatus("이벤트 키는 애니메이션 모드에서 클립에 넣습니다.", true); return false; }
+  const int at = ms < 0 ? playheadMs_ : ms;
+  QString name = nameIn.isEmpty() ? eventId_ : nameIn;
+  if (name.isEmpty()) {
+    // No definitions: any name (the first 「새 이벤트」 later defines it).
+    name = askText("이벤트 키", "이벤트 이름 (영문·숫자·_·-)", "event");
+    if (name.isEmpty()) return false;
+  }
+  if (const Json* clip = findIn(displayData(), "clips", ss(clipId_)))
+    for (const auto& k : listOf(*clip, "events"))
+      if (k.value("timeMs", int64_t(-1)) == at && qs(k.value("name", std::string())) == name) {
+        setStatus(QString("%1ms에 이미 「%2」 이벤트 키가 있습니다.").arg(at).arg(name), true);
+        return false;
+      }
+  if (!runOps({{{"op", "setEventKey"}, {"clip", ss(clipId_)}, {"timeMs", at}, {"name", ss(name)}}}, false,
+              [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); }))
+    return false;
+  setStatus(QString("이벤트 「%1」 키를 %2ms에 넣었습니다(끌어서 이동, 더블클릭으로 값 편집). 되돌리기: Ctrl+Z").arg(name).arg(at));
+  return true;
+}
+bool CutoutPanel::editEventKey(const KeyRef& key, const EventKeyChoice& choice) {
+  if (refusePending()) return false;
+  if (key.target != "event" || clipId_.isEmpty()) { setStatus("편집할 이벤트 키를 고르세요.", true); return false; }
+  const QString name = choice.name.trimmed().isEmpty() ? key.property : choice.name.trimmed();
+  Json op = {{"op", "setEventKey"}, {"clip", ss(clipId_)}, {"timeMs", key.timeMs}, {"name", ss(key.property)}, {"newName", ss(name)},
+             {"int", choice.intValue ? Json(*choice.intValue) : Json(nullptr)}, {"float", choice.floatValue ? Json(*choice.floatValue) : Json(nullptr)},
+             {"string", choice.stringValue ? Json(ss(*choice.stringValue)) : Json(nullptr)}};
+  if (!runOps({op}, false, [this](const cutout::EditResult& r) { selectKeysFrom(r.extra.value("keys", Json::array())); })) return false;
+  setStatus(QString("이벤트 키 %1ms를 「%2」(%3)로 바꿨습니다. 되돌리기: Ctrl+Z").arg(key.timeMs).arg(name, choice.intValue || choice.floatValue || choice.stringValue ? "값 덮어쓰기" : "정의의 값"));
+  return true;
+}
+bool CutoutPanel::editEventKeyInteractive(const KeyRef& keyIn) {
+  KeyRef key = keyIn;
+  if (key.target.isEmpty())
+    for (const auto& k : timeView_->selection()) if (k.target == "event") { key = k; break; }
+  if (key.target != "event") { setStatus("도프시트 「이벤트」 행에서 편집할 이벤트 키를 고르세요.", true); return false; }
+  const Json* clip = findIn(displayData(), "clips", ss(clipId_));
+  const Json* found = nullptr;
+  if (clip) for (const auto& k : listOf(*clip, "events")) if (!found && k.value("timeMs", int64_t(-1)) == key.timeMs && qs(k.value("name", std::string())) == key.property) found = &k;
+  if (!found) { setStatus("그 시간에 이벤트 키가 없습니다.", true); return false; }
+  EventKeyChoice choice;
+  choice.name = key.property;
+  if (found->contains("int") && found->at("int").is_number()) choice.intValue = found->at("int").get<qint64>();
+  if (found->contains("float") && found->at("float").is_number()) choice.floatValue = found->at("float").get<double>();
+  if (found->contains("string") && found->at("string").is_string()) choice.stringValue = qs(found->at("string").get<std::string>());
+  timeView_->setSelection({key});
+  if (!askEventKey || !askEventKey(choice)) return false;
+  return editEventKey(key, choice);
+}
+bool CutoutPanel::runEventKeyDialog(EventKeyChoice& choice) {
+  const Json data = displayData();
+  const Json& defs = listOf(data, "events");
+  QDialog dialog(this);
+  dialog.setObjectName("cutoutEventKeyDialog");
+  dialog.setWindowTitle("이벤트 키");
+  auto* form = new QFormLayout(&dialog);
+  auto* name = new QComboBox;
+  name->setObjectName("cutoutEventKeyName");
+  for (const auto& e : defs) name->addItem(qs(e.value("name", std::string())));
+  name->setEditable(defs.empty());  // without definitions any name works
+  if (name->findText(choice.name) < 0) name->addItem(choice.name);
+  name->setCurrentText(choice.name);
+  form->addRow("이벤트", name);
+  auto* intOn = new QCheckBox("int");
+  intOn->setObjectName("cutoutEventKeyIntOn");
+  auto* intValue = new QSpinBox;
+  intValue->setObjectName("cutoutEventKeyInt");
+  intValue->setRange(-2147483647, 2147483647);
+  auto* floatOn = new QCheckBox("float");
+  floatOn->setObjectName("cutoutEventKeyFloatOn");
+  auto* floatValue = new QDoubleSpinBox;
+  floatValue->setObjectName("cutoutEventKeyFloat");
+  floatValue->setRange(-1e6, 1e6);
+  floatValue->setDecimals(4);
+  auto* stringOn = new QCheckBox("string");
+  stringOn->setObjectName("cutoutEventKeyStringOn");
+  auto* stringValue = new QLineEdit;
+  stringValue->setObjectName("cutoutEventKeyString");
+  stringValue->setMaxLength(1000);
+  auto* defaults = new QLabel;
+  defaults->setObjectName("cutoutEventKeyDefaults");
+  defaults->setStyleSheet("color:#a7b4c2;");
+  // Unchecked fields show (and send) the definition's value: only checked ones are the key's own.
+  auto showDefaults = [&defs, defaults, name] {
+    Json def = Json::object();
+    for (const auto& e : defs) if (qs(e.value("name", std::string())) == name->currentText()) def = e;
+    const QString text = payloadText(def);
+    defaults->setText("정의의 값: " + (text.isEmpty() ? QString("없음 (0, 0, \"\")") : text));
+  };
+  showDefaults();
+  connect(name, &QComboBox::currentTextChanged, &dialog, [showDefaults] { showDefaults(); });
+  intOn->setChecked(choice.intValue.has_value());
+  intValue->setValue(int(choice.intValue.value_or(0)));
+  floatOn->setChecked(choice.floatValue.has_value());
+  floatValue->setValue(choice.floatValue.value_or(0));
+  stringOn->setChecked(choice.stringValue.has_value());
+  stringValue->setText(choice.stringValue.value_or(QString()));
+  for (auto [on, field] : {std::pair<QCheckBox*, QWidget*>{intOn, intValue}, {floatOn, floatValue}, {stringOn, stringValue}}) {
+    field->setEnabled(on->isChecked());
+    connect(on, &QCheckBox::toggled, field, &QWidget::setEnabled);
+    form->addRow(on, field);
+  }
+  form->addRow(defaults);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+  connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  form->addRow(buttons);
+  if (dialog.exec() != QDialog::Accepted) return false;
+  choice.name = name->currentText().trimmed();
+  choice.intValue = intOn->isChecked() ? std::optional<qint64>(intValue->value()) : std::nullopt;
+  choice.floatValue = floatOn->isChecked() ? std::optional<double>(floatValue->value()) : std::nullopt;
+  choice.stringValue = stringOn->isChecked() ? std::optional<QString>(stringValue->text()) : std::nullopt;
+  return true;
+}
+void CutoutPanel::logEvent(const QString& source, const QString& clip, double timeMs, const QString& name, const Json& payload) {
+  const QString payloadPart = payloadText(payload);
+  const QString at = timeMs >= 0 ? QString(" %1ms").arg(int(std::floor(timeMs))) : QString();
+  const QString line = QString("%1 · %2%3 · %4%5").arg(source, clip, at, name, payloadPart.isEmpty() ? QString() : " (" + payloadPart + ")");
+  eventLog_ << line;
+  while (eventLog_.size() > 200) eventLog_.removeFirst();
+  if (eventFlash_) eventFlash_->setText("◆ " + name);
+  if (eventLogList_) {
+    QSignalBlocker block(eventLogList_);
+    eventLogList_->addItem(line);
+    while (eventLogList_->count() > eventLog_.size()) delete eventLogList_->takeItem(0);
+    eventLogList_->scrollToBottom();
+  }
+}
+void CutoutPanel::clearEventLog() {
+  eventLog_.clear();
+  if (eventLogList_) eventLogList_->clear();
+  if (eventFlash_) eventFlash_->clear();
+}
+void CutoutPanel::firePlaybackEvents(double from, double to, bool toInclusive) {
+  if (!rig_) return;
+  const int ci = rig_->clipIndex(ss(clipId_));
+  if (ci < 0) return;
+  // Same half-open rule as the runtime: an event at t fires once when playback crosses [t, t+dt).
+  for (const auto& e : rig_->clips[size_t(ci)].events) {
+    const double t = double(e.timeMs);
+    if (t >= from && (t < to || (toInclusive && t == to))) logEvent("재생", clipId_, t, qs(e.name), e.payload);
+  }
+}
+
 // ---------------------------------------------------------------- playback
 void CutoutPanel::togglePlay(bool on) {
   playing_ = on && mode_ == Mode::Animate;
@@ -5215,17 +5649,26 @@ void CutoutPanel::tick() {
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   const double dt = std::clamp(double(now - lastTick_), 0.0, 250.0);
   lastTick_ = now;
+  advancePlayback(manualClock_ ? 0 : dt);
+}
+void CutoutPanel::advancePlayback(double dt) {
+  dt = std::clamp(dt, 0.0, 250.0);
   if (playing_ && rig_) {
     const int ci = rig_->clipIndex(ss(clipId_));
     if (ci >= 0) {
       const double d = double(rig_->clips[size_t(ci)].durationMs);
       // The editor-only loop range narrows playback to [in, out] (whole clip by default).
       const double lo = timeView_->loopActive() ? timeView_->loopIn() : 0, hi = timeView_->loopActive() ? std::min<double>(timeView_->loopOut(), d) : d;
+      const double from = playheadExact_;
       playheadExact_ += dt * speedCombo_->currentData().toDouble();
+      // Events fire once per pass over their time (the preview log); scrubbing never gets here.
       if (playheadExact_ > hi) {
-        if (loopPreview_->isChecked() && hi > lo) playheadExact_ = lo + std::fmod(playheadExact_ - lo, hi - lo);
-        else { playheadExact_ = hi; playButton_->setChecked(false); }
-      }
+        if (loopPreview_->isChecked() && hi > lo) {
+          playheadExact_ = lo + std::fmod(playheadExact_ - lo, hi - lo);
+          firePlaybackEvents(from, hi, false);
+          firePlaybackEvents(lo, playheadExact_, false);
+        } else { firePlaybackEvents(from, hi, true); playheadExact_ = hi; playButton_->setChecked(false); }
+      } else if (dt > 0) firePlaybackEvents(from, playheadExact_, false);
       playheadMs_ = int(playheadExact_);
       timeView_->setPlayhead(playheadMs_);
       timeView_->reveal(playheadMs_);
@@ -5234,7 +5677,9 @@ void CutoutPanel::tick() {
   }
   if (bottomTabs_->currentIndex() == 1 && preview_) {
     preview_->update(dt);
-    preview_->takeNotifications();  // presentation only; nothing reaches the game
+    // Presentation only; nothing reaches the game. Clip events go to the preview log.
+    for (const auto& n : preview_->takeNotifications())
+      if (n.kind == "event") logEvent("게임 연결", qs(n.clip), -1, qs(n.name), n.payload);
   }
   updateCanvas();
 }

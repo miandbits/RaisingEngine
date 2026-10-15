@@ -8,6 +8,7 @@ import { activityPreview } from '../../../packages/visual/activity-summary.js';
 declare global { interface Window { player: PlayerBridge } }
 import { periodLabel, scheduleStep } from '../../../packages/player-service/schedule.js';
 import { assetUrl } from './assets.js';
+let eventAudio: AudioContext | undefined;
 
 export function Player({ preview = false }: { preview?: boolean }) {
   const [view, setView] = useState<PlayerView | null>(null);
@@ -50,6 +51,22 @@ export function Player({ preview = false }: { preview?: boolean }) {
   useEffect(() => {
     sounds.current.forEach(audio => audio.pause()); sounds.current = [];
     return () => { sounds.current.forEach(audio => audio.pause()); sounds.current = []; };
+  }, [view?.generation, muted]);
+  // Plugin event sounds (presentation only; CONTRACT.md §7): played like sound cues while unmuted.
+  useEffect(() => {
+    const host = window.raisingExtensions, generation = view?.generation;
+    if (!host || muted || generation === undefined) return;
+    host.setSoundListener(sound => {
+      const audio = new Audio(assetUrl(sound.asset, generation)); audio.volume = sound.volume;
+      if (sound.balance !== 0 && typeof AudioContext !== 'undefined') {
+        // Stereo balance through Web Audio; without it the sound still plays centred.
+        try { eventAudio ??= new AudioContext(); const pan = eventAudio.createStereoPanner(); pan.pan.value = sound.balance; eventAudio.createMediaElementSource(audio).connect(pan).connect(eventAudio.destination); } catch { /* centred */ }
+      }
+      sounds.current.push(audio);
+      audio.onended = () => { sounds.current = sounds.current.filter(x => x !== audio); };
+      audio.play().catch(() => {});
+    });
+    return () => host.setSoundListener(null);
   }, [view?.generation, muted]);
   useEffect(() => {
     music.current?.pause(); music.current = null;

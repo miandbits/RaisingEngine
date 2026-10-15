@@ -78,7 +78,23 @@ struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> na
  *  bone=false + ik=true: an IK constraint track (target = constraint id, targetIndex = Rig::ik index;
  *  bendPositive keys carry value 1/0). Deform tracks are slot tracks naming `attachment`. */
 struct Track { bool bone = true; bool rig = false; bool ik = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; std::string attachment; };
-struct ClipEvent { int64_t timeMs = 0; std::string name; };
+/**
+ * Rig-level event definition (plugin 1.8.0, Spine-like): optional default payload of every key
+ * of that name. `audio` names an audio asset the host MAY play when the event fires (with
+ * `volume` 0..1 and `balance` -1..1); players stay free to ignore it. Presentation only: clip
+ * events never reach controller bindings or game rules.
+ */
+struct EventDef {
+  std::string name;
+  std::optional<int64_t> intValue;
+  std::optional<double> floatValue;
+  std::optional<std::string> stringValue, audio;
+  double volume = 1, balance = 0;
+};
+/** A clip event key. `payload` is resolved at parse time (definition defaults, then the key's own
+ *  int/float/string overrides; audio/volume/balance from the definition): only the fields that are
+ *  set appear, so rigs without payloads keep the plugin 1.7 notification shape. */
+struct ClipEvent { int64_t timeMs = 0; std::string name; Json payload = Json::object(); };
 struct Clip { std::string id, name; int64_t durationMs = 1000; bool loop = true; std::vector<Track> tracks; std::vector<ClipEvent> events; };
 struct MixPair { std::string from, to; int64_t durationMs = 0; };
 /** Outfit/variant set: provides or overrides attachments by (slot, name); clips keep keying names. */
@@ -130,6 +146,7 @@ struct Rig {
   std::vector<Expression> expressions;
   std::vector<IkConstraint> ik;
   std::vector<int> ikOrder;         // evaluation order: (order, array index) ascending
+  std::vector<EventDef> events;     // event definitions (plugin 1.8.0); empty = any key name
 
   int boneIndex(const std::string& id) const;
   int slotIndex(const std::string& id) const;
@@ -137,6 +154,7 @@ struct Rig {
   int skinIndex(const std::string& id) const;        // -1 = unknown / "" (default attachments only)
   int expressionIndex(const std::string& id) const;  // -1 = unknown / none
   int ikIndex(const std::string& id) const;
+  int eventIndex(const std::string& name) const;     // -1 = not defined
   /** Lookup order: skin `skin` (when >= 0) first, then the rig's default attachments. */
   const Attachment* attachment(const std::string& slot, const std::string& name, int skin = -1) const;
   int64_t mixDuration(const std::string& from, const std::string& to) const;

@@ -978,12 +978,212 @@ Json refJson(const Str& target, const Str& property, int64_t t, const Str& attac
   if (property == "deform") j["attachment"] = attachment;
   return j;
 }
-std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op) {
+// ---- Clip events (plugin 1.8.0) ----
+// Keys live in clips[].events as {timeMs, name, int?, float?, string?}, identified by (timeMs, name)
+// (the first match when a document repeats one); rig-level `events` holds optional definitions.
+// Multi-key ops take them as refs {target: "event", property: <name>, timeMs}.
+constexpr const char* EVENT_TARGET = "event";
+constexpr int64_t EVENT_INT_LIMIT = 2147483647;
+const char* const EVENT_PAYLOAD[] = {"int", "float", "string"};
+bool isEventRef(const Json& k) { return k.is_object() && k.value("target", Str()) == EVENT_TARGET; }
+bool eventDefined(const Json& d, const Str& name) { return findIndex(listOr(d, "events"), "name", name) >= 0; }
+Json& eventDefAt(Json& d, const Str& name) {
+  const int i = findIndex(arr(d, "events"), "name", name);
+  if (i < 0) throw EditError("없는 이벤트 정의입니다: " + name);
+  return d["events"][size_t(i)];
+}
+void checkEventName(const Str& name) {
+  if (!validName(name)) throw EditError("이벤트 이름은 영문·숫자로 시작하고 영문·숫자·_·-만 씁니다(64자 이하): " + name);
+}
+/** Key names must be defined once the rig has definitions (else any valid name is a new event). */
+void requireEventName(const Json& d, const Str& name) {
+  checkEventName(name);
+  if (!listOr(d, "events").empty() && !eventDefined(d, name)) throw EditError("정의되지 않은 이벤트입니다. 먼저 이벤트 목록에 추가하세요: " + name);
+}
+int findEvent(Json& c, int64_t t, const Str& name) {
+  auto& events = arr(c, "events");
+  for (size_t i = 0; i < events.size(); i++) if (events[i].value("timeMs", int64_t(-1)) == t && events[i].value("name", Str()) == name) return int(i);
+  return -1;
+}
+int eventAt(Json& c, int64_t t, const Str& name) {
+  const int i = findEvent(c, t, name);
+  if (i < 0) throw EditError("그 시간에 이벤트 키가 없습니다: " + name + " " + std::to_string(t) + "ms");
+  return i;
+}
+void sortEvents(Json& c) {
+  auto& events = arr(c, "events");
+  std::stable_sort(events.begin(), events.end(), [](const Json& a, const Json& b) { return a.value("timeMs", int64_t(0)) < b.value("timeMs", int64_t(0)); });
+  if (events.empty()) c.erase("events");
+}
+Str eventRef(const Str& clipId, const Str& name, int64_t t) { return "key:" + clipId + "/" + EVENT_TARGET + "/" + name + "@" + std::to_string(t); }
+/** int/float/string (+ audio, volume, balance for definitions) from `op` onto `e`; null removes a field. */
+void writeEventPayload(Json& e, const Json& op, bool definition) {
+  for (const char* k : EVENT_PAYLOAD) {
+    if (!op.contains(k)) continue;
+    const Json& v = op.at(k);
+    if (v.is_null()) { e.erase(k); continue; }
+    if (Str(k) == "int") {
+      if (!v.is_number() || v.get<double>() != std::floor(v.get<double>()) || std::fabs(v.get<double>()) > double(EVENT_INT_LIMIT)) throw EditError("이벤트 int 값은 32비트 정수입니다.");
+      e[k] = int64_t(v.get<double>());
+    } else if (Str(k) == "float") e[k] = clean(num(op, k, 0));
+    else {
+      if (!v.is_string() || v.get_ref<const Str&>().size() > 1000) throw EditError("이벤트 string 값은 1000바이트 이하의 문자열입니다.");
+      e[k] = v;
+    }
+  }
+  if (!definition) return;
+  if (op.contains("audio")) {
+    const Json& v = op.at("audio");
+    if (v.is_null() || (v.is_string() && v.get_ref<const Str&>().empty())) e.erase("audio");
+    else if (!v.is_string() || v.get_ref<const Str&>().size() > 64) throw EditError("이벤트 소리(audio)는 오디오 에셋 ID입니다.");
+    else e["audio"] = v;
+  }
+  // Defaults are not stored: volume 1 and balance 0 are what a missing field means.
+  if (op.contains("volume")) {
+    const double v = num(op, "volume", 1);
+    if (v < 0 || v > 1) throw EditError("이벤트 음량(volume)은 0..1입니다.");
+    if (op.at("volume").is_null() || clean(v) == 1) e.erase("volume"); else e["volume"] = clean(v);
+  }
+  if (op.contains("balance")) {
+    const double v = num(op, "balance", 0);
+    if (v < -1 || v > 1) throw EditError("이벤트 좌우(balance)는 -1..1입니다.");
+    if (op.at("balance").is_null() || clean(v) == 0) e.erase("balance"); else e["balance"] = clean(v);
+  }
+}
+/** Event names used by keys of any clip, in first-use order. */
+std::vector<Str> usedEventNames(Json& d) {
+  std::vector<Str> out;
+  for (auto& c : arr(d, "clips"))
+    for (const auto& e : listOr(c, "events")) {
+      const Str n = e.value("name", Str());
+      if (!n.empty() && std::find(out.begin(), out.end(), n) == out.end()) out.push_back(n);
+    }
+  return out;
+}
+/** addEventDef {name, int?, float?, string?, audio?, volume?, balance?}. The first definition also
+ *  defines every name keys already use (extra.defined), so the rig stays valid. */
+void addEventDef(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str name = reqStr(op, "name");
+  checkEventName(name);
+  if (eventDefined(d, name)) throw EditError("이미 있는 이벤트 이름입니다: " + name);
+  Json defined = Json::array();
+  if (listOr(d, "events").empty())
+    for (const auto& used : usedEventNames(d))
+      if (used != name && validName(used)) { arr(d, "events").push_back({{"name", used}}); defined.push_back(used); }
+  Json e{{"name", name}};
+  writeEventPayload(e, op, true);
+  arr(d, "events").push_back(e);
+  r.extra["defined"] = defined;
+  r.affected.push_back("event:" + name);
+}
+/** setEventDef {event, int?, float?, string?, audio?, volume?, balance?}: null removes a field. */
+void setEventDef(EditResult& r, const Json& op) {
+  const Str name = reqStr(op, "event");
+  writeEventPayload(eventDefAt(r.data, name), op, true);
+  r.affected.push_back("event:" + name);
+}
+/** renameEventDef {event, name}: every key of the old name in every clip follows (extra.renamedKeys). */
+void renameEventDef(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "event"), to = reqStr(op, "name");
+  Json& e = eventDefAt(d, from);
+  if (from == to) return;
+  checkEventName(to);
+  if (eventDefined(d, to)) throw EditError("이미 있는 이벤트 이름입니다: " + to);
+  e["name"] = to;
+  size_t renamed = 0;
+  for (auto& c : arr(d, "clips"))
+    for (auto& k : arr(c, "events")) if (k.value("name", Str()) == from) { k["name"] = to; renamed++; }
+  for (auto& c : arr(d, "clips")) if (listOr(c, "events").empty()) c.erase("events");
+  r.extra["renamedKeys"] = renamed;
+  r.affected.push_back("event:" + to);
+}
+/** deleteEventDef {event, force?}: refused while keys use it unless force (then they go too). */
+void deleteEventDef(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str name = reqStr(op, "event");
+  eventDefAt(d, name);
+  size_t used = 0;
+  for (auto& c : arr(d, "clips")) for (const auto& k : listOr(c, "events")) used += k.value("name", Str()) == name;
+  if (used && !op.value("force", false)) throw EditError("이 이벤트를 쓰는 키가 " + std::to_string(used) + "개 있습니다. 키까지 지우려면 force를 지정하세요.");
+  for (auto& c : arr(d, "clips")) {
+    auto& events = arr(c, "events");
+    events.erase(std::remove_if(events.begin(), events.end(), [&](const Json& k) { return k.value("name", Str()) == name; }), events.end());
+    if (events.empty()) c.erase("events");
+  }
+  auto& defs = arr(d, "events");
+  defs.erase(defs.begin() + findIndex(defs, "name", name));
+  if (defs.empty()) d.erase("events");
+  r.extra["removedKeys"] = used;
+  r.affected.push_back("event:" + name);
+}
+/**
+ * setEventKey {clip, timeMs, name, newName?, int?, float?, string?}: creates the key (timeMs, name)
+ * or edits it; newName renames that one key; payload fields override the definition (null = use
+ * the definition's value again).
+ */
+void setEventKey(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str clipId = reqStr(op, "clip"), name = reqStr(op, "name");
+  Json& c = clip(d, clipId);
+  const int64_t t = ms(op, "timeMs"), duration = c.value("durationMs", int64_t(0));
+  if (t < 0 || t > duration) throw EditError("이벤트 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
+  int i = findEvent(c, t, name);
+  if (i < 0) {
+    requireEventName(d, name);
+    arr(c, "events").push_back({{"timeMs", t}, {"name", name}});
+    i = int(c["events"].size()) - 1;
+  }
+  Json& e = c["events"][size_t(i)];
+  Str now = name;
+  if (has(op, "newName") && optStr(op, "newName") != name) {
+    now = reqStr(op, "newName");
+    requireEventName(d, now);
+    if (findEvent(c, t, now) >= 0) throw EditError("같은 시간에 이미 그 이벤트 키가 있습니다: " + now);
+    e["name"] = now;
+  }
+  writeEventPayload(e, op, false);
+  sortEvents(c);
+  r.extra["keys"] = Json::array({refJson(EVENT_TARGET, now, t)});
+  r.affected.push_back(eventRef(clipId, now, t));
+}
+/** moveEventKey {clip, name, fromMs, toMs}: refused on range and on a same-name key at toMs. */
+void moveEventKey(EditResult& r, const Json& op) {
+  Json& c = clip(r.data, reqStr(op, "clip"));
+  const Str name = reqStr(op, "name");
+  const int64_t from = ms(op, "fromMs"), to = ms(op, "toMs"), duration = c.value("durationMs", int64_t(0));
+  const int i = eventAt(c, from, name);
+  if (from == to) return;
+  if (to < 0 || to > duration) throw EditError("이벤트 시간이 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다.");
+  if (findEvent(c, to, name) >= 0) throw EditError("같은 시간에 이미 그 이벤트 키가 있습니다: " + name + " " + std::to_string(to) + "ms");
+  c["events"][size_t(i)]["timeMs"] = to;
+  sortEvents(c);
+  r.affected.push_back(eventRef(op.at("clip").get<Str>(), name, to));
+}
+void deleteEventKey(EditResult& r, const Json& op) {
+  Json& c = clip(r.data, reqStr(op, "clip"));
+  const Str name = reqStr(op, "name");
+  const int64_t t = ms(op, "timeMs");
+  auto& events = arr(c, "events");
+  events.erase(events.begin() + eventAt(c, t, name));
+  if (events.empty()) c.erase("events");
+  r.affected.push_back(eventRef(op.at("clip").get<Str>(), name, t));
+}
+
+/** Selected event keys (plugin 1.8.0): indices into the clip's `events`, each once. */
+using PickedEvents = std::set<size_t>;
+std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op, PickedEvents* events = nullptr) {
   if (!has(op, "keys") || !op.at("keys").is_array() || op.at("keys").empty() || op.at("keys").size() > MAX_KEYS)
     throw EditError("keys는 1.." + std::to_string(MAX_KEYS) + "개의 [{target, property, timeMs}] 배열입니다.");
   std::vector<Picked> out;
   for (const auto& k : op.at("keys")) {
     if (!k.is_object()) throw EditError("keys 항목은 {target, property, timeMs} 객체입니다.");
+    if (isEventRef(k)) {
+      if (!events) throw EditError("이 명령은 이벤트 키를 다루지 않습니다.");
+      events->insert(size_t(eventAt(c, ms(k, "timeMs"), reqStr(k, "property"))));
+      continue;
+    }
     target(d, k);
     const Str tg = k.at("target").get<Str>(), prop = k.at("property").get<Str>(), attachment = prop == "deform" ? optStr(k, "attachment") : Str();
     const int64_t t = ms(k, "timeMs");
@@ -996,8 +1196,14 @@ std::vector<Picked> pickKeys(Json& d, Json& c, const Json& op) {
   }
   return out;
 }
+/** Earliest / latest time of a selection (tracks and event keys). */
+void selectionSpan(Json& c, const std::vector<Picked>& picked, const PickedEvents& events, int64_t& lo, int64_t& hi) {
+  lo = INT64_MAX; hi = INT64_MIN;
+  for (const auto& p : picked) { lo = std::min(lo, *p.times.begin()); hi = std::max(hi, *p.times.rbegin()); }
+  for (size_t i : events) { const int64_t t = c["events"][i].value("timeMs", int64_t(0)); lo = std::min(lo, t); hi = std::max(hi, t); }
+}
 /** Re-time the picked keys with `map`; refuses out-of-range, merged and colliding keys before changing anything. */
-void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& picked, const std::function<int64_t(int64_t)>& map) {
+void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& picked, const std::function<int64_t(int64_t)>& map, const PickedEvents& events = {}) {
   const int64_t duration = c.value("durationMs", int64_t(0));
   for (const auto& p : picked) {
     std::set<int64_t> mapped;
@@ -1010,6 +1216,20 @@ void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& 
       const int64_t t = k.value("timeMs", int64_t(-1));
       if (!p.times.count(t) && mapped.count(t)) throw EditError("같은 시간에 이미 키가 있습니다: " + p.target + " " + p.property + " " + std::to_string(t) + "ms");
     }
+  }
+  // Event keys collide only with keys of the same name (different events may share a time).
+  if (!events.empty()) {
+    std::set<std::pair<int64_t, Str>> mapped;
+    auto& list = arr(c, "events");
+    for (size_t i : events) {
+      const int64_t to = map(list[i].value("timeMs", int64_t(0)));
+      const Str name = list[i].value("name", Str());
+      if (to < 0 || to > duration) throw EditError("옮긴 이벤트가 클립 범위(0.." + std::to_string(duration) + "ms) 밖으로 나갑니다: " + std::to_string(to) + "ms");
+      if (!mapped.insert({to, name}).second) throw EditError("간격이 너무 좁아져 이벤트가 같은 시간에 겹칩니다: " + name + " " + std::to_string(to) + "ms");
+    }
+    for (size_t i = 0; i < list.size(); i++)
+      if (!events.count(i) && mapped.count({list[i].value("timeMs", int64_t(-1)), list[i].value("name", Str())}))
+        throw EditError("같은 시간에 이미 그 이벤트 키가 있습니다: " + list[i].value("name", Str()) + " " + std::to_string(list[i].value("timeMs", int64_t(-1))) + "ms");
   }
   Json moved = Json::array();
   for (auto& p : picked) {
@@ -1026,40 +1246,53 @@ void retimeKeys(EditResult& r, Json& c, const Str& clipId, std::vector<Picked>& 
     // Normalized curves ride along with their key: segment shapes stay, only their timing changes.
     sortKeys(*p.track);
   }
+  if (!events.empty()) {
+    auto& list = arr(c, "events");
+    for (size_t i : events) {
+      const int64_t to = map(list[i].value("timeMs", int64_t(0)));
+      list[i]["timeMs"] = to;
+      moved.push_back(refJson(EVENT_TARGET, list[i].value("name", Str()), to));
+      r.affected.push_back(eventRef(clipId, list[i].value("name", Str()), to));
+    }
+    sortEvents(c);
+  }
   r.extra["keys"] = moved;
 }
 void moveKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str clipId = reqStr(op, "clip");
   Json& c = clip(d, clipId);
-  auto picked = pickKeys(d, c, op);
+  PickedEvents events;
+  auto picked = pickKeys(d, c, op, &events);
   int64_t delta = ms(op, "deltaMs");
-  int64_t lo = INT64_MAX, hi = INT64_MIN;
-  for (const auto& p : picked) { lo = std::min(lo, *p.times.begin()); hi = std::max(hi, *p.times.rbegin()); }
+  int64_t lo, hi;
+  selectionSpan(c, picked, events, lo, hi);
   // clamp: a drag past the clip edge stops the whole group there and keeps its spacing.
   if (op.value("clamp", false)) delta = std::clamp<int64_t>(delta, -lo, std::max<int64_t>(-lo, c.value("durationMs", int64_t(0)) - hi));
   r.extra["deltaMs"] = delta;
   if (delta == 0) { r.extra["keys"] = Json::array(); return; }
-  retimeKeys(r, c, clipId, picked, [delta](int64_t t) { return t + delta; });
+  retimeKeys(r, c, clipId, picked, [delta](int64_t t) { return t + delta; }, events);
 }
 void scaleKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str clipId = reqStr(op, "clip");
   Json& c = clip(d, clipId);
-  auto picked = pickKeys(d, c, op);
+  PickedEvents events;
+  auto picked = pickKeys(d, c, op, &events);
   const double factor = num(op, "factor", 1);
   if (!(factor > 0) || factor > 1000) throw EditError("factor(시간 배율)는 0보다 크고 1000 이하여야 합니다.");
-  int64_t pivot = INT64_MAX;
-  for (const auto& p : picked) pivot = std::min(pivot, *p.times.begin());
+  int64_t pivot, hi;
+  selectionSpan(c, picked, events, pivot, hi);
   if (has(op, "pivotMs")) pivot = ms(op, "pivotMs");
   if (factor == 1) { r.extra["keys"] = Json::array(); return; }
-  retimeKeys(r, c, clipId, picked, [pivot, factor](int64_t t) { return pivot + int64_t(std::llround(double(t - pivot) * factor)); });
+  retimeKeys(r, c, clipId, picked, [pivot, factor](int64_t t) { return pivot + int64_t(std::llround(double(t - pivot) * factor)); }, events);
 }
 void deleteKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str clipId = reqStr(op, "clip");
   Json& c = clip(d, clipId);
-  auto picked = pickKeys(d, c, op);
+  PickedEvents events;
+  auto picked = pickKeys(d, c, op, &events);
   for (auto& p : picked) {
     auto& keys = arr(*p.track, "keys");
     keys.erase(std::remove_if(keys.begin(), keys.end(), [&](const Json& k) { return p.times.count(k.value("timeMs", int64_t(-1))) > 0; }), keys.end());
@@ -1067,18 +1300,28 @@ void deleteKeys(EditResult& r, const Json& op) {
   }
   auto& tracks = arr(c, "tracks");
   tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [](const Json& t) { return !t.contains("keys") || !t.at("keys").is_array() || t.at("keys").empty(); }), tracks.end());
+  if (!events.empty()) {
+    auto& list = arr(c, "events");
+    for (auto it = events.rbegin(); it != events.rend(); ++it) {
+      r.affected.push_back(eventRef(clipId, list[*it].value("name", Str()), list[*it].value("timeMs", int64_t(0))));
+      list.erase(list.begin() + int64_t(*it));
+    }
+    if (list.empty()) c.erase("events");
+  }
 }
 /**
  * Clipboard of keys (no data change): extra.clipboard = {keys: [{target, property, offsetMs,
  * value, interp?, curve?}], fromMs} with offsets from the earliest copied key, so it can be
  * pasted at any time of any clip. Numeric keys always carry their interp; attachment keys never do.
+ * Event keys copy as {target: "event", property: <name>, offsetMs, int?, float?, string?}.
  */
 void copyKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
   Json& c = clip(d, reqStr(op, "clip"));
-  const auto picked = pickKeys(d, c, op);
-  int64_t lo = INT64_MAX;
-  for (const auto& p : picked) lo = std::min(lo, *p.times.begin());
+  PickedEvents events;
+  const auto picked = pickKeys(d, c, op, &events);
+  int64_t lo, hi;
+  selectionSpan(c, picked, events, lo, hi);
   Json keys = Json::array();
   for (const auto& p : picked)
     for (const auto& k : p.track->at("keys")) {
@@ -1092,12 +1335,19 @@ void copyKeys(EditResult& r, const Json& op) {
       }
       keys.push_back(e);
     }
+  for (size_t i : events) {
+    const Json& k = c["events"][i];
+    Json e{{"target", EVENT_TARGET}, {"property", k.value("name", Str())}, {"offsetMs", k.value("timeMs", int64_t(0)) - lo}};
+    for (const char* f : EVENT_PAYLOAD) if (k.contains(f)) e[f] = k.at(f);
+    keys.push_back(e);
+  }
   r.extra["clipboard"] = {{"keys", keys}, {"fromMs", lo}};
 }
 /**
  * Paste a clipboard at `timeMs` of `clip`. Same-time keys are overwritten (value and, when
  * the entry has one, interpolation). `target` re-targets a clipboard that holds one target
- * only (copy a row, paste onto another bone). Out-of-range offsets refuse the whole paste.
+ * only (copy a row, paste onto another bone); event entries always keep their event.
+ * Out-of-range offsets refuse the whole paste.
  */
 void pasteKeys(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -1111,7 +1361,7 @@ void pasteKeys(EditResult& r, const Json& op) {
   size_t outside = 0;
   for (const auto& e : op.at("keys")) {
     if (!e.is_object()) throw EditError("붙여넣을 키는 {target, property, offsetMs, value} 객체입니다.");
-    targets.insert(reqStr(e, "target"));
+    if (reqStr(e, "target") != EVENT_TARGET) targets.insert(reqStr(e, "target"));
     const int64_t offset = ms(e, "offsetMs");
     if (offset < 0) throw EditError("offsetMs는 0 이상이어야 합니다.");
     outside += at + offset > duration;
@@ -1121,8 +1371,18 @@ void pasteKeys(EditResult& r, const Json& op) {
   if (outside) throw EditError("붙여넣을 키 " + std::to_string(outside) + "개가 클립 범위(0.." + std::to_string(duration) + "ms) 밖입니다. 재생 헤드를 앞으로 옮기세요.");
   Json pasted = Json::array();
   for (const auto& e : op.at("keys")) {
-    const Str tg = retarget.empty() ? e.at("target").get<Str>() : retarget, prop = optStr(e, "property");
     const int64_t t = at + ms(e, "offsetMs");
+    if (e.at("target") == EVENT_TARGET) {
+      // An event key at the same time and name is replaced, payload included.
+      const Str name = reqStr(e, "property");
+      if (const int i = findEvent(c, t, name); i >= 0) for (const char* f : EVENT_PAYLOAD) c["events"][size_t(i)].erase(f);
+      Json set{{"clip", clipId}, {"timeMs", t}, {"name", name}};
+      for (const char* f : EVENT_PAYLOAD) if (has(e, f)) set[f] = e.at(f);
+      setEventKey(r, set);
+      pasted.push_back(refJson(EVENT_TARGET, name, t));
+      continue;
+    }
+    const Str tg = retarget.empty() ? e.at("target").get<Str>() : retarget, prop = optStr(e, "property");
     Json set{{"clip", clipId}, {"target", tg}, {"property", prop}, {"timeMs", t}};
     if (e.contains("value")) set["value"] = e.at("value");
     for (const char* k : {"interp", "curve", "attachment", "offsets"}) if (has(e, k)) set[k] = e.at(k);
@@ -3006,6 +3266,8 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"setKey", setKey}, {"deleteKey", deleteKey}, {"moveKey", moveKey}, {"setInterp", setInterp}, {"setCurve", setCurve},
     {"moveKeys", moveKeys}, {"scaleKeys", scaleKeys}, {"deleteKeys", deleteKeys}, {"copyKeys", copyKeys}, {"pasteKeys", pasteKeys},
     {"copyPose", copyPose}, {"pastePose", pastePose},
+    {"addEventDef", addEventDef}, {"setEventDef", setEventDef}, {"renameEventDef", renameEventDef}, {"deleteEventDef", deleteEventDef},
+    {"setEventKey", setEventKey}, {"moveEventKey", moveEventKey}, {"deleteEventKey", deleteEventKey},
     {"addClip", addClip}, {"duplicateClip", duplicateClip}, {"setClip", setClip}, {"setMix", setMix}, {"setCanvas", setCanvas},
     {"applySetupDeltaToKeys", applySetupDeltaToKeys},
     {"addSkin", addSkin}, {"duplicateSkin", duplicateSkin}, {"setSkinAttachment", setSkinAttachment}, {"removeSkinAttachment", removeSkinAttachment},

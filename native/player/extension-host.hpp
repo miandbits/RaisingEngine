@@ -4,6 +4,7 @@
 // Nothing here can reach GameSession state, so animation can never change game results.
 #include "session.hpp"
 #include <SDL3/SDL_loadso.h>
+#include <deque>
 #include <functional>
 #include <map>
 #include <set>
@@ -15,6 +16,8 @@ struct ExtensionPlugin {
   SDL_SharedObject* module=nullptr;
   const char* (*request)(const char*)=nullptr;
 };
+/** Sound of an `event` notification that names an audio asset (CONTRACT.md §7 event payloads). */
+struct ExtensionSound { std::string asset; double volume=1,balance=0; };
 struct ExtensionMount {
   std::string instance,plugin,error;
   Json element=nullptr,items=Json::array();
@@ -29,6 +32,11 @@ public:
   Json preserved=Json::object(),pending_restore=nullptr,last_observe=nullptr;
   std::function<std::string(const std::string&)> asset_path;
   uint64_t observations=0;double clock_ms=0;
+  // `event` notifications of update replies: the newest ones for automation reports and the sounds
+  // they name, for the player's audio. Presentation only: none of it reaches the game session.
+  static constexpr size_t MAX_RECENT_EVENTS=32,MAX_PENDING_SOUNDS=64;
+  std::deque<Json> recent_events;uint64_t event_count=0,sound_count=0;
+  std::vector<ExtensionSound> sounds;
   ExtensionHost()=default;
   ExtensionHost(const ExtensionHost&)=delete;
   ExtensionHost& operator=(const ExtensionHost&)=delete;
@@ -88,8 +96,10 @@ public:
   void update(double dt_ms) {
     if(!active())return;
     dt_ms=std::clamp(dt_ms,0.0,10000.0);clock_ms+=dt_ms;
-    for(auto& p:plugins)if(p.available)call(p,{{"op","update"},{"dtMs",dt_ms}});
+    for(auto& p:plugins)if(p.available)collect_events(p.id,call(p,{{"op","update"},{"dtMs",dt_ms}}));
   }
+  /** Sounds of the events fired since the last call (the player plays them unless muted). */
+  std::vector<ExtensionSound> take_sounds(){std::vector<ExtensionSound> out;out.swap(sounds);return out;}
   void frame() {
     for(auto& [id,m]:mounts) {
       if(!m.mounted)continue;auto* p=plugin(m.plugin);if(!p||!p->available){m.items=Json::array();continue;}
@@ -128,9 +138,28 @@ public:
       const auto states=described.count(m.plugin)?described.at(m.plugin):Json::object();
       list.push_back({{"instance",id},{"plugin",m.plugin},{"available",p&&p->available&&m.mounted},{"error",m.error},{"element",m.element},{"items",items},{"state",states.value(id,Json())}});
     }
-    return {{"active",active()},{"plugins",plugin_list},{"instances",list},{"observations",observations},{"clockMs",clock_ms},{"lastObserve",last_observe}};
+    Json events=Json::array();for(const auto& e:recent_events)events.push_back(e);
+    return {{"active",active()},{"plugins",plugin_list},{"instances",list},{"observations",observations},{"clockMs",clock_ms},{"lastObserve",last_observe},
+      {"events",events},{"eventCount",event_count},{"soundCount",sound_count}};
   }
 private:
+  /** update reply {notifications: {instance: [..]}}: keeps `event` entries (with their payload). */
+  void collect_events(const std::string& plugin_id,const Json& reply) {
+    if(!reply.contains("notifications")||!reply.at("notifications").is_object())return;
+    for(const auto& [instance,list]:reply.at("notifications").items()) {
+      if(!list.is_array())continue;
+      for(const auto& n:list) {
+        if(!n.is_object()||n.value("kind","")!="event")continue;
+        Json entry=n;entry["instance"]=instance;entry["plugin"]=plugin_id;entry["clockMs"]=clock_ms;
+        recent_events.push_back(std::move(entry));if(recent_events.size()>MAX_RECENT_EVENTS)recent_events.pop_front();
+        ++event_count;
+        const auto audio=n.contains("audio")&&n.at("audio").is_string()?n.at("audio").get<std::string>():"";
+        if(audio.empty()||sounds.size()>=MAX_PENDING_SOUNDS)continue;
+        auto number=[&](const char* k,double fallback){return n.contains(k)&&n.at(k).is_number()?n.at(k).get<double>():fallback;};
+        sounds.push_back({audio,std::clamp(number("volume",1),0.0,1.0),std::clamp(number("balance",0),-1.0,1.0)});++sound_count;
+      }
+    }
+  }
   void open(ExtensionPlugin& p,const fs::path& root) {
     auto fail=[&](const std::string& message){p.available=false;p.error=message;if(p.module){SDL_UnloadObject(p.module);p.module=nullptr;}p.request=nullptr;};
     if(p.abi!="raising-extension-1")return fail("지원하지 않는 확장 ABI입니다: "+p.abi);

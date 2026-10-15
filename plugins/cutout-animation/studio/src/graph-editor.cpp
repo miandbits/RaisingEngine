@@ -43,11 +43,44 @@ void GraphEditor::setChannels(const QVector<Channel>& channels, int durationMs) 
   channels_ = channels;
   view_->setDuration(durationMs);
   drag_ = Drag::None;
-  fit();
+  QStringList ids;
+  for (const auto& c : channels_) ids << idOf(c.target, c.property);
+  // A zoomed value view survives refreshes of the same channels (a key drag commit, undo): the
+  // keys stay under the cursor. Other channels (another bone) start fitted again.
+  if (!valueManual_ || ids != rangeIds_) { valueManual_ = false; fit(); }
+  rangeIds_ = ids;
   update();
 }
 void GraphEditor::setNormalized(bool on) {
   normalized_ = on;
+  valueManual_ = false;
+  fit();
+  update();
+}
+void GraphEditor::zoomValues(double y, double factor) {
+  if (!(factor > 0) || !std::isfinite(factor) || ranges_.isEmpty()) return;
+  for (const auto& [lo, hi] : ranges_) {
+    const double span = (hi - lo) / factor;
+    if (span < 1e-6 || span > 1e9) return;  // the same limit for every channel keeps them aligned
+  }
+  for (int c = 0; c < ranges_.size(); c++) {
+    const double v = yToValue(c, y);
+    auto& [lo, hi] = ranges_[c];
+    lo = v - (v - lo) / factor;
+    hi = v + (hi - v) / factor;
+  }
+  valueManual_ = true;
+  update();
+}
+void GraphEditor::panValues(double dy) {
+  const double h = plotBottom() - plotTop();
+  if (dy == 0 || h <= 0) return;
+  for (auto& [lo, hi] : ranges_) { const double d = dy / h * (hi - lo); lo += d; hi += d; }
+  valueManual_ = true;
+  update();
+}
+void GraphEditor::fitValues() {
+  valueManual_ = false;
   fit();
   update();
 }
@@ -304,7 +337,7 @@ void GraphEditor::mousePressEvent(QMouseEvent* e) {
   if (const int l = legendAt(pos); l >= 0) {
     const QString id = idOf(channels_[l].target, channels_[l].property);
     if (!hidden_.remove(id)) hidden_.insert(id);
-    fit();
+    if (!valueManual_) fit();  // a zoomed value view stays where the user put it
     update();
     return;
   }
@@ -364,7 +397,11 @@ void GraphEditor::previewGroup(QPointF pos, bool fine) {
 void GraphEditor::mouseMoveEvent(QMouseEvent* e) {
   const QPointF pos = e->position();
   const bool fine = e->modifiers() & Qt::ShiftModifier;
-  if (drag_ == Drag::Pan) view_->panPixels(pos.x() - lastPos_.x());
+  if (drag_ == Drag::Pan) {
+    // Middle-drag pans both axes: time (shared TimeView) and values (this graph only).
+    view_->panPixels(pos.x() - lastPos_.x());
+    panValues(pos.y() - lastPos_.y());
+  }
   if (drag_ == Drag::Scrub && onScrub) onScrub(view_->snap(xToTime(pos.x()), fine));
   if (drag_ == Drag::LoopIn) view_->setLoop(std::min(view_->snap(xToTime(pos.x()), fine), view_->loopOut() - 1), view_->loopOut());
   if (drag_ == Drag::LoopOut) view_->setLoop(view_->loopIn(), std::max(view_->snap(xToTime(pos.x()), fine), view_->loopIn() + 1));
@@ -468,7 +505,12 @@ void GraphEditor::mouseReleaseEvent(QMouseEvent* e) {
 }
 void GraphEditor::wheelEvent(QWheelEvent* e) {
   const QPoint a = e->angleDelta();
-  if (e->modifiers() & Qt::ControlModifier) view_->zoomAround(xToTime(e->position().x()), std::pow(1.25, a.y() / 120.0));
+  const auto mods = e->modifiers();
+  // Ctrl+Shift+wheel or Alt+wheel: value zoom at the cursor (Windows turns Alt+wheel into a
+  // horizontal delta, hence x when y is 0). Ctrl+wheel stays the shared time zoom.
+  if ((mods & Qt::AltModifier) || ((mods & Qt::ControlModifier) && (mods & Qt::ShiftModifier)))
+    zoomValues(e->position().y(), std::pow(1.25, (a.y() ? a.y() : a.x()) / 120.0));
+  else if (mods & Qt::ControlModifier) view_->zoomAround(xToTime(e->position().x()), std::pow(1.25, a.y() / 120.0));
   else view_->panPixels((a.x() ? a.x() : a.y()) / 120.0 * 80);
   e->accept();
 }
