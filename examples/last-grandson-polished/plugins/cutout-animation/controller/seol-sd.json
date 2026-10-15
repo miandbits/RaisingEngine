@@ -1,0 +1,45 @@
+{
+  "formatVersion": "0.1.0",
+  "plugin": "cutout-animation",
+  "type": "controller",
+  "id": "seol-sd",
+  "data": {
+    "schemaVersion": 1,
+    "rig": "seol-sd",
+    "characterId": "apprentice",
+    "defaultClip": "rest",
+    "layers": [],
+    "bindings": [
+      {
+        "id": "activity-study",
+        "signal": "activityResult",
+        "match": {
+          "activityId": "study"
+        },
+        "clip": "study",
+        "loop": true,
+        "track": 0
+      },
+      {
+        "id": "activity-work",
+        "signal": "activityResult",
+        "match": {
+          "activityId": "work"
+        },
+        "clip": "work",
+        "loop": true,
+        "track": 0
+      },
+      {
+        "id": "activity-rest",
+        "signal": "activityResult",
+        "match": {
+          "activityId": "rest"
+        },
+        "clip": "rest",
+        "loop": true,
+        "track": 0
+      }
+    ]
+  }
+}

@@ -25,6 +25,31 @@
       "id": "winter-motif",
       "kind": "audio",
       "path": "assets/winter-motif.wav"
+    },
+    {
+      "id": "sd-study-a",
+      "kind": "image",
+      "path": "assets/art/sd-study-a.png"
+    },
+    {
+      "id": "sd-study-b",
+      "kind": "image",
+      "path": "assets/art/sd-study-b.png"
+    },
+    {
+      "id": "sd-work-a",
+      "kind": "image",
+      "path": "assets/art/sd-work-a.png"
+    },
+    {
+      "id": "sd-work-b",
+      "kind": "image",
+      "path": "assets/art/sd-work-b.png"
+    },
+    {
+      "id": "sd-rest",
+      "kind": "image",
+      "path": "assets/art/sd-rest.png"
     }
   ]
 }

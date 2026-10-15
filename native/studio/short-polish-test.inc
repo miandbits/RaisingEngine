@@ -19,18 +19,20 @@ void StudioTests::shortPolishAuthoring(){
   w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);
   if(!w.lastError.isEmpty()){QFile diagnostic(evidence+"/editor-error.json");if(diagnostic.open(QIODevice::WriteOnly))diagnostic.write(QJsonDocument(w.currentView()).toJson());}
   QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
-  search->setText("seol");for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole).toString()=="seol"&&(*it)->data(0,Qt::UserRole+1).toString()=="schedule"){tree->setCurrentItem(*it);break;}
+  search->setText("sd-character");for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole).toString()=="sd-character"&&(*it)->data(0,Qt::UserRole+1).toString()=="schedule"){tree->setCurrentItem(*it);break;}
   auto launch=w.findChild<QPushButton*>("cutoutOpenWorkspace");QVERIFY(launch);launch->click();QTest::qWait(300);
   auto panel=w.findChild<QWidget*>("cutoutPanel");QVERIFY(panel&&panel->isVisible());
-  auto clips=panel->findChild<QListWidget*>("cutoutClipList");QVERIFY(clips);bool found=false;for(int i=0;i<clips->count();i++)if(clips->item(i)->data(Qt::UserRole).toString()=="idle"){clips->setCurrentRow(i);found=true;break;}QVERIFY(found);
+  auto characters=panel->findChild<QTreeWidget*>("cutoutCharacterList");QVERIFY(characters);bool sdSelected=false;
+  for(QTreeWidgetItemIterator it(characters);*it;++it)if((*it)->data(0,Qt::UserRole).toString()=="rig:seol-sd"){characters->setCurrentItem(*it);sdSelected=true;break;}QVERIFY(sdSelected);QTest::qWait(150);
+  auto clips=panel->findChild<QListWidget*>("cutoutClipList");QVERIFY(clips);bool found=false;for(int i=0;i<clips->count();i++)if(clips->item(i)->data(Qt::UserRole).toString()=="study"){clips->setCurrentRow(i);found=true;break;}QVERIFY(found);
   QTest::qWait(150);auto duration=panel->findChild<QSpinBox*>("cutoutClipDuration");QVERIFY(duration);
-  const auto before=duration->value();QCOMPARE(before,4000);cutoutE2e::typeSpin(duration,"5000");QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);
+  const auto before=duration->value();QCOMPARE(before,2400);cutoutE2e::typeSpin(duration,"2600");QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);
   w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
   bool animate=false;for(auto button:panel->findChildren<QAbstractButton*>())if(button->text().contains("(Animate)")){button->click();animate=button->isChecked();break;}QVERIFY(animate);
   auto play=panel->findChild<QPushButton*>("cutoutPlay");QVERIFY(play&&play->isEnabled());play->click();QTest::qWait(650);
   auto time=panel->findChild<QSpinBox*>("cutoutTimeField");QVERIFY(time&&time->value()>0);w.grab().save(evidence+"/editor-animation.png");play->click();
   w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),20000);
-  const auto data=cutoutE2e::pluginData(w.currentView(),"plugins/cutout-animation/rig/seol.json");bool persisted=false;for(const auto& c:data.value("clips").toArray())if(c.toObject().value("id")=="idle")persisted=c.toObject().value("durationMs")==5000;QVERIFY(persisted);
+  const auto data=cutoutE2e::pluginData(w.currentView(),"plugins/cutout-animation/rig/seol-sd.json");bool persisted=false;for(const auto& c:data.value("clips").toArray())if(c.toObject().value("id")=="study")persisted=c.toObject().value("durationMs")==2600;QVERIFY(persisted);
   w.findChild<QAction*>("validateProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);for(const auto& d:w.currentView().value("diagnostics").toArray())QVERIFY2(d.toObject().value("severity")!="error",qPrintable(QString::fromUtf8(QJsonDocument(d.toObject()).toJson())));
   QFile proof(evidence+"/editor-project.txt");QVERIFY(proof.open(QIODevice::WriteOnly));proof.write(root.toUtf8());
 }

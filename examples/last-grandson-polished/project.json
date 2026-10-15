@@ -262,23 +262,6 @@
             "fill": "#091d2670"
           },
           {
-            "id": "seol",
-            "kind": "plugin",
-            "x": 800,
-            "y": 88,
-            "width": 480,
-            "height": 632,
-            "extension": {
-              "plugin": "cutout-animation",
-              "type": "character",
-              "ref": "seol",
-              "props": {
-                "scale": 1.02
-              }
-            },
-            "locked": true
-          },
-          {
             "id": "game-title",
             "kind": "text",
             "x": 32,
@@ -287,7 +270,8 @@
             "height": 38,
             "text": "잔설 아래 막내손자",
             "fontSize": 26,
-            "color": "#eee4d2"
+            "color": "#eee4d2",
+            "visibleWhen": "planning"
           },
           {
             "id": "toolbar",
@@ -308,7 +292,8 @@
             "fill": "#eee4d2f5",
             "borderWidth": 1,
             "borderColor": "#c5a16b",
-            "radius": 4
+            "radius": 4,
+            "visibleWhen": "planning"
           },
           {
             "id": "chapter",
@@ -319,7 +304,8 @@
             "height": 28,
             "text": "남궁가 별채  /  마지막 두 달",
             "fontSize": 17,
-            "color": "#79715e"
+            "color": "#79715e",
+            "visibleWhen": "planning"
           },
           {
             "id": "prompt",
@@ -330,7 +316,8 @@
             "height": 44,
             "text": "이번 달, 무엇을 지킬 것인가",
             "fontSize": 32,
-            "color": "#233c3b"
+            "color": "#233c3b",
+            "visibleWhen": "planning"
           },
           {
             "id": "stat-skill",
@@ -342,7 +329,8 @@
             "fill": "#ffffff55",
             "borderWidth": 1,
             "borderColor": "#cbbca3",
-            "radius": 3
+            "radius": 3,
+            "visibleWhen": "planning"
           },
           {
             "id": "label-skill",
@@ -353,7 +341,8 @@
             "height": 28,
             "text": "내공",
             "fontSize": 18,
-            "color": "#233c3b"
+            "color": "#233c3b",
+            "visibleWhen": "planning"
           },
           {
             "id": "value-skill",
@@ -368,7 +357,8 @@
             "binding": "attribute-value",
             "attributeId": "skill",
             "valueFormat": "{value}",
-            "align": "right"
+            "align": "right",
+            "visibleWhen": "planning"
           },
           {
             "id": "hint-skill",
@@ -379,7 +369,8 @@
             "height": 24,
             "text": "살아갈 힘",
             "fontSize": 14,
-            "color": "#69736b"
+            "color": "#69736b",
+            "visibleWhen": "planning"
           },
           {
             "id": "stat-money",
@@ -391,7 +382,8 @@
             "fill": "#ffffff55",
             "borderWidth": 1,
             "borderColor": "#cbbca3",
-            "radius": 3
+            "radius": 3,
+            "visibleWhen": "planning"
           },
           {
             "id": "label-money",
@@ -402,7 +394,8 @@
             "height": 28,
             "text": "약값",
             "fontSize": 18,
-            "color": "#233c3b"
+            "color": "#233c3b",
+            "visibleWhen": "planning"
           },
           {
             "id": "value-money",
@@ -417,7 +410,8 @@
             "binding": "attribute-value",
             "attributeId": "money",
             "valueFormat": "{value}",
-            "align": "right"
+            "align": "right",
+            "visibleWhen": "planning"
           },
           {
             "id": "hint-money",
@@ -428,7 +422,8 @@
             "height": 24,
             "text": "남은 은전",
             "fontSize": 14,
-            "color": "#69736b"
+            "color": "#69736b",
+            "visibleWhen": "planning"
           },
           {
             "id": "stat-stamina",
@@ -440,7 +435,8 @@
             "fill": "#ffffff55",
             "borderWidth": 1,
             "borderColor": "#cbbca3",
-            "radius": 3
+            "radius": 3,
+            "visibleWhen": "planning"
           },
           {
             "id": "label-stamina",
@@ -451,7 +447,8 @@
             "height": 28,
             "text": "기력",
             "fontSize": 18,
-            "color": "#233c3b"
+            "color": "#233c3b",
+            "visibleWhen": "planning"
           },
           {
             "id": "value-stamina",
@@ -466,7 +463,8 @@
             "binding": "attribute-value",
             "attributeId": "stamina",
             "valueFormat": "{value}",
-            "align": "right"
+            "align": "right",
+            "visibleWhen": "planning"
           },
           {
             "id": "hint-stamina",
@@ -477,7 +475,8 @@
             "height": 24,
             "text": "무리하지 않기",
             "fontSize": 14,
-            "color": "#69736b"
+            "color": "#69736b",
+            "visibleWhen": "planning"
           },
           {
             "id": "stat-stress",
@@ -489,7 +488,8 @@
             "fill": "#ffffff55",
             "borderWidth": 1,
             "borderColor": "#cbbca3",
-            "radius": 3
+            "radius": 3,
+            "visibleWhen": "planning"
           },
           {
             "id": "label-stress",
@@ -500,7 +500,8 @@
             "height": 28,
             "text": "한독",
             "fontSize": 18,
-            "color": "#233c3b"
+            "color": "#233c3b",
+            "visibleWhen": "planning"
           },
           {
             "id": "value-stress",
@@ -515,7 +516,8 @@
             "binding": "attribute-value",
             "attributeId": "stress",
             "valueFormat": "{value}",
-            "align": "right"
+            "align": "right",
+            "visibleWhen": "planning"
           },
           {
             "id": "hint-stress",
@@ -526,7 +528,8 @@
             "height": 24,
             "text": "운기로 다스리기",
             "fontSize": 14,
-            "color": "#69736b"
+            "color": "#69736b",
+            "visibleWhen": "planning"
           },
           {
             "id": "calendar",
@@ -538,7 +541,8 @@
             "text": "",
             "fontSize": 20,
             "color": "#233c3b",
-            "binding": "calendar"
+            "binding": "calendar",
+            "visibleWhen": "planning"
           },
           {
             "id": "schedule",
@@ -554,14 +558,44 @@
             "showActivityDescription": true
           },
           {
+            "id": "sd-character",
+            "kind": "plugin",
+            "label": "SD 활동 연출",
+            "x": 860,
+            "y": 228,
+            "width": 365,
+            "height": 365,
+            "extension": {
+              "plugin": "cutout-animation",
+              "type": "character",
+              "ref": "seol-sd",
+              "props": {
+                "scale": 1
+              }
+            }
+          },
+          {
+            "id": "activity-result-frame",
+            "kind": "panel",
+            "x": 300,
+            "y": 220,
+            "width": 520,
+            "height": 370,
+            "fill": "#142b32dc",
+            "borderWidth": 1,
+            "borderColor": "#ad8e5b",
+            "radius": 4,
+            "visibleWhen": "result"
+          },
+          {
             "id": "result",
             "kind": "result",
-            "x": 64,
-            "y": 384,
-            "width": 710,
-            "height": 190,
-            "color": "#233c3b",
-            "fontSize": 22,
+            "x": 340,
+            "y": 264,
+            "width": 450,
+            "height": 300,
+            "color": "#f0e5cf",
+            "fontSize": 28,
             "visibleWhen": "result"
           },
           {
@@ -573,7 +607,8 @@
             "height": 26,
             "text": "세 칸을 정한 뒤 진행하세요. 결과를 확인하며 다음 활동으로 넘어갑니다.",
             "fontSize": 14,
-            "color": "#69736b"
+            "color": "#69736b",
+            "visibleWhen": "planning"
           },
           {
             "id": "advance",
@@ -603,7 +638,8 @@
             "height": 28,
             "text": "목표  내공 30 · 기력 20 · 노인의 신뢰 1",
             "fontSize": 15,
-            "color": "#233c3b"
+            "color": "#233c3b",
+            "visibleWhen": "planning"
           },
           {
             "id": "nameplate",
@@ -614,7 +650,8 @@
             "height": 89,
             "fill": "#10242be0",
             "borderWidth": 1,
-            "borderColor": "#c5a16b"
+            "borderColor": "#c5a16b",
+            "visibleWhen": "planning"
           },
           {
             "id": "name",
@@ -625,7 +662,8 @@
             "height": 35,
             "text": "남궁설",
             "fontSize": 28,
-            "color": "#eee4d2"
+            "color": "#eee4d2",
+            "visibleWhen": "planning"
           },
           {
             "id": "identity",
@@ -636,7 +674,8 @@
             "height": 25,
             "text": "막내손자  ·  아직 끝나지 않은 겨울",
             "fontSize": 14,
-            "color": "#c5a16b"
+            "color": "#c5a16b",
+            "visibleWhen": "planning"
           },
           {
             "id": "sound",
@@ -653,6 +692,30 @@
             "radius": 3,
             "borderWidth": 1,
             "borderColor": "#c5a16b"
+          },
+          {
+            "id": "sd-heading",
+            "kind": "text",
+            "x": 846,
+            "y": 142,
+            "width": 360,
+            "height": 42,
+            "text": "남궁설의 작은 하루",
+            "fontSize": 27,
+            "color": "#f0e5cf",
+            "visibleWhen": "planning"
+          },
+          {
+            "id": "sd-subtitle",
+            "kind": "text",
+            "x": 846,
+            "y": 192,
+            "width": 350,
+            "height": 30,
+            "text": "배우고 · 움직이고 · 숨을 고른다",
+            "fontSize": 16,
+            "color": "#c6c7b8",
+            "visibleWhen": "planning"
           }
         ]
       },

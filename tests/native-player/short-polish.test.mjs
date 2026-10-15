@@ -30,6 +30,8 @@ function route(content,kind,evidence){
       action({type:'executeActivity'},[{click:'advance'}]);checkpoint(`month-${month}-slot-${slot}`,month===0);
       if(month===0&&slot===0){steps.push({extensionAdvanceMs:700});restore({type:'acknowledgeResult'},[{click:'advance'}],'training');}
       if(month===0&&slot===1)restore({type:'acknowledgeResult'},[{click:'advance'}],'midpoint');
+      const sdId=`sd-${month}-${slot}`;
+      steps.push({checkpoint:sdId+'-base'},{extensionAdvanceMs:plan[slot]==='study'?1200:plan[slot]==='work'?320:1800},{checkpoint:sdId+'-motion',screenshot:resolve(evidence,kind+'-'+sdId+'.png')});
       action({type:'acknowledgeResult'},[{click:'advance'}]);stories();
     }
   }
@@ -54,18 +56,30 @@ test('polished short: real animation plugin, both endings and save/resume', {tim
     const result=JSON.parse(await readFile(report,'utf8'));assert.equal(child.status,0,JSON.stringify(result.error??child.stderr));assert.equal(result.ok,true);
     const state=id=>result.steps.find(s=>s.command.checkpoint===id)?.ui.state;
     const ui=id=>result.steps.find(s=>s.command.checkpoint===id)?.ui;
-    const animation=id=>ui(id).extensions.instances.find(i=>i.instance==='schedule/seol');
+    const animation=id=>ui(id).extensions.instances.find(i=>i.instance==='schedule/sd-character');
     assert.equal(animation('started').available,true);
     assert.notDeepEqual(animation('started').items[0].matrix,animation('breathing').items[0].matrix);
     assert.ok(animation('breathing').state.tracks[0].timeMs>0);
     assert.equal(ui('muted').audio.muted,true);
     assert.equal(ui('started').audio.musicPlaying,true);
-    assert.equal(animation('month-0-slot-1').state.activeExpression,'rest');
+    assert.equal(animation('month-0-slot-1').state.tracks[0].clip,'rest');
+    for(let month=0;month<2;month++)for(let slot=0;slot<3;slot++){
+      const activity=kind==='survival'?(month===0?['study','rest','study']:['study','rest','work'])[slot]:'rest';
+      const base=ui(`sd-${month}-${slot}-base`),motion=ui(`sd-${month}-${slot}-motion`);
+      const sd=view=>view.extensions.instances.find(i=>i.instance==='schedule/sd-character');
+      assert.equal(sd(base)?.available,true,'SD runtime available');
+      assert.equal(sd(base).state.tracks[0].clip,activity,'activity selects matching SD clip');
+      assert.notDeepEqual(sd(base).items,sd(motion).items,'SD frame or breathing pose advances');
+      assert.ok(sd(base).items.length>0,'SD stage has actual draw items');
+      assert.ok(!JSON.stringify(base.texts).includes('이번 달, 무엇을 지킬 것인가'),'result hides planning prompt');
+      assert.ok(!base.elements.some(e=>/^plan-/.test(e.id)),'result has no schedule selectors');
+    }
+    assert.ok(animation('started').items.length>0,'SD stage stays mounted while planning');
+    assert.equal(animation('started').state.tracks[0].clip,'rest');
     // The plugin restarts decorative loops and does not persist cross-fades; playback
-    // serials are also internal. Expression/clip persist, and one-shots resume their cursor.
+    // serials are also internal. Expression/clip selection persists across restore.
     for(const id of plan.restores){const before=ui(id+'-saved').extensions.instances,after=ui(id+'-restored').extensions.instances;assert.deepEqual(before.map(i=>({instance:i.instance,expression:i.state.activeExpression,clips:i.state.tracks.map(t=>t.clip)})),after.map(i=>({instance:i.instance,expression:i.state.activeExpression,clips:i.state.tracks.map(t=>t.clip)})),'animation selection restores '+id);}
-    assert.equal(ui('training-restored').extensions.instances[0].state.tracks[0].timeMs,kind==='survival'?700:0);
-    if(kind==='survival')assert.deepEqual(ui('training-saved').extensions.instances[0].items,ui('training-restored').extensions.instances[0].items,'one-shot pose resumes');
+    assert.equal(animation('training-restored').state.tracks[0].timeMs,0,'decorative SD loops restart when restored');
     for(const id of ['small','large']){assert.equal(ui(id).screenId,'schedule');assert.ok(ui(id).elements.find(e=>e.id==='advance')?.enabled);assert.equal(animation(id).available,true);}
     assert.ok(JSON.stringify(ui('started').texts).includes('기력 25'),'selected activity description visible');
     for(const [id,expected]of Object.entries(plan.expected))assert.deepEqual(state(id),expected,kind+' '+id);

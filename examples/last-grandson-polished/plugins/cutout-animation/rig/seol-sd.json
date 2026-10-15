@@ -1,0 +1,278 @@
+{
+  "formatVersion": "0.1.0",
+  "plugin": "cutout-animation",
+  "type": "rig",
+  "id": "seol-sd",
+  "data": {
+    "schemaVersion": 1,
+    "name": "남궁설 SD · 작은 하루",
+    "canvas": {
+      "width": 1254,
+      "height": 1254,
+      "originX": 0,
+      "originY": 0
+    },
+    "bones": [
+      {
+        "id": "root",
+        "parent": null
+      },
+      {
+        "id": "body",
+        "parent": "root",
+        "x": 627,
+        "y": 1254
+      }
+    ],
+    "slots": [
+      {
+        "id": "body",
+        "bone": "body",
+        "attachment": "study"
+      }
+    ],
+    "attachments": [
+      {
+        "slot": "body",
+        "name": "study",
+        "imageAssetId": "sd-study-a",
+        "width": 1254,
+        "height": 1254,
+        "pivotX": 0.5,
+        "pivotY": 1,
+        "sequence": {
+          "frames": [
+            "sd-study-a",
+            "sd-study-b"
+          ],
+          "setupIndex": 0
+        }
+      },
+      {
+        "slot": "body",
+        "name": "work",
+        "imageAssetId": "sd-work-a",
+        "width": 1254,
+        "height": 1254,
+        "pivotX": 0.5,
+        "pivotY": 1,
+        "sequence": {
+          "frames": [
+            "sd-work-a",
+            "sd-work-b"
+          ],
+          "setupIndex": 0
+        }
+      },
+      {
+        "slot": "body",
+        "name": "rest",
+        "imageAssetId": "sd-rest",
+        "width": 1254,
+        "height": 1254,
+        "pivotX": 0.5,
+        "pivotY": 1
+      }
+    ],
+    "clips": [
+      {
+        "id": "study",
+        "name": "비급 읽기 · 책장 넘기기",
+        "durationMs": 2400,
+        "loop": true,
+        "tracks": [
+          {
+            "target": "slot:body",
+            "property": "attachment",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "study",
+                "interp": "step"
+              }
+            ]
+          },
+          {
+            "target": "slot:body",
+            "property": "sequence",
+            "keys": [
+              {
+                "timeMs": 0,
+                "mode": "loop",
+                "delay": 1200,
+                "interp": "step",
+                "index": 0
+              }
+            ]
+          },
+          {
+            "target": "bone:body",
+            "property": "rotation",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -0.4,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 1200,
+                "value": 0.4,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 2400,
+                "value": -0.4,
+                "interp": "linear"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "work",
+        "name": "약초 심부름 · 종종걸음",
+        "durationMs": 640,
+        "loop": true,
+        "tracks": [
+          {
+            "target": "slot:body",
+            "property": "attachment",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "work",
+                "interp": "step"
+              }
+            ]
+          },
+          {
+            "target": "slot:body",
+            "property": "sequence",
+            "keys": [
+              {
+                "timeMs": 0,
+                "mode": "loop",
+                "delay": 320,
+                "interp": "step",
+                "index": 0
+              }
+            ]
+          },
+          {
+            "target": "bone:body",
+            "property": "y",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 160,
+                "value": -18,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 320,
+                "value": 0,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 480,
+                "value": -18,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 640,
+                "value": 0,
+                "interp": "linear"
+              }
+            ]
+          },
+          {
+            "target": "bone:body",
+            "property": "rotation",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -1,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 320,
+                "value": 1,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 640,
+                "value": -1,
+                "interp": "linear"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "rest",
+        "name": "운기조식 · 들숨과 날숨",
+        "durationMs": 3600,
+        "loop": true,
+        "tracks": [
+          {
+            "target": "slot:body",
+            "property": "attachment",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "rest",
+                "interp": "step"
+              }
+            ]
+          },
+          {
+            "target": "bone:body",
+            "property": "scaleY",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 1800,
+                "value": 1.025,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 3600,
+                "value": 1,
+                "interp": "linear"
+              }
+            ]
+          },
+          {
+            "target": "bone:body",
+            "property": "y",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 1800,
+                "value": -5,
+                "interp": "linear"
+              },
+              {
+                "timeMs": 3600,
+                "value": 0,
+                "interp": "linear"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

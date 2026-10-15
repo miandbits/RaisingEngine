@@ -1,6 +1,6 @@
 # Assets and generation record
 
-All four illustrations were generated for this sample with OpenAI's built-in image generation tool on 2026-10-15. No extracted game artwork or third-party character reference was supplied. The neutral portrait is the sole reference used for the rest-expression edit. Generated illustrations still need a human art review before a commercial release.
+The four original illustrations and five SD sprites were generated for this sample with OpenAI's built-in image generation tool on 2026-10-15. No extracted game artwork or third-party character reference was supplied. The neutral portrait is the reference used for the rest-expression edit and the first SD sprite. Generated illustrations still need a human art review before a commercial release.
 
 | File | Use |
 |---|---|
@@ -31,3 +31,27 @@ Use the supplied neutral portrait. Preserve the exact pose, alignment, clothing,
 Original high-end 2D wuxia game background, 16:9, a modest apothecary at winter dusk. Dark wooden medicine drawers with only tiny illegible markings, desk with herbs and a brass kettle steaming, paper window showing snow and red plum blossoms, warm lantern, jade ceramics, linen and aged wood. Open center for characters, low-contrast lower space for dialogue. Painterly, cool teal with warm ivory and muted gold. No people, UI or readable letters.
 
 These prompts record the final requested visual direction; the repository contains the selected output files. Layout and animation are authored in project data, not baked into the background images.
+
+## SD activity sprites
+
+All five outputs are transparent 1254×1254 PNGs, used unchanged. The plugin switches the two reading/walking frames and adds small transform keys; this is not a full skeletal character rig.
+
+### `art/sd-study-a.png` — reference `art/seol-neutral.png`
+
+Create an original production-ready SD/chibi game sprite of the boy in the reference, for a small daily activity animation in a 2D raising simulation. The reference is character identity and clothing only, not an edit target. FULL BODY, 3-head-tall adorable but dignified young wuxia boy Namgung Seol, large head, pale skin, black half-up hair, grey shawl over dark teal hanfu, ivory collar, dark-red sash, small jade pendant. Clean hand-painted anime sprite with crisp dark outlines, simple controlled shading, readable at 150 pixels tall. Single character centered on a square 1024x1024 genuinely transparent canvas; head at y~160, feet at y~900, margins on all sides. Pose A: standing in three-quarter view facing left, holding a small OPEN martial arts book with both hands at chest height, eyes looking at the pages, focused expression. No letters on book, no background, floor, shadow, border, labels, text, panels or duplicate figures. This is ONE sprite, not a sprite sheet.
+
+### `art/sd-study-b.png` — edit of study A
+
+Edit this exact chibi sprite to create the second frame of a gentle reading animation. Preserve the EXACT canvas dimensions, character scale, feet baseline, center alignment, clothing, hair, identity, linework and transparent background. Only change the small pose: gently tilt head down a little further, eyes softly closed for a blink, right hand lifts one page of the same open book. Keep head and body nearly at the same positions for clean two-frame looping. ONE full-body character only; no text or scenery.
+
+### `art/sd-work-a.png` — edit of study A
+
+Edit this exact chibi sprite into a walking-with-herbs pose for a wuxia raising game. Preserve EXACT canvas dimensions, character scale, feet baseline, center alignment, clothing, hair, identity, outline and true transparent background. Remove book. Both hands hold a small tan cloth bundle of medicinal herbs at waist height, green leaf tips visible. Side three-quarter facing left; walking stride A, left foot forward and right foot behind, determined gentle expression. Robe split slightly to show small shoes; arms and herb bundle remain compact. ONE full-body character only; no floor, shadow, text, background or effects.
+
+### `art/sd-work-b.png` — edit of work A
+
+Second frame of this exact SD character walking animation. Keep EXACT square canvas size, head size, face, upper body position, hands and herb bundle, clothing, hair, colors and genuine transparent background. Change only the walking stride below the waist: the opposite foot now forward, the previous forward foot now back. Slightly reverse the lower robe folds, shawl hem and trailing hair sway to sell the next step. Keep the same baseline and centered character. No mirroring of the entire sprite! The face and bundle must remain facing the same leftward direction. Single full-body sprite only, no floor or text.
+
+### `art/sd-rest.png` — edit of study A
+
+Edit this exact chibi sprite into a seated meditation pose for a wuxia raising game. Preserve canvas dimensions, character identity, head size, outfit colors, crisp linework and true transparent background. Remove book. Sitting cross-legged on a small simple muted teal round cushion at the SAME ground baseline; hands rest on knees palms upward, eyes gently closed and peaceful expression. The head naturally sits lower than in the standing version. Grey shawl drapes around shoulders. ONE full-body character, nothing cropped. No background, floor, lettering, glowing symbols, effects or duplicate figures.
