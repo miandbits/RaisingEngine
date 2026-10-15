@@ -937,7 +937,7 @@ class StudioTests : public QObject {
     QVERIFY(gesture("onion clip", 1, [&] { click("cutoutNewClip"); }));
     QCOMPARE(panel->clipId(), QString("onion"));
     double x0 = 0, y0 = 0;
-    for (const auto& b : rig()["bones"]) if (b["id"] == "root") { x0 = b.value("x", 0.0); y0 = b.value("y", 0.0); }
+    for (const auto& b : Json(rig()["bones"])) if (b["id"] == "root") { x0 = b.value("x", 0.0); y0 = b.value("y", 0.0); }
     // root x: x0-150 at 0 -> x0+150 at 1000 (looping, 1000 ms); root y key at 300; head rotation key at 700.
     panel->setAutoKey(true);
     panel->selectItem("bone:root");
@@ -1304,7 +1304,7 @@ class StudioTests : public QObject {
     panel->selectItem("bone:head");
     QVERIFY(gesture("head tilt (pending)", 0, [&] { setSpin("cutoutPropRotation", 12); }));
     QVERIFY(panel->hasPending());
-    const Json idleBefore = [&] { for (const auto& c : rig()["clips"]) if (c["id"] == "idle") return c; return Json(); }();
+    const Json idleBefore = [&] { for (const auto& c : Json(rig()["clips"])) if (c["id"] == "idle") return c; return Json(); }();
     answers = {"smile"};
     QVERIFY(gesture("capture expression", 1, [&] { click("cutoutCaptureExpression"); }));
     const Json smile = rig()["expressions"][0];
@@ -1312,7 +1312,7 @@ class StudioTests : public QObject {
     QVERIFY(same(smile["slots"], Json({{"eyes", "closed"}})));
     QVERIFY(same(smile["bones"]["head"], Json({{"rotation", 12}})));
     QVERIFY(!panel->hasPending());
-    QVERIFY(same([&] { for (const auto& c : rig()["clips"]) if (c["id"] == "idle") return c; return Json(); }(), idleBefore));  // pending keys not committed
+    QVERIFY(same([&] { for (const auto& c : Json(rig()["clips"])) if (c["id"] == "idle") return c; return Json(); }(), idleBefore));  // pending keys not committed
     QCOMPARE(panel->previewExpression(), QString("smile"));
     QVERIFY(gesture("nothing changed: capture refused", 0, [&] { panel->setMode(CutoutPanel::Mode::Setup); answers = {"same"}; QVERIFY(!panel->captureExpression()); }));
     panel->setMode(CutoutPanel::Mode::Animate);
@@ -1590,7 +1590,7 @@ class StudioTests : public QObject {
     QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
     const QPointF moved = worldOf(rig(), target.c_str());
     QVERIFY(!closeTo(moved, wristBefore, 1) && closeTo(worldOf(rig(), "wrist"), moved, 1e-6));  // the limb follows the target
-    for (const auto& b : rig()["bones"]) if (b["id"] == "elbow") QCOMPARE(b["rotation"].get<double>(), 40.0);  // ... the arm's own data untouched
+    for (const auto& b : Json(rig()["bones"])) if (b["id"] == "elbow") QCOMPARE(b["rotation"].get<double>(), 40.0);  // ... the arm's own data untouched
     // Flip the bend (Setup: the constraint's setup value).
     panel->selectIk("elbow-ik");
     QVERIFY(gesture("toggle bend", 1, [&] { click("cutoutIkBend"); }));

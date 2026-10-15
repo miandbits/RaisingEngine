@@ -5133,8 +5133,9 @@ bool CutoutPanel::convertToMesh(int rows, int cols, bool trim) {
     if (cells.find('0') != std::string::npos) op["cells"] = cells;
   }
   int vertices = 0;
+  const QString name = qs(att->name);  // the commit re-parses the rig: `att` dangles after runOps
   if (!runOps({op}, false, [&](const cutout::EditResult& r) { vertices = r.extra.value("vertices", 0); })) return false;
-  setStatus(QString("「%1」을 메시(정점 %2개)로 바꿨습니다. 「정점 편집」으로 모양을, 「자동 웨이트」로 본을 따라 휘게 하세요. 되돌리기: Ctrl+Z").arg(qs(att->name)).arg(vertices));
+  setStatus(QString("「%1」을 메시(정점 %2개)로 바꿨습니다. 「정점 편집」으로 모양을, 「자동 웨이트」로 본을 따라 휘게 하세요. 되돌리기: Ctrl+Z").arg(name).arg(vertices));
   return true;
 }
 bool CutoutPanel::convertToRegion() {
