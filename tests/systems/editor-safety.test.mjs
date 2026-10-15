@@ -40,7 +40,9 @@ test('system controls fall back, equipped items can be removed, and expedition l
     };
   `;
   const server = await createServer({ configFile: false, root: resolve('.'), cacheDir: resolve('.cache/systems-editor-review-vite'),
-    server: { host: '127.0.0.1', port: 0 }, appType: 'custom',
+    // This virtual-entry test must not crawl local projects or exported source copies.
+    optimizeDeps: { entries: [], include: ['react', 'react-dom/client'] },
+    server: { host: '127.0.0.1', port: 0, watch: null }, appType: 'custom',
     plugins: [{ name: 'systems-review-fixture', resolveId(id) { if (id === '/review-entry.js') return id; }, load(id) { if (id === '/review-entry.js') return source; }, configureServer(server) {
       server.middlewares.use((req,res,next) => { if (req.url !== '/') return next(); res.setHeader('Content-Type','text/html'); res.end('<div id="root"></div><script type="module" src="/review-entry.js"></script>'); });
     } }] });

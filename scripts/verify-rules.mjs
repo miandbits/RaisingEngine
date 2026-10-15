@@ -8,7 +8,7 @@ import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {exportGame} from '../dist/packages/export-service/export.js';
 
-const source=path.resolve(process.argv[2]??'projects/rules-lab');
+const source=path.resolve(process.argv[2]??'tests/fixtures/projects/rules-lab');
 await mkdir('.cache/rules',{recursive:true});
 const work=await mkdtemp(path.resolve('.cache/rules/run-')),root=path.join(work,'project');
 await cp(source,root,{recursive:true});

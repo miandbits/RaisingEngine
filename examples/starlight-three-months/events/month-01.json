@@ -1,0 +1,110 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "entryNodeId": "visual-intro",
+  "formatVersion": "0.1.0",
+  "id": "month-01",
+  "label": "첫 달 · 준비의 약속",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "next": "intro",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "left"
+          },
+          {
+            "characterId": "mentor",
+            "portraitId": "visual-neutral",
+            "position": "right"
+          }
+        ]
+      },
+      "type": "scene"
+    },
+    {
+      "id": "intro",
+      "next": "path",
+      "speakerId": "mentor",
+      "text": "한 달 동안 잘 적응했구나. 둘째 달에는 도시에서 꽃을 구해 유나에게 마음을 전하고, 검술 16을 갖춰 숲을 찾아가자.",
+      "type": "dialogue"
+    },
+    {
+      "choices": [
+        {
+          "effects": [
+            {
+              "flagId": "knight-track",
+              "op": "setFlag",
+              "value": true
+            }
+          ],
+          "id": "knight",
+          "next": "end",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "기사의 길"
+        },
+        {
+          "effects": [
+            {
+              "flagId": "scholar-track",
+              "op": "setFlag",
+              "value": true
+            }
+          ],
+          "id": "scholar",
+          "next": "end",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "학자의 길"
+        },
+        {
+          "effects": [
+            {
+              "flagId": "artisan-track",
+              "op": "setFlag",
+              "value": true
+            }
+          ],
+          "id": "artisan",
+          "next": "end",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "장인의 길"
+        },
+        {
+          "effects": [],
+          "id": "free",
+          "next": "end",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "아직 정하지 않고 자유롭게 지낸다."
+        }
+      ],
+      "id": "path",
+      "prompt": "남은 두 달을 어떤 마음으로 보낼까?",
+      "type": "choice"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 2,
+    "throughPeriod": 2
+  }
+}

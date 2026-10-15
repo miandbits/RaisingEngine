@@ -1,0 +1,648 @@
+{
+  "data": {
+    "attachments": [
+      {
+        "height": 170,
+        "imageAssetId": "image-86180d35caad57674395da81",
+        "name": "body",
+        "pivotX": 0.5,
+        "pivotY": 1,
+        "slot": "body",
+        "width": 130,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "height": 120,
+        "imageAssetId": "image-a40c1ec251cbc39a644988dd",
+        "name": "arm-left",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "arm-left",
+        "width": 40,
+        "x": 0.825279,
+        "y": 53.936803
+      },
+      {
+        "height": 120,
+        "imageAssetId": "image-a40c1ec251cbc39a644988dd",
+        "name": "arm-right",
+        "pivotX": 0.5,
+        "pivotY": 0.08,
+        "slot": "arm-right",
+        "width": 40,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "height": 150,
+        "imageAssetId": "image-40adb20cea8abde77aafc23d",
+        "name": "head",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "head",
+        "width": 150,
+        "x": 0,
+        "y": -70
+      },
+      {
+        "height": 190,
+        "imageAssetId": "image-4fd76aab843b58aa593ec6b2",
+        "name": "hair-back",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "hair-back",
+        "width": 170,
+        "x": 0,
+        "y": -65
+      },
+      {
+        "height": 30,
+        "imageAssetId": "image-6b030d06ac565588559e998b",
+        "name": "open",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "eyes",
+        "width": 90,
+        "x": 0,
+        "y": -65
+      },
+      {
+        "height": 30,
+        "imageAssetId": "image-00991b971d618ad5ba70f440",
+        "name": "half",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "eyes",
+        "width": 90,
+        "x": 0,
+        "y": -65
+      },
+      {
+        "height": 30,
+        "imageAssetId": "image-27d7af73a9a95f2dc2e55b45",
+        "name": "closed",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "eyes",
+        "width": 90,
+        "x": 0,
+        "y": -65
+      },
+      {
+        "height": 20,
+        "imageAssetId": "image-b934ab91b8f16e8c358635e9",
+        "name": "neutral",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "mouth",
+        "width": 40,
+        "x": 0,
+        "y": -28
+      },
+      {
+        "height": 20,
+        "imageAssetId": "image-6192de808cf2e68159357055",
+        "name": "smile",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "mouth",
+        "width": 40,
+        "x": 0,
+        "y": -28
+      },
+      {
+        "height": 24,
+        "imageAssetId": "image-7fb8be9853e2b05fdc041d34",
+        "name": "open",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "mouth",
+        "width": 40,
+        "x": 0,
+        "y": -28
+      },
+      {
+        "height": 20,
+        "imageAssetId": "image-fa77dbe07f079eb9a1a7bbc0",
+        "name": "blush",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "blush",
+        "width": 110,
+        "x": 0,
+        "y": -47
+      },
+      {
+        "height": 80,
+        "imageAssetId": "image-db42b4a90e488a3bc3dad8ed",
+        "name": "hair-front",
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "slot": "hair-front",
+        "width": 160,
+        "x": 0,
+        "y": -120
+      }
+    ],
+    "bones": [
+      {
+        "id": "root",
+        "parent": null,
+        "x": 256,
+        "y": 720
+      },
+      {
+        "id": "body",
+        "parent": "root",
+        "x": 0,
+        "y": -80
+      },
+      {
+        "id": "head",
+        "parent": "body",
+        "x": 0,
+        "y": -170
+      },
+      {
+        "id": "arm-left",
+        "parent": "body",
+        "x": -42.825279,
+        "y": -148.936803
+      },
+      {
+        "id": "arm-right",
+        "parent": "body",
+        "x": 42.825279,
+        "y": -151.360595
+      }
+    ],
+    "canvas": {
+      "height": 768,
+      "originX": 256,
+      "originY": 720,
+      "width": 512
+    },
+    "clips": [
+      {
+        "durationMs": 3200,
+        "id": "idle",
+        "loop": true,
+        "name": "idle",
+        "tracks": [
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              },
+              {
+                "timeMs": 400,
+                "value": 1.004393
+              },
+              {
+                "timeMs": 800,
+                "value": 1.015
+              },
+              {
+                "timeMs": 1200,
+                "value": 1.025607
+              },
+              {
+                "timeMs": 1600,
+                "value": 1.03
+              },
+              {
+                "timeMs": 2000,
+                "value": 1.025607
+              },
+              {
+                "timeMs": 2400,
+                "value": 1.015
+              },
+              {
+                "timeMs": 2800,
+                "value": 1.004393
+              },
+              {
+                "timeMs": 3200,
+                "value": 1
+              }
+            ],
+            "property": "scaleY",
+            "target": "bone:body"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0
+              }
+            ],
+            "property": "x",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -170
+              }
+            ],
+            "property": "y",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0
+              },
+              {
+                "timeMs": 1580,
+                "value": 8
+              },
+              {
+                "timeMs": 3200,
+                "value": 0
+              }
+            ],
+            "property": "rotation",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleX",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleY",
+            "target": "bone:head"
+          }
+        ]
+      },
+      {
+        "durationMs": 4000,
+        "id": "blink",
+        "loop": true,
+        "name": "눈깜빡임",
+        "tracks": [
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "open"
+              },
+              {
+                "timeMs": 3800,
+                "value": "half"
+              },
+              {
+                "timeMs": 3850,
+                "value": "closed"
+              },
+              {
+                "timeMs": 3900,
+                "value": "half"
+              },
+              {
+                "timeMs": 3950,
+                "value": "open"
+              }
+            ],
+            "property": "attachment",
+            "target": "slot:eyes"
+          }
+        ]
+      },
+      {
+        "durationMs": 1600,
+        "id": "joy",
+        "loop": false,
+        "name": "joy",
+        "tracks": [
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0
+              }
+            ],
+            "property": "x",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -170
+              }
+            ],
+            "property": "y",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0
+              },
+              {
+                "timeMs": 300,
+                "value": -12
+              },
+              {
+                "timeMs": 600,
+                "value": 10
+              },
+              {
+                "timeMs": 1200,
+                "value": 0
+              }
+            ],
+            "property": "rotation",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleX",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleY",
+            "target": "bone:head"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -42.825279
+              }
+            ],
+            "property": "x",
+            "target": "bone:arm-left"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -148.936803
+              }
+            ],
+            "property": "y",
+            "target": "bone:arm-left"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0
+              },
+              {
+                "timeMs": 300,
+                "value": 120
+              },
+              {
+                "timeMs": 1200,
+                "value": 0
+              }
+            ],
+            "property": "rotation",
+            "target": "bone:arm-left"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleX",
+            "target": "bone:arm-left"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleY",
+            "target": "bone:arm-left"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 42.825279
+              }
+            ],
+            "property": "x",
+            "target": "bone:arm-right"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -151.360595
+              }
+            ],
+            "property": "y",
+            "target": "bone:arm-right"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0
+              },
+              {
+                "timeMs": 300,
+                "value": -120
+              },
+              {
+                "timeMs": 1200,
+                "value": 0
+              }
+            ],
+            "property": "rotation",
+            "target": "bone:arm-right"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleX",
+            "target": "bone:arm-right"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              }
+            ],
+            "property": "scaleY",
+            "target": "bone:arm-right"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "neutral"
+              },
+              {
+                "timeMs": 300,
+                "value": "smile"
+              },
+              {
+                "timeMs": 600,
+                "value": "open"
+              },
+              {
+                "timeMs": 1200,
+                "value": "neutral"
+              }
+            ],
+            "property": "attachment",
+            "target": "slot:mouth"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "open"
+              },
+              {
+                "timeMs": 300,
+                "value": "half"
+              },
+              {
+                "timeMs": 1200,
+                "value": "open"
+              }
+            ],
+            "property": "attachment",
+            "target": "slot:eyes"
+          }
+        ]
+      },
+      {
+        "durationMs": 1000,
+        "id": "face-happy",
+        "loop": true,
+        "name": "face-happy",
+        "tracks": [
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "smile"
+              }
+            ],
+            "property": "attachment",
+            "target": "slot:mouth"
+          },
+          {
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": "half"
+              }
+            ],
+            "property": "attachment",
+            "target": "slot:eyes"
+          }
+        ]
+      }
+    ],
+    "mix": {
+      "defaultMs": 120,
+      "pairs": [
+        {
+          "durationMs": 250,
+          "from": "joy",
+          "to": "idle"
+        }
+      ]
+    },
+    "name": "히어로",
+    "schemaVersion": 1,
+    "slots": [
+      {
+        "attachment": "hair-back",
+        "bone": "head",
+        "id": "hair-back"
+      },
+      {
+        "attachment": "arm-left",
+        "bone": "arm-left",
+        "id": "arm-left"
+      },
+      {
+        "attachment": "arm-right",
+        "bone": "arm-right",
+        "id": "arm-right"
+      },
+      {
+        "attachment": "body",
+        "bone": "body",
+        "id": "body"
+      },
+      {
+        "attachment": "head",
+        "bone": "head",
+        "id": "head"
+      },
+      {
+        "attachment": "open",
+        "bone": "head",
+        "id": "eyes"
+      },
+      {
+        "attachment": "neutral",
+        "bone": "head",
+        "id": "mouth"
+      },
+      {
+        "attachment": "blush",
+        "bone": "head",
+        "id": "blush"
+      },
+      {
+        "attachment": "hair-front",
+        "bone": "head",
+        "id": "hair-front"
+      }
+    ]
+  },
+  "formatVersion": "0.1.0",
+  "id": "hero",
+  "plugin": "cutout-animation",
+  "type": "rig"
+}

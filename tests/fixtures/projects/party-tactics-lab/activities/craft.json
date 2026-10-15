@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "craft",
+  "label": "공방 실습",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "money",
+      "amount": 3
+    },
+    {
+      "attributeId": "stamina",
+      "amount": 8
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "craftsmanship"
+      },
+      "value": {
+        "op": "literal",
+        "value": 8
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 4
+      }
+    }
+  ],
+  "presentation": {
+    "backgroundAssetId": "visual-library",
+    "portraits": [
+      {
+        "characterId": "apprentice",
+        "portraitId": "visual-neutral",
+        "position": "center"
+      }
+    ]
+  }
+}

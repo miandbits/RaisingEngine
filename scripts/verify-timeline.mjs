@@ -7,7 +7,7 @@ import {chromium} from 'playwright';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {exportGame} from '../dist/packages/export-service/export.js';
-const source=path.resolve(process.argv[2]??'projects/timeline-lab');await mkdir('.cache/timeline',{recursive:true});
+const source=path.resolve(process.argv[2]??'tests/fixtures/projects/timeline-lab');await mkdir('.cache/timeline',{recursive:true});
 const work=await mkdtemp(path.resolve('.cache/timeline/run-')),root=path.join(work,'project'),web=path.join(work,'web');await cp(source,root,{recursive:true});
 const built=await buildSnapshot(await loadProject(root));assert.ok(built.ok,JSON.stringify(built.diagnostics));assert.equal(built.snapshot.project.visual.timelines.length,3);
 await exportGame({content:built.snapshot,projectRoot:root,destination:web,target:'web',runtimes:{web:path.resolve('dist/web')}});

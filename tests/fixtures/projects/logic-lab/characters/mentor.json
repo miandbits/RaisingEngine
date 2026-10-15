@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../packages/schema/character.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "mentor",
+  "name": "유나",
+  "portraits": {
+    "visual-neutral": "visual-yuna"
+  },
+  "relationships": [
+    {
+      "id": "trust",
+      "label": "신뢰",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    }
+  ]
+}

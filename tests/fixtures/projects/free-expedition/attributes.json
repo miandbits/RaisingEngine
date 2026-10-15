@@ -1,0 +1,301 @@
+{
+  "formatVersion": "0.1.0",
+  "attributes": [
+    {
+      "id": "money",
+      "label": "Fixture money",
+      "initial": 500,
+      "min": 0,
+      "max": 999999,
+      "kind": "resource"
+    },
+    {
+      "id": "energy",
+      "label": "Fixture energy",
+      "initial": 10,
+      "min": 0,
+      "max": 10,
+      "kind": "resource"
+    },
+    {
+      "id": "stress",
+      "label": "Fixture stress",
+      "initial": 0,
+      "min": 0,
+      "max": 100,
+      "kind": "stat"
+    },
+    {
+      "id": "morality",
+      "label": "Fixture morality",
+      "initial": 50,
+      "min": 0,
+      "max": 100,
+      "kind": "stat"
+    },
+    {
+      "id": "sta",
+      "label": "Fixture sta",
+      "initial": 20,
+      "min": 0,
+      "max": 9999,
+      "kind": "stat"
+    },
+    {
+      "id": "int",
+      "label": "Fixture int",
+      "initial": 32,
+      "min": 0,
+      "max": 9999,
+      "kind": "stat"
+    },
+    {
+      "id": "cha",
+      "label": "Fixture cha",
+      "initial": 20,
+      "min": 0,
+      "max": 9999,
+      "kind": "stat"
+    },
+    {
+      "id": "sen",
+      "label": "Fixture sen",
+      "initial": 20,
+      "min": 0,
+      "max": 9999,
+      "kind": "stat"
+    },
+    {
+      "id": "day-stage",
+      "label": "Fixture day-stage",
+      "initial": 0,
+      "min": 0,
+      "max": 2,
+      "kind": "stat"
+    },
+    {
+      "id": "view",
+      "label": "Fixture view",
+      "initial": 0,
+      "min": 0,
+      "max": 4,
+      "kind": "stat"
+    },
+    {
+      "id": "skill-points",
+      "label": "Fixture skill-points",
+      "initial": 0,
+      "min": 0,
+      "max": 999,
+      "kind": "stat"
+    },
+    {
+      "id": "gain",
+      "label": "Fixture gain",
+      "initial": 0,
+      "min": 0,
+      "max": 99,
+      "kind": "stat"
+    },
+    {
+      "id": "study-gain",
+      "label": "Fixture study-gain",
+      "initial": 0,
+      "min": 0,
+      "max": 12,
+      "kind": "stat"
+    },
+    {
+      "id": "noah-talked",
+      "label": "Fixture noah-talked",
+      "initial": 0,
+      "min": 0,
+      "max": 1,
+      "kind": "stat"
+    },
+    {
+      "id": "magic-mastery",
+      "label": "Fixture magic-mastery",
+      "initial": 0,
+      "min": 0,
+      "max": 100,
+      "kind": "stat"
+    },
+    {
+      "id": "magic-tier",
+      "label": "Fixture magic-tier",
+      "initial": 1,
+      "min": 0,
+      "max": 36,
+      "kind": "stat"
+    },
+    {
+      "id": "literature-mastery",
+      "label": "Fixture literature-mastery",
+      "initial": 0,
+      "min": 0,
+      "max": 100,
+      "kind": "stat"
+    },
+    {
+      "id": "literature-tier",
+      "label": "Fixture literature-tier",
+      "initial": 1,
+      "min": 0,
+      "max": 36,
+      "kind": "stat"
+    },
+    {
+      "id": "mathematics-mastery",
+      "label": "Fixture mathematics-mastery",
+      "initial": 0,
+      "min": 0,
+      "max": 100,
+      "kind": "stat"
+    },
+    {
+      "id": "mathematics-tier",
+      "label": "Fixture mathematics-tier",
+      "initial": 1,
+      "min": 0,
+      "max": 36,
+      "kind": "stat"
+    },
+    {
+      "id": "classes-count",
+      "label": "Fixture classes-count",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "classes-cursor",
+      "label": "Fixture classes-cursor",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "classes-running",
+      "label": "Fixture classes-running",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "classes-latch",
+      "label": "Fixture classes-latch",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "classes-current",
+      "label": "Fixture classes-current",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "classes-slot-1",
+      "label": "Fixture classes-slot-1",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "classes-slot-2",
+      "label": "Fixture classes-slot-2",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "classes-slot-3",
+      "label": "Fixture classes-slot-3",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "classes-slot-4",
+      "label": "Fixture classes-slot-4",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "classes-slot-5",
+      "label": "Fixture classes-slot-5",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 3
+    },
+    {
+      "id": "classes-selected-magic",
+      "label": "Fixture classes-selected-magic",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "classes-selected-literature",
+      "label": "Fixture classes-selected-literature",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "classes-selected-mathematics",
+      "label": "Fixture classes-selected-mathematics",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 5
+    },
+    {
+      "id": "study-latch",
+      "label": "Fixture study-latch",
+      "kind": "stat",
+      "initial": 0,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "hp",
+      "label": "Fixture hp",
+      "kind": "stat",
+      "initial": 80,
+      "min": 0,
+      "max": 9999
+    },
+    {
+      "id": "attack",
+      "label": "Fixture attack",
+      "kind": "stat",
+      "initial": 16,
+      "min": 0,
+      "max": 9999
+    },
+    {
+      "id": "defense",
+      "label": "Fixture defense",
+      "kind": "stat",
+      "initial": 4,
+      "min": 0,
+      "max": 9999
+    }
+  ]
+}

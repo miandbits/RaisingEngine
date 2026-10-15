@@ -1,0 +1,7 @@
+# A source archive must not include local projects, even if accidentally staged.
+/projects export-ignore
+/internal export-ignore
+/.cache export-ignore
+/dist export-ignore
+/release export-ignore
+/docs/evidence export-ignore

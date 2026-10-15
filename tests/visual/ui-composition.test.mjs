@@ -23,7 +23,7 @@ test('collection filtering and stable sorting bind into nested component leaves'
  const rows=collectionRows(design,collection,{});assert.deepEqual(rows.map(r=>r.id),['b','c','a']);assert.equal(resolveCollectionRow(design,collection,rows[0],300)[0].text,'B');assert.equal(resolveCollectionRow(design,collection,rows[0],300)[0].id,'list__b__nested__title');
 });
 test('old visual sample still validates; invalid nested/modal/selection drafts produce located diagnostics',async()=>{
- const root=new URL('../../projects/data-ui-lab/',import.meta.url).pathname.replace(/^\/(\w:)/,'$1');assert.equal((await buildSnapshot(await loadProject(root))).ok,true);
+ const root=new URL('../../tests/fixtures/projects/data-ui-lab/',import.meta.url).pathname.replace(/^\/(\w:)/,'$1');assert.equal((await buildSnapshot(await loadProject(root))).ok,true);
  const service=new QtStudioService();await service.handle({method:'open',params:{root}});const editor=service.editor,doc=editor.documents.find(d=>d.kind==='project'),data=structuredClone(doc.data);
  data.visual.components[0].elements.push({id:'cycle',kind:'component',componentId:data.visual.components[0].id,x:0,y:0,width:100,height:100});
  data.visual.screens.find(s=>s.id==='home').elements.push({id:'invalid-modal',kind:'button',action:'openModal',screenId:'home',x:0,y:0,width:100,height:40},{id:'invalid-selection',kind:'text',binding:'selected-field',selectionKey:'absent',selectionField:'name',x:0,y:0,width:100,height:40});

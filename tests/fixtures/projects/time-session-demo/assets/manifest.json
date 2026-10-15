@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../packages/schema/assets.schema.json",
+  "formatVersion": "0.1.0",
+  "assets": [
+    {
+      "id": "visual-courtyard",
+      "kind": "image",
+      "path": "assets/visual/courtyard.png"
+    },
+    {
+      "id": "visual-library",
+      "kind": "image",
+      "path": "assets/visual/library.png"
+    },
+    {
+      "id": "visual-haru",
+      "kind": "image",
+      "path": "assets/visual/haru.png"
+    },
+    {
+      "id": "visual-yuna",
+      "kind": "image",
+      "path": "assets/visual/yuna.png"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "entryNodeId": "visual-intro",
+  "formatVersion": "0.1.0",
+  "id": "neighbor",
+  "label": "마을에 남은 약속",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "next": "intro",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "center"
+          }
+        ]
+      },
+      "type": "scene"
+    },
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": "mentor",
+      "text": "길드 수료에는 한 걸음이 모자랐지만, 함께 웃을 동료가 남았다. 두 사람은 마을에서 다음 도전을 준비한다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 50,
+  "requirements": {
+    "comparator": "gte",
+    "left": {
+      "op": "read",
+      "target": {
+        "characterId": "mentor",
+        "kind": "relationship",
+        "relationshipId": "trust"
+      }
+    },
+    "op": "compare",
+    "right": {
+      "op": "literal",
+      "value": 15
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "../../packages/schema/flags.schema.json",
+  "formatVersion": "0.1.0",
+  "flags": [
+    {
+      "id": "knight-track",
+      "label": "기사 과정",
+      "initial": false
+    },
+    {
+      "id": "scholar-track",
+      "label": "학자 과정",
+      "initial": false
+    },
+    {
+      "id": "artisan-track",
+      "label": "장인 과정",
+      "initial": false
+    },
+    {
+      "id": "community",
+      "label": "마을 지원",
+      "initial": false
+    },
+    {
+      "id": "graduated",
+      "label": "졸업 인증",
+      "initial": false
+    }
+  ]
+}

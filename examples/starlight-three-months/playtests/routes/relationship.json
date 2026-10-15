@@ -1,0 +1,240 @@
+{
+  "checkpointEvery": 10,
+  "checkpoints": [
+    5,
+    62
+  ],
+  "commands": [
+    {
+      "locationId": "market",
+      "type": "visit"
+    },
+    {
+      "itemId": "flower",
+      "quantity": 1,
+      "shopId": "florist",
+      "type": "buy"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "interactionId": "gift-yuna",
+      "type": "interact"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "choiceId": "free",
+      "type": "choose"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    }
+  ],
+  "endingId": "neighbor",
+  "gameId": "starlight-three-months",
+  "id": "relationship",
+  "name": "마을에 남은 약속",
+  "origin": {
+    "initialOverrides": {
+      "attributes": {},
+      "flags": {},
+      "relationships": {}
+    },
+    "mode": "full",
+    "seed": 42
+  },
+  "recordedFingerprint": "sha256:9d403d8225e908b5c06ea697fc750924b1d83d37c83b79242787c82dde6703b3",
+  "version": 1
+}

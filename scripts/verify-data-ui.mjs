@@ -8,7 +8,7 @@ import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {exportGame} from '../dist/packages/export-service/export.js';
 
-const source=path.resolve(process.argv[2]??'projects/data-ui-lab');
+const source=path.resolve(process.argv[2]??'tests/fixtures/projects/data-ui-lab');
 await mkdir('.cache/data-ui',{recursive:true});const work=await mkdtemp(path.resolve('.cache/data-ui/run-')),root=path.join(work,'project');await cp(source,root,{recursive:true});
 const built=await buildSnapshot(await loadProject(root));assert.ok(built.ok,JSON.stringify(built.diagnostics));
 const content=built.snapshot,{visual,gameplay}=content.project;

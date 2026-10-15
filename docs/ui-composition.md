@@ -4,7 +4,7 @@
 
 ## 열기
 
-저장소 루트의 `start-ui-composition.cmd`를 실행한다. 편집기는 `dist/qt-studio-ui5/RaisingStudioQt.exe`, 플레이어는 `dist/native-player-ui5/RaisingPlayer.exe`, 샘플은 `projects/ui-composition-lab`이다. 기존 편집기·플레이어 출력 폴더는 교체하지 않았다.
+저장소 루트의 `start-ui-composition.cmd`를 실행한다. 편집기는 `dist/qt-studio-ui5/RaisingStudioQt.exe`, 플레이어는 `dist/native-player-ui5/RaisingPlayer.exe`, 샘플은 `tests/fixtures/projects/ui-composition-lab`이다. 기존 편집기·플레이어 출력 폴더는 교체하지 않았다.
 
 디자인 메뉴의 **UI 조합 · 중첩 / 배치 / 선택 / 모달**을 연다. 화면과 부품을 같은 작업 창에서 선택하고 요소를 추가·삭제·수정할 수 있다. 부품 생성·복제, 모달 화면 생성, 부모 그룹, 앵커, 배치 방향과 간격, 스크롤, 목록 필터·정렬, 선택 필드와 행동 매개변수, 툴팁을 편집한다. 저장 버튼은 프로젝트 초안에 적용하며, 디스크 기록은 메인 편집기의 프로젝트 저장을 사용한다. 실행 취소/다시 실행은 전체 편집 변경을 하나의 작업으로 다룬다.
 

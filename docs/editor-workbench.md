@@ -2,7 +2,7 @@
 
 ## 실행과 검증 결과
 
-`Edit-Editor-Workbench-Lab.cmd`는 별도 샘플 `projects/editor-workbench-lab`과 자동 플레이 분석 패널을 연다. 기존 프로젝트와 이전 편집기 출력은 보존한다.
+`Edit-Editor-Workbench-Lab.cmd`는 별도 샘플 `tests/fixtures/projects/editor-workbench-lab`과 자동 플레이 분석 패널을 연다. 기존 프로젝트와 이전 편집기 출력은 보존한다.
 
 상단 **검증**을 누르면 하단 검증 패널이 열리고 오류·경고 수, 검사한 초안 버전, 검사 시간이 표시된다. 오류가 없어도 성공 결과를 표시한다. 오류 행을 누르면 해당 화면·요소로 이동한다. 검사 후 수정하면 다시 검증해야 한다는 표시가 나온다. 이 검사는 데이터 구조·참조·규칙 검사이며 자동 플레이는 별도 작업이다.
 

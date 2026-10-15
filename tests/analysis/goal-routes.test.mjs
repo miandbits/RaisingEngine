@@ -8,7 +8,7 @@ import {routeFromRecording,runGoalRoute,validateGoalRoute} from '../../dist/pack
 import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 import {loadProject} from '../../dist/packages/project-service/loader.js';
 
-const project=path.resolve('projects/starlight-three-months'),evidence=path.resolve('docs/evidence/goal-routes');
+const project=path.resolve('examples/starlight-three-months'),evidence=path.resolve('docs/evidence/goal-routes');
 const names={success:'별빛 길드의 동료',relationship:'마을에 남은 약속',ordinary:'다시 시작하는 계절'};
 async function recording(kind){return JSON.parse(await readFile(path.join(evidence,(kind==='success'?'play':kind)+'-recording.json'),'utf8'));}
 test('recorded pilot endings: latest content replay, every save boundary and autosave regression',{timeout:180000},async()=>{

@@ -1,0 +1,23 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "observation-boundary",
+  "label": "Fixture observation-boundary",
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "entryNodeId": "boundary",
+  "nodes": [
+    {
+      "id": "boundary",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "Fixture boundary",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

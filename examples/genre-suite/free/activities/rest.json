@@ -1,0 +1,22 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "rest",
+  "label": "휴식",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stamina"
+      },
+      "value": {
+        "op": "literal",
+        "value": 20
+      }
+    }
+  ]
+}

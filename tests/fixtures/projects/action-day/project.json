@@ -1,0 +1,1560 @@
+{
+  "formatVersion": "0.1.0",
+  "gameId": "fixture-action-day",
+  "title": "Rule fixture: action-day",
+  "description": "Engine-owned rules for deterministic tests; no reference-game media, layout, or dialogue.",
+  "startYear": 889,
+  "startMonth": 4,
+  "durationMonths": 4,
+  "periodsPerMonth": 1,
+  "schedulePlayback": "continuous",
+  "protagonistId": "alice",
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "defaultEndingId": "observation-boundary",
+  "visual": {
+    "width": 1280,
+    "height": 720,
+    "screens": [
+      {
+        "id": "title",
+        "label": "title",
+        "elements": [
+          {
+            "id": "shade",
+            "kind": "panel",
+            "x": 20,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fill": "#152438e8",
+            "radius": 24
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "text": "Fixture title",
+            "x": 420,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 46,
+            "color": "#fff5dc"
+          },
+          {
+            "id": "scope",
+            "kind": "text",
+            "text": "Fixture scope",
+            "x": 820,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc"
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "text": "Fixture start",
+            "x": 20,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "start"
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "text": "Fixture load",
+            "x": 420,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "load"
+          }
+        ]
+      },
+      {
+        "id": "home",
+        "label": "home",
+        "elements": [
+          {
+            "id": "hud-shade",
+            "kind": "panel",
+            "x": 20,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fill": "#132337d9"
+          },
+          {
+            "id": "hud-money",
+            "kind": "text",
+            "text": "Fixture hud-money",
+            "x": 420,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "money",
+            "valueFormat": "{value} G"
+          },
+          {
+            "id": "hud-energy",
+            "kind": "text",
+            "text": "Fixture hud-energy",
+            "x": 820,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "energy",
+            "valueFormat": "Energy {value}/3"
+          },
+          {
+            "id": "hud-stress",
+            "kind": "text",
+            "text": "Fixture hud-stress",
+            "x": 20,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "stress",
+            "valueFormat": "Stress {value}%"
+          },
+          {
+            "id": "hud-morality",
+            "kind": "text",
+            "text": "Fixture hud-morality",
+            "x": 420,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "morality",
+            "valueFormat": "Morality {value}%"
+          },
+          {
+            "id": "stat-sta",
+            "kind": "text",
+            "text": "Fixture stat-sta",
+            "x": 820,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "sta",
+            "valueFormat": "STA  {value}"
+          },
+          {
+            "id": "stat-int",
+            "kind": "text",
+            "text": "Fixture stat-int",
+            "x": 20,
+            "y": 68,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "int",
+            "valueFormat": "INT  {value}"
+          },
+          {
+            "id": "stat-cha",
+            "kind": "text",
+            "text": "Fixture stat-cha",
+            "x": 420,
+            "y": 68,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "cha",
+            "valueFormat": "CHA  {value}"
+          },
+          {
+            "id": "stat-sen",
+            "kind": "text",
+            "text": "Fixture stat-sen",
+            "x": 820,
+            "y": 68,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "sen",
+            "valueFormat": "SEN  {value}"
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "text": "Fixture save",
+            "x": 20,
+            "y": 92,
+            "width": 380,
+            "height": 22,
+            "fontSize": 20,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "save"
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "text": "Fixture load",
+            "x": 420,
+            "y": 92,
+            "width": 380,
+            "height": 22,
+            "fontSize": 20,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "load"
+          },
+          {
+            "id": "month",
+            "kind": "text",
+            "text": "Fixture month",
+            "x": 820,
+            "y": 92,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "calendar"
+          },
+          {
+            "id": "home-label",
+            "kind": "text",
+            "text": "Fixture home-label",
+            "x": 20,
+            "y": 116,
+            "width": 380,
+            "height": 22,
+            "fontSize": 44,
+            "color": "#fff5dc",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "play",
+            "kind": "button",
+            "text": "Fixture play",
+            "x": 420,
+            "y": 116,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "executeAction",
+            "actionId": "open-play",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "rest",
+            "kind": "button",
+            "text": "Fixture rest",
+            "x": 820,
+            "y": 116,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "navigate",
+            "screenId": "schedule",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "play-label",
+            "kind": "text",
+            "text": "Fixture play-label",
+            "x": 20,
+            "y": 140,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "read",
+            "kind": "button",
+            "text": "Fixture read",
+            "x": 420,
+            "y": 140,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "executeAction",
+            "actionId": "read-book",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "back",
+            "kind": "button",
+            "text": "Fixture back",
+            "x": 820,
+            "y": 140,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "executeAction",
+            "actionId": "back-home",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "result-panel",
+            "kind": "panel",
+            "x": 20,
+            "y": 164,
+            "width": 380,
+            "height": 22,
+            "fill": "#18263de8",
+            "radius": 20,
+            "visibleCondition": {
+              "op": "compare",
+              "comparator": "eq",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "menu"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 2
+              }
+            }
+          },
+          {
+            "id": "good",
+            "kind": "text",
+            "text": "Fixture good",
+            "x": 420,
+            "y": 164,
+            "width": 380,
+            "height": 22,
+            "fontSize": 52,
+            "color": "#f5d96f",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 2
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "outcome"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "bad",
+            "kind": "text",
+            "text": "Fixture bad",
+            "x": 820,
+            "y": 164,
+            "width": 380,
+            "height": 22,
+            "fontSize": 52,
+            "color": "#c9b5df",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 2
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "outcome"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 0
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "gain",
+            "kind": "text",
+            "text": "Fixture gain",
+            "x": 20,
+            "y": 188,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "visibleCondition": {
+              "op": "compare",
+              "comparator": "eq",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "menu"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 2
+              }
+            }
+          },
+          {
+            "id": "step",
+            "kind": "text",
+            "text": "Fixture step",
+            "x": 420,
+            "y": 188,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "beat",
+            "valueFormat": "{value} / 3",
+            "visibleCondition": {
+              "op": "compare",
+              "comparator": "eq",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "menu"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 2
+              }
+            }
+          },
+          {
+            "id": "next",
+            "kind": "button",
+            "text": "Fixture next",
+            "x": 820,
+            "y": 188,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "executeAction",
+            "actionId": "next-result",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 2
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "lt",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 3
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "finish",
+            "kind": "button",
+            "text": "Fixture finish",
+            "x": 20,
+            "y": 212,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "executeAction",
+            "actionId": "finish-reading",
+            "visibleCondition": {
+              "op": "all",
+              "conditions": [
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "menu"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 2
+                  }
+                },
+                {
+                  "op": "compare",
+                  "comparator": "eq",
+                  "left": {
+                    "op": "read",
+                    "target": {
+                      "kind": "attribute",
+                      "attributeId": "beat"
+                    }
+                  },
+                  "right": {
+                    "op": "literal",
+                    "value": 3
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "schedule",
+        "label": "schedule",
+        "elements": [
+          {
+            "id": "hud-shade",
+            "kind": "panel",
+            "x": 20,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fill": "#132337d9"
+          },
+          {
+            "id": "hud-money",
+            "kind": "text",
+            "text": "Fixture hud-money",
+            "x": 420,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "money",
+            "valueFormat": "{value} G"
+          },
+          {
+            "id": "hud-energy",
+            "kind": "text",
+            "text": "Fixture hud-energy",
+            "x": 820,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "energy",
+            "valueFormat": "Energy {value}/3"
+          },
+          {
+            "id": "hud-stress",
+            "kind": "text",
+            "text": "Fixture hud-stress",
+            "x": 20,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "stress",
+            "valueFormat": "Stress {value}%"
+          },
+          {
+            "id": "hud-morality",
+            "kind": "text",
+            "text": "Fixture hud-morality",
+            "x": 420,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "morality",
+            "valueFormat": "Morality {value}%"
+          },
+          {
+            "id": "stat-sta",
+            "kind": "text",
+            "text": "Fixture stat-sta",
+            "x": 820,
+            "y": 44,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "sta",
+            "valueFormat": "STA  {value}"
+          },
+          {
+            "id": "stat-int",
+            "kind": "text",
+            "text": "Fixture stat-int",
+            "x": 20,
+            "y": 68,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "int",
+            "valueFormat": "INT  {value}"
+          },
+          {
+            "id": "stat-cha",
+            "kind": "text",
+            "text": "Fixture stat-cha",
+            "x": 420,
+            "y": 68,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "cha",
+            "valueFormat": "CHA  {value}"
+          },
+          {
+            "id": "stat-sen",
+            "kind": "text",
+            "text": "Fixture stat-sen",
+            "x": 820,
+            "y": 68,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "attribute-value",
+            "attributeId": "sen",
+            "valueFormat": "SEN  {value}"
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "text": "Fixture save",
+            "x": 20,
+            "y": 92,
+            "width": 380,
+            "height": 22,
+            "fontSize": 20,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "save"
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "text": "Fixture load",
+            "x": 420,
+            "y": 92,
+            "width": 380,
+            "height": 22,
+            "fontSize": 20,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "load"
+          },
+          {
+            "id": "month",
+            "kind": "text",
+            "text": "Fixture month",
+            "x": 820,
+            "y": 92,
+            "width": 380,
+            "height": 22,
+            "fontSize": 28,
+            "color": "#fff5dc",
+            "binding": "calendar"
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "text": "Fixture title",
+            "x": 20,
+            "y": 116,
+            "width": 380,
+            "height": 22,
+            "fontSize": 42,
+            "color": "#fff5dc"
+          },
+          {
+            "id": "schedule",
+            "kind": "schedule",
+            "x": 420,
+            "y": 116,
+            "width": 380,
+            "height": 22,
+            "visibleWhen": "planning"
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "text": "Fixture advance",
+            "x": 820,
+            "y": 116,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "advance",
+            "autoLabel": false
+          },
+          {
+            "id": "back",
+            "kind": "button",
+            "text": "Fixture back",
+            "x": 20,
+            "y": 140,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "navigate",
+            "screenId": "home",
+            "visibleWhen": "planning"
+          },
+          {
+            "id": "result",
+            "kind": "result",
+            "x": 420,
+            "y": 140,
+            "width": 380,
+            "height": 22,
+            "visibleWhen": "result"
+          }
+        ]
+      },
+      {
+        "id": "story",
+        "label": "story",
+        "elements": [
+          {
+            "id": "dialogue",
+            "kind": "dialogue",
+            "x": 20,
+            "y": 20,
+            "width": 380,
+            "height": 22
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "text": "Fixture advance",
+            "x": 420,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 25,
+            "color": "#fff5dc",
+            "fill": "#203a50e8",
+            "borderColor": "#d5b762",
+            "borderWidth": 2,
+            "radius": 18,
+            "hoverFill": "#47627b",
+            "action": "advance"
+          },
+          {
+            "id": "choices",
+            "kind": "choices",
+            "x": 820,
+            "y": 20,
+            "width": 380,
+            "height": 22
+          }
+        ]
+      },
+      {
+        "id": "ending",
+        "label": "ending",
+        "elements": [
+          {
+            "id": "ending",
+            "kind": "text",
+            "text": "Fixture ending",
+            "x": 20,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "fontSize": 48,
+            "color": "#fff5dc"
+          },
+          {
+            "id": "restart",
+            "kind": "button",
+            "text": "Fixture restart",
+            "x": 420,
+            "y": 20,
+            "width": 380,
+            "height": 22,
+            "action": "start"
+          }
+        ]
+      }
+    ]
+  },
+  "gameplay": {
+    "startLocationId": "home",
+    "locations": [
+      {
+        "id": "home",
+        "name": "Fixture home",
+        "screenId": "home",
+        "connections": []
+      }
+    ],
+    "items": [],
+    "shops": [],
+    "interactions": [],
+    "actions": [
+      {
+        "id": "open-play",
+        "name": "Fixture open-play",
+        "costs": [],
+        "effects": [
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "menu"
+            },
+            "value": {
+              "op": "literal",
+              "value": 1
+            }
+          }
+        ],
+        "requirements": {
+          "op": "compare",
+          "comparator": "eq",
+          "left": {
+            "op": "read",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "beat"
+            }
+          },
+          "right": {
+            "op": "literal",
+            "value": 0
+          }
+        },
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "back-home",
+        "name": "Fixture back-home",
+        "costs": [],
+        "effects": [
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "menu"
+            },
+            "value": {
+              "op": "literal",
+              "value": 0
+            }
+          }
+        ],
+        "requirements": {
+          "op": "compare",
+          "comparator": "eq",
+          "left": {
+            "op": "read",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "beat"
+            }
+          },
+          "right": {
+            "op": "literal",
+            "value": 0
+          }
+        },
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "good",
+        "name": "Fixture good",
+        "costs": [],
+        "effects": [
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "outcome"
+            },
+            "value": {
+              "op": "literal",
+              "value": 1
+            }
+          }
+        ],
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "bad",
+        "name": "Fixture bad",
+        "costs": [],
+        "effects": [
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "outcome"
+            },
+            "value": {
+              "op": "literal",
+              "value": 0
+            }
+          }
+        ],
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "roll",
+        "name": "Fixture roll",
+        "costs": [],
+        "effects": [
+          {
+            "op": "add",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "int"
+            },
+            "value": {
+              "op": "literal",
+              "value": 2
+            }
+          }
+        ],
+        "flow": [
+          {
+            "id": "outcome",
+            "chance": {
+              "op": "literal",
+              "value": 6667
+            },
+            "thenActionId": "good",
+            "elseActionId": "bad"
+          }
+        ],
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "read-book",
+        "name": "Fixture read-book",
+        "costs": [
+          {
+            "attributeId": "energy",
+            "amount": 3
+          }
+        ],
+        "effects": [
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "menu"
+            },
+            "value": {
+              "op": "literal",
+              "value": 2
+            }
+          },
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "beat"
+            },
+            "value": {
+              "op": "literal",
+              "value": 1
+            }
+          }
+        ],
+        "requirements": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "compare",
+              "comparator": "eq",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "beat"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 0
+              }
+            },
+            {
+              "op": "compare",
+              "comparator": "eq",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "menu"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "flow": [
+          {
+            "id": "first",
+            "thenActionId": "roll"
+          }
+        ],
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "next-result",
+        "name": "Fixture next-result",
+        "costs": [],
+        "effects": [
+          {
+            "op": "add",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "beat"
+            },
+            "value": {
+              "op": "literal",
+              "value": 1
+            }
+          }
+        ],
+        "requirements": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "compare",
+              "comparator": "eq",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "menu"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 2
+              }
+            },
+            {
+              "op": "compare",
+              "comparator": "gte",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "beat"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 1
+              }
+            },
+            {
+              "op": "compare",
+              "comparator": "lt",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "beat"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 3
+              }
+            }
+          ]
+        },
+        "flow": [
+          {
+            "id": "next",
+            "thenActionId": "roll"
+          },
+          {
+            "id": "stress",
+            "condition": {
+              "op": "compare",
+              "comparator": "eq",
+              "left": {
+                "op": "read",
+                "target": {
+                  "kind": "attribute",
+                  "attributeId": "beat"
+                }
+              },
+              "right": {
+                "op": "literal",
+                "value": 3
+              }
+            },
+            "thenActionId": "reading-stress"
+          }
+        ],
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "reading-stress",
+        "name": "Fixture reading-stress",
+        "costs": [],
+        "effects": [
+          {
+            "op": "add",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "stress"
+            },
+            "value": {
+              "op": "literal",
+              "value": 2
+            }
+          }
+        ],
+        "confirmation": {
+          "enabled": false
+        }
+      },
+      {
+        "id": "finish-reading",
+        "name": "Fixture finish-reading",
+        "costs": [],
+        "effects": [
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "beat"
+            },
+            "value": {
+              "op": "literal",
+              "value": 0
+            }
+          },
+          {
+            "op": "set",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "menu"
+            },
+            "value": {
+              "op": "literal",
+              "value": 0
+            }
+          }
+        ],
+        "requirements": {
+          "op": "compare",
+          "comparator": "eq",
+          "left": {
+            "op": "read",
+            "target": {
+              "kind": "attribute",
+              "attributeId": "beat"
+            }
+          },
+          "right": {
+            "op": "literal",
+            "value": 3
+          }
+        },
+        "confirmation": {
+          "enabled": false
+        }
+      }
+    ]
+  }
+}

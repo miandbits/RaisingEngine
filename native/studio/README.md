@@ -1,17 +1,19 @@
-# Raising Studio Qt — first authoring slice
+# Raising Studio Qt
 
-Qt 6 Widgets desktop editor. This is a workspace preview, not a standalone installer or a full replacement for every Electron workspace.
+Qt 6 Widgets desktop editor with screen/UI authoring, rules and content tools, player launch, and route regression review. This is a repository-backed preview, not a standalone public installer. See the [documentation map](../../docs/README.md) for the current feature guides.
 
 ## Build and run (verified on Windows)
 
-The existing engine build (`npm run build`) supplies the shared authoring service. The native player build (`npm run build:native-player`) supplies the SDL3/RmlUi player. Then:
+The headless engine build (`npm run build:headless`) supplies the shared authoring service. The native player build (`npm run build:native-player`) supplies the SDL3/RmlUi player. Then:
 
 ```powershell
 npm run build:qt-studio
-npm run studio:qt -- --project D:/Projects/TheSword/RaisingEngine/projects/qt-shop-playtest-2026-10-12
+npm.cmd run studio:qt -- --project ./examples/academy-demo
 npm run test:qt-service
-npm run test:qt-studio
+npm run test:regression
 ```
+
+Desktop Qt tests need their documented fixtures; see the individual feature guides before running `npm run test:qt-studio`. Both build and launch honor `QT_STUDIO_OUT`.
 
 Current build defaults: Qt 6.10.1 `C:/Qt/6.10.1/mingw_64`, GCC 13.1 `C:/Qt/Tools/mingw1310_64/bin`, Qt Ninja. Override `QT_ROOT`, `QT_COMPILER`, `NINJA`, `QT_STUDIO_OUT`. Node 22 must be on PATH, or set `RAISING_NODE`. The build uses shared Qt libraries and runs `windeployqt`. Qt license/module compliance and backend packaging still need a distribution pass before releasing a standalone installer.
 

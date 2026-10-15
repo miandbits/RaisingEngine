@@ -1,0 +1,68 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "entryNodeId": "visual-intro",
+  "formatVersion": "0.1.0",
+  "id": "month-02",
+  "label": "둘째 달 · 숲으로 가는 길",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "next": "intro",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "left"
+          },
+          {
+            "characterId": "mentor",
+            "portraitId": "visual-neutral",
+            "position": "right"
+          }
+        ]
+      },
+      "type": "scene"
+    },
+    {
+      "id": "intro",
+      "next": "reward",
+      "speakerId": "mentor",
+      "text": "우리가 맺은 신뢰는 숲에서도 힘이 될 거야. 집에서 출발 인사를 나누고 의뢰를 받은 뒤 수호자에게 도전해 보자.",
+      "type": "dialogue"
+    },
+    {
+      "effects": [
+        {
+          "op": "add",
+          "target": {
+            "characterId": "mentor",
+            "kind": "relationship",
+            "relationshipId": "trust"
+          },
+          "value": {
+            "op": "literal",
+            "value": 1
+          }
+        }
+      ],
+      "id": "reward",
+      "next": "end",
+      "type": "effect"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 5,
+    "throughPeriod": 5
+  }
+}

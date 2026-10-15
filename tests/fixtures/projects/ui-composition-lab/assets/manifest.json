@@ -1,0 +1,41 @@
+{
+  "$schema": "../../../packages/schema/assets.schema.json",
+  "formatVersion": "0.1.0",
+  "assets": [
+    {
+      "id": "visual-courtyard",
+      "kind": "image",
+      "path": "assets/visual/courtyard.png"
+    },
+    {
+      "id": "visual-library",
+      "kind": "image",
+      "path": "assets/visual/library.png"
+    },
+    {
+      "id": "visual-haru",
+      "kind": "image",
+      "path": "assets/visual/haru.png"
+    },
+    {
+      "id": "visual-yuna",
+      "kind": "image",
+      "path": "assets/visual/yuna.png"
+    },
+    {
+      "id": "image-87d44308813dc6b7",
+      "kind": "image",
+      "path": "assets/image-87d44308813dc6b7.png"
+    },
+    {
+      "id": "image-3df09117b32e2f79",
+      "kind": "image",
+      "path": "assets/image-3df09117b32e2f79.png"
+    },
+    {
+      "id": "image-4988e195be1f84bf",
+      "kind": "image",
+      "path": "assets/image-4988e195be1f84bf.png"
+    }
+  ]
+}

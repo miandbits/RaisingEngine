@@ -1,6 +1,6 @@
 # 일정 · 일별 연출 타임라인
 
-2026-10-12 추가. 실행 파일은 `dist/qt-studio-timeline/RaisingStudioQt.exe`, 제작 샘플은 `projects/timeline-lab`이다. `Edit-Timeline-Lab.cmd`로 함께 연다.
+2026-10-12 추가. 실행 파일은 `dist/qt-studio-timeline/RaisingStudioQt.exe`, 제작 샘플은 `tests/fixtures/projects/timeline-lab`이다. `Edit-Timeline-Lab.cmd`로 함께 연다.
 
 ## 편집기 사용
 

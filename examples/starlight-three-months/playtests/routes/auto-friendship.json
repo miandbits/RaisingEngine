@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "auto-friendship",
+  "name": "관계 사건 · 자동 도달 경로",
+  "gameId": "starlight-three-months",
+  "recordedFingerprint": "sha256:9d403d8225e908b5c06ea697fc750924b1d83d37c83b79242787c82dde6703b3",
+  "origin": {
+    "initialOverrides": {
+      "attributes": {},
+      "flags": {},
+      "relationships": {}
+    },
+    "mode": "full",
+    "seed": 42
+  },
+  "commands": [
+    {
+      "locationId": "market",
+      "type": "visit"
+    },
+    {
+      "itemId": "flower",
+      "quantity": 1,
+      "shopId": "florist",
+      "type": "buy"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "interactionId": "gift-yuna",
+      "type": "interact"
+    }
+  ],
+  "target": {
+    "id": "flowers-bring-friendship",
+    "kind": "event"
+  },
+  "checkpoints": [],
+  "checkpointEvery": 10,
+  "sourceRouteId": "relationship"
+}

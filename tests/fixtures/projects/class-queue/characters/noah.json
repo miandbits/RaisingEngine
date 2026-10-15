@@ -1,0 +1,15 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "noah",
+  "name": "Fixture noah",
+  "portraits": {},
+  "relationships": [
+    {
+      "id": "affinity",
+      "label": "Fixture affinity",
+      "initial": 0,
+      "min": 0,
+      "max": 100
+    }
+  ]
+}

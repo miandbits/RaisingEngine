@@ -7,7 +7,7 @@ import {createRun,dispatchCommand} from '../../dist/packages/core/run.js';
 import {nativeCreateRun,nativeDispatchCommand,nativeReplay} from '../../dist/packages/native-bridge/index.js';
 import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
 import {fixture} from '../systems/fixture.mjs';
-const built=await buildSnapshot(await loadProject(path.resolve('projects/magical-expedition-reference')));
+const built=await buildSnapshot(await loadProject(path.resolve('tests/fixtures/projects/free-expedition')));
 assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const content=built.snapshot;
 function session(overrides={}){
  const origin={seed:42,mode:'full',initialOverrides:{attributes:{'day-stage':1,...overrides},flags:{},relationships:{}}};

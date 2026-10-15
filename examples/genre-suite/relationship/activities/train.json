@@ -1,0 +1,22 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "train",
+  "label": "연습하기",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "skill"
+      },
+      "value": {
+        "op": "literal",
+        "value": 10
+      }
+    }
+  ]
+}

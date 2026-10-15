@@ -1,5 +1,5 @@
 void StudioTests::goalRoutesRecordAndReplay(){
- const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()),root=qEnvironmentVariable("RAISING_GOAL_PROJECT",engine+"/projects/starlight-three-months"),evidence=engine+"/docs/evidence/goal-routes";
+ const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()),root=qEnvironmentVariable("RAISING_GOAL_PROJECT",engine+"/examples/starlight-three-months"),evidence=engine+"/docs/evidence/goal-routes";
  StudioWindow w(engine);w.show();w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
  w.playAutomation=evidence+"/play-steps.json";w.playReport=evidence+"/editor-record-report.json";QSignalSpy finished(&w,&StudioWindow::playerFinished);
  w.findChild<QAction*>("goalRoutes")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);auto dialog=w.findChild<QDialog*>("goalRoutesDialog");QVERIFY(dialog);

@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "entryNodeId": "visual-intro",
+  "formatVersion": "0.1.0",
+  "id": "wanderer",
+  "label": "다시 시작하는 계절",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "next": "intro",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "center"
+          }
+        ]
+      },
+      "type": "scene"
+    },
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": "mentor",
+      "text": "세 달이 흘렀다. 아직 목표에 닿지는 못했지만, 무엇을 배우고 누구와 함께할지 조금은 알게 되었다. 다음 계절은 새로운 시작이다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  }
+}

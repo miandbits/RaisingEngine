@@ -6,7 +6,7 @@ import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 import {createRun,dispatchCommand} from '../../dist/packages/core/run.js';
 import {nativeCreateRun,nativeDispatchCommand,nativeReplay} from '../../dist/packages/native-bridge/index.js';
 import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
-const built=await buildSnapshot(await loadProject(path.resolve('projects/magical-academy-reference')));
+const built=await buildSnapshot(await loadProject(path.resolve('tests/fixtures/projects/class-queue')));
 assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const content=built.snapshot;
 function session(){
  const origin={seed:71,mode:'full',initialOverrides:{attributes:{},flags:{},relationships:{}}};

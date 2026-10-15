@@ -4,7 +4,7 @@ Qt **디자인 → 전투 HUD 제작…**에서 아군·적 상태, 행동, 대�
 
 ## 샘플과 제작 순서
 
-`Edit-Battle-HUD-Lab.cmd`는 `dist/qt-studio-battle-hud/RaisingStudioQt.exe`로 `projects/battle-hud-lab`을 연다. HUD는 Qt GUI 인수 테스트에서 제작·수정·저장했다.
+`Edit-Battle-HUD-Lab.cmd`는 `dist/qt-studio-battle-hud/RaisingStudioQt.exe`로 `tests/fixtures/projects/battle-hud-lab`을 연다. HUD는 Qt GUI 인수 테스트에서 제작·수정·저장했다.
 
 1. 프로젝트 패널에서 **전투 · battle** 화면을 더블클릭한다.
 2. **전투 HUD 제작…**에서 이름·위치·크기·행 높이를 편집한다. 새 구성에는 **기본 전투 HUD 배치** 또는 개별 목록 추가를 사용한다. 기본 배치는 기존 단일 전투 위젯만 대체하며, 다른 요소와 저장/불러오기 버튼을 보존한다.

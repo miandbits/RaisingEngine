@@ -7,7 +7,7 @@ import {saveGoalRoute} from '../../apps/qt-studio/goal-routes.mjs';
 import {readGoalBaseline,saveGoalBaseline} from '../../apps/qt-studio/goal-baselines.mjs';
 import {captureGoalBaseline,compareGoalBaseline,historicalStep} from '../../dist/packages/analysis-service/goal-history.js';
 
-async function setup(){const root=await mkdtemp(path.resolve('.cache/goal-history-'));await cp(path.resolve('projects/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});const service=new QtStudioService();await service.handle({method:'open',params:{root}});const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,root,...params}});return {root,service,call};}
+async function setup(){const root=await mkdtemp(path.resolve('.cache/goal-history-'));await cp(path.resolve('examples/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});const service=new QtStudioService();await service.handle({method:'open',params:{root}});const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,root,...params}});return {root,service,call};}
 test('persisted historical states survive restart; same commands pinpoint costs, effects and conditions',{timeout:120000},async()=>{
  const {root,service,call}=await setup();const ordinary=JSON.parse(await readFile(path.join(root,'playtests/routes/ordinary.json'),'utf8'));
  const route={...ordinary,id:'history-meal',name:'생활과 세 달의 기록',checkpoints:[],commands:[{type:'navigate',screenId:'home'},{type:'executeAction',actionId:'action-1',quantity:1},...ordinary.commands]};await saveGoalRoute(root,route);

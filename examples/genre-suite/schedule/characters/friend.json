@@ -1,0 +1,15 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "friend",
+  "name": "유나",
+  "portraits": {},
+  "relationships": [
+    {
+      "id": "trust",
+      "label": "유대",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    }
+  ]
+}

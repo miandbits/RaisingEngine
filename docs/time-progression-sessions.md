@@ -35,7 +35,7 @@ Qt **디자인 → 시간 · 행동력 · 예약 사건**에서 시간 단위 �
 
 ## 검증과 증거
 
-샘플: `projects/time-session-demo`. 실행: `start-time-sessions.cmd`.
+샘플: `tests/fixtures/projects/time-session-demo`. 실행: `start-time-sessions.cmd`.
 
 Qt 위젯을 통해 두 캐릭터, 서로 다른 행동과 사건을 만든 다음, 민서의 꽃 선물에 5시간/행동력 3, 하린의 공부에 4시간/행동력 2를 설정했다. 행동력 최대 6, 초기 4, 시간당 회복 1이며, 2시간 시점에 방문 사건이 발생한다. 파일 외부 생성만으로 GUI 제작을 주장하지 않는다. README는 검증 후 별도로 작성한 사용 설명이다.
 

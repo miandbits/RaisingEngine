@@ -1,0 +1,10 @@
+{
+  "formatVersion": "0.1.0",
+  "flags": [
+    {
+      "id": "goal",
+      "label": "목표 달성",
+      "initial": false
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { sceneReady } from './scene-ready.mjs';
 
 const executablePath = resolve(process.env.STUDIO_EXECUTABLE || 'release/native-journey-preview/Raising Studio-win32-x64/Raising Studio.exe');
-const projectRoot = resolve(process.env.HANDOFF_PROJECT || 'projects/journey-playtest-2026-10-11');
+const projectRoot = resolve(process.env.HANDOFF_PROJECT || 'tests/fixtures/projects/journey-playtest-2026-10-11');
 const env = { ...process.env };
 delete env.NODE_OPTIONS;
 delete env.ELECTRON_RUN_AS_NODE;

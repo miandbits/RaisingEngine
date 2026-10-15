@@ -28,9 +28,9 @@
 자동화 환경에서는 같은 검사기를 실행할 수 있다.
 
 ```powershell
-node scripts/check-goal-routes.mjs projects/starlight-three-months
+node scripts/check-goal-routes.mjs examples/starlight-three-months
 # 한 경로만
-node scripts/check-goal-routes.mjs projects/starlight-three-months success
+node scripts/check-goal-routes.mjs examples/starlight-three-months success
 ```
 
 종료 코드는 0=통과, 1=회귀 실패/미완료, 2=실행 설정·로드 오류다. 실행 전에 TypeScript 산출물과 런타임을 빌드해야 한다.

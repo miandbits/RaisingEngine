@@ -1,0 +1,319 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "rest",
+  "label": "Fixture rest",
+  "description": "Fixture rest",
+  "requirements": {
+    "op": "all",
+    "conditions": [
+      {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "day-stage"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 2
+        }
+      },
+      {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "classes-running"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 0
+        }
+      }
+    ]
+  },
+  "costs": [],
+  "baseEffects": [
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-count"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-cursor"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-current"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-slot-1"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-slot-2"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-slot-3"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-slot-4"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-slot-5"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-selected-magic"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-selected-literature"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-selected-mathematics"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-running"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "classes-latch"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "day-stage"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "view"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "noah-talked"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "energy"
+      },
+      "value": {
+        "op": "literal",
+        "value": 10
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "morality"
+      },
+      "value": {
+        "op": "literal",
+        "value": 1
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": -30
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "magic-mastery"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "magic-tier"
+      },
+      "value": {
+        "op": "literal",
+        "value": 1
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "literature-mastery"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "literature-tier"
+      },
+      "value": {
+        "op": "literal",
+        "value": 1
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "mathematics-mastery"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "mathematics-tier"
+      },
+      "value": {
+        "op": "literal",
+        "value": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "data": {
+    "bindings": [
+      {
+        "clip": "joy",
+        "id": "cheer-joy",
+        "loop": false,
+        "match": {
+          "actionId": "action-1",
+          "outcome": "success"
+        },
+        "signal": "actionResult"
+      },
+      {
+        "clip": "face-happy",
+        "id": "happy-face",
+        "match": {
+          "self": "true"
+        },
+        "signal": "portraitChanged",
+        "stopOn": [
+          "dialogueEnded"
+        ],
+        "then": "stop",
+        "track": 2
+      }
+    ],
+    "characterId": "apprentice",
+    "defaultClip": "idle",
+    "layers": [
+      {
+        "clip": "blink",
+        "track": 1
+      }
+    ],
+    "rig": "hero",
+    "schemaVersion": 1
+  },
+  "formatVersion": "0.1.0",
+  "id": "hero",
+  "plugin": "cutout-animation",
+  "type": "controller"
+}

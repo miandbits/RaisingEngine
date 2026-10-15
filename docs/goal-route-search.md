@@ -44,7 +44,7 @@ npx tsc -p tsconfig.json
 node --test tests/analysis/goal-search.test.mjs tests/analysis/goal-routes.test.mjs tests/analysis/analysis.test.mjs tests/qt-studio/service.test.mjs
 # 위 탐색 검증이 생성한 증거 경로의 발견 결과를 실제 플레이어로 재현
 node --test tests/native-player/goal-search.test.mjs
-node scripts/check-goal-routes.mjs projects/starlight-three-months
+node scripts/check-goal-routes.mjs examples/starlight-three-months
 ```
 
 Qt 통합 테스트 `goalSearchAndRegister`에는 `RAISING_SEARCH_PROJECT`로 별도 파일럿 복사본을 지정한다. 같은 복사본에서 테스트가 생성한 ID를 다시 등록하지 않도록 실행마다 새 복사본을 사용한다. 기존 사용자 창/프로젝트에는 실패 재현용 변경을 적용하지 않는다.

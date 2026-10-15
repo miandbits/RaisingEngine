@@ -1,0 +1,63 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "success",
+  "label": "서로 다른 두 성장",
+  "requirements": {
+    "op": "all",
+    "conditions": [
+      {
+        "op": "compare",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "skill",
+            "owner": {
+              "kind": "character",
+              "characterId": "hero"
+            }
+          }
+        },
+        "comparator": "gte",
+        "right": {
+          "op": "literal",
+          "value": 20
+        }
+      },
+      {
+        "op": "compare",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stamina",
+            "owner": {
+              "kind": "character",
+              "characterId": "friend"
+            }
+          }
+        },
+        "comparator": "gte",
+        "right": {
+          "op": "literal",
+          "value": 70
+        }
+      }
+    ]
+  },
+  "priority": 10,
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "제작 시험 · roster의 목표를 완수했습니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

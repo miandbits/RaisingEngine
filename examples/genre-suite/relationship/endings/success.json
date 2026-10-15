@@ -1,0 +1,36 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "success",
+  "label": "서로의 친구",
+  "requirements": {
+    "op": "compare",
+    "left": {
+      "op": "read",
+      "target": {
+        "kind": "relationship",
+        "characterId": "friend",
+        "relationshipId": "trust"
+      }
+    },
+    "comparator": "gte",
+    "right": {
+      "op": "literal",
+      "value": 40
+    }
+  },
+  "priority": 10,
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "제작 시험 · relationship의 목표를 완수했습니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

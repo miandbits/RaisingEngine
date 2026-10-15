@@ -1,0 +1,202 @@
+{
+  "checkpointEvery": 10,
+  "checkpoints": [
+    52
+  ],
+  "commands": [
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "choiceId": "free",
+      "type": "choose"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    }
+  ],
+  "endingId": "wanderer",
+  "gameId": "starlight-three-months",
+  "id": "ordinary",
+  "name": "다시 시작하는 계절",
+  "origin": {
+    "initialOverrides": {
+      "attributes": {},
+      "flags": {},
+      "relationships": {}
+    },
+    "mode": "full",
+    "seed": 42
+  },
+  "recordedFingerprint": "sha256:9d403d8225e908b5c06ea697fc750924b1d83d37c83b79242787c82dde6703b3",
+  "version": 1
+}

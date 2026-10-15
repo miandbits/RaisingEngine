@@ -7,7 +7,7 @@ import {chromium} from 'playwright';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {exportGame} from '../dist/packages/export-service/export.js';
-const source=path.resolve(process.argv[2]??'projects/battle-hud-lab');await mkdir('.cache/battle-hud',{recursive:true});
+const source=path.resolve(process.argv[2]??'tests/fixtures/projects/battle-hud-lab');await mkdir('.cache/battle-hud',{recursive:true});
 const work=await mkdtemp(path.resolve('.cache/battle-hud/run-')),root=path.join(work,'project'),web=path.join(work,'web');await cp(source,root,{recursive:true});
 const built=await buildSnapshot(await loadProject(root));assert.ok(built.ok,JSON.stringify(built.diagnostics));const content=built.snapshot;
 await exportGame({content,projectRoot:root,destination:web,target:'web',runtimes:{web:path.resolve('dist/web')}});

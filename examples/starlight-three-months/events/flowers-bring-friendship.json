@@ -1,0 +1,56 @@
+{
+  "entryNodeId": "visual-scene",
+  "formatVersion": "0.1.0",
+  "id": "flowers-bring-friendship",
+  "label": "관계 사건 · 함께 걷는 길",
+  "nodes": [
+    {
+      "id": "visual-scene",
+      "next": "greeting",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "mentor",
+            "portraitId": "visual-neutral",
+            "position": "center"
+          }
+        ]
+      },
+      "type": "scene"
+    },
+    {
+      "id": "greeting",
+      "next": "done",
+      "speakerId": "mentor",
+      "text": "이 꽃은 오래 기억할게. 네가 숲에 들어갈 때 나도 함께할게. 집으로 돌아가 출발 준비를 하자.",
+      "type": "dialogue"
+    },
+    {
+      "id": "done",
+      "type": "end"
+    }
+  ],
+  "priority": 50,
+  "requirements": {
+    "comparator": "gte",
+    "left": {
+      "op": "read",
+      "target": {
+        "characterId": "mentor",
+        "kind": "relationship",
+        "relationshipId": "trust"
+      }
+    },
+    "op": "compare",
+    "right": {
+      "op": "literal",
+      "value": 15
+    }
+  },
+  "trigger": "interaction",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 8
+  }
+}

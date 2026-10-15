@@ -35,9 +35,9 @@ cli.sequence = 0;
 test('CLI honors exact partial approvals, rejects remaining regressions and ending failures, and writes reports', {timeout: 240000}, async () => {
   await mkdir('.cache', {recursive: true});
   const root = await mkdtemp(path.resolve('.cache/goal-regression-cli-'));
-  await cp(path.resolve('projects/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).some(part => ['.studio', 'playtests'].includes(part))});
+  await cp(path.resolve('examples/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).some(part => ['.studio', 'playtests'].includes(part))});
   await mkdir(path.join(root, 'playtests/routes'), {recursive: true});
-  const route = await json('projects/starlight-three-months/playtests/routes/ordinary.json');
+  const route = await json('examples/starlight-three-months/playtests/routes/ordinary.json');
   await writeFile(path.join(root, 'playtests/routes/ordinary.json'), JSON.stringify(route));
   const initial = await content(root), baseline = await captureGoalBaseline(initial, route, 'CLI initial', await runtimeIdentity());
   const saved = await saveGoalBaseline(root, baseline), originalBytes = await readFile(saved.file);
@@ -102,13 +102,13 @@ test('CLI honors exact partial approvals, rejects remaining regressions and endi
 
 test('CLI fails closed for empty/missing baselines, invalid project, malformed route and arguments', {timeout: 120000}, async () => {
   const root = await mkdtemp(path.resolve('.cache/goal-regression-cli-'));
-  await cp(path.resolve('projects/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).some(part => ['.studio', 'baselines'].includes(part))});
+  await cp(path.resolve('examples/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).some(part => ['.studio', 'baselines'].includes(part))});
   let result = await cli(root, root); assert.equal(result.exit, 2); assert.ok(result.report.counts['missing-baseline'] > 0);
   const routes = path.join(root, 'playtests/routes');
   for (const file of await readdir(routes)) await writeFile(path.join(routes, file), 'invalid-json');
   result = await cli(root, root); assert.equal(result.exit, 2); assert.ok(result.report.counts.error > 0);
   const empty = await mkdtemp(path.resolve('.cache/goal-regression-cli-'));
-  await cp(path.resolve('projects/starlight-three-months'), empty, {recursive: true, filter: s => !s.split(path.sep).some(part => ['.studio', 'playtests'].includes(part))});
+  await cp(path.resolve('examples/starlight-three-months'), empty, {recursive: true, filter: s => !s.split(path.sep).some(part => ['.studio', 'playtests'].includes(part))});
   result = await cli(empty, root); assert.equal(result.exit, 2); assert.match(result.report.errors[0], /경로가 없습니다/);
   result = await cli(path.join(root, 'missing'), root); assert.equal(result.exit, 2);
   result = await cli(root, root, ['--runtime-policy', 'ignore']); assert.equal(result.exit, 2);

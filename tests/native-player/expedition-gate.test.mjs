@@ -9,8 +9,8 @@ import {exportGame} from '../../dist/packages/export-service/export.js';
 
 test('expedition entry explains locked exits; return remains clickable; qualified route moves and wins',{timeout:120000},async()=>{
  const root=await mkdtemp(resolve('.cache/entry-gate-')),game=resolve(root,'game'),evidence=resolve('docs/evidence/goal-routes');
- const built=await buildSnapshot(await loadProject(resolve('projects/starlight-three-months')));assert.equal(built.ok,true);
- await exportGame({content:built.snapshot,projectRoot:resolve('projects/starlight-three-months'),destination:game,target:'windows',runtimes:{windows:resolve('dist/native-player-routes'),web:resolve('dist/web')}});
+ const built=await buildSnapshot(await loadProject(resolve('examples/starlight-three-months')));assert.equal(built.ok,true);
+ await exportGame({content:built.snapshot,projectRoot:resolve('examples/starlight-three-months'),destination:game,target:'windows',runtimes:{windows:resolve('dist/native-player-routes'),web:resolve('dist/web')}});
  const steps=[{click:'start'},{click:'tactics-entry'},{click:'party-depart'},{click:'confirm-purchase'},{checkpoint:'entry',screenshot:resolve(evidence,'entry-conditions.png')},{clickWindow:'move-expedition-clearing'},{checkpoint:'blocked'},{clickWindow:'return-expedition'},{checkpoint:'returned'},{click:'party-home'},{checkpoint:'home'},{key:'F5'},{click:'schedule-link'},{click:'load'},{checkpoint:'restored'}];
  const file=resolve(root,'steps.json'),report=resolve(evidence,'entry-gate-report.json');await writeFile(file,JSON.stringify(steps));
  const result=spawnSync(resolve(game,'RaisingPlayer.exe'),['--bundle',game,'--save',resolve(root,'save.json'),'--automation',file,'--report',report,'--hidden'],{encoding:'utf8',windowsHide:true,timeout:90000});const data=JSON.parse(await readFile(report,'utf8'));assert.equal(result.status,0,JSON.stringify(data.error));

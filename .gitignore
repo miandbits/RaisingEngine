@@ -4,7 +4,7 @@ dist/
 .cache/
 examples/*/.studio/
 
-release/
+/release/
 
 .toolchains/
 plugin-store/
@@ -12,3 +12,60 @@ plugin-store/
 # Local authoring test drafts; the finished two-trainees sample is versioned.
 projects/two-trainees-lab*/
 projects/**/.studio/
+
+# Local recordings and review evidence are not source distributions.
+docs/evidence/
+**/.studio/
+
+# Local credentials and signing material. Existing tracked files need separate review.
+.env
+.env.*
+!.env.example
+!.env.sample
+*.p12
+*.pfx
+*.keystore
+
+# OS/editor state
+.DS_Store
+Thumbs.db
+*.user
+*.suo
+
+# User work and reference-game experiments remain local at their original paths.
+/projects/
+/internal/
+
+# Historical reference-only launchers and generation tools remain on this PC.
+/Edit-Magical-Academy.cmd
+/Edit-Magical-Character.cmd
+/Edit-Magical-Expedition.cmd
+/Edit-Magical-Reference.cmd
+/Edit-PM2-Components.cmd
+/Edit-PM2-Design.cmd
+/Edit-PM2-Facilities.cmd
+/Edit-PM2-Localization.cmd
+/Edit-PM2-Renderer.cmd
+/Edit-PM2.cmd
+/Play-PM2.cmd
+/Start-PM2-Editor.cmd
+/scripts/author-pm2-ui.mjs
+/scripts/create-facilities-lab.mjs
+/scripts/create-magical-academy.mjs
+/scripts/create-magical-character-reference.mjs
+/scripts/create-magical-expedition.mjs
+/scripts/create-magical-reference.mjs
+/scripts/create-pm2-project.mjs
+/scripts/verify-character-integration.mjs
+/scripts/verify-components.mjs
+/scripts/verify-design-system.mjs
+/scripts/verify-localization.mjs
+/scripts/verify-magical-academy.mjs
+/scripts/verify-magical-expedition.mjs
+/scripts/verify-magical-reference.mjs
+/scripts/verify-pm2-exported-web.mjs
+/scripts/verify-pm2-production.mjs
+/scripts/verify-pm2-schedule-web.mjs
+/scripts/verify-pm2-ui.mjs
+/scripts/verify-pm2.mjs
+/tests/pm2-expeditions.mjs

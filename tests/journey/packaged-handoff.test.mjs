@@ -9,7 +9,7 @@ import { sceneReady } from './scene-ready.mjs';
 
 test('packaged Studio creates the handoff project, plays and saves the journey, and exports bundled native/web players', { timeout: 180000 }, async t => {
   assert.ok(process.env.STUDIO_EXECUTABLE, 'must use a packaged executable');
-  const projectRoot = resolve('projects/journey-playtest-2026-10-11'), output = resolve('.cache/journey-packaged-ui');
+  const projectRoot = resolve('tests/fixtures/projects/journey-playtest-2026-10-11'), output = resolve('.cache/journey-packaged-ui');
   await mkdir(projectRoot, { recursive: true }); await mkdir(output, { recursive: true });
   const empty = (await readdir(projectRoot)).length === 0;
   const save = resolve(projectRoot, 'saves/first-flower.json');

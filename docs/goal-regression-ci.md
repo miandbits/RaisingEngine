@@ -11,7 +11,7 @@ Node.js 22.12 이상, CMake 3.20 이상, C++17 컴파일러가 필요합니다. 
 ```sh
 npm ci
 npm run build:headless
-node scripts/check-goal-regression.mjs projects/starlight-three-months --report-dir .cache/goal-regression
+node scripts/check-goal-regression.mjs examples/starlight-three-months --report-dir .cache/goal-regression
 ```
 
 `npm run check:regression -- ...`도 같은 CLI입니다. PowerShell에서 npm 래퍼가 옵션을 소비하는 환경에서는 위의 `node` 직접 실행을 사용하세요.
@@ -19,7 +19,7 @@ node scripts/check-goal-regression.mjs projects/starlight-three-months --report-
 다른 컴퓨터 또는 CI에서 빌드한 런타임으로 검사할 때:
 
 ```sh
-node scripts/check-goal-regression.mjs projects/starlight-three-months --runtime-policy verify-replay --timeout-ms 300000 --report-dir .cache/ci-goal-regression
+node scripts/check-goal-regression.mjs examples/starlight-three-months --runtime-policy verify-replay --timeout-ms 300000 --report-dir .cache/ci-goal-regression
 ```
 
 - 기본 `strict`: 실행 파일 SHA-256이 기준과 달라지면 기존 편집기와 같이 변경으로 판정합니다.

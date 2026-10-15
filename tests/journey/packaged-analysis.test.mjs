@@ -7,7 +7,7 @@ import { openJourneyStudio, click } from './gui-helpers.mjs';
 
 test('packaged analysis worker completes 1000 plays started through the real editor UI', { timeout: 600000 }, async t => {
   assert.ok(process.env.STUDIO_EXECUTABLE, 'requires the packaged Studio');
-  const projectRoot = resolve('projects/journey-playtest-2026-10-11');
+  const projectRoot = resolve('tests/fixtures/projects/journey-playtest-2026-10-11');
   const { app, page, errors } = await openJourneyStudio(t);
   await app.evaluate(({ dialog }, root) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] }); }, projectRoot);
   await click(page, '열기'); await page.getByText(projectRoot, { exact: true }).waitFor();

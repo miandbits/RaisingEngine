@@ -1,0 +1,28 @@
+{
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "mentor-recognition",
+  "label": "관계 단계 · 믿을 수 있는 동료",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": "mentor",
+      "text": "이제 네 곁을 맡길 수 있겠어. 돌아오면 우리가 걸어온 길도 함께 기념하자.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "trigger": "interaction",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 8
+  }
+}

@@ -29,7 +29,7 @@ Qt의 **디자인 → 제작 작업실 · 데이터 / 행동 / 진행**에서 �
 
 ## 검증 샘플
 
-기존 `projects/time-session-demo`를 별도 디렉터리로 복사한 뒤, 실제 Qt 위젯을 QTest로 조작해 변경했다. 복사 자체는 파일 복사이며 GUI에서 새로 제작했다고 계산하지 않는다. 변경은 JSON 외부 편집 없이 작업실·조건/효과 편집기로 수행한다.
+기존 `tests/fixtures/projects/time-session-demo`를 별도 디렉터리로 복사한 뒤, 실제 Qt 위젯을 QTest로 조작해 변경했다. 복사 자체는 파일 복사이며 GUI에서 새로 제작했다고 계산하지 않는다. 변경은 JSON 외부 편집 없이 작업실·조건/효과 편집기로 수행한다.
 
 1. 책 최대 수량 10 → 25, 되돌리기·다시 실행.
 2. 민서 꽃 선물의 소요 시간 5 → 6.
@@ -43,7 +43,7 @@ Windows 플레이 검증에서는 3시간 시점 방문 사건 도중 저장하�
 
 테스트: `tests/qt-studio/authoring-workspace.test.mjs`, `native/studio/authoring-workspace-test.inc`, `tests/native-player/authoring-workspace.test.mjs`. 관련 기존 캐릭터·시간·규칙 회귀와 함께 실행한다. 증거는 `docs/evidence/authoring-workspace/`, 프로젝트 위치는 `.cache/authoring-workspace-proof.json`에 기록한다.
 
-최종 샘플은 `projects/authoring-workspace`, 실행 진입점은 `start-authoring-workspace.cmd`다. 관련 Node 테스트 39개가 통과했다. 최종 Qt 빌드에서 제작·충돌 보호·저장 재열기와 편집기 플레이 연동 2개 시험이 통과했으며, 확률 분기 추가 후 별도 Windows 플레이어의 저장 재개 시험도 통과했다. Qt의 초기화/정리 시험은 기능 시험 수에서 제외했다.
+최종 샘플은 `tests/fixtures/projects/authoring-workspace`, 실행 진입점은 `start-authoring-workspace.cmd`다. 관련 Node 테스트 39개가 통과했다. 최종 Qt 빌드에서 제작·충돌 보호·저장 재열기와 편집기 플레이 연동 2개 시험이 통과했으며, 확률 분기 추가 후 별도 Windows 플레이어의 저장 재개 시험도 통과했다. Qt의 초기화/정리 시험은 기능 시험 수에서 제외했다.
 
 ## 호환 범위
 

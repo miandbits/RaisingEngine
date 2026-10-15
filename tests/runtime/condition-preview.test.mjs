@@ -4,7 +4,7 @@ import path from 'node:path';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 
 test('condition preview uses shared evaluator, does not edit or mutate debug state, rejects invalid overrides',async()=>{
- const service=new QtStudioService();const opened=await service.handle({method:'open',params:{root:path.resolve('projects/magical-academy-reference')}});
+ const service=new QtStudioService();const opened=await service.handle({method:'open',params:{root:path.resolve('tests/fixtures/projects/class-queue')}});
  const revision=opened.view.revision;const before=JSON.stringify(opened.view.documents);
  const first=await service.handle({method:'conditionPreview',params:{revision}});
  assert.ok(first.conditionPreview.hidden.home.includes('night'));assert.ok(first.conditionPreview.hidden.home.includes('free-panel'));assert.ok(!first.conditionPreview.hidden.home.includes('class-title'));

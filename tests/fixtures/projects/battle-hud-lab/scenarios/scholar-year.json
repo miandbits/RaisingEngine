@@ -1,0 +1,363 @@
+{
+  "$schema": "../../../packages/schema/scenario.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "scholar-year",
+  "description": "12개월 scholar 경로. 1·6개월 선택과 매월 일정을 고정합니다.",
+  "seed": 42,
+  "initialOverrides": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "commands": [
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": [
+        {
+          "eventId": "month-01",
+          "nodeId": "path",
+          "choiceId": "scholar"
+        }
+      ]
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": [
+        {
+          "eventId": "month-06",
+          "nodeId": "festival",
+          "choiceId": "support"
+        }
+      ]
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "read",
+        "work",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "ending",
+      "endingId": "scholar"
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "knowledge"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 106
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "money"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 146
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "reputation"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 15
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stamina"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 100
+        }
+      }
+    },
+    {
+      "kind": "condition",
+      "condition": {
+        "op": "compare",
+        "comparator": "eq",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stress"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 0
+        }
+      }
+    }
+  ],
+  "stepLimit": 1000
+}

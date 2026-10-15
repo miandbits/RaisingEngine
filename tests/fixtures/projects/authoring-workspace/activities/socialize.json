@@ -1,0 +1,65 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "socialize",
+  "label": "이웃과 교류",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "money",
+      "amount": 1
+    },
+    {
+      "attributeId": "stamina",
+      "amount": 5
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "reputation"
+      },
+      "value": {
+        "op": "literal",
+        "value": 3
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": -8
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "relationship",
+        "characterId": "mentor",
+        "relationshipId": "trust"
+      },
+      "value": {
+        "op": "literal",
+        "value": 2
+      }
+    }
+  ],
+  "presentation": {
+    "backgroundAssetId": "visual-courtyard",
+    "portraits": [
+      {
+        "characterId": "apprentice",
+        "portraitId": "visual-neutral",
+        "position": "center"
+      }
+    ]
+  }
+}

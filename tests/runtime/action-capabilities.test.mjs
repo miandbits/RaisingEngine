@@ -7,7 +7,7 @@ import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 import {exportGame} from '../../dist/packages/export-service/export.js';
 
 test('action export rejects old renderers before publication and retries after capability repair',async()=>{
-  const projectRoot=path.resolve('projects/magical-childhood-reference');
+  const projectRoot=path.resolve('tests/fixtures/projects/action-day');
   const built=await buildSnapshot(await loadProject(projectRoot));
   assert.equal(built.ok,true,JSON.stringify(built));
   await mkdir('.cache/action-capability-tests',{recursive:true});
@@ -16,7 +16,7 @@ test('action export rejects old renderers before publication and retries after c
   // Packaging fixtures, never executable game binaries.
   await writeFile(path.join(runtime,'RaisingPlayer.exe'),'packaging fixture');
   await writeFile(path.join(runtime,'index.html'),'packaging fixture');
-  const capabilities=JSON.parse(await readFile('dist/web/capabilities.json','utf8'));
+  const capabilities={formatVersion:'1',visualFeatures:['probabilistic-actions-v1','optional-confirmation-v1','monthly-schedule-v1','action-flows-v1','data-ui-v1','generic-rules-v1'],imageExtensions:['.png'],audioExtensions:['.ogg'],fontExtensions:['.ttf']};
   for(const target of ['windows','web']){
     for(const missing of ['probabilistic-actions-v1','optional-confirmation-v1']){
       assert.ok(capabilities.visualFeatures.includes(missing));

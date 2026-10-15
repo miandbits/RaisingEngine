@@ -1,0 +1,63 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "success",
+  "label": "건강하고 행복한 모모",
+  "requirements": {
+    "op": "all",
+    "conditions": [
+      {
+        "op": "compare",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "skill",
+            "owner": {
+              "kind": "character",
+              "characterId": "pet"
+            }
+          }
+        },
+        "comparator": "gte",
+        "right": {
+          "op": "literal",
+          "value": 20
+        }
+      },
+      {
+        "op": "compare",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "stamina",
+            "owner": {
+              "kind": "character",
+              "characterId": "pet"
+            }
+          }
+        },
+        "comparator": "gte",
+        "right": {
+          "op": "literal",
+          "value": 70
+        }
+      }
+    ]
+  },
+  "priority": 10,
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "제작 시험 · pet의 목표를 완수했습니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

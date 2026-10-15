@@ -1,0 +1,28 @@
+{
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "time-visit",
+  "label": "두 시간 뒤의 방문",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": null,
+      "text": "약속한 시간이 되었네요. 이야기한 뒤 하던 행동을 이어가세요.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "trigger": "interaction",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 35
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "entryNodeId": "visual-intro",
+  "formatVersion": "0.1.0",
+  "id": "month-03",
+  "label": "마지막 달 · 세 달의 기록",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "next": "intro",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "left"
+          },
+          {
+            "characterId": "mentor",
+            "portraitId": "visual-neutral",
+            "position": "right"
+          }
+        ]
+      },
+      "type": "scene"
+    },
+    {
+      "id": "intro",
+      "next": "reward",
+      "speakerId": "mentor",
+      "text": "마지막 일정이 끝났어. 검술과 신뢰, 숲에서의 도전이 우리의 다음 길을 결정할 거야.",
+      "type": "dialogue"
+    },
+    {
+      "effects": [
+        {
+          "op": "add",
+          "target": {
+            "characterId": "mentor",
+            "kind": "relationship",
+            "relationshipId": "trust"
+          },
+          "value": {
+            "op": "literal",
+            "value": 1
+          }
+        }
+      ],
+      "id": "reward",
+      "next": "end",
+      "type": "effect"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 8,
+    "throughPeriod": 8
+  }
+}

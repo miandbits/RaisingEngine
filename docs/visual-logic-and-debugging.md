@@ -1,6 +1,6 @@
 # 조건 · 실행 흐름 · 규칙 디버거
 
-새 Qt 편집기 빌드는 `dist/qt-studio-logic/RaisingStudioQt.exe`다. `Edit-Logic-Lab.cmd`로 별도 실습 프로젝트 `projects/logic-lab`를 연다. 이전 편집기 빌드와 원본 프로젝트는 그대로 유지한다.
+새 Qt 편집기 빌드는 `dist/qt-studio-logic/RaisingStudioQt.exe`다. `Edit-Logic-Lab.cmd`로 별도 실습 프로젝트 `tests/fixtures/projects/logic-lab`를 연다. 이전 편집기 빌드와 원본 프로젝트는 그대로 유지한다.
 
 ## 1. 조건 · 효과 · 수식
 

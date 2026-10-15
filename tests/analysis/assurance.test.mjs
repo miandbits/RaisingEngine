@@ -68,7 +68,7 @@ test('goal search keeps bounded misses distinct from witnessed reachable endings
 });
 
 test('existing projects load without schema migration',async()=>{
- const roots=['examples/academy-demo','examples/academy-year','examples/academy-adventure','examples/academy-journey','examples/academy-visual','projects/character-state-demo','projects/time-session-demo','projects/authoring-workspace','projects/ui-composition-lab','projects/party-tactics-lab','projects/direction-lab'];
+ const roots=['examples/academy-demo','examples/academy-year','examples/academy-adventure','examples/academy-journey','examples/academy-visual','tests/fixtures/projects/character-state-demo','tests/fixtures/projects/time-session-demo','tests/fixtures/projects/authoring-workspace','tests/fixtures/projects/ui-composition-lab','tests/fixtures/projects/party-tactics-lab','tests/fixtures/projects/direction-lab'];
  const results=[];
  for(const root of roots){const before=await readFile(resolve(root,'project.json'),'utf8'),b=await buildSnapshot(await loadProject(root));assert.equal(b.ok,true,root+': '+JSON.stringify(b.diagnostics));assert.equal(await readFile(resolve(root,'project.json'),'utf8'),before);results.push({root,valid:true,unchanged:true});}
  await writeFile('docs/evidence/genre-suite/compatibility.json',JSON.stringify(results,null,2));

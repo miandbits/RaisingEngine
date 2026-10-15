@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {loadProject} from '../../dist/packages/project-service/loader.js';import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
-const loaded=await loadProject('projects/party-tactics-lab');
+const loaded=await loadProject('tests/fixtures/projects/party-tactics-lab');
 const definition={actors:[{id:'hero',name:'Hero',assetId:'visual-haru',expressions:[{id:'happy',assetId:'visual-haru'}]}],sequences:[{id:'hello',name:'Hello',stages:[{name:'Enter',durationMs:1000,cues:[{actorId:'hero',x:0,y:0,width:100,height:200}]}]}]};
 async function build(change){const copy=structuredClone(loaded),p=copy.documents.find(d=>d.kind==='project').data;p.visual.direction=structuredClone(definition);change?.(p);return buildSnapshot(copy);}
 test('direction uses the common schema and semantic diagnostics',async()=>{

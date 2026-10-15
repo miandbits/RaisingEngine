@@ -1,0 +1,45 @@
+{
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "personal-gift",
+  "label": "민서의 선물 사건",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": null,
+      "text": "민서가 준비한 꽃을 받았습니다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "comparator": "gte",
+    "left": {
+      "op": "read",
+      "target": {
+        "characterId": "mentor",
+        "kind": "relationship",
+        "owner": {
+          "kind": "actor"
+        },
+        "relationshipId": "trust"
+      }
+    },
+    "op": "compare",
+    "right": {
+      "op": "literal",
+      "value": 15
+    }
+  },
+  "scope": "actor",
+  "trigger": "interaction",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 35
+  }
+}

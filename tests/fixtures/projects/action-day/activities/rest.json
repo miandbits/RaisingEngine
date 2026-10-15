@@ -1,0 +1,45 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "rest",
+  "label": "Fixture rest",
+  "description": "Fixture rest",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [],
+  "baseEffects": [
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "energy"
+      },
+      "value": {
+        "op": "literal",
+        "value": 3
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "menu"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "beat"
+      },
+      "value": {
+        "op": "literal",
+        "value": 0
+      }
+    }
+  ]
+}

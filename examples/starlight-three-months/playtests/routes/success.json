@@ -1,0 +1,347 @@
+{
+  "checkpointEvery": 10,
+  "checkpoints": [
+    9,
+    20,
+    26,
+    31,
+    36,
+    37,
+    53,
+    59,
+    70,
+    76,
+    82
+  ],
+  "commands": [
+    {
+      "screenId": "screen-2",
+      "type": "navigate"
+    },
+    {
+      "actionId": "action-1",
+      "quantity": 1,
+      "type": "executeAction"
+    },
+    {
+      "screenId": "home",
+      "type": "navigate"
+    },
+    {
+      "locationId": "market",
+      "type": "visit"
+    },
+    {
+      "itemId": "flower",
+      "quantity": 1,
+      "shopId": "florist",
+      "type": "buy"
+    },
+    {
+      "itemId": "training-sword",
+      "quantity": 1,
+      "shopId": "florist",
+      "type": "buy"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "interactionId": "gift-yuna",
+      "type": "interact"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "study",
+        "rest",
+        "study"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "choiceId": "free",
+      "type": "choose"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "tactics-camp",
+      "type": "navigate"
+    },
+    {
+      "equipmentId": "wooden-sword",
+      "type": "tacticsEquip",
+      "unitId": "vanguard"
+    },
+    {
+      "questId": "first-expedition",
+      "type": "acceptQuest"
+    },
+    {
+      "actionId": "tactics-depart",
+      "quantity": 1,
+      "type": "executeAction"
+    },
+    {
+      "nodeId": "clearing",
+      "type": "moveExpedition"
+    },
+    {
+      "skillId": "spark",
+      "targetId": "wave-0-wolf",
+      "type": "tacticsAction",
+      "unitId": "mage"
+    },
+    {
+      "skillId": "strike",
+      "targetId": "wave-0-wolf",
+      "type": "tacticsAction",
+      "unitId": "vanguard"
+    },
+    {
+      "skillId": "venom",
+      "targetId": "wave-1-guardian",
+      "type": "tacticsAction",
+      "unitId": "mage"
+    },
+    {
+      "skillId": "strike",
+      "targetId": "wave-1-guardian",
+      "type": "tacticsAction",
+      "unitId": "vanguard"
+    },
+    {
+      "skillId": "spark",
+      "targetId": "wave-1-guardian",
+      "type": "tacticsAction",
+      "unitId": "mage"
+    },
+    {
+      "skillId": "strike",
+      "targetId": "wave-1-guardian",
+      "type": "tacticsAction",
+      "unitId": "vanguard"
+    },
+    {
+      "skillId": "strike",
+      "targetId": "wave-1-guardian",
+      "type": "tacticsAction",
+      "unitId": "vanguard"
+    },
+    {
+      "nodeId": "entrance",
+      "type": "moveExpedition"
+    },
+    {
+      "type": "returnFromExpedition"
+    },
+    {
+      "questId": "first-expedition",
+      "type": "claimQuest"
+    },
+    {
+      "screenId": "home",
+      "type": "navigate"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "study",
+        "rest",
+        "work"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "locationId": "city",
+      "type": "visit"
+    },
+    {
+      "locationId": "home",
+      "type": "visit"
+    },
+    {
+      "screenId": "schedule",
+      "type": "navigate"
+    },
+    {
+      "activityIds": [
+        "rest",
+        "study",
+        "socialize"
+      ],
+      "type": "setSchedule"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    }
+  ],
+  "endingId": "knight",
+  "gameId": "starlight-three-months",
+  "id": "success",
+  "name": "별빛 길드의 동료",
+  "origin": {
+    "initialOverrides": {
+      "attributes": {},
+      "flags": {},
+      "relationships": {}
+    },
+    "mode": "full",
+    "seed": 42
+  },
+  "recordedFingerprint": "sha256:9d403d8225e908b5c06ea697fc750924b1d83d37c83b79242787c82dde6703b3",
+  "version": 1
+}

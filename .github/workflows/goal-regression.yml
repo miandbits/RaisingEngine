@@ -26,9 +26,11 @@ jobs:
         run: npm run build:headless
       - name: Test approval and failure semantics
         run: npm run test:regression
+      - name: Check public samples and asset-free regression fixtures
+        run: npm run check:public-content && npm run test:public-content
       - name: Check committed pilot routes and approved expectations
         if: ${{ !cancelled() && success() }}
-        run: npm run check:regression -- projects/starlight-three-months --runtime-policy verify-replay --timeout-ms 300000 --report-dir .cache/ci-goal-regression
+        run: npm run check:regression -- examples/starlight-three-months --runtime-policy verify-replay --timeout-ms 300000 --report-dir .cache/ci-goal-regression
       - name: Publish readable summary
         if: always()
         shell: bash

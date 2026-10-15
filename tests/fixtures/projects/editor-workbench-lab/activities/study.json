@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "study",
+  "label": "검술 수업",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "money",
+      "amount": 5
+    },
+    {
+      "attributeId": "stamina",
+      "amount": 10
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "skill"
+      },
+      "value": {
+        "op": "literal",
+        "value": 8
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 4
+      }
+    }
+  ],
+  "presentation": {
+    "backgroundAssetId": "visual-courtyard",
+    "portraits": [
+      {
+        "characterId": "apprentice",
+        "portraitId": "visual-neutral",
+        "position": "center"
+      }
+    ]
+  }
+}

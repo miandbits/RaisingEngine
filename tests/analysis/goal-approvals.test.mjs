@@ -8,7 +8,7 @@ import {goalBaselineSelection} from '../../apps/qt-studio/goal-approvals.mjs';
 
 test('review one route, preserve other regressions, reject stale approvals, restore and persist history',{timeout:180000},async()=>{
  const root=await mkdtemp(path.resolve('.cache/goal-approvals-'));
- await cp(path.resolve('projects/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});
+ await cp(path.resolve('examples/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});
  const service=new QtStudioService();await service.handle({method:'open',params:{root}});
  const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,...params}});
  const ordinary=JSON.parse(await readFile(path.join(root,'playtests/routes/ordinary.json'),'utf8'));

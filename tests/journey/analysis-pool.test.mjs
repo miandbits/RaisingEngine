@@ -6,7 +6,7 @@ import {runAnalysisPool} from '../../dist/packages/analysis-service/pool.js';
 import {validateOptions} from '../../dist/packages/analysis-service/model.js';
 import {replayTrace} from '../../dist/packages/analysis-service/runner.js';
 import {freeze} from '../../dist/packages/core/util.js';
-const built=await buildSnapshot(await loadProject('projects/editor-workbench-lab'));assert.ok(built.ok);const content=freeze(built.snapshot);
+const built=await buildSnapshot(await loadProject('tests/fixtures/projects/editor-workbench-lab'));assert.ok(built.ok);const content=freeze(built.snapshot);
 const options={runs:20,seed:42,strategy:'random',maxCommands:1000,timeoutMs:60000};
 test('one and four real worker threads preserve ordered seeds, all commands, full state and graph counts',{timeout:60000},async()=>{
   for(const strategy of ['random','focus','conserve']){

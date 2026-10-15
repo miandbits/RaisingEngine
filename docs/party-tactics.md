@@ -4,7 +4,7 @@
 
 ## 실행과 제작
 
-저장소 루트의 `start-party-tactics.cmd`로 `projects/party-tactics-lab`을 연다. 편집기는 `dist/qt-studio-tactics/RaisingStudioQt.exe`, 플레이어는 `dist/native-player-tactics/RaisingPlayer.exe`다. 기존 편집기 출력 폴더와 사용자 프로젝트는 교체하지 않았다.
+저장소 루트의 `start-party-tactics.cmd`로 `tests/fixtures/projects/party-tactics-lab`을 연다. 편집기는 `dist/qt-studio-tactics/RaisingStudioQt.exe`, 플레이어는 `dist/native-player-tactics/RaisingPlayer.exe`다. 기존 편집기 출력 폴더와 사용자 프로젝트는 교체하지 않았다.
 
 디자인 메뉴의 **다인 전투 · 탐험 · 성장…**에서 다음을 편집한다.
 

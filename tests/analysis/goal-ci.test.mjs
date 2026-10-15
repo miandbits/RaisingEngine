@@ -10,7 +10,7 @@ import {nativeExecutable} from '../../dist/packages/native-bridge/index.js';
 test('CI report stays immutable while local graph approval, restore and revalidation use fresh trusted results', {timeout: 180000}, async () => {
   await mkdir('.cache', {recursive: true});
   const root = await mkdtemp(path.resolve('.cache/goal-ci-'));
-  await cp(path.resolve('projects/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).includes('.studio')});
+  await cp(path.resolve('examples/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).includes('.studio')});
   const projectFile = path.join(root, 'project.json'), project = JSON.parse(await readFile(projectFile, 'utf8'));
   project.initialState.attributes.money += 1;
   await writeFile(projectFile, JSON.stringify(project, null, 2));
@@ -70,7 +70,7 @@ test('CI report stays immutable while local graph approval, restore and revalida
 
 test('portable CI graph approvals use the verified baseline context across runtime hashes', {timeout: 120000}, async () => {
   const root = await mkdtemp(path.resolve('.cache/goal-ci-portable-'));
-  await cp(path.resolve('projects/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).includes('.studio')});
+  await cp(path.resolve('examples/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).includes('.studio')});
   const projectFile = path.join(root, 'project.json'), project = JSON.parse(await readFile(projectFile, 'utf8'));
   project.initialState.attributes.money += 1; await writeFile(projectFile, JSON.stringify(project));
   const binary = path.join(root, process.platform === 'win32' ? 'alternate.exe' : 'alternate');

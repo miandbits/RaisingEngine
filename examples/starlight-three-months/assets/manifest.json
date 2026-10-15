@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../packages/schema/assets.schema.json",
+  "formatVersion": "0.1.0",
+  "assets": [
+    {
+      "id": "visual-courtyard",
+      "kind": "image",
+      "path": "assets/visual/courtyard.png"
+    },
+    {
+      "id": "visual-library",
+      "kind": "image",
+      "path": "assets/visual/library.png"
+    },
+    {
+      "id": "visual-haru",
+      "kind": "image",
+      "path": "assets/visual/haru.png"
+    },
+    {
+      "id": "visual-yuna",
+      "kind": "image",
+      "path": "assets/visual/yuna.png"
+    },
+    {
+      "id": "image-87d44308813dc6b7",
+      "kind": "image",
+      "path": "assets/image-87d44308813dc6b7.png"
+    },
+    {
+      "id": "image-3df09117b32e2f79",
+      "kind": "image",
+      "path": "assets/image-3df09117b32e2f79.png"
+    },
+    {
+      "id": "image-4988e195be1f84bf",
+      "kind": "image",
+      "path": "assets/image-4988e195be1f84bf.png"
+    },
+    {
+      "id": "image-6fae8d96e2ff5b6e7c119626",
+      "kind": "image",
+      "path": "assets/image-6fae8d96e2ff5b6e7c119626.png"
+    },
+    {
+      "id": "image-a4b1131d94929a84e152d1ab",
+      "kind": "image",
+      "path": "assets/image-a4b1131d94929a84e152d1ab.png"
+    },
+    {
+      "id": "image-8b96cea886876912ac42d335",
+      "kind": "image",
+      "path": "assets/image-8b96cea886876912ac42d335.png"
+    },
+    {
+      "id": "image-87efbcd08f5b19090dbae334",
+      "kind": "image",
+      "path": "assets/image-87efbcd08f5b19090dbae334.png"
+    },
+    {
+      "id": "image-604196819963c10da5d7183a",
+      "kind": "image",
+      "path": "assets/image-604196819963c10da5d7183a.png"
+    },
+    {
+      "id": "image-8605cbc5e9880a2f7dac1b0c",
+      "kind": "image",
+      "path": "assets/image-8605cbc5e9880a2f7dac1b0c.png"
+    }
+  ]
+}

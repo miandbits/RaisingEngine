@@ -1,0 +1,67 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "month-08",
+  "label": "긴 밤의 약속",
+  "window": {
+    "fromPeriod": 23,
+    "throughPeriod": 23
+  },
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "entryNodeId": "visual-intro",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "type": "scene",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "left"
+          },
+          {
+            "characterId": "mentor",
+            "portraitId": "visual-neutral",
+            "position": "right"
+          }
+        ]
+      },
+      "next": "intro"
+    },
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "길었던 하루도 돌아보면 배움이 남지.",
+      "next": "reward"
+    },
+    {
+      "id": "reward",
+      "type": "effect",
+      "effects": [
+        {
+          "op": "add",
+          "target": {
+            "kind": "relationship",
+            "characterId": "mentor",
+            "relationshipId": "trust"
+          },
+          "value": {
+            "op": "literal",
+            "value": 1
+          }
+        }
+      ],
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "../../../../packages/schema/attributes.schema.json",
+  "formatVersion": "0.1.0",
+  "attributes": [
+    {
+      "id": "skill",
+      "label": "검술",
+      "kind": "stat",
+      "min": 0,
+      "max": 300,
+      "initial": 0
+    },
+    {
+      "id": "knowledge",
+      "label": "학문",
+      "kind": "stat",
+      "min": 0,
+      "max": 300,
+      "initial": 0
+    },
+    {
+      "id": "craftsmanship",
+      "label": "제작",
+      "kind": "stat",
+      "min": 0,
+      "max": 300,
+      "initial": 0
+    },
+    {
+      "id": "money",
+      "label": "소지금",
+      "kind": "resource",
+      "min": 0,
+      "max": 10000,
+      "initial": 60
+    },
+    {
+      "id": "stamina",
+      "label": "체력",
+      "kind": "condition",
+      "min": 0,
+      "max": 100,
+      "initial": 60
+    },
+    {
+      "id": "stress",
+      "label": "스트레스",
+      "kind": "condition",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    },
+    {
+      "id": "reputation",
+      "label": "평판",
+      "kind": "stat",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    }
+  ]
+}

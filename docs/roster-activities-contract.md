@@ -57,7 +57,7 @@ Qt의 새 프로젝트 마법사 → 화면을 포함한 비주얼 템플릿(aca
 - 실행: 루트의 `start-two-trainees.cmd`.
 - 편집기: `dist/qt-studio-roster-final/RaisingStudioQt.exe`.
 - 런타임: `dist/native-player-roster/RaisingPlayer.exe`.
-- GUI 제작 프로젝트: `projects/two-trainees`.
+- GUI 제작 프로젝트: `tests/fixtures/projects/two-trainees`.
 - 제작/플레이 이미지 및 입력·결과 보고서: `docs/evidence/roster/`.
 - 저장 샘플: `docs/evidence/roster/play-save.json`. 편집기 실행 저장은 별도로 샘플 프로젝트의 편집기 실행 디렉터리에 유지된다.
 

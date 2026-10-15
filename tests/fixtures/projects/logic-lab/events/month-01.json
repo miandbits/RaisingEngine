@@ -1,0 +1,109 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "month-01",
+  "label": "입학의 봄",
+  "window": {
+    "fromPeriod": 2,
+    "throughPeriod": 2
+  },
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "entryNodeId": "visual-intro",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "type": "scene",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "left"
+          },
+          {
+            "characterId": "mentor",
+            "portraitId": "visual-neutral",
+            "position": "right"
+          }
+        ]
+      },
+      "next": "intro"
+    },
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "무엇을 배우고 싶은지 천천히 골라 보자.",
+      "next": "path"
+    },
+    {
+      "id": "path",
+      "type": "choice",
+      "prompt": "어떤 한 해를 보내고 싶나요?",
+      "choices": [
+        {
+          "id": "knight",
+          "text": "기사의 길",
+          "requirements": {
+            "op": "always"
+          },
+          "effects": [
+            {
+              "op": "setFlag",
+              "flagId": "knight-track",
+              "value": true
+            }
+          ],
+          "next": "end"
+        },
+        {
+          "id": "scholar",
+          "text": "학자의 길",
+          "requirements": {
+            "op": "always"
+          },
+          "effects": [
+            {
+              "op": "setFlag",
+              "flagId": "scholar-track",
+              "value": true
+            }
+          ],
+          "next": "end"
+        },
+        {
+          "id": "artisan",
+          "text": "장인의 길",
+          "requirements": {
+            "op": "always"
+          },
+          "effects": [
+            {
+              "op": "setFlag",
+              "flagId": "artisan-track",
+              "value": true
+            }
+          ],
+          "next": "end"
+        },
+        {
+          "id": "free",
+          "text": "아직 정하지 않고 자유롭게 지낸다.",
+          "requirements": {
+            "op": "always"
+          },
+          "effects": [],
+          "next": "end"
+        }
+      ]
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ void selectWorkspaceItem(QWidget *dock,const QString &key){
 void StudioTests::authoringWorkspaceRoundtrip(){
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
   const auto root=qEnvironmentVariable("RAISING_WORKSPACE_PROJECT",engine+"/.cache/workspace-authored-"+QString::number(QDateTime::currentMSecsSinceEpoch()));
-  QVERIFY(!QFileInfo::exists(root));QVERIFY(copyWorkspaceSample(engine+"/projects/time-session-demo",root));
+  QVERIFY(!QFileInfo::exists(root));QVERIFY(copyWorkspaceSample(engine+"/tests/fixtures/projects/time-session-demo",root));
   const auto evidence=engine+"/docs/evidence/authoring-workspace";QDir().mkpath(evidence);
   StudioWindow w(engine);w.show();w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
   w.findChild<QAction*>("showAuthoringWorkspace")->trigger();
@@ -51,7 +51,7 @@ void StudioTests::authoringWorkspaceRoundtrip(){
   characterChoose(dock->findChild<QComboBox*>("debugCommandTarget"),"action-1");execute("executeActorAction");QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
   execute("advanceSession");QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QVERIFY(dock->findChild<QTreeWidget*>("debugTrace")->topLevelItemCount()>0);dock->grab().save(evidence+"/appointment-debugger.png");
   w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QCOMPARE(w.projectData(),authored);
-  QFile proof(engine+"/.cache/authoring-workspace-proof.json");QVERIFY(proof.open(QIODevice::WriteOnly));proof.write(QJsonDocument(QJsonObject{{"project",root},{"sourceSample","projects/time-session-demo"},{"guiEdited",true},{"saveReopen",true},{"undoRedo",true},{"referenceNavigation",true},{"debugger",true}}).toJson());
+  QFile proof(engine+"/.cache/authoring-workspace-proof.json");QVERIFY(proof.open(QIODevice::WriteOnly));proof.write(QJsonDocument(QJsonObject{{"project",root},{"sourceSample","tests/fixtures/projects/time-session-demo"},{"guiEdited",true},{"saveReopen",true},{"undoRedo",true},{"referenceNavigation",true},{"debugger",true}}).toJson());
 }
 
 void StudioTests::authoringWorkspacePlayIntegration(){

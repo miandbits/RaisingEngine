@@ -1,0 +1,25 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "success",
+  "label": "첫 의뢰 완수",
+  "requirements": {
+    "op": "flag",
+    "flagId": "goal",
+    "equals": true
+  },
+  "priority": 10,
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "제작 시험 · free의 목표를 완수했습니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

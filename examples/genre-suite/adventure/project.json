@@ -1,0 +1,608 @@
+{
+  "formatVersion": "0.1.0",
+  "gameId": "trial-adventure",
+  "title": "제작 시험 · adventure",
+  "description": "모험형 제작 시험. 한 달 두 기간 안에 목표를 이루거나 다른 결말을 맞습니다.",
+  "startYear": 1,
+  "startMonth": 1,
+  "durationMonths": 1,
+  "periodsPerMonth": 2,
+  "protagonistId": "hero",
+  "defaultEndingId": "ordinary",
+  "initialState": {
+    "attributes": {
+      "money": 45
+    },
+    "flags": {},
+    "relationships": {}
+  },
+  "systems": {
+    "hero": {
+      "maxHpAttributeId": "stamina",
+      "attackAttributeId": "skill",
+      "defenseAttributeId": "stress"
+    },
+    "equipment": [],
+    "consumables": [],
+    "enemies": [
+      {
+        "id": "slime",
+        "name": "숲의 수호자",
+        "maxHp": 10,
+        "attack": 2,
+        "defense": 0,
+        "rewards": {
+          "items": [],
+          "effects": [
+            {
+              "op": "setFlag",
+              "flagId": "goal",
+              "value": true
+            }
+          ]
+        }
+      }
+    ],
+    "expeditions": [
+      {
+        "id": "forest",
+        "name": "작은 숲",
+        "locationId": "home",
+        "entryNodeId": "gate",
+        "nodes": [
+          {
+            "id": "gate",
+            "name": "입구",
+            "connections": [
+              "clearing"
+            ],
+            "exit": true
+          },
+          {
+            "id": "clearing",
+            "name": "수호자의 공터",
+            "connections": [
+              "gate"
+            ],
+            "exit": false,
+            "enemyId": "slime"
+          }
+        ]
+      }
+    ],
+    "quests": [],
+    "relationshipStages": []
+  },
+  "gameplay": {
+    "startLocationId": "home",
+    "locations": [
+      {
+        "id": "home",
+        "name": "생활 공간",
+        "screenId": "home",
+        "connections": []
+      }
+    ],
+    "items": [],
+    "shops": [],
+    "interactions": [],
+    "actions": [
+      {
+        "id": "depart",
+        "name": "숲 탐험 시작",
+        "requirements": {
+          "op": "always"
+        },
+        "costs": [
+          {
+            "attributeId": "money",
+            "amount": 0
+          }
+        ],
+        "effects": [],
+        "maxQuantity": 1,
+        "confirmation": {
+          "title": "숲 탐험 시작 확인",
+          "message": "비용과 효과를 확인하고 진행하세요.",
+          "confirmLabel": "진행",
+          "cancelLabel": "취소"
+        },
+        "expeditionId": "forest"
+      }
+    ]
+  },
+  "visual": {
+    "width": 1280,
+    "height": 720,
+    "screens": [
+      {
+        "id": "title",
+        "label": "시작",
+        "elements": [
+          {
+            "id": "page",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#edf2f7",
+            "radius": 12
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 170,
+            "y": 180,
+            "width": 950,
+            "height": 50,
+            "text": "제작 시험 · adventure",
+            "color": "#25354a",
+            "fontSize": 24
+          },
+          {
+            "id": "type",
+            "kind": "text",
+            "x": 170,
+            "y": 260,
+            "width": 950,
+            "height": 50,
+            "text": "모험형 · 작은 완결 제작 시험",
+            "color": "#25354a",
+            "fontSize": 24
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 500,
+            "y": 430,
+            "width": 260,
+            "height": 48,
+            "text": "시작하기",
+            "action": "start",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          }
+        ]
+      },
+      {
+        "id": "home",
+        "label": "생활 공간",
+        "elements": [
+          {
+            "id": "page",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#edf2f7",
+            "radius": 12
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 35,
+            "y": 30,
+            "width": 850,
+            "height": 50,
+            "text": "제작 시험 · adventure",
+            "color": "#25354a",
+            "fontSize": 24
+          },
+          {
+            "id": "hint",
+            "kind": "text",
+            "x": 35,
+            "y": 95,
+            "width": 1170,
+            "height": 50,
+            "text": "숲의 수호자를 이기고 돌아온 뒤 한 달을 마무리하세요.",
+            "color": "#25354a",
+            "fontSize": 24
+          },
+          {
+            "id": "stats",
+            "kind": "stats",
+            "x": 35,
+            "y": 160,
+            "width": 300,
+            "height": 490
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 950,
+            "y": 20,
+            "width": 110,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1070,
+            "y": 20,
+            "width": 170,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "schedule-link",
+            "kind": "button",
+            "x": 940,
+            "y": 640,
+            "width": 260,
+            "height": 48,
+            "text": "일정 / 한 달 마무리",
+            "action": "navigate",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20,
+            "screenId": "schedule"
+          },
+          {
+            "id": "actions",
+            "kind": "actions",
+            "x": 370,
+            "y": 170,
+            "width": 840,
+            "height": 420
+          }
+        ]
+      },
+      {
+        "id": "schedule",
+        "label": "일정",
+        "elements": [
+          {
+            "id": "page",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#edf2f7",
+            "radius": 12
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 950,
+            "y": 20,
+            "width": 110,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1070,
+            "y": 20,
+            "width": 170,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 35,
+            "y": 30,
+            "width": 700,
+            "height": 50,
+            "text": "제작 시험 · adventure",
+            "color": "#25354a",
+            "fontSize": 24
+          },
+          {
+            "id": "stats",
+            "kind": "stats",
+            "x": 30,
+            "y": 130,
+            "width": 280,
+            "height": 470
+          },
+          {
+            "id": "schedule",
+            "kind": "schedule",
+            "visibleWhen": "planning",
+            "x": 340,
+            "y": 150,
+            "width": 880,
+            "height": 360
+          },
+          {
+            "id": "result",
+            "kind": "result",
+            "visibleWhen": "result",
+            "x": 340,
+            "y": 150,
+            "width": 880,
+            "height": 360
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 920,
+            "y": 640,
+            "width": 260,
+            "height": 48,
+            "text": "계속",
+            "action": "advance",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "home-link",
+            "kind": "button",
+            "x": 620,
+            "y": 640,
+            "width": 260,
+            "height": 48,
+            "text": "생활 공간",
+            "action": "navigate",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20,
+            "screenId": "home"
+          }
+        ]
+      },
+      {
+        "id": "story",
+        "label": "이야기",
+        "elements": [
+          {
+            "id": "page",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#edf2f7",
+            "radius": 12
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 950,
+            "y": 20,
+            "width": 110,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1070,
+            "y": 20,
+            "width": 170,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "dialogue",
+            "kind": "dialogue",
+            "x": 100,
+            "y": 260,
+            "width": 1080,
+            "height": 200
+          },
+          {
+            "id": "choices",
+            "kind": "choices",
+            "visibleWhen": "choice",
+            "x": 100,
+            "y": 140,
+            "width": 1080,
+            "height": 100
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 920,
+            "y": 640,
+            "width": 260,
+            "height": 48,
+            "text": "계속",
+            "action": "advance",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          }
+        ]
+      },
+      {
+        "id": "ending",
+        "label": "결말",
+        "elements": [
+          {
+            "id": "page",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#edf2f7",
+            "radius": 12
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 950,
+            "y": 20,
+            "width": 110,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1070,
+            "y": 20,
+            "width": 170,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "ending",
+            "kind": "text",
+            "binding": "ending",
+            "x": 150,
+            "y": 230,
+            "width": 1000,
+            "height": 160,
+            "fontSize": 44
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 500,
+            "y": 500,
+            "width": 260,
+            "height": 48,
+            "text": "다시 시작",
+            "action": "start",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          }
+        ]
+      },
+      {
+        "id": "expedition",
+        "label": "탐험",
+        "elements": [
+          {
+            "id": "page",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#edf2f7",
+            "radius": 12
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 950,
+            "y": 20,
+            "width": 110,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1070,
+            "y": 20,
+            "width": 170,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "trip",
+            "kind": "expedition",
+            "x": 80,
+            "y": 120,
+            "width": 1100,
+            "height": 560
+          }
+        ]
+      },
+      {
+        "id": "battle",
+        "label": "전투",
+        "elements": [
+          {
+            "id": "page",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#edf2f7",
+            "radius": 12
+          },
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 950,
+            "y": 20,
+            "width": 110,
+            "height": 48,
+            "text": "저장",
+            "action": "save",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 1070,
+            "y": 20,
+            "width": 170,
+            "height": 48,
+            "text": "불러오기",
+            "action": "load",
+            "fill": "#355c4c",
+            "color": "#ffffff",
+            "fontSize": 20
+          },
+          {
+            "id": "fight",
+            "kind": "battle",
+            "x": 80,
+            "y": 120,
+            "width": 1100,
+            "height": 560
+          }
+        ]
+      }
+    ]
+  }
+}

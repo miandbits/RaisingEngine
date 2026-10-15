@@ -7,7 +7,7 @@ import {compareGoalRoutes,comparisonSummary,compareGoalStep} from '../../dist/pa
 import {saveGoalRoute} from '../../apps/qt-studio/goal-routes.mjs';
 import {createSession,dispatchSession} from '../../dist/packages/runtime-service/session.js';
 
-const project=path.resolve('projects/starlight-three-months'),evidence=path.resolve('docs/evidence/route-compare');
+const project=path.resolve('examples/starlight-three-months'),evidence=path.resolve('docs/evidence/route-compare');
 async function setup(){const root=await mkdtemp(path.resolve('.cache/route-compare-'));await cp(project,root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});const service=new QtStudioService();await service.handle({method:'open',params:{root}});const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,root:service.editor.root,...params}});return {root,service,call};}
 test('failed original vs changed activity: exact branch, state deltas, authoritative costs, immutable replay',{timeout:60000},async()=>{
  const {service,call,root}=await setup();const original=JSON.parse(await readFile(path.join(root,'playtests/routes/ordinary.json'),'utf8'));

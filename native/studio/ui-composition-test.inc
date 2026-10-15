@@ -1,7 +1,7 @@
 void StudioTests::uiCompositionAuthoringRoundtrip(){
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
   const auto root=qEnvironmentVariable("RAISING_UI5_PROJECT",engine+"/.cache/ui5-authored-"+QString::number(QDateTime::currentMSecsSinceEpoch()));
-  QVERIFY(!QFileInfo::exists(root));QVERIFY(copyWorkspaceSample(engine+"/projects/data-ui-lab",root));
+  QVERIFY(!QFileInfo::exists(root));QVERIFY(copyWorkspaceSample(engine+"/tests/fixtures/projects/data-ui-lab",root));
   const auto evidence=engine+"/docs/evidence/ui-composition";QDir().mkpath(evidence);
   StudioWindow w(engine);w.show();w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);const auto original=w.projectData();bool authored=false;
   QTimer::singleShot(80,&w,[&]{auto d=w.findChild<QDialog*>("uiCompositionDialog");QVERIFY(d);QTimer::singleShot(30000,d,&QDialog::reject);
@@ -26,7 +26,7 @@ void StudioTests::uiCompositionAuthoringRoundtrip(){
   });w.findChild<QAction*>("editUiComposition")->trigger();QVERIFY(authored);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));const auto authoredProject=w.projectData();QVERIFY(authoredProject!=original);
   w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),original);w.findChild<QAction*>("redoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),authoredProject);
   w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError+QString::fromUtf8(QJsonDocument(w.currentView().value("diagnostics").toArray()).toJson())));w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QCOMPARE(w.projectData(),authoredProject);
-  QFile proof(engine+"/.cache/ui-composition-proof.json");QVERIFY(proof.open(QIODevice::WriteOnly));proof.write(QJsonDocument(QJsonObject{{"project",root},{"sourceSample","projects/data-ui-lab"},{"guiEdited",true},{"saveReopen",true},{"undoRedo",true}}).toJson());
+  QFile proof(engine+"/.cache/ui-composition-proof.json");QVERIFY(proof.open(QIODevice::WriteOnly));proof.write(QJsonDocument(QJsonObject{{"project",root},{"sourceSample","tests/fixtures/projects/data-ui-lab"},{"guiEdited",true},{"saveReopen",true},{"undoRedo",true}}).toJson());
 }
 
 void StudioTests::uiCompositionPlayIntegration(){

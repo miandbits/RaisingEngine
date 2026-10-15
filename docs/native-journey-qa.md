@@ -105,7 +105,7 @@ C++ 시뮬레이션이 Windows에서 실행된다는 사실만으로 C++ 그래�
 
 ### 패키지 실행 검증
 
-`release/native-journey-preview/Raising Studio-win32-x64/Raising Studio.exe`를 직접 실행하여 `app.isPackaged=true`와 `resources/app.asar` 경로를 확인했다. 실제 템플릿 생성 버튼으로 `projects/journey-playtest-2026-10-11`을 만들고 일정·휴식→상점 구매→선물→관계 사건→저장·불러오기→HUD 값을 확인했다. 사용자가 이어서 볼 저장 파일은 `saves/first-flower.json`이다.
+`release/native-journey-preview/Raising Studio-win32-x64/Raising Studio.exe`를 직접 실행하여 `app.isPackaged=true`와 `resources/app.asar` 경로를 확인했다. 실제 템플릿 생성 버튼으로 `tests/fixtures/projects/journey-playtest-2026-10-11`을 만들고 일정·휴식→상점 구매→선물→관계 사건→저장·불러오기→HUD 값을 확인했다. 사용자가 이어서 볼 저장 파일은 `saves/first-flower.json`이다.
 
 패키지의 메뉴에서 Windows와 웹 폴더를 내보냈고, 내보낸 Windows 실행 파일과 Chrome 웹 플레이어 모두 실제 관계 사건까지 실행했다. 잘못된 입력 방어가 추가된 코어 `9849d547a9334c45`와 애드온 `b07dab9f67f81797`을 포함한 패키지에서도 전체 검증 1/1이 통과했다. 메인 프로세스 모듈 캐시에서 패키지 내부 `.node` 파일의 실제 로딩을 확인했고 애드온 매니페스트가 동일한 네이티브 실행 파일을 가리키는지도 검사했다. 증거와 최신 내보내기 경로는 `.cache/journey-packaged-ui/evidence.json`, `packaged-relationship.png`, `packaged-native-export.png`, `packaged-web-export.png`에 있다.
 

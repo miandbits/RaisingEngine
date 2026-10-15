@@ -98,7 +98,7 @@ const track=(i,n)=>i?.state?.tracks?.find(t=>t.track===n);
 
 // ---- reusable demo project ----------------------------------------------------------------
 {
-  const target=resolve('projects/cutout-animation-demo');
+  const target=resolve('tests/fixtures/projects/cutout-animation-demo');
   if(existsSync(target)){
     const marker=resolve(target,'.cutout-e2e-source');
     assert.ok(existsSync(marker),`${target} exists and was not written by this script; not overwriting`);

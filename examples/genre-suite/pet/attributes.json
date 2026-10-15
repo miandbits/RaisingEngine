@@ -1,0 +1,37 @@
+{
+  "formatVersion": "0.1.0",
+  "attributes": [
+    {
+      "id": "skill",
+      "label": "훈련도",
+      "kind": "stat",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    },
+    {
+      "id": "money",
+      "label": "자금",
+      "kind": "resource",
+      "min": 0,
+      "max": 999,
+      "initial": 30
+    },
+    {
+      "id": "stamina",
+      "label": "포만감",
+      "kind": "condition",
+      "min": 0,
+      "max": 100,
+      "initial": 30
+    },
+    {
+      "id": "stress",
+      "label": "불안",
+      "kind": "condition",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    }
+  ]
+}

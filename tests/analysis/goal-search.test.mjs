@@ -7,7 +7,7 @@ import {listGoalRoutes} from '../../apps/qt-studio/goal-routes.mjs';
 import {searchGoalRoute} from '../../dist/packages/analysis-service/goal-search.js';
 import {runGoalRoute} from '../../dist/packages/analysis-service/goal-routes.js';
 
-const project=path.resolve('projects/starlight-three-months'),evidence=path.resolve('docs/evidence/goal-search');
+const project=path.resolve('examples/starlight-three-months'),evidence=path.resolve('docs/evidence/goal-search');
 async function setup(){const root=await mkdtemp(path.resolve('.cache/goal-search-'));await cp(project,root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});const service=new QtStudioService();await service.handle({method:'open',params:{root}});const call=(method,params={})=>service.handle({method,params:{root:service.editor.root,revision:service.editor.revision,...params}});return {service,call,root};}
 async function wait(call,id){for(let i=0;i<1300;i++){const r=await call('goalSearchStatus',{jobId:id});if(r.goalSearch.status!=='running')return r.goalSearch;await new Promise(r=>setTimeout(r,100));}throw Error('search timeout');}
 test('target ending/event search, registration, save replay and bounded miss',{timeout:180000},async()=>{

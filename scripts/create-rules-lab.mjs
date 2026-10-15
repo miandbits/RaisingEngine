@@ -1,6 +1,6 @@
 import { access,cp } from 'node:fs/promises';
 import path from 'node:path';
-const destination=path.resolve('projects/rules-lab');
+const destination=path.resolve('tests/fixtures/projects/rules-lab');
 try{await access(destination);throw new Error(`Refusing to overwrite ${destination}`);}catch(error){if(error.code!=='ENOENT')throw error;}
 await cp('examples/academy-adventure',destination,{recursive:true,errorOnExist:true,force:false});
 console.log(destination);

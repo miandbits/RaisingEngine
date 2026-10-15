@@ -1,0 +1,28 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "mentor-recognition",
+  "label": "유나의 인정",
+  "requirements": {
+    "op": "always"
+  },
+  "priority": 0,
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "첫 탐험을 무사히 마쳤구나. 준비하고 돌아오는 법을 배운 너를 이제 믿을 수 있겠어.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 35
+  },
+  "trigger": "interaction"
+}

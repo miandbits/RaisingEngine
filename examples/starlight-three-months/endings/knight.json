@@ -1,0 +1,77 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "entryNodeId": "visual-intro",
+  "formatVersion": "0.1.0",
+  "id": "knight",
+  "label": "별빛 길드의 동료",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "next": "intro",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "center"
+          }
+        ]
+      },
+      "type": "scene"
+    },
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": "mentor",
+      "text": "세 달의 훈련, 유나와의 신뢰, 수호자와의 전투가 하나의 길로 이어졌다. 두 사람은 별빛 길드의 정식 동료가 되었다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 50,
+  "requirements": {
+    "conditions": [
+      {
+        "equals": true,
+        "flagId": "graduated",
+        "op": "flag"
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "attributeId": "skill",
+            "kind": "attribute"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 20
+        }
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "characterId": "mentor",
+            "kind": "relationship",
+            "relationshipId": "trust"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 15
+        }
+      }
+    ],
+    "op": "all"
+  }
+}

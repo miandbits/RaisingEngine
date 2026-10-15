@@ -1,0 +1,93 @@
+{
+  "formatVersion": "0.1.0",
+  "attributes": [
+    {
+      "id": "money",
+      "label": "Fixture money",
+      "initial": 500,
+      "max": 999999,
+      "min": 0,
+      "kind": "resource"
+    },
+    {
+      "id": "energy",
+      "label": "Fixture energy",
+      "initial": 3,
+      "max": 3,
+      "min": 0,
+      "kind": "resource"
+    },
+    {
+      "id": "stress",
+      "label": "Fixture stress",
+      "initial": 0,
+      "max": 100,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "morality",
+      "label": "Fixture morality",
+      "initial": 50,
+      "max": 100,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "sta",
+      "label": "Fixture sta",
+      "initial": 20,
+      "max": 999,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "int",
+      "label": "Fixture int",
+      "initial": 20,
+      "max": 999,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "cha",
+      "label": "Fixture cha",
+      "initial": 20,
+      "max": 999,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "sen",
+      "label": "Fixture sen",
+      "initial": 20,
+      "max": 999,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "menu",
+      "label": "Fixture menu",
+      "initial": 0,
+      "max": 3,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "beat",
+      "label": "Fixture beat",
+      "initial": 0,
+      "max": 3,
+      "min": 0,
+      "kind": "stat"
+    },
+    {
+      "id": "outcome",
+      "label": "Fixture outcome",
+      "initial": 0,
+      "max": 1,
+      "min": 0,
+      "kind": "stat"
+    }
+  ]
+}

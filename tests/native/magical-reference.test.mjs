@@ -8,8 +8,8 @@ import {WasmRuntime} from '../../dist/packages/native-bridge/wasm.js';
 import createModule from '../../dist/wasm/raising-wasm.mjs';
 import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
 
-test('observed childhood slice: four months, three result beats, C++/Wasm parity and save replay',async()=>{
- const loaded=await loadProject('projects/magical-childhood-reference'),built=await buildSnapshot(loaded);
+test('asset-free action-day fixture: four months, three result beats, C++/Wasm parity and save replay',async()=>{
+ const loaded=await loadProject('tests/fixtures/projects/action-day'),built=await buildSnapshot(loaded);
  assert.equal(built.ok,true,JSON.stringify(built)); const content=built.snapshot;
  const wasm=new WasmRuntime(await createModule());
  const origin={seed:572,mode:'full',initialOverrides:{attributes:{},flags:{},relationships:{}}};

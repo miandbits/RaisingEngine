@@ -7,7 +7,7 @@ import {saveGoalRoute} from '../../apps/qt-studio/goal-routes.mjs';
 
 test('partial approval preserves remaining differences, exact values, history and restoration',{timeout:180000},async()=>{
  const root=await mkdtemp(path.resolve('.cache/goal-partial-'));
- await cp(path.resolve('projects/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});
+ await cp(path.resolve('examples/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});
  const service=new QtStudioService();await service.handle({method:'open',params:{root}});
  const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,...params}});
  const original=JSON.parse(await readFile(path.join(root,'playtests/routes/ordinary.json'),'utf8'));

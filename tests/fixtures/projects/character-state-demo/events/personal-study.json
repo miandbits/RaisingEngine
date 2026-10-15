@@ -1,0 +1,45 @@
+{
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "personal-study",
+  "label": "하린의 공부 사건",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": null,
+      "text": "하린의 공부 성과를 확인했습니다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "comparator": "gte",
+    "left": {
+      "op": "read",
+      "target": {
+        "characterId": "mentor",
+        "kind": "relationship",
+        "owner": {
+          "kind": "actor"
+        },
+        "relationshipId": "respect"
+      }
+    },
+    "op": "compare",
+    "right": {
+      "op": "literal",
+      "value": 20
+    }
+  },
+  "scope": "actor",
+  "trigger": "interaction",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 35
+  }
+}

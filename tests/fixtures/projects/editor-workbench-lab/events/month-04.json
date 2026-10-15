@@ -1,0 +1,67 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "month-04",
+  "label": "비 오는 도서관",
+  "window": {
+    "fromPeriod": 11,
+    "throughPeriod": 11
+  },
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  },
+  "entryNodeId": "visual-intro",
+  "nodes": [
+    {
+      "id": "visual-intro",
+      "type": "scene",
+      "scene": {
+        "backgroundAssetId": "visual-courtyard",
+        "portraits": [
+          {
+            "characterId": "apprentice",
+            "portraitId": "visual-neutral",
+            "position": "left"
+          },
+          {
+            "characterId": "mentor",
+            "portraitId": "visual-neutral",
+            "position": "right"
+          }
+        ]
+      },
+      "next": "intro"
+    },
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": "mentor",
+      "text": "비 오는 날에도 배우는 길은 많단다.",
+      "next": "reward"
+    },
+    {
+      "id": "reward",
+      "type": "effect",
+      "effects": [
+        {
+          "op": "add",
+          "target": {
+            "kind": "relationship",
+            "characterId": "mentor",
+            "relationshipId": "trust"
+          },
+          "value": {
+            "op": "literal",
+            "value": 1
+          }
+        }
+      ],
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}
