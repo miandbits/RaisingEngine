@@ -53,7 +53,7 @@ export class QtStudioService {
   }
   async handle(request) {
     const { method, params = {} } = request;
-    if(method==='goalCompareStep')return {error:null,goalComparisonStep:this.goalComparisons.step(this.editor,params)};
+    if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
     if(method==='goalSearchStatus'||method==='goalSearchStop')return {error:null,goalSearch:method==='goalSearchStop'?this.goalSearchJobs.cancel(params.root,params.jobId):this.goalSearchJobs.public(this.goalSearchJobs.get(params.root,params.jobId))};
     if(['analysisList','analysisStatus','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
       const jobs=this.analysisJobs;let analysis;

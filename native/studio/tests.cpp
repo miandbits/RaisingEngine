@@ -44,6 +44,7 @@ private slots:
   void goalHistoricalBaseline();
   void goalSaveImpact();
   void goalPartialApproval();
+  void goalGraphApproval();
   void benchmarkAuthoringSuite();
   void benchmarkPlayAndAssurance();
   void directionAuthoringRoundtrip();
@@ -929,6 +930,7 @@ private slots:
 #include "goal-history-test.inc"
 #include "goal-impact-test.inc"
 #include "goal-partial-test.inc"
+#include "goal-review-graph-test.inc"
 #include "screen-settings-test.inc"
 #include "user-fields-test.inc"
 #include "text-binding-batch-test.inc"
