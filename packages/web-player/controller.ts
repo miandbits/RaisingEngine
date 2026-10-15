@@ -189,14 +189,15 @@ export class WebPlayerController implements PlayerBridge {
       if (canonical(state) !== canonical(saved.state)) throw new Error('저장 상태가 명령 기록의 재현 결과와 다릅니다.');
       const previous = this.session;
       const previousPresentation=structuredClone(this.presentation.cursor);
+    const previousScheduleSpeed=this.presentation.scheduleSpeed;
     const previousBattleSelection=structuredClone(this.presentation.battleSelection);
       const presentationError=this.presentation.restore(this.content,state,saved.playerPresentation);
       if(presentationError)throw new Error(presentationError);
       this.session = { origin: structuredClone(saved.origin), commands: structuredClone(saved.commands) as Command[], state };
       try {
         const error = this.settle([]);
-        if (error) { this.session = previous; this.presentation.cursor=previousPresentation; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
-      } catch (error) { this.session = previous; this.presentation.cursor=previousPresentation; this.presentation.battleSelection=previousBattleSelection; throw error; }
+        if (error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
+      } catch (error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; throw error; }
       this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions);
       this.generation++; return this.reply(null, '저장한 게임을 불러왔습니다.');
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }

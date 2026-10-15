@@ -6,12 +6,13 @@ import {createSession,dispatchSession} from '../../dist/packages/runtime-service
 import {planActivityTimeline,createTimelineCursor,advanceTimeline,resultPlaybackText,validateTimelineCursor} from '../../dist/packages/visual/timeline.js';
 import {PlayerPresentation} from '../../dist/packages/player-service/presentation.js';
 import {scheduleStep} from '../../dist/packages/player-service/schedule.js';
+import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
 
 async function setup(){
   const built=await buildSnapshot(await loadProject('examples/last-grandson-polished'));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot;let session=createSession(content,42,{mode:'activities-only'}).session;
   for(const command of [{type:'setSchedule',activityIds:['study','rest','work']},{type:'executeActivity'}]){const reply=dispatchSession(content,session,command,session.state.stateRevision);assert.equal(reply.ok,true);session=reply.session;}
-  return {content,state:session.state};
+  return {content,state:session.state,session};
 }
 
 test('inline result interpolates committed costs then effects without changing simulation or RNG',async()=>{
@@ -45,4 +46,22 @@ test('legacy projects stay manual; authored activity timelines retain priority; 
 test('auto-only navigation allowance does not weaken manual navigation validation',async()=>{
   const loaded=await loadProject('examples/last-grandson-polished'),project=loaded.documents.find(d=>d.kind==='project');project.data.schedulePlayback='manual';
   const result=await buildSnapshot(loaded);assert.equal(result.ok,false);assert.ok(result.diagnostics.some(d=>d.code==='UI_NAVIGATION'));
+});
+
+test('pause and 4x are presentation-only, survive encoded save, and carry across events',async()=>{
+  const {content,state,session}=await setup(),original=JSON.stringify(state),p=new PlayerPresentation();p.view(content,state);
+  p.act(content,state,{type:'timelineTick',deltaMs:400});p.act(content,state,{type:'timelineSpeed'});p.act(content,state,{type:'timelinePause'});
+  const before=p.view(content,state);p.act(content,state,{type:'timelineTick',deltaMs:30000});assert.deepEqual(p.view(content,state),before);
+  const saved=await encodeSave(content,session,p.envelope(content,state));assert.equal(saved.ok,true,JSON.stringify(saved));
+  const loaded=await decodeSave(content,saved.text);assert.equal(loaded.ok,true,JSON.stringify(loaded));
+  const q=new PlayerPresentation();assert.equal(q.restore(content,loaded.session.state,loaded.playerPresentation),null);assert.deepEqual(q.view(content,state),before);
+  q.act(content,state,{type:'timelinePause'});q.act(content,state,{type:'timelineTick',deltaMs:100});assert.equal(q.view(content,state).cursor.clipIndex,1);assert.equal(q.view(content,state).cursor.elapsedMs,0);
+  q.act(content,state,{type:'timelineSkip'});assert.equal(q.view(content,state).cursor.completed,true);assert.equal(q.view(content,state).cursor.paused,false);
+  const narrative={...state,phase:'narrative'};assert.equal(q.view(content,narrative),null);assert.equal(scheduleStep(narrative,'continuous',null),null);
+  const next=new PlayerPresentation();assert.equal(next.restore(content,narrative,q.envelope(content,narrative)),null);assert.equal(next.view(content,{...state,stateRevision:state.stateRevision+1}).cursor.speed,4);
+  assert.equal(JSON.stringify(state),original);
+  const corrupt=JSON.parse(saved.text);corrupt.playerPresentation.scheduleSpeed=3;assert.equal((await decodeSave(content,JSON.stringify(corrupt))).ok,false);
+  corrupt.playerPresentation.scheduleSpeed=1;assert.equal((await decodeSave(content,JSON.stringify(corrupt))).ok,false,'inconsistent speed must not silently override the saved cursor');
+  const legacy=JSON.parse(saved.text);delete legacy.playerPresentation.scheduleSpeed;assert.equal((await decodeSave(content,JSON.stringify(legacy))).ok,true,'old cursor-only saves remain valid');
+  next.clear();assert.equal(next.scheduleSpeed,1);
 });

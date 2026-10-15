@@ -11,7 +11,12 @@ export function TimelineOverlay({timeline,generation,busy,act,save,load}:{timeli
     const timer=setTimeout(()=>act({type:'timelineTick',deltaMs:100}),100);
     return()=>clearTimeout(timer);
   },[cursor,busy,act]);
-  if(!timeline||timeline.plan.resultPlayback)return null;
+  if(!timeline)return null;
+  if(timeline.plan.resultPlayback)return <div className="result-playback-controls" role="group" aria-label="일정 연출 재생">
+    <button id="timeline-pause" disabled={busy||cursor!.completed} onClick={()=>act({type:'timelinePause'})}>{cursor!.paused?'계속 재생':'일시정지'}</button>
+    <button id="timeline-speed" disabled={busy||cursor!.completed} onClick={()=>act({type:'timelineSpeed'})}>{cursor!.speed===1?'배속 ×1 → ×4':'배속 ×4 → ×1'}</button>
+    <button id="timeline-skip" disabled={busy||cursor!.completed} onClick={()=>act({type:'timelineSkip'})}>이번 활동 연출 건너뛰기</button>
+  </div>;
   const {plan}=timeline,clip=plan.clips[Math.min(timeline.cursor.clipIndex,plan.clips.length-1)];
   if(!clip)return null;
   const elapsedMs=cursor!.completed?clip.durationMs:cursor!.elapsedMs;

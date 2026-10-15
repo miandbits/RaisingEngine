@@ -212,6 +212,7 @@ export class PlayerController {
     let candidate = loaded.session;
     const previous = this.session;
     const previousPresentation=structuredClone(this.presentation.cursor);
+    const previousScheduleSpeed=this.presentation.scheduleSpeed;
     const previousBattleSelection=structuredClone(this.presentation.battleSelection);
     const presentationError=this.presentation.restore(this.content,loaded.session.state,loaded.playerPresentation);
     if(presentationError)return this.reply(presentationError);
@@ -223,7 +224,7 @@ export class PlayerController {
       this.session = candidate;
       return null;
     }, []);
-    if (reply.error) { this.session = previous; this.presentation.cursor=previousPresentation; this.presentation.battleSelection=previousBattleSelection; return this.reply(reply.error); }
+    if (reply.error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(reply.error); }
     this.generation++;
     return this.reply(null, '저장한 지점에서 이어갑니다.');
   }

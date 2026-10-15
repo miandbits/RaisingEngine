@@ -13,9 +13,20 @@
     return out+"</div>";
   }
   std::string timeline_overlay() {
-    if(!game.timeline_active()||game.timeline_plan.contains("resultPlayback"))return "";
+    if(!game.timeline_active())return "";
     const auto& plan=game.timeline_plan;const auto& cursor=game.timeline_cursor;
     const bool completed=cursor.value("completed",false),paused=cursor.value("paused",false);
+    if(plan.contains("resultPlayback")){
+      const int barWidth=std::min(720,width-32),buttonWidth=(barWidth-24)/3;
+      const std::vector<Json> controls={
+        {{"id","timeline-pause"},{"label",paused?"계속 재생":"일시정지"},{"type","timelinePause"}},
+        {{"id","timeline-speed"},{"label",cursor.value("speed",1)==1?"배속 ×1 → ×4":"배속 ×4 → ×1"},{"type","timelineSpeed"}},
+        {{"id","timeline-skip"},{"label","이번 활동 연출 건너뛰기"},{"type","timelineSkip"}}
+      };
+      std::string out="<div id=\"result-playback-controls\" style=\"position:absolute;left:"+number((width-barWidth)/2)+"px;top:"+number(height-80)+"px;width:"+number(barWidth)+"px;height:48px;z-index:121;\">";
+      for(size_t i=0;i<controls.size();i++){const auto& c=controls[i];out+="<div style=\"position:absolute;left:"+number(i*(buttonWidth+12))+"px;top:0;width:"+number(buttonWidth)+"px;height:48px;\">"+button(c.at("id"),c.at("label"),{{"type",c.at("type")}},!completed)+"</div>";}
+      return out+"</div>";
+    }
     const auto& clip=plan.at("clips").at(std::min(cursor.at("clipIndex").get<size_t>(),plan.at("clips").size()-1));
     const int panelWidth=std::max(240,std::min(960,width-24)),panelHeight=std::max(240,std::min(620,height-24));
     const int innerWidth=panelWidth-32,mediaHeight=std::max(60,panelHeight-194),buttonWidth=std::max(60,(innerWidth-24)/3);

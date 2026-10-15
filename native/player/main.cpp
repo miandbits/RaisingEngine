@@ -87,10 +87,11 @@ public:
   /** One presentation update per frame, then one frame request per mounted instance. */
   void update_extensions() {
     if(!extensions.active())return;
-    const double dt=preview()?0:extension_dt;extension_dt=0;
+    const double dt=preview()?0:extension_dt*extension_playback_rate();extension_dt=0;
     extensions.update(dt);play_extension_sounds();extensions.frame();
   }
-  void advance_extensions(double delta){if(!extensions.active())return;extensions.update(delta);play_extension_sounds();extensions.frame();}
+  double extension_playback_rate() const {return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
+  void advance_extensions(double delta){if(!extensions.active())return;extensions.update(delta*extension_playback_rate());play_extension_sounds();extensions.frame();}
   /** Event sounds of plugin notifications (presentation only): a missing file never stops the game. */
   uint64_t extension_sounds_played=0,extension_sound_errors=0,extension_sound_missing=0;
   void play_extension_sounds() {
@@ -278,7 +279,7 @@ public:
       if(type=="timelinePause"||type=="timelineSpeed"||type=="timelineSkip") {
         if(game.timeline_active()&&!game.timeline_cursor.value("completed",false)) {
           if(type=="timelinePause")game.timeline_cursor["paused"]=!game.timeline_cursor.value("paused",false);
-          if(type=="timelineSpeed")game.timeline_cursor["speed"]=game.timeline_cursor.value("speed",1)==1?4:1;
+          if(type=="timelineSpeed"){game.timeline_cursor["speed"]=game.timeline_cursor.value("speed",1)==1?4:1;if(game.timeline_plan.contains("resultPlayback"))game.schedule_speed=game.timeline_cursor.at("speed").get<int>();}
           if(type=="timelineSkip")game.timeline_cursor=skip_timeline(game.timeline_plan,game.timeline_cursor);
         }dirty=true;return;
       }

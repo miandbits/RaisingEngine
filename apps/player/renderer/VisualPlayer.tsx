@@ -8,6 +8,7 @@ import type { ReadonlyDesign, Element, ScreenId } from '../../../packages/visual
 import { VisualSurface, isVisible, type VisualContext } from './VisualSurface.js';
 import { systemsScreens } from '../../../packages/visual/systems-screens.js';
 import {TimelineOverlay} from './TimelineOverlay.js';
+import {ExtensionPlaybackRate} from './ExtensionElement.js';
 import {resultPlaybackText} from '../../../packages/visual/timeline.js';
 
 export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,sound,muted,preview,error,notice}: {
@@ -96,10 +97,10 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
     if(action==='start'){if(!busy)newRun(view.userFields?.length?{...(s?.userValues??draft)}:undefined);}else if(action==='save')save();else if(action==='load')load();else if(action==='sound')sound();
     else if(action==='advance'&&s){if(['planning','ready'].includes(s.phase)){if(!s.schedule||plan.some((id,i)=>id!==s.schedule?.[i]))act({type:'schedule',activityIds:plan});else act({type:'execute'});}else act({type:'continue'});}
   };
-  return <div className="visual-player" data-runtime-backend={view.runtimeBackend}><div className="visual-status"><span>{view.title} · {busy?'처리 중…':preview?'초안 미리보기':'플레이 중'}</span><span>{muted?'소리 꺼짐':'소리 켜짐'}</span></div>{error&&<div role="alert" className="alert">{error}</div>}{notice&&<p role="status" className="notice">{notice}</p>}
+  return <ExtensionPlaybackRate.Provider value={view.timeline?.plan.resultPlayback?(view.timeline.cursor.paused?0:view.timeline.cursor.speed):1}><div className="visual-player" data-runtime-backend={view.runtimeBackend}><div className="visual-status"><span>{view.title} · {busy?'처리 중…':preview?'초안 미리보기':'플레이 중'}</span><span>{muted?'소리 꺼짐':'소리 켜짐'}</span></div>{error&&<div role="alert" className="alert">{error}</div>}{notice&&<p role="status" className="notice">{notice}</p>}
     <VisualSurface design={effectiveDesign} screenId={screen} context={{...context,userFields:view.userFields??[],userValues:s?.userValues??draft,userFieldsEditable:!s,...(view.dataUi?{dataUi:view.dataUi}:{})}} assetUrl={id=>assetUrl(id,view.generation)} busy={busy||!!pending} fitViewport onUserValue={(id,value)=>setDraft(previous=>({...previous,[id]:value}))} onAction={action} onCommitPlan={()=>act({type:'commitPlan',activityIds:plan})} onCommand={run} onChoice={choiceId=>act({type:'choose',choiceId})} onPlan={(index,id)=>{const next:string[]=[...plan];next[index]=id;onPlan(next);}}>
       {pending&&<div className="transaction-overlay"><div className="transaction-dialog" role="dialog" aria-modal="true" aria-labelledby="transaction-title"><h3 id="transaction-title">{pending.confirmation.title??'거래 확인'}</h3><p>{pending.confirmation.message??'계속하시겠습니까?'}</p><p className="transaction-summary">{pending.summary}</p><small>효과는 능력치 범위에 따라 제한됩니다.</small><div><button autoFocus disabled={busy} onClick={confirm}>{pending.confirmation.confirmLabel??'확인'}</button><button disabled={busy} onClick={cancel}>{pending.confirmation.cancelLabel??'취소'}</button></div></div></div>}
     </VisualSurface>
     <TimelineOverlay timeline={view.timeline??null} generation={view.generation} busy={busy} act={act} save={save} load={load}/>
-  </div>;
+  </div></ExtensionPlaybackRate.Provider>;
 }

@@ -59,10 +59,11 @@ public:
   bool battle_ui_available(const Json& action) {
     const auto saved=battle_selection;try{battle_ui(action);battle_selection=saved;return true;}catch(...){battle_selection=saved;return false;}
   }
+  int schedule_speed=1;
   void sync_timeline() {
     timeline_plan=plan_activity_timeline(content,state);
     if(timeline_plan.is_null())timeline_cursor=nullptr;
-    else if(!validate_timeline_cursor(timeline_plan,timeline_cursor))timeline_cursor=create_timeline_cursor(timeline_plan);
+    else if(!validate_timeline_cursor(timeline_plan,timeline_cursor)){timeline_cursor=create_timeline_cursor(timeline_plan);if(timeline_plan.contains("resultPlayback"))timeline_cursor["speed"]=schedule_speed;}
   }
   bool timeline_active() const {return !timeline_plan.is_null()&&!timeline_cursor.is_null();}
   void tick_timeline(double delta) {if(timeline_active())timeline_cursor=advance_timeline(timeline_plan,timeline_cursor,delta);}
@@ -84,6 +85,7 @@ public:
     catch(const std::exception& error){if(reason)*reason=error.what();return false;}
   }
   void start(const Json& userValues=Json::object()) {
+    schedule_speed=1;
     state = call({{"operation", "create"}, {"seed", seed}, {"options", {{"mode", "full"},{"userValues",userValues}}}}).at("state");
     commands = Json::array(); message.clear(); sound_cues.clear(); battle_selection=nullptr;refresh(); sync_timeline();
     origin = {{"seed",seed},{"mode","full"},{"initialOverrides",{{"attributes",Json::object()},{"flags",Json::object()},{"relationships",Json::object()}}}};
@@ -121,8 +123,9 @@ public:
       {"origin", origin},
       {"commands", commands}, {"state", state}};
     const Json extensions=extension_state?extension_state():Json();
-    if(timeline_active()||!battle_selection.is_null()||!extensions.is_null()||!direction_cursor.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;if(!extensions.is_null())envelope["playerPresentation"]["extensions"]=extensions;}
+    if(schedule_speed!=1||timeline_active()||!battle_selection.is_null()||!extensions.is_null()||!direction_cursor.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;if(!extensions.is_null())envelope["playerPresentation"]["extensions"]=extensions;}
     if(!direction_cursor.is_null())envelope["playerPresentation"]["direction"]=direction_cursor;
+    if(schedule_speed!=1)envelope["playerPresentation"]["scheduleSpeed"]=schedule_speed;
     fs::create_directories(file.parent_path());
     auto temp = file; temp += ".tmp";
     { std::ofstream out(temp, std::ios::binary | std::ios::trunc); if (!out) throw std::runtime_error("저장 파일을 열 수 없습니다."); out << envelope.dump(2); out.flush(); if (!out) throw std::runtime_error("저장 파일 쓰기에 실패했습니다."); }
@@ -150,11 +153,12 @@ public:
     for (const auto& command : saved.at("commands")) replay = call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}}).at("state");
     if (replay != saved.at("state")) throw std::runtime_error("저장 데이터와 명령 재현 결과가 다릅니다.");
     const auto restored_plan=plan_activity_timeline(content,replay);Json restored_cursor=restored_plan.is_null()?Json():create_timeline_cursor(restored_plan);
-    Json restored_battle=nullptr,restored_extensions=nullptr,restored_direction=nullptr;
+    Json restored_battle=nullptr,restored_extensions=nullptr,restored_direction=nullptr;int restored_speed=1;
     if(saved.contains("playerPresentation")) {
       const auto presentation=saved.at("playerPresentation");
       if(!presentation.is_object()||!presentation.contains("version")||presentation.at("version")!=1||!presentation.contains("timeline"))throw std::runtime_error("Invalid player presentation save");
-      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction")throw std::runtime_error("Invalid player presentation save");
+      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction"&&it.key()!="scheduleSpeed")throw std::runtime_error("Invalid player presentation save");
+      if(presentation.contains("scheduleSpeed")){const auto speed=presentation.at("scheduleSpeed");if(!speed.is_number_integer()||(speed!=1&&speed!=4))throw std::runtime_error("Invalid schedule speed");restored_speed=speed.get<int>();}
       // Opaque plugin states; a missing plugin later ignores (and preserves) its entry.
       if(presentation.contains("extensions")){if(!presentation.at("extensions").is_object())throw std::runtime_error("Invalid player presentation save");restored_extensions=presentation.at("extensions");}
       if(presentation.contains("direction")){restored_direction=presentation.at("direction");if(!direction_valid(direction_config(content),restored_direction))throw std::runtime_error("Invalid direction cursor");}
@@ -166,7 +170,8 @@ public:
         call({{"operation","command"},{"state",replay},{"command",battle_command(restored_battle)},{"expectedRevision",replay.at("stateRevision")}});
       }
     }
-    state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
+    if(!restored_plan.is_null()&&restored_plan.contains("resultPlayback")){const int speed=restored_cursor.at("speed");if(saved.contains("playerPresentation")&&saved.at("playerPresentation").contains("scheduleSpeed")&&speed!=restored_speed)throw std::runtime_error("Inconsistent schedule speed");restored_speed=speed;}
+    schedule_speed=restored_speed;state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
     message = "저장한 지점에서 이어갑니다.";
   }
 };

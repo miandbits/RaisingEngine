@@ -77,6 +77,7 @@
             }
           ]
         },
+        "scheduleSpeed": { "type": "integer", "enum": [1, 4] },
         "battleSelection": {
           "anyOf": [
             {
