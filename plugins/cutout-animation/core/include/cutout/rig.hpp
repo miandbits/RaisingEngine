@@ -84,8 +84,8 @@ struct Expression {
 };
 
 /**
- * IK constraint (plugin 1.3.0). `bones` = 1 (aim: the bone's local +x axis points at the target)
- * or 2 (parent, direct child: two-bone limb whose effector is the origin of `tip`: the explicit
+ * IK constraint (plugin 1.3.0). `bones` = 1 (aim: the bone-local direction `aimAxis` (plugin 1.4.1,
+ * degrees, default 0 = +x) points at the target) or 2 (parent, direct child: two-bone limb whose effector is the origin of `tip`: the explicit
  * `tip` bone (plugin 1.4.0, a direct child of the lower bone), else the lower bone's first child
  * bone in array order). Solved after expressions on world transforms, in `Rig::ikOrder`.
  */
@@ -96,6 +96,7 @@ struct IkConstraint {
   int tip = -1;               // two-bone effector bone (-1 = none: the child origin aims at the target)
   bool explicitTip = false;   // `tip` named in the data (else the implicit first-child rule)
   double mix = 1;
+  double aimAxis = 0;         // aim: bone-local direction (degrees, before the bone's scale) aimed at the target
   bool bendPositive = true;   // two-bone: the child turns in the positive (clockwise on screen) direction
   bool stretch = false;       // accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH)
   int order = 0;

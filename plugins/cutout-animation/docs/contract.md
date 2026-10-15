@@ -78,17 +78,24 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 
 ## IK constraints (plugin 1.3.0)
 
-* `ik: [{id, name?, bones, target, tip?, mix?, bendPositive?, stretch?, order?}]` (optional; absent =
-  no constraints). `bones` is the chain, parent first:
-  * **1 bone = aim**: the bone is rotated so its local **+x axis** points at the target (a
-    negative `scaleX` flips that axis, like the drawing does).
+* `ik: [{id, name?, bones, target, tip?, mix?, aimAxis?, bendPositive?, stretch?, order?}]` (optional;
+  absent = no constraints). `bones` is the chain, parent first:
+  * **1 bone = aim**: the bone is rotated so its bone-local direction **`aimAxis`** (plugin
+    1.4.1; degrees, −360..360, default **0 = +x**, 90 = +y, i.e. down a y-down screen) points at
+    the target. The axis is measured after the bone's own scale (`atan2(scaleY·sin a,
+    scaleX·cos a)`): a negative `scaleX` flips +x like the drawing does, a non-uniform scale
+    tilts an oblique axis exactly as the image tilts. Cutout limbs usually keep rotation 0 while
+    their image hangs down: such an arm aims with `aimAxis: 90`. Absent and 0 are identical
+    (bit for bit the 1.3.0 solve), so older documents play unchanged.
   * **2 bones = two-bone limb** `[upper, lower]`, `lower` a **direct child** of `upper`. Bones
     have no length in this format, so the **effector** is the origin of the `tip` bone (plugin
     1.4.0, optional: must be a **direct child of `lower`**, `ANIM_IK_TIP` otherwise, also on an
     aim chain), else of `lower`'s **first child bone** in `bones` array order (hand, foot). The
     explicit tip keeps a forearm with several children (hand, sleeve, weapon) pointing at the
     right one. Without a child the limb degenerates to aiming `lower`'s origin at the target.
-    `upper` and `lower` are rotated (law of cosines).
+    `upper` and `lower` are rotated (law of cosines). Two-bone chains solve from these bone
+    **positions** only; `aimAxis` is an error there (`ANIM_IK_AIM_AXIS`) — to make an image lie
+    along the limb, place the child bone (wrist) where the image ends.
   * `target`: the bone whose **world origin** the effector reaches. It must not be a chain bone
     or a descendant of one (solving would move it).
   * `mix` 0..1 (default 1): `rotation = animated + shortestDelta(animated → solved) · mix`, so
@@ -124,20 +131,29 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
   `ANIM_TARGET_MISSING`. Cross-fades lerp `mix` and switch `bendPositive` halfway.
 * Validation: `ANIM_IK_DUP_ID`, `ANIM_IK_BONE_MISSING` (chain or target), `ANIM_IK_CHAIN` (not
   1–2 bones, or not a direct parent → child pair), `ANIM_IK_TARGET` (target in or below the
-  chain), `ANIM_IK_TIP` (tip unknown, not a direct child of the lower bone, or on an aim chain), `ANIM_IK_MIX` (setup or key out of 0..1), `ANIM_IK_CYCLE` (constraints that move each
+  chain), `ANIM_IK_TIP` (tip unknown, not a direct child of the lower bone, or on an aim chain), `ANIM_IK_AIM_AXIS`
+  (not a number in −360..360, or on a two-bone chain), `ANIM_IK_MIX` (setup or key out of 0..1), `ANIM_IK_CYCLE` (constraints that move each
   other's target or chain base: no order can satisfy them; a constraint moves every strict
   descendant of its chain bones), warning `ANIM_IK_ORDER` (a dependent constraint is solved
   first; the order is honoured anyway), `ANIM_STRUCTURE` for wrong field types.
 * Editing ops (`edit`; each is one undo step in the editor):
   * `addIk {id?, name?, bones, target? | createTarget: true (+ targetId?, targetParent?), mix?,
-    bendPositive?, order?}`: `createTarget` adds a bone where the chain end is shown now (two
-    bones: the effector; aim: on the bone's x axis at the first child's distance or 60 px),
+    bendPositive?, order?, aimAxis?}`: an aim chain without `aimAxis` gets the bone's natural
+    direction (1.4.1): toward its first child bone (array order) when that is off the origin,
+    else toward the area-weighted centre of its slots' setup attachments (region corners / mesh
+    vertices through their placement), reaching the farthest point along it; nothing to read
+    (no child, images centred on the origin) = +x as before. Only a non-zero axis is stored.
+    `createTarget` adds a bone where the chain end is shown now (two bones: the effector; aim:
+    on the aim axis at that reach, else 60 px),
     under the chain's top-level ancestor; without `bendPositive` the current bend side is kept,
     so creating a constraint never moves the limb. `tip?` (1.4.0) names the effector; a two-bone
     chain whose end has a child always gets an explicit `tip` (the bone the target was placed
     at), so adding another child bone later never changes the limb. `extra.ik`, `extra.target`.
   * `setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, tip? (null = the
-    implicit first child), bones?}`,
+    implicit first child), bones?, aimAxis? (null = +x), fitAimAxis? (+ clip?, timeMs?)}`;
+    `fitAimAxis: true` (aim chains) sets the axis to the direction of the target seen from the
+    bone in the pose without IK (setup, or `clip` at `timeMs`), so the constraint stops turning
+    the bone there (the editor's 현재 방향으로 맞추기),
     `renameIk {ik, id?, name?}` (renames `ik:<id>` tracks; `extra.tracks`),
     `deleteIk {ik, deleteTarget?}` (removes its tracks; `deleteTarget` also deletes the target
     bone when no other constraint or part uses it), `bakeIk {clip, timeMs, ik?, disable?}` (keys

@@ -244,8 +244,9 @@ bool RigCanvas::isIkTarget(int bone) const {
   for (const auto& k : rig_->ik) if (k.target == bone) return true;
   return false;
 }
-// IK overlay: a dashed line from each chain's effector to its target (where the limb is pulled)
-// and the selected constraint's chain links drawn thick, so solved bones read as "driven".
+// IK overlay: a dashed line from each chain's effector to its target (where the limb is pulled),
+// the selected constraint's chain links drawn thick, so solved bones read as "driven", and on
+// aim chains the aim axis as an arrow (which part of the bone faces the target).
 void RigCanvas::paintIk(QPainter& p) {
   if (!rig_ || rig_->ik.empty() || pose_.world.size() != rig_->bones.size()) return;
   auto origin = [&](int b) { return rigToWidget(QPointF(pose_.world[size_t(b)].e, pose_.world[size_t(b)].f)); };
@@ -259,12 +260,18 @@ void RigCanvas::paintIk(QPainter& p) {
       QPolygonF chain;
       for (int b : k.bones) chain << origin(b);
       if (k.tip >= 0) chain << origin(k.tip);
-      if (k.bones.size() == 1) {
-        const auto& w = pose_.world[size_t(k.bones[0])];
-        const double len = std::hypot(w.a, w.b);
-        if (len > 1e-9) chain << origin(k.bones[0]) + QPointF(w.a / len, w.b / len) * 28;
-      }
       p.drawPolyline(chain);
+    }
+    double dx = 0, dy = 0;
+    if (k.bones.size() == 1 && cutout::ikAimDirection(*rig_, pose_, int(&k - rig_->ik.data()), dx, dy)) {
+      // Screen length: the target's distance, kept readable (16..60 px).
+      const QPointF from = origin(k.bones[0]), aimAt = origin(k.target);
+      const double len = std::clamp(std::hypot(aimAt.x() - from.x(), aimAt.y() - from.y()), 16.0, 60.0);
+      const QPointF dir(dx, dy), side(-dy, dx), to = from + dir * len;
+      p.setPen(QPen(line, selected ? 3 : 2, Qt::SolidLine, Qt::RoundCap));
+      p.drawLine(from, to);
+      p.drawLine(to, to - dir * 8 + side * 4);
+      p.drawLine(to, to - dir * 8 - side * 4);
     }
     const int end = k.tip >= 0 ? k.tip : k.bones.back();
     p.setPen(QPen(line, 1.5, Qt::DashLine));

@@ -31,6 +31,7 @@ class QLineEdit;
 class QListWidget;
 class QMimeData;
 class QPushButton;
+class QScrollArea;
 class QScrollBar;
 class QSpinBox;
 class QSplitter;
@@ -59,6 +60,11 @@ class CutoutPanel : public QWidget {
  public:
   enum class Mode { Setup, Animate };
   struct PartChoice { QString assetId, importFile, slot, name, bone; };
+  /** 스킨 그림 지정: `slot` is always an existing slot; the image never changes slot or name. */
+  struct SkinImageChoice { QString skin, slot, name, assetId, importFile; };
+  /** A slot as the skin-image dialog lists it: names it can show, the one shown now, and the
+   *  previewed skin's current image per name. */
+  struct SkinSlotInfo { QString slot, bone, shown; QStringList names; QMap<QString, QString> images; };
   explicit CutoutPanel(raising::StudioHost* host, QWidget* parent = nullptr);
   ~CutoutPanel() override;
 
@@ -151,8 +157,13 @@ class CutoutPanel : public QWidget {
   /** Image `assetId` for `slot` in the preview skin, as attachment `name` (default: the name shown now). */
   bool assignSkinImage(const QString& slot, const QString& assetId, const QString& name = QString());
   /** importImage (asset gesture) then assignSkinImage (edit gesture). */
-  void importAndAssignSkinImage(const QString& file, const QString& slot);
-  bool assignSkinImageInteractive();  // 그림 지정…: image picker for the selected part
+  void importAndAssignSkinImage(const QString& file, const QString& slot, const QString& name = QString());
+  /** 그림 지정…: the skin-image dialog, prefilled with the selected part (a selected bone: its
+   *  first part in draw order) and the name it shows now. */
+  bool assignSkinImageInteractive();
+  QVector<SkinSlotInfo> skinSlots() const;
+  /** The current pose with `assetId` as the preview skin's (slot, name), that name shown. */
+  QImage skinImagePreview(const QString& slot, const QString& name, const QString& assetId, const QSize& size);
   bool removeSkinAttachment();        // selected entry of the skin's attachment list
   /** Drop of PNG files / an asset id onto part `slot` ("" = selected part): goes into the preview skin. */
   bool dropImages(const QMimeData* mime, const QString& slot);
@@ -177,6 +188,9 @@ class CutoutPanel : public QWidget {
   bool setIkBend(bool positive);
   bool setIkOrder(int order);
   bool setIkTarget(const QString& bone);
+  /** Aim chains (plugin 1.4.1): the bone-local direction (degrees) that points at the target. */
+  bool setIkAimAxis(double degrees);
+  bool fitIkAimAxis();  // 현재 방향으로 맞추기: the axis the target is seen at without IK (core fitAimAxis)
   bool selectIkTarget();  // canvas/tree selection = the constraint's target bone
   bool renameIk();
   bool deleteIk();        // also its target bone when nothing else uses it
@@ -252,6 +266,10 @@ class CutoutPanel : public QWidget {
   std::function<QString(const QString& title, const QString& label, const QString& value)> askText;
   std::function<bool(const QString& title, const QString& text)> askConfirm;
   std::function<bool(PartChoice&)> askPart;
+  std::function<bool(SkinImageChoice&)> askSkinImage;
+  // The real dialogs behind askPart / askSkinImage (modal; tests drive them with timers).
+  bool runPartDialog(PartChoice& choice);
+  bool runSkinImageDialog(SkinImageChoice& choice);
 
  protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
@@ -300,7 +318,7 @@ class CutoutPanel : public QWidget {
   std::optional<SetupDelta> lastSetupDelta_;
 
   // widgets
-  QSplitter *mainSplit_ = nullptr, *workspaceSplit_ = nullptr, *leftSplit_ = nullptr, *rightSplit_ = nullptr, *timelineAreaSplit_ = nullptr;
+  QSplitter *outerSplit_ = nullptr, *mainSplit_ = nullptr, *workspaceSplit_ = nullptr, *leftSplit_ = nullptr, *rightSplit_ = nullptr, *timelineAreaSplit_ = nullptr;
   QWidget *leftPane_ = nullptr, *rightPane_ = nullptr;
   QToolButton* fullViewButton_ = nullptr;
   QList<QToolButton*> sections_;  // collapsible section headers (objectName "<section>Toggle")
@@ -351,8 +369,9 @@ class CutoutPanel : public QWidget {
   QDoubleSpinBox* ikMix_ = nullptr;
   QCheckBox* ikBend_ = nullptr;
   QSpinBox* ikOrder_ = nullptr;
+  QDoubleSpinBox* ikAimAxis_ = nullptr;
   QLabel* ikInfo_ = nullptr;
-  QVector<QWidget*> ikEditors_, ikAnimateTools_;
+  QVector<QWidget*> ikEditors_, ikAnimateTools_, ikAimTools_;
   // meshes (editor state: mode, vertex selection and brush never reach documents)
   MeshEdit meshEdit_ = MeshEdit::Off;
   QSet<int> meshSelection_;
@@ -365,6 +384,7 @@ class CutoutPanel : public QWidget {
   QDoubleSpinBox *brushWeight_ = nullptr, *brushStrength_ = nullptr, *brushRadius_ = nullptr;
   QLabel* meshInfo_ = nullptr;
   QVector<QWidget*> meshTools_, meshSetupTools_, meshAnimateTools_;
+  QVector<QWidget*> meshModeRows_;  // button rows shown in one mode only (property cutoutModeRow)
   QTableWidget *layerTable_ = nullptr, *bindingTable_ = nullptr;
   QComboBox* previewSignalCombo_ = nullptr;
   QLineEdit* previewParams_ = nullptr;
@@ -376,6 +396,9 @@ class CutoutPanel : public QWidget {
   void buildUi();
   QWidget* buildCharacters();
   QWidget* buildLooks();
+  static constexpr int LIST_MIN_HEIGHT = 40;  // look-page lists/tables: ~2 rows, never 0
+  QWidget* lookPage(const char* name);        // fixed (non-scrolling) page of the look tabs
+  QScrollArea* formScroll(const char* name, QWidget* inner);
   void refreshLooks();
   QWidget* buildIk();
   void refreshIk();

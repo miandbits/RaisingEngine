@@ -52,6 +52,49 @@ QStringList workspaceLayoutProblems(QWidget *page, QWidget *panel) {
   }
   return problems;
 }
+/**
+ * The cutout panel's 스킨 · 표정 · IK · 메시 pages, in both modes: every action button and list of
+ * each tab is shown, unsqueezed and inside the page (and inside the viewport of any scroll area
+ * on the way) without scrolling; rows the other mode uses (property cutoutModeRow) are skipped.
+ */
+QStringList lookPageProblems(QWidget *panel) {
+  QStringList problems;
+  auto tabs = panel->findChild<QTabWidget *>("cutoutLookTabs");
+  if (!tabs) return {"cutoutLookTabs missing"};
+  const int keep = tabs->currentIndex();
+  for (const char *mode : {"cutoutModeAnimate", "cutoutModeSetup"}) {
+    panel->findChild<QPushButton *>(mode)->click();
+    for (int t = 0; t < tabs->count(); ++t) {
+      tabs->setCurrentIndex(t);
+      QCoreApplication::processEvents();
+      QWidget *page = tabs->widget(t);
+      const QString where = QString(mode).mid(10) + ":" + page->objectName();
+      if (qobject_cast<QAbstractScrollArea *>(page)) problems << where + " scrolls as a whole";
+      QList<QWidget *> widgets;
+      for (auto b : page->findChildren<QAbstractButton *>()) {
+        if (!b->objectName().startsWith("cutout") || !(qobject_cast<QPushButton *>(b) || qobject_cast<QToolButton *>(b))) continue;
+        bool otherMode = false;
+        for (QWidget *p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || (p->property("cutoutModeRow").isValid() && p->isHidden());
+        if (!otherMode) widgets << b;
+      }
+      for (auto v : page->findChildren<QAbstractItemView *>())
+        if (v->objectName().startsWith("cutout")) widgets << v;
+      if (widgets.size() < 4) problems << where + QString(" has %1 controls").arg(widgets.size());
+      for (QWidget *w : widgets) {
+        const QString what = where + "/" + w->objectName();
+        if (!w->isVisible()) { problems << what + " hidden"; continue; }
+        const QRect r(w->mapTo(page, QPoint(0, 0)), w->size());
+        if (qobject_cast<QAbstractButton *>(w) && w->width() < w->sizeHint().width()) problems << what + QString(" squeezed %1 < %2").arg(w->width()).arg(w->sizeHint().width());
+        if (!page->rect().contains(r) || r.height() < qMin(w->minimumSizeHint().height(), 20)) problems << what + QString(" clipped %1,%2 %3x%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height());
+        for (QWidget *p = w->parentWidget(); p && p != page; p = p->parentWidget())
+          if (auto scroll = qobject_cast<QScrollArea *>(p))
+            if (!scroll->viewport()->rect().contains(QRect(w->mapTo(scroll->viewport(), QPoint(0, 0)), w->size()))) problems << what + " scrolled out of " + scroll->objectName();
+      }
+    }
+  }
+  tabs->setCurrentIndex(keep);
+  return problems;
+}
 QList<QAction *> pluginPaletteActions(StudioWindow &w) {
   QList<QAction *> out;
   for (auto action : w.findChild<QToolButton *>("elementPalette")->menu()->actions())
@@ -290,6 +333,8 @@ void StudioTests::pluginWorkspaceSwitch() {
   QCOMPARE(w.size(), QSize(1280, 720));  // the workspace minimum fits a 1280x720 window
   QStringList problems = workspaceLayoutProblems(page, panel);
   QVERIFY2(problems.isEmpty(), qPrintable(problems.join(" | ")));
+  problems = lookPageProblems(panel);  // 1280x720: the look pages keep every button
+  QVERIFY2(problems.isEmpty(), qPrintable(problems.join(" | ")));
   auto canvas = panel->findChild<QWidget *>("cutoutCanvas");
   QVERIFY2(canvas->width() >= 240 && canvas->height() >= 150, qPrintable(QString("%1x%2").arg(canvas->width()).arg(canvas->height())));
   // Ctrl+Shift+A toggles back to 화면 편집 with exactly the previous dock layout.
@@ -314,11 +359,11 @@ void StudioTests::pluginWorkspaceSwitch() {
   QCOMPARE(w.currentWorkspace(), QString("cutout-animation/character"));
   const int leftWidth = panel->findChild<QWidget *>("cutoutLeftSplitter")->width();
   // Ultrawide and very tall: only the canvas / time area grow, side panels keep their width.
-  for (const QSize size : {QSize(3840, 1080), QSize(5120, 1440), QSize(1440, 2560)}) {
+  for (const QSize size : {QSize(1920, 1080), QSize(3840, 1080), QSize(5120, 1440), QSize(1440, 2560)}) {
     w.resize(size);
     QTest::qWait(120);
     QCOMPARE(w.size(), size);
-    problems = workspaceLayoutProblems(page, panel);
+    problems = workspaceLayoutProblems(page, panel) + lookPageProblems(panel);
     QVERIFY2(problems.isEmpty(), qPrintable(QString("%1x%2: ").arg(size.width()).arg(size.height()) + problems.join(" | ")));
     QCOMPARE(panel->findChild<QWidget *>("cutoutLeftSplitter")->width(), leftWidth);
     if (size.width() >= 3840) QVERIFY2(canvas->width() > size.width() - 700, qPrintable(QString::number(canvas->width())));

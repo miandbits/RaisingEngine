@@ -1426,12 +1426,77 @@ double optUnit(const Json& op, const char* k) {
   if (v < 0 || v > 1) throw EditError("IK 혼합(mix)은 0..1이어야 합니다.");
   return v;
 }
+double aimAxisOf(const Json& op) {
+  if (!op.at("aimAxis").is_number() || !std::isfinite(op.at("aimAxis").get<double>()) || std::fabs(op.at("aimAxis").get<double>()) > 360)
+    throw EditError("조준 축(aimAxis)은 -360..360 사이의 각도(도)입니다.");
+  return op.at("aimAxis").get<double>();
+}
+void putAimAxis(Json& k, double degrees) {
+  degrees = clean(degrees);
+  if (degrees == 0) k.erase("aimAxis");  // the 1.3.0 default (+x): documents stay as they were
+  else k["aimAxis"] = degrees;
+}
+/**
+ * The direction a bone "points" in its own space, for a new aim constraint: toward its first
+ * child bone (array order) when that is off the origin, else toward the far end of the setup
+ * attachments of its slots (their area-weighted centre; reach = the farthest corner/vertex along
+ * that direction). Cutout limbs typically keep rotation 0 with the image hanging down (+y), which
+ * is why +x alone aimed them 90° off. false = nothing to infer (no child, centred or no images).
+ */
+bool naturalAimAxis(const Rig& rig, int bone, double& degrees, double& reach) {
+  for (size_t i = 0; i < rig.bones.size(); i++) {
+    if (rig.bones[i].parentIndex != bone) continue;
+    const Transform& t = rig.bones[i].setup;
+    if (std::hypot(t.x, t.y) > 1) {
+      degrees = std::atan2(t.y, t.x) * 180 / PI;
+      reach = std::hypot(t.x, t.y);
+      return true;
+    }
+    break;
+  }
+  std::vector<std::pair<double, double>> points;
+  double cx = 0, cy = 0, area = 0;
+  for (const Slot& s : rig.slots) {
+    if (s.boneIndex != bone || !s.attachment) continue;
+    const Attachment* a = rig.attachment(s.id, *s.attachment);
+    if (!a || !(a->width > 0) || !(a->height > 0)) continue;
+    std::vector<std::pair<double, double>> image;
+    if (a->mesh) for (size_t v = 0; v + 1 < a->vertices.size(); v += 2) image.push_back({a->vertices[v], a->vertices[v + 1]});
+    else image = {{0, 0}, {a->width, 0}, {a->width, a->height}, {0, a->height}};
+    if (image.empty()) continue;
+    const Affine m = attachmentPlacement(*a);
+    double sx = 0, sy = 0;
+    for (const auto& [u, v] : image) {
+      double x, y;
+      m.apply(u, v, x, y);
+      points.push_back({x, y});
+      sx += x;
+      sy += y;
+    }
+    const double weight = a->width * a->height;
+    cx += sx / double(image.size()) * weight;
+    cy += sy / double(image.size()) * weight;
+    area += weight;
+  }
+  if (!(area > 0)) return false;
+  cx /= area;
+  cy /= area;
+  const double dist = std::hypot(cx, cy);
+  if (dist < 1) return false;  // centred on the bone origin: no direction to read
+  double far = 0;
+  for (const auto& [x, y] : points) far = std::max(far, (x * cx + y * cy) / dist);
+  degrees = std::atan2(cy, cx) * 180 / PI;
+  reach = far > 1 ? far : dist;
+  return true;
+}
 /**
  * addIk {id?, name?, bones: [parent?, child], target? | createTarget: true (+ targetId?,
- * targetParent?), mix?, bendPositive?, order?}. createTarget adds a bone at the chain end as
- * shown now (two-bone: the effector = the child's first child, else the child origin; aim: on
- * the bone's x axis), under the chain's top-level ancestor, so the new constraint starts by
- * holding the current pose; bendPositive defaults to the chain's current bend side.
+ * targetParent?), mix?, bendPositive?, order?, aimAxis?}. createTarget adds a bone at the chain
+ * end as shown now (two-bone: the effector = the child's first child, else the child origin;
+ * aim: along the aim axis), under the chain's top-level ancestor, so the new constraint starts by
+ * holding the current pose; bendPositive defaults to the chain's current bend side. An aim chain
+ * without `aimAxis` gets the bone's natural direction (naturalAimAxis; plugin 1.4.1), stored only
+ * when it is not +x.
  */
 void addIk(EditResult& r, const Json& op) {
   Json& d = r.data;
@@ -1457,6 +1522,16 @@ void addIk(EditResult& r, const Json& op) {
   Json k{{"id", id}, {"name", displayName(op, id)}, {"bones", chain}};
   // A known end becomes the explicit effector: adding a sibling bone later never changes the limb.
   if (chain.size() == 2 && tip >= 0) k["tip"] = rig.bones[size_t(tip)].id;
+  double axis = 0, reach = 0;
+  bool hasAxis = false;
+  if (has(op, "aimAxis")) {
+    if (chain.size() != 1) throw EditError("조준 축(aimAxis)은 조준 IK(본 1개)에만 지정합니다.");
+    axis = aimAxisOf(op);
+    double natural = 0;
+    naturalAimAxis(rig, end, natural, reach);
+    hasAxis = true;
+  } else if (chain.size() == 1) hasAxis = naturalAimAxis(rig, end, axis, reach);
+  if (chain.size() == 1) putAimAxis(k, axis);
   Str target = optStr(op, "target");
   if (target.empty()) {
     if (!(has(op, "createTarget") && op.at("createTarget") == true)) throw EditError("target(대상 본) 또는 createTarget: true가 필요합니다.");
@@ -1464,11 +1539,17 @@ void addIk(EditResult& r, const Json& op) {
     const Affine& w = pose.world[size_t(end)];
     double wx = w.e, wy = w.f;
     if (chain.size() == 2 && tip >= 0) { wx = pose.world[size_t(tip)].e; wy = pose.world[size_t(tip)].f; }
-    else if (chain.size() == 1) {
-      const double axis = std::hypot(w.a, w.b);
-      const double len = tip >= 0 ? std::hypot(pose.world[size_t(tip)].e - w.e, pose.world[size_t(tip)].f - w.f) : 0;
-      const double reach = len > 1 ? len : 60;
-      if (axis > 1e-9) { wx += w.a / axis * reach; wy += w.b / axis * reach; }
+    else if (chain.size() == 1 && hasAxis) {
+      // On the aim axis at the bone's own length (child or image end): solving changes nothing.
+      const double cx = std::cos(axis * PI / 180), cy = std::sin(axis * PI / 180);
+      const double unit = std::hypot(w.a * cx + w.c * cy, w.b * cx + w.d * cy);
+      const double local = reach > 1 ? reach : unit > 1e-9 ? 60 / unit : 0;
+      w.apply(cx * local, cy * local, wx, wy);
+    } else if (chain.size() == 1) {
+      const double len = std::hypot(w.a, w.b);
+      const double far = tip >= 0 ? std::hypot(pose.world[size_t(tip)].e - w.e, pose.world[size_t(tip)].f - w.f) : 0;
+      const double dist = far > 1 ? far : 60;
+      if (len > 1e-9) { wx += w.a / len * dist; wy += w.b / len * dist; }
     }
     Str top = chain[0];
     for (Str p = parentOf(bone(d, top)); !p.empty(); p = parentOf(bone(d, p))) top = p;
@@ -1510,7 +1591,12 @@ void addIk(EditResult& r, const Json& op) {
   r.extra["ik"] = id;
   r.extra["target"] = target;
 }
-/** setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, bones?}: setup values of one constraint. */
+/**
+ * setIk {ik, name?, mix?, bendPositive?, order? (null = default), target?, bones?, aimAxis?
+ * (null = +x), fitAimAxis? (+ clip?, timeMs?)}: setup values of one constraint. fitAimAxis (aim
+ * chains) sets the axis to where the target is seen from the bone in the pose without IK (setup,
+ * or `clip` at `timeMs`), so turning the constraint on stops moving the bone.
+ */
 void setIk(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str id = reqStr(op, "ik");
@@ -1533,6 +1619,29 @@ void setIk(EditResult& r, const Json& op) {
   if (has(op, "bones")) {
     if (!op.at("bones").is_array()) throw EditError("bones는 본 ID 배열입니다.");
     k["bones"] = op.at("bones");
+  }
+  if (op.contains("aimAxis")) {
+    if (op.at("aimAxis").is_null()) k.erase("aimAxis");
+    else putAimAxis(k, aimAxisOf(op));
+  }
+  if (has(op, "fitAimAxis") && op.at("fitAimAxis") == true) {
+    if (!k.contains("bones") || !k.at("bones").is_array() || k.at("bones").size() != 1) throw EditError("현재 방향으로 맞추기는 조준 IK(본 1개)에만 씁니다.");
+    Rig rig;
+    try { rig = parseRig("ik", d); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+    const int b = rig.boneIndex(k.at("bones")[0].get<Str>()), target = rig.boneIndex(optStr(k, "target"));
+    const Str clip = optStr(op, "clip");
+    const int ci = clip.empty() ? -1 : rig.clipIndex(clip);
+    if (!clip.empty() && ci < 0) throw EditError("클립이 없습니다: " + clip);
+    if (b < 0 || target < 0) throw EditError("IK의 본 또는 대상 본이 없습니다.");
+    Look look;
+    look.ik = false;  // the pose the bone has on its own: the axis then needs no rotation to aim
+    const Pose pose = samplePose(rig, ci, ci < 0 ? 0 : num(op, "timeMs", 0), look);
+    const auto inv = pose.world[size_t(b)].inverse();
+    if (!inv) throw EditError("본의 크기가 0이라 방향을 계산할 수 없습니다.");
+    double lx, ly;
+    inv->apply(pose.world[size_t(target)].e, pose.world[size_t(target)].f, lx, ly);
+    if (std::hypot(lx, ly) < 1e-6) throw EditError("대상 본이 본의 원점에 있어 방향을 정할 수 없습니다. 대상을 조금 옮긴 뒤 다시 누르세요.");
+    putAimAxis(k, std::atan2(ly, lx) * 180 / PI);
   }
   if (const Str problem = ikProblem(d); !problem.empty()) throw EditError(problem);
   r.affected.push_back("ik:" + id);

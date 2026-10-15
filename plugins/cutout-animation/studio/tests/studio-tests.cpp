@@ -153,6 +153,7 @@ class StudioTests : public QObject {
   CutoutPanel* panel = nullptr;
   QStringList answers;
   std::optional<CutoutPanel::PartChoice> nextPart;
+  std::optional<CutoutPanel::SkinImageChoice> nextSkinImage, skinPrefill;  // scripted 그림 지정 / what it was offered
   QTemporaryDir dir;
   int gestures = 0;
 
@@ -261,6 +262,84 @@ class StudioTests : public QObject {
     return out;
   }
   static QSet<KeyRef> asSet(const QVector<KeyRef>& keys) { return QSet<KeyRef>(keys.begin(), keys.end()); }
+  /** Once the modal dialog `name` is open (exec() blocks the test), run `drive` on it; true =
+   *  confirm with its OK button, false = cancel. A dialog that never shows is not waited for. */
+  void onDialog(const QString& name, std::function<bool(QDialog*)> drive) {
+    auto tries = std::make_shared<int>(0);
+    auto poll = std::make_shared<std::function<void()>>();
+    *poll = [name, drive, tries, poll] {
+      auto* d = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+      if (d && d->objectName() == name) {
+        const bool ok = drive(d);
+        if (!d->isVisible()) return;
+        auto* box = d->findChild<QDialogButtonBox*>();
+        if (ok && box) box->button(QDialogButtonBox::Ok)->click();
+        if (d->isVisible()) d->reject();  // refused confirm (or cancel): never leave exec() running
+        return;
+      }
+      if (++*tries > 150) { if (d) d->reject(); return; }
+      QTimer::singleShot(20, *poll);
+    };
+    QTimer::singleShot(0, *poll);
+  }
+  static void clickRow(QAbstractItemView* view, const QModelIndex& index) {
+    view->scrollTo(index);
+    const QRect r = view->visualRect(index);
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(r.left() + qMin(30, r.width() / 2), r.center().y()));
+  }
+  static bool clickListItem(QListWidget* list, const QString& data) {
+    for (int i = 0; i < list->count(); i++)
+      if (list->item(i)->data(Qt::UserRole).toString() == data) { clickRow(list, list->model()->index(i, 0)); return true; }
+    return false;
+  }
+  bool clickTreeRow(const QString& ref) {
+    auto* tree = find<QTreeWidget>("cutoutBoneTree");
+    for (QTreeWidgetItemIterator it(tree); *it; ++it)
+      if ((*it)->data(0, Qt::UserRole).toString() == ref) { clickRow(tree, tree->indexFromItem(*it)); pump(); return true; }
+    return false;
+  }
+  Json skinAttachment(const char* skin, const char* slot, const char* name) const {
+    const Json r = rig();  // (a temporary's subobject would dangle in the range-for)
+    for (const auto& s : r["skins"]) if (s["id"] == skin) for (const auto& a : s["attachments"]) if (a["slot"] == slot && a["name"] == name) return a;
+    return Json();
+  }
+  /** Each look tab in turn: its buttons and lists are shown, unclipped by the page or by a scroll
+   *  area's viewport (what the user sees without scrolling), and the page itself never scrolls. */
+  QStringList lookPageProblems() {
+    QStringList problems;
+    auto* tabs = find<QTabWidget>("cutoutLookTabs");
+    const int keep = tabs->currentIndex();
+    for (int t = 0; t < tabs->count(); t++) {
+      tabs->setCurrentIndex(t);
+      pump();
+      QWidget* page = tabs->widget(t);
+      if (qobject_cast<QAbstractScrollArea*>(page)) problems << page->objectName() + " scrolls as a whole";
+      QList<QWidget*> widgets;
+      // Action buttons (form check boxes are values) except the rows the other mode uses.
+      for (auto* b : page->findChildren<QAbstractButton*>()) {
+        if (!b->objectName().startsWith("cutout") || !(qobject_cast<QPushButton*>(b) || qobject_cast<QToolButton*>(b))) continue;
+        bool otherMode = false;
+        for (QWidget* p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || (p->property("cutoutModeRow").isValid() && p->isHidden());
+        if (!otherMode) widgets << b;
+      }
+      for (auto* l : page->findChildren<QAbstractItemView*>()) if (l->objectName().startsWith("cutout")) widgets << l;
+      if (widgets.size() < 4) problems << page->objectName() + QString(" has %1 controls").arg(widgets.size());
+      for (QWidget* w : widgets) {
+        const QString what = page->objectName() + "/" + w->objectName();
+        if (!w->isVisible()) { problems << what + " hidden"; continue; }
+        const QRect r(w->mapTo(page, QPoint(0, 0)), w->size());
+        if (qobject_cast<QAbstractButton*>(w) && w->width() < w->sizeHint().width()) problems << what + QString(" squeezed to %1 < %2").arg(w->width()).arg(w->sizeHint().width());
+        if (!page->rect().contains(r) || r.height() < qMin(w->minimumSizeHint().height(), 20)) problems << what + QString(" clipped %1,%2 %3x%4 in %5x%6").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).arg(page->width()).arg(page->height());
+        for (QWidget* p = w->parentWidget(); p && p != page; p = p->parentWidget())
+          if (auto* scroll = qobject_cast<QScrollArea*>(p)) {
+            const QRect inView(w->mapTo(scroll->viewport(), QPoint(0, 0)), w->size());
+            if (!scroll->viewport()->rect().contains(inView)) problems << what + " scrolled out of " + scroll->objectName();
+          }
+      }
+    }
+    tabs->setCurrentIndex(keep);
+    return problems;
+  }
 
  private Q_SLOTS:
   void initTestCase() {
@@ -283,6 +362,13 @@ class StudioTests : public QObject {
       if (!nextPart) return false;
       c = *nextPart;
       nextPart.reset();
+      return true;
+    };
+    panel->askSkinImage = [this](CutoutPanel::SkinImageChoice& c) {
+      skinPrefill = c;
+      if (!nextSkinImage) return false;
+      c = *nextSkinImage;
+      nextSkinImage.reset();
       return true;
     };
     host.mainWindow.resize(1700, 1200);
@@ -1168,8 +1254,9 @@ class StudioTests : public QObject {
     const qint64 basePaint = paintProps({}), winterPaint = paintProps({{"skin", "winter"}});
     QVERIFY(basePaint > 0 && winterPaint > basePaint);  // the blue coat
     // 그림 지정… with an explicit name (the closed eyes of this outfit), then 빼기.
-    nextPart = CutoutPanel::PartChoice{"img-eye-open", QString(), "eyes", "closed", QString()};
+    nextSkinImage = CutoutPanel::SkinImageChoice{"winter", "eyes", "closed", "img-eye-open", QString()};
     QVERIFY(gesture("assign closed-eye image", 1, [&] { click("cutoutSkinAssign"); }));
+    QVERIFY(skinPrefill && skinPrefill->skin == "winter" && skinPrefill->slot == "eyes" && skinPrefill->name == "open");
     QCOMPARE(rig()["skins"][0]["attachments"].size(), size_t(3));
     auto* list = find<QListWidget>("cutoutSkinAttachments");
     QCOMPARE(list->count(), 3);
@@ -1291,6 +1378,129 @@ class StudioTests : public QObject {
     QCOMPARE(paintProps({{"skin", "nope"}}), paintProps({{"skin", "winter"}}));
     find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
     panel->setMode(CutoutPanel::Mode::Setup);
+  }
+
+  // The real 그림 지정… and 이미지 조각 추가… dialogs driven by mouse: prefill from the tree
+  // selection, picking an image never rewrites slot/name, one edit per confirm, undo/redo.
+  void imageDialogs() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("winter");
+    panel->setPreviewExpression("");
+    pump();
+    const auto scriptedSkin = panel->askSkinImage;
+    const auto scriptedPart = panel->askPart;
+    panel->askSkinImage = [this](CutoutPanel::SkinImageChoice& c) { return panel->runSkinImageDialog(c); };
+    panel->askPart = [this](CutoutPanel::PartChoice& c) { return panel->runPartDialog(c); };
+    // Tree row clicks select bones and parts (slot rows) alike.
+    QVERIFY(clickTreeRow("bone:root"));
+    QCOMPARE(panel->selection(), QString("bone:root"));
+    QVERIFY(clickTreeRow("slot:eyes"));
+    QCOMPARE(panel->selection(), QString("slot:eyes"));
+    const Json before = skinAttachment("winter", "eyes", "open");
+    QVERIFY(before.is_object());
+    QString title, slot, name, slotAfter, nameAfter, startImage;
+    bool slotFree = true, previewShown = false;
+    auto observe = [&](QDialog* d, const QString& pick) {
+      auto* slots = d->findChild<QComboBox*>("cutoutSkinImageSlot");
+      auto* names = d->findChild<QComboBox*>("cutoutSkinImageName");
+      auto* assets = d->findChild<QListWidget*>("cutoutSkinImageAssets");
+      title = d->windowTitle();
+      slot = slots->currentData().toString();
+      name = names->currentText();
+      slotFree = slots->isEditable();
+      startImage = assets->currentItem() ? assets->currentItem()->data(Qt::UserRole).toString() : QString();
+      if (!pick.isEmpty() && !clickListItem(assets, pick)) return false;
+      slotAfter = slots->currentData().toString();
+      nameAfter = names->currentText();
+      previewShown = !d->findChild<QLabel*>("cutoutSkinImagePreview")->pixmap().isNull();
+      return true;
+    };
+    onDialog("cutoutSkinImageDialog", [&](QDialog* d) { return observe(d, "img-eye-closed"); });
+    QVERIFY(gesture("skin image dialog on the clicked part", 1, [&] { click("cutoutSkinAssign"); }));
+    QCOMPARE(title, QString("스킨 그림 지정 — winter"));
+    QCOMPARE(slot, QString("eyes"));
+    QCOMPARE(name, QString("open"));  // the name the part shows now
+    QVERIFY(!slotFree);
+    QCOMPARE(startImage, qs(before["imageAssetId"].get<std::string>()));  // the skin's current image
+    QCOMPARE(slotAfter, QString("eyes"));
+    QCOMPARE(nameAfter, QString("open"));
+    QVERIFY(previewShown);
+    QCOMPARE(qs(skinAttachment("winter", "eyes", "open")["imageAssetId"].get<std::string>()), QString("img-eye-closed"));
+    QCOMPARE(host.lastEdit.value("type").toString(), QString("replace"));
+    undo();
+    QVERIFY(skinAttachment("winter", "eyes", "open") == before);
+    redo();
+    QCOMPARE(qs(skinAttachment("winter", "eyes", "open")["imageAssetId"].get<std::string>()), QString("img-eye-closed"));
+    undo();
+    // A selected bone offers its first part; cancel is no edit.
+    QVERIFY(clickTreeRow("bone:head"));
+    onDialog("cutoutSkinImageDialog", [&](QDialog* d) { observe(d, QString()); return false; });
+    QVERIFY(gesture("skin image dialog from a bone, cancelled", 0, [&] { click("cutoutSkinAssign"); }));
+    QCOMPARE(slot, QString("eyes"));
+    // Another slot from the combo + a new attachment name typed in: the image keeps both.
+    QVERIFY(clickTreeRow("slot:body"));
+    onDialog("cutoutSkinImageDialog", [&](QDialog* d) {
+      auto* names = d->findChild<QComboBox*>("cutoutSkinImageName");
+      names->lineEdit()->selectAll();
+      QTest::keyClicks(names->lineEdit(), "coat-open");
+      return observe(d, "img-body-winter") && nameAfter == "coat-open" && slotAfter == "body";
+    });
+    QVERIFY(gesture("skin image with a new name", 1, [&] { click("cutoutSkinAssign"); }));
+    QCOMPARE(slot, QString("body"));
+    QCOMPARE(qs(skinAttachment("winter", "body", "coat-open")["imageAssetId"].get<std::string>()), QString("img-body-winter"));
+    undo();
+    QVERIFY(skinAttachment("winter", "body", "coat-open").is_null());
+
+    // 이미지 조각 추가…: the clicked part prefills 조각 ID and picking images never rewrites it.
+    QVERIFY(clickTreeRow("slot:eyes"));
+    const size_t parts = rig()["attachments"].size(), slotCount = rig()["slots"].size();
+    QString prefilled, afterPick;
+    onDialog("cutoutPartDialog", [&](QDialog* d) {
+      auto* slots = d->findChild<QComboBox*>("cutoutPartSlot");
+      auto* assets = d->findChild<QListWidget*>("cutoutPartAssetList");
+      prefilled = slots->currentText();
+      if (!clickListItem(assets, "img-body") || !clickListItem(assets, "img-eye-open")) return false;
+      afterPick = slots->currentText();
+      QTest::keyClicks(d->findChild<QLineEdit*>("cutoutPartName"), "half");
+      return true;
+    });
+    QVERIFY(gesture("part dialog keeps the selected part", 1, [&] { click("cutoutAddPart"); }));
+    QCOMPARE(prefilled, QString("eyes"));
+    QCOMPARE(afterPick, QString("eyes"));
+    QCOMPARE(rig()["attachments"].size(), parts + 1);
+    QCOMPARE(rig()["slots"].size(), slotCount);
+    const Json half = rig()["attachments"].back();
+    QVERIFY(half["slot"] == "eyes" && half["name"] == "half" && half["imageAssetId"] == "img-eye-open");
+    undo();
+    QCOMPARE(rig()["attachments"].size(), parts);
+    redo();
+    QCOMPARE(rig()["attachments"].size(), parts + 1);
+    undo();
+    // From a bone: an empty 조각 ID follows the picked image; a typed one is kept.
+    QVERIFY(clickTreeRow("bone:root"));
+    QStringList seen;
+    onDialog("cutoutPartDialog", [&](QDialog* d) {
+      auto* slots = d->findChild<QComboBox*>("cutoutPartSlot");
+      auto* assets = d->findChild<QListWidget*>("cutoutPartAssetList");
+      seen << slots->currentText();
+      clickListItem(assets, "img-eye-open");
+      seen << slots->currentText();
+      clickListItem(assets, "img-body");
+      seen << slots->currentText();
+      slots->lineEdit()->selectAll();
+      QTest::keyClicks(slots->lineEdit(), "cape");
+      clickListItem(assets, "img-eye-open");
+      seen << slots->currentText();
+      return false;
+    });
+    QVERIFY(gesture("part dialog auto id, cancelled", 0, [&] { click("cutoutAddPart"); }));
+    // (seen[0] may already follow the row the focused list made current: that is an auto value too.)
+    QCOMPARE(seen.mid(1), (QStringList{"img-eye-open", "img-body", "cape"}));
+    panel->askSkinImage = scriptedSkin;
+    panel->askPart = scriptedPart;
+    panel->setPreviewSkin("");
   }
 
   void ikConstraints() {
@@ -1449,6 +1659,93 @@ class StudioTests : public QObject {
     QVERIFY(gesture("reparent breaking the chain", 0, [&] { QVERIFY(!panel->requestReparent("elbow", "root")); }));
     QVERIFY(panel->status().contains("IK"));
     QVERIFY(gesture("target into its own chain", 0, [&] { panel->selectIk("left-arm"); QVERIFY(!panel->setIkTarget("wrist")); }));
+  }
+
+  // 조준 IK on a limb as cutout rigs make it (rotation 0, image hanging down): the aim axis follows
+  // the image, creating the constraint moves nothing, dragging the target turns the image's long
+  // axis onto it; 조준 축 and 현재 방향으로 맞추기 are one edit each; undo restores everything.
+  void aimIkOnHangingArm() {
+    panel->selectRig("hero");
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setTool(RigCanvas::Move);
+    pump();
+    const Json start = rig();
+    panel->selectItem("bone:root");
+    answers = {"forearm"};
+    QVERIFY(gesture("add a limb bone", 1, [&] { click("cutoutAddBone"); }));
+    nextPart = CutoutPanel::PartChoice{"img-body", QString(), "sleeve", QString(), "forearm"};  // 60x100: long axis = image y
+    QVERIFY(gesture("limb image", 1, [&] { click("cutoutAddPart"); }));
+    panel->selectItem("slot:sleeve");
+    QVERIFY(gesture("the image hangs from the shoulder", 1, [&] { setSpin("cutoutPropPivotY", 0); }));
+    const Json made = rig();  // (iterating rig()["..."] directly would read a destroyed temporary)
+    for (const auto& b : made["bones"]) if (b["id"] == "forearm") QCOMPARE(b.value("rotation", 0.0), 0.0);
+    // Angle (degrees) between the image's long axis (its +y in rig space) and the bone -> target line.
+    auto imageError = [&](const Json& data, const std::string& target) {
+      const cutout::Rig r = cutout::parseRig("hero", data);
+      const cutout::Pose p = cutout::samplePose(r, -1, 0);
+      const int si = r.slotIndex("sleeve");
+      const cutout::Affine m = p.world[size_t(r.boneIndex("forearm"))] * cutout::attachmentPlacement(*r.attachment("sleeve", *r.slots[size_t(si)].attachment));
+      const auto& o = p.world[size_t(r.boneIndex("forearm"))];
+      const auto& t = p.world[size_t(r.boneIndex(target))];
+      return std::fabs(std::remainder(std::atan2(m.d, m.c) - std::atan2(t.f - o.f, t.e - o.e), 2 * M_PI)) * 180 / M_PI;
+    };
+    const auto before = cutout::setupWorld(rig());
+    panel->selectItem("bone:forearm");
+    QVERIFY(gesture("new aim IK on the hanging arm", 1, [&] { click("cutoutNewAimIk"); }));
+    Json k;
+    const Json withIk = rig();
+    for (const auto& x : withIk["ik"]) if (x["bones"] == Json::array({"forearm"})) k = x;
+    QVERIFY2(k.is_object() && std::fabs(k.value("aimAxis", 0.0) - 90) < 1e-6, k.dump().c_str());
+    const std::string target = k["target"].get<std::string>();
+    {
+      const cutout::Rig r = cutout::parseRig("hero", rig());
+      const cutout::Pose p = cutout::samplePose(r, -1, 0);
+      QVERIFY(std::fabs(p.applied[size_t(r.boneIndex("forearm"))].rotation) < 1e-6);  // creating it turned nothing
+      const auto& w = p.world[size_t(r.boneIndex("forearm"))];
+      QVERIFY(std::hypot(w.e - before.at("forearm").e, w.f - before.at("forearm").f) < 1e-6 && std::fabs(w.b - before.at("forearm").b) < 1e-9);
+      double dx = 0, dy = 0;
+      QVERIFY(cutout::ikAimDirection(r, p, r.ikIndex(k["id"].get<std::string>()), dx, dy) && std::fabs(dx) < 1e-6 && dy > 0.999);  // the canvas arrow points down
+    }
+    QVERIFY(imageError(rig(), target) < 1e-6);
+    QCOMPARE(panel->ikId(), qs(k["id"].get<std::string>()));
+    QVERIFY(find<QWidget>("cutoutIkAimAxis")->isEnabled() && find<QWidget>("cutoutIkFitAimAxis")->isEnabled());
+    QCOMPARE(find<QDoubleSpinBox>("cutoutIkAimAxis")->value(), 90.0);
+    // Drag the target sideways and up on the canvas: one edit, the image points at it.
+    panel->selectItem("");
+    pump();
+    const QPointF at = panel->canvas()->rigToWidget(world(target));
+    QVERIFY(gesture("drag the aim target", 1, [&] { drag(panel->canvas(), at, at + QPointF(90, -40)); }));
+    QVERIFY(std::hypot(world(target).x() - before.at("forearm").e, world(target).y() - before.at("forearm").f) > 20);
+    const double error = imageError(rig(), target);
+    QVERIFY2(error < 1.0, qPrintable(QString::number(error)));
+    // 조준 축 0: the bone's +x aims instead (the 1.3.0 behaviour), one edit.
+    panel->selectIk(qs(k["id"].get<std::string>()));
+    QVERIFY(gesture("aim axis 0", 1, [&] { setSpin("cutoutIkAimAxis", 0); }));
+    QVERIFY(!rig()["ik"].back().contains("aimAxis"));
+    QVERIFY(std::fabs(imageError(rig(), target) - 90) < 1e-3);
+    // 현재 방향으로 맞추기: the axis becomes where the bone sees the target on its own, so the
+    // constraint stops turning it (rotation 0 = its setup pose).
+    QVERIFY(gesture("fit the aim axis", 1, [&] { click("cutoutIkFitAimAxis"); }));
+    {
+      const cutout::Rig r = cutout::parseRig("hero", rig());
+      const cutout::Pose p = cutout::samplePose(r, -1, 0);
+      QVERIFY(std::fabs(p.applied[size_t(r.boneIndex("forearm"))].rotation) < 1e-4);
+      QVERIFY(rig()["ik"].back().contains("aimAxis"));
+    }
+    QCOMPARE(find<QDoubleSpinBox>("cutoutIkAimAxis")->value(), std::round(rig()["ik"].back()["aimAxis"].get<double>() * 10) / 10);
+    // A two-bone IK has no aim axis: the row is disabled.
+    panel->selectIk("left-arm");
+    pump();
+    QVERIFY(!find<QWidget>("cutoutIkAimAxis")->isEnabled() && !find<QWidget>("cutoutIkFitAimAxis")->isEnabled());
+    QVERIFY(gesture("aim axis on a two-bone IK refused", 0, [&] { QVERIFY(!panel->setIkAimAxis(30)); }));
+    for (int i = 0; i < 7; i++) undo();
+    QVERIFY(rig() == start);
+    redo();
+    undo();
+    QVERIFY(rig() == start);
   }
 
   void meshEditing() {
@@ -1655,7 +1952,7 @@ class StudioTests : public QObject {
     // Every splitter child keeps its minimum and nothing leaves the window, from a small
     // 1280x720 laptop to a 5120x1440 ultrawide and a very tall portrait screen.
     int sideWidth = -1;
-    for (const QSize size : {QSize(1280, 720), QSize(3840, 1080), QSize(5120, 1440), QSize(1080, 1920)}) {
+    for (const QSize size : {QSize(1280, 720), QSize(1920, 1080), QSize(3840, 1080), QSize(5120, 1440), QSize(1080, 1920), QSize(1440, 2560)}) {
       host.mainWindow.resize(size);
       pump();
       QTest::qWait(30);
@@ -1680,6 +1977,16 @@ class StudioTests : public QObject {
         QVERIFY2(panel->rect().contains(QRect(w->mapTo(panel, QPoint(0, 0)), w->size())), qPrintable(at + name + " cut off"));
       }
       QVERIFY(panel->canvas()->width() >= 200 && panel->canvas()->height() >= 150);
+      // Every page of 스킨 · 표정 · IK · 메시 shows its list and all its buttons by default.
+      for (const auto mode : {CutoutPanel::Mode::Setup, CutoutPanel::Mode::Animate}) {
+        panel->setMode(mode);
+        pump();
+        const QStringList clipped = lookPageProblems();
+        QVERIFY2(clipped.isEmpty(), qPrintable(at + (mode == CutoutPanel::Mode::Setup ? "setup: " : "animate: ") + clipped.join(" | ")));
+      }
+      panel->setMode(CutoutPanel::Mode::Setup);
+      find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+      pump();
       // Side panels keep their width on wide screens: the canvas gets the extra space.
       if (size.width() >= 3840) {
         if (sideWidth < 0) sideWidth = panel->leftPane()->width();
@@ -1689,6 +1996,34 @@ class StudioTests : public QObject {
     }
     host.mainWindow.resize(1700, 1200);
     pump();
+    // A layout saved by plugin <= 1.4.0 (no version, right column starving the look pages) comes
+    // back as the defaults; the same state saved by this version is restored as is.
+    {
+      auto* right = find<QSplitter>("cutoutRightSplitter");
+      const QList<int> defaults = right->sizes();
+      right->setSizes({5000, 1, 1});
+      pump();
+      const QList<int> starved = right->sizes();
+      QVERIFY2(starved[1] < defaults[1] - 100, qPrintable(QString("%1 vs %2").arg(starved[1]).arg(defaults[1])));
+      QSettings q;
+      q.beginGroup("plugins/cutout-animation/layout");
+      q.setValue("cutoutRightSplitter", right->saveState());
+      q.setValue("version", 1);
+      right->setSizes(defaults);
+      q.sync();
+      panel->restoreLayout();
+      pump();
+      QCOMPARE(right->sizes(), defaults);
+      QVERIFY(lookPageProblems().isEmpty());
+      q.setValue("version", 2);
+      q.sync();
+      panel->restoreLayout();
+      pump();
+      QCOMPARE(right->sizes(), starved);
+      QVERIFY2(lookPageProblems().isEmpty(), "even at its minimum the look section keeps its buttons");
+      right->setSizes(defaults);
+      panel->saveLayout();
+    }
     // Tab on the canvas / dopesheet = full view (side panels hidden); Tab in a form field still
     // moves the focus. Presentation only.
     const int canvasWidth = panel->canvas()->width();

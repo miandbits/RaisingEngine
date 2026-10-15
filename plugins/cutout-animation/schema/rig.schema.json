@@ -101,6 +101,7 @@
           "target": { "description": "Bone whose world origin the chain reaches; never in the chain or below it.", "$ref": "#/$defs/id" },
           "tip": { "description": "Explicit two-bone effector (plugin 1.4.0): a direct child of the lower bone. Absent = the lower bone's first child.", "$ref": "#/$defs/id" },
           "mix": { "type": "number", "minimum": 0, "maximum": 1 },
+          "aimAxis": { "description": "Aim chains (plugin 1.4.1): the bone-local direction, in degrees (0 = +x, 90 = +y / down the screen), that points at the target. Absent = 0. Two-bone chains: ANIM_IK_AIM_AXIS.", "type": "number", "minimum": -360, "maximum": 360 },
           "bendPositive": { "type": "boolean" },
           "stretch": { "description": "Accepted, not applied in 1.3.0 (warning ANIM_IK_STRETCH).", "type": "boolean" },
           "order": { "type": "integer", "minimum": -1000, "maximum": 1000 }

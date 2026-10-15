@@ -211,6 +211,18 @@ std::set<std::string> checkIk(Checker& c, const Json& data, std::map<std::string
         }
     const double mix = number(c, k, p, "mix", 1);
     if (mix < 0 || mix > 1) c.error(at(p, "mix"), "ANIM_IK_MIX", "IK 혼합(mix)은 0..1이어야 합니다.");
+    // Aim axis (plugin 1.4.1): which bone-local direction aims. Two-bone chains solve from the
+    // bone positions (elbow, wrist), so an axis there would be silently meaningless.
+    if (k.contains("aimAxis")) {
+      const Json& axis = k.at("aimAxis");
+      if (!axis.is_number() || !std::isfinite(axis.get<double>()) || std::fabs(axis.get<double>()) > 360) {
+        c.error(at(p, "aimAxis"), "ANIM_IK_AIM_AXIS", "조준 축(aimAxis)은 -360..360 사이의 각도(도)입니다.");
+        ok = false;
+      } else if (ok && info[i].chain.size() != 1) {
+        c.error(at(p, "aimAxis"), "ANIM_IK_AIM_AXIS", "조준 축(aimAxis)은 조준 IK(본 1개)에만 씁니다. 두 본 IK는 본 위치(팔꿈치·손목)로 풉니다.");
+        ok = false;
+      }
+    }
     for (const char* flag : {"bendPositive", "stretch"})
       if (k.contains(flag) && !k.at(flag).is_boolean()) c.error(at(p, flag), "ANIM_STRUCTURE", std::string(flag) + "는 true 또는 false입니다.");
     if (k.contains("stretch") && k.at("stretch") == true) c.warn(at(p, "stretch"), "ANIM_IK_STRETCH", "늘이기(stretch)는 아직 지원하지 않아 무시됩니다.");
@@ -625,7 +637,7 @@ Rig parseRig(const std::string& id, const Json& data) {
     IkConstraint x; x.id = k.at("id"); x.name = k.value("name", x.id);
     for (const auto& b : k.at("bones")) x.bones.push_back(rig.boneIndex(b.get<std::string>()));
     x.target = rig.boneIndex(k.at("target").get<std::string>());
-    x.mix = k.value("mix", 1.0); x.bendPositive = k.value("bendPositive", true); x.stretch = k.value("stretch", false); x.order = k.value("order", 0);
+    x.mix = k.value("mix", 1.0); x.aimAxis = k.value("aimAxis", 0.0); x.bendPositive = k.value("bendPositive", true); x.stretch = k.value("stretch", false); x.order = k.value("order", 0);
     // The effector of a two-bone chain: the explicit `tip` (plugin 1.4.0), else the first child
     // (array order) of its end bone.
     x.explicitTip = k.contains("tip");
