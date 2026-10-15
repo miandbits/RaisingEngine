@@ -348,7 +348,7 @@ class StudioTests : public QObject {
       for (auto* b : page->findChildren<QAbstractButton*>()) {
         if (!b->objectName().startsWith("cutout") || !(qobject_cast<QPushButton*>(b) || qobject_cast<QToolButton*>(b))) continue;
         bool otherMode = false;
-        for (QWidget* p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || (p->property("cutoutModeRow").isValid() && p->isHidden());
+        for (QWidget* p = b->parentWidget(); p && p != page; p = p->parentWidget()) otherMode = otherMode || ((p->property("cutoutModeRow").isValid() || p->property("cutoutConditionalRow").isValid()) && p->isHidden());
         if (!otherMode) widgets << b;
       }
       for (auto* l : page->findChildren<QAbstractItemView*>()) if (l->objectName().startsWith("cutout")) widgets << l;
@@ -4441,8 +4441,10 @@ class StudioTests : public QObject {
     QVERIFY(gesture("다시 놓기", 0, [&] { click("cutoutPhysicsReset"); }));
     QVERIFY(panel->physicsSim().settles >= 2);
     click("cutoutPlay");  // stop
+    QCOMPARE(find<QToolButton>("cutoutPhysicsPreview")->text(), QString("● 재생 중 물리: 켜짐"));  // plugin 1.14.0: state in words
     QVERIFY(gesture("preview off", 0, [&] { click("cutoutPhysicsPreview"); }));
     QVERIFY(!panel->physicsPreview());
+    QCOMPARE(find<QToolButton>("cutoutPhysicsPreview")->text(), QString("○ 재생 중 물리: 꺼짐"));
     click("cutoutPlay");
     panel->advancePlayback(100);
     QVERIFY(!panel->physicsRunning());
@@ -4458,6 +4460,20 @@ class StudioTests : public QObject {
     QVERIFY(gesture("delete physics", 1, [&] { click("cutoutDeletePhysics"); }));
     QCOMPARE(data()["physics"].size(), size_t(1));
     QVERIFY(timesOfRig(data(), "wave", "physics:tip-sway", "mix").isEmpty());
+    // Plugin 1.14.0: a point bone under physics gets a hint and a one-click 본 방향 맞추기.
+    QVERIFY(find<QWidget>("cutoutPhysicsBoneHint")->isHidden());  // c2 has a length
+    panel->selectItem("bone:c2");
+    QVERIFY(gesture("c2 becomes a point bone", 1, [&] { setSpin("cutoutPropLength", 0); }));
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectPhysics("c2-physics");
+    pump();
+    QVERIFY(!find<QWidget>("cutoutPhysicsBoneHint")->isHidden());
+    QVERIFY2(find<QLabel>("cutoutPhysicsBoneHintText")->text().contains("c2"), qPrintable(find<QLabel>("cutoutPhysicsBoneHintText")->text()));
+    QVERIFY(gesture("물리 탭의 본 방향 맞추기", 1, [&] { click("cutoutPhysicsOrientBone"); }));
+    QVERIFY(panel->mode() == CutoutPanel::Mode::Setup);
+    { const cutout::Rig r = cutout::parseRig("swing", data()); QVERIFY(r.bones[size_t(r.boneIndex("c2"))].length > 0); }
+    pump();
+    QVERIFY(find<QWidget>("cutoutPhysicsBoneHint")->isHidden());
     for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
     panel->selectRig(keepRig);
     pump();
