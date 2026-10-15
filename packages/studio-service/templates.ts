@@ -58,7 +58,7 @@ export async function createProjectFromSource(source: string, target: string): P
   // Preflight source before creating the destination or copying any bytes.
   for (const file of ['project.json', 'attributes.json', 'flags.json', 'assets']) await collect(file);
   JSON.parse(await readFile(path.join(sourceRoot, 'project.json'), 'utf8'));
-  for (const folder of ['characters', 'activities', 'events', 'endings', 'scenarios']) {
+  for (const folder of ['characters', 'activities', 'events', 'endings', 'scenarios', 'plugins']) {
     try { await collect(folder); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   await mkdir(destination, { recursive: true });

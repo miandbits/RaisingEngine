@@ -1,0 +1,980 @@
+{
+  "$schema": "../../packages/schema/project.schema.json",
+  "defaultEndingId": "ordinary",
+  "description": "남궁가에서 천대받는 막내 남궁설. 태어날 때부터 막힌 혈맥과 한독 때문에 남은 시간은 두 달뿐이다. 비급 수련으로 내공을 쌓고 약방 심부름으로 약값을 벌며 운기조식으로 기력을 지켜라. 노인의 약속을 받아들이고 마지막 날 내공 30·기력 20·신뢰 1 이상을 갖추면 운명을 넘어설 수 있다.",
+  "durationMonths": 2,
+  "formatVersion": "0.1.0",
+  "gameId": "last-grandson",
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "startMonth": 1,
+  "startYear": 1,
+  "title": "잔설 아래 막내손자",
+  "visual": {
+    "width": 1280,
+    "height": 720,
+    "viewportMode": "fit",
+    "components": [
+      {
+        "id": "save-controls",
+        "label": "기록 · 이어가기",
+        "width": 260,
+        "height": 42,
+        "elements": [
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 0,
+            "y": 0,
+            "width": 122,
+            "height": 42,
+            "text": "기록  F5",
+            "action": "save",
+            "fill": "#142f32d9",
+            "color": "#eee4d2",
+            "fontSize": 17,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "hoverFill": "#45655e",
+            "pressedFill": "#172e2d"
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 136,
+            "y": 0,
+            "width": 124,
+            "height": 42,
+            "text": "이어가기  F9",
+            "action": "load",
+            "fill": "#142f32d9",
+            "color": "#eee4d2",
+            "fontSize": 17,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "hoverFill": "#45655e",
+            "pressedFill": "#172e2d"
+          }
+        ]
+      }
+    ],
+    "screens": [
+      {
+        "id": "title",
+        "label": "서막 · 잔설",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "asset",
+            "imageAssetId": "winter-courtyard",
+            "fit": "cover"
+          },
+          {
+            "id": "veil",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#091d2670"
+          },
+          {
+            "id": "seol",
+            "kind": "plugin",
+            "x": 790,
+            "y": 30,
+            "width": 490,
+            "height": 690,
+            "extension": {
+              "plugin": "cutout-animation",
+              "type": "character",
+              "ref": "seol",
+              "props": {
+                "scale": 1.02
+              }
+            },
+            "locked": true
+          },
+          {
+            "id": "title-shade",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 720,
+            "height": 720,
+            "fill": "#10242be8"
+          },
+          {
+            "id": "eyebrow",
+            "kind": "text",
+            "x": 72,
+            "y": 88,
+            "width": 580,
+            "height": 36,
+            "text": "남궁가의 마지막 겨울",
+            "fontSize": 20,
+            "color": "#c5a16b"
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 64,
+            "y": 150,
+            "width": 620,
+            "height": 196,
+            "text": "잔설 아래\n막내손자",
+            "fontSize": 72,
+            "color": "#eee4d2"
+          },
+          {
+            "id": "title-rule",
+            "kind": "panel",
+            "x": 72,
+            "y": 368,
+            "width": 480,
+            "height": 16,
+            "fill": "#00000000",
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "opacity": 0.65
+          },
+          {
+            "id": "tagline",
+            "kind": "text",
+            "x": 72,
+            "y": 404,
+            "width": 555,
+            "height": 85,
+            "text": "모두가 끝이라 부른 겨울.\n나는, 아직 봄을 기다린다.",
+            "fontSize": 26,
+            "color": "#eee4d2"
+          },
+          {
+            "id": "subtitle",
+            "kind": "text",
+            "x": 72,
+            "y": 510,
+            "width": 555,
+            "height": 30,
+            "text": "시한부 막내 남궁설의 두 달을 함께하는 이야기",
+            "fontSize": 17,
+            "color": "#a9b9b4"
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 72,
+            "y": 575,
+            "width": 280,
+            "height": 58,
+            "text": "이야기 시작   →",
+            "action": "start",
+            "fill": "#233c3b",
+            "color": "#eee4d2",
+            "fontSize": 21,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "hoverFill": "#45655e",
+            "pressedFill": "#172e2d"
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 372,
+            "y": 575,
+            "width": 208,
+            "height": 58,
+            "text": "기록 이어가기",
+            "action": "load",
+            "fill": "#10242b",
+            "color": "#eee4d2",
+            "fontSize": 21,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "hoverFill": "#45655e",
+            "pressedFill": "#172e2d"
+          },
+          {
+            "id": "footer",
+            "kind": "text",
+            "x": 72,
+            "y": 660,
+            "width": 600,
+            "height": 28,
+            "text": "두 달 · 세 가지 활동 · 두 갈래의 운명",
+            "fontSize": 16,
+            "color": "#a9b9b4"
+          },
+          {
+            "id": "sound",
+            "kind": "button",
+            "action": "sound",
+            "text": "소리 켜기/끄기",
+            "x": 1080,
+            "y": 664,
+            "width": 164,
+            "height": 42,
+            "fill": "#142f32d9",
+            "color": "#eee4d2",
+            "fontSize": 16,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b"
+          }
+        ]
+      },
+      {
+        "id": "schedule",
+        "label": "생활 · 이번 달의 약속",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "asset",
+            "imageAssetId": "winter-courtyard",
+            "fit": "cover"
+          },
+          {
+            "id": "veil",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#091d2670"
+          },
+          {
+            "id": "seol",
+            "kind": "plugin",
+            "x": 800,
+            "y": 88,
+            "width": 480,
+            "height": 632,
+            "extension": {
+              "plugin": "cutout-animation",
+              "type": "character",
+              "ref": "seol",
+              "props": {
+                "scale": 1.02
+              }
+            },
+            "locked": true
+          },
+          {
+            "id": "game-title",
+            "kind": "text",
+            "x": 32,
+            "y": 30,
+            "width": 560,
+            "height": 38,
+            "text": "잔설 아래 막내손자",
+            "fontSize": 26,
+            "color": "#eee4d2"
+          },
+          {
+            "id": "toolbar",
+            "kind": "component",
+            "x": 990,
+            "y": 28,
+            "width": 260,
+            "height": 42,
+            "componentId": "save-controls"
+          },
+          {
+            "id": "paper",
+            "kind": "panel",
+            "x": 32,
+            "y": 105,
+            "width": 772,
+            "height": 575,
+            "fill": "#eee4d2f5",
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "radius": 4
+          },
+          {
+            "id": "chapter",
+            "kind": "text",
+            "x": 64,
+            "y": 127,
+            "width": 600,
+            "height": 28,
+            "text": "남궁가 별채  /  마지막 두 달",
+            "fontSize": 17,
+            "color": "#79715e"
+          },
+          {
+            "id": "prompt",
+            "kind": "text",
+            "x": 64,
+            "y": 162,
+            "width": 710,
+            "height": 44,
+            "text": "이번 달, 무엇을 지킬 것인가",
+            "fontSize": 32,
+            "color": "#233c3b"
+          },
+          {
+            "id": "stat-skill",
+            "kind": "panel",
+            "x": 64,
+            "y": 219,
+            "width": 164,
+            "height": 96,
+            "fill": "#ffffff55",
+            "borderWidth": 1,
+            "borderColor": "#cbbca3",
+            "radius": 3
+          },
+          {
+            "id": "label-skill",
+            "kind": "text",
+            "x": 76,
+            "y": 229,
+            "width": 75,
+            "height": 28,
+            "text": "내공",
+            "fontSize": 18,
+            "color": "#233c3b"
+          },
+          {
+            "id": "value-skill",
+            "kind": "text",
+            "x": 152,
+            "y": 224,
+            "width": 64,
+            "height": 40,
+            "text": "",
+            "fontSize": 28,
+            "color": "#233c3b",
+            "binding": "attribute-value",
+            "attributeId": "skill",
+            "valueFormat": "{value}",
+            "align": "right"
+          },
+          {
+            "id": "hint-skill",
+            "kind": "text",
+            "x": 76,
+            "y": 276,
+            "width": 145,
+            "height": 24,
+            "text": "살아갈 힘",
+            "fontSize": 14,
+            "color": "#69736b"
+          },
+          {
+            "id": "stat-money",
+            "kind": "panel",
+            "x": 244,
+            "y": 219,
+            "width": 164,
+            "height": 96,
+            "fill": "#ffffff55",
+            "borderWidth": 1,
+            "borderColor": "#cbbca3",
+            "radius": 3
+          },
+          {
+            "id": "label-money",
+            "kind": "text",
+            "x": 256,
+            "y": 229,
+            "width": 75,
+            "height": 28,
+            "text": "약값",
+            "fontSize": 18,
+            "color": "#233c3b"
+          },
+          {
+            "id": "value-money",
+            "kind": "text",
+            "x": 332,
+            "y": 224,
+            "width": 64,
+            "height": 40,
+            "text": "",
+            "fontSize": 28,
+            "color": "#233c3b",
+            "binding": "attribute-value",
+            "attributeId": "money",
+            "valueFormat": "{value}",
+            "align": "right"
+          },
+          {
+            "id": "hint-money",
+            "kind": "text",
+            "x": 256,
+            "y": 276,
+            "width": 145,
+            "height": 24,
+            "text": "남은 은전",
+            "fontSize": 14,
+            "color": "#69736b"
+          },
+          {
+            "id": "stat-stamina",
+            "kind": "panel",
+            "x": 424,
+            "y": 219,
+            "width": 164,
+            "height": 96,
+            "fill": "#ffffff55",
+            "borderWidth": 1,
+            "borderColor": "#cbbca3",
+            "radius": 3
+          },
+          {
+            "id": "label-stamina",
+            "kind": "text",
+            "x": 436,
+            "y": 229,
+            "width": 75,
+            "height": 28,
+            "text": "기력",
+            "fontSize": 18,
+            "color": "#233c3b"
+          },
+          {
+            "id": "value-stamina",
+            "kind": "text",
+            "x": 512,
+            "y": 224,
+            "width": 64,
+            "height": 40,
+            "text": "",
+            "fontSize": 28,
+            "color": "#233c3b",
+            "binding": "attribute-value",
+            "attributeId": "stamina",
+            "valueFormat": "{value}",
+            "align": "right"
+          },
+          {
+            "id": "hint-stamina",
+            "kind": "text",
+            "x": 436,
+            "y": 276,
+            "width": 145,
+            "height": 24,
+            "text": "무리하지 않기",
+            "fontSize": 14,
+            "color": "#69736b"
+          },
+          {
+            "id": "stat-stress",
+            "kind": "panel",
+            "x": 604,
+            "y": 219,
+            "width": 164,
+            "height": 96,
+            "fill": "#ffffff55",
+            "borderWidth": 1,
+            "borderColor": "#cbbca3",
+            "radius": 3
+          },
+          {
+            "id": "label-stress",
+            "kind": "text",
+            "x": 616,
+            "y": 229,
+            "width": 75,
+            "height": 28,
+            "text": "한독",
+            "fontSize": 18,
+            "color": "#233c3b"
+          },
+          {
+            "id": "value-stress",
+            "kind": "text",
+            "x": 692,
+            "y": 224,
+            "width": 64,
+            "height": 40,
+            "text": "",
+            "fontSize": 28,
+            "color": "#233c3b",
+            "binding": "attribute-value",
+            "attributeId": "stress",
+            "valueFormat": "{value}",
+            "align": "right"
+          },
+          {
+            "id": "hint-stress",
+            "kind": "text",
+            "x": 616,
+            "y": 276,
+            "width": 145,
+            "height": 24,
+            "text": "운기로 다스리기",
+            "fontSize": 14,
+            "color": "#69736b"
+          },
+          {
+            "id": "calendar",
+            "kind": "text",
+            "x": 64,
+            "y": 333,
+            "width": 550,
+            "height": 35,
+            "text": "",
+            "fontSize": 20,
+            "color": "#233c3b",
+            "binding": "calendar"
+          },
+          {
+            "id": "schedule",
+            "kind": "schedule",
+            "x": 56,
+            "y": 384,
+            "width": 728,
+            "height": 200,
+            "color": "#233c3b",
+            "fontSize": 20,
+            "scheduleLayout": "columns",
+            "visibleWhen": "planning",
+            "showActivityDescription": true
+          },
+          {
+            "id": "result",
+            "kind": "result",
+            "x": 64,
+            "y": 384,
+            "width": 710,
+            "height": 190,
+            "color": "#233c3b",
+            "fontSize": 22,
+            "visibleWhen": "result"
+          },
+          {
+            "id": "plan-help",
+            "kind": "text",
+            "x": 64,
+            "y": 579,
+            "width": 705,
+            "height": 26,
+            "text": "세 칸을 정한 뒤 진행하세요. 결과를 확인하며 다음 활동으로 넘어갑니다.",
+            "fontSize": 14,
+            "color": "#69736b"
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 64,
+            "y": 620,
+            "width": 350,
+            "height": 44,
+            "text": "다음 진행",
+            "action": "advance",
+            "fill": "#233c3b",
+            "color": "#eee4d2",
+            "fontSize": 21,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "hoverFill": "#45655e",
+            "pressedFill": "#172e2d",
+            "autoLabel": true
+          },
+          {
+            "id": "goal",
+            "kind": "text",
+            "x": 432,
+            "y": 630,
+            "width": 340,
+            "height": 28,
+            "text": "목표  내공 30 · 기력 20 · 노인의 신뢰 1",
+            "fontSize": 15,
+            "color": "#233c3b"
+          },
+          {
+            "id": "nameplate",
+            "kind": "panel",
+            "x": 904,
+            "y": 592,
+            "width": 295,
+            "height": 89,
+            "fill": "#10242be0",
+            "borderWidth": 1,
+            "borderColor": "#c5a16b"
+          },
+          {
+            "id": "name",
+            "kind": "text",
+            "x": 927,
+            "y": 606,
+            "width": 247,
+            "height": 35,
+            "text": "남궁설",
+            "fontSize": 28,
+            "color": "#eee4d2"
+          },
+          {
+            "id": "identity",
+            "kind": "text",
+            "x": 927,
+            "y": 651,
+            "width": 247,
+            "height": 25,
+            "text": "막내손자  ·  아직 끝나지 않은 겨울",
+            "fontSize": 14,
+            "color": "#c5a16b"
+          },
+          {
+            "id": "sound",
+            "kind": "button",
+            "action": "sound",
+            "text": "소리 켜기/끄기",
+            "x": 806,
+            "y": 28,
+            "width": 164,
+            "height": 42,
+            "fill": "#142f32d9",
+            "color": "#eee4d2",
+            "fontSize": 16,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b"
+          }
+        ]
+      },
+      {
+        "id": "story",
+        "label": "이야기 · 약방의 온기",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "asset",
+            "imageAssetId": "apothecary",
+            "fit": "cover"
+          },
+          {
+            "id": "veil",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#091d2670"
+          },
+          {
+            "id": "seol",
+            "kind": "plugin",
+            "x": 800,
+            "y": 88,
+            "width": 480,
+            "height": 632,
+            "extension": {
+              "plugin": "cutout-animation",
+              "type": "character",
+              "ref": "seol",
+              "props": {
+                "scale": 1.02
+              }
+            },
+            "locked": true
+          },
+          {
+            "id": "toolbar",
+            "kind": "component",
+            "x": 990,
+            "y": 28,
+            "width": 260,
+            "height": 42,
+            "componentId": "save-controls"
+          },
+          {
+            "id": "story-label",
+            "kind": "text",
+            "x": 44,
+            "y": 35,
+            "width": 600,
+            "height": 35,
+            "text": "겨울의 기록",
+            "fontSize": 22,
+            "color": "#c5a16b"
+          },
+          {
+            "id": "dialogue-paper",
+            "kind": "panel",
+            "x": 32,
+            "y": 428,
+            "width": 1216,
+            "height": 265,
+            "fill": "#10242bf2",
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "radius": 4
+          },
+          {
+            "id": "speaker",
+            "kind": "text",
+            "x": 64,
+            "y": 449,
+            "width": 900,
+            "height": 35,
+            "text": "",
+            "fontSize": 23,
+            "color": "#c5a16b",
+            "binding": "speaker"
+          },
+          {
+            "id": "dialogue",
+            "kind": "dialogue",
+            "x": 64,
+            "y": 494,
+            "width": 1148,
+            "height": 123,
+            "color": "#eee4d2",
+            "fontSize": 23
+          },
+          {
+            "id": "choices",
+            "kind": "choices",
+            "x": 48,
+            "y": 258,
+            "width": 650,
+            "height": 160,
+            "color": "#eee4d2",
+            "fontSize": 22,
+            "visibleWhen": "choice"
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 968,
+            "y": 634,
+            "width": 248,
+            "height": 42,
+            "text": "이야기 계속   →",
+            "action": "advance",
+            "fill": "#233c3b",
+            "color": "#eee4d2",
+            "fontSize": 21,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "hoverFill": "#45655e",
+            "pressedFill": "#172e2d"
+          },
+          {
+            "id": "story-hint",
+            "kind": "text",
+            "x": 64,
+            "y": 643,
+            "width": 820,
+            "height": 24,
+            "text": "기록은 언제든 남길 수 있습니다.  F5 저장 · F9 불러오기",
+            "fontSize": 15,
+            "color": "#a9b9b4"
+          },
+          {
+            "id": "sound",
+            "kind": "button",
+            "action": "sound",
+            "text": "소리 켜기/끄기",
+            "x": 806,
+            "y": 28,
+            "width": 164,
+            "height": 42,
+            "fill": "#142f32d9",
+            "color": "#eee4d2",
+            "fontSize": 16,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b"
+          }
+        ]
+      },
+      {
+        "id": "ending",
+        "label": "종장 · 겨울의 끝",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "imageSource": "asset",
+            "imageAssetId": "winter-courtyard",
+            "fit": "cover"
+          },
+          {
+            "id": "veil",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#091d2670"
+          },
+          {
+            "id": "seol",
+            "kind": "plugin",
+            "x": 790,
+            "y": 30,
+            "width": 490,
+            "height": 690,
+            "extension": {
+              "plugin": "cutout-animation",
+              "type": "character",
+              "ref": "seol",
+              "props": {
+                "scale": 1.02
+              }
+            },
+            "locked": true
+          },
+          {
+            "id": "ending-shade",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 775,
+            "height": 720,
+            "fill": "#10242bf0"
+          },
+          {
+            "id": "toolbar",
+            "kind": "component",
+            "x": 990,
+            "y": 28,
+            "width": 260,
+            "height": 42,
+            "componentId": "save-controls"
+          },
+          {
+            "id": "ending-kicker",
+            "kind": "text",
+            "x": 64,
+            "y": 110,
+            "width": 600,
+            "height": 35,
+            "text": "마지막 장",
+            "fontSize": 22,
+            "color": "#c5a16b"
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 64,
+            "y": 174,
+            "width": 650,
+            "height": 65,
+            "text": "잔설 아래 막내손자",
+            "fontSize": 38,
+            "color": "#eee4d2"
+          },
+          {
+            "id": "ending-rule",
+            "kind": "panel",
+            "x": 64,
+            "y": 257,
+            "width": 580,
+            "height": 16,
+            "fill": "#00000000",
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "opacity": 0.65
+          },
+          {
+            "id": "ending",
+            "kind": "text",
+            "x": 64,
+            "y": 310,
+            "width": 650,
+            "height": 150,
+            "text": "",
+            "fontSize": 42,
+            "color": "#eee4d2",
+            "binding": "ending"
+          },
+          {
+            "id": "ending-note",
+            "kind": "text",
+            "x": 64,
+            "y": 474,
+            "width": 620,
+            "height": 55,
+            "text": "남겨진 선택들이, 하나의 계절이 되었습니다.",
+            "fontSize": 23,
+            "color": "#a9b9b4"
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 64,
+            "y": 570,
+            "width": 340,
+            "height": 56,
+            "text": "다른 봄을 만나러",
+            "action": "start",
+            "fill": "#233c3b",
+            "color": "#eee4d2",
+            "fontSize": 21,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b",
+            "hoverFill": "#45655e",
+            "pressedFill": "#172e2d"
+          },
+          {
+            "id": "ending-footer",
+            "kind": "text",
+            "x": 64,
+            "y": 653,
+            "width": 630,
+            "height": 28,
+            "text": "끝까지 함께해 주셔서 감사합니다.",
+            "fontSize": 17,
+            "color": "#c5a16b"
+          },
+          {
+            "id": "sound",
+            "kind": "button",
+            "action": "sound",
+            "text": "소리 켜기/끄기",
+            "x": 806,
+            "y": 28,
+            "width": 164,
+            "height": 42,
+            "fill": "#142f32d9",
+            "color": "#eee4d2",
+            "fontSize": 16,
+            "radius": 3,
+            "borderWidth": 1,
+            "borderColor": "#c5a16b"
+          }
+        ]
+      }
+    ],
+    "defaultScene": {
+      "musicAssetId": "winter-motif"
+    }
+  }
+}

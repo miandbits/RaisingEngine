@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "ordinary",
+  "label": "이별 · 눈 속에 남은 이름",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": null,
+      "text": "마지막 눈이 내리던 밤, 설의 숨은 작은 새처럼 잦아들었다. 가문은 여전히 그를 실패한 막내라 불렀다. 그러나 약방의 노인은 묘비에 남궁설이라는 이름을 또박또박 새겼다. 쓸모없는 목숨은 없었다. 이 아이가 살고자 했다는 사실만은 봄에도 지워지지 않았다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  }
+}

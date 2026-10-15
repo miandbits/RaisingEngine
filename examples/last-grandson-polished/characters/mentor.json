@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../packages/schema/character.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "mentor",
+  "name": "약방의 진 노인",
+  "portraits": {},
+  "relationships": [
+    {
+      "id": "trust",
+      "initial": 0,
+      "label": "신뢰",
+      "max": 100,
+      "min": 0
+    }
+  ]
+}

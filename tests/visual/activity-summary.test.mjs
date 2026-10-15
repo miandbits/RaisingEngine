@@ -31,6 +31,16 @@ test('activity details use current values, escape formats, wrap, and hide only z
   await page.evaluate(()=>window.update({view:{activities:[{id:'study',label:'Study',previewAttributes:Array.from({length:8},(_,i)=>({attributeId:'fee',label:'정보'+i,valueFormat:'긴정보'.repeat(24)+'{value}'}))},{id:'rest',label:'Rest'}]}}));
   await page.waitForFunction(()=>document.querySelector('.activity-preview')?.textContent.includes('정보7'));
   assert.equal(await page.locator('.activity-preview').first().evaluate(e=>e.scrollWidth<=e.clientWidth),true);
+  // Descriptions are opt-in, escaped text and update with the selected activity.
+  await page.evaluate(()=>window.update({view:{activities:[{id:'study',label:'Study',description:'<b>집중 수련</b> · 기력 -5'},{id:'rest',label:'Rest',description:'기력 +25'}]}}));
+  assert.equal(await page.locator('.activity-description').count(),0);
+  await page.evaluate(()=>window.update({design:{width:720,height:500,screens:[{id:'home',label:'home',elements:[{id:'schedule',kind:'schedule',x:10,y:10,width:700,height:300,showActivityDescription:true}]}]}}));
+  await page.locator('.activity-description').first().waitFor();
+  assert.equal(await page.locator('.activity-description').first().textContent(),'<b>집중 수련</b> · 기력 -5');
+  assert.equal(await page.locator('.activity-description b').count(),0);
+  await page.evaluate(()=>window.update({plan:['rest','study','rest']}));
+  await page.waitForFunction(()=>document.querySelector('.activity-description')?.textContent==='기력 +25');
+  await page.evaluate(()=>window.update({design:{width:720,height:500,screens:['home','schedule'].map(id=>({id,label:id,elements:[{id:'result',kind:'result',x:10,y:320,width:700,height:160,visibleWhen:'result'}]}))}}));
   const changes=[{kind:'numeric',target:{kind:'attribute',attributeId:'tier'},before:3,after:3,delta:0},{kind:'numeric',target:{kind:'attribute',attributeId:'fee'},before:11,after:9,delta:-2}];
   await page.evaluate(({state,changes})=>window.update({view:{state:{...state,phase:'activity-result',lastActivityResult:{activityId:'study',success:null,changes}}}}),{state,changes});
   await page.locator('[data-element-id="result"]').waitFor();assert.equal(await page.locator('[data-element-id="result"]').textContent(),'Study 완료\nFee -2');

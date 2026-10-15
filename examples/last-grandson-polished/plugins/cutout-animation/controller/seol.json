@@ -1,0 +1,62 @@
+{
+  "formatVersion": "0.1.0",
+  "plugin": "cutout-animation",
+  "type": "controller",
+  "id": "seol",
+  "data": {
+    "schemaVersion": 1,
+    "rig": "seol",
+    "characterId": "apprentice",
+    "defaultClip": "idle",
+    "layers": [],
+    "bindings": [
+      {
+        "id": "training",
+        "signal": "activityResult",
+        "match": {
+          "activityId": "study"
+        },
+        "clip": "resolve",
+        "track": 0,
+        "then": "default",
+        "expression": "neutral"
+      },
+      {
+        "id": "errand",
+        "signal": "activityResult",
+        "match": {
+          "activityId": "work"
+        },
+        "clip": "weary",
+        "track": 0,
+        "then": "default",
+        "expression": "neutral"
+      },
+      {
+        "id": "meditation",
+        "signal": "activityResult",
+        "match": {
+          "activityId": "rest"
+        },
+        "clip": "meditate",
+        "expression": "rest",
+        "track": 0,
+        "loop": true
+      },
+      {
+        "id": "new-month",
+        "signal": "phaseChanged",
+        "match": {
+          "phase": "planning"
+        },
+        "expression": "neutral"
+      },
+      {
+        "id": "story-neutral",
+        "signal": "dialogueLine",
+        "expression": "neutral"
+      }
+    ],
+    "defaultExpression": "neutral"
+  }
+}

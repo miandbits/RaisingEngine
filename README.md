@@ -52,6 +52,8 @@ Both the Qt builder and launcher honor `QT_STUDIO_OUT`. Use a separate output di
 
 The `examples/starlight-three-months` pilot exercises more systems. Public sample candidates are separated from the ignored `projects/` user workspace and contain no known extracted reference-game assets. Engine licensing and generated-asset/dependency notice review remain pending. See [sample separation](docs/public-sample-separation.md). Development launchers may point to historical local build outputs; the npm commands above are the primary entry point.
 
+For a short visual presentation sample, see [Last Grandson — winter short](examples/last-grandson-polished/README.md). It uses original generated artwork and the cutout-animation 1.13.0 plugin for portrait motion and expressions. The plugin must be built/installed separately; see its [review and verification record](docs/short-game-polish.md).
+
 ## Verify
 
 ```powershell

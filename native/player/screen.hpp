@@ -665,6 +665,7 @@ public:
         out+="</select><span class=\"dropdown-marker\">▼</span>";
         std::string selected_summary;for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])selected_summary=activity_preview(a);
         out+="<div id=\"plan-summary-"+std::to_string(i)+"\" class=\"activity-preview\" style=\"font-size:16px;max-height:120px;overflow:auto;white-space:normal;word-break:break-all;\">"+escape(selected_summary)+"</div>";
+        if(e.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])out+="<div id=\"plan-description-"+std::to_string(i)+"\" style=\"font-size:17px;line-height:25px;max-height:125px;overflow:auto;white-space:normal;word-break:break-all;padding-top:10px;\">"+escape(a.value("description",""))+"</div>";
         out+="</div>";
       }
     }

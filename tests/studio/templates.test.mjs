@@ -51,6 +51,19 @@ test('content reuse copies authored data and assets but excludes saves, analysis
   assert.deepEqual(await readFile(join(target,'project.json')),before);
 });
 
+test('content reuse preserves plugin lock, rig and controller together with referenced artwork', async () => {
+  await mkdir('.cache/studio-template-tests', { recursive: true });
+  const target = await mkdtemp(resolve('.cache/studio-template-tests/plugin-'));
+  const source = resolve('examples/last-grandson-polished');
+  await createProjectFromSource(source, target);
+  for (const file of ['plugins/lock.json', 'plugins/cutout-animation/rig/seol.json', 'plugins/cutout-animation/controller/seol.json', 'assets/art/seol-neutral.png']) {
+    assert.deepEqual(await readFile(join(target, file)), await readFile(join(source, file)));
+  }
+  const copied = await buildSnapshot(await loadProject(target));
+  assert.ok(copied.ok, JSON.stringify(copied));
+  await assert.rejects(access(join(target, '.studio')), { code: 'ENOENT' });
+});
+
 test('template creation refuses a source descendant before making directories', async () => {
   await mkdir('.cache/studio-template-tests', { recursive: true });
   const samples = await mkdtemp(resolve('.cache/studio-template-tests/nested-'));

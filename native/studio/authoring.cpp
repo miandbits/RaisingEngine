@@ -50,6 +50,10 @@ void StudioWindow::editWidgetSettings() {
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));
+  auto activityDescription = new QCheckBox(tr("일정 칸 아래에 선택한 활동 설명 표시"));
+  activityDescription->setObjectName("showActivityDescription");
+  activityDescription->setChecked(value.value("showActivityDescription").toBool());
+  if(kind=="schedule")form->addRow(activityDescription);else activityDescription->hide();
   autoLabel->setChecked(value.value("autoLabel").toBool(true)); if(kind=="button")form->addRow(autoLabel); else autoLabel->hide();
   auto groups = value.value("scheduleGroups").toArray();
   auto table = new QTableWidget(groups.size(),2);table->setHorizontalHeaderLabels({tr("분류 ID"),tr("표시 이름")});table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -64,7 +68,7 @@ void StudioWindow::editWidgetSettings() {
   }
   const auto selectionField=kind=="actions"?QString("actionIds"):QString("attributeIds");
   if(kind=="actions")entries=projectData().value("gameplay").toObject().value("actions").toArray();
-  for(auto v:entries){auto a=v.toObject();auto item=new QListWidgetItem(a.value("label").toString(a.value("name").toString())+" · "+a["id"].toString(),list);item->setData(Qt::UserRole,a["id"].toString());item->setCheckState(value[selectionField].toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);}
+  for(auto v:entries){auto a=v.toObject();auto item=new QListWidgetItem(a.value("label").toString(a.value("name").toString())+" · "+a["id"].toString(),list);item->setData(Qt::UserRole,a["id"].toString());item->setCheckState(value.value(selectionField).toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);}
   int selected=-1;
   auto storeGroup=[&]{if(selected<0||selected>=groups.size())return;QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());auto g=groups[selected].toObject();g["activityIds"]=ids;groups[selected]=g;};
   connect(table,&QTableWidget::currentCellChanged,&dialog,[&](int row,int,int,int){storeGroup();selected=row;auto ids=row>=0&&row<groups.size()?groups[row].toObject()["activityIds"].toArray():QJsonArray();for(int i=0;i<list->count();i++)list->item(i)->setCheckState(ids.contains(list->item(i)->data(Qt::UserRole).toString())?Qt::Checked:Qt::Unchecked);});
@@ -80,6 +84,7 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="schedule") {for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();g["id"]=table->item(i,0)->text().trimmed();g["label"]=table->item(i,1)->text();groups[i]=g;}value["scheduleGroups"]=groups;}
   if(kind=="stats"||kind=="actions"){QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove(selectionField);else value[selectionField]=ids;}
   if(kind=="button")value["autoLabel"]=autoLabel->isChecked();
+  if(kind=="schedule"){if(activityDescription->isChecked())value["showActivityDescription"]=true;else value.remove("showActivityDescription");}
   auto project=projectData();auto visual=project["visual"].toObject();auto screens=visual["screens"].toArray();
   for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s["id"]!=screenId)continue;auto elements=s["elements"].toArray();for(int j=0;j<elements.size();j++)if(elements[j].toObject()["id"]==selection)elements[j]=value;s["elements"]=elements;screens[i]=s;}
   visual["screens"]=screens;visual["widgetTheme"]=appearance->currentData().toString();visual["confirmPurchases"]=confirm->isChecked();project["visual"]=visual;replaceProject(project);

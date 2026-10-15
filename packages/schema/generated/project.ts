@@ -2829,6 +2829,10 @@ export type Element = {
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
+  /**
+   * Show the selected activity's authored description below each schedule column. Off by default.
+   */
+  showActivityDescription?: boolean;
   scheduleLayout?: "columns" | "calendar" | "menu";
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";

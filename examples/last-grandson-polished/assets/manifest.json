@@ -1,0 +1,30 @@
+{
+  "formatVersion": "0.1.0",
+  "assets": [
+    {
+      "id": "winter-courtyard",
+      "kind": "image",
+      "path": "assets/art/winter-courtyard.png"
+    },
+    {
+      "id": "seol-neutral",
+      "kind": "image",
+      "path": "assets/art/seol-neutral.png"
+    },
+    {
+      "id": "seol-rest",
+      "kind": "image",
+      "path": "assets/art/seol-rest.png"
+    },
+    {
+      "id": "apothecary",
+      "kind": "image",
+      "path": "assets/art/apothecary.png"
+    },
+    {
+      "id": "winter-motif",
+      "kind": "audio",
+      "path": "assets/winter-motif.wav"
+    }
+  ]
+}

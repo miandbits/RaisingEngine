@@ -42,6 +42,7 @@ private slots:
   void timeSessionAuthoringRoundtrip();
   void unifiedTimeAuthoring();
   void unifiedTimePlay();
+  void shortPolishAuthoring();
   void authoringWorkspaceRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();
@@ -967,5 +968,6 @@ private slots:
 #include "project-manager-test.inc"
 #include "designer-pilot-test.inc"
 #include "unified-time-test.inc"
+#include "short-polish-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"

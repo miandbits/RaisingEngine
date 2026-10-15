@@ -1,0 +1,74 @@
+{
+  "$schema": "../../../packages/schema/event.schema.json",
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "final-exam",
+  "label": "마지막 밤의 문턱",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "certify",
+      "speakerId": "mentor",
+      "text": "눈발이 처마를 때리는 마지막 밤. 설은 기어이 약방 문을 밀었다. 진 노인은 떨리는 손목을 붙잡았다. '내가 열 수 있는 것은 문뿐이다. 그 너머로 걸어가는 힘은 네가 길렀구나.' 막힌 혈맥 속에서 작은 온기가 움직였다.",
+      "type": "dialogue"
+    },
+    {
+      "effects": [
+        {
+          "flagId": "certified",
+          "op": "setFlag",
+          "value": true
+        },
+        {
+          "op": "add",
+          "target": {
+            "attributeId": "skill",
+            "kind": "attribute"
+          },
+          "value": {
+            "op": "literal",
+            "value": 5
+          }
+        }
+      ],
+      "id": "certify",
+      "next": "end",
+      "type": "effect"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 80,
+  "requirements": {
+    "conditions": [
+      {
+        "equals": true,
+        "flagId": "registered",
+        "op": "flag"
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "attributeId": "skill",
+            "kind": "attribute"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 20
+        }
+      }
+    ],
+    "op": "all"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 5,
+    "throughPeriod": 5
+  }
+}

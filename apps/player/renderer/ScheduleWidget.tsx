@@ -4,7 +4,7 @@ import type {Element} from '../../../packages/visual/model.js';
 import {activityPreview} from '../../../packages/visual/activity-summary.js';
 
 export interface ScheduleActivity {
-  id:string; label:string; iconAssetId?:string;
+  id:string; label:string; iconAssetId?:string; description?:string;
   costs?:readonly {attributeId:string;amount:number}[];
   previewAttributes?:readonly {attributeId:string;label?:string;valueFormat?:string}[];
 }
@@ -85,6 +85,6 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
     const activity=context.activities.find(a=>a.id===context.plan[index]);const summary=activity?activityPreview(activity,context.stats):'';
     return <label key={period}>{period}<select aria-label={`${period} 활동`} value={context.plan[index]??''} disabled={!editable||index<context.period} onChange={event=>chooseActivity(event.target.value,index)}>
       {context.activities.map(value=><option key={value.id} value={value.id}>{value.label}{value.previewAttributes?.length?` · ${activityPreview(value,context.stats)}`:''}</option>)}
-    </select>{summary&&<small className="activity-preview">{summary}</small>}</label>;
+    </select>{summary&&<small className="activity-preview">{summary}</small>}{element.showActivityDescription&&activity?.description&&<small className="activity-preview activity-description">{activity.description}</small>}</label>;
   })}</div>;
 }

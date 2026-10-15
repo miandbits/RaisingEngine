@@ -1,0 +1,361 @@
+{
+  "formatVersion": "0.1.0",
+  "plugin": "cutout-animation",
+  "type": "rig",
+  "id": "seol",
+  "data": {
+    "schemaVersion": 1,
+    "name": "남궁설 · 겨울의 숨",
+    "canvas": {
+      "width": 1024,
+      "height": 1536,
+      "originX": 0,
+      "originY": 0
+    },
+    "bones": [
+      {
+        "id": "root",
+        "parent": null
+      },
+      {
+        "id": "breath",
+        "parent": "root",
+        "x": 512,
+        "y": 1536
+      }
+    ],
+    "slots": [
+      {
+        "id": "portrait",
+        "bone": "breath",
+        "attachment": "neutral"
+      }
+    ],
+    "attachments": [
+      {
+        "slot": "portrait",
+        "name": "neutral",
+        "imageAssetId": "seol-neutral",
+        "width": 1024,
+        "height": 1536,
+        "pivotX": 0.5,
+        "pivotY": 1
+      },
+      {
+        "slot": "portrait",
+        "name": "rest",
+        "imageAssetId": "seol-rest",
+        "width": 1024,
+        "height": 1536,
+        "pivotX": 0.5,
+        "pivotY": 1
+      }
+    ],
+    "clips": [
+      {
+        "id": "idle",
+        "name": "겨울의 숨",
+        "durationMs": 4000,
+        "loop": true,
+        "tracks": [
+          {
+            "target": "bone:breath",
+            "property": "scaleY",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 2000,
+                "value": 1.006,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 4000,
+                "value": 1,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "target": "bone:breath",
+            "property": "rotation",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": -0.12,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 2000,
+                "value": 0.12,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 4000,
+                "value": -0.12,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "resolve",
+        "name": "수련의 결의",
+        "durationMs": 1400,
+        "loop": false,
+        "tracks": [
+          {
+            "target": "bone:breath",
+            "property": "y",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1536,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 700,
+                "value": 1527,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 1400,
+                "value": 1536,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "target": "bone:breath",
+            "property": "rotation",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 700,
+                "value": -0.65,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 1400,
+                "value": 0,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "weary",
+        "name": "무거운 발걸음",
+        "durationMs": 1600,
+        "loop": false,
+        "tracks": [
+          {
+            "target": "bone:breath",
+            "property": "rotation",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 0,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 800,
+                "value": 0.8,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 1600,
+                "value": 0,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "target": "bone:breath",
+            "property": "scaleY",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 800,
+                "value": 0.992,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              },
+              {
+                "timeMs": 1600,
+                "value": 1,
+                "interp": "bezier",
+                "curve": [
+                  0.42,
+                  0,
+                  0.58,
+                  1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "meditate",
+        "name": "운기조식",
+        "durationMs": 4800,
+        "loop": true,
+        "tracks": [
+          {
+            "target": "bone:breath",
+            "property": "scaleY",
+            "keys": [
+              {
+                "timeMs": 0,
+                "value": 1
+              },
+              {
+                "timeMs": 2400,
+                "value": 1.009
+              },
+              {
+                "timeMs": 4800,
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "mix": {
+      "defaultMs": 250,
+      "pairs": []
+    },
+    "expressions": [
+      {
+        "id": "neutral",
+        "name": "겨울의 결의",
+        "slots": {
+          "portrait": "neutral"
+        }
+      },
+      {
+        "id": "rest",
+        "name": "숨을 고르다",
+        "slots": {
+          "portrait": "rest"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "certified",
+  "label": "생존 · 봄을 훔친 아이",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": null,
+      "text": "자정을 넘겨도 숨이 끊어지지 않았다. 설은 자신을 버린 가문의 문패를 돌아보지 않았다. 찬밥과 멸시 속에서도 지킨 의지, 스스로 번 약값, 단 한 사람과 맺은 약속이 봄을 데려왔다. 강호에서 가장 약했던 막내의 이야기는 이제 시작이었다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 80,
+  "requirements": {
+    "conditions": [
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "attributeId": "skill",
+            "kind": "attribute"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 30
+        }
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "attributeId": "stamina",
+            "kind": "attribute"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 20
+        }
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "characterId": "mentor",
+            "kind": "relationship",
+            "relationshipId": "trust"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 1
+        }
+      }
+    ],
+    "op": "all"
+  }
+}
