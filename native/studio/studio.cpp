@@ -1,3 +1,4 @@
+#include "save-migration.hpp"
 #include "studio.hpp"
 #include "project-manager.hpp"
 #include "hierarchy-tree.hpp"
@@ -135,6 +136,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                                QKeySequence::Save);
   saveAction->setObjectName("saveProject");
   file->addAction(tr("게임 내보내기…"), this, &StudioWindow::exportGameDialog)->setObjectName("exportGame");
+  file->addAction(tr("콘텐츠 업데이트 · 저장 이전 / 복구…"),this,[this]{showSaveMigration(engineRoot,view.value("root").toString(),this);})->setObjectName("saveMigration");
   auto edit = menuBar()->addMenu(tr("편집"));
   undoAction = edit->addAction(
       tr("되돌리기"), this,

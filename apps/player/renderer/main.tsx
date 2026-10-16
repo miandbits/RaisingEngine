@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { PlayerAction, PlayerBridge, PlayerReply, PlayerView, Version } from '../../../packages/player-service/controller.js';
 import './style.css';
+import './player-quality.css';
+import { PlayerSettings, readPreferences, preferencesKey } from './PlayerSettings.js';
 import { VisualPlayer } from './VisualPlayer.js';
 import {TimelineOverlay} from './TimelineOverlay.js';
 import { activityPreview } from '../../../packages/visual/activity-summary.js';
@@ -18,6 +20,19 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [plan, setPlan] = useState<string[]>(['', '', '']);
   const [muted, setMuted] = useState(true);
+  const [preferences, setPreferences] = useState(readPreferences);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hidden, setHidden] = useState(document.hidden);
+  useEffect(() => {
+    const changed = () => setHidden(document.hidden);
+    document.addEventListener('visibilitychange', changed);
+    return () => document.removeEventListener('visibilitychange', changed);
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem(preferencesKey, JSON.stringify(preferences)); } catch { /* Storage may be disabled; session settings still work. */ }
+    document.documentElement.dataset.playerReducedMotion = String(preferences.reducedMotion);
+    document.documentElement.dataset.playerHighContrast = String(preferences.highContrast);
+  }, [preferences]);
   const music = useRef<HTMLAudioElement | null>(null);
   const sounds = useRef<HTMLAudioElement[]>([]);
   const state = view?.state;
@@ -27,8 +42,9 @@ export function Player({ preview = false }: { preview?: boolean }) {
 
   function accept(reply: PlayerReply) {
     setView(reply.view); setError(reply.error); setNotice(reply.notice);
-    if (!muted && reply.view) for (const id of reply.soundCues) {
+    if (!muted && !document.hidden && reply.view) for (const id of reply.soundCues) {
       const audio = new Audio(assetUrl(id, reply.view.generation));
+      audio.dataset.baseVolume ??= "1"; audio.volume = Number(audio.dataset.baseVolume) * preferences.effects;
       sounds.current.push(audio);
       audio.onended = () => { sounds.current = sounds.current.filter(x => x !== audio); };
       audio.play().catch(() => setNotice('소리를 재생하지 못했습니다. 에셋 파일을 확인해 주세요.'));
@@ -57,31 +73,42 @@ export function Player({ preview = false }: { preview?: boolean }) {
     const host = window.raisingExtensions, generation = view?.generation;
     if (!host || muted || generation === undefined) return;
     host.setSoundListener(sound => {
-      const audio = new Audio(assetUrl(sound.asset, generation)); audio.volume = sound.volume;
+      if (document.hidden) return;
+      const audio = new Audio(assetUrl(sound.asset, generation)); audio.dataset.baseVolume = String(sound.volume); audio.volume = sound.volume * preferences.effects;
       if (sound.balance !== 0 && typeof AudioContext !== 'undefined') {
         // Stereo balance through Web Audio; without it the sound still plays centred.
         try { eventAudio ??= new AudioContext(); const pan = eventAudio.createStereoPanner(); pan.pan.value = sound.balance; eventAudio.createMediaElementSource(audio).connect(pan).connect(eventAudio.destination); } catch { /* centred */ }
       }
+      audio.dataset.baseVolume ??= "1"; audio.volume = Number(audio.dataset.baseVolume) * preferences.effects;
       sounds.current.push(audio);
       audio.onended = () => { sounds.current = sounds.current.filter(x => x !== audio); };
       audio.play().catch(() => {});
     });
     return () => host.setSoundListener(null);
-  }, [view?.generation, muted]);
+  }, [view?.generation, muted, preferences.effects]);
   useEffect(() => {
     music.current?.pause(); music.current = null;
     const id = state?.presentation.musicAssetId;
     if (!muted && id && view) {
-      const audio = new Audio(assetUrl(id, view.generation)); audio.loop = true; audio.volume = 0.4;
+      const audio = new Audio(assetUrl(id, view.generation)); audio.loop = true; audio.volume = preferences.music;
       music.current = audio;
-      audio.play().catch(() => setNotice('배경음을 재생하지 못했습니다. 에셋 파일을 확인해 주세요.'));
+      if (!document.hidden) audio.play().catch(() => setNotice('배경음을 재생하지 못했습니다. 에셋 파일을 확인해 주세요.'));
     }
     return () => { music.current?.pause(); };
   }, [state?.presentation.musicAssetId, view?.generation, muted]);
 
-  const act = (action: PlayerAction) => { if (version) void request(() => window.player.act(action, version)); };
+  useEffect(() => {
+    if (music.current) music.current.volume = preferences.music;
+    sounds.current.forEach(audio => { audio.volume = Number(audio.dataset.baseVolume ?? 1) * preferences.effects; });
+  }, [preferences.music, preferences.effects]);
+  useEffect(() => {
+    if (hidden) { music.current?.pause(); sounds.current.forEach(audio => audio.pause()); sounds.current = []; }
+    else if (!muted) void music.current?.play().catch(() => {});
+  }, [hidden, muted]);
+
+  const act = (action: PlayerAction) => { if ((document.hidden || settingsOpen) && (action.type === 'scheduleStep' || action.type === 'timelineTick')) return; if (version) void request(() => window.player.act(action, version)); };
   const autoStep=scheduleStep(state??null,view?.schedulePlayback,view?.timeline);
-  useEffect(()=>{if(busy||error||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error]);
+  useEffect(()=>{if(settingsOpen||hidden||busy||error||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error,hidden,settingsOpen]);
   const canPlan = state?.phase === 'planning' || state?.phase === 'ready';
   const dirty = !state?.schedule || plan.some((id, index) => id !== state.schedule?.[index]);
   const attributeLabel = (id: string) => view?.attributes.find(x => x.id === id)?.label ?? id;
@@ -91,8 +118,9 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const result = state?.lastActivityResult;
   const node = view?.narrative?.node;
 
-  if (view?.visual) return <>{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}<VisualPlayer view={view} design={view.visual} busy={busy} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></>;
-  return <div className="app-shell">
+  const settings = <PlayerSettings value={preferences} onChange={setPreferences} locale={view?.locale} onOpenChange={setSettingsOpen} muted={muted} onMuted={setMuted}/>;
+  if (view?.visual) return <>{settings}{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}<VisualPlayer view={view} design={view.visual} busy={busy} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></>;
+  return <div className="app-shell">{settings}
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">✦</span><div><strong>육성 일지</strong><span>RAISING PLAYER</span></div></div>
       <nav aria-label="게임 메뉴">
@@ -112,7 +140,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
       <p className="intro">{view?.description || '일정을 계획하고, 만남을 이어가며 나만의 이야기를 완성하세요.'}</p>
       {view && <div className="welcome-meta"><span>{view.durationMonths}개월의 여정</span><span>{view.activities.length}가지 활동</span><span>선택에 따라 달라지는 결말</span></div>}
       <button className="primary large" disabled={busy || !view} onClick={() => void request(() => window.player.newRun(version))}>새 게임 시작 <span aria-hidden="true">→</span></button>
-      <p className="muted small">한 달은 상순 · 중순 · 하순, 세 번의 일정으로 흘러갑니다.</p>
+      <p className="muted small">한 달은 {periods.join(" · ")}, {count}번의 일정으로 흘러갑니다.</p>
     </main> : <main className="game-layout">
       <aside className="sidebar">
         <p className="eyebrow">성장의 기록</p><h1>{view!.title}</h1>

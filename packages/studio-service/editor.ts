@@ -85,12 +85,19 @@ export class StudioEditor {
     const disk = await loadProject(this.root);
     if (disk.diagnostics.some(d => d.severity === 'error')) throw Object.assign(new Error('외부 파일을 읽을 수 없습니다. 다시 불러온 뒤 확인해 주세요.'), { code: 'PROJECT_READ_ERROR' });
     const actual = new Map<string, string>();
-    for (const doc of disk.documents) {
-      const bytes = await readFile(await safeFile(this.root, doc.file));
-      if (fileHash(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) !== doc.version)
-        throw Object.assign(new Error(`읽는 동안 변경되었습니다: ${doc.file}`), { code: 'PROJECT_BUSY' });
-      actual.set(doc.file, fileHash(bytes));
-    }
+    // Keep both byte/version checks, but bound independent filesystem reads to eight.
+    // Drain every worker before returning an error; no verification outlives this save.
+    let nextDocument = 0;
+    const checked = await Promise.allSettled(Array.from({length: Math.min(8, disk.documents.length)}, async () => {
+      while (nextDocument < disk.documents.length) {
+        const doc = disk.documents[nextDocument++]!;
+        const bytes = await readFile(await safeFile(this.root!, doc.file));
+        if (fileHash(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) !== doc.version)
+          throw Object.assign(new Error(`읽는 동안 변경되었습니다: ${doc.file}`), { code: 'PROJECT_BUSY' });
+        actual.set(doc.file, fileHash(bytes));
+      }
+    }));
+    for (const result of checked) if (result.status === 'rejected') throw result.reason;
     await checkLock();
     const files = [...new Set([...this.baseline.keys(), ...actual.keys()])].filter(file => this.baseline.get(file) !== actual.get(file));
     if (files.length) throw new ProjectConflict(this.diskVersion(), projectVersion(this.root, actual), files);
@@ -285,9 +292,10 @@ export class StudioEditor {
     // Structural errors cannot be written. Semantic errors are allowed in an explicit draft save.
     if (candidate.diagnostics.some(d => d.severity === 'error') || validation.structuredDocuments.length !== this.documents.length) throw new Error('구조 오류를 먼저 수정해 주세요. 의미 오류가 있는 초안은 저장할 수 있습니다.');
     await this.assertDiskUnchanged();
-    const all = new Set([...this.baseline.keys(), ...this.documents.map(d => d.file)]);
+    const documentsByFile = new Map(this.documents.map(d => [d.file, d]));
+    const all = new Set([...this.baseline.keys(), ...documentsByFile.keys()]);
     const changes = [...all].flatMap(file => {
-      const doc = this.documents.find(d => d.file === file);
+      const doc = documentsByFile.get(file);
       const text = doc ? serialize(doc.data) : null;
       const expected = this.baseline.get(file) ?? null;
       if (text !== null && this.originalDocuments.get(file) === text) return [];

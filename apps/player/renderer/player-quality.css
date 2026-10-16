@@ -1,0 +1,12 @@
+.player-quality { position: fixed; right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); z-index: 90; }
+.player-quality button, .player-quality input { min-height: 44px; }
+.player-quality dialog { color: #f8fafc; background: #182033; border: 2px solid #94a3b8; border-radius: 12px; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px; }
+.player-quality dialog::backdrop { background: #000a; }
+.player-quality label { display: flex; align-items: center; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+.player-quality input[type=range] { flex: 1; min-width: 120px; }
+.player-quality input[type=checkbox] { width: 24px; }
+.player-quality p { line-height: 1.5; }
+button:focus-visible, select:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 3px solid #ffdd75 !important; outline-offset: 3px; }
+html[data-player-reduced-motion=true] *, html[data-player-reduced-motion=true] *::before, html[data-player-reduced-motion=true] *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+html[data-player-high-contrast=true] button, html[data-player-high-contrast=true] select, html[data-player-high-contrast=true] input { color: #fff !important; background: #111 !important; border: 2px solid #fff !important; }
+html[data-player-high-contrast=true] button:disabled { color: #aaa !important; border-style: dashed !important; }

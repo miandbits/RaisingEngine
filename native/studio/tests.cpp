@@ -47,6 +47,8 @@ private slots:
   void galleryMediaAuthoring();
   void galleryUiAuthoring();
   void galleryBranchesAuthoring();
+  void saveMigrationReview();
+  void durabilityLargeProject();
   void replayUiAuthoring();
   void authoringWorkspaceRoundtrip();
   void uiCompositionAuthoringRoundtrip();
@@ -977,6 +979,7 @@ private slots:
 #include "gallery-test.inc"
 #include "gallery-ui-test.inc"
 #include "gallery-branches-test.inc"
+#include "save-migration-test.inc"
 #include "replay-ui-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"

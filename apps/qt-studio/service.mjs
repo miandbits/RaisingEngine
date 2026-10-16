@@ -1,3 +1,4 @@
+import { saveMigration } from './save-migration.mjs';
 import {GoalCiReports} from './goal-ci.mjs';
 import {GitHubGoalReports} from './goal-github.mjs';
 import {runGoalRegression} from './goal-regression.mjs';
@@ -45,7 +46,7 @@ export class QtStudioService {
   goalGitHub = new GitHubGoalReports();
   /** shareViews: replies are serialized right away (the stdio protocol below), so the draft's
    *  documents are not cloned into each reply (in-process callers keep their own copies). */
-  constructor({ runtimes = { web: path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore, shareViews = false } = {}) {
+  constructor({ runtimes = { web: process.env.RAISING_WEB_PLAYER_RUNTIME || path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore, shareViews = false } = {}) {
     this.runtimes = runtimes;
     this.shareViews = shareViews;
     this.pluginStore = pluginStorePath(pluginStore);
@@ -68,6 +69,7 @@ export class QtStudioService {
   }
   async handle(request) {
     const { method, params = {} } = request;
+    if (method === 'saveMigrationPreview' || method === 'saveMigrationPublish') return saveMigration(method, params);
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
     if(method==='goalSearchStatus'||method==='goalSearchStop')return {error:null,goalSearch:method==='goalSearchStop'?this.goalSearchJobs.cancel(params.root,params.jobId):this.goalSearchJobs.public(this.goalSearchJobs.get(params.root,params.jobId))};
     if(['analysisList','analysisStatus','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
