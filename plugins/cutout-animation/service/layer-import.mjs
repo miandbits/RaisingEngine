@@ -22,11 +22,13 @@
 //   * hit areas and anchors (plugin 1.17.0): a `[box]` layer becomes a bounding box (slot
 //     `<name>-box`, attachment `<name>`) outlining its pixels instead of a picture, a `[point]`
 //     layer a point (slot `<name>-point`) at the centre of its pixels; neither moves bone centres.
+//   * clipping onto a group (plugin 1.19.1): layers clipped to a group that stays bones / slots are
+//     painted into the group's pictures, hidden variants included (compose.mjs paintClippedGroup).
 import { createHash } from 'node:crypto';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { decodePng, encodePng } from './atlas.mjs';
-import { BAKED_BLENDS, Surface } from './compose.mjs';
+import { BAKED_BLENDS, paintClippedGroup, Surface } from './compose.mjs';
 import { BLEND_NAMES, MAX_PIXELS, MAX_PSD_EDGE, PsdError, readPsd, resampleRgba, scaledRect } from './psd.mjs';
 
 const MAX_FILE_BYTES = 512 * 1024 * 1024, MAX_FOLDER_FILES = 1024;
@@ -350,7 +352,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
   };
 
   // Pass 1: the report tree + groups (future bones) + pictures, in document order (back → front).
-  const groups = [], pictures = [], markers = [], marks = [];
+  const groups = [], pictures = [], markers = [], marks = [], groupClips = [];
   const tally = { masks: [], effects: [], empty: 0, emptyGroups: 0, baked: 0, merged: 0, unbaked: new Map() };
   let order = 0;
   const keyOf = (prefix, index) => prefix ? `${prefix}.${index}` : String(index);
@@ -419,6 +421,23 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     });
     return surface.picture();
   };
+  /**
+   * Layers clipped to a group that stays bones / slots → painted into its pictures (1.19.1). The
+   * stack is what the group shows: per slot the topmost picture visible inside the group. Every
+   * other picture of the group (hidden variants, a covered second visible layer of a slot) is
+   * painted as if it were shown in place of its slot's shown picture (so swapping `eyes/closed`
+   * in keeps the shading), or at its own draw position when its slot shows nothing in the group.
+   */
+  const bakeIntoGroup = ({ clips, members }) => {
+    const shown = new Map();
+    for (const m of members) if (m.visible) shown.set(m.pic.slot, m);  // back → front: the last wins
+    const stack = members.filter(m => shown.get(m.pic.slot) === m);
+    const layers = stack.map(m => ({ picture: m.pic.picture, opacity: m.opacity }));
+    const variants = members.filter(m => shown.get(m.pic.slot) !== m).map(m => ({ picture: m.pic.picture,
+      replace: shown.has(m.pic.slot) ? stack.indexOf(shown.get(m.pic.slot)) : -1, at: stack.filter(o => o.pic.order < m.pic.order).length }));
+    const painted = clips.map(({ node, key, blend }) => ({ picture: node.kind === 'group' ? composeGroup(node, key) : pixelsOf(node), blend, opacity: node.opacity ?? 1 })).filter(c => c.picture);
+    if (painted.length && (layers.length || variants.length)) paintClippedGroup(layers, variants, painted);
+  };
   /** Report items of the layers inside a merged group (drawn into its picture, no slots of their own). */
   const describe = (nodes, include, prefix) => {
     const baseOf = clipBases(nodes);
@@ -434,19 +453,19 @@ export function planImport({ source, options, existing = null, rigName = '', dry
   const visit = (nodes, ctx, prefix, baseOf = clipBases(nodes)) => nodes.map((node, index) => {
     const key = keyOf(prefix, index), { text, tags } = parseName(node.name);
     const visible = ctx.visible && node.visible !== false, opacity = ctx.opacity * (node.opacity ?? 1);
+    // Visibility / opacity relative to every enclosing group that layers are clipped to (1.19.1):
+    // such a group's pictures are baked as the group shows them, even when the group is hidden.
+    const frames = ctx.frames.map(f => ({ target: f.target, visible: f.visible && node.visible !== false, opacity: f.opacity * (node.opacity ?? 1) }));
     const item = itemOf(node, key, !options.exclude.has(key) && ctx.include);
     const note = (code, message) => { item.warnings.push(message); warn(code, message, key); };
     if (tags.has('ignore')) { item.role = 'ignored'; item.include = false; if (node.kind === 'group') item.children = visit(node.children, { ...ctx, include: false }, key); return item; }
     if (!item.include) { item.role = 'excluded'; if (node.kind === 'group') item.children = visit(node.children, { ...ctx, include: false }, key); return item; }
-    // Clipped onto a layer (or a merged group) below: painted into that picture (plugin 1.15.0).
+    // Clipped onto a layer (or a merged group) below: painted into that picture (plugin 1.15.0);
+    // onto a group that stays bones / slots: painted into its pictures (1.19.1, after the slots).
     if (baseOf.has(index)) {
-      const baseKey = keyOf(prefix, baseOf.get(index)), base = nodes[baseOf.get(index)];
-      if (base.kind === 'layer' || isMerged(base, baseKey)) {
-        item.role = 'clipped'; item.clippedTo = baseKey;
-        if (node.kind === 'group') item.children = describe(node.children, true, key);
-        return item;
-      }
-      note('ANIM_IMPORT_CLIPPING', `'${node.name}': 그룹에 붙은 클리핑 마스크는 적용되지 않습니다(그 그룹을 [merge]로 합치면 적용됨).`);
+      item.role = 'clipped'; item.clippedTo = keyOf(prefix, baseOf.get(index));
+      if (node.kind === 'group') item.children = describe(node.children, true, key);
+      return item;
     }
     if (node.mask) { item.warnings.push('레이어 마스크는 무시됩니다.'); tally.masks.push(node.name ?? ''); }
     const merged = isMerged(node, key);
@@ -461,18 +480,27 @@ export function planImport({ source, options, existing = null, rigName = '', dry
       item.warnings.push(`혼합 모드 ${BLEND_NAMES[node.blend] ?? node.blend}는 표준으로 그립니다.`);
     }
     if (node.kind === 'group' && !merged) {
+      // Layers clipped to this group: baked into its pictures once the slots are known (innermost
+      // group first: a group's composite includes what is clipped to the groups inside it).
+      const clips = clipsOf(nodes, baseOf, index, prefix);
+      const target = clips.length ? { clips: clips.map(c => ({ ...c, blend: alphaOnly ? null : bakeBlend(c.node) })), members: [] } : null;
+      const inner = extra => {
+        const out = visit(node.children, { ...ctx, visible, opacity, frames: target ? [...frames, { target, visible: true, opacity: 1 }] : frames, ...extra }, key);
+        if (target) { groupClips.push(target); tally.baked += clips.length; }
+        return out;
+      };
       if (tags.has('slot') && !ctx.slotGroup) {
         item.role = 'slot-group';
-        item.children = visit(node.children, { ...ctx, visible, opacity, slotGroup: { text: text || node.name, key } }, key);
+        item.children = inner({ slotGroup: { text: text || node.name, key } });
         return item;
       }
       if (ctx.slotGroup) note('ANIM_IMPORT_NESTED_SLOT', `'${node.name}': [slot] 그룹 안의 그룹은 같은 슬롯의 그림으로 가져옵니다([merge]면 한 그림).`);
-      if (ctx.slotGroup) { item.role = 'group-in-slot'; item.children = visit(node.children, { ...ctx, visible, opacity }, key); return item; }
+      if (ctx.slotGroup) { item.role = 'group-in-slot'; item.children = inner({}); return item; }
       if ((node.opacity ?? 1) < 1) note('ANIM_IMPORT_GROUP_OPACITY', `'${node.name}': 그룹 불투명도는 레이어마다 곱해 적용합니다(겹친 부분은 조금 다를 수 있음).`);
       const group = { key, text, name: node.name ?? '', parent: ctx.group, rects: [], marker: null, item };
       groups.push(group);
       item.role = 'bone';
-      item.children = visit(node.children, { ...ctx, visible, opacity, group }, key);
+      item.children = inner({ group });
       return item;
     }
     if (!merged && (tags.has('pivot') || tags.has('bone'))) {
@@ -506,10 +534,12 @@ export function planImport({ source, options, existing = null, rigName = '', dry
       if (cut > 0 && cut < text.length - 1) { slotText = text.slice(0, cut); attText = text.slice(cut + 1); } else { slotText = attText = text; plain = true; }
     }
     for (let g = ctx.group; g; g = g.parent) g.rects.push(picture);
-    pictures.push({ item, key, picture, visible, opacity, group: ctx.group, slotText, attText, plain, order: order++, name: node.name ?? '' });
+    const pic = { item, key, picture, visible, opacity, group: ctx.group, slotText, attText, plain, order: order++, name: node.name ?? '' };
+    pictures.push(pic);
+    for (const f of frames) f.target.members.push({ pic, visible: f.visible, opacity: f.opacity });
     return item;
   });
-  const layers = visit(source.layers, { visible: true, opacity: 1, include: true, group: null, slotGroup: null }, '');
+  const layers = visit(source.layers, { visible: true, opacity: 1, include: true, group: null, slotGroup: null, frames: [] }, '');
   // One summary line per kind, not one per layer (a production file has hundreds of these).
   const list = names => names.slice(0, 3).map(n => `'${n}'`).join(', ') + (names.length > 3 ? ' …' : '');
   const byBlend = blends => [...blends.reduce((m, b) => m.set(b, (m.get(b) ?? 0) + 1), new Map())].map(([b, n]) => `${BLEND_NAMES[b] ?? b} ${n}`).join(' · ');
@@ -632,6 +662,9 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     for (const p of slot.pictures) { p.item.slot = slot.id; p.item.attachment = p.attachment; p.item.bone = slot.bone; p.item.setup = p === slot.setup; }
   }
   const slots = [...planned.values()].sort((a, b) => a.order - b.order);
+  // Layers clipped onto groups (1.19.1): painted into the pictures before they are hashed, so a
+  // re-import notices a changed shading layer. A preview reading only alpha has nothing to paint.
+  if (!alphaOnly) for (const target of groupClips) bakeIntoGroup(target);
 
   // Pictures → images and attachments.
   const images = new Map(), provLayers = { ...(prov?.layers && typeof prov.layers === 'object' ? prov.layers : {}) }, seen = new Set();

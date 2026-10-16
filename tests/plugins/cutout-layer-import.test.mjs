@@ -8,6 +8,9 @@
 // box filter), clipping groups baked to match the composite, effects keep/skip, merged groups
 // ([merge] and merge keys), the over-limit preview and its auto-merge proposal, transliterated
 // ids, one summary for empty layers, and a 5000×7000 / ~500-layer file imported within budget.
+// Clipping onto groups (plugin 1.19.1): layers clipped to a group that stays bones / slots are
+// painted into its pictures (each equal to the composite without overlap, the setup frame with
+// see-through overlap, hidden variants, hidden groups, scale 0.25, effects skip, re-import hashes).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -17,7 +20,7 @@ import { readPsd } from '../../plugins/cutout-animation/service/psd.mjs';
 import { autoScale, importLayers, importOptions, planImport, readLayerSource, toId } from '../../plugins/cutout-animation/service/layer-import.mjs';
 import { decodePng, encodePng } from '../../plugins/cutout-animation/service/atlas.mjs';
 import { flattenImage, pixelsOf, writePsd } from './psd-fixture.mjs';
-import { countRecords, realLikePsd } from './fixtures-gen/real-like-psd.mjs';
+import { countRecords, realLikeLayers, realLikePsd } from './fixtures-gen/real-like-psd.mjs';
 import { block, characterLayers, H, maxDifference, renderSetup, W, wasm } from './layer-import-fixture.mjs';
 import { temp } from './host-helpers.mjs';
 
@@ -94,10 +97,9 @@ test('mapping: groups → bones, layers → slots/attachments, variants, [slot],
   assert.equal(toId('Left Arm 2'), 'left-arm-2'); assert.equal(toId('2nd', 'x'), 'n2nd'); assert.equal(toId('머리', 'part-3'), 'part-3'); assert.equal(toId('Émile'), 'emile');
 });
 
-test('mapping options: exclude keys, origin, scale, trim off, warnings for blend / clipping / masks / two visible variants', () => {
+test('mapping options: exclude keys, origin, scale, trim off, warnings for blend / masks / two visible variants', () => {
   const layers = characterLayers();
   layers[1].blend = 'mul '; layers[1].mask = true;
-  layers[4].clipping = true;  // a group clipped to the group below: not applied (warned)
   layers[4].children[1].visible = true;  // both eye variants visible
   const psd = readPsd(writePsd({ width: W, height: H, layers }));
   const source = { ...psd, file: '/art/hero.psd' };
@@ -110,7 +112,7 @@ test('mapping options: exclude keys, origin, scale, trim off, warnings for blend
   // 1.15.0: scale < 1 downscales the pictures (45..95 → 22..48 px), placed at scale 1.
   assert.deepEqual([body.width, body.height, body.scaleX, body.scaleY, body.imageAssetId], [26, 45, undefined, undefined, ''], 'trim off = the layer rect at the scale; preview has no ids');
   assert.deepEqual([report.options.scale, report.options.scaleMode, report.options.resolution], [0.5, 'fixed', 0.5]);
-  assert.deepEqual(report.warnings.map(w => w.code).sort(), ['ANIM_IMPORT_BLEND', 'ANIM_IMPORT_CLIPPING', 'ANIM_IMPORT_MASK', 'ANIM_IMPORT_SLOT_VISIBLE']);
+  assert.deepEqual(report.warnings.map(w => w.code).sort(), ['ANIM_IMPORT_BLEND', 'ANIM_IMPORT_MASK', 'ANIM_IMPORT_SLOT_VISIBLE']);
   assert.equal(rig.slots.find(s => s.id === 'eyes').attachment, 'open', 'the topmost visible variant shows');
   assert.equal(report.layers[2].role, 'excluded');
   assert.equal(report.layers[2].children[0].include, false);
@@ -343,11 +345,161 @@ test('clipping groups bake into their base: multiply / linear dodge / screen / o
   // The preview reads only alpha (no colour, no baking): the same rectangles and mapping.
   const preview = await importLayers({ payload: { file, id: 'clip' }, dryRun: true });
   assert.deepEqual(preview.documents[0].data.attachments.map(a => [a.slot, a.width, a.height, a.x, a.y]), rig.attachments.map(a => [a.slot, a.width, a.height, a.x, a.y]));
-  // A layer clipped onto a group is not applied (warned): it stays its own picture.
-  const onGroup = [layers[5], { name: 'tint', x: 70, y: 30, ...block(10, 10, [0, 0, 0]), clipping: true, blend: 'mul ' }];
-  const plan = planImport({ source: { ...readPsd(writePsd({ width: CW, height: CH, layers: onGroup })), file: '/art/g.psd' }, options: importOptions({}), dryRun: true });
-  assert.ok(plan.rig.slots.some(s => s.id === 'tint'));
-  assert.ok(plan.report.warnings.some(w => w.code === 'ANIM_IMPORT_CLIPPING'));
+  // 1.19.1: a layer clipped onto a group (that stays a bone) is painted into the group's pictures.
+  const onGroup = [layers[5], { name: 'tint', x: 70, y: 30, ...block(30, 30, [90, 60, 30]), clipping: true, blend: 'mul ' }];
+  const plan = planImport({ source: { ...readPsd(writePsd({ width: CW, height: CH, layers: onGroup })), file: '/art/g.psd' }, options: importOptions({}) });
+  assert.ok(!plan.rig.slots.some(s => s.id === 'tint'));
+  assert.ok(!plan.report.warnings.some(w => w.code === 'ANIM_IMPORT_CLIPPING'));
+  assert.deepEqual([plan.report.summary.baked, plan.report.layers[1].role, plan.report.layers[1].clippedTo], [5, 'clipped', '0']);
+  assert.ok(maxDifference(await renderSetup(plan.rig, pngMap(plan.images)), flattenImage(CW, CH, onGroup)) <= 2, 'clip onto the group vs composite');
+});
+
+// ------------------------------------------------------------------ clipping onto groups (plugin 1.19.1)
+
+/** An opaque block of one colour (no gradient: box filtering a product stays exact for the scale test). */
+const flat = (w, h, rgb) => ({ width: w, height: h, pixel: () => [...rgb, 255] });
+/** The decoded picture of every attachment with its rectangle (picture px) from the provenance. */
+const picturesOf = (rig, images) => {
+  const pngs = pngMap(images), out = new Map();
+  for (const a of rig.attachments) {
+    const r = rig.editor.layerImport.layers[`${a.slot}/${a.name}`], image = decodePng(pngs.get(a.imageAssetId));
+    out.set(`${a.slot}/${a.name}`, { ...r, rgba: image.rgba });
+  }
+  return out;
+};
+/** Largest difference between a picture and the composite inside the picture's alpha (colour where both are visible). */
+const pictureVsComposite = (picture, composite, width) => {
+  let worst = 0;
+  for (let y = 0; y < picture.height; y++) for (let x = 0; x < picture.width; x++) {
+    const s = (y * picture.width + x) * 4, d = ((picture.y + y) * width + picture.x + x) * 4;
+    if (!picture.rgba[s + 3]) continue;
+    worst = Math.max(worst, Math.abs(picture.rgba[s + 3] - composite[d + 3]));
+    if (picture.rgba[s + 3] > 8) for (let k = 0; k < 3; k++) worst = Math.max(worst, Math.abs(picture.rgba[s + k] - composite[d + k]));
+  }
+  return worst;
+};
+
+/** Two legs (separate slots) shaded by layers clipped to their group, like painted production art. */
+const legLayers = (shade = [120, 90, 160]) => [
+  { name: 'legs', children: [
+    { name: 'left', x: 10, y: 20, ...disc(40, 60, [230, 190, 160], 2) },
+    { name: 'right', x: 62, y: 20, ...disc(40, 60, [200, 170, 150], 2) },
+  ] },
+  { name: 'shade', x: 0, y: 40, ...block(120, 40, shade), clipping: true, blend: 'mul ', opacity: 0.8 },
+  { name: 'light', x: 20, y: 12, ...disc(70, 30, [90, 70, 40], 3), clipping: true, blend: 'lddg' },
+  { name: 'off', x: 0, y: 0, ...block(120, 100, [0, 255, 0]), clipping: true, visible: false },
+];
+
+test('clipping onto a group (1.19.1): non-overlapping pictures each equal the composite; report; effects skip keeps them; re-import notices a changed shading', async () => {
+  const CW = 120, CH = 100, layers = legLayers();
+  const source = l => ({ ...readPsd(writePsd({ width: CW, height: CH, layers: l })), file: '/art/legs.psd' });
+  const { rig, images, report } = planImport({ source: source(layers), options: importOptions({}) });
+  assert.deepEqual(rig.slots.map(s => s.id), ['left', 'right'], 'the group stays a bone with its slots; no clipped slot');
+  const expected = flattenImage(CW, CH, layers), pictures = picturesOf(rig, images);
+  for (const ref of ['left/left', 'right/right']) {
+    const worst = pictureVsComposite(pictures.get(ref), expected, CW);
+    assert.ok(worst <= 1, `${ref}: picture vs composite in its region, max difference ${worst}`);
+  }
+  const bare = planImport({ source: source([layers[0]]), options: importOptions({}) }), plain = picturesOf(bare.rig, bare.images);
+  assert.ok(!plain.get('left/left').rgba.equals(pictures.get('left/left').rgba), 'the shading is in the picture');
+  assert.ok(maxDifference(await renderSetup(rig, pngMap(images)), expected) <= 1, 'setup frame vs composite');
+  const items = flatItems(report.layers);
+  assert.deepEqual(items.filter(i => i.role === 'clipped').map(i => [i.name, i.clippedTo]), [['shade', '0'], ['light', '0'], ['off', '0']]);
+  assert.equal(report.summary.baked, 2, 'the hidden clipped layer is not painted');
+  assert.ok(!report.warnings.some(w => ['ANIM_IMPORT_CLIPPING', 'ANIM_IMPORT_BLEND'].includes(w.code)), JSON.stringify(report.warnings));
+  // Clipped layers are not "effects": effects "skip" keeps them (same pictures, same counts).
+  const skip = planImport({ source: source(layers), options: importOptions({ effects: 'skip' }) });
+  assert.deepEqual(skip.rig.attachments.map(a => a.imageAssetId), rig.attachments.map(a => a.imageAssetId));
+  assert.deepEqual([skip.report.summary.baked, skip.report.summary.effects, flatItems(skip.report.layers).filter(i => i.role === 'effect').length], [2, 0, 0]);
+  // The preview reads only alpha: same rectangles and mapping, nothing painted.
+  const preview = planImport({ source: source(layers), options: importOptions({}), dryRun: true });
+  assert.deepEqual(preview.rig.attachments.map(a => [a.slot, a.width, a.height, a.x, a.y]), rig.attachments.map(a => [a.slot, a.width, a.height, a.x, a.y]));
+  assert.equal(preview.report.summary.baked, 2);
+  // Re-import: the pixel hash includes the baked shading, so a recoloured shade layer updates both pictures.
+  const same = planImport({ source: source(layers), options: importOptions({}), existing: rig, dryRun: true });
+  assert.deepEqual(same.report.changes.attachments.unchanged.sort(), ['left/left', 'right/right']);
+  const changed = planImport({ source: source(legLayers([90, 140, 90])), options: importOptions({}), existing: rig });
+  assert.deepEqual(changed.report.changes.attachments.updated.sort(), ['left/left', 'right/right']);
+  assert.ok(maxDifference(await renderSetup(changed.rig, pngMap(changed.images)), flattenImage(CW, CH, legLayers([90, 140, 90]))) <= 1, 're-imported frame = the changed document');
+});
+
+test('clipping onto a group (1.19.1): overlapping semi-transparent pictures split the effect by coverage; covered pixels untouched; setup frame = composite', async () => {
+  const CW = 120, CH = 100;
+  const layers = [
+    { name: 'back', x: 0, y: 70, ...flat(120, 30, [40, 60, 40]) },  // below the group: not clipped
+    { name: 'arm', children: [
+      { name: 'upper', x: 20, y: 20, ...block(50, 40, [200, 160, 140]) },
+      { name: 'sleeve', x: 40, y: 30, ...disc(50, 50, [80, 120, 200], 6), opacity: 0.6 },  // see-through over the upper arm
+      { name: 'cuff', x: 30, y: 25, ...block(15, 15, [250, 250, 250]) },  // opaque over the upper arm
+    ] },
+    { name: 'shade', x: 0, y: 0, ...block(120, 100, [140, 110, 170]), clipping: true, blend: 'mul ', opacity: 0.7 },
+    { name: 'glow', x: 30, y: 30, ...disc(60, 40, [60, 60, 30], 4), clipping: true, blend: 'scrn' },
+  ];
+  const { rig, images, report } = planImport({ source: { ...readPsd(writePsd({ width: CW, height: CH, layers })), file: '/art/arm.psd' }, options: importOptions({}) });
+  assert.deepEqual(rig.slots.map(s => s.id), ['back', 'upper', 'sleeve', 'cuff']);
+  assert.equal(report.summary.baked, 2);
+  const drawn = await renderSetup(rig, pngMap(images)), expected = flattenImage(CW, CH, layers);
+  assert.ok(maxDifference(drawn, expected) <= 2, `overlapping pictures: frame vs composite, max difference ${maxDifference(drawn, expected)}`);
+  const pictures = picturesOf(rig, images), upper = pictures.get('upper/upper'), back = pictures.get('back/back');
+  const at = (p, x, y) => [...p.rgba.subarray(((y - p.y) * p.width + x - p.x) * 4, ((y - p.y) * p.width + x - p.x) * 4 + 3)];
+  const original = (x, y) => block(50, 40, [200, 160, 140]).pixel(x - 20, y - 20).slice(0, 3);
+  assert.deepEqual(at(upper, 36, 31), original(36, 31), 'under the opaque cuff the upper arm gets nothing');
+  assert.notDeepEqual(at(upper, 60, 50), original(60, 50), 'under the see-through sleeve it is shaded (it shows through)');
+  assert.notDeepEqual(at(upper, 22, 50), original(22, 50), 'uncovered: shaded');
+  assert.deepEqual(at(back, 10, 90), [40, 60, 40], 'a layer below the group is not clipped');
+});
+
+test('clipping onto a group (1.19.1): hidden variants are shaded as if shown in place of their slot\'s picture', async () => {
+  const CW = 120, CH = 100;
+  const layers = (open = true) => [
+    { name: 'face', x: 20, y: 10, ...disc(80, 80, [240, 200, 170], 2) },
+    { name: 'eyes', children: [
+      { name: 'eyes/closed', x: 40, y: 45, ...block(40, 6, [30, 20, 20]), visible: !open },
+      { name: 'eyes/open', x: 40, y: 38, ...disc(40, 16, [60, 120, 200], 2), visible: open },
+      { name: 'lash', x: 38, y: 44, ...block(44, 3, [10, 10, 10]) },  // over the closed eyes too
+    ] },
+    { name: 'pupil shade', x: 30, y: 30, ...block(60, 30, [120, 100, 160]), clipping: true, blend: 'mul ' },
+    { name: 'shine', x: 45, y: 40, ...disc(20, 12, [80, 80, 60], 3), clipping: true, blend: 'lddg', opacity: 0.7 },
+  ];
+  const { rig, images } = planImport({ source: { ...readPsd(writePsd({ width: CW, height: CH, layers: layers() })), file: '/art/eyes.psd' }, options: importOptions({}) });
+  assert.equal(rig.slots.find(s => s.id === 'eyes').attachment, 'open');
+  const pngs = pngMap(images);
+  assert.ok(maxDifference(await renderSetup(rig, pngs), flattenImage(CW, CH, layers())) <= 1, 'eyes open');
+  const closed = structuredClone(rig);
+  closed.slots.find(s => s.id === 'eyes').attachment = 'closed';
+  const swapped = maxDifference(await renderSetup(closed, pngs), flattenImage(CW, CH, layers(false)));
+  assert.ok(swapped <= 1, `eyes closed (hidden variant shaded within its own alpha): max difference ${swapped}`);
+  // A hidden group whose layers are clipped to it: baked as the group would show (all variants).
+  const hidden = [{ ...layers()[1], visible: false }, layers()[2]];
+  const plan = planImport({ source: { ...readPsd(writePsd({ width: CW, height: CH, layers: hidden })), file: '/art/h.psd' }, options: importOptions({}) });
+  const shown = planImport({ source: { ...readPsd(writePsd({ width: CW, height: CH, layers: [layers()[1], layers()[2]] })), file: '/art/h.psd' }, options: importOptions({}) });
+  assert.deepEqual(plan.rig.attachments.map(a => a.imageAssetId), shown.rig.attachments.map(a => a.imageAssetId));
+});
+
+test('clipping onto a group (1.19.1): scale 0.25 bakes at the import resolution (= the per-layer clipping bake; setup frame = box-filtered composite)', async () => {
+  const DW = 160, DH = 120;
+  const legs = [
+    { name: 'left', x: 12, y: 20, ...disc(56, 80, [230, 190, 160], 3) },
+    { name: 'right', x: 88, y: 20, ...disc(56, 80, [200, 170, 150], 3) },
+  ];
+  const clips = [
+    { name: 'shade', x: 0, y: 64, ...flat(160, 56, [120, 90, 160]), clipping: true, blend: 'mul ', opacity: 0.8 },
+    { name: 'light', x: 24, y: 16, ...disc(100, 40, [90, 70, 40], 4), clipping: true, blend: 'lddg', opacity: 0.6 },
+  ];
+  const layers = [{ name: 'legs', children: legs }, ...clips];
+  const dir = await temp('psd-group-clip'), file = path.join(dir, 'legs.psd');
+  await writeFile(file, writePsd({ width: DW, height: DH, layers }));
+  const done = await importLayers({ payload: { file, id: 'legs', scale: 0.25 } }), rig = done.documents[0].data;
+  assert.deepEqual([done.report.options.resolution, done.report.summary.baked], [0.25, 2]);
+  // Without overlap the group bake is the 1.15.0 bake of each picture with its own copy of the clipped layers.
+  const perLayer = [{ name: 'legs', children: [legs[0], ...clips, legs[1], ...clips] }];
+  const each = planImport({ source: { ...readPsd(writePsd({ width: DW, height: DH, layers: perLayer })), file: '/art/legs.psd' }, options: importOptions({ scale: 0.25 }) });
+  assert.deepEqual(rig.attachments.map(a => a.imageAssetId), each.rig.attachments.map(a => a.imageAssetId), 'bit-identical to clipping each picture');
+  // Downscaling before baking: faint edge pixels can differ like any baked clip; the rest is exact.
+  const drawn = await renderSetup(rig, pngMap(done.images)), expected = boxDownscale(DW, DH, flattenImage(DW, DH, layers), 0.25);
+  const solid = image => { const out = Buffer.from(image); for (let i = 0; i < out.length; i += 4) if (out[i + 3] < 128) out.fill(0, i, i + 4); return out; };
+  assert.ok(maxDifference(solid(drawn), solid(expected)) <= 2, `0.25: frame vs box-filtered composite (alpha ≥ 128), max difference ${maxDifference(solid(drawn), solid(expected))}`);
+  assert.ok(maxDifference(drawn, expected) <= 10, `0.25: edges ${maxDifference(drawn, expected)}`);
 });
 
 test('effects "keep" | "skip": unclipped non-normal blend layers, one summary warning', () => {
@@ -505,12 +657,40 @@ test('a 5000×7000, ~500-layer production-like PSD imports at auto scale within 
   assert.deepEqual([done.report.options.scale, done.report.options.scaleMode, done.report.canvas.width, done.report.canvas.height], [0.25, 'auto', 1250, 1750]);
   assert.equal(done.report.limits.exceeded, false);
   assert.ok(done.report.summary.baked > 300, `${done.report.summary.baked} clipped layers baked`);
+  // 1.19.1: shading clipped onto groups (legs, hands, eyes) is baked too: no clipping warning left.
+  const items = flatItems(done.report.layers), byKey = new Map(items.map(i => [i.key, i]));
+  assert.equal(items.filter(i => i.role === 'clipped' && byKey.get(i.clippedTo).kind === 'group').length, 6);
+  assert.ok(!done.report.warnings.some(w => w.code === 'ANIM_IMPORT_CLIPPING'), JSON.stringify(done.report.warnings.map(w => w.code)));
   assert.equal(preview.report.summary.attachments, done.report.summary.attachments);
   assert.ok(previewMs < 10000, `preview ${previewMs} ms`);
   assert.ok(importMs < 20000, `import ${importMs} ms`);
   const rig = done.documents[0].data;
   assert.ok(rig.bones.some(b => b.id === 'ruka-levaya') && rig.bones.some(b => b.id === 'golova'), rig.bones.map(b => b.id).join());
   for (const image of done.images.slice(0, 5)) assert.ok(!decodePng(image.bytes).reason);
+});
+
+test('the production-like tree at a small size: setup frame = composite with shading clipped onto layers and groups (effects skip)', async () => {
+  const size = { width: 400, height: 600, strands: 4, bangs: 3 };
+  const layers = realLikeLayers(size);
+  // The unclipped light / shadow overlays are left out (effects "skip"), so the composite leaves them out too.
+  const skipFx = list => list.map(n => ({ ...n, ...(n.children ? { children: skipFx(n.children) } : {}),
+    ...(!n.clipping && !['norm', 'pass', undefined].includes(n.blend) ? { ignoreInComposite: true } : {}) }));
+  const source = { ...readPsd(writePsd({ ...size, layers, composite: 'none' })), file: '/art/real.psd' };
+  const { rig, images, report } = planImport({ source, options: importOptions({ effects: 'skip', boneDirection: 'none' }) });
+  assert.ok(!report.warnings.some(w => w.code === 'ANIM_IMPORT_CLIPPING'));
+  const drawn = await renderSetup(rig, pngMap(images)), expected = flattenImage(size.width, size.height, skipFx(layers));
+  // Exact but where linear dodge clamps on two differently coloured pictures overlapping at an
+  // antialiased edge (each picture clamps on its own, Photoshop clamps the mix): a few pixels.
+  let off = 0;
+  for (let i = 0; i < drawn.length; i += 4) if (maxDifference(drawn.subarray(i, i + 4), expected.subarray(i, i + 4)) > 2) off++;
+  assert.ok(off <= 8 && maxDifference(drawn, expected) <= 20, `production-like frame vs composite: ${off} pixels over 2, max difference ${maxDifference(drawn, expected)}`);
+  // The hidden fist and closed-eyes variants carry the shading clipped onto their groups.
+  const plain = planImport({ source: { ...readPsd(writePsd({ ...size, layers: realLikeLayers(size).map(n => ({ ...n, children: n.children?.filter(c => !c.clipping) ?? n.children })), composite: 'none' })), file: '/art/real.psd' }, options: importOptions({ effects: 'skip', boneDirection: 'none' }) });
+  for (const ref of ['kist/kulak', 'eyes/closed']) {
+    const id = rig => rig.attachments.find(a => `${a.slot}/${a.name}` === ref)?.imageAssetId;
+    assert.ok(id(rig), ref);
+    assert.notEqual(id(rig), id(plain.rig), `${ref} is shaded`);
+  }
 });
 
 test('[box] / [point] layers (1.17.0): a traced bounding box and a point instead of pictures; bones unchanged; re-import updates them, never pictures', async () => {

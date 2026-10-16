@@ -3,8 +3,8 @@
 // PackBits channels, and the merged composite. The composite is computed independently of the
 // importer (plugin 1.15.0): straight-alpha W3C blending (normal, multiply, screen, overlay, linear
 // dodge, lighten, darken, soft light), Photoshop clipping (a clipped layer paints inside its
-// base's alpha), pass-through groups (group opacity multiplied into each layer) and isolated
-// groups (`blend: 'norm'`). Big sparse documents: layers given as `rows(y, r, g, b, a)` row
+// base's alpha), pass-through groups (group opacity multiplied into each layer), isolated
+// groups (`blend: 'norm'`) and groups as clipping bases (1.19.1: the group's composite alpha). Big sparse documents: layers given as `rows(y, r, g, b, a)` row
 // fillers and `composite: 'none'` write a 5000×7000, 500-layer file in seconds. No dependency.
 
 /** PackBits rows of one plane (Apple/Adobe RLE): returns [counts per row, bytes]. */
@@ -104,7 +104,7 @@ const blendFn = key => BLEND[key] ?? ((b, s) => s);
  * back to front, each blended onto what is below it; clipped layers paint inside their base's
  * alpha (transparency locked) before the clipping group is drawn with the base's blend mode and
  * opacity; a pass-through group multiplies its opacity into its layers; a `blend: 'norm'` group
- * is composited on its own first. Colour is straight (0..255), alpha 0..1, rounded once.
+ * — or any group with layers clipped to it — is composited on its own first. Colour is straight (0..255), alpha 0..1, rounded once.
  */
 export function flattenImage(width, height, nodes) {
   const canvas = () => new Float64Array(width * height * 4);
@@ -137,7 +137,10 @@ export function flattenImage(width, height, nodes) {
       const shown = visible && n.visible !== false;
       if (!shown || n.ignoreInComposite) return;
       let c, o = opacity * (n.opacity ?? 1);
-      if (n.children && (n.blend ?? 'pass') === 'pass') { draw(n.children, dst, shown, o); return; }
+      // A group with layers clipped to it is their base: composited on its own first (its alpha is
+      // the clipping mask), even a pass-through one.
+      const clipped = list.some((m, j) => baseOf[j] === i && m.visible !== false && !m.ignoreInComposite);
+      if (n.children && (n.blend ?? 'pass') === 'pass' && !clipped) { draw(n.children, dst, shown, o); return; }
       if (n.children) { c = canvas(); draw(n.children, c, true, 1); } else c = layerCanvas(n);
       list.forEach((m, j) => {
         if (baseOf[j] !== i || m.visible === false || m.ignoreInComposite) return;

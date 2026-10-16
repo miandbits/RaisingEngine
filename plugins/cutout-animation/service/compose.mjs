@@ -15,6 +15,8 @@
 //   formula (Photoshop's own curve differs by a few levels in the mid tones). Opacity always mixes
 //   linearly (Photoshop's "special" fill behaviour of add-like modes is not reproduced). Other
 //   modes are drawn as normal (the importer warns).
+//   * paintClippedGroup (plugin 1.19.1, a layer clipped to a group that stays several pictures):
+//     the same locked paint, into every picture that shows at the pixel (see the function).
 
 /** Blend keys composited exactly when baking (`pass` = a group's pass-through, drawn isolated). */
 export const BAKED_BLENDS = new Set(['norm', 'pass', 'mul ', 'scrn', 'over', 'lddg', 'lite', 'dark', 'sLit']);
@@ -91,4 +93,74 @@ export class Surface {
     }
     return { left: this.left, top: this.top, width: this.width, height: this.height, rgba };
   }
+}
+
+/**
+ * Layers clipped to a group that is not merged (plugin 1.19.1). Photoshop clips them to the
+ * group's composite alpha; the rig draws the group's pictures one by one, so the effect is painted
+ * into the pictures that make that composite at each pixel: the topmost picture covering it and,
+ * where it is partly transparent, the pictures showing through it, down to the first opaque one.
+ * Each gets the full strength (t = αs·opacity, transparency locked as paintLocked): the drawn mix
+ * Σ wᵢ·Cᵢ' then equals Photoshop's (1 − t)·Cg + t·B(Cg, Cs) exactly for modes linear in the
+ * backdrop (normal, multiply, screen, linear dodge below the clamp) and within a few levels for
+ * overlay / soft light / lighten / darken, which see each picture's colour instead of the mix.
+ * Without semi-transparent overlap (one picture per pixel) it is Photoshop's result for every
+ * mode. Pixels under an opaque picture get nothing: the artist never saw the effect there.
+ *   stack: the shown pictures, back → front: [{picture: {x, y, width, height, rgba}, opacity}]
+ *     (opacity relative to the group: how much a picture hides the ones below it);
+ *   variants: hidden pictures, painted within their own alpha as if shown in the stack, either in
+ *     place of the shown picture of their slot (`replace`: stack index) or at their own draw
+ *     position (`replace` −1, `at`: the number of stack pictures below them);
+ *   clips: [{picture: {left, top, width, height, rgba}, blend, opacity}], bottom → top (in order).
+ * Paints the pictures' rgba in place (colour only; alpha stays) and returns how many changed.
+ */
+export function paintClippedGroup(stack, variants, clips) {
+  const n = stack.length, open = new Float64Array(n + 1), floats = new Map();
+  const floatOf = m => {
+    let f = floats.get(m);
+    if (!f) { const { rgba } = m.picture; f = new Float32Array(rgba.length); for (let i = 0; i < rgba.length; i++) f[i] = rgba[i] / 255; floats.set(m, f); }
+    return f;
+  };
+  const inside = (q, x, y) => x >= q.x && y >= q.y && x < q.x + q.width && y < q.y + q.height;
+  for (const clip of clips) {
+    const p = clip.picture, src = p.rgba, B = modeOf(clip.blend), k = clip.opacity / 255;
+    const meets = m => { const q = m.picture; return q.x < p.left + p.width && p.left < q.x + q.width && q.y < p.top + p.height && p.top < q.y + q.height; };
+    const hit = stack.map(meets), hitVariants = variants.filter(meets);
+    // Only the part of the clip over the pictures it can reach.
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const m of [...stack.filter((_, s) => hit[s]), ...hitVariants]) {
+      const q = m.picture;
+      x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.width); y1 = Math.max(y1, q.y + q.height);
+    }
+    x0 = Math.max(x0, p.left); y0 = Math.max(y0, p.top); x1 = Math.min(x1, p.left + p.width); y1 = Math.min(y1, p.top + p.height);
+    const paint = (m, i, t, j) => {
+      const f = floatOf(m);
+      for (let c = 0; c < 3; c++) { const cs = src[j + c] / 255, cb = f[i + c]; f[i + c] = (1 - t) * cb + t * (B ? B(cb, cs) : cs); }
+    };
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const j = ((y - p.top) * p.width + (x - p.left)) * 4, t = src[j + 3] * k;
+      if (t <= 0) continue;
+      // open[s] = how much of the pixel the stack pictures s.. (front part) leave uncovered.
+      open[n] = 1;
+      for (let s = n - 1; s >= 0; s--) {
+        open[s] = open[s + 1];
+        const m = stack[s], q = m.picture;
+        if (!hit[s] || !inside(q, x, y)) continue;
+        const i = ((y - q.y) * q.width + (x - q.x)) * 4, a = q.rgba[i + 3] / 255 * m.opacity;
+        if (q.rgba[i + 3] && open[s + 1] > 0) paint(m, i, t, j);
+        if (a > 0) open[s] = open[s + 1] * (1 - a);
+      }
+      for (const v of hitVariants) {
+        const q = v.picture;
+        if (!inside(q, x, y)) continue;
+        const i = ((y - q.y) * q.width + (x - q.x)) * 4;
+        if (q.rgba[i + 3] && (v.replace >= 0 ? open[v.replace + 1] : open[v.at]) > 0) paint(v, i, t, j);
+      }
+    }
+  }
+  for (const [m, f] of floats) {
+    const { rgba } = m.picture;
+    for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 3]) for (let c = 0; c < 3; c++) rgba[i + c] = Math.max(0, Math.min(255, Math.round(f[i + c] * 255)));
+  }
+  return floats.size;
 }

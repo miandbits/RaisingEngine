@@ -1120,8 +1120,32 @@ is ordinary schemaVersion 1 data plus editor metadata.
     the base's alpha with its blend mode and opacity (transparency locked:
     `t = αs·opacity, C = (1 − t)·Cb + t·B(Cb, Cs)`, alpha stays the base's), then the result is
     the base layer's picture (its opacity → slot alpha). Report items of clipped layers have
-    `role: "clipped"`, `clippedTo: <base key>`. A clipping base that is a group (not merged) is not
-    applied (`ANIM_IMPORT_CLIPPING`, the clipped layers stay pictures of their own).
+    `role: "clipped"`, `clippedTo: <base key>`.
+  * **clipping onto a group** (1.19.1): when the base is a group that is not merged (it stays bones
+    / slots, e.g. legs with a left and a right slot), its visible clipped layers (layers or groups,
+    composited as in a merge) are painted into the group's pictures at the import resolution,
+    after the slots are known and before the pixel hashes, innermost base group first, in layer
+    order, with their blend modes and opacities. Photoshop clips to the group's composite alpha;
+    at each pixel the effect goes into the topmost picture of the group covering it and, where
+    that picture is partly transparent (soft edge, opacity < 1 relative to the group), also into
+    the pictures showing through it, down to the first opaque one, each with the full
+    `t = αs·opacity` (transparency locked as above). Without semi-transparent overlap (one picture
+    per pixel) every picture equals Photoshop's result in its region; with it the setup frame
+    equals Photoshop's for modes linear in the backdrop (normal, multiply, screen, linear dodge
+    below its clamp) and is within a few levels for overlay / soft light / lighten / darken and a
+    clamping linear dodge (each picture is blended on its own colour, not the mix). Pixels of a
+    picture under an opaque picture of the group get nothing (only uncovered by animation).
+    The group's shown stack is, per slot, the topmost picture visible inside the group (the
+    group's own visibility does not matter: a hidden group's pictures are baked as it would
+    show); every other picture of the group — hidden variants (`eyes/closed`, a fist), a covered
+    second visible layer of a slot — gets the effect within its own alpha as if it were shown in
+    place of its slot's shown picture (pictures above that one still cover it), or at its own
+    draw position when its slot shows nothing in the group, so swapping a variant in keeps the
+    shading. Clipped layers are never "effects" (`effects: "skip"` keeps them). Report: the
+    clipped items `role: "clipped"`, `clippedTo: <group key>`, counted in `summary.baked`. A
+    preview reading only alpha paints nothing (rectangles are unchanged by baking). A clipping base
+    that is excluded, `[ignore]`d or a skipped effect takes its clipped layers with it (as for
+    layer bases). `ANIM_IMPORT_CLIPPING` is no longer reported (every clipping base is baked).
   * **merge** (1.15.0): a group whose name has `[merge]` or whose key is in `merge` is flattened
     into one picture, mapped like a layer named after the group (`hair [merge]` → slot `hair`;
     `mouth/smile [merge]` → attachment `smile` of slot `mouth`; inside a `[slot]` group one
@@ -1149,7 +1173,7 @@ is ordinary schemaVersion 1 data plus editor metadata.
     differ slightly from Photoshop's isolated group).
   * `[ignore]` / `[skip]` drop a layer or a whole group; `exclude` keys likewise.
   * Warnings (report; one summary line per kind where a production file has hundreds): unbaked
-    blend modes (`ANIM_IMPORT_BLEND`), clipping onto a group (`ANIM_IMPORT_CLIPPING`), layer masks
+    blend modes (`ANIM_IMPORT_BLEND`), layer masks
     (`ANIM_IMPORT_MASK`, not applied), empty layers/groups (`ANIM_IMPORT_EMPTY`), over the limits
     (`ANIM_IMPORT_LIMIT`), translucent groups, two visible layers in one slot, more than one marker.
   * **Limits**: bones 256, slots 256, attachments 1024 (rig totals). Over them an import is refused;
@@ -1162,7 +1186,8 @@ is ordinary schemaVersion 1 data plus editor metadata.
   * New rig: `idle` clip, mix 150 ms; new controller `{rig: id, defaultClip: "idle"}`.
 * **Provenance**: `editor.layerImport = {source, format, width, height, scale, layers: {"slot/name":
   {x, y, width, height, pixels}}, resolution}` (picture rectangle in picture px = document px ×
-  resolution, and a pixel hash). Runtimes ignore `editor`.
+  resolution, and a pixel hash of the baked picture: a changed clipped layer, also one clipped onto
+  a group, changes the hash and updates the picture on re-import). Runtimes ignore `editor`.
 * **Re-import** (`rig`): bones, slots, keys, skins, expressions, IK and every placement stay.
   Matching is by id: groups map to bones of the same id (kept, never moved; new groups become new
   bones placed through the current setup pose), `slot/name` to existing attachments.
@@ -1193,7 +1218,7 @@ is ordinary schemaVersion 1 data plus editor metadata.
   reads only the alpha of each layer (trimmed bounds, empty checks, placements are exact; colour,
   clipping and merge compositing and PNG encoding happen on import only), a re-import preview also
   decodes colour (unchanged pictures are found by their pixel hash). Measured on the generated
-  5000×7000, 489-layer / 158 Mpx file (`tests/plugins/fixtures-gen/real-like-psd.mjs`): preview
+  5000×7000, 496-layer / 162 Mpx file (`tests/plugins/fixtures-gen/real-like-psd.mjs`): preview
   ≈ 0.5 s, import ≈ 3 s at scale 0.25 (test budget 10 s / 20 s).
 * `plugin_call` op `importLayers`: the same with `target: {id, rig}` for a re-import preview of rig
   data and `includeImages: true` for base64 PNGs; it never writes anything.

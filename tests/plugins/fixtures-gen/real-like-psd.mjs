@@ -3,7 +3,9 @@
 // "блик"), Photoshop default names ("Layer 40 Copy 13"), every part shaded with clipped multiply /
 // linear-dodge / overlay layers, unclipped light and shadow overlays, eye and mouth variants
 // (hidden layers), a hidden sketch, layer masks, empty 0×0 and fully transparent layers and
-// empty groups. The pictures are soft-edged ellipses (antialiased alpha, transparent margins,
+// empty groups, and (plugin 1.19.1) shading clipped onto GROUPS that stay several slots: multiply /
+// linear dodge / normal layers and a clipped group on the legs, the hands (a hidden fist variant)
+// and the eyes (a hidden closed-eyes variant). The pictures are soft-edged ellipses (antialiased alpha, transparent margins,
 // written with PackBits like Photoshop) so big documents stay small and fast to write.
 //
 //   node tests/plugins/fixtures-gen/real-like-psd.mjs <out.psd> [width height strands bangs]
@@ -70,6 +72,7 @@ export function realLikeLayers({ width: W = 4000, height: H = 6000, strands = 24
         ...shaded('кисть/открытая', ax, Y(0.58), X(0.09), Y(0.07), [240, 205, 180]),
         ellipse('кисть/кулак', ax + X(0.01), Y(0.58), X(0.07), Y(0.06), [235, 200, 175], { visible: false }),
       ] },
+      ellipse('тень кисти', ax - X(0.01), Y(0.6), X(0.11), Y(0.06), [150, 120, 160], { clipping: true, blend: 'mul ', opacity: 0.6 }),
     ] };
   };
   const eye = (side, x) => ({ name: `глаз ${side}`, children: [
@@ -88,6 +91,12 @@ export function realLikeLayers({ width: W = 4000, height: H = 6000, strands = 24
     ellipse('тень на полу', X(0.3), Y(0.9), X(0.4), Y(0.05), [60, 50, 70], { blend: 'mul ', opacity: 0.5 }),
     { name: 'задние волосы', children: Array.from({ length: strands }, (_, i) => ({ name: `прядь ${i + 1}`, children: strand(i, strands, 0.08, 0.42, 0.42, 'прядь') })).flat() },
     { name: 'ноги', children: [leg('левая'), leg('правая')] },
+    ellipse('свет ног', X(0.36), Y(0.56), X(0.28), Y(0.2), [70, 60, 40], { clipping: true, blend: 'lddg', opacity: 0.7 }),
+    ellipse('чулки', X(0.38), Y(0.76), X(0.24), Y(0.1), [40, 40, 55], { clipping: true, opacity: 0.8 }),
+    { name: 'тени ног', clipping: true, children: [
+      ellipse('тень колена', X(0.4), Y(0.68), X(0.2), Y(0.04), [120, 100, 130]),
+      ellipse('тень стопы', X(0.4), Y(0.85), X(0.2), Y(0.04), [90, 80, 100], { opacity: 0.7 }),
+    ] },
     { name: 'тело', children: [
       ...shaded('шея', X(0.46), Y(0.24), X(0.08), Y(0.06), [240, 205, 180]),
       ...shaded('торс', X(0.38), Y(0.28), X(0.24), Y(0.24), [90, 110, 170], { overlay: true }),
@@ -106,6 +115,7 @@ export function realLikeLayers({ width: W = 4000, height: H = 6000, strands = 24
       ellipse('румянец', X(0.41), Y(0.18), X(0.18), Y(0.02), [240, 150, 150], { blend: 'mul ', opacity: 0.4 }),
       ellipse('нос', X(0.49), Y(0.17), X(0.02), Y(0.015), [220, 170, 150]),
       { name: 'глаза', children: [eye('левый', X(0.41)), eye('правый', X(0.52)), ellipse('eyes/closed', X(0.41), Y(0.16), X(0.18), Y(0.01), [40, 30, 30], { visible: false })] },
+      ellipse('тень глаз', X(0.4), Y(0.14), X(0.2), Y(0.025), [150, 120, 170], { clipping: true, blend: 'mul ', opacity: 0.6 }),
       ellipse('бровь левая', X(0.41), Y(0.135), X(0.07), Y(0.008), [90, 60, 40]),
       ellipse('бровь правая', X(0.52), Y(0.135), X(0.07), Y(0.008), [90, 60, 40]),
       { name: 'рот [slot]', children: [
