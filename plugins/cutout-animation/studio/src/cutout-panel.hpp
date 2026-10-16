@@ -486,6 +486,33 @@ class CutoutPanel : public QWidget {
   bool runCommand(const QString& id);  // false: unknown or disabled
   void showCommandPalette();
   QWidget* commandPalette() const;
+  // ---- Direct manipulation on the canvas (plugin 1.19.0). Keys and gestures only choose what an
+  // existing gesture does; every edit is still ONE core op batch (transformBones, duplicateBones...).
+  /** Arrow-key nudge of the selection by `step` px in the axis space of the numeric fields (world:
+   *  rig px; local/parent: the parent's axes, a part's bone axes). Presses within NUDGE_IDLE_MS are
+   *  one gesture: previewed live, ONE edit when the keys rest (Animate: keys, as a drag does). */
+  static constexpr int NUDGE_IDLE_MS = 400;
+  bool nudgeSelection(const QPoint& step);
+  bool flushNudge();             // commit a pending nudge now (false = nothing pending / refused)
+  bool nudgePending() const { return nudge_.has_value(); }
+  /** 복제 (Ctrl+D, setup mode): the selected bones with their subtrees and the selected parts (core
+   *  duplicateBones, one edit); the copies become the selection. */
+  bool duplicateSelected();
+  /** Double-click on the canvas: a part selects its bone, a bone its first part (draw order). */
+  void canvasDoubleClick(const QString& ref);
+  /** Esc on the canvas with nothing to cancel there: mesh/box vertex editing off, else the select
+   *  tool, else the selection cleared (one step per press). */
+  void canvasEscape();
+  /** Right-click menu for `ref` (the item under the cursor, "" = none): existing commands only,
+   *  objectNames cutoutCanvasMenu*. The caller owns (exec / deletes) the menu. */
+  QMenu* canvasMenu(const QString& ref);
+  /** Every bound shortcut: the panel's QShortcuts (their key, group, text) and the canvas's own
+   *  keys and gestures (RigCanvas::keyBindings). The overlay shows exactly this list. */
+  struct ShortcutInfo { QString keys, group, text, source; };
+  QVector<ShortcutInfo> shortcutList() const;
+  /** ? on the canvas / 보기 ▾ 단축키 모음: the overlay cutoutShortcutOverlay (Esc or ? closes it). */
+  void showShortcutOverlay(bool on);
+  bool shortcutOverlayVisible() const;
   /** First-run hint strip (dismissed = editor-only QSettings flag). */
   void setHintVisible(bool on);
   bool hintVisible() const;
@@ -640,6 +667,15 @@ class CutoutPanel : public QWidget {
   bool applyingLayout_ = false;
   QWidget *canvasPane_ = nullptr, *clipsPane_ = nullptr, *timelinePane_ = nullptr, *mixPane_ = nullptr, *modeBar_ = nullptr;
   QFrame* hintStrip_ = nullptr;
+  QFrame* shortcutOverlay_ = nullptr;   // plugin 1.19.0
+  QTreeWidget* shortcutTree_ = nullptr;
+  void buildShortcutOverlay();
+  struct Nudge { QString ref; QPointF total; };  // plugin 1.19.0: arrow keys being coalesced
+  std::optional<Nudge> nudge_;
+  QTimer* nudgeTimer_ = nullptr;
+  bool flushingNudge_ = false;
+  std::vector<cutout::Json> nudgeOps() const;
+  void toggleMeshHotkey(MeshEdit mode);  // M / W
   QFrame* palette_ = nullptr;
   QLineEdit* paletteSearch_ = nullptr;
   QListWidget* paletteList_ = nullptr;
@@ -905,6 +941,7 @@ class CutoutPanel : public QWidget {
   /** `accepted` runs after the core accepted the ops and before the commit (selection follow-up). */
   bool runOps(const std::vector<cutout::Json>& ops, bool keyGesture, const std::function<void(const cutout::EditResult&)>& accepted = {});
   bool refusePending();  // true (and a status) while uncommitted pose changes exist
+  const cutout::Json& editBase() const;  // working_, else the in-flight edit of this rig, else the document
   cutout::Json refsJson(const QVector<KeyRef>& keys) const;
   void selectKeysFrom(const cutout::Json& refs);
   void keyCommand(const QString& command);

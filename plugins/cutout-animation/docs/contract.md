@@ -1521,3 +1521,120 @@ gets a full `weights` list.
   of the same aspect), for a mesh `cutoutLinkedSkin`, `cutoutLinkedName`, `cutoutLinkedImage`
   (images of the same aspect); `cutoutLinkedDeform`. Locks, the brush, the mode and the preview
   pose are editor state.
+
+## Canvas shortcuts and direct manipulation (plugin 1.19.0)
+
+No data change: keys, modifiers, the readout, the shortcut overlay and the right-click menu only
+choose which existing gesture runs. Every edit is still ONE core op batch (the LLM `edit` op gets
+the same ops) and one undo step; every 1.18 document loads and plays bit-identically.
+
+### `duplicateBones {bones?, slots?}` (복제, Ctrl+D)
+
+* Every listed bone is copied with its whole subtree; a copied top bone keeps the original's
+  parent, so the copy sits exactly on top (same setup world). Every slot on a copied bone is
+  copied; listed `slots` whose bone is not copied are copied on the same bone. A bone listed with
+  its own descendant is copied once.
+* Ids: the next free `-N` of the id without a numeric suffix (`arm` → `arm-2`, `arm-2` → `arm-3`),
+  unique among bones and slots; a too long id is refused.
+* Draw order: the copied slots (in their own order) go right after the last original slot of the
+  set, so the copy draws above the originals with its own layering kept.
+* Attachments of the copied slots in the default list and in every skin are copied; mesh weights
+  of copied bones, linked-mesh parents (`linkedMesh.parent` slot) and clip ends (`end`) point at the
+  copies when those are copied too (else they keep naming the originals). A clipping slot whose
+  `end` is not copied is left out (warning `ANIM_DUPLICATE_CLIP_SKIPPED`).
+* IK, physics and transform constraints are copied (id: the next free `-N`) only when every bone
+  they name (`bones`, `bone`, `target`, `tip`) is inside the copy.
+* Clips, keys and expressions are not copied: the copy starts unanimated.
+* `extra.bones` / `extra.slots` = `{original id: copy id}`. Refused: neither list, unknown ids, a
+  non-array list. The editor runs it in setup mode only and selects the copies.
+
+### Keys (shortcut overlay `cutoutShortcutOverlay`)
+
+The overlay (`?` on the canvas, `보기 ▾ › 단축키 모음` = `cutoutShortcutOverlayAction`, closed by
+Esc / `?` / `cutoutShortcutOverlayClose`) lists in `cutoutShortcutList`, grouped by 도구 · 선택 ·
+변형 · 보기 · 편집 · 애니메이션 · 메시 · 도움말 · 작업 공간, exactly `CutoutPanel::shortcutList()`:
+every panel `QShortcut` named `cutoutShortcut*` (its key and the properties `cutoutShortcutGroup` /
+`cutoutShortcutText`) plus every `RigCanvas::keyBindings()` entry (the keys the canvas's key handler
+dispatches from, and the mouse gestures). The studio test `canvasDirectManipulation` compares the
+two, so the overlay cannot drift from what is bound.
+
+| Key | Where | Does |
+| --- | --- | --- |
+| V R S P | workspace | 선택·이동 / 회전 / 크기 / 회전 중심 tools (P setup only) |
+| B (and C) | workspace | 본 만들기 tool (setup only); C keeps working for 1.18 habits |
+| M | workspace | 메시 정점 편집 on/off (a part showing a mesh) |
+| W | workspace | 웨이트 칠하기 on/off (a mesh part, setup mode) |
+| G | workspace | 판정 상자 정점 편집 on/off (a bounding-box part, setup mode) |
+| K · O · Space · , . | workspace | key · onion skin · play/stop · step (unchanged) |
+| [ ] | workspace | brush size in weight mode (unchanged) |
+| Ctrl+K, F1 · Ctrl+= / Ctrl++ / Ctrl+- / Ctrl+0 | workspace | command palette · UI scale (unchanged) |
+| Esc | canvas | cancels a drag (the preview goes back, zero edits), a band, a mesh drag / stroke, outline drawing, point placing; else steps back: mesh / box vertex editing off → select tool → selection cleared |
+| F | canvas | 선택 맞춤: the selected bones (origin + tip) and parts (drawn bounds) fill the view (at least 80 rig px framed, zoom ≤ 8); nothing selected = 전체 맞춤 |
+| Shift+F, Home | canvas | 전체 맞춤 (the fit button `cutoutFitView`, now `전체 맞춤 (Home)`) |
+| Space held | canvas | hand tool: a left drag pans in any tool and mode (open / closed hand cursor), nothing is picked; a tap (press + release, no drag) is the panel's Space (play/stop in Animate). Middle / right drags still pan |
+| ← ↑ → ↓ (Shift = 10 px) | canvas | nudge (below); not while a mesh mode, outline drawing or point placing owns the canvas |
+| Ctrl+A | canvas | all bones (unchanged); Ctrl+Shift+A stays the host's workspace toggle (clearing = Esc) |
+| Delete / Backspace | canvas | deletes the selection like the 삭제 button `cutoutDeleteItem` (same confirmation; `deleteBone` cascade / `deleteSlot`); in vertex mode still the selected vertices |
+| Ctrl+D | canvas | `duplicateBones` of the selected bones (subtrees) and parts, setup mode |
+| ? (Shift+/) | canvas | the shortcut overlay |
+| Tab | canvas, dopesheet, graph | 캔버스 크게 (unchanged) |
+
+Letter keys are `QShortcut`s of the workspace (`Qt::WidgetWithChildrenShortcut`): a focused text or
+number field accepts the key as typing (`ShortcutOverride`), so they never fire while typing. The
+canvas claims its own keys through `ShortcutOverride` while it has the focus (Space is then the
+hand tool instead of the panel's play shortcut; during a drag also digits, `-`, `.`, `,`, `;`,
+Backspace and Enter, so `,` / `.` do not step the playhead mid-drag). Conflicts resolved in 1.19.0:
+F was 화면 맞춤 (now 선택 맞춤, the whole canvas without a selection); Space was play only (on the
+canvas now hold = pan, tap = play); Shift while dragging was fine ×0.25 (now constrain; Ctrl =
+fine); a right click only panned (now a click opens the menu, a drag still pans); B joins C for
+본 만들기; Ctrl+Shift+A was not taken for clearing (the host's toggle).
+
+### Drag modifiers, readout and typed values
+
+`RigCanvas::gestureValue(drag)` is the one interpretation of a drag (the readout and the panel's
+`dragOps` both read it):
+
+* **Shift** (held after the press: a Shift/Ctrl press toggles the selection): move = the dominant
+  axis of the mouse motion in rig axes; rotate = the grabbed bone's rotation in 15° steps (a group
+  or a part: the turn); scale = the factor in 10 % steps (never 0). Scale stays uniform.
+* **Ctrl**: fine, delta / angle / (factor − 1) × 0.1; with Shift the steps are 1° and 1 %.
+* Pressing or releasing Shift / Ctrl mid-drag re-previews at once.
+* **Typed value** (Move / Rotate / Scale drags): digits, `-`, `.` and `,` / `;` build the value,
+  Backspace edits, Enter (or keypad Enter) commits that ONE edit at once (the later release adds
+  nothing), Esc cancels. Move: `dx,dy` in rig px (one number = along the dominant axis of the drag
+  so far); rotate: degrees clockwise; scale: the factor. Typed values are exact (no snap).
+* Readout (editor-only, beside the cursor while dragging): `Δx · Δy`, `회전 …°`, `크기 ×…`,
+  `길이 · 각도` for 본 만들기, with the active modifiers and the typed text.
+
+### Nudge (arrow keys)
+
+* The selection (`transformBones` for bones, the topmost selected ones as in a drag; a part in
+  setup mode: its attachment offset) moves 1 px per press (Shift: 10 px) in the axis space of the
+  numeric fields (`숫자 축`): 월드 = rig px (`space: "world"`), 로컬 / 부모 = the parent's axes
+  (`space: "parent"`; a part: its bone's axes).
+* Presses (auto-repeat included) less than `CutoutPanel::NUDGE_IDLE_MS` (400 ms) apart are one
+  gesture: previewed live, ONE edit when the keys rest. Any other gesture (a drag, K, a selection,
+  mode or character change, any op) commits a resting nudge first, so its edit comes first and the
+  next edit builds on it.
+* Animate mode keys like a drag (`clip` + `timeMs`; with 자동 키 off the change is pending).
+
+### Canvas selection and menu
+
+* Double-click (select / rotate / scale tools): a part selects its bone; a bone selects its first
+  part in draw order (a bone without parts stays selected).
+* A right click on the canvas (no drag; the menu key: the selection) opens `cutoutCanvasMenu` for
+  the item under the cursor. An action on an item outside the selection selects it first; inside a
+  multi-selection it acts on the selection. Entries (only those that apply):
+  `cutoutCanvasMenuSelect`, `cutoutCanvasMenuSelectBone` (part) / `cutoutCanvasMenuSelectPart`
+  (a bone with parts), the submenu `cutoutCanvasMenuParent` (setup: 부모 본 바꾸기 = `reparentBone`
+  keeping the world pose, the bone's own subtree not offered; for a part 붙을 본 바꾸기 = `setSlot`
+  bone; entries `cutoutCanvasMenuParentTo` with the bone id as data, `cutoutCanvasMenuParentNone`),
+  `cutoutCanvasMenuKey` (Animate: K), `cutoutCanvasMenuOrient` (setup, bone: 본 방향 맞추기),
+  `cutoutCanvasMenuBox` (setup: 판정 상자), `cutoutCanvasMenuMesh` (setup, a part showing a plain
+  picture: 메시로 변환 with the 메시 page's grid), `cutoutCanvasMenuHide` (part: the editor-only eye
+  toggle), `cutoutCanvasMenuShowAll`, `cutoutCanvasMenuDuplicate` (setup), `cutoutCanvasMenuDelete`;
+  on empty canvas `cutoutCanvasMenuFrame`, `cutoutCanvasMenuFitAll`, `cutoutCanvasMenuSelectNone`;
+  always `cutoutCanvasMenuShortcuts`.
+* 보기 ▾ adds `cutoutFrameSelectionAction` (선택 맞춤, F) and `cutoutShortcutOverlayAction`. Tool
+  tooltips name their keys (`cutoutToolCreate` B · C, `cutoutMeshVertices` M, `cutoutMeshWeights`
+  W, `cutoutBoxVertices` G); the hint strip and the canvas hint line name V / R / S / Space / ?.

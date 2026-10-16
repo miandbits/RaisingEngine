@@ -603,36 +603,50 @@ void CutoutPanel::buildUi() {
   statusLabel_->setWordWrap(true);
   statusLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   root->addWidget(statusLabel_);
-  auto shortcut = [this](const QKeySequence& key, const char* name, std::function<void()> fn) {
+  // Every workspace shortcut is a QShortcut named cutoutShortcut* with its group and meaning
+  // (plugin 1.19.0): the shortcut overlay lists exactly these plus the canvas's own keys. Letter keys
+  // never fire while a text or number field has the focus (those fields take the key as typing).
+  auto shortcut = [this](const QKeySequence& key, const char* name, const char* group, const char* text, std::function<void()> fn) {
     auto* s = new QShortcut(key, this);
     s->setObjectName(name);
     s->setContext(Qt::WidgetWithChildrenShortcut);
+    s->setProperty("cutoutShortcutGroup", QString::fromUtf8(group));
+    s->setProperty("cutoutShortcutText", QString::fromUtf8(text));
     connect(s, &QShortcut::activated, this, fn);
   };
-  shortcut(Qt::Key_V, "cutoutShortcutMove", [this] { setTool(RigCanvas::Move); });
-  shortcut(Qt::Key_R, "cutoutShortcutRotate", [this] { setTool(RigCanvas::Rotate); });
-  shortcut(Qt::Key_S, "cutoutShortcutScale", [this] { setTool(RigCanvas::Scale); });
-  shortcut(Qt::Key_P, "cutoutShortcutPivot", [this] { setTool(RigCanvas::Pivot); });
-  shortcut(Qt::Key_C, "cutoutShortcutCreate", [this] { setTool(RigCanvas::Create); });
-  shortcut(Qt::Key_K, "cutoutShortcutKey", [this] { keySelected(); });
-  shortcut(Qt::Key_O, "cutoutShortcutOnion", [this] { setOnionSkin(!onion_.enabled); });
-  shortcut(Qt::Key_Space, "cutoutShortcutPlay", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
-  shortcut(Qt::Key_Comma, "cutoutShortcutStepBack", [this] { if (mode_ == Mode::Animate) stepPlayhead(-1); });
-  shortcut(Qt::Key_Period, "cutoutShortcutStepForward", [this] { if (mode_ == Mode::Animate) stepPlayhead(1); });
+  shortcut(Qt::Key_V, "cutoutShortcutMove", "도구", "선택·이동 도구", [this] { setTool(RigCanvas::Move); });
+  shortcut(Qt::Key_R, "cutoutShortcutRotate", "도구", "회전 도구", [this] { setTool(RigCanvas::Rotate); });
+  shortcut(Qt::Key_S, "cutoutShortcutScale", "도구", "크기 도구", [this] { setTool(RigCanvas::Scale); });
+  shortcut(Qt::Key_P, "cutoutShortcutPivot", "도구", "회전 중심 도구 (조립 모드)", [this] { setTool(RigCanvas::Pivot); });
+  // Plugin 1.19.0: B = 본 만들기 (Spine-like); C stays bound to it for existing habits.
+  shortcut(Qt::Key_B, "cutoutShortcutCreateBone", "도구", "본 만들기 도구 (조립 모드)", [this] { setTool(RigCanvas::Create); });
+  shortcut(Qt::Key_C, "cutoutShortcutCreate", "도구", "본 만들기 도구 (B와 같음)", [this] { setTool(RigCanvas::Create); });
+  shortcut(Qt::Key_M, "cutoutShortcutMeshVertices", "메시", "메시 정점 편집 켜기·끄기 (메시 조각을 골랐을 때)", [this] { toggleMeshHotkey(MeshEdit::Vertices); });
+  shortcut(Qt::Key_W, "cutoutShortcutWeights", "메시", "웨이트 붓 켜기·끄기 (메시 조각, 조립 모드)", [this] { toggleMeshHotkey(MeshEdit::Weights); });
+  shortcut(Qt::Key_G, "cutoutShortcutBoxVertices", "메시", "판정 상자 정점 편집 켜기·끄기 (판정 상자를 골랐을 때, 조립 모드)", [this] {
+    if (boxSlot().isEmpty() && !boxEdit_) { setStatus("G: 판정 상자 조각을 먼저 고르세요(판정 페이지의 「판정 상자」).", true); return; }
+    setBoxVertexEdit(!boxEdit_);
+  });
+  shortcut(Qt::Key_K, "cutoutShortcutKey", "애니메이션", "키 넣기 (고른 본·조각, 메시 편집 중이면 변형 키)", [this] { keySelected(); });
+  shortcut(Qt::Key_O, "cutoutShortcutOnion", "보기", "어니언 스킨 켜기·끄기", [this] { setOnionSkin(!onion_.enabled); });
+  shortcut(Qt::Key_Space, "cutoutShortcutPlay", "애니메이션", "재생 / 정지 (애니메이션 모드; 캔버스에서는 짧게 누름)", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
+  shortcut(Qt::Key_Comma, "cutoutShortcutStepBack", "애니메이션", "한 간격 뒤로", [this] { if (mode_ == Mode::Animate) stepPlayhead(-1); });
+  shortcut(Qt::Key_Period, "cutoutShortcutStepForward", "애니메이션", "한 간격 앞으로", [this] { if (mode_ == Mode::Animate) stepPlayhead(1); });
   // Plugin 1.18.0: weight brush size while 웨이트 칠하기 is on (free keys: no other shortcut uses [ ]).
-  shortcut(Qt::Key_BracketLeft, "cutoutShortcutBrushSmaller", [this] { stepBrushRadius(-1); });
-  shortcut(Qt::Key_BracketRight, "cutoutShortcutBrushLarger", [this] { stepBrushRadius(1); });
+  shortcut(Qt::Key_BracketLeft, "cutoutShortcutBrushSmaller", "메시", "웨이트 붓 작게", [this] { stepBrushRadius(-1); });
+  shortcut(Qt::Key_BracketRight, "cutoutShortcutBrushLarger", "메시", "웨이트 붓 크게", [this] { stepBrushRadius(1); });
   // Plugin 1.10.0: the command palette and the workspace text size.
-  shortcut(QKeySequence(Qt::CTRL | Qt::Key_K), "cutoutShortcutPalette", [this] { showCommandPalette(); });
-  shortcut(Qt::Key_F1, "cutoutShortcutPaletteF1", [this] { showCommandPalette(); });
-  shortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal), "cutoutShortcutUiLarger", [this] { stepUiScale(1); });
-  shortcut(QKeySequence(Qt::CTRL | Qt::Key_Plus), "cutoutShortcutUiLargerPlus", [this] { stepUiScale(1); });
-  shortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus), "cutoutShortcutUiSmaller", [this] { stepUiScale(-1); });
-  shortcut(QKeySequence(Qt::CTRL | Qt::Key_0), "cutoutShortcutUiNormal", [this] { setUiScale(1.0); });
+  shortcut(QKeySequence(Qt::CTRL | Qt::Key_K), "cutoutShortcutPalette", "도움말", "명령 찾기", [this] { showCommandPalette(); });
+  shortcut(Qt::Key_F1, "cutoutShortcutPaletteF1", "도움말", "명령 찾기", [this] { showCommandPalette(); });
+  shortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal), "cutoutShortcutUiLarger", "작업 공간", "글자 크기 한 단계 크게", [this] { stepUiScale(1); });
+  shortcut(QKeySequence(Qt::CTRL | Qt::Key_Plus), "cutoutShortcutUiLargerPlus", "작업 공간", "글자 크기 한 단계 크게", [this] { stepUiScale(1); });
+  shortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus), "cutoutShortcutUiSmaller", "작업 공간", "글자 크기 한 단계 작게", [this] { stepUiScale(-1); });
+  shortcut(QKeySequence(Qt::CTRL | Qt::Key_0), "cutoutShortcutUiNormal", "작업 공간", "글자 크기 보통", [this] { setUiScale(1.0); });
   // Tab = full view, but only where Tab has no text-entry meaning (form fields keep focus
   // navigation): an event filter sees the key before QWidget's focus-chain handling.
   for (QWidget* w : {static_cast<QWidget*>(canvas_), static_cast<QWidget*>(dopesheet_), static_cast<QWidget*>(graph_)}) w->installEventFilter(this);
   buildCommandPalette();
+  buildShortcutOverlay();
   finishTooltips();
   restoreLayout();
   // A drag of any splitter makes the layout the user's (kept, saved) from then on.
@@ -745,6 +759,10 @@ bool CutoutPanel::eventFilter(QObject* watched, QEvent* event) {
       if (event->type() == QEvent::KeyPress) { if (key->modifiers() & Qt::ShiftModifier) selectChildren(); else selectAllBones(); }
       return true;
     }
+  }
+  if (watched == shortcutTree_ && event->type() == QEvent::KeyPress) {
+    auto* key = static_cast<QKeyEvent*>(event);
+    if (key->key() == Qt::Key_Escape || key->key() == Qt::Key_Question || (key->key() == Qt::Key_Slash && (key->modifiers() & Qt::ShiftModifier))) { showShortcutOverlay(false); return true; }
   }
   if (palette_ && (watched == paletteSearch_ || watched == paletteList_)) {
     if (event->type() == QEvent::KeyPress) {
@@ -926,6 +944,9 @@ void CutoutPanel::buildViewMenu() {
   hintAction_->setCheckable(true);
   action(menu, "레이아웃 초기화", "cutoutResetLayoutAction", QString(), [this] { resetLayout(); });
   action(menu, "캔버스 크게", "cutoutFullViewAction", "Tab", [this] { setFullView(!fullView()); });
+  // Plugin 1.19.0: canvas framing and the shortcut overlay (also F / Home / ? on the canvas).
+  action(menu, "선택 맞춤", "cutoutFrameSelectionAction", "F", [this] { canvas_->frameSelection(); });
+  action(menu, "단축키 모음", "cutoutShortcutOverlayAction", "?", [this] { QTimer::singleShot(0, this, [this] { showShortcutOverlay(true); }); });
   menu->addSeparator();
   buildHitViewActions(menu);  // plugin 1.17.0: 판정 상자 / 기준점 보이기
   viewMenuButton_->setMenu(menu);
@@ -941,8 +962,8 @@ void CutoutPanel::buildHintStrip() {
   row->setContentsMargins(6, 2, 2, 2);
   auto* text = new HintLabel;
   text->setObjectName("cutoutHintText");
-  text->setText("처음이라면: Ctrl+K(또는 F1)로 모든 명령을 이름·단축키로 찾아 실행합니다 · 조립 모드: 「새 캐릭터」 → 「이미지 조각 추가…」 → 본 만들기(C) · "
-                "애니메이션 모드: 자세를 바꾸고 K · 글자 크기: 「보기 ▾」 또는 Ctrl+= / Ctrl+-");
+  text->setText("처음이라면: Ctrl+K(또는 F1)로 모든 명령을 이름·단축키로 찾아 실행합니다 · 조립 모드: 「새 캐릭터」 → 「이미지 조각 추가…」 → 본 만들기(B) · "
+                "캔버스: V 선택 · R 회전 · S 크기 · Space 누른 채 끌기 = 화면 이동 · ? = 단축키 모음 · 애니메이션 모드: 자세를 바꾸고 K · 글자 크기: Ctrl+= / Ctrl+-");
   text->setWordWrap(true);
   text->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   auto* open = new QToolButton;
@@ -1023,7 +1044,8 @@ QVector<CutoutPanel::Command> CutoutPanel::commands() const {
   QVector<Command> out;
   QSet<QString> seen;
   auto skip = [this](const QObject* o) {
-    for (const QObject* p = o; p; p = p->parent()) if (p == palette_) return true;
+    // The palette's own widgets and the shortcut overlay's close button are not commands.
+    for (const QObject* p = o; p; p = p->parent()) if (p == palette_ || (shortcutOverlay_ && p == shortcutOverlay_)) return true;
     return false;
   };
   for (QAbstractButton* b : findChildren<QAbstractButton*>()) {
@@ -1562,6 +1584,8 @@ QWidget* CutoutPanel::buildMesh() {
   };
   meshVerticesButton_ = mode("정점 편집", "cutoutMeshVertices", "캔버스에서 정점을 클릭·상자로 골라 끕니다.\n조립 모드: 메시 모양(그림은 제자리) · 애니메이션 모드: 이 시간의 변형(K로 키).", MeshEdit::Vertices);
   meshWeightsButton_ = mode("웨이트 칠하기", "cutoutMeshWeights", "조립 모드: 캔버스를 끌어 고른 본의 웨이트를 칠합니다(색: 파랑 0 → 빨강 1).", MeshEdit::Weights);
+  meshVerticesButton_->setProperty("cutoutShortcut", "M");  // plugin 1.19.0 (panel shortcuts M / W)
+  meshWeightsButton_->setProperty("cutoutShortcut", "W");
   meshBones_ = new QListWidget;
   meshBones_->setObjectName("cutoutMeshBones");
   meshBones_->setMinimumHeight(LIST_MIN_HEIGHT);
@@ -1965,13 +1989,13 @@ QWidget* CutoutPanel::buildWorkspace() {
   treeButtons->setProperty("cutoutGroup", "본");
   auto* addBoneButton = new QPushButton("본 추가");
   addBoneButton->setObjectName("cutoutAddBone");
-  addBoneButton->setToolTip("고른 본(없으면 루트)의 자식 본을 하나 추가합니다(조립 모드). 캔버스에서 끌어 그리려면 본 만들기(C) 도구를 씁니다.");
+  addBoneButton->setToolTip("고른 본(없으면 루트)의 자식 본을 하나 추가합니다(조립 모드). 캔버스에서 끌어 그리려면 본 만들기(B) 도구를 씁니다.");
   auto* addPartButton = new QPushButton("이미지 조각 추가…");
   addPartButton->setObjectName("cutoutAddPart");
   addPartButton->setToolTip("프로젝트 이미지나 PNG를 고른 본에 붙는 조각(슬롯)으로 추가합니다.");
   auto* deleteButton = new QPushButton("삭제");
   deleteButton->setObjectName("cutoutDeleteItem");
-  deleteButton->setToolTip("고른 본(자식·조각 포함) 또는 조각을 삭제합니다. 쓰는 키·IK도 함께 지웁니다.");
+  deleteButton->setToolTip("고른 본(자식·조각 포함) 또는 조각을 삭제합니다. 쓰는 키·IK도 함께 지웁니다. 캔버스에서 Delete도 같습니다.");
   connect(addBoneButton, &QPushButton::clicked, this, [this] { addBone(); });
   connect(addPartButton, &QPushButton::clicked, this, [this] { addPartInteractive(); });
   connect(deleteButton, &QPushButton::clicked, this, [this] { deleteSelected(); });
@@ -2041,12 +2065,12 @@ QWidget* CutoutPanel::buildWorkspace() {
   // width from 1280 px windows up, so no tool hides behind ».
   auto* tools = toolRow("cutoutCanvasTools");
   const char* toolNames[] = {"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot", "cutoutToolCreate"};
-  const char* toolLabels[] = {"선택/이동 (V)", "회전 (R)", "크기 (S)", "회전 중심 (P)", "본 만들기 (C)"};
-  const char* toolKeys[] = {"V", "R", "S", "P", "C"};
+  const char* toolLabels[] = {"선택/이동 (V)", "회전 (R)", "크기 (S)", "회전 중심 (P)", "본 만들기 (B)"};
+  const char* toolKeys[] = {"V", "R", "S", "P", "B · C"};
   const char* toolGroups[] = {"선택", "변형", "변형", "변형", "본"};
   const char* toolTips[] = {"고르고 끌어 옮깁니다. 본 몸통을 끌면 원점을 중심으로 돌고, 빈 곳을 끌면 상자 선택(Ctrl/Shift = 더하기).",
-                            "끌어서 돌립니다(Shift: 15° 단위). 여러 본은 「중심」에 따라 각자 원점 / 선택 중심으로 돕니다.",
-                            "끌어서 크기를 바꿉니다. 애니메이션 모드에서는 크기 키가 됩니다.",
+                            "끌어서 돌립니다(끄는 중 Shift: 15° 단위, Ctrl: 미세). 여러 본은 「중심」에 따라 각자 원점 / 선택 중심으로 돕니다.",
+                            "끌어서 크기를 바꿉니다(끄는 중 Shift: 10 % 단위, Ctrl: 미세). 애니메이션 모드에서는 크기 키가 됩니다.",
                             "관절 위치(본 원점 또는 그림 기준점)를 찍습니다. 자식 본과 조각은 화면 자리를 지킵니다(조립 모드).",
                             "끌어서 본을 그립니다: 고른 본(없으면 루트)의 자식, 누른 곳이 원점, 끈 방향·거리가 회전·길이 · 클릭 = 길이 0 · Shift 15° · 본 원점 클릭 = 부모 고르기 (조립 모드)"};
   auto* toolGroup = new QButtonGroup(this);
@@ -2073,9 +2097,9 @@ QWidget* CutoutPanel::buildWorkspace() {
   toolButtons_[0]->setChecked(true);
   auto* fit = new QToolButton;
   fit->setObjectName("cutoutFitView");
-  fit->setText("화면 맞춤 (F)");
-  fit->setToolTip("캐릭터 전체가 캔버스에 들어오게 확대·위치를 맞춥니다.");
-  fit->setProperty("cutoutShortcut", "F");
+  fit->setText("전체 맞춤 (Home)");
+  fit->setToolTip("캐릭터 전체가 캔버스에 들어오게 확대·위치를 맞춥니다 (Home 또는 Shift+F). 캔버스에서 F = 고른 것만 맞춤.");
+  fit->setProperty("cutoutShortcut", "Home");
   fit->setProperty("cutoutGroup", "보기");
   onionButton_ = new QToolButton;
   onionButton_->setObjectName("cutoutOnionSkin");
@@ -2158,6 +2182,28 @@ QWidget* CutoutPanel::buildWorkspace() {
   canvas_->onPlacePoint = [this](const QPointF& at) { addPointAt(at); };
   canvas_->onPlaceCancel = [this] { setStatus("기준점 놓기를 취소했습니다."); refreshHits(); };
   canvas_->onPreviewClick = [this](const QPointF& at) { return previewClick(at); };
+  // Direct manipulation (plugin 1.19.0, cutout-direct.cpp).
+  canvas_->onDragCancel = [this] {
+    // Esc mid-drag: the preview goes, the data never changed (zero edits).
+    dragActive_ = false;
+    dragPreview_.reset();
+    createId_.clear();
+    pendingStroke_.reset();
+    if (paintPreviewTimer_) paintPreviewTimer_->stop();
+    rebuildDisplay(false);
+    setStatus("끌기를 취소했습니다(바뀐 것 없음).");
+  };
+  canvas_->onEscape = [this] { canvasEscape(); };
+  canvas_->onNudge = [this](const QPoint& step) { nudgeSelection(step); };
+  canvas_->onDeleteSelection = [this] { deleteSelected(); };
+  canvas_->onDuplicate = [this] { duplicateSelected(); };
+  canvas_->onDoubleClick = [this](const QString& ref) { canvasDoubleClick(ref); };
+  canvas_->onContextMenu = [this](const QString& ref, const QPoint& at) {
+    std::unique_ptr<QMenu> menu(canvasMenu(ref));
+    menu->exec(at);
+  };
+  canvas_->onSpaceTap = [this] { if (mode_ == Mode::Animate) playButton_->click(); };
+  canvas_->onShortcutOverlay = [this] { showShortcutOverlay(!shortcutOverlayVisible()); };
   connect(fit, &QToolButton::clicked, canvas_, &RigCanvas::fitToCanvas);
   // Second row (plugin 1.7.0, editor-only options): selection commands, the pivot of a
   // multi-bone rotate/scale, setup-pose compensation and the axis space of the numeric fields.
@@ -2950,6 +2996,10 @@ const CutoutPanel::Doc* CutoutPanel::controllerDoc() const { auto it = controlle
 // empty object (never null) when absent because nlohmann value() throws on null.
 static const Json& emptyObject() { static const Json e = Json::object(); return e; }
 const Json& CutoutPanel::committedRig() const { const Doc* d = rigDoc(); return d && d->data ? *d->data : emptyObject(); }
+// What the next edit builds on: uncommitted Animate changes, else the edit just sent for this rig
+// (shown already; its view may still be on the way: a nudge flushed by the next gesture), else the
+// document.
+const Json& CutoutPanel::editBase() const { return working_ ? *working_ : inflight_ && inflightRig_ == rigId_ ? *inflight_ : committedRig(); }
 const Json& CutoutPanel::committedController() const { const Doc* d = controllerDoc(); return d && d->data ? *d->data : emptyObject(); }
 CutoutPanel::JsonPtr CutoutPanel::displayShared() const {
   static const JsonPtr empty = std::make_shared<const Json>(Json::object());
@@ -3053,11 +3103,13 @@ bool CutoutPanel::commitRig(cutout::EditResult result) {
   return true;
 }
 bool CutoutPanel::runOps(const std::vector<Json>& ops, bool keyGesture, const std::function<void(const cutout::EditResult&)>& accepted) {
+  // A resting nudge is its own (earlier) edit: any other gesture commits it first (plugin 1.19.0).
+  if (nudge_ && !flushingNudge_) flushNudge();
   if (!rigDoc()) { setStatus("먼저 캐릭터를 선택하거나 만드세요.", true); return false; }
   if (ops.empty()) return false;
   cutout::EditResult result;
   try {
-    result = cutout::applyEdit(working_ ? *working_ : committedRig(), batch(ops), controllersFor(rigId_));
+    result = cutout::applyEdit(editBase(), batch(ops), controllersFor(rigId_));
   } catch (const std::exception& e) {
     setStatus(qs(e.what()), true);
     rebuildDisplay(false);
@@ -4105,6 +4157,7 @@ void CutoutPanel::updateTrail(int clip) {
 
 // ---------------------------------------------------------------- navigation
 void CutoutPanel::selectRig(const QString& id) {
+  if (nudge_) flushNudge();
   if (id == rigId_ || !rigs_.contains(id)) return;
   if (working_) { working_.reset(); setStatus("다른 캐릭터로 바꿔 키로 저장하지 않은 변경을 버렸습니다."); }
   rigId_ = id;
@@ -4232,6 +4285,7 @@ void CutoutPanel::syncSelectionWidgets() {
   if (dopesheet_) dopesheet_->setHighlightTargets(set);
 }
 void CutoutPanel::setSelection(const QStringList& refsIn, const QString& primaryIn) {
+  if (nudge_ && !flushingNudge_) flushNudge();  // the nudge belongs to the selection it moved
   QStringList refs;
   for (const QString& r : selected_) if (refsIn.contains(r) && !refs.contains(r)) refs << r;  // keep the pick order
   for (const QString& r : refsIn) if (!r.isEmpty() && !refs.contains(r)) refs << r;
@@ -4263,6 +4317,7 @@ void CutoutPanel::selectClip(const QString& id) {
   rebuildDisplay();
 }
 void CutoutPanel::setMode(Mode mode) {
+  if (nudge_) flushNudge();
   if (mode == mode_) { refreshModeUi(); return; }
   if (working_) { working_.reset(); setStatus("모드를 바꿔 키로 저장하지 않은 변경을 버렸습니다."); }
   if (playing_) playButton_->setChecked(false);
@@ -4617,10 +4672,12 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   const cutout::Rig& rig = *dragRig_;
   const cutout::Pose& pose = dragPose_;
   const bool animate = mode_ == Mode::Animate;
-  const double k = d.shift ? 0.25 : 1.0;  // Shift = fine adjustment
-  const QPointF delta = (d.current - d.start) * k;
-  auto snap = [&](double r) { return d.shift ? std::round(r / 15) * 15 : r; };
-  const double ratio = d.shift ? 1 + (d.ratio - 1) * 0.25 : d.ratio;
+  // Plugin 1.19.0: modifiers and typed values come from the canvas's one interpretation (the same
+  // numbers its readout shows): Shift constrains (axis / 15° / 10 %), Ctrl is fine (×0.1).
+  const RigCanvas::GestureValue g = RigCanvas::gestureValue(d);
+  const QPointF delta = g.delta;
+  auto snap = [&](double r) { return g.snapRotation ? std::round(r / g.snapStep) * g.snapStep : r; };
+  const double ratio = g.ratio;
   QString kind = refKind(d.ref), id = refId(d.ref);
   if (d.tool == RigCanvas::Create) {
     // A child of the selected bone (a part: its bone), else of the root (first top-level bone):
@@ -4664,7 +4721,10 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
     const QString skin = skinProviding(id, qs(att->name));
     Json op = skin.isEmpty() ? Json{{"op", "setAttachment"}, {"slot", ss(id)}, {"name", att->name}}
                              : Json{{"op", "setSkinAttachment"}, {"skin", ss(skin)}, {"slot", ss(id)}, {"name", att->name}};
-    if (d.tool == RigCanvas::Move) {
+    if (d.tool == RigCanvas::Move && d.parentSpace) {
+      // Nudge in local/parent axes (plugin 1.19.0): the part's own offset, in its bone's axes.
+      op["x"] = att->offset.x + delta.x(); op["y"] = att->offset.y + delta.y();
+    } else if (d.tool == RigCanvas::Move) {
       double ax, ay;
       boneWorld.apply(att->offset.x, att->offset.y, ax, ay);
       const auto inv = boneWorld.inverse();
@@ -4674,7 +4734,7 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
       op["x"] = lx; op["y"] = ly;
     } else if (d.tool == RigCanvas::Rotate) {
       const double sign = boneWorld.a * boneWorld.d - boneWorld.b * boneWorld.c < 0 ? -1 : 1;
-      op["rotation"] = snap(att->offset.rotation + sign * d.angle);
+      op["rotation"] = snap(att->offset.rotation + sign * g.angle);
     } else {
       op["scaleX"] = att->offset.scaleX * ratio; op["scaleY"] = att->offset.scaleY * ratio;
     }
@@ -4704,7 +4764,7 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
     change = {{"x", delta.x()}, {"y", delta.y()}};
   } else if (d.tool == RigCanvas::Rotate) {
     // Shift snaps the grabbed bone's own rotation to 15° (a group: the turn itself).
-    const double sign = mirrors && pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1, turn = group ? snap(d.angle) : sign * (snap(cur.rotation + sign * d.angle) - cur.rotation);
+    const double sign = mirrors && pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1, turn = group ? snap(g.angle) : sign * (snap(cur.rotation + sign * g.angle) - cur.rotation);
     if (std::fabs(turn) < 1e-9) return {};
     change = {{"rotation", turn}};
   } else {
@@ -4715,6 +4775,7 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   for (const QString& b : bones) ids.push_back(ss(b));
   Json op = {{"op", "transformBones"}, {"bones", ids}, {"delta", change}};
   if (group) op["pivot"] = "centroid";
+  if (d.parentSpace && d.tool == RigCanvas::Move) op["space"] = "parent";  // nudge in local/parent axes
   if (animate) {
     op["clip"] = ss(clipId_);
     op["timeMs"] = playheadMs_;
@@ -4728,8 +4789,9 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
 
 void CutoutPanel::onCanvasDrag(const RigCanvas::Drag& d, bool finished) {
   if (!dragActive_) {
+    flushNudge();  // arrow keys still resting: their edit comes first (plugin 1.19.0)
     dragActive_ = true;
-    dragBase_ = working_ ? *working_ : committedRig();
+    dragBase_ = editBase();
     dragRig_ = rig_;
     dragPose_ = currentPose(false);  // deltas apply to the keyable values, never to a previewed expression
   }
@@ -4915,6 +4977,7 @@ void CutoutPanel::commitAttachmentChoice() {
 }
 
 bool CutoutPanel::keySelected() {
+  flushNudge();
   if (mode_ != Mode::Animate) { setStatus("키는 애니메이션 모드에서 추가합니다.", true); return false; }
   if (clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return false; }
   if (working_) {
@@ -6254,8 +6317,9 @@ std::vector<Json> CutoutPanel::meshMoveOps(const QPointF& rigDelta) const {
 }
 void CutoutPanel::onMeshDrag(const QPointF& delta, bool finished) {
   if (!dragActive_) {
+    flushNudge();
     dragActive_ = true;
-    dragBase_ = working_ ? *working_ : committedRig();
+    dragBase_ = editBase();
     dragRig_ = rig_;
     dragPose_ = currentPose(false);
   }

@@ -60,6 +60,7 @@ QWidget* CutoutPanel::buildHits() {
   hitVerticesButton_ = new QPushButton("정점 편집");
   hitVerticesButton_->setObjectName("cutoutBoxVertices");
   hitVerticesButton_->setCheckable(true);
+  hitVerticesButton_->setProperty("cutoutShortcut", "G");  // plugin 1.19.0
   hitVerticesButton_->setToolTip("조립 모드: 고른 판정 상자의 점을 캔버스에서 고치고(끌기·상자 선택), 「점 추가」로 변에 점을 넣고, Delete로 지웁니다.");
   connect(hitVerticesButton_, &QPushButton::toggled, this, [this](bool on) { if (!filling_) setBoxVertexEdit(on); });
   addTo(tools, hitVerticesButton_);

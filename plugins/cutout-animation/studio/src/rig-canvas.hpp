@@ -26,7 +26,26 @@ class RigCanvas : public QWidget {
     double ratio = 1;       // |current-origin| / |start-origin|
     bool shift = false, moved = false;
     bool body = false;      // the press grabbed a bone's body (length shape / axis): rotates around its origin
+    bool ctrl = false;      // plugin 1.19.0: Ctrl held while dragging = fine (×0.1)
+    QString typed;          // plugin 1.19.0: digits typed while dragging (exact value; Enter commits)
+    bool parentSpace = false;  // nudge (plugin 1.19.0): the delta is in the parent's axes, not rig px
   };
+  /** What a drag means once its modifiers / typed value are applied (plugin 1.19.0): the one place
+   *  the canvas readout and the panel's ops read it from, so what is shown is what is committed.
+   *  Shift = constrain (move along the dominant axis, rotation in 15° steps, scale in 10 % steps),
+   *  Ctrl = fine (×0.1; with Shift the steps are 1° / 1 %). A typed value replaces the mouse:
+   *  move "dx,dy" (one number = along the dominant axis), rotate degrees, scale a factor. */
+  struct GestureValue { QPointF delta; double angle = 0, ratio = 1, snapStep = 15; bool snapRotation = false, typed = false; };
+  static GestureValue gestureValue(const Drag& d);
+  /** The on-canvas readout of the drag in progress ("" = none): Δx Δy / 회전 / 크기 / 길이. */
+  QString readoutText() const;
+  const std::optional<Drag>& currentDrag() const { return drag_; }
+  /** Canvas keys and gestures (plugin 1.19.0): THE list the key handler dispatches from and the
+   *  shortcut overlay shows (`codes` empty = a mouse gesture or a key handled elsewhere, listed only). */
+  struct KeyBinding { const char* id; const char* keys; const char* group; const char* text; QVector<int> codes; int modifiers = 0; bool anyShift = false; };
+  static const QVector<KeyBinding>& keyBindings();
+  /** id of the keyBindings() entry a key press matches ("" = none). */
+  static QString bindingFor(int key, Qt::KeyboardModifiers modifiers);
   /** Create tool: where the new bone's tip is (rig space), Shift snapping the angle to 15°. */
   static QPointF createEnd(const Drag& d);
   /** Onion-skin ghost: a pose of `rig` drawn behind the live pose, tinted (invalid tint =
@@ -84,6 +103,13 @@ class RigCanvas : public QWidget {
   double uiScale() const { return ui_; }
   /** Fit the authoring canvas into the widget (also re-enables auto fit on resize). */
   void fitToCanvas();
+  /** F (plugin 1.19.0): zoom/pan so the selected bones and parts fill the view (nothing selected =
+   *  fitToCanvas). Editor-only view state. */
+  void frameSelection();
+  double zoom() const { return zoom_; }
+  QPointF panOffset() const { return pan_; }
+  /** Space held (plugin 1.19.0): a left drag pans the view (hand cursor) instead of editing. */
+  bool spaceHeld() const { return spaceHeld_; }
   QTransform viewTransform() const;
   QPointF widgetToRig(const QPointF& p) const;
   QPointF rigToWidget(const QPointF& p) const;
@@ -205,6 +231,21 @@ class RigCanvas : public QWidget {
   /** Delete / Backspace in vertex mode (the panel deletes the selected vertices). */
   std::function<void()> onMeshDelete;
 
+  // ---- Direct manipulation (plugin 1.19.0). The canvas only reports; the panel makes the edits.
+  /** Esc during a drag: the drag is dropped, the preview must go back to the data (zero edits). */
+  std::function<void()> onDragCancel;
+  /** Esc with nothing to cancel on the canvas: the panel steps back (mesh mode off, select tool, clear). */
+  std::function<void()> onEscape;
+  /** Arrow keys: a nudge of the selection by `step` px (Shift = 10); auto-repeat included, the panel coalesces. */
+  std::function<void(const QPoint& step)> onNudge;
+  std::function<void()> onDeleteSelection;  // Delete / Backspace (not in mesh vertex mode)
+  std::function<void()> onDuplicate;        // Ctrl+D
+  std::function<void(const QString& ref)> onDoubleClick;  // left double-click on an item (select tools)
+  /** Right click without a pan drag (or the menu key): `ref` = the item under the cursor ("" = none). */
+  std::function<void(const QString& ref, const QPoint& globalPos)> onContextMenu;
+  std::function<void()> onSpaceTap;          // Space pressed and released without panning (play in Animate)
+  std::function<void()> onShortcutOverlay;   // ? (Shift+/)
+
   std::function<void(const QString&)> onSelect;
   /** Ctrl/Shift+click on an item: toggle it in the multi-selection (no drag starts). */
   std::function<void(const QString& ref)> onToggleSelect;
@@ -233,6 +274,8 @@ class RigCanvas : public QWidget {
   void resizeEvent(QResizeEvent*) override;
   void keyPressEvent(QKeyEvent*) override;
   void keyReleaseEvent(QKeyEvent*) override;
+  void contextMenuEvent(QContextMenuEvent*) override;
+  void focusOutEvent(QFocusEvent*) override;
   void leaveEvent(QEvent*) override;
   bool event(QEvent*) override;
 
@@ -253,6 +296,13 @@ class RigCanvas : public QWidget {
   std::optional<Drag> drag_;
   bool panning_ = false;
   QPointF panStart_, panOrigin_, pressWidget_;
+  // plugin 1.19.0: Space-held pan, right-click vs right-drag (a pan never opens the menu)
+  bool spaceHeld_ = false, spacePanned_ = false, rightPan_ = false, suppressContext_ = false;
+  void setSpaceHeld(bool on);
+  void refreshDragModifiers(bool shift, bool ctrl);  // Shift/Ctrl pressed mid-drag: re-preview
+  bool typeIntoDrag(QKeyEvent* e);                  // digits / Enter / Backspace during a drag
+  void cancelDrag();
+  void paintReadout(QPainter& p);
   double lastAngle_ = 0;
   // Onion skin: each ghost renders once into a tinted layer (widget pixels) reused while the
   // view, size and filters stay the same, so scrubbing between keys and hover repaints are cheap.

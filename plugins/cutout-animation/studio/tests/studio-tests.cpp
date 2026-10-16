@@ -4274,7 +4274,7 @@ class StudioTests : public QObject {
     QVERIFY(!panel->findCommands("키 복사").isEmpty() || !panel->findCommands("복사").isEmpty());
     // Every action the README authoring guide names is reachable from the palette.
     const QStringList guide{"새 캐릭터", "이미지 조각 추가", "회전 중심", "본 만들기", "자동 길이", "본 방향 맞추기", "선택/이동", "회전 (R)", "크기 (S)",
-                            "자식 본까지 선택", "모든 본 선택", "선택 해제", "본 보정", "이미지 보정", "상대값 입력", "뒤로 ↑", "앞으로 ↓", "캔버스 크게", "화면 맞춤",
+                            "자식 본까지 선택", "모든 본 선택", "선택 해제", "본 보정", "이미지 보정", "상대값 입력", "뒤로 ↑", "앞으로 ↓", "캔버스 크게", "전체 맞춤", "선택 맞춤", "단축키 모음",
                             "조립", "애니메이션 (Animate)", "새 클립", "자동 키", "키 추가", "맞춤", "[ 구간 시작", "구간 끝 ]", "구간 해제", "간격 배율", "만큼 이동",
                             "복사", "붙여넣기", "복제", "포즈 복사", "포즈 붙여넣기", "그래프", "도프시트", "둘 다", "채널별 맞춤", "값 맞춤", "이벤트 키", "키 편집",
                             "새 이벤트", "지우기", "숨쉬기", "눈깜빡임", "어니언 스킨", "어니언 스킨 설정", "궤적", "재생", "처음으로", "새 스킨", "그림 지정", "빼기",
@@ -5340,6 +5340,421 @@ class StudioTests : public QObject {
     QVERIFY(gesture("delete the box", 1, [&] { click("cutoutHitDelete"); }));
     QVERIFY(!slotIds().contains("face-box"));
     QCOMPARE(find<QListWidget>("cutoutHitList")->count(), 1);  // the point is left
+    panel->selectRig(keepRig);
+    pump();
+  }
+  /** Right-click `at` on `w` and trigger the menu action `name` whose data is `data` (submenus too). */
+  void contextTrigger(QWidget* w, QPoint at, const char* name, const QString& data) {
+    QTimer::singleShot(50, [name, data] {
+      auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+      if (!menu) return;
+      QAction* hit = nullptr;
+      for (QAction* a : menu->findChildren<QAction*>(name)) if (a->data().toString() == data) hit = a;
+      menu->close();
+      if (hit) hit->trigger();
+    });
+    QTimer::singleShot(3000, [] { if (auto* m = QApplication::activePopupWidget()) m->close(); });  // never hang
+    QContextMenuEvent e(QContextMenuEvent::Mouse, at, w->mapToGlobal(at));
+    QCoreApplication::sendEvent(w, &e);
+  }
+  /** Canvas direct manipulation (plugin 1.19.0): tool keys, Space pan, framing, drag modifiers and
+   *  typed values, Esc cancel, nudges, double-click, Ctrl+A, Delete, Ctrl+D, the context menu and the
+   *  shortcut overlay, all through real key / mouse events on the canvas. */
+  void canvasDirectManipulation() {
+    const QString keepRig = panel->rigId();
+    for (const auto& [id, size, color] : {std::tuple<QString, QSize, QColor>{"img-d-body", QSize(60, 100), QColor("#2a9d8f")}, {"img-d-glove", QSize(20, 20), QColor("#e9c46a")}}) {
+      QImage img(size, QImage::Format_ARGB32);
+      img.fill(color);
+      const QString file = dir.filePath(id + ".png");
+      QVERIFY(img.save(file));
+      host.assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", "assets/" + id + ".png"}, {"absolutePath", file}});
+    }
+    // root (200, 200) · arm (100, 200) turned 90° (its body points down to hand at (100, 260)) · tail
+    // (200, 300). body on root, glove (a mesh) on hand 30 px further down, a hit box on root.
+    Json start = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 400, "height": 400, "originX": 200, "originY": 380},
+      "bones": [{"id": "root", "parent": null, "x": 200, "y": 200}, {"id": "arm", "parent": "root", "x": -100, "rotation": 90, "length": 60},
+                {"id": "hand", "parent": "arm", "x": 60}, {"id": "tail", "parent": "root", "y": 100}],
+      "slots": [{"id": "body", "bone": "root", "attachment": "body"}, {"id": "glove", "bone": "hand", "attachment": "glove"}],
+      "attachments": [{"slot": "body", "name": "body", "imageAssetId": "img-d-body", "width": 60, "height": 100},
+                      {"slot": "glove", "name": "glove", "imageAssetId": "img-d-glove", "width": 20, "height": 20, "x": 30}],
+      "clips": [{"id": "move", "durationMs": 1000, "loop": true, "tracks": []}]})");
+    start = cutout::applyEdit(start, {{"op", "convertToMesh"}, {"slot", "glove"}, {"rows", 1}, {"cols", 1}}).data;
+    start = cutout::applyEdit(start, {{"op", "addBoundingBox"}, {"slot", "hit"}, {"bone", "root"}, {"vertices", {60, -100, 100, -100, 100, -60, 60, -60}}}).data;
+    host.documents.append(QJsonObject{{"file", "plugins/cutout-animation/rig/direct.json"}, {"kind", "extension"},
+                                      {"data", QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", "cutout-animation"}, {"type", "rig"}, {"id", "direct"}, {"data", toQtObject(start)}}}});
+    host.revision++;
+    plugin.viewChanged();
+    pump();
+    panel->selectRig("direct");
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+    panel->setAxes(cutout::Axes::World);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    host.mainWindow.activateWindow();
+    canvas->setFocus();
+    pump();
+    QCOMPARE(panel->rigId(), QString("direct"));
+    auto data = [&] { return host.data("rig", "direct"); };
+    auto boneOf = [&](const char* id) { const Json d = data(); for (const auto& b : d["bones"]) if (b["id"] == id) return b; return Json(); };
+    auto worldOf = [&](const std::string& id) { const auto w = cutout::setupWorld(data()).at(id); return QPointF(w.e, w.f); };
+    auto at = [&](QPointF rig) { return canvas->rigToWidget(rig); };
+    auto has = [&](const char* list, const char* id) { const Json d = data(); for (const auto& x : d[list]) if (x["id"] == id) return true; return false; };
+    // Press without modifiers (a Ctrl/Shift press toggles the selection), move with `mods` held.
+    auto dragMid = [&](QPointF from, QPointF to, Qt::KeyboardModifiers mods) {
+      QMouseEvent p(QEvent::MouseButtonPress, from, canvas->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(canvas, &p);
+      for (int i = 1; i <= 4; i++) {
+        const QPointF m = from + (to - from) * (i / 4.0);
+        QMouseEvent e(QEvent::MouseMove, m, canvas->mapToGlobal(m), Qt::NoButton, Qt::LeftButton, mods);
+        QCoreApplication::sendEvent(canvas, &e);
+      }
+      QMouseEvent r(QEvent::MouseButtonRelease, to, canvas->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, mods);
+      QCoreApplication::sendEvent(canvas, &r);
+    };
+    auto pressMove = [&](QPointF from, QPointF to) {
+      mouse(canvas, QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
+      for (int i = 1; i <= 2; i++) mouse(canvas, QEvent::MouseMove, from + (to - from) * (i / 2.0), Qt::NoButton, Qt::LeftButton);
+    };
+    auto release = [&](QPointF to) { mouse(canvas, QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton); };
+
+    // ---- tool hotkeys (the panel's shortcuts) from the canvas; Esc steps back to the select tool
+    const QList<QPair<int, int>> keys{{Qt::Key_R, RigCanvas::Rotate}, {Qt::Key_S, RigCanvas::Scale}, {Qt::Key_P, RigCanvas::Pivot}, {Qt::Key_B, RigCanvas::Create},
+                                      {Qt::Key_V, RigCanvas::Move}, {Qt::Key_C, RigCanvas::Create}};
+    for (const auto& [key, tool] : keys) {
+      QVERIFY(gesture("tool key", 0, [&] { QTest::keyClick(canvas, Qt::Key(key)); }));
+      QVERIFY2(panel->tool() == tool, qPrintable(QString("key %1 -> tool %2, got %3").arg(key).arg(tool).arg(panel->tool())));
+      QVERIFY(find<QToolButton>(QList<const char*>{"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot", "cutoutToolCreate"}[tool])->isChecked());
+    }
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    // Never while typing: a number field and a text field take the letters.
+    panel->selectItem("bone:arm");
+    pump();
+    auto* spin = find<QDoubleSpinBox>("cutoutPropRotation");
+    QVERIFY(spin && spin->isVisible());
+    spin->setFocus();
+    pump();
+    for (int key : {Qt::Key_R, Qt::Key_S, Qt::Key_B, Qt::Key_M, Qt::Key_W, Qt::Key_G}) QTest::keyClick(spin, Qt::Key(key));
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    panel->showCommandPalette();
+    auto* search = find<QLineEdit>("cutoutCommandSearch");
+    QVERIFY(search->hasFocus());
+    QTest::keyClick(search, Qt::Key_R);
+    QTest::keyClick(search, Qt::Key_B);
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    QCOMPARE(search->text(), QString("rb"));
+    QTest::keyClick(search, Qt::Key_Escape);
+    QVERIFY(!panel->commandPalette()->isVisible() && canvas->hasFocus());
+    // M / W need a mesh part, G a hit box; Esc turns the mode off again.
+    panel->selectItem("slot:body");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_M);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    QVERIFY(panel->status().contains("메시"));
+    panel->selectItem("slot:glove");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_M);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Vertices);
+    QTest::keyClick(canvas, Qt::Key_W);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Weights);
+    QTest::keyClick(canvas, Qt::Key_W);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    QTest::keyClick(canvas, Qt::Key_M);
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    panel->selectItem("slot:hit");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_G);
+    QVERIFY(panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshVertices);
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshOff);
+    QTest::keyClick(canvas, Qt::Key_Escape);  // nothing else on: Esc clears the selection
+    QVERIFY(panel->selection().isEmpty());
+
+    // ---- Space held = hand tool (any tool, no edit, no selection); middle drag still pans
+    const QPointF empty = at(QPointF(350, 60));
+    QVERIFY(canvas->hitCandidates(empty).isEmpty());
+    QPointF pan0 = canvas->panOffset();
+    QTest::keyPress(canvas, Qt::Key_Space);
+    QVERIFY(canvas->spaceHeld() && canvas->cursor().shape() == Qt::OpenHandCursor);
+    QVERIFY(gesture("space + drag pans", 0, [&] { drag(canvas, at(worldOf("tail")), at(worldOf("tail")) + QPointF(40, 20)); }));
+    QTest::keyRelease(canvas, Qt::Key_Space);
+    QVERIFY(!canvas->spaceHeld());
+    QVERIFY(std::hypot(canvas->panOffset().x() - pan0.x() - 40, canvas->panOffset().y() - pan0.y() - 20) < 1e-6);
+    QVERIFY2(panel->selection().isEmpty(), "the hand drag picked nothing");
+    pan0 = canvas->panOffset();
+    QVERIFY(gesture("middle drag pans", 0, [&] {
+      mouse(canvas, QEvent::MouseButtonPress, empty, Qt::MiddleButton, Qt::MiddleButton);
+      mouse(canvas, QEvent::MouseMove, empty + QPointF(-30, 10), Qt::NoButton, Qt::MiddleButton);
+      mouse(canvas, QEvent::MouseButtonRelease, empty + QPointF(-30, 10), Qt::MiddleButton, Qt::NoButton);
+    }));
+    QVERIFY(std::hypot(canvas->panOffset().x() - pan0.x() + 30, canvas->panOffset().y() - pan0.y() - 10) < 1e-6);
+
+    // ---- F = 선택 맞춤, Home / Shift+F = 전체 맞춤
+    canvas->fitToCanvas();
+    const double fitZoom = canvas->zoom();
+    panel->selectItem("slot:glove");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_F);
+    QVERIFY2(canvas->zoom() > fitZoom * 2, qPrintable(QString("framed zoom %1 vs fit %2").arg(canvas->zoom()).arg(fitZoom)));
+    const QPointF gloveCenter = at(worldOf("hand") + QPointF(0, 30));
+    QVERIFY(std::hypot(gloveCenter.x() - canvas->width() / 2.0, gloveCenter.y() - canvas->height() / 2.0) < 1.0);
+    QTest::keyClick(canvas, Qt::Key_Home);
+    QVERIFY(std::fabs(canvas->zoom() - fitZoom) < 1e-9);
+    QTest::keyClick(canvas, Qt::Key_F);
+    QTest::keyClick(canvas, Qt::Key_F, Qt::ShiftModifier);
+    QVERIFY(std::fabs(canvas->zoom() - fitZoom) < 1e-9);
+    panel->selectItem(QString());
+    QTest::keyClick(canvas, Qt::Key_F);  // nothing selected: the whole canvas
+    QVERIFY(std::fabs(canvas->zoom() - fitZoom) < 1e-9);
+    pump();
+
+    // ---- drag modifiers: Shift = one axis / 15° / 10 %, Ctrl = ×0.1 (exact), readout while dragging
+    const double z = canvas->zoom();
+    const Json tail0 = boneOf("tail");
+    QVERIFY(gesture("shift move = one axis", 1, [&] { dragMid(at(worldOf("tail")), at(worldOf("tail")) + QPointF(40, 6), Qt::ShiftModifier); }));
+    QVERIFY(std::fabs(boneOf("tail")["x"].get<double>() - (tail0.value("x", 0.0) + 40 / z)) < 1e-5);
+    QVERIFY(std::fabs(boneOf("tail")["y"].get<double>() - tail0["y"].get<double>()) < 1e-9);
+    const Json tail1 = boneOf("tail");
+    QVERIFY(gesture("ctrl move = fine", 1, [&] { dragMid(at(worldOf("tail")), at(worldOf("tail")) + QPointF(40, 20), Qt::ControlModifier); }));
+    QVERIFY(std::fabs(boneOf("tail")["x"].get<double>() - (tail1["x"].get<double>() + 4 / z)) < 1e-5);
+    QVERIFY(std::fabs(boneOf("tail")["y"].get<double>() - (tail1["y"].get<double>() + 2 / z)) < 1e-5);
+    // Rotate: the arm body (pointing down) turned about its origin.
+    panel->setTool(RigCanvas::Rotate);
+    panel->selectItem("bone:arm");
+    pump();
+    const QPointF armO = worldOf("arm"), bodyAt = armO + QPointF(0, 30), turned = armO + QPointF(-25, 30);
+    const double rot0 = boneOf("arm")["rotation"].get<double>();
+    QVERIFY(gesture("shift rotate = 15° steps", 1, [&] { dragMid(at(bodyAt), at(turned), Qt::ShiftModifier); }));
+    const double rot1 = boneOf("arm")["rotation"].get<double>();
+    QVERIFY2(std::fabs(std::remainder(rot1, 15.0)) < 1e-9 && std::fabs(rot1 - rot0) > 1, qPrintable(QString::number(rot1)));
+    const QPointF armO1 = worldOf("arm");
+    const QPointF from = at(armO1 + QPointF(0, 30)) , to = at(armO1 + QPointF(-25, 30));
+    const QPointF rf = canvas->widgetToRig(from) - armO1, rt = canvas->widgetToRig(to) - armO1;
+    const double turn = (std::atan2(rt.y(), rt.x()) - std::atan2(rf.y(), rf.x())) * 180 / 3.14159265358979323846;
+    QVERIFY(gesture("ctrl rotate = fine", 1, [&] { dragMid(from, to, Qt::ControlModifier); }));
+    QVERIFY2(std::fabs(boneOf("arm")["rotation"].get<double>() - (rot1 + turn * 0.1)) < 1e-4, qPrintable(QString("%1 vs %2").arg(boneOf("arm")["rotation"].get<double>()).arg(rot1 + turn * 0.1)));
+    // Scale: Shift snaps the factor to 10 % steps (the tail, pressed beside it).
+    panel->setTool(RigCanvas::Scale);
+    panel->selectItem("bone:tail");
+    pump();
+    QVERIFY(gesture("shift scale = 10 % steps", 1, [&] { dragMid(at(worldOf("tail") + QPointF(30, 0)), at(worldOf("tail") + QPointF(50, 0)), Qt::ShiftModifier); }));
+    QVERIFY2(std::fabs(boneOf("tail").value("scaleX", 1.0) - 1.7) < 1e-6, boneOf("tail").dump().c_str());
+    // Readout: what the drag means, near the cursor.
+    panel->setTool(RigCanvas::Move);
+    pressMove(at(worldOf("tail")), at(worldOf("tail")) + QPointF(30, 0));
+    QVERIFY2(canvas->readoutText().contains("Δx"), qPrintable(canvas->readoutText()));
+    // ---- Esc during a drag: the preview goes back, zero edits.
+    const Json beforeCancel = data();
+    QVERIFY(std::fabs(panel->displayData()["bones"][3]["x"].get<double>() - beforeCancel["bones"][3]["x"].get<double>()) > 1);
+    QVERIFY(gesture("Esc cancels the drag", 0, [&] { QTest::keyClick(canvas, Qt::Key_Escape); release(at(worldOf("tail")) + QPointF(30, 0)); }));
+    QVERIFY(!canvas->dragging() && data() == beforeCancel && panel->displayData()["bones"][3] == beforeCancel["bones"][3]);
+    // Typed value: digits then Enter (one edit, exact; the release adds nothing).
+    const QPointF tailW = worldOf("tail");
+    QVERIFY(gesture("typed move 12,-5", 1, [&] {
+      pressMove(at(tailW), at(tailW) + QPointF(6, 0));
+      for (int k : {Qt::Key_1, Qt::Key_2, Qt::Key_Comma, Qt::Key_Minus, Qt::Key_5}) QTest::keyClick(canvas, Qt::Key(k));
+      QVERIFY2(canvas->readoutText().contains("입력 12,-5"), qPrintable(canvas->readoutText()));
+      QTest::keyClick(canvas, Qt::Key_Return);
+      release(at(tailW) + QPointF(6, 0));
+    }));
+    QVERIFY(std::hypot(worldOf("tail").x() - tailW.x() - 12, worldOf("tail").y() - tailW.y() + 5) < 1e-5);
+    panel->setTool(RigCanvas::Rotate);
+    panel->selectItem("bone:arm");
+    pump();
+    const double rot2 = boneOf("arm")["rotation"].get<double>();
+    const QPointF armBody = worldOf("arm") + QPointF(std::cos(rot2 * 3.14159265358979323846 / 180), std::sin(rot2 * 3.14159265358979323846 / 180)) * 30;
+    QVERIFY(gesture("typed rotate 30", 1, [&] {
+      pressMove(at(armBody), at(armBody) + QPointF(4, 4));
+      QTest::keyClick(canvas, Qt::Key_3);
+      QTest::keyClick(canvas, Qt::Key_0);
+      QTest::keyClick(canvas, Qt::Key_Enter);
+      release(at(armBody) + QPointF(4, 4));
+    }));
+    QVERIFY2(std::fabs(boneOf("arm")["rotation"].get<double>() - (rot2 + 30)) < 1e-6, boneOf("arm").dump().c_str());
+    panel->setTool(RigCanvas::Move);
+
+    // ---- nudge: 5 presses = ONE edit when the keys rest; Shift = 10 px; local axes follow the parent
+    panel->selectItem("bone:tail");
+    pump();
+    const QPointF n0 = worldOf("tail");
+    QVERIFY(gesture("5 x Right (pending)", 0, [&] { for (int i = 0; i < 5; i++) QTest::keyClick(canvas, Qt::Key_Right); }));
+    QVERIFY(panel->nudgePending());
+    QVERIFY(std::fabs(panel->displayData()["bones"][3]["x"].get<double>() - (boneOf("tail")["x"].get<double>() + 5)) < 1e-6);  // previewed live
+    QVERIFY(gesture("nudge rests = one edit", 1, [&] { QTest::qWait(CutoutPanel::NUDGE_IDLE_MS + 250); }));
+    QVERIFY(!panel->nudgePending() && std::hypot(worldOf("tail").x() - n0.x() - 5, worldOf("tail").y() - n0.y()) < 1e-6);
+    QVERIFY(gesture("2 x Shift+Up, then a drag commits the nudge first", 2, [&] {
+      for (int i = 0; i < 2; i++) QTest::keyClick(canvas, Qt::Key_Up, Qt::ShiftModifier);
+      drag(canvas, at(worldOf("tail") + QPointF(0, -20)), at(worldOf("tail") + QPointF(0, -20)) + QPointF(10, 0));  // the drag commits the nudge first
+    }));
+    QVERIFY2(std::fabs(worldOf("tail").y() - n0.y() + 20) < 1e-6, qPrintable(QString("tail moved %1, %2").arg(worldOf("tail").x() - n0.x()).arg(worldOf("tail").y() - n0.y())));
+    undo();
+    // Local axes: Right moves the hand along its parent's (the turned arm's) x axis.
+    panel->setAxes(cutout::Axes::Local);
+    panel->selectItem("bone:hand");
+    pump();
+    const QPointF h0 = worldOf("hand");
+    const double armRot = boneOf("arm")["rotation"].get<double>() * 3.14159265358979323846 / 180;
+    QVERIFY(gesture("local nudge", 1, [&] { for (int i = 0; i < 3; i++) QTest::keyClick(canvas, Qt::Key_Right); QVERIFY(panel->flushNudge()); }));
+    QVERIFY2(std::hypot(worldOf("hand").x() - h0.x() - 3 * std::cos(armRot), worldOf("hand").y() - h0.y() - 3 * std::sin(armRot)) < 1e-5, qPrintable(QString("%1,%2").arg(worldOf("hand").x() - h0.x()).arg(worldOf("hand").y() - h0.y())));
+    QCOMPARE(boneOf("hand")["x"].get<double>(), 63.0);
+    panel->setAxes(cutout::Axes::World);
+
+    // ---- double-click: a part selects its bone, a bone its first part
+    auto doubleClick = [&](QPointF w) {
+      mouse(canvas, QEvent::MouseButtonPress, w, Qt::LeftButton, Qt::LeftButton);
+      mouse(canvas, QEvent::MouseButtonRelease, w, Qt::LeftButton, Qt::NoButton);
+      mouse(canvas, QEvent::MouseButtonDblClick, w, Qt::LeftButton, Qt::LeftButton);
+      mouse(canvas, QEvent::MouseButtonRelease, w, Qt::LeftButton, Qt::NoButton);
+    };
+    const QPointF glovePart = at(worldOf("hand") + QPointF(std::cos(armRot), std::sin(armRot)) * 30);
+    QCOMPARE(canvas->hitTest(glovePart), QString("slot:glove"));
+    QVERIFY(gesture("double-click part -> bone", 0, [&] { doubleClick(glovePart); }));
+    QCOMPARE(panel->selection(), QString("bone:hand"));
+    QVERIFY(gesture("double-click bone -> part", 0, [&] { doubleClick(at(worldOf("hand"))); }));
+    QCOMPARE(panel->selection(), QString("slot:glove"));
+    // ---- Ctrl+A
+    QTest::keyClick(canvas, Qt::Key_A, Qt::ControlModifier);
+    QCOMPARE(int(panel->selectedBones().size()), 4);
+
+    // ---- Ctrl+D: the arm with its subtree and parts (core duplicateBones), one edit, copies selected
+    panel->selectItem("bone:arm");
+    pump();
+    QVERIFY(gesture("Ctrl+D duplicates", 1, [&] { QTest::keyClick(canvas, Qt::Key_D, Qt::ControlModifier); }));
+    QVERIFY(has("bones", "arm-2") && has("bones", "hand-2") && has("slots", "glove-2"));
+    QCOMPARE(panel->selection(), QString("bone:arm-2"));
+    QVERIFY(std::hypot(worldOf("hand-2").x() - worldOf("hand").x(), worldOf("hand-2").y() - worldOf("hand").y()) < 1e-9);
+    undo();
+    QVERIFY(!has("bones", "arm-2"));
+    // ---- Delete (asks like the 삭제 button)
+    panel->selectItem("slot:hit");
+    pump();
+    panel->askConfirm = [](const QString&, const QString&) { return false; };
+    QVERIFY(gesture("Delete declined", 0, [&] { QTest::keyClick(canvas, Qt::Key_Delete); }));
+    panel->askConfirm = [](const QString&, const QString&) { return true; };
+    QVERIFY(gesture("Delete", 1, [&] { QTest::keyClick(canvas, Qt::Key_Delete); }));
+    QVERIFY(!has("slots", "hit"));
+    undo();
+
+    // ---- right-click menu (existing commands, one edit each); a right drag pans and opens nothing
+    const QPoint tailAt = at(worldOf("tail")).toPoint(), bodyAt2 = at(worldOf("root") + QPointF(0, -30)).toPoint();
+    QVERIFY(gesture("menu: select the part's bone", 0, [&] { contextPick(canvas, glovePart.toPoint(), "cutoutCanvasMenuSelectBone"); }));
+    QCOMPARE(panel->selection(), QString("bone:hand"));
+    QVERIFY(gesture("menu: hide (editor only)", 0, [&] { contextPick(canvas, bodyAt2, "cutoutCanvasMenuHide"); }));
+    QVERIFY(canvas->hitTest(QPointF(bodyAt2)) != "slot:body");
+    QVERIFY(gesture("menu: show all", 0, [&] { contextPick(canvas, empty.toPoint(), "cutoutCanvasMenuShowAll"); }));
+    QCOMPARE(canvas->hitTest(QPointF(bodyAt2)), QString("slot:body"));
+    QVERIFY(gesture("menu: duplicate", 1, [&] { contextPick(canvas, tailAt, "cutoutCanvasMenuDuplicate"); }));
+    QVERIFY(has("bones", "tail-2"));
+    undo();
+    const QPointF tailWorld = worldOf("tail");
+    QVERIFY(gesture("menu: parent -> arm", 1, [&] { contextTrigger(canvas, tailAt, "cutoutCanvasMenuParentTo", "arm"); }));
+    QCOMPARE(qs(boneOf("tail")["parent"].get<std::string>()), QString("arm"));
+    QVERIFY(std::hypot(worldOf("tail").x() - tailWorld.x(), worldOf("tail").y() - tailWorld.y()) < 1e-5);
+    undo();
+    QVERIFY(gesture("menu: hit box from the part", 1, [&] { contextPick(canvas, bodyAt2, "cutoutCanvasMenuBox"); }));
+    QVERIFY(has("slots", "body-box"));
+    undo();
+    const int beforeOrient = host.edits;  // a point bone with nothing to point at: at most one (no-op) edit
+    contextPick(canvas, tailAt, "cutoutCanvasMenuOrient");
+    pump();
+    QVERIFY(host.edits - beforeOrient <= 1 && host.lastError.isEmpty());
+    bool opened = false;
+    QTimer::singleShot(50, [&] { if (auto* m = QApplication::activePopupWidget()) { opened = true; m->close(); } });
+    pan0 = canvas->panOffset();
+    QVERIFY(gesture("right drag pans", 0, [&] {
+      mouse(canvas, QEvent::MouseButtonPress, empty, Qt::RightButton, Qt::RightButton);
+      mouse(canvas, QEvent::MouseMove, empty + QPointF(25, 0), Qt::NoButton, Qt::RightButton);
+      mouse(canvas, QEvent::MouseButtonRelease, empty + QPointF(25, 0), Qt::RightButton, Qt::NoButton);
+      QContextMenuEvent e(QContextMenuEvent::Mouse, (empty + QPointF(25, 0)).toPoint(), canvas->mapToGlobal((empty + QPointF(25, 0)).toPoint()));
+      QCoreApplication::sendEvent(canvas, &e);
+    }));
+    QTest::qWait(100);
+    QVERIFY2(!opened, "a right drag never opens the menu");
+    QVERIFY(std::fabs(canvas->panOffset().x() - pan0.x() - 25) < 1e-6);
+    // Animate mode: 키 넣기, nudges make keys, a Space tap plays.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("move");
+    panel->setPlayhead(0);
+    panel->setAutoKey(true);
+    pump();
+    QVERIFY(gesture("menu: key", 1, [&] { contextPick(canvas, at(worldOf("tail")).toPoint(), "cutoutCanvasMenuKey"); }));  // (the right drag panned the view)
+    QVERIFY(!keyOfRig(data(), "move", "bone:tail", "rotation", 0).is_null());
+    panel->selectItem("bone:tail");
+    pump();
+    const double ty = boneOf("tail")["y"].get<double>();
+    QVERIFY(gesture("animate nudge = keys", 1, [&] { for (int i = 0; i < 3; i++) QTest::keyClick(canvas, Qt::Key_Up); QTest::qWait(CutoutPanel::NUDGE_IDLE_MS + 250); }));
+    QVERIFY(std::fabs(keyOfRig(data(), "move", "bone:tail", "y", 0)["value"].get<double>() - (ty - 3)) < 1e-6);
+    QCOMPARE(boneOf("tail")["y"].get<double>(), ty);  // the setup pose is untouched
+    auto* play = find<QPushButton>("cutoutPlay");
+    panel->setManualClock(true);
+    QVERIFY(gesture("Space tap plays", 0, [&] { canvas->setFocus(); QTest::keyPress(canvas, Qt::Key_Space); QTest::keyRelease(canvas, Qt::Key_Space); }));
+    QVERIFY(play->isChecked());
+    QTest::keyPress(canvas, Qt::Key_Space);
+    QTest::keyRelease(canvas, Qt::Key_Space);
+    QVERIFY(!play->isChecked());
+    panel->setManualClock(false);
+    QVERIFY(gesture("Ctrl+D refused in Animate", 0, [&] { QTest::keyClick(canvas, Qt::Key_D, Qt::ControlModifier); }));
+    panel->setAutoKey(false);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    pump();
+
+    // ---- discoverability: the overlay lists every bound shortcut (from the panel's registry and the
+    // canvas's table, so it cannot drift), tooltips name the keys, the hint strip names V/R/S/Space.
+    canvas->setFocus();
+    QTest::keyClick(canvas, Qt::Key_Question);
+    QVERIFY(panel->shortcutOverlayVisible());
+    auto* list = find<QTreeWidget>("cutoutShortcutList");
+    QVERIFY(list && list->isVisible() && find<QWidget>("cutoutShortcutOverlay")->isVisible());
+    QStringList shown;
+    for (int g = 0; g < list->topLevelItemCount(); g++)
+      for (int i = 0; i < list->topLevelItem(g)->childCount(); i++) shown << list->topLevelItem(g)->child(i)->text(0) + "|" + list->topLevelItem(g)->child(i)->text(1);
+    QStringList expected;
+    int shortcuts = 0;
+    for (QShortcut* s : panel->findChildren<QShortcut*>()) {
+      if (!s->objectName().startsWith("cutoutShortcut")) continue;
+      shortcuts++;
+      QVERIFY2(!s->property("cutoutShortcutGroup").toString().isEmpty() && !s->property("cutoutShortcutText").toString().isEmpty(), qPrintable(s->objectName()));
+      expected << s->key().toString(QKeySequence::NativeText) + "|" + s->property("cutoutShortcutText").toString();
+    }
+    for (const auto& b : RigCanvas::keyBindings()) expected << QString::fromUtf8(b.keys) + "|" + QString::fromUtf8(b.text);
+    QVERIFY(shortcuts >= 22);
+    std::sort(shown.begin(), shown.end());
+    std::sort(expected.begin(), expected.end());
+    QCOMPARE(shown, expected);
+    QCOMPARE(int(panel->shortcutList().size()), int(expected.size()));
+    for (const char* key : {"V", "R", "S", "P", "B", "M", "W", "G", "F", "Home", "Esc", "Ctrl+D", "Delete", "?", "Space 누른 채 끌기", "끄는 중 Shift", "끄는 중 Ctrl"}) {
+      bool found = false;
+      for (const QString& row : shown) found = found || row.section('|', 0, 0) == QString::fromUtf8(key);
+      QVERIFY2(found, key);
+    }
+    // Every canvas key in the table is dispatched (its id is what a press of it matches).
+    for (const auto& b : RigCanvas::keyBindings())
+      for (int code : b.codes) QCOMPARE(RigCanvas::bindingFor(code, Qt::KeyboardModifiers(b.modifiers)), QString::fromUtf8(b.id));
+    QCOMPARE(RigCanvas::bindingFor(Qt::Key_Slash, Qt::ShiftModifier), QString("overlay"));
+    QCOMPARE(RigCanvas::bindingFor(Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier), QString());  // the host's workspace toggle
+    QTest::keyClick(list, Qt::Key_Escape);
+    QVERIFY(!panel->shortcutOverlayVisible() && canvas->hasFocus());
+    QTest::keyClick(canvas, Qt::Key_Slash, Qt::ShiftModifier);
+    QVERIFY(panel->shortcutOverlayVisible());
+    click("cutoutShortcutOverlayClose");
+    QVERIFY(!panel->shortcutOverlayVisible());
+    QVERIFY(panel->runCommand("cutoutShortcutOverlayAction"));
+    pump();
+    QVERIFY(panel->shortcutOverlayVisible());
+    panel->showShortcutOverlay(false);
+    QVERIFY(find<QToolButton>("cutoutToolCreate")->toolTip().contains("B"));
+    QVERIFY(find<QToolButton>("cutoutToolSelect")->toolTip().contains("단축키: V"));
+    QVERIFY(find<QWidget>("cutoutMeshVertices")->toolTip().contains("단축키: M") && find<QWidget>("cutoutMeshWeights")->toolTip().contains("단축키: W"));
+    QVERIFY(find<QWidget>("cutoutBoxVertices")->toolTip().contains("단축키: G"));
+    const QString hint = find<QLabel>("cutoutHintText")->text();
+    QVERIFY(hint.contains("V 선택") && hint.contains("R 회전") && hint.contains("S 크기") && hint.contains("Space"));
+    QVERIFY(!panel->findCommands("단축키 모음").isEmpty() && !panel->findCommands("선택 맞춤").isEmpty());
+    panel->setAxes(cutout::Axes::Local);
     panel->selectRig(keepRig);
     pump();
   }

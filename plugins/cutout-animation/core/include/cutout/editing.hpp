@@ -128,6 +128,10 @@ struct EditResult {
  * parent: "<slot>/<name>", parentSkin?, deform?, imageAssetId?, width?, height?} unlinkMesh {slot,
  * name?, skin?}; mesh shape/weight ops refuse linked meshes (edit the parent), deleting / converting a
  * parent turns its linked meshes into independent copies (ANIM_LINKED_UNLINKED), renameSkin follows.
+ * Duplicate (plugin 1.19.0): duplicateBones {bones?, slots?} copies bone subtrees (+ their slots,
+ * attachments of every list, constraints entirely inside) and listed slots; ids get the next free
+ * "-N", copied slots go right after the last original in draw order; clips/keys/expressions are not
+ * copied. extra.bones / extra.slots = {original: copy}.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

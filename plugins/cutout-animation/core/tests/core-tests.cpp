@@ -473,6 +473,7 @@ Json outlineParityScript() {
 #include "constraint-tests.hpp"
 #include "box-tests.hpp"
 #include "weight-tests.hpp"
+#include "duplicate-tests.hpp"
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--physics-parity") {
@@ -3206,6 +3207,7 @@ int main(int argc, char** argv) {
   xform::run();
   boxes::run();
   weights::run();
+  duplicate::run();
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;

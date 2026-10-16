@@ -1171,6 +1171,148 @@ void moveSlot(EditResult& r, const Json& op) {
   slots.insert(slots.begin() + to, moved);
   r.affected.push_back("slot:" + id);
 }
+/**
+ * duplicateBones {bones?, slots?} (plugin 1.19.0, 복제 / Ctrl+D; setup data): every listed bone is
+ * copied with its whole subtree (a copied top bone keeps the original's parent, so the copy sits
+ * exactly on top), with every slot on a copied bone; listed `slots` whose bone is not copied are
+ * copied on the same bone. Ids get the next free "-N" (arm -> arm-2, arm-2 -> arm-3). The copied
+ * slots go right after the last original of the set in draw order (above it, their own layering
+ * kept); their attachments (default list and every skin) follow, with mesh weights, linked-mesh
+ * parents and clip ends pointing at the copies where those are copied too (a clip whose end is not
+ * copied is left out: ANIM_DUPLICATE_CLIP_SKIPPED). IK, physics and transform constraints are copied
+ * only when every bone they name is inside the copy. Clips, keys and expressions are not copied:
+ * the copy starts unanimated. extra.bones / extra.slots = {original id: copy id}.
+ */
+void duplicateBones(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  std::vector<Str> roots, wanted;
+  auto ids = [&](const char* k, std::vector<Str>& out) {
+    if (!has(op, k)) return;
+    if (!op.at(k).is_array()) throw EditError(Str(k) + "는 ID 배열입니다.");
+    for (const auto& v : op.at(k)) {
+      const Str id = v.is_string() ? v.get<Str>() : Str();
+      if (std::find(out.begin(), out.end(), id) == out.end()) out.push_back(id);
+    }
+  };
+  ids("bones", roots);
+  ids("slots", wanted);
+  if (roots.empty() && wanted.empty()) throw EditError("복제할 본(bones)이나 조각(slots)이 필요합니다.");
+  for (const Str& b : roots) bone(d, b);
+  for (const Str& s : wanted) slot(d, s);
+  std::set<Str> copied(roots.begin(), roots.end());
+  for (bool grew = true; grew;) {
+    grew = false;
+    for (const auto& b : arr(d, "bones"))
+      if (const Str id = optStr(b, "id"); !copied.count(id) && copied.count(parentOf(b))) { copied.insert(id); grew = true; }
+  }
+  // "-N" suffixes: a copy of a copy counts on instead of stacking suffixes.
+  std::set<Str> taken;
+  for (const char* k : {"bones", "slots"}) for (const auto& x : arr(d, k)) taken.insert(optStr(x, "id"));
+  auto fresh = [](const Str& id, std::set<Str>& used) {
+    Str base = id;
+    if (const size_t dash = id.rfind('-'); dash != Str::npos && dash + 1 < id.size() && std::all_of(id.begin() + long(dash) + 1, id.end(), [](char c) { return c >= '0' && c <= '9'; })) base = id.substr(0, dash);
+    for (int n = 2; n < 100000; n++) {
+      const Str c = base + "-" + std::to_string(n);
+      if (used.count(c)) continue;
+      if (!validId(c)) throw EditError("복제한 ID가 너무 깁니다: " + c);
+      used.insert(c);
+      return c;
+    }
+    throw EditError("복제할 ID를 만들 수 없습니다: " + id);
+  };
+  // Slots to copy (draw order); a clip whose range end stays behind is left out (repeat: dropping
+  // one may strand another clip's end).
+  std::vector<Str> order;
+  for (const auto& s : arr(d, "slots"))
+    if (const Str id = optStr(s, "id"); copied.count(optStr(s, "bone")) || std::find(wanted.begin(), wanted.end(), id) != wanted.end()) order.push_back(id);
+  auto clipEnds = [&](const Str& slotId) {
+    std::vector<Str> ends;
+    auto scan = [&](const Json& list) { for (const auto& a : list) if (isClipping(a) && optStr(a, "slot") == slotId) ends.push_back(optStr(a, "end")); };
+    scan(listOr(d, "attachments"));
+    for (const auto& sk : listOr(d, "skins")) scan(listOr(sk, "attachments"));
+    return ends;
+  };
+  bool skippedClip = false;
+  for (bool dropped = true; dropped;) {
+    dropped = false;
+    for (auto it = order.begin(); it != order.end(); ++it) {
+      bool stranded = false;
+      for (const Str& e : clipEnds(*it)) stranded = stranded || std::find(order.begin(), order.end(), e) == order.end();
+      if (stranded) { order.erase(it); dropped = skippedClip = true; break; }
+    }
+  }
+  std::map<Str, Str> boneMap, slotMap;
+  for (const auto& b : arr(d, "bones")) if (const Str id = optStr(b, "id"); copied.count(id)) boneMap[id] = fresh(id, taken);
+  for (const Str& s : order) slotMap[s] = fresh(s, taken);
+  std::vector<Json> bones;
+  for (const auto& b : arr(d, "bones")) {
+    const Str id = optStr(b, "id");
+    if (!boneMap.count(id)) continue;
+    Json c = b;
+    c["id"] = boneMap[id];
+    if (boneMap.count(parentOf(b))) c["parent"] = boneMap[parentOf(b)];
+    bones.push_back(std::move(c));
+  }
+  for (auto& c : bones) { r.affected.push_back("bone:" + optStr(c, "id")); arr(d, "bones").push_back(std::move(c)); }
+  auto& slots = arr(d, "slots");
+  int last = -1;
+  std::vector<Json> slotCopies;
+  for (size_t i = 0; i < slots.size(); i++) {
+    const Str id = optStr(slots[i], "id");
+    if (!slotMap.count(id)) continue;
+    last = int(i);
+    Json c = slots[i];
+    c["id"] = slotMap[id];
+    if (boneMap.count(optStr(c, "bone"))) c["bone"] = boneMap[optStr(c, "bone")];
+    slotCopies.push_back(std::move(c));
+  }
+  for (size_t k = 0; k < slotCopies.size(); k++) r.affected.push_back("slot:" + optStr(slotCopies[k], "id"));
+  for (size_t k = 0; k < slotCopies.size(); k++) slots.insert(slots.begin() + (last + 1 + long(k)), std::move(slotCopies[k]));
+  auto copyList = [&](Json& list) {
+    std::vector<Json> add;
+    for (const auto& a : list) {
+      if (!a.is_object() || !slotMap.count(optStr(a, "slot"))) continue;
+      Json c = a;
+      c["slot"] = slotMap[optStr(a, "slot")];
+      if (c.contains("weights") && c["weights"].is_array())
+        for (auto& vertex : c["weights"]) if (vertex.is_array()) for (auto& w : vertex) if (w.is_object() && boneMap.count(optStr(w, "bone"))) w["bone"] = boneMap[optStr(w, "bone")];
+      Str ps, pn;
+      if (isLinked(c) && splitLinkedParent(optStr(c.at("linkedMesh"), "parent"), ps, pn) && slotMap.count(ps)) c["linkedMesh"]["parent"] = slotMap[ps] + "/" + pn;
+      if (isClipping(c) && slotMap.count(optStr(c, "end"))) c["end"] = slotMap[optStr(c, "end")];
+      add.push_back(std::move(c));
+    }
+    for (auto& c : add) list.push_back(std::move(c));
+  };
+  copyList(arr(d, "attachments"));
+  if (d.contains("skins") && d["skins"].is_array())
+    for (auto& sk : d["skins"]) if (sk.is_object() && sk.contains("attachments") && sk["attachments"].is_array()) copyList(sk["attachments"]);
+  // Constraints entirely inside the copy come along (their own ids: the next free "-N").
+  auto inside = [&](const Json& v) { return v.is_string() && boneMap.count(v.get<Str>()) > 0; };
+  auto mapped = [&](const Json& v) { return Json(boneMap[v.get<Str>()]); };
+  for (const char* kind : {"ik", "physics", "transform"}) {
+    if (!d.contains(kind) || !d[kind].is_array()) continue;
+    std::set<Str> used;
+    for (const auto& k : d[kind]) used.insert(optStr(k, "id"));
+    std::vector<Json> add;
+    for (const auto& k : d[kind]) {
+      if (!k.is_object()) continue;
+      bool all = true;
+      for (const char* f : {"bone", "target", "tip"}) if (k.contains(f)) all = all && inside(k.at(f));
+      if (k.contains("bones")) for (const auto& b : listOr(k, "bones")) all = all && inside(b);
+      if (!all || !(k.contains("bone") || k.contains("bones"))) continue;
+      Json c = k;
+      c["id"] = fresh(optStr(k, "id"), used);
+      for (const char* f : {"bone", "target", "tip"}) if (c.contains(f)) c[f] = mapped(k.at(f));
+      if (c.contains("bones")) for (auto& b : c["bones"]) b = mapped(b);
+      r.affected.push_back(Str(kind) + ":" + optStr(c, "id"));
+      add.push_back(std::move(c));
+    }
+    for (auto& c : add) d[kind].push_back(std::move(c));
+  }
+  if (skippedClip) warn(r, "ANIM_DUPLICATE_CLIP_SKIPPED", "", "끝 조각이 복제되지 않는 클리핑은 복제하지 않았습니다.");
+  r.extra["bones"] = Json(boneMap);
+  r.extra["slots"] = Json(slotMap);
+}
 
 // ---- Keys ----
 void setKey(EditResult& r, const Json& op) {
@@ -4707,6 +4849,7 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
   static const std::map<Str, void (*)(EditResult&, const Json&)> simple = {
     {"addBone", addBone}, {"setBone", setBone}, {"transformBones", transformBones}, {"reparentBone", reparentBone}, {"setPivot", setPivot}, {"deleteBone", deleteBone},
     {"addPart", addPart}, {"setSlot", setSlot}, {"setAttachment", setAttachment}, {"deleteSlot", deleteSlot}, {"moveSlot", moveSlot},
+    {"duplicateBones", duplicateBones},
     {"setKey", setKey}, {"deleteKey", deleteKey}, {"moveKey", moveKey}, {"setInterp", setInterp}, {"setCurve", setCurve},
     {"moveKeys", moveKeys}, {"scaleKeys", scaleKeys}, {"deleteKeys", deleteKeys}, {"copyKeys", copyKeys}, {"pasteKeys", pasteKeys},
     {"copyPose", copyPose}, {"pastePose", pastePose},
