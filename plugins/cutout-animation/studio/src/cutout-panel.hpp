@@ -37,6 +37,8 @@ class QScrollArea;
 class QScrollBar;
 class QSpinBox;
 class QSplitter;
+class QActionGroup;
+class QButtonGroup;
 class QTabWidget;
 class QTableWidget;
 class QTimer;
@@ -516,6 +518,25 @@ class CutoutPanel : public QWidget {
   /** First-run hint strip (dismissed = editor-only QSettings flag). */
   void setHintVisible(bool on);
   bool hintVisible() const;
+  // ---- View (plugin 1.20.0, editor-only: QSettings plugins/cutout-animation/view, never an edit)
+  /** 보기 ▾ 본 표시 (RigCanvas::BoneDisplay: 모두 / 선택·관련만 / 숨김); H cycles it. */
+  void setBoneDisplay(int mode);
+  int boneDisplay() const;
+  void cycleBoneDisplay();
+  /** 보기 ▾ 본 흐리게: unselected bones at 40 % opacity. */
+  void setBonesDim(bool on);
+  bool bonesDim() const;
+  /** 보기 ▾ 캔버스 안내 줄: the tool hint at the bottom of the canvas. */
+  void setCanvasHintVisible(bool on);
+  bool canvasHintVisible() const;
+  /** 계층 / 그리는 순서 filters (cutoutTreeFilter / cutoutDrawOrderFilter): every word in the id, an
+   *  attachment name or an original PSD layer / group name; matches stay with their ancestors. */
+  void setTreeFilter(const QString& text);
+  void setDrawOrderFilter(const QString& text);
+  /** Refs the filter shows as matches, in list order (empty = no filter). Enter selects the first. */
+  QStringList filterMatchRefs(bool tree) const;
+  /** Original layer names of a part / group name of a bone recorded by the PSD import (editor.layerImport). */
+  QStringList importedNames(const QString& ref) const;
   /** Layout: until the user drags a splitter, the panes follow the window size (proportional, never
    *  below what their widest tool row needs); 레이아웃 초기화 goes back to that. */
   bool autoLayout() const { return autoLayout_; }
@@ -866,6 +887,21 @@ class CutoutPanel : public QWidget {
   QPushButton *hitBoxButton_ = nullptr, *hitPointButton_ = nullptr, *hitVerticesButton_ = nullptr, *hitDeleteButton_ = nullptr, *hitAddVertexButton_ = nullptr;
   QWidget* hitVertexRow_ = nullptr;
   QAction *showBoxesAction_ = nullptr, *showPointsAction_ = nullptr;
+  // plugin 1.20.0 view state (cutout-view.cpp)
+  QActionGroup* boneDisplayGroup_ = nullptr;
+  QAction *bonesDimAction_ = nullptr, *canvasHintAction_ = nullptr;
+  QButtonGroup* lookPageButtons_ = nullptr;
+  QTreeWidget* treeBase_ = nullptr;  // tree_ as a QTreeWidget (BoneTree is local to cutout-panel.cpp)
+  QLineEdit *treeFilter_ = nullptr, *orderFilter_ = nullptr;
+  QWidget* buildLookPageBar();
+  void buildBoneViewActions(QMenu* menu);
+  QLineEdit* buildFilterField(const char* name, const QString& tip, QWidget* list);
+  void focusFilterFrom(QWidget* from, QLineEdit* field);  // Ctrl+F on `from` focuses `field`
+  bool filterKey(QObject* watched, QEvent* e);  // Esc in a filter field
+  bool filterMatches(const QString& ref, const QString& query) const;
+  void applyTreeFilter();
+  void applyOrderFilter();
+  void pickFirstMatch(QLineEdit* field);
   QWidget* buildHits();
   void refreshHits();
   void buildHitViewActions(QMenu* menu);
@@ -913,7 +949,7 @@ class CutoutPanel : public QWidget {
   /** Preview skin when it provides (slot, name): setup edits of that attachment go to the skin. */
   QString skinProviding(const QString& slot, const QString& name) const;
   QWidget* buildWorkspace();
-  QWidget* section(const QString& title, const char* name, QWidget* body);
+  QWidget* section(const QString& title, const char* name, QWidget* body, QWidget* headExtra = nullptr);
   QWidget* buildAnimateTab();
   QWidget* buildControllerTab();
   QWidget* buildExportTab();

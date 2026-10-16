@@ -52,7 +52,8 @@ export async function renderSetup(rig, pngs) {
   const dst = new Float64Array(width * height * 4);
   for (const item of frame.items) {
     const [a, b, c, d, e, f] = item.matrix;
-    assert.deepEqual([a, b, c, d], [1, 0, 0, 1], `${item.slot}: the import places pictures unrotated at scale 1`);
+    // Unrotated at scale 1 (an aimed bone's counter-rotated picture composes to 1 within float rounding).
+    assert.ok([a - 1, b, c, d - 1].every(v => Math.abs(v) < 1e-9), `${item.slot}: the import places pictures unrotated at scale 1 (${[a, b, c, d]})`);
     const image = decodePng(pngs.get(item.imageAssetId)), ox = Math.round(e + originX), oy = Math.round(f + originY);
     // Frames are printed with 6 decimals: "whole pixels" = within that rounding.
     assert.ok(Math.abs(ox - e - originX) < 1e-5 && Math.abs(oy - f - originY) < 1e-5, `${item.slot} lands on whole pixels (${e + originX}, ${f + originY})`);

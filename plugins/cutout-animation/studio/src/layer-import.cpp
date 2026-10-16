@@ -34,6 +34,7 @@ QString layerImportSummary(const QJsonObject& report) {
     text += QString(" · 새 그림 %1 · 교체 %2 · 같음 %3").arg(s.value("added").toInt()).arg(s.value("updated").toInt()).arg(s.value("unchanged").toInt());
   const int missing = report.value("changes").toObject().value("attachments").toObject().value("missing").toArray().size();
   if (missing) text += QString(" · PSD에 없는 첨부 %1(그대로 둠)").arg(missing);
+  if (const int joints = s.value("joints").toInt()) text += QString(" · 관절 짐작 %1").arg(joints);  // plugin 1.20.0
   if (const int baked = s.value("baked").toInt()) text += QString(" · 클리핑 %1개 합침").arg(baked);
   if (const int merged = s.value("merged").toInt()) text += QString(" · 그룹 %1개 한 그림으로").arg(merged);
   // Over the rig limits (plugin 1.15.0): the preview still shows, the import is refused until it fits.
@@ -53,6 +54,9 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
     : QDialog(parent), choice_(choice), preview_(std::move(preview)) {
   setObjectName("cutoutLayerImportDialog");
   setWindowTitle("레이어 그림 가져오기 (PSD)");
+  // Plugin 1.20.0: a production file has hundreds of layers: a large, resizable window by default.
+  setSizeGripEnabled(true);
+  resize(defaultSize(parent));
   auto* layout = new QVBoxLayout(this);
   source_ = new QLabel;
   source_->setObjectName("cutoutLayerImportSource");
@@ -80,6 +84,7 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
   aimBones_->setObjectName("cutoutLayerImportAimBones");
   aimBones_->setChecked(choice.aimBones);
   aimBones_->setToolTip("새 본을 그 그룹의 자식 본(하나일 때) 또는 그림 쪽으로 향하게 하고, 그림 끝까지의 길이를 줍니다(없으면 위쪽).\n"
+                        "[pivot]이 없는 그룹은 매달린 가장자리(관절: 머리는 목, 다리·머리채·소매는 위끝)를 원점으로 짐작합니다(1.20.0).\n"
                         "그림은 반대로 돌려 붙여 PSD와 똑같이 보입니다. 끄면 1.11.0처럼 모든 본이 오른쪽(+x)을 향하고 길이가 없습니다.\n다시 가져올 때 이미 있는 본은 바꾸지 않습니다.");
   scale_ = new QDoubleSpinBox;
   scale_->setObjectName("cutoutLayerImportScale");
@@ -161,6 +166,26 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
     follow(item, item->checkState(0) == Qt::Checked);
     filling_ = false;
   });
+  // Plugin 1.20.0: find layers by name, open or fold every group.
+  auto* treeTools = new QHBoxLayout;
+  filter_ = new QLineEdit;
+  filter_->setObjectName("cutoutLayerImportFilter");
+  filter_->setPlaceholderText("레이어 이름 찾기");
+  filter_->setClearButtonEnabled(true);
+  filter_->setToolTip("이름에 모든 낱말이 들어 있는 레이어와 그 위 그룹만 보입니다(체크·합치기는 숨은 줄도 그대로).");
+  connect(filter_, &QLineEdit::textChanged, this, [this] { applyFilter(); });
+  auto* expand = new QPushButton("모두 펼치기");
+  expand->setObjectName("cutoutLayerImportExpandAll");
+  expand->setToolTip("모든 그룹을 펼칩니다.");
+  connect(expand, &QPushButton::clicked, tree_, &QTreeWidget::expandAll);
+  auto* collapse = new QPushButton("모두 접기");
+  collapse->setObjectName("cutoutLayerImportCollapseAll");
+  collapse->setToolTip("모든 그룹을 접어 맨 위 단계만 보입니다.");
+  connect(collapse, &QPushButton::clicked, tree_, &QTreeWidget::collapseAll);
+  treeTools->addWidget(filter_, 1);
+  treeTools->addWidget(expand);
+  treeTools->addWidget(collapse);
+  layout->addLayout(treeTools);
   layout->addWidget(tree_, 1);
   warnings_ = new QListWidget;
   warnings_->setObjectName("cutoutLayerImportWarnings");
@@ -251,6 +276,7 @@ void LayerImportDialog::showReport(const QJsonObject& report) {
   addItems(nullptr, report.value("layers").toArray());
   tree_->expandAll();
   for (int c = 0; c < COLUMNS; c++) tree_->resizeColumnToContents(c);
+  applyFilter();
   warnings_->clear();
   for (const auto& w : report.value("warnings").toArray()) warnings_->addItem(w.toObject().value("message").toString());
   if (!warnings_->count()) warnings_->addItem("없음");
@@ -304,6 +330,37 @@ void LayerImportDialog::autoMerge() {
   for (const auto& key : report_.value("autoMerge").toObject().value("keys").toArray())
     if (!choice_.merge.contains(key.toString())) choice_.merge << key.toString();
   refresh(false);  // the tree does not show the proposal yet: preview the choice as it is
+}
+
+void LayerImportDialog::setFilter(const QString& text) { filter_->setText(text); }
+void LayerImportDialog::applyFilter() {
+  const QStringList words = filter_ ? filter_->text().split(' ', Qt::SkipEmptyParts) : QStringList();
+  std::function<bool(QTreeWidgetItem*)> walk = [&](QTreeWidgetItem* it) {
+    bool below = false;
+    for (int i = 0; i < it->childCount(); i++) below = walk(it->child(i)) || below;
+    bool match = !words.isEmpty();
+    for (const QString& w : words) match = match && it->text(0).contains(w, Qt::CaseInsensitive);
+    it->setHidden(!words.isEmpty() && !match && !below);
+    if (below && !words.isEmpty()) it->setExpanded(true);  // a match inside a folded group shows
+    return match || below;
+  };
+  for (int i = 0; i < tree_->topLevelItemCount(); i++) walk(tree_->topLevelItem(i));
+}
+QSize LayerImportDialog::defaultSize(const QWidget* parent) {
+  const QScreen* screen = parent && parent->screen() ? parent->screen() : QGuiApplication::primaryScreen();
+  const QSize avail = screen ? screen->availableGeometry().size() : QSize(1280, 720);
+  const QSize least(std::min(900, avail.width()), std::min(600, avail.height()));
+  QSettings q;
+  q.beginGroup(SIZE_SETTINGS);
+  const QSize saved = q.value("size").toSize();
+  if (saved.isValid()) return saved.expandedTo(least).boundedTo(avail);
+  return QSize(int(avail.width() * 0.7), int(avail.height() * 0.7)).expandedTo(least).boundedTo(avail);
+}
+void LayerImportDialog::done(int result) {
+  QSettings q;
+  q.beginGroup(SIZE_SETTINGS);
+  q.setValue("size", size());
+  QDialog::done(result);
 }
 
 void LayerImportDialog::accept() {

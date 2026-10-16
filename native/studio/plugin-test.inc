@@ -97,6 +97,14 @@ QStringList lookPageProblems(QWidget *panel) {
     }
   }
   tabs->setCurrentIndex(keep);
+  // Plugin 1.20.0: every page has a selector button, shown whole (the scrolling tab bar is hidden).
+  if (!tabs->tabBar()->isHidden()) problems << "cutoutLookTabs shows its scrolling tab bar";
+  for (int t = 0; t < tabs->count(); ++t) {
+    const QString name = tabs->widget(t)->objectName() + "Tab";
+    auto b = panel->findChild<QToolButton *>(name);
+    if (!b || !b->isVisible()) { problems << name + " missing or hidden"; continue; }
+    if (!panel->rect().contains(QRect(b->mapTo(panel, QPoint(0, 0)), b->size())) || b->width() < b->sizeHint().width()) problems << name + " clipped or squeezed";
+  }
   return problems;
 }
 /**

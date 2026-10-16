@@ -6,8 +6,9 @@
 //
 // Mapping (README "PSD 가져오기" documents the same rules for artists):
 //   * group = bone (id from the group name), nested groups = child bones; the bone origin is the
-//     centre of a `[pivot]` / `[bone]` / `#pivot` marker layer inside the group, else the centre
-//     of the group's content. A top-level marker sets the character origin (root bone).
+//     centre of a `[pivot]` / `[bone]` / `#pivot` marker layer inside the group, else (plugin
+//     1.20.0, boneDirection "auto") the joint guessed at the edge facing the parent (jointAim),
+//     else the centre of the group's content. A top-level marker sets the character origin (root bone).
 //   * layer = slot + attachment at its canvas position (pivot 0.5, trimmed to its pixels with a
 //     1 px transparent ring); `eyes/open`, `eyes@open` → slot `eyes`, attachment `open`; the
 //     layers of a `[slot]` group are attachments of one slot named after the group.
@@ -251,6 +252,78 @@ function boneAim(g, children) {
     length = Math.abs((children[0].world.x - o.x) * Math.cos(r) + (children[0].world.y - o.y) * Math.sin(r));
   }
   return { angle, length, from };
+}
+
+/** Joint guess thresholds (1.20.0): see jointAim. */
+const JOINT_MIN = 0.15, JOINT_LONG = 1.75, JOINT_INSET = 0.03, JOINT_ALPHA = 128;
+/**
+ * The joint of a group without a marker (plugin 1.20.0, `boneDirection: "auto"`): hanging parts
+ * (hair strands, sleeves, legs, tails, earrings) attach at an edge, so they turn around that edge
+ * instead of their middle. c = centre of the group's content bounds, p = `parentAt` (the parent
+ * bone's origin: its marker, its own joint or its content centre; the document's content centre
+ * for a top-level group). Returns null (the centre origin stays) when |p − c| < 15 % of the
+ * larger bounds side: the group sits on its parent (a torso, a face). Else the joint J is
+ *   * a tall part (height ≥ 1.75 × width): on its top or bottom end, at the middle of the first
+ *     pixel row from that end with alpha ≥ 128 in the group's pictures. The end facing p when p
+ *     lies above or below the part; the top end when p lies within its height (a long strand,
+ *     sleeve or leg reaching past its parent's origin hangs from its top in the setup pose);
+ *   * a wide part (width ≥ 1.75 × height) with p left or right of it: likewise on the end facing
+ *     p, at the middle of the first opaque column;
+ *   * otherwise where the ray from c toward p (snapped within 4° of an axis) leaves the content
+ *     bounds (never past p), moved back along it to the first pixel with alpha ≥ 128 (a slanted
+ *     part does not start in empty corner space): a head above the body gets its neck.
+ * The bone points from J through c (snapped within 4° like boneAim) and J moves 3 % of the group's
+ * extent along that axis inward, so it sits inside the art; length = the farthest bounds corner
+ * along the axis. Pictures are sampled in picture px (rig px / k).
+ */
+function jointAim(g, parentAt, k) {
+  const b = g.bounds;
+  if (!b || !parentAt) return null;
+  const w = b.x1 - b.x0, h = b.y1 - b.y0, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  const dx = parentAt.x - cx, dy = parentAt.y - cy, dist = Math.hypot(dx, dy);
+  if (dist < 1 || dist < JOINT_MIN * Math.max(w, h)) return null;
+  const pics = g.rects.filter(p => p.rgba);
+  const opaqueAt = (p, px, py) => px >= 0 && py >= 0 && px < p.width && py < p.height && p.rgba[(py * p.width + px) * 4 + 3] >= JOINT_ALPHA;
+  const snap = a => { const s = Math.round(a / 90) * 90; return Math.abs(a - s) <= 4 ? normalizeDegrees(s) : a; };
+  let jx = null, jy = null;
+  const tall = h >= JOINT_LONG * w, wide = !tall && w >= JOINT_LONG * h && (parentAt.x < b.x0 || parentAt.x > b.x1);
+  if (tall || wide) {
+    // The end: toward p, or the top when p is within the part's height.
+    const side = tall ? (parentAt.y > b.y1 ? 1 : -1) : Math.sign(dx);
+    // Picture-px lines across the short side from that end inward: the first with an opaque pixel.
+    const along0 = Math.round((tall ? b.y0 : b.x0) / k), across0 = Math.round((tall ? b.x0 : b.y0) / k), n = Math.round((tall ? h : w) / k);
+    for (let i = 0; i < n && jx === null; i++) {
+      const line = side < 0 ? i : n - 1 - i;
+      let lo = Infinity, hi = -Infinity;
+      for (const p of pics) {
+        const at = along0 + line - (tall ? p.y : p.x), count = tall ? p.width : p.height, off = (tall ? p.x : p.y) - across0;
+        if (at < 0 || at >= (tall ? p.height : p.width)) continue;
+        for (let j = 0; j < count; j++) if (tall ? opaqueAt(p, j, at) : opaqueAt(p, at, j)) { lo = Math.min(lo, j + off); hi = Math.max(hi, j + off + 1); }
+      }
+      if (lo >= hi) continue;
+      const edge = (along0 + (side < 0 ? line : line + 1)) * k, mid = (across0 + (lo + hi) / 2) * k;
+      [jx, jy] = tall ? [mid, edge] : [edge, mid];
+    }
+  }
+  if (jx === null) {
+    const a = snap(Math.atan2(-dy, -dx) * 180 / Math.PI) * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a);
+    // c − s·u leaves the bounds at s = exit (at most at p's projection), then back toward c to the art.
+    const exit = Math.min(Math.abs(ux) > 1e-9 ? w / 2 / Math.abs(ux) : Infinity, Math.abs(uy) > 1e-9 ? h / 2 / Math.abs(uy) : Infinity, Math.max(0, -(dx * ux + dy * uy)));
+    const ex = cx - exit * ux, ey = cy - exit * uy;
+    const near = pics.filter(p => p.x * k <= Math.max(ex, cx) + k && (p.x + p.width) * k >= Math.min(ex, cx) - k && p.y * k <= Math.max(ey, cy) + k && (p.y + p.height) * k >= Math.min(ey, cy) - k);
+    let s = exit;
+    for (let at = exit; at >= 0; at -= k) {
+      const x = cx - at * ux, y = cy - at * uy;
+      if (near.some(p => opaqueAt(p, Math.floor(x / k - p.x), Math.floor(y / k - p.y)))) { s = at; break; }
+    }
+    [jx, jy] = [cx - s * ux, cy - s * uy];
+  }
+  if (Math.hypot(cx - jx, cy - jy) < 1e-6) return null;
+  const angle = snap(Math.atan2(cy - jy, cx - jx) * 180 / Math.PI), r = angle * Math.PI / 180, ux = Math.cos(r), uy = Math.sin(r);
+  const corners = [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]].map(([x, y]) => (x - jx) * ux + (y - jy) * uy);
+  const inset = JOINT_INSET * (Math.max(...corners) - Math.min(...corners));
+  jx += inset * ux; jy += inset * uy;
+  return { joint: { x: jx, y: jy }, angle, length: Math.max(0, Math.max(...corners) - inset), from: 'joint' };
 }
 
 /** Pixel bounds (alpha > 0) of an RGBA layer, or null when fully transparent. */
@@ -580,6 +653,10 @@ export function planImport({ source, options, existing = null, rigName = '', dry
   const boneIds = new Set([rootId]), existingBones = new Set(rig.bones.map(b => b.id));
   let boneN = 0;
   const made = [];
+  // Joint guesses (1.20.0) look at the parent bone's origin (its marker, joint or content centre);
+  // top-level groups at the document's content centre (the root origin is only the character's feet).
+  const docBounds = rectsBounds(pictures.map(p => p.picture), k);
+  const centreOf = b => b ? { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 } : null;
   for (const g of groups) {
     if (!g.rects.length && !g.marker) { g.item.role = 'empty-group'; tally.emptyGroups++; continue; }
     g.id = unique(toId(g.text, null) ?? `bone-${++boneN}`, boneIds);
@@ -587,10 +664,17 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     while (parent && !parent.id) parent = parent.parent;
     g.parentId = parent ? parent.id : rootId;
     g.bounds = rectsBounds(g.rects, k);
-    const at = g.marker ? { x: g.marker.x * scale, y: g.marker.y * scale } : { x: (g.bounds.x0 + g.bounds.x1) / 2, y: (g.bounds.y0 + g.bounds.y1) / 2 };
-    g.world = { x: round(at.x), y: round(at.y) };
     g.item.bone = g.id;
-    if (existingBones.has(g.id)) { changes.bones.kept.push(g.id); g.item.status = 'kept'; continue; }
+    if (existingBones.has(g.id)) {
+      // A kept bone stays where the rig has it (a new parent's child aim looks at the real origin).
+      const m = world.get(g.id);
+      g.world = m ? { x: round(m[4]), y: round(m[5]) } : centreOf(g.bounds);
+      changes.bones.kept.push(g.id); g.item.status = 'kept'; continue;
+    }
+    const parentAt = parent ? parent.world : centreOf(docBounds);
+    g.joint = options.boneDirection === 'auto' && !g.marker ? jointAim(g, parentAt, k) : null;
+    const at = g.marker ? { x: g.marker.x * scale, y: g.marker.y * scale } : g.joint ? g.joint.joint : centreOf(g.bounds);
+    g.world = { x: round(at.x), y: round(at.y) };
     existingBones.add(g.id);
     made.push(g);
   }
@@ -601,7 +685,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     const bone = { id: g.id, parent: g.parentId, x: round(x), y: round(y) };
     let rotation = 0;
     if (options.boneDirection === 'auto') {
-      const aim = boneAim(g, groups.filter(c => c.id && c.parentId === g.id));
+      const aim = g.joint ?? boneAim(g, groups.filter(c => c.id && c.parentId === g.id));
       // Local rotation = the aim's screen angle minus the parent's (a parent may be rotated too).
       rotation = round(normalizeDegrees(aim.angle - Math.atan2(parentWorld[1], parentWorld[0]) * 180 / Math.PI));
       if (rotation !== 0) bone.rotation = rotation;
@@ -776,6 +860,10 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     changes.slots.added.push(slot.id);
   }
   for (const ref of Object.keys(provLayers)) if (!seen.has(ref) && rig.attachments.some(a => `${a.slot}/${a.name}` === ref)) changes.attachments.missing.push(ref);
+  // Original names (1.20.0): the editor's hierarchy filter finds parts by what the artist called them.
+  for (const pic of pictures) { const ref = `${pic.slot.id}/${pic.attachment}`; if (provLayers[ref]) provLayers[ref] = { ...provLayers[ref], name: pic.name }; }
+  const provBones = { ...(prov?.bones && typeof prov.bones === 'object' ? prov.bones : {}) };
+  for (const g of groups) if (g.id) provBones[g.id] = g.name;
   if (!pictures.length) fail('가져올 그림 레이어가 없습니다(모두 빠졌거나 비어 있음).');
   // Rig limits: an import over them is refused, but a preview reports the problem and proposes
   // which groups to merge (plugin 1.15.0), so a 500-layer file is one click from fitting.
@@ -796,13 +884,13 @@ export function planImport({ source, options, existing = null, rigName = '', dry
 
   // Provenance: editor-only metadata (runtimes ignore `editor`) that lets a re-import keep placements.
   rig.editor = { ...(rig.editor && typeof rig.editor === 'object' ? rig.editor : {}),
-    layerImport: { source: path.basename(source.file), format: source.format, width: source.width, height: source.height, scale, resolution, layers: provLayers } };
+    layerImport: { source: path.basename(source.file), format: source.format, width: source.width, height: source.height, scale, resolution, layers: provLayers, bones: provBones } };
   const hidden = pictures.filter(p => p.slot.setup !== p).length;
   const report = {
     source: { format: source.format, file: path.basename(source.file), width: source.width, height: source.height, layerPixels: layerArea(source.layers, 1) },
     options: { origin, scale, scaleMode, resolution, trim: options.trim, exclude: [...options.exclude], merge: [...options.merge], effects: options.effects, boneDirection: options.boneDirection },
     canvas: rig.canvas, layers, warnings, changes,
-    summary: { bones: changes.bones.added.length, slots: slots.length, attachments: pictures.length, hidden, images: dryRun ? null : images.size,
+    summary: { bones: changes.bones.added.length, joints: made.filter(g => g.joint).length, slots: slots.length, attachments: pictures.length, hidden, images: dryRun ? null : images.size,
       added: changes.attachments.added.length, updated: changes.attachments.updated.length, unchanged: changes.attachments.unchanged.length,
       ...(marks.length ? { boxes: marks.filter(m => m.kind === 'box').length, points: marks.filter(m => m.kind === 'point').length } : {}),
       baked: tally.baked, merged: tally.merged, effects: tally.effects.length, empty: tally.empty + tally.emptyGroups, pixels: pictures.reduce((s, p) => s + p.picture.width * p.picture.height, 0) },

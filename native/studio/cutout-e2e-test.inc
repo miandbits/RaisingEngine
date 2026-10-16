@@ -1338,10 +1338,11 @@ void StudioTests::cutoutEndToEnd() {
     QVERIFY(settle());
     auto tabs = panel->findChild<QTabWidget *>("cutoutLookTabs");
     auto showPage = [&](const char *name) {
+      // Plugin 1.20.0: the page selector's button (the tab bar is hidden), clicked like a user.
       QWidget *page = panel->findChild<QWidget *>(name);
-      const QRect r = tabs->tabBar()->tabRect(tabs->indexOf(page));
-      if (tabs->tabBar()->rect().contains(r)) QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier, r.center());
-      if (tabs->currentWidget() != page) { hooks << QString("look tab %1 chosen with setCurrentWidget() (scrolled out of the tab bar)").arg(name); tabs->setCurrentWidget(page); }
+      auto button = panel->findChild<QToolButton *>(QString(name) + "Tab");
+      if (button && button->isVisible()) QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, button->rect().center());
+      if (tabs->currentWidget() != page) { hooks << QString("look page %1 chosen with setCurrentWidget() (its selector button was not clickable)").arg(name); tabs->setCurrentWidget(page); }
       return waitFor([&] { return page->isVisible(); }, 2000);
     };
     QVERIFY(showPage("cutoutClippingPage"));
@@ -1451,10 +1452,11 @@ void StudioTests::cutoutEndToEnd() {
     auto psd = [&] { return pluginData(w->currentView(), psdRig); };
     auto tabs = panel->findChild<QTabWidget *>("cutoutLookTabs");
     auto showPage = [&](const char *name) {
+      // Plugin 1.20.0: the page selector's button (the tab bar is hidden), clicked like a user.
       QWidget *page = panel->findChild<QWidget *>(name);
-      const QRect r = tabs->tabBar()->tabRect(tabs->indexOf(page));
-      if (tabs->tabBar()->rect().contains(r)) QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier, r.center());
-      if (tabs->currentWidget() != page) { hooks << QString("look tab %1 chosen with setCurrentWidget() (scrolled out of the tab bar)").arg(name); tabs->setCurrentWidget(page); }
+      auto button = panel->findChild<QToolButton *>(QString(name) + "Tab");
+      if (button && button->isVisible()) QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, button->rect().center());
+      if (tabs->currentWidget() != page) { hooks << QString("look page %1 chosen with setCurrentWidget() (its selector button was not clickable)").arg(name); tabs->setCurrentWidget(page); }
       return waitFor([&] { return page->isVisible(); }, 2000);
     };
     click("cutoutModeSetup");

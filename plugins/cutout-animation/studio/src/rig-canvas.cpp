@@ -30,6 +30,7 @@ constexpr double VERTEX_RADIUS = 7, IK_RADIUS = 12, BONE_RADIUS = 8, SELECTED_RA
 // Bone bodies (plugin 1.5.0): a press within BODY_RADIUS of the origin->tip line (or inside the
 // drawn diamond) grabs the body; shorter than MIN_BODY on screen a bone is drawn as a point.
 constexpr double BODY_RADIUS = 4, MIN_BODY = 6;
+constexpr int HINT_PAD = 8;  // hint line text inset in its band (widget px)
 /** Weight heat map (blue 0 -> red 1). */
 QColor heatColor(double w, int alpha) { w = std::clamp(w, 0.0, 1.0); return QColor::fromHsvF((1 - w) * 0.66, 0.85, 0.95, alpha / 255.0); }
 double segmentDistance(const QPointF& p, const QPointF& a, const QPointF& b) {
@@ -718,8 +719,11 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
     for (int i = 0; i < pts.size(); i++)
       if (const double d = dist(rigToWidget(pts[i])); d <= VERTEX_RADIUS * ui_) out.push_back({"slot:" + meshSlot_, i, HitVertex, d});
   }
-  // Bones back to front so equally near handles keep the later (drawn on top) bone first.
+  // Bones back to front so equally near handles keep the later (drawn on top) bone first. Bones
+  // the 본 표시 mode does not draw are never picked (plugin 1.20.0).
+  const QVector<bool> shown = handles ? shownBones() : QVector<bool>();
   for (size_t i = handles ? rig_->bones.size() : 0; i-- > 0;) {
+    if (!shown[int(i)]) continue;
     const QString ref = "bone:" + qs(rig_->bones[i].id);
     const auto& m = pose_.world[i];
     const QPointF at = rigToWidget(QPointF(m.e, m.f));
@@ -828,7 +832,9 @@ QPolygonF RigCanvas::boneShape(int bone) const {
   if (len < MIN_BODY * ui_) return {};
   // Spine-like: widest a little after the origin, tapering to a point at the tip.
   const QPointF dir = v / len, side(-dir.y(), dir.x());
-  const double half = std::clamp(len * 0.1, 2.5 * ui_, 8.0 * ui_), knee = std::min(len * 0.2, half * 2.5);
+  // Many bones (plugin 1.20.0): thinner bodies so the art between them stays readable.
+  const double thin = thinBones() ? 0.55 : 1.0;
+  const double half = std::clamp(len * 0.1 * thin, 2.5 * ui_ * thin, 8.0 * ui_ * thin), knee = std::min(len * 0.2, half * 2.5);
   return QPolygonF({o, o + dir * knee + side * half, t, o + dir * knee - side * half});
 }
 QPointF RigCanvas::createEnd(const Drag& d) {
@@ -927,6 +933,7 @@ const QVector<RigCanvas::KeyBinding>& RigCanvas::keyBindings() {
     {"multi", "Ctrl/Shift+클릭 · 빈 곳 끌기", "선택", "여러 개 고르기 · 상자 선택", {}},
     {"altPick", "Alt+클릭", "선택", "겹친 항목을 차례로 고르기", {}},
     {"doubleClick", "더블클릭", "선택", "조각 → 그 본 · 본 → 그 본의 첫 조각", {}},
+    {"find", "Ctrl+F", "선택", "계층 찾기 칸으로 (계층·그리는 순서 목록에서는 그 목록의 찾기 칸): ID·PSD 레이어 이름으로 찾고 Enter로 첫 결과 고르기", {}},
     {"context", "오른쪽 클릭", "편집", "가리킨 항목의 메뉴 (선택·부모·키·방향·판정 상자·메시·숨기기·복제·삭제)", {}},
     {"delete", "Delete", "편집", "고른 본·조각 삭제 (확인 후, 삭제 버튼과 같음)", {Qt::Key_Delete, Qt::Key_Backspace}},
     {"duplicate", "Ctrl+D", "편집", "복제: 고른 본(자식·조각까지) 또는 조각 (조립 모드)", {Qt::Key_D}, int(Qt::ControlModifier)},
@@ -1024,11 +1031,16 @@ void RigCanvas::paintHover(QPainter& p) {
 // Bones (plugin 1.5.0, Spine-like): a link to the parent, then a tapered body from origin to tip
 // for bones with a length (fill = bone colour), else the origin circle and local x axis tick.
 void RigCanvas::paintBones(QPainter& p) {
+  const QVector<bool> shown = shownBones();
+  // Many bones: smaller origins and thinner lines (bodies: boneShape); 본 흐리게: unselected at 40 %.
+  const double thin = thinBones() ? 0.7 : 1.0;
   for (size_t i = 0; i < rig_->bones.size(); i++) {
+    if (!shown[int(i)]) continue;
     const auto& w = pose_.world[i];
     const QPointF at = rigToWidget(QPointF(w.e, w.f));
     const QString ref = "bone:" + qs(rig_->bones[i].id);
     const bool selected = isSelected(ref), hovered = ref == hoverRef_ && !drag_;
+    p.setOpacity(bonesDim_ && !selected && !hovered ? 0.4 : 1.0);
     const int parent = rig_->bones[i].parentIndex;
     if (parent >= 0) {
       // A child starting at its parent's tip needs no link (the bodies already join).
@@ -1057,18 +1069,49 @@ void RigCanvas::paintBones(QPainter& p) {
       p.drawPolygon(shape);
       p.setPen(QPen(QColor("#0b1220"), 1));
       p.setBrush(selected ? SELECT_COLOR : color.lighter(115));
-      p.drawEllipse(at, (selected ? 4.5 : 3.5) * ui_, (selected ? 4.5 : 3.5) * ui_);
+      p.drawEllipse(at, (selected ? 4.5 : 3.5 * thin) * ui_, (selected ? 4.5 : 3.5 * thin) * ui_);
       p.setBrush(Qt::NoBrush);
       continue;
     }
     const double len = std::hypot(w.a, w.b);
-    const QPointF axis = len > 1e-9 ? QPointF(w.a / len, w.b / len) * AXIS_LENGTH * ui_ : QPointF(AXIS_LENGTH * ui_, 0);
-    p.setPen(QPen(selected ? SELECT_COLOR : QColor("#c8d2dc"), (selected ? 2.5 : 1.5) * ui_));
+    const QPointF axis = len > 1e-9 ? QPointF(w.a / len, w.b / len) * AXIS_LENGTH * ui_ * thin : QPointF(AXIS_LENGTH * ui_ * thin, 0);
+    p.setPen(QPen(selected ? SELECT_COLOR : QColor("#c8d2dc"), (selected ? 2.5 : 1.5 * thin) * ui_));
     p.drawLine(at, at + axis);
     p.setBrush(selected ? SELECT_COLOR : color);
-    p.drawEllipse(at, (selected ? 6.0 : 4.5) * ui_, (selected ? 6.0 : 4.5) * ui_);
+    p.drawEllipse(at, (selected ? 6.0 : 4.5 * thin) * ui_, (selected ? 6.0 : 4.5 * thin) * ui_);
     p.setBrush(Qt::NoBrush);
   }
+  p.setOpacity(1.0);
+}
+QVector<bool> RigCanvas::shownBones() const {
+  const int n = rig_ ? int(rig_->bones.size()) : 0;
+  QVector<bool> shown(n, boneDisplay_ == BonesAll);
+  if (boneDisplay_ == BonesAll || !n) return shown;
+  // The selected bones (a selected part = its bone) are always drawn.
+  QVector<int> picked;
+  QSet<QString> refs = multi_;
+  if (!selection_.isEmpty()) refs.insert(selection_);
+  for (const QString& ref : refs) {
+    int b = -1;
+    if (ref.startsWith("bone:")) b = rig_->boneIndex(ss(ref.section(':', 1)));
+    else if (ref.startsWith("slot:")) if (const int si = rig_->slotIndex(ss(ref.section(':', 1))); si >= 0) b = rig_->slots[size_t(si)].boneIndex;
+    if (b >= 0 && b < n) { shown[b] = true; picked << b; }
+  }
+  if (boneDisplay_ == BonesHidden) return shown;
+  // 선택·관련만: parents, children and the bones sharing an IK or transform constraint.
+  for (const int b : picked) {
+    if (const int parent = rig_->bones[size_t(b)].parentIndex; parent >= 0) shown[parent] = true;
+    for (int c = 0; c < n; c++) if (rig_->bones[size_t(c)].parentIndex == b) shown[c] = true;
+    auto partners = [&](const std::vector<int>& bones, int target, int tip) {
+      if (std::find(bones.begin(), bones.end(), b) == bones.end() && target != b && tip != b) return;
+      for (int o : bones) if (o >= 0 && o < n) shown[o] = true;
+      if (target >= 0 && target < n) shown[target] = true;
+      if (tip >= 0 && tip < n) shown[tip] = true;
+    };
+    for (const auto& k : rig_->ik) partners(k.bones, k.target, k.tip);
+    for (const auto& t : rig_->transforms) partners(t.bones, t.target, -1);
+  }
+  return shown;
 }
 
 void RigCanvas::paintEvent(QPaintEvent*) {
@@ -1107,10 +1150,9 @@ void RigCanvas::paintEvent(QPaintEvent*) {
       // Selected part outline.
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
       for (size_t i = 0; i < rig_->slots.size(); i++) if (isSelected("slot:" + qs(rig_->slots[i].id))) outlineSlot(p, int(i));
-      paintIk(p);
-      paintTransforms(p);
+      if (boneDisplay_ != BonesHidden) { paintIk(p); paintTransforms(p); }
       paintBones(p);
-      paintPhysics(p);
+      if (boneDisplay_ != BonesHidden) paintPhysics(p);
       paintPoints(p);
     }
     if (pose_.world.size() == rig_->bones.size()) paintHover(p);
@@ -1147,8 +1189,21 @@ void RigCanvas::paintEvent(QPaintEvent*) {
     p.setPen(QColor("#f0c0c0"));
     p.drawText(rect().adjusted(16, 16, -16, -16), Qt::AlignCenter | Qt::TextWordWrap, message_);
   }
+  // The hint line (plugin 1.20.0): a dark band under it so it reads over any artwork, elided to
+  // the canvas width instead of running past it (보기 ▾ 캔버스 안내 줄 hides it).
+  if (const QString hint = hintLineText(); !hint.isEmpty()) {
+    const QRectF band = hintLineRect();
+    p.fillRect(band, QColor(12, 16, 22, 190));
+    p.setPen(QColor("#b4bec8"));
+    p.drawText(band.adjusted(HINT_PAD, 0, -HINT_PAD, 0), Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, hint);
+  }
+  // Strong mode cue: the whole canvas is framed in the mode color.
+  p.setPen(QPen(animate_ ? ANIMATE_COLOR : SETUP_COLOR, 4));
+  p.drawRect(QRectF(rect()).adjusted(2, 2, -2, -2));
+}
+
+QString RigCanvas::hintLine() const {
   static const char* names[] = {"이동(V)", "회전(R)", "크기(S)", "회전 중심(P)", "본 만들기(B)"};
-  p.setPen(QColor("#9aa4ae"));
   QString hint = placingPoint_ ? QString("기준점 놓기: 캔버스를 클릭한 곳에 고른 본의 기준점이 생깁니다 · 끌어서 옮기고 끝의 둥근 손잡이로 방향을 돌림 · Esc 취소")
                  : outlineDrawing() ? QString("윤곽 그리기: 그림 둘레를 차례로 클릭 · 첫 점 클릭·더블클릭·Enter로 닫기(메시 만들기) · Backspace 마지막 점 지우기 · Esc 취소")
                  : meshMode_ == MeshVertices && meshTool_ == MeshAddVertex ? QString("정점 추가: 메시 안(안쪽 정점)이나 윤곽 가까이(윤곽 정점)를 클릭 · 다시 삼각분할됩니다")
@@ -1156,15 +1211,19 @@ void RigCanvas::paintEvent(QPaintEvent*) {
                  : meshMode_ == MeshVertices ? QString("메시 정점: 클릭·Shift+클릭 선택 · 빈 곳 끌기 상자 선택 · 정점 끌기로 이동") + (animate_ ? " (K로 변형 키)" : " · Delete 정점 삭제")
                        : meshMode_ == MeshWeights ? QString("웨이트 칠하기: 끌어서 붓으로 칠함 · Shift+끌기 부드럽게 · Ctrl+끌기 빼기 · [ ] 붓 크기 · 정점에 올리면 웨이트 · 색 = 고른 본(파랑 0 → 빨강 1)")
                        : tool_ == Create ? QString("본 만들기: 끌어서 고른 본의 자식 본(길이·방향) · 클릭 = 점 본 · 본 원점 클릭 = 부모 고르기 · Shift 15° 스냅")
-                                         : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Ctrl/Shift+클릭 여러 개 선택 · 빈 곳 끌기 상자 선택 · V·R·S 도구 · 끄는 중 Shift 한 축/15°, Ctrl 미세, 숫자+Enter 정확히, Esc 취소 · 화살표 1 px · Space+끌기 화면 이동 · Alt+클릭 겹친 항목 · ? 단축키").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
+                                         : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Ctrl/Shift+클릭 여러 개 선택 · 빈 곳 끌기 상자 선택 · V·R·S 도구 · H 본 표시 · 끄는 중 Shift 한 축/15°, Ctrl 미세, 숫자+Enter 정확히, Esc 취소 · 화살표 1 px · Space+끌기 화면 이동 · Alt+클릭 겹친 항목 · ? 단축키").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
   // What a click would pick (handles beat images): named so an overlap is never a surprise.
   const QString kind = hoverRef_.startsWith("slot:") ? "조각" : rig_ && isIkTarget(rig_->boneIndex(ss(hoverRef_.section(':', 1)))) ? "IK 대상" : "본";
   if (!hoverRef_.isEmpty()) hint = QString("가리킴: %1 %2 · ").arg(kind, hoverRef_.section(':', 1)) + hint;
-  const int hintHeight = fontMetrics().height() + 4;  // the hint line follows the (scaled) font
-  p.drawText(QRectF(10, height() - hintHeight - 4, width() - 20, hintHeight), Qt::AlignLeft | Qt::AlignVCenter, hint + " · 휠 확대 · 가운데·오른쪽 버튼 끌기로 화면 이동");
-  // Strong mode cue: the whole canvas is framed in the mode color.
-  p.setPen(QPen(animate_ ? ANIMATE_COLOR : SETUP_COLOR, 4));
-  p.drawRect(QRectF(rect()).adjusted(2, 2, -2, -2));
+  return hint + " · 휠 확대 · 가운데·오른쪽 버튼 끌기로 화면 이동";
+}
+QRectF RigCanvas::hintLineRect() const {
+  const int h = fontMetrics().height() + 6;  // follows the (scaled) font
+  return QRectF(6, height() - h - 6, std::max(0, width() - 12), h);
+}
+QString RigCanvas::hintLineText() const {
+  if (!showHint_ || !rig_) return {};
+  return fontMetrics().elidedText(hintLine(), Qt::ElideRight, std::max(0, int(hintLineRect().width()) - 2 * HINT_PAD));
 }
 
 void RigCanvas::mousePressEvent(QMouseEvent* e) {
@@ -1482,8 +1541,9 @@ bool RigCanvas::event(QEvent* e) {
 QStringList RigCanvas::bonesIn(const QRectF& r) const {
   QStringList out;
   if (!rig_ || pose_.world.size() != rig_->bones.size()) return out;
+  const QVector<bool> shown = shownBones();
   for (size_t i = 0; i < rig_->bones.size(); i++)
-    if (r.contains(rigToWidget(QPointF(pose_.world[i].e, pose_.world[i].f)))) out << "bone:" + qs(rig_->bones[i].id);
+    if (shown[int(i)] && r.contains(rigToWidget(QPointF(pose_.world[i].e, pose_.world[i].f)))) out << "bone:" + qs(rig_->bones[i].id);
   return out;
 }
 void RigCanvas::leaveEvent(QEvent*) {

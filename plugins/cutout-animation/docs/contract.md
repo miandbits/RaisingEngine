@@ -1115,7 +1115,32 @@ is ordinary schemaVersion 1 data plus editor metadata.
   a top-level `[pivot]` layer's centre overrides the origin.
   * group → bone (id from the name, nested groups = child bones, local = world − parent); origin =
     the centre of a `[pivot]` / `[bone]` / `#pivot` marker layer inside it (not imported as a
-    picture), else the centre of its content. A group without pictures makes no bone.
+    picture; always authoritative), else with `boneDirection: "auto"` the guessed **joint**
+    (below, plugin 1.20.0), else the centre of its content. A group without pictures makes no bone.
+  * **joint guess** (plugin 1.20.0, `boneDirection: "auto"`, new bones without a marker): hanging
+    parts turn around the edge they hang from instead of their middle. In rig px (document px ×
+    scale): c = centre of the group's content bounds (own and descendants' pictures, hidden
+    variants included), p = the parent bone's origin (its marker, its own joint or its content
+    centre); for a top-level group p = the centre of all pictures' bounds (the root origin is only
+    the character's feet). If |p − c| < 15 % of the larger bounds side the group keeps the centre
+    origin (it sits on its parent: a torso, a face; aimed as before). Else the joint J is:
+    * tall group (height ≥ 1.75 × width): on its top or bottom end — the end facing p when p lies
+      above or below the bounds, the **top** end when p lies within the group's height (a strand,
+      sleeve or leg reaching past its parent's origin hangs from its top in the setup pose) — at
+      the middle of the opaque span of the first pixel row from that end with alpha ≥ 128 in any
+      of the group's pictures (picture px at the import resolution);
+    * wide group (width ≥ 1.75 × height) with p left or right of its bounds: likewise on the end
+      facing p, at the middle of the first opaque column;
+    * otherwise: where the ray from c toward p, its angle snapped to an axis within 4°, leaves the
+      bounds (never past p's projection on the ray), moved back along the ray toward c to the
+      first pixel with alpha ≥ 128 (sampled every picture px; none on the ray = the bounds exit).
+    The bone's x axis then points from J through c (snapped to an axis within 4°), J moves inward
+    along it by 3 % of the bounds' extent along the axis, and the length reaches the farthest
+    bounds corner along the axis. Results: heads point up from the neck, legs, strands and sleeves
+    hang down from their top, ears point up from their base, fingers point away from the palm.
+    The report says `direction.from: "joint"` and `summary.joints` counts them. Kept bones of a
+    re-import are never moved (their real origin is the anchor of new child groups);
+    `boneDirection: "none"` keeps the centre origin.
   * bone direction (`boneDirection: "auto"`, plugin 1.14.0; new bones only, never the root): the
     bone's x axis points at its only child bone (length = the distance along it), else at the
     centre of the group's pictures (own and descendants'), else straight up (origin at that
@@ -1123,7 +1148,8 @@ is ordinary schemaVersion 1 data plus editor metadata.
     within 4° of an axis snap to it. `rotation` is local (aim − parent world angle), `length` in
     the parent's scale. Attachments are placed through the rotated bone (their `rotation` is the
     opposite), so the setup frame is unchanged. Report layers of bones carry
-    `direction: {angle, length, from: child | content | up}`. `none`: rotation 0, no length.
+    `direction: {angle, length, from: child | content | up | joint}` (`joint`: the 1.20.0 joint
+    guess above decides origin and aim). `none`: rotation 0, no length.
   * layer → region attachment, picture trimmed to its pixels (alpha > 0) plus a 1 px transparent
     ring (linear filtering at the edge blends to transparency like the document), placed with
     pivot 0.5 at its centre in the bone's space (see Scale for the resolution and the attachment
@@ -1206,9 +1232,13 @@ is ordinary schemaVersion 1 data plus editor metadata.
     only (a re-import keeps existing slots, so merging cannot shrink it).
   * New rig: `idle` clip, mix 150 ms; new controller `{rig: id, defaultClip: "idle"}`.
 * **Provenance**: `editor.layerImport = {source, format, width, height, scale, layers: {"slot/name":
-  {x, y, width, height, pixels}}, resolution}` (picture rectangle in picture px = document px ×
-  resolution, and a pixel hash of the baked picture: a changed clipped layer, also one clipped onto
-  a group, changes the hash and updates the picture on re-import). Runtimes ignore `editor`.
+  {x, y, width, height, pixels, name}}, bones: {boneId: groupName}, resolution}` (picture rectangle
+  in picture px = document px × resolution, and a pixel hash of the baked picture: a changed
+  clipped layer, also one clipped onto a group, changes the hash and updates the picture on
+  re-import; plugin 1.20.0: `name` = the original layer name and `bones` the original group name
+  of every imported bone, e.g. Cyrillic names before transliteration, so the editor's 계층 filter
+  finds parts by the names the artist gave them; a re-import refreshes them, older records
+  without them still work). Runtimes ignore `editor`.
 * **Re-import** (`rig`): bones, slots, keys, skins, expressions, IK and every placement stay.
   Matching is by id: groups map to bones of the same id (kept, never moved; new groups become new
   bones placed through the current setup pose), `slot/name` to existing attachments.
@@ -1253,6 +1283,12 @@ is ordinary schemaVersion 1 data plus editor metadata.
   `…Summary` (red with the counts when over the limits; 가져오기 disabled), `…Refresh` = preview
   again, `…AutoMerge` 「자동 합치기」 = add `report.autoMerge.keys` and preview again) → `가져오기` =
   one edit (one Ctrl+Z). The file the selected character was imported from defaults to updating it.
+  Plugin 1.20.0: the dialog is resizable (size grip) and opens at the size it was last closed at
+  (QSettings `plugins/cutout-animation/layerImport/size`, editor-only), else at 70 % of the
+  available screen, at least 900x600 (or the whole screen when smaller); over the tree
+  `cutoutLayerImportFilter` (rows whose name holds every word, case-insensitive, with their parent
+  groups, which open; kept across 미리 보기 갱신; checks and merge boxes of hidden rows unchanged),
+  `cutoutLayerImportExpandAll` 「모두 펼치기」 and `cutoutLayerImportCollapseAll` 「모두 접기」.
 
 ## Clipping (plugin 1.12.0)
 
@@ -1684,3 +1720,50 @@ fine); a right click only panned (now a click opens the menu, a drag still pans)
 * 보기 ▾ adds `cutoutFrameSelectionAction` (선택 맞춤, F) and `cutoutShortcutOverlayAction`. Tool
   tooltips name their keys (`cutoutToolCreate` B · C, `cutoutMeshVertices` M, `cutoutMeshWeights`
   W, `cutoutBoxVertices` G); the hint strip and the canvas hint line name V / R / S / Space / ?.
+
+## Workspace view (plugin 1.20.0)
+
+No data change (every 1.19 document loads and plays bit-identically); everything here is editor
+presentation, remembered per user in QSettings `plugins/cutout-animation/view` (`boneDisplay`,
+`bonesDim`, `canvasHint`), never an edit.
+
+* **Look pages**: the right column's page section (its fold toggle `cutoutSectionLooksToggle` keeps
+  only the arrow, accessible name `페이지`) shows a two-row page selector `cutoutLookPageBar` in its
+  header row instead of the long title and the tab bar (which needed scroll arrows at 1456x819 and
+  hid 판정); its buttons use a compact padding (scaled with the UI) so the right column still
+  fits next to the other panes at 1280x720. One checkable button per
+  page, objectName = the page's objectName + `Tab` (`cutoutSkinPageTab`, `cutoutExpressionPageTab`,
+  `cutoutIkPageTab`, `cutoutMeshPageTab`, `cutoutEventPageTab`, `cutoutClippingPageTab`,
+  `cutoutSequencePageTab`, `cutoutPhysicsPageTab`, `cutoutTransformPageTab`, `cutoutHitPageTab`),
+  text = the tab text. `cutoutLookTabs` stays the QTabWidget (pages, `currentIndex`,
+  `setCurrentWidget`, the palette's `… 탭 열기` commands); its tab bar is hidden and the buttons
+  follow its current page. Collapsing the section hides the selector. Every button is shown whole
+  from 1280x720 windows up at UI scale 1.0 and 1.25 (studio test `lookPagesAndCanvasView`, the
+  layout matrices and the real-studio plugin layout test check it); the buttons are not palette
+  commands of their own.
+* **본 표시** (`보기 ▾ › 본 표시`, `cutoutBoneDisplayMenu`): `cutoutBonesAll` 모두 (default),
+  `cutoutBonesSelected` 선택·관련만 = the selected bones (a selected part counts as its bone),
+  their parents and children and every bone of an IK constraint (`bones`, `target`, `tip`) or
+  transform constraint (`bones`, `target`) that includes one of them; `cutoutBonesHidden` 숨김 =
+  only the selected bones (picked in the tree, they stay drawn and draggable), and the IK /
+  transform / physics overlays are off. Bones not drawn are not candidates of the canvas hit test
+  (parts still are) nor of a box selection; the hierarchy still selects them. **H** (QShortcut
+  `cutoutShortcutBoneDisplay`, a free letter: V R S P B C M W G K O are tools) cycles 모두 →
+  선택·관련만 → 숨김 and says so in the status line. `cutoutBonesDim` 본 흐리게 draws every
+  unselected, unhovered bone at 40 % opacity. Rigs with more than `RigCanvas::THIN_BONES` (40) bones
+  draw bone bodies at 0.55× their width and origins / axes at 0.7× (pick radii unchanged).
+* **Canvas hint line** (`cutoutShowCanvasHint` 캔버스 안내 줄, default on): the tool hint at the
+  bottom of the canvas (`도구: 이동(V) · …`, the hovered item first) is drawn on a translucent dark
+  band (`RigCanvas::hintLineRect()`) and elided with `…` to the band's width
+  (`RigCanvas::hintLineText()` = what is drawn, "" when hidden), so it reads over any artwork and
+  never runs past the canvas.
+* **Hierarchy and draw-order filters**: `cutoutTreeFilter` (in the `계층` section's header row) and
+  `cutoutDrawOrderFilter` (in the `그리는 순서` header row), placeholder 「본·조각 찾기」. A row
+  matches when every whitespace-separated word occurs, case-insensitively, in its id, the names of
+  its attachments (parts) or the original PSD names in `rig.editor.layerImport` (`layers[ref].name`
+  of the part's attachments, `bones[id]` of a bone; rigs imported before 1.20.0 match by id only).
+  The hierarchy shows matches (bold) with their ancestor rows; the draw order only matches. The
+  filter survives refreshes. Enter selects the first match (status line when none), Esc clears
+  (an empty field: back to its list), **Ctrl+F** focuses the hierarchy filter from the hierarchy or
+  the canvas and the draw-order filter from the draw order (the host binds no Ctrl+F; listed once
+  in the shortcut overlay from the canvas table).

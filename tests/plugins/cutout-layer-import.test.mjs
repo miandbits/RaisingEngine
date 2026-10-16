@@ -11,6 +11,7 @@
 // Clipping onto groups (plugin 1.19.1): layers clipped to a group that stays bones / slots are
 // painted into its pictures (each equal to the composite without overlap, the setup frame with
 // see-through overlap, hidden variants, hidden groups, scale 0.25, effects skip, re-import hashes).
+// Joint guess (plugin 1.20.0): groups without a marker get their origin at the edge they hang from.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -73,7 +74,7 @@ test('mapping: groups → bones, layers → slots/attachments, variants, [slot],
   assert.equal(rig.name, 'Hero Girl');
   assert.deepEqual(rig.canvas, { width: W, height: H, originX: W / 2, originY: H }, 'origin default bottom-center');
   assert.deepEqual(rig.bones.map(b => [b.id, b.parent]), [['root', null], ['left', 'root'], ['right', 'root'], ['head', 'root']]);
-  // Head bone at the [pivot] marker centre (70, 88); arm bones at their content centres (trim ring included).
+  // Head bone at the [pivot] marker centre (70, 88); the arm bones (no marker, beside the body) get joints (1.20.0).
   const head = rig.bones.find(b => b.id === 'head');
   assert.deepEqual([head.x + W / 2, head.y + H], [70, 88]);
   assert.deepEqual(rig.slots.map(s => [s.id, s.bone, s.attachment]),
@@ -92,7 +93,11 @@ test('mapping: groups → bones, layers → slots/attachments, variants, [slot],
   assert.deepEqual(flat.filter(n => n.role === 'pivot').map(n => n.name), ['[pivot]']);
   assert.deepEqual(flat.find(n => n.name === 'eyes/closed'), { ...flat.find(n => n.name === 'eyes/closed'), slot: 'eyes', attachment: 'closed', bone: 'head', setup: false, status: 'add' });
   assert.equal(flat.find(n => n.name === 'Head').bone, 'head');
-  assert.deepEqual(report.summary, { bones: 3, slots: 8, attachments: 10, hidden: 2, images: 10, added: 10, updated: 0, unchanged: 0, baked: 0, merged: 0, effects: 0, empty: 0, pixels: report.summary.pixels });
+  // 1.20.0: the original layer / group names stay in the provenance (the editor's hierarchy filter).
+  assert.equal(rig.editor.layerImport.layers['eyes/closed'].name, 'eyes/closed');
+  assert.equal(rig.editor.layerImport.layers['part-1/part-1'].name, '모자');
+  assert.deepEqual(rig.editor.layerImport.bones, { left: 'left', right: 'right', head: 'Head' });
+  assert.deepEqual(report.summary, { bones: 3, joints: 2, slots: 8, attachments: 10, hidden: 2, images: 10, added: 10, updated: 0, unchanged: 0, baked: 0, merged: 0, effects: 0, empty: 0, pixels: report.summary.pixels });
   assert.deepEqual(report.limits, { bones: { count: 4, max: 256 }, slots: { count: 8, max: 256 }, attachments: { count: 10, max: 1024 }, exceeded: false });
   assert.equal(toId('Left Arm 2'), 'left-arm-2'); assert.equal(toId('2nd', 'x'), 'n2nd'); assert.equal(toId('머리', 'part-3'), 'part-3'); assert.equal(toId('Émile'), 'emile');
 });
@@ -136,9 +141,10 @@ test('rendered setup frame equals the composited PSD (Wasm core draw list)', asy
   assert.ok(maxDifference(await renderSetup(closed, pngs), flattenImage(W, H, variant)) <= 1, 'eyes closed variant');
 });
 
-test('bone direction (1.14.0): toward the only child, the pictures or up; lengths; render unchanged; none; re-import keeps bones', async () => {
+test('bone direction (1.14.0): toward the only child, the pictures, up or from a joint; lengths; render unchanged; none; re-import keeps bones', async () => {
   // An arm whose [pivot] is the shoulder and whose picture hangs down-right; a torso with one child
-  // group (neck → aims at it); a hat group without a marker (origin = its centre → up).
+  // group (neck → aims at it); a badge group without a marker centred on the art (origin = its
+  // centre → up); a hat group without a marker above the art (1.20.0: a joint at its lower edge).
   const layers = [
     { name: 'torso', children: [
       { name: 'chest', x: 50, y: 100, ...block(40, 60, [180, 60, 40]) },
@@ -150,6 +156,7 @@ test('bone direction (1.14.0): toward the only child, the pictures or up; length
       { name: '[pivot]', x: 90, y: 102, ...block(4, 4, [255, 0, 255]), ignoreInComposite: true },
     ] },
     { name: 'hat', children: [{ name: 'cap', x: 50, y: 10, ...block(40, 24, [250, 220, 0]) }] },
+    { name: 'badge', children: [{ name: 'pin', x: 81, y: 80, ...block(10, 10, [20, 200, 200]) }] },
   ];
   const psd = readPsd(writePsd({ width: W, height: H, layers }));
   const source = { ...psd, file: '/art/aim.psd' };
@@ -163,11 +170,16 @@ test('bone direction (1.14.0): toward the only child, the pictures or up; length
   const arm = bone('arm');
   assert.ok(arm.rotation > 30 && arm.rotation < 60, `the sleeve hangs down-right: ${arm.rotation}`);
   assert.ok(arm.length > 35 && arm.length < 46, `reaches the far corner of the sleeve: ${arm.length}`);
-  assert.equal(bone('hat').rotation, -90, 'no marker, no child: straight up');
-  assert.equal(bone('hat').length, 13, 'half the picture height (24 + 2 ring)');
+  assert.equal(bone('badge').rotation, -90, 'no marker, no child, centred on the art: straight up');
+  assert.equal(bone('badge').length, 6, 'half the picture height (10 + 2 ring)');
+  const hat = bone('hat');
+  assert.ok(hat.rotation > -110 && hat.rotation < -100, `the hat points from the art centre through its own: ${hat.rotation}`);
+  assert.ok(hat.y + H > 30 && hat.y + H < 34.5 && Math.abs(hat.x + W / 2 - 72.5) < 2, `joint at the lower edge of the cap: ${[hat.x + W / 2, hat.y + H]}`);
   const flat = []; const walk = l => { for (const n of l) { flat.push(n); if (n.children) walk(n.children); } }; walk(report.layers);
   assert.deepEqual(flat.find(n => n.name === 'torso').direction, { angle: -90, length: 62, from: 'child' });
   assert.equal(flat.find(n => n.name === 'arm').direction.from, 'content');
+  assert.equal(flat.find(n => n.name === 'hat').direction.from, 'joint');
+  assert.equal(flat.find(n => n.name === 'badge').direction.from, 'up');
   assert.equal(report.options.boneDirection, 'auto');
   // The pictures are counter-rotated: the setup frame is still the PSD, pixel for pixel.
   const pngs = new Map(images.map(i => [i.id, i.bytes]));
@@ -184,6 +196,81 @@ test('bone direction (1.14.0): toward the only child, the pictures or up; length
   const again = planImport({ source: { ...readPsd(writePsd({ width: W, height: H, layers: more })), file: '/art/aim.psd' }, options: importOptions({}), existing, dryRun: true }).rig;
   assert.equal(again.bones.find(b => b.id === 'arm').rotation, 10, 'kept bones keep their rig work');
   assert.equal(again.bones.find(b => b.id === 'tail').rotation, 180, 'the new tail aims left, at its picture');
+});
+
+test('joint guess (1.20.0): groups without a marker attach at the edge they hang from; setup frame unchanged; none and markers as before', async () => {
+  // A front-facing character, every group without a [pivot]: legs below the art's centre, a torso
+  // on it with sleeves at its sides, a head above it with ears on top and pigtails at its sides.
+  const side = (name, x, w) => ({ name, children: [{ name: `${name}-art`, x, y: 200, ...block(w, 100, [40, 40, 120]) }] });
+  const layers = [
+    side('leg-l', 78, 18), side('leg-r', 104, 18),
+    { name: 'torso', children: [
+      { name: 'chest', x: 70, y: 110, ...block(60, 95, [180, 60, 40]) },
+      { name: 'sleeve-l', children: [{ name: 'cuff-l', x: 52, y: 112, ...block(16, 78, [60, 140, 60]) }] },
+      { name: 'sleeve-r', children: [{ name: 'cuff-r', x: 132, y: 112, ...block(16, 78, [60, 140, 60]) }] },
+    ] },
+    { name: 'head', children: [
+      { name: 'pigtail-l', children: [{ name: 'strand-l', x: 40, y: 60, ...block(22, 110, [90, 60, 20]) }] },
+      { name: 'pigtail-r', children: [{ name: 'strand-r', x: 138, y: 60, ...block(22, 110, [90, 60, 20]) }] },
+      { name: 'face', x: 72, y: 40, ...block(56, 68, [240, 200, 160]) },
+      { name: 'ear-l', children: [{ name: 'lobe-l', x: 64, y: 22, ...block(10, 26, [230, 190, 150]) }] },
+      { name: 'ear-r', children: [{ name: 'lobe-r', x: 126, y: 22, ...block(10, 26, [230, 190, 150]) }] },
+    ] },
+  ];
+  const size = { width: 200, height: 320 };
+  const source = { ...readPsd(writePsd({ ...size, layers })), file: '/art/joints.psd' };
+  const { rig, images, report } = planImport({ source, options: importOptions({ origin: 'top-left' }) });
+  const world = new Map([['root', { x: 0, y: 0, a: 0 }]]);
+  for (const b of rig.bones.slice(1)) {
+    const p = world.get(b.parent), r = p.a * Math.PI / 180;
+    world.set(b.id, { x: p.x + b.x * Math.cos(r) - b.y * Math.sin(r), y: p.y + b.x * Math.sin(r) + b.y * Math.cos(r), a: p.a + (b.rotation ?? 0) });
+  }
+  const flat = []; const walk = l => { for (const n of l) { flat.push(n); if (n.children) walk(n.children); } }; walk(report.layers);
+  const near = (id, x, y, angle, tol = 2) => {
+    const w = world.get(id), dir = flat.find(n => n.bone === id && n.kind === 'group').direction;
+    assert.ok(Math.abs(w.x - x) <= tol && Math.abs(w.y - y) <= tol, `${id} origin ${w.x.toFixed(2)},${w.y.toFixed(2)} ≈ ${x},${y}`);
+    assert.equal(dir.from, 'joint', id);
+    assert.ok(Math.abs(normalize(w.a - angle)) < 1e-6, `${id} points ${w.a} (expected ${angle})`);
+    assert.ok(dir.length > 0, `${id} has a length`);
+  };
+  const normalize = d => ((d + 180) % 360 + 360) % 360 - 180;
+  // Legs below the art's centre: top edge (the hip), pointing down; inset 3 % of 102 px.
+  near('leg-l', 87, 203, 90); near('leg-r', 113, 203, 90);
+  // Sleeves beside the torso (its origin within their height): hang from their top.
+  near('sleeve-l', 60, 114.4, 90); near('sleeve-r', 140, 114.4, 90);
+  // The head above the art's centre: the bottom of the face (neck), pointing up.
+  near('head', 100, 102.5, -90, 2.5);
+  // Ears above the head's joint: their base, pointing up; pigtails reaching past it: their top, down.
+  near('ear-l', 69, 47.2, -90); near('ear-r', 131, 47.2, -90);
+  near('pigtail-l', 51, 63.4, 90); near('pigtail-r', 149, 63.4, 90);
+  // The torso sits on the art's centre: centre origin, as before.
+  const torso = world.get('torso');
+  assert.deepEqual([torso.x, torso.y], [100, 157.5]);
+  assert.equal(flat.find(n => n.name === 'torso').direction.from, 'up');
+  assert.equal(report.summary.joints, 9);
+  // Lengths reach the far end: a leg 102 px tall from 3 px below its top.
+  assert.ok(Math.abs(flat.find(n => n.name === 'leg-l').direction.length - 98) < 1.5, `${flat.find(n => n.name === 'leg-l').direction.length}`);
+  // The pictures are counter-placed: the setup frame is still the PSD, pixel for pixel.
+  const pngs = new Map(images.map(i => [i.id, i.bytes]));
+  assert.ok(maxDifference(await renderSetup(rig, pngs), flattenImage(size.width, size.height, layers)) <= 1, 'joint bones draw the same picture');
+  // The preview (alpha only) guesses the same joints as the import.
+  const preview = planImport({ source, options: importOptions({ origin: 'top-left' }), dryRun: true }).rig;
+  assert.deepEqual(preview.bones, rig.bones);
+  // boneDirection "none": every origin at its content centre, unrotated (1.11.0).
+  const plain = planImport({ source, options: importOptions({ origin: 'top-left', boneDirection: 'none' }), dryRun: true }).rig;
+  const leg = plain.bones.find(b => b.id === 'leg-l');
+  assert.deepEqual([leg.x, leg.y, leg.rotation, leg.length], [87, 250, undefined, undefined]);
+  // A [pivot] marker stays authoritative.
+  const marked = [{ ...layers[0], children: [...layers[0].children] }, ...layers.slice(1)];
+  marked[0].children.push({ name: '[pivot]', x: 85, y: 290, ...block(4, 4, [255, 0, 255]), ignoreInComposite: true });
+  const pinned = planImport({ source: { ...readPsd(writePsd({ ...size, layers: marked })), file: '/art/joints.psd' }, options: importOptions({ origin: 'top-left' }), dryRun: true });
+  const pinnedLeg = pinned.rig.bones.find(b => b.id === 'leg-l');
+  assert.deepEqual([pinnedLeg.x, pinnedLeg.y], [87, 292]);
+  const flatPinned = []; const walkPinned = l => { for (const n of l) { flatPinned.push(n); if (n.children) walkPinned(n.children); } }; walkPinned(pinned.report.layers);
+  assert.notEqual(flatPinned.find(n => n.name === 'leg-l').direction.from, 'joint');
+  // Re-import: kept bones keep their place and aim.
+  const again = planImport({ source, options: importOptions({ origin: 'top-left' }), existing: structuredClone(rig), dryRun: true }).rig;
+  assert.deepEqual(again.bones, rig.bones);
 });
 
 test('PNG folder: layout.json positions, groups, hidden and order; plain folders with sub-folders', async () => {

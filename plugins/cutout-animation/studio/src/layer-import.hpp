@@ -52,6 +52,13 @@ class LayerImportDialog : public QDialog {
   LayerImportDialog(QWidget* parent, LayerImportChoice& choice, const QStringList& rigs, const QJsonObject& report, Preview preview);
   void showReport(const QJsonObject& report);
   QTreeWidget* tree() const { return tree_; }
+  /** Plugin 1.20.0: layer rows whose name contains every word of `text` stay, with their parent
+   *  groups (cutoutLayerImportFilter); "" shows all. Kept across 미리 보기 갱신. */
+  void setFilter(const QString& text);
+  /** Size the dialog opens at: the remembered one (QSettings, editor-only), else ~70 % of the
+   *  available screen, at least 900x600 (or the whole screen when it is smaller). */
+  static QSize defaultSize(const QWidget* parent);
+  static constexpr const char* SIZE_SETTINGS = "plugins/cutout-animation/layerImport";
 
  private:
   void collect();  // widgets -> choice_
@@ -59,12 +66,15 @@ class LayerImportDialog : public QDialog {
   void autoMerge();  // the report's proposal (autoMerge.keys) into the merge list, then preview again
   void addItems(QTreeWidgetItem* parent, const QJsonArray& layers);
   void accept() override;
+  void done(int result) override;  // remembers the size
+  void applyFilter();
   LayerImportChoice& choice_;
   Preview preview_;
   QJsonObject report_;
   QLabel *source_ = nullptr, *summary_ = nullptr, *scaleInfo_ = nullptr;
   QComboBox *target_ = nullptr, *origin_ = nullptr;
   QLineEdit* id_ = nullptr;
+  QLineEdit* filter_ = nullptr;
   QCheckBox* trim_ = nullptr;
   QCheckBox* aimBones_ = nullptr;
   QCheckBox* autoScale_ = nullptr;

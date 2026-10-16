@@ -443,9 +443,98 @@ class StudioTests : public QObject {
       }
     }
     tabs->setCurrentIndex(keep);
+    return problems + lookBarProblems();
+  }
+  /** The look pages' selector (plugin 1.20.0): the tab bar is hidden and every page has a button
+   *  that is shown, unsqueezed and inside the bar, the right pane and the panel. */
+  QStringList lookBarProblems() {
+    QStringList problems;
+    auto* tabs = find<QTabWidget>("cutoutLookTabs");
+    auto* bar = find<QWidget>("cutoutLookPageBar");
+    if (!tabs || !bar) return {"cutoutLookPageBar missing"};
+    if (!tabs->isVisible()) return problems;  // a collapsed section / full view: nothing to reach
+    if (!tabs->tabBar()->isHidden()) problems << "cutoutLookTabs shows its scrolling tab bar";
+    if (!bar->isVisible()) return problems << "cutoutLookPageBar hidden";
+    QWidget* pane = paneOf(bar);
+    for (int i = 0; i < tabs->count(); i++) {
+      const QString name = tabs->widget(i)->objectName() + "Tab";
+      auto* b = bar->findChild<QToolButton*>(name);
+      if (!b) { problems << name + " missing"; continue; }
+      if (!b->isVisible()) { problems << name + " hidden"; continue; }
+      const QRect inBar(b->mapTo(bar, QPoint(0, 0)), b->size()), inPane(b->mapTo(pane, QPoint(0, 0)), b->size()), inPanel(b->mapTo(panel, QPoint(0, 0)), b->size());
+      if (!bar->rect().contains(inBar) || !pane->rect().contains(inPane) || !panel->rect().contains(inPanel))
+        problems << name + QString(" clipped %1,%2 %3x%4 in %5x%6").arg(inPane.x()).arg(inPane.y()).arg(inPane.width()).arg(inPane.height()).arg(pane->width()).arg(pane->height());
+      if (b->width() < b->sizeHint().width() || b->height() < b->minimumSizeHint().height()) problems << name + QString(" squeezed %1x%2 < %3x%4").arg(b->width()).arg(b->height()).arg(b->sizeHint().width()).arg(b->minimumSizeHint().height());
+      if (b->text() != tabs->tabText(i)) problems << name + " says " + b->text();
+    }
     return problems;
   }
-  /** The splitter pane holding `w` (its ancestor that is a splitter child). */
+  /**
+   * 계층 / 그리는 순서 filters (plugin 1.20.0) on the imported psdhero rig (layerImportDialog): by
+   * id, by the original PSD group / layer names in editor.layerImport (Cyrillic, any case),
+   * matches with their ancestor rows, Enter selects the first match, Esc clears, Ctrl+F from the
+   * tree, the canvas and the draw order; kept across a refresh; presentation only.
+   */
+  void hierarchyFilter() {
+    auto* tree = find<QTreeWidget>("cutoutBoneTree");
+    auto* filter = find<QLineEdit>("cutoutTreeFilter");
+    auto* orderFilter = find<QLineEdit>("cutoutDrawOrderFilter");
+    auto* order = find<QListWidget>("cutoutDrawOrder");
+    QVERIFY(tree && filter && orderFilter && order);
+    QCOMPARE(filter->placeholderText(), QString("본·조각 찾기"));
+    QCOMPARE(orderFilter->placeholderText(), QString("본·조각 찾기"));
+    panel->selectRig("psdhero");
+    pump();
+    const int edits = host.edits;
+    auto shownRefs = [&] { QStringList out; for (QTreeWidgetItemIterator it(tree); *it; ++it) if (!(*it)->isHidden()) out << (*it)->data(0, Qt::UserRole).toString(); return out; };
+    auto shownOrder = [&] { QStringList out; for (int i = 0; i < order->count(); i++) if (!order->item(i)->isHidden()) out << order->item(i)->data(Qt::UserRole).toString(); return out; };
+    const QStringList all = shownRefs();
+    QCOMPARE(all, (QStringList{"bone:root", "slot:body", "bone:head", "slot:face", "slot:eyes"}));
+    QCOMPARE(panel->importedNames("bone:head"), QStringList{"Голова"});
+    QCOMPARE(panel->importedNames("slot:eyes"), QStringList{"глаза/open"});
+    QVERIFY(panel->importedNames("slot:body").isEmpty());  // no recorded name: ids only
+    filter->setText("голова");  // the group's original name, other case
+    QCOMPARE(shownRefs(), (QStringList{"bone:root", "bone:head"}));
+    filter->setText("ЛИЦО");  // a layer name: the part with its bones
+    QCOMPARE(shownRefs(), (QStringList{"bone:root", "bone:head", "slot:face"}));
+    QVERIFY(tree->topLevelItem(0)->child(1)->child(0)->font(0).bold());  // the match is bold
+    filter->setText("ey");  // ids too
+    QCOMPARE(panel->filterMatchRefs(true), QStringList{"slot:eyes"});
+    QTest::keyClick(filter, Qt::Key_Return);
+    QCOMPARE(panel->selection(), QString("slot:eyes"));
+    panel->setTreeFilter("лицо");
+    plugin.viewChanged();  // a refresh rebuilds the rows: the filter stays
+    pump();
+    QCOMPARE(shownRefs(), (QStringList{"bone:root", "bone:head", "slot:face"}));
+    QTest::keyClick(filter, Qt::Key_Escape);
+    QVERIFY(filter->text().isEmpty());
+    QCOMPARE(shownRefs(), all);
+    filter->setText("nothing-like-this");
+    QTest::keyClick(filter, Qt::Key_Return);
+    QVERIFY2(panel->status().contains("없습니다"), qPrintable(panel->status()));
+    filter->clear();
+    // The draw order: the same matching over parts.
+    orderFilter->setText("глаза");
+    QCOMPARE(shownOrder(), QStringList{"eyes"});
+    panel->selectItem("slot:body");
+    QTest::keyClick(orderFilter, Qt::Key_Return);
+    QCOMPARE(panel->selection(), QString("slot:eyes"));
+    QTest::keyClick(orderFilter, Qt::Key_Escape);
+    QCOMPARE(shownOrder(), (QStringList{"body", "face", "eyes"}));
+    // Ctrl+F: the list's (or, from the canvas, the hierarchy's) filter field.
+    host.mainWindow.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    for (QWidget* from : {static_cast<QWidget*>(tree), static_cast<QWidget*>(panel->canvas()), static_cast<QWidget*>(order)}) {
+      from->setFocus(Qt::OtherFocusReason);
+      pump();
+      QTest::keyClick(from, Qt::Key_F, Qt::ControlModifier);
+      pump();
+      QCOMPARE(QApplication::focusWidget(), static_cast<QWidget*>(from == order ? orderFilter : filter));
+    }
+    QTest::keyClick(orderFilter, Qt::Key_Escape);  // empty: Esc goes back to the list
+    QCOMPARE(QApplication::focusWidget(), static_cast<QWidget*>(order));
+    QCOMPARE(host.edits, edits);  // presentation only
+  }
   QWidget* paneOf(QWidget* w) const {
     for (QWidget* p = w; p && p != panel; p = p->parentWidget())
       if (qobject_cast<QSplitter*>(p->parentWidget())) return p;
@@ -1275,6 +1364,9 @@ class StudioTests : public QObject {
       return panel->canvas()->rigToWidget(qtTransform(m).map(QPointF(att->width / 2, att->height * 0.85))).toPoint();
     };
     auto pixel = [&](double t) { pump(); return QColor(panel->canvas()->grab().toImage().pixel(bodyPoint(t))); };
+    // The hint line's band (plugin 1.20.0) covers the bottom of this small canvas, where the body is.
+    const bool hintLine = panel->canvasHintVisible();
+    panel->setCanvasHintVisible(false);
     const QColor before = pixel(250), after = pixel(750), live = pixel(500);
     qInfo("ghost pixels: before %s after %s live %s", qPrintable(before.name()), qPrintable(after.name()), qPrintable(live.name()));
     QVERIFY(before.blue() > before.red() + 40);
@@ -1297,6 +1389,7 @@ class StudioTests : public QObject {
     const QColor off = pixel(250);
     qInfo("onion off pixel %s, filtered %s", qPrintable(off.name()), qPrintable(filtered.name()));
     QVERIFY(off == filtered);  // nothing there but the backdrop
+    panel->setCanvasHintVisible(hintLine);
     panel->setOnionSkin(true);
 
     // Cache: redraws and revisiting a time never resample; an edit (and its undo) does.
@@ -4089,6 +4182,185 @@ class StudioTests : public QObject {
     QCOMPARE(host.edits, edits);  // presentation only
   }
 
+  /**
+   * Plugin 1.20.0 view: the look pages' two-row selector keeps every page fully visible at
+   * 1280x720, 1456x819 and 1920x1080 with UI scale 1.0 and 1.25 (before, the tab bar scrolled and
+   * hid 판정 at 1456x819); a button opens its page and follows setCurrentWidget; the palette lists
+   * pages, not buttons. Then 보기 ▾ 본 표시 (H cycles; hidden bones are not picked, parts are, a
+   * tree selection stays drawn), 본 흐리게, thinner bones on big rigs and the 캔버스 안내 줄 band
+   * (elided to the width, toggled). Presentation only, remembered in QSettings.
+   */
+  void lookPagesAndCanvasView() {
+    QWidget* page = workspacePage();
+    QVERIFY(page && page->isAncestorOf(panel));
+    const int edits = host.edits;
+    auto* tabs = find<QTabWidget>("cutoutLookTabs");
+    auto* bar = find<QWidget>("cutoutLookPageBar");
+    QVERIFY(tabs && bar);
+    panel->resetLayout();
+    QStringList report, failures;
+    for (const QSize size : {QSize(1280, 720), QSize(1456, 819), QSize(1920, 1080)})
+      for (const double ui : {1.0, 1.25}) {
+        panel->setUiScale(ui);
+        host.mainWindow.resize(size);
+        pump();
+        QTest::qWait(20);
+        const QString at = QString("%1x%2 ui %3").arg(size.width()).arg(size.height()).arg(ui);
+        // Every row at the default scale (the 1.10.0 guarantee); the page selector at both.
+        QStringList problems = lookBarProblems() + (ui == 1.0 ? fullLayoutProblems(page) : QStringList());
+        if (host.mainWindow.size() != size)
+          problems << QString("window refused (got %1x%2; panel %6, left %3, right %4, canvas %5, main %7, bottom %8 min height)").arg(host.mainWindow.width()).arg(host.mainWindow.height())
+                          .arg(panel->leftPane()->minimumSizeHint().height()).arg(panel->rightPane()->minimumSizeHint().height()).arg(find<QWidget>("cutoutCanvasPane")->minimumSizeHint().height())
+                          .arg(panel->minimumSizeHint().height()).arg(find<QWidget>("cutoutMainSplitter") ? find<QWidget>("cutoutMainSplitter")->minimumSizeHint().height() : -1)
+                          .arg(find<QWidget>("cutoutBottomTabs")->minimumSizeHint().height());
+        report << at + (problems.isEmpty() ? QString(": ok") : QString(": %1 problems").arg(problems.size()));
+        if (!problems.isEmpty()) failures << at + ": " + problems.mid(0, 6).join(" | ");
+      }
+    qInfo("look page bar:\n  %s", qPrintable(report.join("\n  ")));
+    QVERIFY2(failures.isEmpty(), qPrintable(failures.join("\n")));
+    for (int i = tabs->count(); i-- > 0;) {
+      auto* b = bar->findChild<QToolButton*>(tabs->widget(i)->objectName() + "Tab");
+      QVERIFY(b);
+      b->click();
+      pump();
+      QCOMPARE(tabs->currentIndex(), i);
+      QVERIFY(b->isChecked() && tabs->widget(i)->isVisible());
+    }
+    tabs->setCurrentWidget(find<QWidget>("cutoutHitPage"));
+    QVERIFY(find<QToolButton>("cutoutHitPageTab")->isChecked());
+    const auto commands = panel->commands();
+    QVERIFY(std::none_of(commands.begin(), commands.end(), [](const CutoutPanel::Command& c) { return c.id.endsWith("PageTab"); }));
+    const auto opening = panel->findCommands("판정 탭 열기");
+    QVERIFY(!opening.isEmpty() && opening.first().id.startsWith("tab:cutoutLookTabs:"));
+    tabs->setCurrentIndex(0);
+    QVERIFY(panel->runCommand(opening.first().id));
+    QCOMPARE(tabs->currentWidget()->objectName(), QString("cutoutHitPage"));
+    tabs->setCurrentIndex(0);
+    panel->setUiScale(1.0);
+    host.mainWindow.resize(1700, 1200);
+    pump();
+
+    // ---- 본 표시: every bone, the selection's relatives, or none but the selection.
+    RigCanvas* canvas = panel->canvas();
+    const Json data = rig();
+    const auto& bones = data["bones"];
+    QVERIFY(bones.size() >= 3);
+    auto bonePoint = [&](const QString& id) {
+      const int b = canvas->rig()->boneIndex(ss(id));
+      return canvas->rigToWidget(QPointF(canvas->pose().world[size_t(b)].e, canvas->pose().world[size_t(b)].f));
+    };
+    auto picksBone = [&](const QString& id) {
+      for (const auto& h : canvas->hitCandidates(bonePoint(id))) if (h.ref == "bone:" + id) return true;
+      return false;
+    };
+    // A bone with a parent other than the root and a sibling elsewhere: its relatives differ from the rest.
+    QString child;
+    for (const auto& b : bones) if (b.contains("parent") && b["parent"].is_string()) { child = qs(b["id"].get<std::string>()); }
+    QVERIFY(!child.isEmpty());
+    for (const char* name : {"cutoutBonesAll", "cutoutBonesSelected", "cutoutBonesHidden", "cutoutBonesDim", "cutoutShowCanvasHint"})
+      QVERIFY2(panel->findChild<QAction*>(name), name);
+    panel->setBoneDisplay(RigCanvas::BonesAll);
+    panel->selectItem(QString());
+    pump();
+    QVERIFY(picksBone(child) && picksBone("root"));
+    panel->findChild<QAction*>("cutoutBonesHidden")->trigger();
+    QCOMPARE(panel->boneDisplay(), int(RigCanvas::BonesHidden));
+    QVERIFY(!picksBone(child) && !picksBone("root"));
+    QVERIFY(canvas->bonesIn(QRectF(canvas->rect())).isEmpty());  // no box selection of hidden bones
+    panel->selectItem("bone:" + child);  // the tree still selects: that bone is drawn and grabbed
+    pump();
+    QVERIFY(picksBone(child) && !picksBone("root"));
+    { QSettings q; QCOMPARE(q.value("plugins/cutout-animation/view/boneDisplay").toInt(), int(RigCanvas::BonesHidden)); }
+    // 선택·관련만: the selection, its parent, its children, its IK / transform partners.
+    panel->findChild<QAction*>("cutoutBonesSelected")->trigger();
+    const QVector<bool> shown = canvas->shownBones();
+    const int ci = canvas->rig()->boneIndex(ss(child));
+    for (int i = 0; i < int(canvas->rig()->bones.size()); i++) {
+      bool related = i == ci || canvas->rig()->bones[size_t(ci)].parentIndex == i || canvas->rig()->bones[size_t(i)].parentIndex == ci;
+      for (const auto& k : canvas->rig()->ik) {
+        const bool in = std::find(k.bones.begin(), k.bones.end(), ci) != k.bones.end() || k.target == ci || k.tip == ci;
+        related = related || (in && (std::find(k.bones.begin(), k.bones.end(), i) != k.bones.end() || k.target == i || k.tip == i));
+      }
+      for (const auto& t : canvas->rig()->transforms) {
+        const bool in = std::find(t.bones.begin(), t.bones.end(), ci) != t.bones.end() || t.target == ci;
+        related = related || (in && (std::find(t.bones.begin(), t.bones.end(), i) != t.bones.end() || t.target == i));
+      }
+      QVERIFY2(shown[i] == related, qPrintable(qs(canvas->rig()->bones[size_t(i)].id)));
+    }
+    QVERIFY(picksBone(child));
+    // H (canvas focus) cycles 모두 → 선택·관련만 → 숨김; the menu follows.
+    host.mainWindow.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    canvas->setFocus(Qt::OtherFocusReason);
+    panel->setBoneDisplay(RigCanvas::BonesAll);
+    for (const int expected : {int(RigCanvas::BonesRelated), int(RigCanvas::BonesHidden), int(RigCanvas::BonesAll)}) {
+      QTest::keyClick(canvas, Qt::Key_H);
+      pump();
+      QCOMPARE(panel->boneDisplay(), expected);
+      const char* names[] = {"cutoutBonesAll", "cutoutBonesSelected", "cutoutBonesHidden"};
+      QVERIFY(panel->findChild<QAction*>(names[expected])->isChecked());
+    }
+    QVERIFY2(panel->status().contains("본 표시"), qPrintable(panel->status()));
+    // Listed in the shortcut overlay and the palette.
+    const auto keys = panel->shortcutList();
+    QVERIFY(std::any_of(keys.begin(), keys.end(), [](const CutoutPanel::ShortcutInfo& k) { return k.keys == "H" && k.text.contains("본 표시"); }));
+    QVERIFY(std::any_of(keys.begin(), keys.end(), [](const CutoutPanel::ShortcutInfo& k) { return k.keys == "Ctrl+F"; }));
+    for (const char* query : {"본 표시", "숨김", "본 흐리게", "캔버스 안내 줄"}) QVERIFY2(!panel->findCommands(query).isEmpty(), query);
+    // 본 흐리게.
+    panel->findChild<QAction*>("cutoutBonesDim")->trigger();
+    QVERIFY(canvas->bonesDim() && panel->bonesDim());
+    { QSettings q; QVERIFY(q.value("plugins/cutout-animation/view/bonesDim").toBool()); }
+    panel->setBonesDim(false);
+    QVERIFY(!panel->findChild<QAction*>("cutoutBonesDim")->isChecked());
+
+    // Big rigs (> 40 bones): thinner bone bodies than a small rig's at the same zoom.
+    {
+      auto bigRig = [](int count) {
+        Json r{{"schemaVersion", 1}, {"name", "thin"}, {"canvas", {{"width", 400}, {"height", 400}, {"originX", 0}, {"originY", 0}}}, {"slots", Json::array()},
+               {"attachments", Json::array()}, {"clips", Json::array()}};
+        Json list = Json::array({{{"id", "root"}, {"parent", nullptr}, {"x", 10}, {"y", 10}, {"length", 100}}});
+        for (int i = 1; i < count; i++) list.push_back({{"id", "b" + std::to_string(i)}, {"parent", "root"}, {"y", 5 * i}, {"length", 100}});
+        r["bones"] = list;
+        return std::make_shared<const cutout::Rig>(cutout::parseRig("thin", r));
+      };
+      auto widthOf = [&](int count) {
+        RigCanvas view;
+        view.resize(400, 400);
+        auto r = bigRig(count);
+        view.setScene(r, cutout::samplePose(*r, -1, 0));
+        const QPolygonF shape = view.boneShape(0);
+        return QLineF(shape[1], shape[3]).length();
+      };
+      QVERIFY(!(widthOf(10) <= 0));
+      QVERIFY2(widthOf(RigCanvas::THIN_BONES + 5) < widthOf(10) * 0.7, qPrintable(QString("%1 vs %2").arg(widthOf(RigCanvas::THIN_BONES + 5)).arg(widthOf(10))));
+    }
+
+    // ---- 캔버스 안내 줄: a band at the bottom, the text elided to it at any width, toggled.
+    QVERIFY(panel->canvasHintVisible());
+    const int keepWidth = host.mainWindow.width();
+    for (const int w : {1280, 900}) {
+      host.mainWindow.resize(w, 900);
+      pump();
+      const QString text = canvas->hintLineText();
+      const QRectF band = canvas->hintLineRect();
+      QVERIFY(!text.isEmpty());
+      QVERIFY2(canvas->fontMetrics().horizontalAdvance(text) <= band.width() - 16, qPrintable(QString("%1 > %2").arg(canvas->fontMetrics().horizontalAdvance(text)).arg(band.width())));
+      QVERIFY(QRectF(canvas->rect()).contains(band) && band.bottom() <= canvas->height());
+      if (canvas->fontMetrics().horizontalAdvance(canvas->hintLine()) > band.width() - 16) QVERIFY(text.endsWith(QChar(0x2026)));
+    }
+    canvas->resize(320, canvas->height());  // very narrow: still one elided line inside the band
+    QVERIFY(canvas->fontMetrics().horizontalAdvance(canvas->hintLineText()) <= canvas->hintLineRect().width() - 16);
+    host.mainWindow.resize(keepWidth, 1200);
+    pump();
+    panel->findChild<QAction*>("cutoutShowCanvasHint")->trigger();
+    QVERIFY(!panel->canvasHintVisible() && canvas->hintLineText().isEmpty());
+    { QSettings q; QVERIFY(!q.value("plugins/cutout-animation/view/canvasHint").toBool()); }
+    panel->setCanvasHintVisible(true);
+    QVERIFY(panel->findChild<QAction*>("cutoutShowCanvasHint")->isChecked() && !canvas->hintLineText().isEmpty());
+    panel->setBoneDisplay(RigCanvas::BonesAll);
+    QCOMPARE(host.edits, edits);  // presentation only
+  }
+
   /** UI scale: fonts, rows, dopesheet/ruler metrics, gizmo radii follow it; persisted per user; new panels read it. */
   void uiScaleSetting() {
     host.mainWindow.activateWindow();  // window shortcuts (Ctrl+K, Ctrl+=) need the active window
@@ -4402,7 +4674,9 @@ class StudioTests : public QObject {
                       {"slots", QJsonArray{QJsonObject{{"id", "body"}, {"bone", "root"}, {"attachment", "body"}}, QJsonObject{{"id", "face"}, {"bone", "head"}, {"attachment", "face"}},
                                            QJsonObject{{"id", "eyes"}, {"bone", "head"}, {"attachment", "open"}}}},
                       {"attachments", attachments}, {"clips", QJsonArray{QJsonObject{{"id", "idle"}, {"durationMs", 1000}, {"loop", true}, {"tracks", QJsonArray()}}}},
-                      {"editor", QJsonObject{{"layerImport", QJsonObject{{"source", "psdhero.psd"}, {"format", "psd"}, {"layers", QJsonObject()}}}}}};
+                      {"editor", QJsonObject{{"layerImport", QJsonObject{{"source", "psdhero.psd"}, {"format", "psd"},
+                                                                         {"layers", QJsonObject{{"face/face", QJsonObject{{"name", "лицо"}}}, {"eyes/open", QJsonObject{{"name", "глаза/open"}}}}},
+                                                                         {"bones", QJsonObject{{"head", "Голова"}}}}}}}};
       QJsonArray edits;
       const QString rigFile = QString("plugins/cutout-animation/rig/%1.json").arg(id);
       if (update) {
@@ -4434,7 +4708,7 @@ class StudioTests : public QObject {
 
     // New character: the dialog shows the tree, mapping, warnings; leave out the closed eyes, refresh, import.
     panel->askLayerFile = [&] { return psd; };
-    bool shown = false;
+    bool shown = false, dialogSized = false, filtered = false;
     onDialog("cutoutLayerImportDialog", [&](QDialog* d) {
       auto* tree = d->findChild<QTreeWidget*>("cutoutLayerImportTree");
       auto* id = d->findChild<QLineEdit*>("cutoutLayerImportId");
@@ -4455,15 +4729,42 @@ class StudioTests : public QObject {
       for (int i = 0; i < tree->topLevelItem(0)->childCount(); i++)
         if (tree->topLevelItem(0)->child(i)->text(0).startsWith("eyes/closed")) shown = shown && tree->topLevelItem(0)->child(i)->text(1) == "빼기";
       shown = shown && d->findChild<QLabel*>("cutoutLayerImportSummary")->text().contains("첨부 3");
+      // Plugin 1.20.0: a large resizable window, a name filter (rows + their groups), expand / fold all.
+      const QSize avail = d->screen()->availableGeometry().size();
+      dialogSized = d->isSizeGripEnabled() && d->width() >= std::min(900, avail.width()) && d->height() >= std::min(600, avail.height()) &&
+                    d->width() <= avail.width() && d->height() <= avail.height();
+      auto* filter = d->findChild<QLineEdit*>("cutoutLayerImportFilter");
+      auto* expand = d->findChild<QPushButton*>("cutoutLayerImportExpandAll");
+      auto* collapse = d->findChild<QPushButton*>("cutoutLayerImportCollapseAll");
+      if (filter && expand && collapse) {
+        QTreeWidgetItem* headRow = tree->topLevelItem(0);
+        QTreeWidgetItem* bodyRow = tree->topLevelItem(1);
+        collapse->click();
+        filtered = !headRow->isExpanded();
+        expand->click();
+        filtered = filtered && headRow->isExpanded();
+        collapse->click();
+        filter->setText("OPEN");  // case-insensitive; the group of a match opens
+        filtered = filtered && !headRow->isHidden() && headRow->isExpanded() && bodyRow->isHidden();
+        for (int i = 0; i < headRow->childCount(); i++)
+          filtered = filtered && headRow->child(i)->isHidden() == !headRow->child(i)->text(0).startsWith("eyes/open");
+        d->findChild<QPushButton*>("cutoutLayerImportRefresh")->click();  // kept across a refresh
+        filtered = filtered && tree->topLevelItem(1)->isHidden() && filter->text() == "OPEN";
+        filter->clear();
+        filtered = filtered && !tree->topLevelItem(1)->isHidden();
+      }
       return true;
     });
     QVERIFY(gesture("psd import: new character", 1, [&] { click("cutoutImportLayers"); pump(); }));
     QVERIFY(shown);
-    QCOMPARE(host.pluginImports.size(), 3);
-    QVERIFY(host.pluginImports[0].value("dryRun").toBool() && host.pluginImports[1].value("dryRun").toBool() && !host.pluginImports[2].value("dryRun").toBool());
-    const QJsonObject sent = host.pluginImports[2].value("payload").toObject();
-    QCOMPARE(host.pluginImports[2].value("plugin").toString(), QString("cutout-animation"));
-    QCOMPARE(host.pluginImports[2].value("op").toString(), QString("importLayers"));
+    QVERIFY(dialogSized);
+    QVERIFY(filtered);
+    QCOMPARE(host.pluginImports.size(), 4);  // three previews (the filter check refreshes once more), one import
+    QVERIFY(host.pluginImports[0].value("dryRun").toBool() && host.pluginImports[1].value("dryRun").toBool() && host.pluginImports[2].value("dryRun").toBool() &&
+            !host.pluginImports[3].value("dryRun").toBool());
+    const QJsonObject sent = host.pluginImports[3].value("payload").toObject();
+    QCOMPARE(host.pluginImports[3].value("plugin").toString(), QString("cutout-animation"));
+    QCOMPARE(host.pluginImports[3].value("op").toString(), QString("importLayers"));
     QCOMPARE(sent.value("file").toString(), psd);
     QCOMPARE(sent.value("id").toString(), QString("psdhero"));
     QCOMPARE(sent.value("exclude").toArray(), QJsonArray{"1.1"});
@@ -4482,6 +4783,7 @@ class StudioTests : public QObject {
     redo();
     QVERIFY(!host.data("rig", "psdhero").is_null());
     pump();
+    hierarchyFilter();
 
     // Re-import of the same file with that character selected: the dialog defaults to updating it.
     panel->selectRig("psdhero");
@@ -4618,9 +4920,19 @@ class StudioTests : public QObject {
     QCOMPARE(sent.last().value("effects").toString(), QString("skip"));
     QCOMPARE(sent.last().value("scale").toDouble(), 0.5);
     QVERIFY2(info->text().startsWith("0.5배"), qPrintable(info->text()));
+    // Plugin 1.20.0: the size the dialog closes at is where it opens next time (editor-only QSettings).
+    const QSize least = LayerImportDialog::defaultSize(panel).boundedTo(QSize(900, 600));
+    dialog.resize(least + QSize(37, 23));
     ok->click();
     QCOMPARE(dialog.result(), int(QDialog::Accepted));
     QVERIFY(choice.merge == QStringList{"1"} && choice.skipEffects && !choice.autoScale && choice.scale == 0.5);
+    {
+      QSettings q;
+      QCOMPARE(q.value(QString(LayerImportDialog::SIZE_SETTINGS) + "/size").toSize(), dialog.size());
+      LayerImportChoice again;
+      LayerImportDialog next(panel, again, {}, report(again), nullptr);
+      QCOMPARE(next.size(), dialog.size().boundedTo(next.screen()->availableGeometry().size()));
+    }
   }
 
   /**

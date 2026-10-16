@@ -629,6 +629,8 @@ void CutoutPanel::buildUi() {
   });
   shortcut(Qt::Key_K, "cutoutShortcutKey", "애니메이션", "키 넣기 (고른 본·조각, 메시 편집 중이면 변형 키)", [this] { keySelected(); });
   shortcut(Qt::Key_O, "cutoutShortcutOnion", "보기", "어니언 스킨 켜기·끄기", [this] { setOnionSkin(!onion_.enabled); });
+  // Plugin 1.20.0: H = 본 표시 모두 → 선택·관련만 → 숨김 (a free letter: V R S P B C M W G K O are tools).
+  shortcut(Qt::Key_H, "cutoutShortcutBoneDisplay", "보기", "본 표시 바꾸기: 모두 → 선택·관련만 → 숨김", [this] { cycleBoneDisplay(); });
   shortcut(Qt::Key_Space, "cutoutShortcutPlay", "애니메이션", "재생 / 정지 (애니메이션 모드; 캔버스에서는 짧게 누름)", [this] { if (mode_ == Mode::Animate) playButton_->click(); });
   shortcut(Qt::Key_Comma, "cutoutShortcutStepBack", "애니메이션", "한 간격 뒤로", [this] { if (mode_ == Mode::Animate) stepPlayhead(-1); });
   shortcut(Qt::Key_Period, "cutoutShortcutStepForward", "애니메이션", "한 간격 앞으로", [this] { if (mode_ == Mode::Animate) stepPlayhead(1); });
@@ -664,7 +666,7 @@ void CutoutPanel::buildUi() {
 QList<QSplitter*> CutoutPanel::splitters() const {
   return findChildren<QSplitter*>(QRegularExpression("^cutout.*Splitter$"));
 }
-QWidget* CutoutPanel::section(const QString& title, const char* name, QWidget* body) {
+QWidget* CutoutPanel::section(const QString& title, const char* name, QWidget* body, QWidget* headExtra) {
   auto* box = new QWidget;
   box->setObjectName(name);
   auto* layout = new QVBoxLayout(box);
@@ -681,10 +683,23 @@ QWidget* CutoutPanel::section(const QString& title, const char* name, QWidget* b
   head->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
   head->setToolTip("눌러서 접거나 펼칩니다. 접힌 구역의 공간은 다른 구역이 씁니다.");
   head->setProperty("cutoutSection", true);
-  layout->addWidget(head);
+  if (headExtra) {
+    // Plugin 1.20.0: widgets beside the header (the look pages' selector) cost no row of their own.
+    auto* row = new QWidget;
+    auto* rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(4);
+    head->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    rowLayout->addWidget(head);
+    rowLayout->addWidget(headExtra, 1);
+    layout->addWidget(row);
+  } else {
+    layout->addWidget(head);
+  }
   layout->addWidget(body, 1);
-  connect(head, &QToolButton::toggled, this, [this, box, head, body](bool open) {
+  connect(head, &QToolButton::toggled, this, [this, box, head, body, headExtra](bool open) {
     body->setVisible(open);
+    if (headExtra) headExtra->setVisible(open);
     head->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
     // A splitter honours maximum sizes: a collapsed section shrinks to its header.
     box->setMaximumHeight(open ? QWIDGETSIZE_MAX : head->sizeHint().height());
@@ -739,6 +754,7 @@ bool CutoutPanel::eventFilter(QObject* watched, QEvent* event) {
     return false;
   }
   if (watched == canvas_ && (event->type() == QEvent::Resize || event->type() == QEvent::FontChange)) layoutHintStrip();
+  if (filterKey(watched, event)) return true;
   // PNG/asset drops on the skin's attachment list go to the selected part of the previewed skin.
   if (skinAttachments_ && watched == skinAttachments_->viewport()) {
     if (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove) { static_cast<QDragMoveEvent*>(event)->acceptProposedAction(); return true; }
@@ -878,7 +894,8 @@ void CutoutPanel::applyUiScale() {
                         "QLabel[cutoutGroupLabel=\"true\"]{color:#8b98a5;font-weight:bold;padding:0 %3px 0 %5px}"
                         "#cutoutHintStrip{background:#233044;border:1px solid #3b4d66;border-radius:%5px}"
                         "#cutoutCommandPalette{background:#1c232c;border:1px solid #60738a;border-radius:%5px}"
-                        "QTabBar::tab{padding:%5px %6px}")
+                        "QTabBar::tab{padding:%5px %6px}"
+                        "#cutoutLookPageBar QToolButton{padding:%3px %5px}")
                     .arg(px(3)).arg(px(6)).arg(px(2)).arg(px(18)).arg(px(4)).arg(px(12)));
   for (QToolBar* bar : findChildren<QToolBar*>()) bar->setIconSize(QSize(px(16), px(16)));
   for (QPushButton* b : {setupButton_, animateButton_}) b->setMinimumHeight(px(28));
@@ -949,6 +966,8 @@ void CutoutPanel::buildViewMenu() {
   action(menu, "단축키 모음", "cutoutShortcutOverlayAction", "?", [this] { QTimer::singleShot(0, this, [this] { showShortcutOverlay(true); }); });
   menu->addSeparator();
   buildHitViewActions(menu);  // plugin 1.17.0: 판정 상자 / 기준점 보이기
+  menu->addSeparator();
+  buildBoneViewActions(menu);  // plugin 1.20.0: 본 표시 · 본 흐리게 · 캔버스 안내 줄
   viewMenuButton_->setMenu(menu);
 }
 
@@ -1016,7 +1035,7 @@ QString groupOf(const QObject* o) {
  *  listed instead), not part of the palette or the hint strip's own close button. */
 bool isCommandButton(const QAbstractButton* b) {
   const QString n = b->objectName();
-  if (!n.startsWith("cutout") || n == "cutoutHintDismiss" || b->property("cutoutSection").toBool()) return false;
+  if (!n.startsWith("cutout") || n == "cutoutHintDismiss" || b->property("cutoutSection").toBool() || b->property("cutoutPageButton").toBool()) return false;
   if (auto* t = qobject_cast<const QToolButton*>(b); t && t->menu()) return false;
   return true;
 }
@@ -1495,7 +1514,16 @@ QWidget* CutoutPanel::buildLooks() {
   lookTabs_->addTab(buildPhysics(), "물리");  // plugin 1.13.0
   lookTabs_->addTab(buildTransform(), "변형 제약");  // plugin 1.16.0
   lookTabs_->addTab(buildHits(), "판정");  // plugin 1.17.0: bounding boxes and points
-  return section("스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스 · 물리 · 변형", "cutoutSectionLooks", lookTabs_);
+  // Plugin 1.20.0: a two-row page selector in the section's header row replaces the header's long
+  // title and the tab bar, which needed scroll arrows (판정 out of sight) at 1456x819; same height.
+  // The header keeps only its fold arrow: every pixel of the right column's width is a minimum.
+  QWidget* box = section("페이지", "cutoutSectionLooks", lookTabs_, buildLookPageBar());
+  if (auto* head = box->findChild<QToolButton*>("cutoutSectionLooksToggle")) {
+    head->setText(QString());
+    head->setAccessibleName("페이지");
+    head->setToolTip("페이지 구역(스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스 · 물리 · 변형 제약 · 판정)을 접거나 펼칩니다. 접힌 구역의 공간은 다른 구역이 씁니다.");
+  }
+  return box;
 }
 QWidget* CutoutPanel::lookPage(const char* name) {
   auto* page = new QWidget;
@@ -1947,6 +1975,7 @@ QWidget* CutoutPanel::buildWorkspace() {
   treeLayout->setContentsMargins(0, 0, 0, 0);
   treeLayout->setSpacing(2);
   tree_ = new BoneTree;
+  treeBase_ = tree_;
   tree_->setObjectName("cutoutBoneTree");
   tree_->setHeaderLabels({"본 · 조각", "보기"});
   tree_->setColumnWidth(0, 170);
@@ -2014,6 +2043,9 @@ QWidget* CutoutPanel::buildWorkspace() {
   treeButtons->addWidget(fitLengths);
   treeButtons->addWidget(orient);
   treeButtons->addWidget(deleteButton);
+  // Plugin 1.20.0: find bones and parts by id or by their PSD layer / group name.
+  // It sits in the section's header row: at 1280x720 the left column has no row of height to spare.
+  treeFilter_ = buildFilterField("cutoutTreeFilter", "계층에서 본·조각을 이름(ID, 그림 이름, PSD 레이어·그룹 이름)으로 찾습니다. 맞는 줄과 그 위 본만 보입니다.", tree_);
   treeLayout->addWidget(tree_, 1);
   treeLayout->addWidget(treeButtons);
   auto* orderBody = new QWidget;
@@ -2042,13 +2074,14 @@ QWidget* CutoutPanel::buildWorkspace() {
   connect(down, &QPushButton::clicked, this, [this] { moveSelectedSlot(1); });
   orderButtons->addWidget(up);
   orderButtons->addWidget(down);
+  orderFilter_ = buildFilterField("cutoutDrawOrderFilter", "그리는 순서에서 조각을 이름(ID, 그림 이름, PSD 레이어 이름)으로 찾습니다.", drawOrder_);
   orderLayout->addWidget(drawOrder_, 1);
   orderLayout->addWidget(orderButtons);
   leftSplit_ = new QSplitter(Qt::Vertical);
   leftSplit_->setObjectName("cutoutLeftSplitter");
   leftSplit_->setChildrenCollapsible(false);
-  leftSplit_->addWidget(section("계층 (본 · 조각)", "cutoutSectionHierarchy", treeBody));
-  leftSplit_->addWidget(section("그리는 순서 (뒤 → 앞)", "cutoutSectionDrawOrder", orderBody));
+  leftSplit_->addWidget(section("계층 (본 · 조각)", "cutoutSectionHierarchy", treeBody, treeFilter_));
+  leftSplit_->addWidget(section("그리는 순서 (뒤 → 앞)", "cutoutSectionDrawOrder", orderBody, orderFilter_));
   leftSplit_->addWidget(buildCharacters());
   leftSplit_->setSizes({500, 300, 200});
   leftPane_ = leftSplit_;
@@ -2137,6 +2170,13 @@ QWidget* CutoutPanel::buildWorkspace() {
   setGroup("보기", {onionButton_, onionSettingsButton_, trailButton_});
   canvas_ = new RigCanvas;
   canvas_->setImages(&images_);
+  // 보기 ▾ was built before the canvas: hand it the remembered view state now.
+  if (boneDisplayGroup_ && boneDisplayGroup_->checkedAction()) canvas_->setBoneDisplay(boneDisplayGroup_->checkedAction()->data().toInt());
+  if (bonesDimAction_) canvas_->setBonesDim(bonesDimAction_->isChecked());
+  if (canvasHintAction_) canvas_->setShowHint(canvasHintAction_->isChecked());
+  if (showBoxesAction_) canvas_->setShowBoxes(showBoxesAction_->isChecked());
+  if (showPointsAction_) canvas_->setShowPoints(showPointsAction_->isChecked());
+  focusFilterFrom(canvas_, treeFilter_);  // Ctrl+F on the canvas: the hierarchy filter
   canvas_->onSelect = [this](const QString& ref) { selectItem(ref); };
   canvas_->originOf = [this](const QString& ref) { return manipulationOrigin(ref); };
   canvas_->onDrag = [this](const RigCanvas::Drag& d, bool finished) { onCanvasDrag(d, finished); };
@@ -3358,6 +3398,7 @@ void CutoutPanel::refreshTree() {
   };
   for (int i = 0; i < tree_->topLevelItemCount(); i++) visible(tree_->topLevelItem(i));
   tree_->expandAll();
+  applyTreeFilter();
   filling_ = false;
   syncSelectionWidgets();
 }
@@ -3372,6 +3413,7 @@ void CutoutPanel::refreshDrawOrder() {
     item->setData(Qt::UserRole, id);
     if ("slot:" + id == selection_) drawOrder_->setCurrentItem(item);
   }
+  applyOrderFilter();
   filling_ = false;
 }
 

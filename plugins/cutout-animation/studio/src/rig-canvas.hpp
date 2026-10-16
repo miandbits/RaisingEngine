@@ -6,6 +6,7 @@
 #include <QMimeData>
 #include <QPolygonF>
 #include <QWidget>
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -62,6 +63,7 @@ class RigCanvas : public QWidget {
 
   void setScene(std::shared_ptr<const cutout::Rig> rig, const cutout::Pose& pose);
   const cutout::Pose& pose() const { return pose_; }  // what the canvas draws (tests, overlays)
+  const cutout::Rig* rig() const { return rig_.get(); }
   void setImages(ImageCache* images) { images_ = images; }
   void setHiddenSlots(const QSet<QString>& hidden) { hidden_ = hidden; refreshHover(); update(); }
   void setSelection(const QString& ref) { selection_ = ref; refreshHover(); update(); }
@@ -211,6 +213,30 @@ class RigCanvas : public QWidget {
   bool showPoints() const { return showPoints_; }
   static QColor boxColor();
   static QColor pointColor();
+  /** 본 표시 (plugin 1.20.0, editor-only view): all bones; only the selected ones and their
+   *  relatives (parent, children, IK / transform constraint partners; a selected part counts as its
+   *  bone); or none but the selected bones (picked in the tree, they stay drawn and draggable).
+   *  Bones not drawn are never picked on the canvas (parts still are) nor box-selected; IK /
+   *  transform / physics overlays are off while bones are hidden. `dim` draws unselected bones at
+   *  40 % opacity. Rigs with more than THIN_BONES bones get thinner bodies and smaller origins. */
+  enum BoneDisplay { BonesAll = 0, BonesRelated = 1, BonesHidden = 2 };
+  static constexpr int THIN_BONES = 40;
+  void setBoneDisplay(int mode) { boneDisplay_ = std::clamp(mode, 0, 2); refreshHover(); update(); }
+  int boneDisplay() const { return boneDisplay_; }
+  void setBonesDim(bool on) { bonesDim_ = on; update(); }
+  bool bonesDim() const { return bonesDim_; }
+  /** Bone indices drawn (and pickable) under the current display mode and selection. */
+  QVector<bool> shownBones() const;
+  bool thinBones() const { return rig_ && int(rig_->bones.size()) > THIN_BONES; }
+  /** 캔버스 안내 줄 (plugin 1.20.0): the tool hint at the bottom of the canvas, drawn on a dark band
+   *  and elided to the canvas width (editor-only toggle). hintLineText() = what is drawn now ("" =
+   *  hidden), hintLineRect() = its band (widget px). */
+  void setShowHint(bool on) { showHint_ = on; update(); }
+  bool showHint() const { return showHint_; }
+  QString hintLineText() const;
+  QRectF hintLineRect() const;
+  /** The full (unelided) hint for the current tool / mode / hover. */
+  QString hintLine() const;
   /** Widget px of a shown point's rotation handle (the end of its direction line). */
   QPointF pointHandle(const QPointF& rigAt, double rotation) const;
   /** 기준점 놓기: the next left click places a point (onPlacePoint, rig space); Esc cancels (onPlaceCancel). */
@@ -363,6 +389,8 @@ class RigCanvas : public QWidget {
   bool showClips_ = true;
   void paintClips(QPainter& p);
   bool showBoxes_ = true, showPoints_ = true, placingPoint_ = false, previewClicks_ = false;
+  int boneDisplay_ = BonesAll;
+  bool bonesDim_ = false, showHint_ = true;
   void paintBoxes(QPainter& p);
   void paintPoints(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;
