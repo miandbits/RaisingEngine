@@ -598,6 +598,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField->addItem(tr("도감 열기"),"galleryOpen");
   actionField->addItem(tr("도감 닫기"),"galleryClose");
   actionField->addItem(tr("도감 목록으로"),"galleryBack");
+  actionField->addItem(tr("선택 분기 목록"),"galleryBranches");
   actionField->addItem(tr("도감 항목 보기"),"galleryView");
   actionField->addItem(tr("도감 탭 · 필터"),"galleryFilter");
   actionField->addItem(tr("원본 연출 회상"),"galleryReplay");
@@ -974,7 +975,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       if (action == "selectBattleAction") {e["battleAction"]=target.section(':',0,0);if(target.startsWith("useItem:"))e["itemId"]=target.section(':',1);}
       if (action == "selectBattleTarget")e["battleTarget"]=target;
       if(action=="galleryFilter")e["galleryFilter"]=target;
-      if((action=="galleryView"||action=="galleryReplay"||action=="galleryMusicToggle"||action=="galleryMusicStop")&&!target.isEmpty())e["entryId"]=target;
+      if((action=="galleryBranches"||action=="galleryView"||action=="galleryReplay"||action=="galleryMusicToggle"||action=="galleryMusicStop")&&!target.isEmpty())e["entryId"]=target;
       if (action == "navigate")
         e["screenId"] = target;
       if (action == "shop" || action == "visit")
@@ -989,7 +990,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     updateElement([type, target](QJsonObject &e) {
       if(type=="selectBattleAction"){e["battleAction"]=target.section(':',0,0);e.remove("itemId");if(target.startsWith("useItem:"))e["itemId"]=target.section(':',1);}
       else if(type=="galleryFilter")e["galleryFilter"]=target;
-      else if(type=="galleryView"||type=="galleryReplay"||type=="galleryMusicToggle"||type=="galleryMusicStop"){e.remove("entryId");if(!target.isEmpty())e["entryId"]=target;}
+      else if(type=="galleryBranches"||type=="galleryView"||type=="galleryReplay"||type=="galleryMusicToggle"||type=="galleryMusicStop"){e.remove("entryId");if(!target.isEmpty())e["entryId"]=target;}
       else e[type == "navigate" ? "screenId" : type=="selectBattleTarget"?"battleTarget":type=="executeAction"?"actionId":"locationId"] = target;
     });
   });
@@ -1281,7 +1282,7 @@ void StudioWindow::updateTargets(const QString &action, const QJsonObject &e) {
     for(auto value:project.value("gallery").toObject().value("entries").toArray()){auto category=value.toObject().value("category").toString();if(!category.isEmpty()&&targetField->findData("category:"+category)<0)targetField->addItem(tr("분류: ")+category,"category:"+category);}
     selected=e.value("galleryFilter").toString("all");
   }
-  if(action=="galleryView"||action=="galleryReplay"||action=="galleryMusicToggle"||action=="galleryMusicStop"){
+  if(action=="galleryBranches"||action=="galleryView"||action=="galleryReplay"||action=="galleryMusicToggle"||action=="galleryMusicStop"){
     targetField->addItem(tr("현재 선택한 도감 항목"),"");for(auto value:project.value("gallery").toObject().value("entries").toArray()){auto entry=value.toObject();targetField->addItem(entry.value("title").toString(),entry.value("id").toString());}selected=e.value("entryId").toString();
   }
   if (action == "navigate") {

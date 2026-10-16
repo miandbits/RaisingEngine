@@ -860,7 +860,9 @@
             "recollectionLoad",
             "recollectionAuto",
             "recollectionSpeed",
-            "recollectionSkip"
+            "recollectionSkip",
+            "galleryBranches",
+            "galleryBranch"
           ]
         },
         "screenId": {
@@ -1117,7 +1119,9 @@
                       "recollectionLoad",
                       "recollectionAuto",
                       "recollectionSpeed",
-                      "recollectionSkip"
+                      "recollectionSkip",
+                      "galleryBranches",
+                      "galleryBranch"
                     ]
                   },
                   "screenId": {
@@ -1235,7 +1239,8 @@
                             "optionId",
                             "quantity",
                             "screenId",
-                            "entryId"
+                            "entryId",
+                            "branchId"
                           ]
                         },
                         "field": {
@@ -1265,6 +1270,10 @@
                     "type": "string",
                     "maxLength": 100,
                     "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
+                  },
+                  "branchId": {
+                    "type": "string",
+                    "maxLength": 150
                   }
                 }
               }
@@ -1331,7 +1340,8 @@
                 "battleLog",
                 "battleRewards",
                 "galleryEntries",
-                "gallerySelection"
+                "gallerySelection",
+                "galleryBranches"
               ]
             },
             "shopId": {
@@ -1405,7 +1415,8 @@
                   "maxValue",
                   "battleAction",
                   "battleTarget",
-                  "entryId"
+                  "entryId",
+                  "branchId"
                 ]
               },
               "field": {
@@ -1616,7 +1627,8 @@
                   "optionId",
                   "quantity",
                   "screenId",
-                  "entryId"
+                  "entryId",
+                  "branchId"
                 ]
               },
               "field": {
@@ -1659,6 +1671,10 @@
           "type": "string",
           "maxLength": 100,
           "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
+        },
+        "branchId": {
+          "type": "string",
+          "maxLength": 150
         }
       },
       "required": [
@@ -2682,7 +2698,9 @@
             "recollectionLoad",
             "recollectionAuto",
             "recollectionSpeed",
-            "recollectionSkip"
+            "recollectionSkip",
+            "galleryBranches",
+            "galleryBranch"
           ]
         },
         "screenId": {
@@ -3010,7 +3028,8 @@
                   "optionId",
                   "quantity",
                   "screenId",
-                  "entryId"
+                  "entryId",
+                  "branchId"
                 ]
               },
               "field": {
@@ -3112,7 +3131,9 @@
                       "recollectionLoad",
                       "recollectionAuto",
                       "recollectionSpeed",
-                      "recollectionSkip"
+                      "recollectionSkip",
+                      "galleryBranches",
+                      "galleryBranch"
                     ]
                   },
                   "screenId": {
@@ -3230,7 +3251,8 @@
                             "optionId",
                             "quantity",
                             "screenId",
-                            "entryId"
+                            "entryId",
+                            "branchId"
                           ]
                         },
                         "field": {
@@ -3260,6 +3282,10 @@
                     "type": "string",
                     "maxLength": 100,
                     "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
+                  },
+                  "branchId": {
+                    "type": "string",
+                    "maxLength": 150
                   }
                 }
               }
@@ -3287,6 +3313,10 @@
           "type": "string",
           "maxLength": 100,
           "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
+        },
+        "branchId": {
+          "type": "string",
+          "maxLength": 150
         }
       },
       "required": [

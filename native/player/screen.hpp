@@ -615,7 +615,7 @@ public:
         {"selectBattleAction",{"battleAction","itemId"}},{"selectBattleTarget",{"battleTarget"}},
         {"unequip",{"slot"}},{"acceptQuest",{"questId"}},{"claimQuest",{"questId"}},
         {"moveExpedition",{"nodeId"}},
-        {"galleryView",{"entryId"}},{"galleryReplay",{"entryId"}},
+        {"galleryBranches",{"entryId"}},{"galleryBranch",{"entryId","branchId"}},{"galleryView",{"entryId"}},{"galleryReplay",{"entryId"}},
         {"galleryMusicToggle",{"entryId"}},{"galleryMusicStop",{"entryId"}},
         {"galleryFilter",{"galleryFilter"}}
       };
@@ -775,7 +775,7 @@ public:
       (raw_phase=="planning"||raw_phase=="ready")&&game.state.contains("gameplay")?game.state.at("gameplay").value("screenId","schedule"):"schedule";
     if(authored_gallery()){
       const auto config=display_content.at("project").at("gallery");
-      screen_id=!gallery_entry.empty()&&config.contains("detailScreenId")?config.at("detailScreenId").get<std::string>():config.at("screenId").get<std::string>();
+      screen_id=gallery_branch_view&&config.contains("branchScreenId")?config.at("branchScreenId").get<std::string>():!gallery_entry.empty()&&config.contains("detailScreenId")?config.at("detailScreenId").get<std::string>():config.at("screenId").get<std::string>();
     }
     if(!preview_screen.empty())screen_id=preview_screen;
     const Json* screen=nullptr;for(const auto& s:visual.at("screens"))if(s.at("id")==screen_id)screen=&s;

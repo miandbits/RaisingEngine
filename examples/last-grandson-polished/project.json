@@ -63,6 +63,76 @@
             "pressedFill": "#172e2d"
           }
         ]
+      },
+      {
+        "elements": [
+          {
+            "anchorX": "stretch",
+            "anchorY": "stretch",
+            "fill": "#243b43",
+            "height": 220,
+            "id": "background",
+            "kind": "panel",
+            "radius": 8,
+            "width": 560,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#eee5d2",
+            "fontSize": 22,
+            "height": 54,
+            "id": "name",
+            "kind": "text",
+            "text": "선택 내용",
+            "width": 520,
+            "x": 20,
+            "y": 14
+          },
+          {
+            "color": "#eee5d2",
+            "fontSize": 16,
+            "height": 70,
+            "id": "prompt",
+            "kind": "text",
+            "text": "선택 지점",
+            "width": 520,
+            "x": 20,
+            "y": 70
+          },
+          {
+            "color": "#eee5d2",
+            "fontSize": 16,
+            "height": 44,
+            "id": "status",
+            "kind": "text",
+            "text": "해금 상태",
+            "width": 320,
+            "x": 20,
+            "y": 160
+          },
+          {
+            "action": "galleryBranch",
+            "anchorX": "right",
+            "anchorY": "bottom",
+            "color": "#fff2da",
+            "fill": "#304d51",
+            "fontSize": 18,
+            "height": 44,
+            "hoverFill": "#55736b",
+            "id": "play",
+            "kind": "button",
+            "radius": 6,
+            "text": "이 선택의 기억 보기",
+            "width": 190,
+            "x": 350,
+            "y": 160
+          }
+        ],
+        "height": 220,
+        "id": "gallery-branch-card",
+        "label": "도감 · 선택 분기 카드",
+        "width": 560
       }
     ],
     "screens": [
@@ -1234,6 +1304,130 @@
         ],
         "id": "replay-controls",
         "label": "회상 · 재생 조작"
+      },
+      {
+        "elements": [
+          {
+            "anchorX": "stretch",
+            "anchorY": "stretch",
+            "fill": "#15252d",
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#eee5d2",
+            "fontSize": 30,
+            "height": 44,
+            "id": "heading",
+            "kind": "text",
+            "text": "선택으로 갈라진 기억",
+            "width": 1000,
+            "x": 32,
+            "y": 24
+          },
+          {
+            "action": "galleryBack",
+            "anchorX": "right",
+            "color": "#fff2da",
+            "fill": "#304d51",
+            "fontSize": 18,
+            "height": 44,
+            "hoverFill": "#55736b",
+            "id": "back",
+            "kind": "button",
+            "radius": 6,
+            "text": "도감 목록으로",
+            "width": 188,
+            "x": 1060,
+            "y": 24
+          },
+          {
+            "color": "#eee5d2",
+            "fontSize": 18,
+            "height": 28,
+            "id": "help",
+            "kind": "text",
+            "text": "경험한 선택의 기록을 회상합니다. 아직 보지 못한 선택은 잠금으로 표시됩니다.",
+            "width": 1216,
+            "x": 32,
+            "y": 78
+          },
+          {
+            "binding": "gallery-error",
+            "color": "#eee5d2",
+            "fontSize": 16,
+            "height": 30,
+            "id": "error",
+            "kind": "text",
+            "text": "",
+            "width": 1216,
+            "x": 32,
+            "y": 104
+          },
+          {
+            "anchorX": "stretch",
+            "anchorY": "stretch",
+            "bindings": [
+              {
+                "elementId": "name",
+                "field": "name",
+                "property": "text"
+              },
+              {
+                "elementId": "prompt",
+                "field": "prompt",
+                "property": "text"
+              },
+              {
+                "elementId": "status",
+                "field": "statusText",
+                "property": "text"
+              },
+              {
+                "elementId": "play",
+                "field": "entryId",
+                "property": "entryId"
+              },
+              {
+                "elementId": "play",
+                "field": "branchId",
+                "property": "branchId"
+              },
+              {
+                "elementId": "play",
+                "field": "canReplay",
+                "property": "enabled"
+              }
+            ],
+            "columns": 2,
+            "componentId": "gallery-branch-card",
+            "enabledCondition": {
+              "op": "always"
+            },
+            "gap": 16,
+            "height": 548,
+            "id": "branches",
+            "kind": "collection",
+            "label": "데이터 목록",
+            "layout": "grid",
+            "rowHeight": 220,
+            "source": {
+              "type": "galleryBranches"
+            },
+            "visibleCondition": {
+              "op": "always"
+            },
+            "width": 1216,
+            "x": 32,
+            "y": 140
+          }
+        ],
+        "id": "gallery-branches",
+        "label": "도감 · 선택 분기"
       }
     ],
     "defaultScene": {
@@ -1326,6 +1520,7 @@
       }
     ],
     "title": "설이의 추억 · 제작 확인",
-    "replayControlsScreenId": "replay-controls"
+    "replayControlsScreenId": "replay-controls",
+    "branchScreenId": "gallery-branches"
   }
 }

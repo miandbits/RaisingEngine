@@ -4,6 +4,7 @@ import type { Element, ReadonlyDesign } from './model.js';
 import { resolveElementHierarchy, expandComponents, type ResolvedElement } from './components.js';
 import type { SystemsView } from '../systems/model.js';
 import type { BattleSelection } from '../player-service/battle.js';
+import {galleryBranchRows,galleryBranchFields} from './gallery-branches.js';
 import { galleryRows, gallerySourceFields, type GalleryUiContext } from './gallery-data.js';
 import { battleSourceFields, battleCollectionRows } from './battle-data.js';
 
@@ -12,7 +13,7 @@ export interface DataRow { id: string; values: Record<string, DataValue>; enable
 export type BoundElement = ResolvedElement & { dataEnabled?: boolean; dataReason?: string };
 export interface DataContext { content: ContentSnapshot; state: RunState | null; gameplay: GameplayView | null; systems?: SystemsView | null; gallery?: GalleryUiContext; battleSelection?: BattleSelection | null }
 export const sourceFields:Record<string,Record<string,'text'|'number'|'boolean'>>={
-  ...battleSourceFields, galleryEntries:gallerySourceFields, gallerySelection:gallerySourceFields,
+  ...battleSourceFields, galleryEntries:gallerySourceFields, gallerySelection:gallerySourceFields,galleryBranches:galleryBranchFields,
   shopOffers:{id:'text',name:'text',shopId:'text',itemId:'text',price:'number',stock:'number',owned:'number',maxQuantity:'number',imageAssetId:'text',description:'text',enabled:'boolean',reason:'text',action:'text',quantity:'number'},
   policyOptions:{id:'text',name:'text',groupName:'text',groupId:'text',optionId:'text',actionId:'text',selected:'boolean',enabled:'boolean',reason:'text',action:'text',costsText:'text'},
   relationships:{id:'text',name:'text',characterId:'text',relationshipId:'text',relationshipName:'text',value:'number',min:'number',max:'number',enabled:'boolean',reason:'text'},
@@ -25,7 +26,8 @@ function matches(row:DataRow,filter:Element['rowFilter']):boolean {
 export function collectionRows(design:ReadonlyDesign,element:DeepReadonly<Element>,context:DataContext):DataRow[]{
   const rows:DataRow[]=[],source=element.source;if(!source)return rows;
   const add=(id:string,values:Record<string,DataValue>,enabled=true,reason='')=>rows.push({id,values:{...values,id},enabled,reason});
-  if(source.type==='galleryEntries'||source.type==='gallerySelection'){rows.push(...galleryRows(context.content.project.gallery,context.gallery,source.type==='gallerySelection'));
+  if(source.type==='galleryBranches'){rows.push(...galleryBranchRows(context.content,context.gallery));
+  }else if(source.type==='galleryEntries'||source.type==='gallerySelection'){rows.push(...galleryRows(context.content.project.gallery,context.gallery,source.type==='gallerySelection'));
   }else if(Object.hasOwn(battleSourceFields,source.type)){
     rows.push(...battleCollectionRows(source.type,context));
   }else if(source.type==='table'){

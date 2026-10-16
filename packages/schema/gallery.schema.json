@@ -85,6 +85,9 @@
     },
     "replayControlsScreenId": {
       "$ref": "common.schema.json#/$defs/id"
+    },
+    "branchScreenId": {
+      "$ref": "common.schema.json#/$defs/id"
     }
   }
 }

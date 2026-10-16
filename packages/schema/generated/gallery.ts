@@ -100,4 +100,5 @@ export interface CrossRunNarrativeGallery {
   screenId?: string;
   detailScreenId?: string;
   replayControlsScreenId?: string;
+  branchScreenId?: string;
 }

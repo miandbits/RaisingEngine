@@ -5,7 +5,8 @@
     auto append=[&](std::string id,Json values,bool enabled=true,std::string reason="") {
       values["id"]=id;rows.push_back({{"id",id},{"values",values},{"enabled",enabled},{"reason",reason}});
     };
-    if(type=="galleryEntries"||type=="gallerySelection")rows=gallery_rows(type=="gallerySelection");
+    if(type=="galleryBranches")rows=gallery_branch_rows();
+    else if(type=="galleryEntries"||type=="gallerySelection")rows=gallery_rows(type=="gallerySelection");
     if(type.rfind("battle",0)==0)rows=battle_collection_rows(type);
     if(type=="shopOffers"&&!gp.is_null())for(const auto& shop:gp.value("shops",Json::array())) {
       const auto shopId=shop.value("id","");if(source.contains("shopId")&&source.at("shopId")!=shopId)continue;

@@ -1,4 +1,5 @@
 #pragma once
+#include "gallery-branches-ui.hpp"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>

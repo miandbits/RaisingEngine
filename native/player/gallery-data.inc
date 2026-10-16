@@ -1,7 +1,8 @@
 // Gallery rows deliberately expose only public, unlocked metadata, never the live state.
   bool authored_gallery() const {
     return game.gallery.active && preview_screen.empty() &&
-      display_content.at("project").value("gallery",Json::object()).contains("screenId");
+      (display_content.at("project").value("gallery",Json::object()).contains("screenId") ||
+       (gallery_branch_view&&display_content.at("project").value("gallery",Json::object()).contains("branchScreenId")));
   }
   Json gallery_rows(bool selection) const {
     Json rows=Json::array();
@@ -30,3 +31,5 @@
     }
     return rows;
   }
+
+#include "gallery-branches.inc"

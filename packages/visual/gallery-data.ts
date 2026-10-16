@@ -3,7 +3,7 @@ import type { ContentSnapshot } from '../core/model.js';
 
 /** Read-only UI projection. It never evaluates conditions or grants unlocks. */
 export interface GalleryUiContext {
-  entries?: Record<string,{records:readonly {kind:string;sourceId:string;replayFrames?:readonly unknown[]}[]}>;
+  entries?: Record<string,{records:readonly {kind:string;sourceId:string;frames?:readonly {nodeId?:string;choiceId?:string;text?:string}[];replayFrames?:readonly unknown[]}[]}>;
   selectedId?:string; kind?:string; status?:string; category?:string;
   recordIndex?:number; musicPlaying?:boolean;
 }
