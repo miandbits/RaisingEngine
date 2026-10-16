@@ -900,7 +900,7 @@ pictures larger than a page. Packing is deterministic (skyline, tallest first).
   page). Screenshots with and without atlas differ by a mean of 0.0013/255 (native) and 0.004/255
   (web) (`tests/plugins/cutout-atlas.test.mjs`).
 
-## Layer import (plugin 1.11.0)
+## Layer import (plugin 1.11.0; production files 1.15.0)
 
 Layered art becomes a rig whose setup pose looks exactly like the document. One implementation
 (`service/psd.mjs` reader + `service/layer-import.mjs` mapping) serves every path: the service
@@ -915,12 +915,26 @@ is ordinary schemaVersion 1 data plus editor metadata.
   leading number `01-` only sorts). PSD: 8-bit RGB only — 16/32-bit, CMYK, indexed, grayscale,
   Lab, … are refused with a message saying how to re-save; raw and PackBits channels (ZIP channels
   refused); Unicode names (`luni`); section dividers (`lsct`/`lsdk`) = groups; a document without
-  layer records imports its merged image as one layer. Canvas ≤ 8192 px, ≤ 64 Mpx of layers.
+  layer records imports its merged image as one layer. Canvas ≤ 8192 px, file ≤ 512 MiB, decoded
+  pictures ≤ 64 Mpx **after scaling** (the layer rectangles at the import resolution; 1.14 counted
+  them at full size). The reader parses records first and decodes one layer at a time, row by row,
+  downscaling while it reads (below), so a 5656×8000 file with 511 records and ~190 Mpx of layer
+  rectangles never exists decoded at full size.
 * **Payload**: `file`, `id` (new character, default from the file name; an existing rig or
   controller id is refused) **or** `rig` (re-import onto that rig), `name?`, `origin?`
   (`bottom-center` default, `center`, `top-center`, `top-left`, `{x, y}` in document px),
-  `trim?` (default true), `scale?` (0.05..4, default 1), `exclude?` (report layer keys),
-  `boneDirection?` (`auto` default, `none` = the 1.11.0 mapping; plugin 1.14.0).
+  `trim?` (default true), `scale?` (0.05..4 or `"auto"`, default 1), `exclude?` (report layer keys),
+  `boneDirection?` (`auto` default, `none` = the 1.11.0 mapping; plugin 1.14.0), `merge?` (report
+  keys of groups to flatten, 1.15.0), `effects?` (`keep` default | `skip`, 1.15.0).
+* **Scale** (1.15.0): `"auto"` = the largest of 1, 0.75, 0.5, 0.375, 0.25, 0.125 whose canvas long
+  edge is ≤ 2048 px and whose layer rectangles at that scale are ≤ 64 Mpx (a document ≤ 2048 px gets
+  1: the 1.14 result). Pictures are read at `resolution` = min(1, scale): below 1 every output
+  pixel is the area average of the document pixels it covers (box filter with fractional coverage,
+  in premultiplied alpha, so antialiased edges keep their colour and only fade in alpha; output
+  rectangle = floor/ceil of the layer rectangle × resolution) and is placed 1:1 (attachment scale
+  1); above 1 pictures keep their resolution and the attachment scale is the scale. A re-import
+  uses the first import's scale and resolution (`editor.layerImport.scale/resolution`; a record
+  without `resolution`, i.e. from 1.11–1.14, means full-size pictures placed at the scale).
 * **Mapping** (new character): canvas = document size × scale, root bone `root` at the origin;
   a top-level `[pivot]` layer's centre overrides the origin.
   * group → bone (id from the name, nested groups = child bones, local = world − parent); origin =
@@ -936,26 +950,64 @@ is ordinary schemaVersion 1 data plus editor metadata.
     `direction: {angle, length, from: child | content | up}`. `none`: rotation 0, no length.
   * layer → region attachment, picture trimmed to its pixels (alpha > 0) plus a 1 px transparent
     ring (linear filtering at the edge blends to transparency like the document), placed with
-    pivot 0.5 at its centre in the bone's space; `scale` ≠ 1 sets the attachment scale (the
-    pictures keep their resolution). `trim: false` keeps the whole layer rectangle.
+    pivot 0.5 at its centre in the bone's space (see Scale for the resolution and the attachment
+    scale). `trim: false` keeps the whole layer rectangle.
   * names: `slot/attachment` or `slot@attachment` → one slot (`eyes/open`, `eyes/closed`); the
     layers of a `[slot]` group are attachments of the slot named after the group; every plain
     layer is its own slot (attachment named like the slot). Ids are lowercase kebab-case from
-    the name (accents dropped); names without Latin letters fall back to `part-N` / `bone-N`; a
-    slot name used under two bones becomes `<bone>-<slot>`, later duplicates `-2`.
+    the name (accents dropped; 1.15.0: Cyrillic — Russian readings plus Ukrainian є/і/ї/ґ — and
+    Greek transliterated first, `рука левая` → `ruka-levaya`, `Layer 12 Copy 3` →
+    `layer-12-copy-3`); other names without Latin letters (CJK, Hangul) fall back to `part-N` /
+    `bone-N`; a slot name used under two bones becomes `<bone>-<slot>`, later duplicates `-2`.
+  * **clipping** (1.15.0): a clipped layer belongs to the nearest unclipped sibling below it (the
+    base; a clipped layer with nothing below is drawn normally). The base and its visible clipped
+    layers (hidden or left-out ones skipped) become ONE picture: each clipped layer paints inside
+    the base's alpha with its blend mode and opacity (transparency locked:
+    `t = αs·opacity, C = (1 − t)·Cb + t·B(Cb, Cs)`, alpha stays the base's), then the result is
+    the base layer's picture (its opacity → slot alpha). Report items of clipped layers have
+    `role: "clipped"`, `clippedTo: <base key>`. A clipping base that is a group (not merged) is not
+    applied (`ANIM_IMPORT_CLIPPING`, the clipped layers stay pictures of their own).
+  * **merge** (1.15.0): a group whose name has `[merge]` or whose key is in `merge` is flattened
+    into one picture, mapped like a layer named after the group (`hair [merge]` → slot `hair`;
+    `mouth/smile [merge]` → attachment `smile` of slot `mouth`; inside a `[slot]` group one
+    attachment) on the enclosing bone; it makes no bone. Its visible children (not hidden, not
+    `[ignore]`/excluded, not markers) are composited back to front, isolated (like a "Normal"
+    group; a pass-through group whose children blend with art below the group can differ there),
+    nested groups recursively, clipping as above, blending with source-over
+    `mix = (1 − αb)·Cs + αb·B(Cb, Cs)`, `αo = αs + αb(1 − αs)`, `Co = (αs·mix + αb(1 − αs)·Cb) / αo`.
+    The group's opacity → slot alpha. Report: `role: "merged"`, `merge: "tag" | "key"`, children
+    `role: "in-merge"` (or clipped / excluded / ignored).
+  * **blend modes** baked (clipping and merge): normal, multiply, screen, overlay, linear dodge (add,
+    clamped), lighten, darken, soft light (W3C formula; Photoshop's curve differs by a few levels in
+    the mid tones); opacity always mixes linearly (Photoshop's fill behaviour of add-like modes is
+    not reproduced); other modes are computed as normal (one `ANIM_IMPORT_BLEND` line).
+  * **effects** (1.15.0): a layer, merged group or group outside a merged group with a blend mode
+    other than normal / pass-through cannot be drawn by the rig: `effects: "keep"` draws it normal,
+    `"skip"` leaves it (and a group's children) out (`role: "effect"`). One `ANIM_IMPORT_BLEND`
+    warning counts them by mode.
+  * empty layers (0×0 or fully transparent) and groups without pictures are skipped quietly (roles
+    `empty` / `empty-group`, one `ANIM_IMPORT_EMPTY` summary line).
   * draw order = layer order (a slot sits where its shown layer is); the topmost visible layer of a
     slot is its setup attachment, hidden layers (or layers of hidden groups) are attachments that
     are not shown (expression / key swaps); a slot with only hidden layers has `attachment: null`.
     Layer opacity × group opacities → slot `alpha` (overlapping children of a translucent group can
     differ slightly from Photoshop's isolated group).
   * `[ignore]` / `[skip]` drop a layer or a whole group; `exclude` keys likewise.
-  * Warnings (report): blend modes other than normal/pass-through (`ANIM_IMPORT_BLEND`, drawn
-    normal), clipping masks (`ANIM_IMPORT_CLIPPING`), layer masks (`ANIM_IMPORT_MASK`, not applied),
-    translucent groups, two visible layers in one slot, empty layers/groups, more than one marker.
+  * Warnings (report; one summary line per kind where a production file has hundreds): unbaked
+    blend modes (`ANIM_IMPORT_BLEND`), clipping onto a group (`ANIM_IMPORT_CLIPPING`), layer masks
+    (`ANIM_IMPORT_MASK`, not applied), empty layers/groups (`ANIM_IMPORT_EMPTY`), over the limits
+    (`ANIM_IMPORT_LIMIT`), translucent groups, two visible layers in one slot, more than one marker.
+  * **Limits**: bones 256, slots 256, attachments 1024 (rig totals). Over them an import is refused;
+    a preview (`dryRun`) is not: `report.limits = {bones|slots|attachments: {count, max}, exceeded}`
+    and `report.autoMerge = {keys, fits}`, a proposal for `merge`: repeatedly the leaf bone group
+    (all bone groups under it already proposed) with the most pictures, groups holding hidden
+    variants last, until the counts fit (merging a group removes its bones and turns its slots and
+    attachments into one each; a proposed group replaces proposed groups under it). New characters
+    only (a re-import keeps existing slots, so merging cannot shrink it).
   * New rig: `idle` clip, mix 150 ms; new controller `{rig: id, defaultClip: "idle"}`.
 * **Provenance**: `editor.layerImport = {source, format, width, height, scale, layers: {"slot/name":
-  {x, y, width, height, pixels}}}` (picture rectangle in document px and a pixel hash). Runtimes
-  ignore `editor`.
+  {x, y, width, height, pixels}}, resolution}` (picture rectangle in picture px = document px ×
+  resolution, and a pixel hash). Runtimes ignore `editor`.
 * **Re-import** (`rig`): bones, slots, keys, skins, expressions, IK and every placement stay.
   Matching is by id: groups map to bones of the same id (kept, never moved; new groups become new
   bones placed through the current setup pose), `slot/name` to existing attachments.
@@ -974,19 +1026,32 @@ is ordinary schemaVersion 1 data plus editor metadata.
   report}`; image ids are `image-<sha256 of the PNG, 24 hex>` (the same as `importImage`), so an
   unchanged picture is the same asset. `report`: `mode` (`create`/`update`), `rigId`, `source`,
   `options`, `canvas`, `layers` (tree, back → front: `key`, `name`, `kind`, `visible`, `opacity`,
-  `blend`, `bounds`, `include`, `role` = image/bone/pivot/slot-group/ignored/excluded/empty/…,
-  `bone`, `slot`, `attachment`, `setup`, `status` = add/update/same/skip/kept, `warnings`),
-  `warnings`, `changes` (bones added/kept, slots added/kept, attachments added/updated/unchanged/
-  skipped/missing) and `summary`. The rig passes core validation before it is returned. A preview
-  (`dryRun`) has no images and empty `imageAssetId`s.
+  `blend`, `bounds` (document px), `include`, `role` = image/bone/pivot/slot-group/ignored/
+  excluded/empty/empty-group/clipped/merged/in-merge/effect/…, `clippedTo`, `merge`, `bone`,
+  `slot`, `attachment`, `setup`, `status` = add/update/same/skip/kept, `warnings`), `warnings`,
+  `changes` (bones added/kept, slots added/kept, attachments added/updated/unchanged/skipped/
+  missing), `summary` (+ 1.15.0 `baked` clipped layers, `merged` groups, `effects`, `empty`,
+  `pixels` of the pictures), `limits`, `autoMerge` (over the limits only); `options` carries the
+  chosen `scale`, `scaleMode` (`auto` | `fixed` | `kept`), `resolution`, `merge`, `effects`;
+  `source.layerPixels` = the layer rectangles in document px. The rig passes core validation before
+  it is returned. A preview (`dryRun`) has no images and empty `imageAssetId`s; for a new character it
+  reads only the alpha of each layer (trimmed bounds, empty checks, placements are exact; colour,
+  clipping and merge compositing and PNG encoding happen on import only), a re-import preview also
+  decodes colour (unchanged pictures are found by their pixel hash). Measured on the generated
+  5000×7000, 489-layer / 158 Mpx file (`tests/plugins/fixtures-gen/real-like-psd.mjs`): preview
+  ≈ 0.5 s, import ≈ 3 s at scale 0.25 (test budget 10 s / 20 s).
 * `plugin_call` op `importLayers`: the same with `target: {id, rig}` for a re-import preview of rig
   data and `includeImages: true` for base64 PNGs; it never writes anything.
 * Editor: `PSD 가져오기…` (character row `cutoutImportLayers`, plugin menu
   `cutoutImportLayersAction`, command palette) → file → preview → dialog
   `cutoutLayerImportDialog` (`cutoutLayerImportSource`, `…Target` new / update, `…Id`, `…Origin`,
-  `…Scale`, `…Trim`, `…AimBones` (boneDirection), layer tree `…Tree` with include boxes and bone/slot/attachment/status columns,
-  `…Warnings`, `…Summary`, `…Refresh` = preview again) → `가져오기` = one edit (one Ctrl+Z). The
-  file the selected character was imported from defaults to updating it.
+  `…Scale`, `…AutoScale` (default on = `scale: "auto"`) + `…ScaleInfo` (the chosen scale and
+  canvas), `…Trim`, `…AimBones` (boneDirection), `…SkipEffects` (effects), layer tree `…Tree` with
+  include boxes, bone/slot/attachment/status columns and the group column 「한 그림으로」 (= `merge`;
+  a `[merge]` row stays checked; row context action `cutoutLayerImportMergeAction`), `…Warnings`,
+  `…Summary` (red with the counts when over the limits; 가져오기 disabled), `…Refresh` = preview
+  again, `…AutoMerge` 「자동 합치기」 = add `report.autoMerge.keys` and preview again) → `가져오기` =
+  one edit (one Ctrl+Z). The file the selected character was imported from defaults to updating it.
 
 ## Clipping (plugin 1.12.0)
 
