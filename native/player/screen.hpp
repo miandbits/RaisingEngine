@@ -41,7 +41,8 @@ inline std::string css_color(std::string hex) {
 class ScreenMarkup {
 public:
   GameSession& game;
-  bool replay_controls=false;
+  bool replay_controls=false,replay_autoplay=false;
+  int replay_speed=1;
   size_t replay_cursor=0,replay_count=0;
   std::string replay_notice,replay_title;
   Json assets,display_content,display_projection,render_elements=Json::array();
@@ -308,6 +309,8 @@ public:
     const auto& project=display_content.at("project");
     if(name=="replay-position")return replay_controls?std::to_string(replay_cursor+1)+" / "+std::to_string(replay_count):"";
     if(name=="replay-notice")return replay_controls?replay_notice:"";
+    if(name=="replay-mode")return replay_controls?(replay_autoplay?"자동 재생 중":"자동 재생 멈춤"):"";
+    if(name=="replay-speed")return replay_controls?std::to_string(replay_speed)+"×":"";
     if(name=="replay-title")return replay_controls?replay_title:"";
     if(name=="gallery-error")return game.gallery.error;
     if(name=="gallery-filter"){const std::map<std::string,std::string> kinds={{"all","전체 종류"},{"cg","CG"},{"music","음악"},{"event","사건"},{"ending","엔딩"}},statuses={{"all","모든 기록"},{"locked","미해금"},{"unlocked","해금됨"}};return kinds.at(gallery_kind)+" · "+statuses.at(gallery_status)+(gallery_category.empty()?"":" · "+gallery_category);}

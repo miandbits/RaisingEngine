@@ -13,6 +13,10 @@ test('replay UI validates dedicated controls, screen references and reusable com
   const screen={id:'replay-test',label:'Replay test',elements:actions.map((action,i)=>({id:'button-'+i,kind:'button',x:10+i*150,y:10,width:140,height:44,text:action,action}))};
   p.visual.screens.push(screen);p.gallery.replayControlsScreenId=screen.id;
   let r=await validateProject(loaded);assert.equal(r.valid,true,JSON.stringify(r.diagnostics));
+  const playback={id:'playback',kind:'button',x:10,y:60,width:200,height:44,text:'Playback',action:'recollectionAuto'};
+  screen.elements.push(playback);
+  for(const action of ['recollectionAuto','recollectionSpeed','recollectionSkip']){playback.action=action;r=await validateProject(loaded);assert.equal(r.valid,true,JSON.stringify(r.diagnostics));}
+  screen.elements.pop(); // The three playback controls are optional in existing projects.
   p.gallery.replayControlsScreenId='missing';r=await validateProject(loaded);assert.ok(r.diagnostics.some(d=>d.pointer==='/gallery/replayControlsScreenId'));
   p.gallery.replayControlsScreenId=screen.id;screen.elements[3].action='save';r=await validateProject(loaded);assert.ok(r.diagnostics.some(d=>d.code==='REPLAY_UI_ACTION'));assert.ok(r.diagnostics.some(d=>d.code==='REPLAY_UI_CONTROLS'));
   screen.elements[3].action='recollectionSave';
@@ -30,4 +34,6 @@ test('old runtime refuses replay controls, even in component overrides',async()=
   delete content.project.gallery.replayControlsScreenId;
   v.screens[0].elements.push({id:'replay-override',kind:'component',componentId:c.id,x:0,y:0,width:c.width,height:c.height,overrides:[{elementId:c.elements[0].id,values:{action:'recollectionClose'}}]});
   await assert.rejects(exportGame({content,projectRoot,destination:resolve(runtime,'rejected'),target:'windows',runtimes:{windows:runtime,web:runtime}}),/authored-recollection-v1/);
+  v.screens[0].elements.at(-1).overrides[0].values.action='recollectionAuto';
+  await assert.rejects(exportGame({content,projectRoot,destination:resolve(runtime,'rejected-auto'),target:'windows',runtimes:{windows:runtime,web:runtime}}),/recollection-playback-v1/);
 });

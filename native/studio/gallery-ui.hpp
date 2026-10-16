@@ -56,13 +56,14 @@ inline QJsonObject makeRecollectionUi(QJsonObject project) {
   QString id="replay-controls";int n=2;while(ids.contains(id))id="replay-controls-"+QString::number(n++);
   const int w=visual.value("width").toInt(1280),h=visual.value("height").toInt(720),gap=8,margin=16,bw=(w-2*margin-4*gap)/5;
   auto node=[](QString id,QString kind,int x,int y,int w,int h){return QJsonObject{{"id",id},{"kind",kind},{"x",x},{"y",y},{"width",w},{"height",h}};};
-  auto bg=node("background","panel",margin,12,w-2*margin,128);bg["fill"]="#15232ff5";bg["anchorX"]="stretch";bg["radius"]=8;QJsonArray elements{bg};
-  int i=0;for(auto pair:QList<QPair<QString,QString>>{{"이전","recollectionPrev"},{"다음","recollectionNext"},{"회상 종료","recollectionClose"},{"회상 저장","recollectionSave"},{"회상 불러오기","recollectionLoad"}}){
-    const QStringList names{"previous","next","close","save","load"};auto e=node(names[i],"button",margin+i*(bw+gap),24,bw,44);e["text"]=pair.first;e["action"]=pair.second;e["fontSize"]=18;e["color"]="#fff2da";e["fill"]="#304d51";e["hoverFill"]="#55736b";e["radius"]=6;elements.append(e);++i;
+  auto bg=node("background","panel",margin,12,w-2*margin,180);bg["fill"]="#15232ff5";bg["anchorX"]="stretch";bg["radius"]=8;QJsonArray elements{bg};
+  int i=0;for(auto pair:QList<QPair<QString,QString>>{{"이전","recollectionPrev"},{"다음","recollectionNext"},{"회상 종료","recollectionClose"},{"회상 저장","recollectionSave"},{"회상 불러오기","recollectionLoad"},{"자동 / 멈춤","recollectionAuto"},{"배속 변경","recollectionSpeed"},{"끝으로 건너뛰기","recollectionSkip"}}){
+    const QStringList names{"previous","next","close","save","load","auto","speed","skip"};auto e=node(names[i],"button",margin+(i%5)*(bw+gap),24+(i/5)*52,bw,44);e["text"]=pair.first;e["action"]=pair.second;e["fontSize"]=18;e["color"]="#fff2da";e["fill"]="#304d51";e["hoverFill"]="#55736b";e["radius"]=6;elements.append(e);++i;
   }
   auto text=[&](QString id,QString binding,int x,int y,int width){auto e=node(id,"text",x,y,width,30);e["text"]="";e["binding"]=binding;e["fontSize"]=18;e["color"]="#eee5d2";return e;};
-  elements.append(text("title","replay-title",margin+12,76,w-220));auto position=text("position","replay-position",w-180,76,140);position["anchorX"]="right";elements.append(position);
-  auto notice=text("notice","replay-notice",margin+12,106,w-2*margin-24);notice["anchorX"]="stretch";elements.append(notice);
+  elements.append(text("title","replay-title",margin+12,128,w-220));auto position=text("position","replay-position",w-180,128,140);position["anchorX"]="right";elements.append(position);
+  auto notice=text("notice","replay-notice",margin+12,158,w-2*margin-24);notice["anchorX"]="stretch";elements.append(notice);
+  elements.append(text("mode","replay-mode",margin+3*(bw+gap),82,bw));elements.append(text("rate","replay-speed",margin+4*(bw+gap),82,bw));
   screens.append(QJsonObject{{"id",id},{"label","회상 · 재생 조작"},{"elements",elements}});visual["screens"]=screens;project["visual"]=visual;
   auto gallery=project.value("gallery").toObject();gallery["replayControlsScreenId"]=id;project["gallery"]=gallery;return project;
 }

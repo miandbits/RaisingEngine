@@ -720,7 +720,9 @@
             "gallery-error",
             "replay-position",
             "replay-notice",
-            "replay-title"
+            "replay-title",
+            "replay-mode",
+            "replay-speed"
           ]
         },
         "imageSource": {
@@ -855,7 +857,10 @@
             "recollectionNext",
             "recollectionClose",
             "recollectionSave",
-            "recollectionLoad"
+            "recollectionLoad",
+            "recollectionAuto",
+            "recollectionSpeed",
+            "recollectionSkip"
           ]
         },
         "screenId": {
@@ -1109,7 +1114,10 @@
                       "recollectionNext",
                       "recollectionClose",
                       "recollectionSave",
-                      "recollectionLoad"
+                      "recollectionLoad",
+                      "recollectionAuto",
+                      "recollectionSpeed",
+                      "recollectionSkip"
                     ]
                   },
                   "screenId": {
@@ -2538,7 +2546,9 @@
             "gallery-error",
             "replay-position",
             "replay-notice",
-            "replay-title"
+            "replay-title",
+            "replay-mode",
+            "replay-speed"
           ]
         },
         "imageSource": {
@@ -2669,7 +2679,10 @@
             "recollectionNext",
             "recollectionClose",
             "recollectionSave",
-            "recollectionLoad"
+            "recollectionLoad",
+            "recollectionAuto",
+            "recollectionSpeed",
+            "recollectionSkip"
           ]
         },
         "screenId": {
@@ -3096,7 +3109,10 @@
                       "recollectionNext",
                       "recollectionClose",
                       "recollectionSave",
-                      "recollectionLoad"
+                      "recollectionLoad",
+                      "recollectionAuto",
+                      "recollectionSpeed",
+                      "recollectionSkip"
                     ]
                   },
                   "screenId": {

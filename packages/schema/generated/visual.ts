@@ -103,7 +103,9 @@ export type Element = {
     | "gallery-error"
     | "replay-position"
     | "replay-notice"
-    | "replay-title";
+    | "replay-title"
+    | "replay-mode"
+    | "replay-speed";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -973,7 +975,10 @@ export type Element = {
     | "recollectionNext"
     | "recollectionClose"
     | "recollectionSave"
-    | "recollectionLoad";
+    | "recollectionLoad"
+    | "recollectionAuto"
+    | "recollectionSpeed"
+    | "recollectionSkip";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -1067,7 +1072,10 @@ export type Element = {
         | "recollectionNext"
         | "recollectionClose"
         | "recollectionSave"
-        | "recollectionLoad";
+        | "recollectionLoad"
+        | "recollectionAuto"
+        | "recollectionSpeed"
+        | "recollectionSkip";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -5199,7 +5207,9 @@ export type ComponentChild = {
     | "gallery-error"
     | "replay-position"
     | "replay-notice"
-    | "replay-title";
+    | "replay-title"
+    | "replay-mode"
+    | "replay-speed";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -6065,7 +6075,10 @@ export type ComponentChild = {
     | "recollectionNext"
     | "recollectionClose"
     | "recollectionSave"
-    | "recollectionLoad";
+    | "recollectionLoad"
+    | "recollectionAuto"
+    | "recollectionSpeed"
+    | "recollectionSkip";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -8136,7 +8149,10 @@ export type ComponentChild = {
         | "recollectionNext"
         | "recollectionClose"
         | "recollectionSave"
-        | "recollectionLoad";
+        | "recollectionLoad"
+        | "recollectionAuto"
+        | "recollectionSpeed"
+        | "recollectionSkip";
       screenId?: string;
       locationId?: string;
       shopId?: string;

@@ -498,6 +498,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   bindingField->addItem(tr("회상 진행 위치"),"replay-position");
   bindingField->addItem(tr("회상 저장 알림"),"replay-notice");
   bindingField->addItem(tr("회상 제목"),"replay-title");
+  bindingField->addItem(tr("회상 자동 재생 상태"),"replay-mode");bindingField->addItem(tr("회상 배속"),"replay-speed");
   builtinBindingCount=bindingField->count();
   userFieldField=new QComboBox;userFieldField->setObjectName("bindingUserField");
   attributeField = new QComboBox;
@@ -608,6 +609,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField->addItem(tr("회상 종료"),"recollectionClose");
   actionField->addItem(tr("회상 위치 저장"),"recollectionSave");
   actionField->addItem(tr("회상 위치 불러오기"),"recollectionLoad");
+  actionField->addItem(tr("자동 재생 · 멈춤"),"recollectionAuto");
+  actionField->addItem(tr("회상 배속 변경"),"recollectionSpeed");
+  actionField->addItem(tr("회상 끝으로 건너뛰기"),"recollectionSkip");
   actionField->setProperty("builtinActionCount", actionField->count());
   targetField = new QComboBox;
   targetField->setObjectName("actionTarget");
