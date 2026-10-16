@@ -74,6 +74,10 @@ class RigCanvas : public QWidget {
   void setPhysicsView(const QString& selected, const QHash<int, QPointF>& rest) { selectedPhysics_ = selected; physicsRest_ = rest; update(); }
   const QHash<int, QPointF>& physicsRest() const { return physicsRest_; }
   static QColor physicsColor();
+  /** Transform constraints (plugin 1.16.0): a dashed pink line from every constrained bone to its
+   *  target (a diamond), the `selected` constraint's drawn thicker. */
+  void setSelectedTransform(const QString& id) { if (id != selectedTransform_) { selectedTransform_ = id; update(); } }
+  static QColor transformColor();
   /** Workspace UI scale (plugin 1.10.0, editor-only): handles, gizmos, pick radii and the hint
    *  line grow with it, so a large-text workspace also gets larger targets. */
   void setUiScale(double scale) { ui_ = scale; refreshHover(); update(); }
@@ -218,6 +222,7 @@ class RigCanvas : public QWidget {
   QPolygonF trail_, trailKeys_;
   QString selectedIk_;
   QString selectedPhysics_;
+  QString selectedTransform_;
   QHash<int, QPointF> physicsRest_;
   // hover: what a click at the cursor would pick (Alt held = the cycled pick)
   QString hoverRef_;
@@ -251,6 +256,7 @@ class RigCanvas : public QWidget {
   void paintGhosts(QPainter& p);
   void paintIk(QPainter& p);
   void paintPhysics(QPainter& p);
+  void paintTransforms(QPainter& p);
   bool showClips_ = true;
   void paintClips(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;

@@ -269,6 +269,23 @@ class CutoutPanel : public QWidget {
   /** The preview simulation (empty bodies while not playing); `running` = it drives the canvas. */
   const cutout::PhysicsSim& physicsSim() const { return editorPhysics_; }
   bool physicsRunning() const { return physicsRunning_; }
+  // ---- Transform constraints (plugin 1.16.0; the 변형 제약 page). Setup values via addTransform /
+  // setTransform; Animate mode keys the mixes (transform:<id>). One core edit per gesture.
+  /** 제약 추가: the selected bones follow a target — the primary (last picked) bone when two or more
+   *  are selected, else the bone id asked for. keepPose offsets: nothing jumps when it is added. */
+  bool addTransform();
+  bool selectTransform(const QString& id);
+  QString transformId() const { return transformId_; }
+  /** mixRotate..mixShearY / offsetRotation..offsetShearY / order; Animate mode: a mix is a key. */
+  bool setTransformField(const QString& field, double value);
+  bool setTransformFlag(const QString& flag, bool on);  // local / relative (setup values)
+  bool renameTransform();
+  bool deleteTransform();
+  bool keyTransformMixes();                             // 혼합 키: the mixes at the playhead (non-zero or keyed)
+  bool selectTransformTarget();
+  bool selectTransformBones();
+  /** 상속 of the selected bones (setup data, one setBone per bone in one edit). */
+  bool setBoneInherit(const QString& inherit);
   // ---- Meshes (plugin 1.4.0) on the selected part's shown attachment (the preview skin's own when
   // it provides it). Setup mode edits the mesh (vertices, weights); Animate mode makes deform keys.
   enum class MeshEdit { Off = 0, Vertices = 1, Weights = 2 };
@@ -501,6 +518,7 @@ class CutoutPanel : public QWidget {
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)
   QString physicsId_;                         // physics constraint shown in the 물리 page (editor state)
+  QString transformId_;                       // transform constraint shown in the 변형 제약 page (editor state)
   cutout::PhysicsSim editorPhysics_;          // preview playback simulation (editor-only)
   bool physicsPreview_ = true, physicsRunning_ = false;
   double physicsWind_ = 0, physicsGravity_ = 0;
@@ -667,6 +685,16 @@ class CutoutPanel : public QWidget {
   void refreshPhysics();
   void refreshPhysicsInfo();
   const cutout::Json* currentPhysics() const;
+  // transform constraints and inherit (plugin 1.16.0)
+  QListWidget* transformList_ = nullptr;
+  QMap<QString, QDoubleSpinBox*> transformFields_;
+  QCheckBox *transformLocal_ = nullptr, *transformRelative_ = nullptr;
+  QLabel* transformInfo_ = nullptr;
+  QVector<QWidget*> transformEditors_, transformAnimateTools_;
+  QComboBox* inheritCombo_ = nullptr;
+  QWidget* buildTransform();
+  void refreshTransform();
+  const cutout::Json* currentTransform() const;
   // events (plugin 1.8.0)
   QListWidget *eventList_ = nullptr, *eventLogList_ = nullptr;
   QSpinBox* eventInt_ = nullptr;

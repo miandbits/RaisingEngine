@@ -161,6 +161,9 @@ Json poseJson(const Rig& rig, const Pose& pose) {
     const auto& t = pose.bones[i]; const auto& w = pose.world[i];
     bones[rig.bones[i].id] = {{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY},
                               {"world", {w.a, w.b, w.c, w.d, w.e, w.f}}};
+    // Shear (plugin 1.16.0): only when sampled non-zero, so replies of older rigs keep their shape.
+    if (t.shearX != 0) bones[rig.bones[i].id]["shearX"] = t.shearX;
+    if (t.shearY != 0) bones[rig.bones[i].id]["shearY"] = t.shearY;
   }
   for (size_t i = 0; i < rig.slots.size(); i++) {
     slots[rig.slots[i].id] = {{"attachment", pose.attachments[i] ? Json(*pose.attachments[i]) : Json(nullptr)}, {"alpha", pose.alpha[i]}};
@@ -188,6 +191,22 @@ Json poseJson(const Rig& rig, const Pose& pose) {
       for (int b : rig.ik[i].bones) if (pose.local(size_t(b)).scaleX != pose.bones[size_t(b)].scaleX) out["bones"][rig.bones[size_t(b)].id]["appliedScaleX"] = pose.local(size_t(b)).scaleX;
     }
     out["ik"] = ik;
+  }
+  // Transform constraints (plugin 1.16.0): the sampled channel mixes, and the local values the
+  // constraints left on every bone they move (`applied`, rotation..shearY).
+  if (!rig.transforms.empty()) {
+    static const char* const keys[TRANSFORM_MIXES] = {"mixRotate", "mixX", "mixY", "mixScaleX", "mixScaleY", "mixShearY"};
+    Json transform = Json::object();
+    for (size_t i = 0; i < rig.transforms.size(); i++) {
+      Json mixes = Json::object();
+      for (size_t m = 0; m < TRANSFORM_MIXES; m++) mixes[keys[m]] = i < pose.transformMix.size() ? pose.transformMix[i][m] : rig.transforms[i].mix[m];
+      transform[rig.transforms[i].id] = mixes;
+      for (int b : rig.transforms[i].bones) {
+        const Transform& a = pose.local(size_t(b));
+        out["bones"][rig.bones[size_t(b)].id]["applied"] = {{"x", a.x}, {"y", a.y}, {"rotation", a.rotation}, {"scaleX", a.scaleX}, {"scaleY", a.scaleY}, {"shearX", a.shearX}, {"shearY", a.shearY}};
+      }
+    }
+    out["transform"] = transform;
   }
   // Physics (plugin 1.13.0): the sampled mixes. A sampled pose has no simulation (stateless).
   if (!rig.physics.empty()) {

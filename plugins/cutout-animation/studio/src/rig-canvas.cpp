@@ -12,6 +12,7 @@ namespace cutout_studio {
 namespace {
 constexpr double PI = 3.14159265358979323846;
 const QColor SETUP_COLOR("#3b82f6"), ANIMATE_COLOR("#ef4444"), SELECT_COLOR("#ffd34d"), TRAIL_COLOR("#38bdf8"), IK_COLOR("#f97316");
+const QColor TRANSFORM_COLOR("#f472b6");  // transform constraints (plugin 1.16.0): pink, apart from IK orange and physics teal
 const QColor PHYSICS_COLOR("#2dd4bf");  // physics bones (plugin 1.13.0): teal, apart from IK orange and trail blue
 // Mesh edit (plugin 1.6.0): outline edges, pinned inside edges, outline being drawn / previewed.
 const QColor OUTLINE_COLOR("#f59e0b"), PINNED_COLOR("#22d3ee"), DRAFT_COLOR("#e879f9");
@@ -337,6 +338,7 @@ void RigCanvas::paintMesh(QPainter& p) {
 
 QColor RigCanvas::ikColor() { return IK_COLOR; }
 QColor RigCanvas::physicsColor() { return PHYSICS_COLOR; }
+QColor RigCanvas::transformColor() { return TRANSFORM_COLOR; }
 bool RigCanvas::isIkTarget(int bone) const {
   if (!rig_) return false;
   for (const auto& k : rig_->ik) if (k.target == bone) return true;
@@ -376,6 +378,26 @@ void RigCanvas::paintIk(QPainter& p) {
     const QPointF from = k.tip >= 0 ? origin(k.tip) : k.bones.size() >= 2 && k.tipLength > 0 ? rigToWidget(boneTip(k.bones.back())) : origin(k.bones.back());
     p.setPen(QPen(line, 1.5, Qt::DashLine));
     p.drawLine(from, origin(k.target));
+  }
+}
+
+// Transform constraint overlay (plugin 1.16.0): from each constrained bone's origin a dashed pink
+// line to the target's origin, which gets a diamond; the selected constraint is drawn thicker.
+void RigCanvas::paintTransforms(QPainter& p) {
+  if (!rig_ || rig_->transforms.empty() || pose_.world.size() != rig_->bones.size()) return;
+  auto origin = [&](int b) { return rigToWidget(QPointF(pose_.world[size_t(b)].e, pose_.world[size_t(b)].f)); };
+  for (const auto& k : rig_->transforms) {
+    if (k.target < 0) continue;
+    const bool selected = qs(k.id) == selectedTransform_;
+    QColor c = TRANSFORM_COLOR;
+    c.setAlpha(selected ? 255 : 160);
+    const QPointF to = origin(k.target);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(c, (selected ? 2.25 : 1.25) * ui_, Qt::DashLine));
+    for (int b : k.bones) if (b >= 0) p.drawLine(origin(b), to);
+    const double r = (selected ? 7 : 5) * ui_;
+    p.setPen(QPen(c, (selected ? 2.5 : 1.5) * ui_));
+    p.drawPolygon(QPolygonF({to + QPointF(0, -r), to + QPointF(r, 0), to + QPointF(0, r), to + QPointF(-r, 0)}));
   }
 }
 
@@ -690,6 +712,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
       for (size_t i = 0; i < rig_->slots.size(); i++) if (isSelected("slot:" + qs(rig_->slots[i].id))) outlineSlot(p, int(i));
       paintIk(p);
+      paintTransforms(p);
       paintBones(p);
       paintPhysics(p);
     }

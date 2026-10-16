@@ -22,6 +22,7 @@ Transform readT(const Json& o) {
   Transform t;
   auto get = [&](const char* k, double f) { return o.is_object() && o.contains(k) && o.at(k).is_number() ? o.at(k).get<double>() : f; };
   t.x = get("x", 0); t.y = get("y", 0); t.rotation = get("rotation", 0); t.scaleX = get("scaleX", 1); t.scaleY = get("scaleY", 1);
+  t.shearX = get("shearX", 0); t.shearY = get("shearY", 0);  // bones only (plugin 1.16.0)
   return t;
 }
 /** Finer rounding (1e-9) for ops that must leave the drawing unchanged (orientBones rotates
@@ -34,8 +35,9 @@ void writeT(Json& o, const Transform& t, double (*round)(double) = clean) {
   o["x"] = round(t.x); o["y"] = round(t.y);
   auto opt = [&](const char* k, double v, double def) { v = round(v); if (v == def) o.erase(k); else o[k] = v; };
   opt("rotation", t.rotation, 0); opt("scaleX", t.scaleX, 1); opt("scaleY", t.scaleY, 1);
+  opt("shearX", t.shearX, 0); opt("shearY", t.shearY, 0);
 }
-Affine local(const Transform& t) { return Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY); }
+Affine local(const Transform& t) { return localMatrix(t); }
 
 Json& arr(Json& d, const char* k) {
   if (!d.contains(k) || !d.at(k).is_array()) d[k] = Json::array();
@@ -85,6 +87,13 @@ Json& clip(Json& d, const Str& id) {
   return d["clips"][size_t(i)];
 }
 Str parentOf(const Json& b) { return b.contains("parent") && b.at("parent").is_string() ? b.at("parent").get<Str>() : ""; }
+/** Bone inherit mode (plugin 1.16.0; absent / unknown = normal). */
+Inherit inheritOf(const Json& b) { return parseInherit(optStr(b, "inherit", "normal")).value_or(Inherit::Normal); }
+/** Normal inheritance and no setup shear: the pre-1.16 world <-> local conversions apply unchanged. */
+bool plainBone(const Json& b) {
+  const Transform t = readT(b);
+  return inheritOf(b) == Inherit::Normal && t.shearX == 0 && t.shearY == 0;
+}
 bool hasErrors(const std::vector<Diagnostic>& ds) { for (const auto& x : ds) if (x.severity == "error") return true; return false; }
 void warn(EditResult& r, const Str& code, const Str& pointer, const Str& message) { r.diagnostics.push_back({code, "warning", pointer, message}); }
 
@@ -101,6 +110,18 @@ Affine inverseOr(const Affine& m, const char* what) {
   auto inv = m.inverse();
   if (!inv) throw EditError(Str(what) + "의 크기가 0이라 계산할 수 없습니다.");
   return *inv;
+}
+/**
+ * New local transform of bone `b` whose world must become `world` under the parent world `pw`
+ * (nullptr = a root). Plain bones keep the 1.7 decomposition (skew dropped, its size in *skew);
+ * shaped bones (plugin 1.16.0) invert their inherit mode exactly, skew going into shearY.
+ */
+Transform boneLocalFor(const Json& b, const Affine* pw, const Affine& world, double* skew) {
+  if (plainBone(b)) return decomposeNear((pw ? inverseOr(*pw, "부모 본") : Affine{}) * world, readT(b), skew);
+  const auto t = localFromWorld(pw ? *pw : Affine{}, world, inheritOf(b), readT(b));
+  if (!t) throw EditError("부모 본의 크기가 0이라 계산할 수 없습니다.");
+  if (skew) *skew = 0;
+  return *t;
 }
 
 /** Deform tracks (plugin 1.4.0) are told apart by the mesh attachment they key. */
@@ -206,6 +227,11 @@ Json& physicsAt(Json& d, const Str& id) {
   if (i < 0) throw EditError("없는 물리 제약입니다: " + id);
   return d["physics"][size_t(i)];
 }
+Json& transformAt(Json& d, const Str& id) {
+  const int i = findIndex(listOr(d, "transform"), "id", id);
+  if (i < 0) throw EditError("없는 변형 제약입니다: " + id);
+  return d["transform"][size_t(i)];
+}
 struct Target { bool bone; Str id; Property property; bool rig = false; bool ik = false; };
 Target target(Json& d, const Json& op) {
   const Str target = reqStr(op, "target"), prop = reqStr(op, "property");
@@ -217,6 +243,14 @@ Target target(Json& d, const Json& op) {
     return {false, "", *p, true};
   }
   if (*p == Property::Expression) throw EditError("표정 키의 대상은 rig입니다(target: \"rig\").");
+  // Transform constraint mix tracks (plugin 1.16.0).
+  const bool transformProp = transformMixChannel(*p) >= 0;
+  if (target.rfind("transform:", 0) == 0) {
+    if (!transformProp) throw EditError("변형 제약 트랙의 속성은 mixRotate, mixX, mixY, mixScaleX, mixScaleY, mixShearY입니다.");
+    transformAt(d, target.substr(10));
+    return {false, target.substr(10), *p};
+  }
+  if (transformProp) throw EditError("mixRotate·mixX 등의 키 대상은 transform:<id>입니다.");
   // Physics mix tracks (plugin 1.13.0).
   if (target.rfind("physics:", 0) == 0) {
     if (*p != Property::Mix) throw EditError("물리 트랙의 속성은 mix뿐입니다.");
@@ -232,7 +266,7 @@ Target target(Json& d, const Json& op) {
   }
   if (ikProp) throw EditError("mix·bendPositive 키의 대상은 ik:<id> 또는 physics:<id>입니다.");
   const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0;
-  if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id>, slot:<id>, ik:<id>, physics:<id> 또는 rig 형식입니다.");
+  if (!isBone && !isSlot) throw EditError("트랙 대상은 bone:<id>, slot:<id>, ik:<id>, physics:<id>, transform:<id> 또는 rig 형식입니다.");
   const Str id = target.substr(5);
   if (isBone) bone(d, id); else slot(d, id);
   const bool slotProp = *p == Property::Alpha || *p == Property::Attachment || *p == Property::Deform || *p == Property::Sequence;
@@ -346,6 +380,25 @@ size_t removePhysics(Json& d, const Str& id) {
   return keys;
 }
 
+// ---- Transform constraint helpers (plugin 1.16.0) ----
+/** Constraint ids whose target is `bone`. */
+std::vector<Str> transformsTargeting(const Json& d, const Str& bone) {
+  std::vector<Str> out;
+  for (const auto& k : listOr(d, "transform")) if (optStr(k, "target") == bone) out.push_back(optStr(k, "id"));
+  return out;
+}
+/** Drop transform constraint `id` and its mix tracks; the last one gone removes the list. */
+size_t removeTransform(Json& d, const Str& id) {
+  auto& list = arr(d, "transform");
+  list.erase(list.begin() + findIndex(list, "id", id));
+  if (list.empty()) d.erase("transform");
+  size_t keys = 0;
+  for (auto& c : arr(d, "clips"))
+    for (const auto& t : arr(c, "tracks")) if (t.value("target", Str()) == "transform:" + id) keys += t.contains("keys") ? t.at("keys").size() : 0;
+  removeTracks(d, {"transform:" + id});
+  return keys;
+}
+
 // ---- Mesh helpers (plugin 1.4.0; ops near the end) ----
 bool isMesh(const Json& a) { return a.is_object() && optStr(a, "type") == "mesh"; }
 bool isClipping(const Json& a) { return a.is_object() && optStr(a, "type") == "clipping"; }
@@ -442,6 +495,14 @@ void pinLimbTips(EditResult& r, const Str& id) {
       r.affected.push_back("ik:" + optStr(k, "id"));
     }
 }
+/** `inherit` of addBone/setBone (plugin 1.16.0): a mode name; null / "normal" drops the key. */
+void writeInherit(Json& b, const Json& op) {
+  if (!op.contains("inherit")) return;
+  const Json& v = op.at("inherit");
+  if (v.is_null() || v == "normal") { b.erase("inherit"); return; }
+  if (!v.is_string() || !parseInherit(v.get<Str>())) throw EditError("상속(inherit)은 normal, onlyTranslation, noRotationOrReflection, noScale, noScaleOrReflection 중 하나입니다.");
+  b["inherit"] = v;
+}
 void addBone(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str id = reqStr(op, "id");
@@ -455,9 +516,11 @@ void addBone(EditResult& r, const Json& op) {
     inv.apply(num(op, "worldX", 0), num(op, "worldY", 0), t.x, t.y);
   } else { t.x = num(op, "x", 0); t.y = num(op, "y", 0); }
   t.rotation = num(op, "rotation", 0); t.scaleX = num(op, "scaleX", 1); t.scaleY = num(op, "scaleY", 1);
+  t.shearX = num(op, "shearX", 0); t.shearY = num(op, "shearY", 0);
   Json b{{"id", id}, {"parent", parent.empty() ? Json(nullptr) : Json(parent)}};
   writeT(b, t);
   writeLook(b, op);
+  writeInherit(b, op);
   arr(d, "bones").push_back(b);
   r.affected.push_back("bone:" + id);
 }
@@ -492,7 +555,8 @@ void compensate(EditResult& r, const Json& before, const std::set<Str>& changed,
     for (auto& c : arr(d, "bones")) {
       const Str id = c.value("id", Str()), parent = parentOf(c);
       if (!changed.count(parent) || keep.count(id) || !oldWorld.count(parent) || !newWorld.count(parent)) continue;
-      writeT(c, rebase(parent, local(readT(c)), readT(c)), fine);
+      // Shaped children (plugin 1.16.0) invert their inherit mode onto their old world.
+      writeT(c, plainBone(c) ? rebase(parent, local(readT(c)), readT(c)) : boneLocalFor(c, &newWorld.at(parent), oldWorld.at(id), nullptr), fine);
       keyed = keyed || targetHasKeys(d, "bone:" + id);
       for (const auto& e : listOr(d, "expressions")) keyed = keyed || (e.contains("bones") && e.at("bones").is_object() && e.at("bones").contains(id));
       r.affected.push_back("bone:" + id);
@@ -522,17 +586,20 @@ void setBone(EditResult& r, const Json& op) {
   const Json before = compBones || compImages ? r.data : Json();
   Json& b = bone(r.data, id);
   Transform t = readT(b);
+  writeInherit(b, op);  // first: world/parent axes below convert through the new mode
   if (const Axes axes = axesOf(op); axes != Axes::Local && (has(op, "x") || has(op, "y") || has(op, "rotation"))) {
     // Values given in parent/world axes are converted through the parent's setup world.
     const Str parent = parentOf(b);
     const Affine pw = parent.empty() ? Affine{} : setupWorld(r.data).at(parent);
-    Transform shown = toAxes(t, pw, axes);
+    const Inherit inherit = parent.empty() ? Inherit::Normal : inheritOf(b);
+    Transform shown = toAxes(t, pw, axes, inherit);
     shown.x = num(op, "x", shown.x); shown.y = num(op, "y", shown.y); shown.rotation = num(op, "rotation", shown.rotation);
-    const auto back = fromAxes(shown, pw, axes, t);
+    const auto back = fromAxes(shown, pw, axes, t, inherit);
     if (!back) throw EditError("부모 본의 크기가 0이라 " + optStr(op, "axes") + " 값으로 바꿀 수 없습니다.");
     t.x = back->x; t.y = back->y; t.rotation = back->rotation;
   } else { t.x = num(op, "x", t.x); t.y = num(op, "y", t.y); t.rotation = num(op, "rotation", t.rotation); }
   t.scaleX = num(op, "scaleX", t.scaleX); t.scaleY = num(op, "scaleY", t.scaleY);
+  t.shearX = num(op, "shearX", t.shearX); t.shearY = num(op, "shearY", t.shearY);
   writeT(b, t);
   const bool hadLength = boneLength(b) > 0;
   writeLook(b, op);
@@ -610,7 +677,10 @@ void transformBones(EditResult& r, const Json& op) {
     const Transform cur = pose.bones[size_t(i)];
     Transform next = cur;
     const Affine pw = parentWorld(i);
-    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1;
+    // A mirrored parent reverses the local turn of bones that inherit its mirror (plugin 1.16.0:
+    // onlyTranslation / no*Reflection bones turn on screen as their local rotation does).
+    const Inherit mode = rig.bones[size_t(i)].parentIndex < 0 ? Inherit::Normal : rig.bones[size_t(i)].inherit;
+    const double sign = (mode == Inherit::Normal || mode == Inherit::NoScale) && pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1;
     next.rotation += sign * dr;
     next.scaleX *= fx;
     next.scaleY *= fy;
@@ -677,10 +747,12 @@ void reparentBone(EditResult& r, const Json& op) {
       if (cur == id) throw EditError("자손 본 아래로 옮기면 부모 관계가 순환합니다.");
   }
   auto world = setupWorld(d);
-  const Affine inv = parent.empty() ? Affine{} : inverseOr(world[parent], "새 부모 본");
   double skew = 0;
-  // Keep the world pose: new local = newParentWorld^-1 * oldWorld.
-  writeT(b, decomposeNear(inv * world[id], readT(b), &skew));
+  // Keep the world pose: new local = newParentWorld^-1 * oldWorld (inherit-aware, plugin 1.16.0).
+  if (plainBone(b)) {
+    const Affine inv = parent.empty() ? Affine{} : inverseOr(world[parent], "새 부모 본");
+    writeT(b, decomposeNear(inv * world[id], readT(b), &skew));
+  } else writeT(b, boneLocalFor(b, parent.empty() ? nullptr : &world[parent], world[id], &skew));
   b["parent"] = parent.empty() ? Json(nullptr) : Json(parent);
   if (const Str problem = ikProblem(d); !problem.empty()) throw EditError("IK 제약이 깨져 옮기지 않았습니다: " + problem);
   if (skew > 1e-6) warn(r, "ANIM_REPARENT_SKEW", "", "부모의 비균일 크기 때문에 기울임이 생겨 모양이 조금 달라질 수 있습니다.");
@@ -697,7 +769,16 @@ void setPivot(EditResult& r, const Json& op) {
   if (std::fabs(px) < 1e-9 && std::fabs(py) < 1e-9) return;
   const Transform setup = readT(b);
   Transform t = setup;
-  local(setup).apply(px, py, t.x, t.y);  // L' = L * T(p): origin moves, rotation/scale stay
+  const Inherit mode = inheritOf(b);
+  const Str boneParent = parentOf(b);
+  if (mode == Inherit::Normal || boneParent.empty()) local(setup).apply(px, py, t.x, t.y);  // L' = L * T(p): origin moves, rotation/scale stay
+  else {
+    // Plugin 1.16.0: the origin is parent world · (x, y) in every mode; put it under the bone's world p.
+    auto world = setupWorld(d);
+    double wx, wy;
+    world[id].apply(px, py, wx, wy);
+    inverseOr(world[boneParent], "부모 본").apply(wx, wy, t.x, t.y);
+  }
   writeT(b, t);
   // Everything expressed in this bone's space shifts by -p so it stays where it was.
   std::vector<Str> children;
@@ -713,15 +794,22 @@ void setPivot(EditResult& r, const Json& op) {
   // Keys are absolute local values: child offsets shift exactly; the bone's own position
   // shifts by R(t)S(t)p using the clip's rotation/scale at each key time.
   const Str self = "bone:" + id;
+  // Non-normal inheritance (plugin 1.16.0): the key's shift is measured under the setup parent.
+  const auto pivotWorld = mode == Inherit::Normal || boneParent.empty() ? std::map<Str, Affine>() : setupWorld(d);
   for (auto& c : arr(d, "clips")) {
     Json* rot = findTrack(c, self, "rotation"); Json* sx = findTrack(c, self, "scaleX"); Json* sy = findTrack(c, self, "scaleY");
+    Json* hx = findTrack(c, self, "shearX"); Json* hy = findTrack(c, self, "shearY");
     for (const char* axis : {"x", "y"}) {
       Json* tr = findTrack(c, self, axis);
       if (!tr) continue;
       for (auto& k : arr(*tr, "keys")) {
         if (!k.contains("value") || !k.at("value").is_number()) continue;
         const double tm = k.value("timeMs", 0.0);
-        const Affine m = Affine::compose(0, 0, sampleJson(rot, tm, setup.rotation), sampleJson(sx, tm, setup.scaleX), sampleJson(sy, tm, setup.scaleY));
+        Transform kt;
+        kt.rotation = sampleJson(rot, tm, setup.rotation); kt.scaleX = sampleJson(sx, tm, setup.scaleX); kt.scaleY = sampleJson(sy, tm, setup.scaleY);
+        kt.shearX = sampleJson(hx, tm, setup.shearX); kt.shearY = sampleJson(hy, tm, setup.shearY);
+        Affine m = local(kt);
+        if (!pivotWorld.empty()) { const Affine& pw = pivotWorld.at(boneParent); m = inverseOr(pw, "부모 본") * childWorld(pw, kt, mode); }
         double ox, oy; m.apply(px, py, ox, oy);
         k["value"] = clean(k.at("value").get<double>() + (axis[0] == 'x' ? ox : oy));
       }
@@ -760,6 +848,32 @@ void deleteBone(EditResult& r, const Json& op) {
     r.affected.push_back("physics:" + p);
     warn(r, "ANIM_PHYSICS_REMOVED", "", "본을 지우면서 물리 제약 「" + p + "」도 지웠습니다.");
   }
+  // Transform constraints (plugin 1.16.0): one following this bone goes with it (cascade, like IK);
+  // as a constrained bone it just leaves the list (an emptied constraint goes).
+  const std::vector<Str> followers = transformsTargeting(d, id);
+  if (!followers.empty() && !op.value("cascade", false))
+    throw EditError("변형 제약 " + refListOf(followers) + "이(가) 이 본을 대상으로 씁니다. 함께 삭제하려면 cascade를 켜세요.");
+  for (const auto& k : followers) {
+    removeTransform(d, k);
+    r.affected.push_back("transform:" + k);
+    warn(r, "ANIM_TRANSFORM_REMOVED", "", "본을 지우면서 변형 제약 「" + k + "」도 지웠습니다.");
+  }
+  std::vector<Str> emptied;
+  if (d.contains("transform") && d["transform"].is_array())
+    for (auto& k : d["transform"]) {
+      if (!k.is_object() || !k.contains("bones") || !k["bones"].is_array()) continue;
+      auto& list = k["bones"];
+      const auto before = list.size();
+      list.erase(std::remove(list.begin(), list.end(), Json(id)), list.end());
+      if (list.size() == before) continue;
+      r.affected.push_back("transform:" + optStr(k, "id"));
+      if (list.empty()) emptied.push_back(optStr(k, "id"));
+      else warn(r, "ANIM_TRANSFORM_BONE_REMOVED", "", "변형 제약 「" + optStr(k, "id") + "」에서 지운 본을 뺐습니다.");
+    }
+  for (const auto& k : emptied) {
+    removeTransform(d, k);
+    warn(r, "ANIM_TRANSFORM_REMOVED", "", "변형 제약 「" + k + "」에 남은 본이 없어 지웠습니다.");
+  }
   // An explicit effector that goes away falls back to the implicit rule (the lower bone's first child).
   if (d.contains("ik") && d["ik"].is_array())
     for (auto& k : d["ik"])
@@ -772,8 +886,9 @@ void deleteBone(EditResult& r, const Json& op) {
   auto world = setupWorld(d);
   const Affine inv = parent.empty() ? Affine{} : inverseOr(world[parent], "부모 본");
   for (auto& c : arr(d, "bones")) if (parentOf(c) == id) {
-    // Children move up one level and keep their world pose.
-    writeT(c, decomposeNear(inv * world[c.value("id", Str())], readT(c), nullptr));
+    // Children move up one level and keep their world pose (inherit-aware, plugin 1.16.0).
+    if (plainBone(c)) writeT(c, decomposeNear(inv * world[c.value("id", Str())], readT(c), nullptr));
+    else writeT(c, boneLocalFor(c, parent.empty() ? nullptr : &world[parent], world[c.value("id", Str())], nullptr));
     c["parent"] = parent.empty() ? Json(nullptr) : Json(parent);
     r.affected.push_back("bone:" + c.value("id", Str()));
   }
@@ -956,6 +1071,7 @@ void setKey(EditResult& r, const Json& op) {
     const double v = num(op, "value", 0);
     if (!value.is_number()) throw EditError("키 값은 숫자여야 합니다.");
     if (tg.property == Property::Alpha && (v < 0 || v > 1)) throw EditError("투명도는 0..1이어야 합니다.");
+    if (transformMixChannel(tg.property) >= 0 && (v < 0 || v > 1)) throw EditError("변형 제약 혼합은 0..1이어야 합니다.");
     if (tg.property == Property::Mix && (v < 0 || v > 1)) throw EditError(op.at("target").get<Str>().rfind("physics:", 0) == 0 ? "물리 혼합(mix)은 0..1이어야 합니다." : "IK 혼합(mix)은 0..1이어야 합니다.");
     value = clean(v);
   }
@@ -1460,9 +1576,10 @@ void pasteKeys(EditResult& r, const Json& op) {
   r.extra["keys"] = pasted;
 }
 const char* const POSE_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY"};
+const char* const SHEAR_PROPS[] = {"shearX", "shearY"};  // plugin 1.16.0: copied only when not 0
 double setupValue(const Json& b, const Str& prop) {
   const Transform t = readT(b);
-  return prop == "x" ? t.x : prop == "y" ? t.y : prop == "rotation" ? t.rotation : prop == "scaleX" ? t.scaleX : t.scaleY;
+  return prop == "x" ? t.x : prop == "y" ? t.y : prop == "rotation" ? t.rotation : prop == "scaleX" ? t.scaleX : prop == "shearX" ? t.shearX : prop == "shearY" ? t.shearY : t.scaleY;
 }
 /** Bone transforms sampled at clip time (setup pose without `clip`): extra.pose = [{bone, x, y, rotation, scaleX, scaleY}]. */
 void copyPose(EditResult& r, const Json& op) {
@@ -1480,6 +1597,8 @@ void copyPose(EditResult& r, const Json& op) {
     const Json& b = bone(d, id);
     Json e{{"bone", id}};
     for (const char* prop : POSE_PROPS) e[prop] = clean(sampleJson(c ? findTrack(*c, "bone:" + id, prop) : nullptr, double(t), setupValue(b, prop)));
+    for (const char* prop : SHEAR_PROPS)
+      if (const double v = clean(sampleJson(c ? findTrack(*c, "bone:" + id, prop) : nullptr, double(t), setupValue(b, prop))); v != 0) e[prop] = v;
     pose.push_back(e);
   }
   r.extra["pose"] = pose;
@@ -1499,9 +1618,9 @@ void pastePose(EditResult& r, const Json& op) {
   for (const auto& e : op.at("pose")) {
     const Str id = reqStr(e, "bone");
     const double setup[] = {setupValue(bone(d, id), "x"), setupValue(bone(d, id), "y"), setupValue(bone(d, id), "rotation"),
-                            setupValue(bone(d, id), "scaleX"), setupValue(bone(d, id), "scaleY")};
-    for (size_t i = 0; i < 5; i++) {
-      const char* prop = POSE_PROPS[i];
+                            setupValue(bone(d, id), "scaleX"), setupValue(bone(d, id), "scaleY"), setupValue(bone(d, id), "shearX"), setupValue(bone(d, id), "shearY")};
+    for (size_t i = 0; i < 7; i++) {
+      const char* prop = i < 5 ? POSE_PROPS[i] : SHEAR_PROPS[i - 5];
       if (!has(e, prop)) continue;
       const double v = clean(num(e, prop, 0));
       if (!findTrack(c, "bone:" + id, prop) && std::fabs(v - clean(setup[i])) < 1e-9) continue;
@@ -1641,7 +1760,7 @@ void applySetupDeltaToKeys(EditResult& r, const Json& op) {
   int64_t count = 0;
   for (auto& c : arr(d, "clips")) {
     if (!only.empty() && !only.count(c.value("id", Str()))) continue;
-    for (const char* prop : {"x", "y", "rotation", "scaleX", "scaleY"}) {
+    for (const char* prop : {"x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY"}) {
       const double dv = num(delta, prop, 0);
       Json* tr = findTrack(c, "bone:" + id, prop);
       if (!tr || dv == 0) continue;
@@ -2265,6 +2384,15 @@ void orientBones(EditResult& r, const Json& op) {
     double degrees = 0, reach = 0;
     if (!naturalAimAxis(rig, rig.boneIndex(id), degrees, reach)) { skip("가리킬 자식 본이나 그림이 없습니다"); continue; }
     if (!uniformScale(d, id)) { skip("크기가 가로·세로 달라(또는 뒤집혀) 방향만 돌릴 수 없습니다"); continue; }
+    // Plugin 1.16.0: L · R(δ) is no rotation change of a sheared or non-normal bone, and children
+    // that do not inherit the parent's rotation would turn with the frame.
+    bool shearKeyed = false;
+    for (auto& c : arr(d, "clips")) for (const char* prop : {"shearX", "shearY"}) if (const Json* tr = findTrack(c, "bone:" + id, prop)) shearKeyed = shearKeyed || !listOr(*tr, "keys").empty();
+    if (!plainBone(bone(d, id)) || shearKeyed) { skip("기울이기(shear)나 상속(inherit) 설정이 있어 방향만 돌릴 수 없습니다"); continue; }
+    Str freeChild;
+    for (const auto& c : arr(d, "bones"))
+      if (parentOf(c) == id && (inheritOf(c) == Inherit::OnlyTranslation || inheritOf(c) == Inherit::NoRotationOrReflection)) freeChild = c.value("id", Str());
+    if (!freeChild.empty()) { skip("자식 본 「" + freeChild + "」이 부모 회전을 상속하지 않아 방향만 돌릴 수 없습니다"); continue; }
     Str problem;
     for (const auto& c : arr(d, "bones")) if (problem.empty() && parentOf(c) == id) problem = pairProblem(d, c.value("id", Str()));
     if (!problem.empty()) { skip(problem); continue; }
@@ -2642,6 +2770,196 @@ void deletePhysics(EditResult& r, const Json& op) {
   physicsAt(d, id);
   r.extra["keys"] = removePhysics(d, id);
   r.affected.push_back("physics:" + id);
+}
+
+// ---- Transform constraints (plugin 1.16.0) ----
+const char* const TRANSFORM_MIX_FIELDS[TRANSFORM_MIXES] = {"mixRotate", "mixX", "mixY", "mixScaleX", "mixScaleY", "mixShearY"};
+const double TRANSFORM_MIX_DEFAULT[TRANSFORM_MIXES] = {1, 1, 1, 0, 0, 0};
+const char* const TRANSFORM_OFFSET_FIELDS[TRANSFORM_MIXES] = {"offsetRotation", "offsetX", "offsetY", "offsetScaleX", "offsetScaleY", "offsetShearY"};
+/** Constrained bones of add/setTransform: known and distinct (the target check is the validation's). */
+Json transformBoneList(Json& d, const Json& op) {
+  if (!has(op, "bones") || !op.at("bones").is_array() || op.at("bones").empty()) throw EditError("bones는 제약할 본 ID 배열입니다(1개 이상).");
+  Json out = Json::array();
+  for (const auto& v : op.at("bones")) {
+    const Str id = v.is_string() ? v.get<Str>() : Str();
+    bone(d, id);
+    if (std::find(out.begin(), out.end(), Json(id)) == out.end()) out.push_back(id);
+  }
+  return out;
+}
+/** Mixes (0..1), offsets, local / relative and order of add/setTransform; null or the default drops the key. */
+void writeTransformFields(Json& k, const Json& op) {
+  for (size_t m = 0; m < TRANSFORM_MIXES; m++) {
+    const char* key = TRANSFORM_MIX_FIELDS[m];
+    if (!op.contains(key)) continue;
+    if (op.at(key).is_null()) { k.erase(key); continue; }
+    const double v = num(op, key, 0);
+    if (v < 0 || v > 1) throw EditError(Str(key) + " (혼합)은 0..1입니다.");
+    if (clean(v) == TRANSFORM_MIX_DEFAULT[m]) k.erase(key); else k[key] = clean(v);
+  }
+  for (const char* key : TRANSFORM_OFFSET_FIELDS) {
+    if (!op.contains(key)) continue;
+    const double v = op.at(key).is_null() ? 0 : num(op, key, 0);
+    if (clean(v) == 0) k.erase(key); else k[key] = clean(v);
+  }
+  for (const char* flag : {"local", "relative"}) {
+    if (!op.contains(flag)) continue;
+    if (!op.at(flag).is_null() && !op.at(flag).is_boolean()) throw EditError(Str(flag) + "는 true 또는 false입니다.");
+    if (op.at(flag) == true) k[flag] = true; else k.erase(flag);
+  }
+  if (op.contains("order")) {
+    if (op.at("order").is_null()) k.erase("order");
+    else {
+      const double o = num(op, "order", 0);
+      if (o != std::floor(o) || std::fabs(o) > 1000) throw EditError("제약 순서(order)는 -1000..1000 정수입니다.");
+      if (o == 0) k.erase("order"); else k["order"] = int64_t(o);
+    }
+  }
+}
+/** First transform constraint error of `d` ("" = fine). */
+Str transformProblem(const Json& d) {
+  if (listOr(d, "transform").empty()) return "";
+  for (const auto& x : validateRig(d)) if (x.severity == "error" && x.code.rfind("ANIM_TRANSFORM_", 0) == 0) return x.message;
+  return "";
+}
+double wrap180(double deg) { return std::remainder(deg, 360.0); }
+double axisAngle(double x, double y) { return std::atan2(y, x) * 180 / PI; }
+/** The runtime's skew measure (runtime.cpp skewOf): y axis turn from orthogonal, mirror-aware. */
+double skewDegrees(const Affine& m) { return wrap180(axisAngle(m.c, m.d) - axisAngle(m.a, m.b) - (m.a * m.d - m.b * m.c < 0 ? -90 : 90)); }
+/**
+ * keepPose (add/setTransform): offsets that keep the setup pose as `shown` draws it (the data before
+ * the edit: no constraint yet for addTransform, the old settings for setTransform), measured on the
+ * first constrained bone. b / t = the bone's and the target's values when the constraint runs (the
+ * pose without it), S = the bone's shown values; per channel the offset solves "result = S" for the
+ * constraint's mode and mix (world / local, absolute / relative). A channel with mix 0 gets the
+ * offset that changes nothing, so raising its mix later starts from the shown pose too.
+ */
+void keepPoseOffsets(const Json& shown, const Json& d, Json& k) {
+  Json without = d;
+  if (without.contains("transform") && without["transform"].is_array()) {
+    auto& list = without["transform"];
+    const int i = findIndex(list, "id", optStr(k, "id"));
+    if (i >= 0) list.erase(list.begin() + i);
+    if (list.empty()) without.erase("transform");
+  }
+  Rig rig, view;
+  try { rig = parseRig("transform", without); view = parseRig("shown", shown); } catch (const std::exception& e) { throw EditError(Str("리그를 읽을 수 없습니다: ") + e.what()); }
+  const Pose pose = samplePose(rig, -1, 0), seen = samplePose(view, -1, 0);
+  const Str boneId = k.at("bones")[0].get<Str>();
+  const int b = rig.boneIndex(boneId), t = rig.boneIndex(optStr(k, "target")), sb = view.boneIndex(boneId);
+  if (b < 0 || t < 0 || sb < 0) throw EditError("제약할 본 또는 대상 본이 없습니다.");
+  const bool local = k.value("local", false), relative = k.value("relative", false);
+  double mix[TRANSFORM_MIXES], off[TRANSFORM_MIXES];
+  for (size_t m = 0; m < TRANSFORM_MIXES; m++) mix[m] = std::clamp(k.value(TRANSFORM_MIX_FIELDS[m], TRANSFORM_MIX_DEFAULT[m]), 0.0, 1.0);
+  // Absolute: b + (t - b + off) · m = S; relative: b + (t + off) · m = S (angles wrapped).
+  auto solve = [&](size_t m, double bv, double tv, double sv, bool angle) {
+    const double change = angle ? wrap180(sv - bv) : sv - bv, rest = angle ? wrap180(bv - tv) : bv - tv;
+    return relative ? (mix[m] > 0 ? change / mix[m] : 0) - tv : (mix[m] > 0 ? change / mix[m] : 0) + rest;
+  };
+  if (local) {
+    const Transform& bt = pose.local(size_t(b));
+    const Transform& tt = pose.local(size_t(t));
+    const Transform& st = seen.local(size_t(sb));
+    off[0] = solve(0, bt.rotation, tt.rotation, st.rotation, true);
+    off[1] = solve(1, bt.x, tt.x, st.x, false);
+    off[2] = solve(2, bt.y, tt.y, st.y, false);
+    off[5] = solve(5, bt.shearY, tt.shearY, st.shearY, true);
+    for (size_t m : {size_t(3), size_t(4)}) {
+      const double bv = m == 3 ? bt.scaleX : bt.scaleY, tv = m == 3 ? tt.scaleX : tt.scaleY, sv = m == 3 ? st.scaleX : st.scaleY;
+      // Relative scale multiplies: b · (1 + (t - 1 + off) · m) = S.
+      off[m] = relative ? (mix[m] > 0 && bv != 0 ? (sv / bv - 1) / mix[m] : 0) + 1 - tv : solve(m, bv, tv, sv, false);
+    }
+  } else {
+    const Affine& w = pose.world[size_t(b)];
+    const Affine& tw = pose.world[size_t(t)];
+    const Affine& sw = seen.world[size_t(sb)];
+    const auto inv = tw.inverse();
+    if (!inv) throw EditError("대상 본의 크기가 0이라 오프셋을 계산할 수 없습니다.");
+    const double rho = tw.a * tw.d - tw.b * tw.c < 0 ? -1 : 1;  // world offsets turn with a mirrored target
+    off[0] = rho * solve(0, axisAngle(w.a, w.b), axisAngle(tw.a, tw.b), axisAngle(sw.a, sw.b), true);
+    off[5] = rho * solve(5, skewDegrees(w), skewDegrees(tw), skewDegrees(sw), true);
+    for (size_t m : {size_t(3), size_t(4)}) {
+      const double bv = m == 3 ? std::hypot(w.a, w.b) : std::hypot(w.c, w.d), tv = m == 3 ? std::hypot(tw.a, tw.b) : std::hypot(tw.c, tw.d);
+      const double sv = m == 3 ? std::hypot(sw.a, sw.b) : std::hypot(sw.c, sw.d);
+      off[m] = relative ? (mix[m] > 0 && bv > 0 ? (sv / bv - 1) / mix[m] : 0) + 1 - tv : solve(m, bv, tv, sv, false);
+    }
+    // Translation: the point in the target's space (absolute: where the origin moves toward;
+    // relative: what is added), per axis by its own mix.
+    auto point = [&](size_t m, double bv, double sv) { const double step = mix[m] > 0 ? (sv - bv) / mix[m] : 0; return relative ? step : bv + step; };
+    const double px = point(1, w.e, sw.e), py = point(2, w.f, sw.f);
+    inv->apply(px, py, off[1], off[2]);
+  }
+  for (size_t m = 0; m < TRANSFORM_MIXES; m++) {
+    const double v = clean(off[m]);
+    if (v == 0) k.erase(TRANSFORM_OFFSET_FIELDS[m]); else k[TRANSFORM_OFFSET_FIELDS[m]] = v;
+  }
+}
+/**
+ * addTransform {id?, name?, bones, target, order?, mixRotate? .. mixShearY?, offsetRotation? ..
+ * offsetShearY?, local?, relative?, keepPose?} (plugin 1.16.0): the selected bones follow
+ * `target` (default id "<first bone>-transform"). keepPose computes the offsets so nothing moves
+ * now (keepPoseOffsets; explicit offsets are then ignored). extra.transform = the id.
+ */
+void addTransform(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Json bones = transformBoneList(d, op);
+  const Str target = reqStr(op, "target");
+  bone(d, target);
+  const Str first = bones[0].get<Str>();
+  Str id = has(op, "id") ? reqStr(op, "id") : slugId(first + "-transform", "transform");
+  if (!has(op, "id")) for (int n = 2; findIndex(listOr(d, "transform"), "id", id) >= 0; n++) id = slugId(first + "-transform-" + std::to_string(n), "transform");
+  ensureUniqueIn(d, "transform", id, "변형 제약");
+  Json k{{"id", id}, {"name", displayName(op, id)}, {"bones", bones}, {"target", target}};
+  writeTransformFields(k, op);
+  if (flag(op, "keepPose")) {
+    if (std::find(bones.begin(), bones.end(), Json(target)) != bones.end()) throw EditError("대상 본은 제약되는 본일 수 없습니다: " + target);
+    keepPoseOffsets(d, d, k);
+  }
+  arr(d, "transform").push_back(k);
+  if (const Str problem = transformProblem(d); !problem.empty()) throw EditError(problem);
+  r.affected.push_back("transform:" + id);
+  r.extra["transform"] = id;
+}
+/** setTransform {transform, name?, bones?, target?, order?, mix*?, offset*?, local?, relative?, keepPose?}: null = default. */
+void setTransform(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "transform");
+  const Json shown = flag(op, "keepPose") ? d : Json();  // keepPose keeps the pose drawn before this edit
+  Json& k = transformAt(d, id);
+  if (has(op, "name")) k["name"] = displayName(op, id);
+  if (has(op, "bones")) k["bones"] = transformBoneList(d, op);
+  if (has(op, "target")) { bone(d, reqStr(op, "target")); k["target"] = reqStr(op, "target"); }
+  writeTransformFields(k, op);
+  if (flag(op, "keepPose")) {
+    if (const Str problem = transformProblem(d); !problem.empty()) throw EditError(problem);
+    keepPoseOffsets(shown, d, transformAt(d, id));
+  }
+  if (const Str problem = transformProblem(d); !problem.empty()) throw EditError(problem);
+  r.affected.push_back("transform:" + id);
+}
+/** renameTransform {transform, id?, name?}: a new id renames its mix tracks too. */
+void renameTransform(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str from = reqStr(op, "transform");
+  Json& k = transformAt(d, from);
+  const Str to = has(op, "id") ? reqStr(op, "id") : from;
+  if (has(op, "name")) k["name"] = displayName(op, to);
+  r.affected.push_back("transform:" + to);
+  if (to == from) return;
+  ensureUniqueIn(d, "transform", to, "변형 제약");
+  k["id"] = to;
+  size_t tracks = 0;
+  for (auto& c : arr(d, "clips"))
+    for (auto& t : arr(c, "tracks")) if (t.value("target", Str()) == "transform:" + from) { t["target"] = "transform:" + to; tracks++; }
+  r.extra["tracks"] = tracks;
+}
+/** deleteTransform {transform}: the constraint and its mix keys (extra.keys). */
+void deleteTransform(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str id = reqStr(op, "transform");
+  transformAt(d, id);
+  r.extra["keys"] = removeTransform(d, id);
+  r.affected.push_back("transform:" + id);
 }
 
 // ---- Mesh attachments (plugin 1.4.0) ----
@@ -3591,6 +3909,7 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"addExpression", addExpression}, {"setExpressionSlot", setExpressionSlot}, {"setExpressionBone", setExpressionBone}, {"captureExpression", captureExpression},
     {"addIk", addIk}, {"setIk", setIk}, {"fitBoneLengths", fitBoneLengths}, {"orientBones", orientBones}, {"renameIk", renameIk}, {"deleteIk", deleteIk}, {"bakeIk", bakeIk},
     {"addPhysics", addPhysics}, {"setPhysics", setPhysics}, {"renamePhysics", renamePhysics}, {"deletePhysics", deletePhysics},
+    {"addTransform", addTransform}, {"setTransform", setTransform}, {"renameTransform", renameTransform}, {"deleteTransform", deleteTransform},
     {"convertToMesh", convertToMesh}, {"convertToRegion", convertToRegion}, {"setMeshVertices", setMeshVertices}, {"setWeights", setWeights},
     {"unbindMesh", unbindMesh}, {"autoWeights", [](EditResult& r, const Json& op) { autoWeights(r, op, false); }},
     {"bindMesh", [](EditResult& r, const Json& op) { autoWeights(r, op, true); }},
@@ -3687,14 +4006,17 @@ double unwrapNear(double deg, double near) {
 double parentAngle(const Affine& p) { return std::atan2(p.b, p.a) * 180 / PI; }
 double parentSign(const Affine& p) { return p.a * p.d - p.b * p.c < 0 ? -1 : 1; }
 }  // namespace
-Transform toAxes(const Transform& t, const Affine& parent, Axes axes) {
+Transform toAxes(const Transform& t, const Affine& parent, Axes axes, Inherit inherit) {
   if (axes == Axes::Local) return t;
   Transform out = t;
   double wx, wy;
   parent.apply(t.x, t.y, wx, wy);
-  // The bone's +x axis (before its own scale) on screen: the world rotation a user sees.
-  const double r = t.rotation * PI / 180, dx = parent.a * std::cos(r) + parent.c * std::sin(r), dy = parent.b * std::cos(r) + parent.d * std::sin(r);
-  const double pa = parentAngle(parent), world = unwrapNear(std::atan2(dy, dx) * 180 / PI, pa + parentSign(parent) * t.rotation);
+  // The bone's +x axis (before its own shear and scale) on screen: the world rotation a user sees;
+  // other inherit modes (plugin 1.16.0) turn it through their frame (identity: the local angle).
+  const Affine f = inherit == Inherit::Normal ? parent : inheritFrame(parent, inherit);
+  const bool turns = inherit == Inherit::Normal || inherit == Inherit::NoScale || inherit == Inherit::NoScaleOrReflection;
+  const double r = t.rotation * PI / 180, dx = f.a * std::cos(r) + f.c * std::sin(r), dy = f.b * std::cos(r) + f.d * std::sin(r);
+  const double pa = parentAngle(parent), world = unwrapNear(std::atan2(dy, dx) * 180 / PI, turns ? pa + parentSign(parent) * t.rotation : t.rotation);
   if (axes == Axes::World) { out.x = wx; out.y = wy; out.rotation = world; return out; }
   // Parent: offset from the parent origin along the parent's (unscaled) axes, angle from its +x.
   const double ox = wx - parent.e, oy = wy - parent.f, c = std::cos(pa * PI / 180), s = std::sin(pa * PI / 180);
@@ -3703,10 +4025,12 @@ Transform toAxes(const Transform& t, const Affine& parent, Axes axes) {
   out.rotation = world - pa;
   return out;
 }
-std::optional<Transform> fromAxes(const Transform& shown, const Affine& parent, Axes axes, const Transform& hint) {
+std::optional<Transform> fromAxes(const Transform& shown, const Affine& parent, Axes axes, const Transform& hint, Inherit inherit) {
   if (axes == Axes::Local) return shown;
   const auto inv = parent.inverse();
   if (!inv) return std::nullopt;
+  const auto frameInv = inherit == Inherit::Normal ? inv : inheritFrame(parent, inherit).inverse();
+  if (!frameInv) return std::nullopt;
   double wx = shown.x, wy = shown.y, world = shown.rotation;
   if (axes == Axes::Parent) {
     const double pa = parentAngle(parent), c = std::cos(pa * PI / 180), s = std::sin(pa * PI / 180);
@@ -3717,7 +4041,7 @@ std::optional<Transform> fromAxes(const Transform& shown, const Affine& parent, 
   Transform out = shown;
   inv->apply(wx, wy, out.x, out.y);
   // The local direction that the parent maps onto the shown world direction.
-  const double r = world * PI / 180, dx = inv->a * std::cos(r) + inv->c * std::sin(r), dy = inv->b * std::cos(r) + inv->d * std::sin(r);
+  const double r = world * PI / 180, dx = frameInv->a * std::cos(r) + frameInv->c * std::sin(r), dy = frameInv->b * std::cos(r) + frameInv->d * std::sin(r);
   out.rotation = unwrapNear(std::atan2(dy, dx) * 180 / PI, hint.rotation);
   return out;
 }
@@ -3731,8 +4055,9 @@ std::map<std::string, Affine> setupWorld(const Json& rig) {
     if (auto it = out.find(id); it != out.end()) return it->second;
     const Json& b = *byId.at(id);
     const Str p = parentOf(b);
-    // depth guard turns a cyclic (invalid) hierarchy into roots instead of recursing forever
-    const Affine w = !p.empty() && byId.count(p) && depth < byId.size() ? world(p, depth + 1) * local(readT(b)) : local(readT(b));
+    // depth guard turns a cyclic (invalid) hierarchy into roots instead of recursing forever;
+    // shear and inheritance (plugin 1.16.0) as the runtime computes them
+    const Affine w = !p.empty() && byId.count(p) && depth < byId.size() ? childWorld(world(p, depth + 1), readT(b), inheritOf(b)) : local(readT(b));
     out[id] = w;
     return w;
   };

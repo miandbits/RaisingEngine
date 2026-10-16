@@ -1,6 +1,7 @@
 // Per-instance playback state, controller bindings and draw-list output.
 // Presentation only: nothing here may feed back into game rules, costs or RNG.
 #pragma once
+#include <array>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -88,6 +89,8 @@ int sequenceFrame(const SequenceState& state, size_t count, int setupIndex);
  * IK chains (plugin 1.13.0): ikSolve reports per constraint what the last solve did (FABRIK
  * passes, effector distance, stretch factor). Physics (plugin 1.13.0): physicsMix holds the
  * sampled constraint mixes; the physics offsets are in `world` only (applied stays the IK result).
+ * Transform constraints (plugin 1.16.0): transformMix holds the sampled channel mixes (rotate, x,
+ * y, scaleX, scaleY, shearY); their results are in `applied` (local values) and `world` like IK's.
  */
 struct IkSolve { int iterations = 0; double error = 0, stretch = 1; bool solved = false; };
 struct Pose {
@@ -99,10 +102,12 @@ struct Pose {
   std::vector<SequenceState> sequence;  // per slot (plugin 1.12.0)
   std::vector<IkSolve> ikSolve;          // per IK constraint (plugin 1.13.0)
   std::vector<double> physicsMix;        // per physics constraint (plugin 1.13.0)
+  std::vector<std::array<double, TRANSFORM_MIXES>> transformMix;  // per transform constraint (plugin 1.16.0)
   const Transform& local(size_t bone) const { return applied.size() > bone ? applied[bone] : bones[bone]; }
 };
 /** Skin/expression for samplePose. expressions=false skips every expression (raw clip values);
- *  ik=false skips the IK constraints (world = plain forward kinematics of the animated values). */
+ *  ik=false skips the IK and transform constraints (world = plain forward kinematics of the
+ *  animated values). */
 struct Look { int skin = -1; int expression = -1; bool expressions = true; bool ik = true; };
 
 /** One physics constraint's simulation state (rig space px, radians). Never saved: a restored
@@ -236,8 +241,12 @@ void applyExpression(const Rig& rig, int index, Pose& pose);
  * recompute the world of every bone they move. Fills pose.applied and pose.ikSolve. One and two
  * bones are analytic (bit for bit the 1.12 results without stretch); chains of 3+ run FABRIK in
  * rig space (IK_CHAIN_ITERATIONS / IK_CHAIN_TOLERANCE). No-op without constraints.
+ * Plugin 1.16.0: transform constraints run in the same pass, in Rig::constraintOrder; bones with
+ * shear or a non-normal inherit mode solve through rotationToward (exact for every mode).
  */
 void applyIk(const Rig& rig, Pose& pose);
+/** World matrix of bone `bone` from `world` (its parent's entry must be current) and `local`. */
+Affine boneWorld(const Rig& rig, const std::vector<Affine>& world, size_t bone, const Transform& local);
 /** Unit rig-space direction of aim constraint `ik`'s axis (`aimAxis` on its bone) in `pose`: after
  *  solving at full mix it points at the target. false for two-bone chains or a degenerate bone. */
 bool ikAimDirection(const Rig& rig, const Pose& pose, int ik, double& dx, double& dy);

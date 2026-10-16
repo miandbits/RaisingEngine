@@ -463,6 +463,99 @@ std::set<std::string> checkPhysics(Checker& c, const Json& data, const std::map<
   }
   return ids;
 }
+
+const char* const TRANSFORM_MIX_KEYS[TRANSFORM_MIXES] = {"mixRotate", "mixX", "mixY", "mixScaleX", "mixScaleY", "mixShearY"};
+const double TRANSFORM_MIX_DEFAULTS[TRANSFORM_MIXES] = {1, 1, 1, 0, 0, 0};
+const char* const TRANSFORM_OFFSET_KEYS[TRANSFORM_MIXES] = {"offsetRotation", "offsetX", "offsetY", "offsetScaleX", "offsetScaleY", "offsetShearY"};
+/**
+ * Transform constraints (plugin 1.16.0): ids, constrained bones, target, mixes and offsets, and
+ * their place in the order shared with IK. A target among the constrained bones would follow
+ * itself (error); a target hanging below a constrained bone is allowed (warning): it is read
+ * before the constraint moves anything, so the bones reach where it was, and it then moves with
+ * them. A constraint solved before one that moves its target sees the target's old place
+ * (ANIM_TRANSFORM_ORDER, like ANIM_IK_ORDER). Returns the ids `transform:<id>` tracks may use.
+ */
+std::set<std::string> checkTransforms(Checker& c, const Json& data, std::map<std::string, std::string>& parentOf) {
+  std::set<std::string> ids;
+  if (data.contains("transform") && !data.at("transform").is_array()) c.error("/transform", "ANIM_STRUCTURE", "transform은 배열입니다.");
+  const auto& list = arrayOr(data, "transform");
+  auto under = [&](std::string b, const std::string& ancestor) {
+    size_t guard = 0;
+    for (b = parentOf.count(b) ? parentOf[b] : ""; !b.empty() && guard++ <= parentOf.size(); b = parentOf.count(b) ? parentOf[b] : "")
+      if (b == ancestor) return true;
+    return false;
+  };
+  // Every constraint of the shared order: what it moves (bones; strict descendants follow) and its target.
+  struct Node { bool transform = false; size_t index = 0; int64_t order = 0; std::vector<std::string> moves; std::string target, base; bool ok = false; };
+  std::vector<Node> nodes;
+  const auto& ik = arrayOr(data, "ik");
+  for (size_t i = 0; i < ik.size(); i++) {
+    Node n; n.index = i;
+    n.order = ik[i].is_object() && ik[i].contains("order") && ik[i].at("order").is_number_integer() ? ik[i].at("order").get<int64_t>() : 0;
+    for (const auto& b : arrayOr(ik[i], "bones")) if (b.is_string()) n.moves.push_back(b.get<std::string>());
+    n.target = text(ik[i], "target");
+    n.base = n.moves.empty() ? "" : n.moves[0];
+    n.ok = !n.moves.empty();
+    nodes.push_back(n);
+  }
+  for (size_t i = 0; i < list.size(); i++) {
+    const Json& k = list[i];
+    const std::string p = at("/transform", i), id = text(k, "id");
+    if (!k.is_object()) { c.error(p, "ANIM_STRUCTURE", "변형 제약은 객체입니다."); continue; }
+    if (id.empty()) c.error(at(p, "id"), "ANIM_ID_MISSING", "변형 제약 ID가 필요합니다.");
+    else if (!ids.insert(id).second) c.error(at(p, "id"), "ANIM_TRANSFORM_DUP_ID", "중복된 변형 제약 ID: " + id);
+    if (k.contains("name") && !k.at("name").is_string()) c.error(at(p, "name"), "ANIM_STRUCTURE", "name은 문자열입니다.");
+    Node n; n.transform = true; n.index = i;
+    bool ok = true;
+    const Json bones = k.contains("bones") ? k.at("bones") : Json();
+    if (!bones.is_array() || bones.empty() || bones.size() > 256) { c.error(at(p, "bones"), "ANIM_TRANSFORM_BONES", "변형 제약에는 제약할 본이 1..256개 필요합니다."); ok = false; }
+    else
+      for (size_t b = 0; b < bones.size(); b++) {
+        const std::string bone = bones[b].is_string() ? bones[b].get<std::string>() : "";
+        if (!parentOf.count(bone)) { c.error(at(at(p, "bones"), b), "ANIM_TRANSFORM_BONE_MISSING", "변형 제약이 없는 본을 가리킵니다: " + bone); ok = false; }
+        else if (std::find(n.moves.begin(), n.moves.end(), bone) != n.moves.end()) { c.error(at(at(p, "bones"), b), "ANIM_TRANSFORM_BONES", "같은 본이 두 번 있습니다: " + bone); ok = false; }
+        else n.moves.push_back(bone);
+      }
+    n.target = text(k, "target");
+    if (!parentOf.count(n.target)) { c.error(at(p, "target"), "ANIM_TRANSFORM_BONE_MISSING", "변형 제약 대상 본이 없습니다: " + n.target); ok = false; }
+    else if (std::find(n.moves.begin(), n.moves.end(), n.target) != n.moves.end()) {
+      c.error(at(p, "target"), "ANIM_TRANSFORM_TARGET", "대상 본은 제약되는 본일 수 없습니다(자기 자신을 따라감): " + n.target);
+      ok = false;
+    } else
+      for (const auto& bone : n.moves)
+        if (under(n.target, bone)) {
+          c.warn(at(p, "target"), "ANIM_TRANSFORM_TARGET_DESCENDANT", "대상 「" + n.target + "」이 제약되는 본 「" + bone + "」의 자손입니다. 제약 전 대상 위치를 따르고, 대상은 그 뒤 본과 함께 움직입니다.");
+          break;
+        }
+    for (size_t m = 0; m < TRANSFORM_MIXES; m++) {
+      const double v = number(c, k, p, TRANSFORM_MIX_KEYS[m], TRANSFORM_MIX_DEFAULTS[m]);
+      if (v < 0 || v > 1) c.error(at(p, TRANSFORM_MIX_KEYS[m]), "ANIM_TRANSFORM_MIX", std::string(TRANSFORM_MIX_KEYS[m]) + " (혼합)은 0..1입니다.");
+      number(c, k, p, TRANSFORM_OFFSET_KEYS[m], 0);
+    }
+    for (const char* flag : {"local", "relative"})
+      if (k.contains(flag) && !k.at(flag).is_boolean()) c.error(at(p, flag), "ANIM_STRUCTURE", std::string(flag) + "는 true 또는 false입니다.");
+    if (k.contains("order") && (!k.at("order").is_number_integer() || std::llabs(k.at("order").get<int64_t>()) > 1000))
+      c.error(at(p, "order"), "ANIM_STRUCTURE", "제약 순서(order)는 -1000..1000 정수입니다.");
+    else n.order = k.value("order", int64_t(0));
+    n.ok = ok;
+    nodes.push_back(n);
+  }
+  // b reads a target that a moves (a constrained bone or one below it): a must come first.
+  auto movesBone = [&](const Node& a, const std::string& bone) {
+    for (const auto& m : a.moves) if (bone == m || under(bone, m)) return true;
+    return false;
+  };
+  auto before = [](const Node& a, const Node& b) { return a.order != b.order ? a.order < b.order : a.transform != b.transform ? !a.transform : a.index < b.index; };
+  for (const Node& b : nodes)
+    for (const Node& a : nodes) {
+      if (&a == &b || !a.ok || !b.ok || (!a.transform && !b.transform)) continue;  // IK pairs: ANIM_IK_ORDER
+      if ((movesBone(a, b.target) || (!b.transform && movesBone(a, b.base))) && before(b, a)) {
+        const std::string what = std::string(a.transform ? "변형 제약 「" : "IK 「") + text((a.transform ? list : ik)[a.index], "id") + "」";
+        c.warn(at(at(b.transform ? "/transform" : "/ik", b.index), "order"), "ANIM_TRANSFORM_ORDER", what + "가 이 제약의 대상(또는 사슬)을 움직이는데 더 늦게 풉니다. 이 제약의 order를 더 크게 하세요.");
+      }
+    }
+  return ids;
+}
 }  // namespace
 
 std::optional<Affine> Affine::inverse() const {
@@ -476,6 +569,166 @@ Affine Affine::compose(double x, double y, double rotationDeg, double sx, double
   return {cs * sx, sn * sx, -sn * sy, cs * sy, x, y};
 }
 
+// ---- Shear and inheritance (plugin 1.16.0) ----
+namespace {
+constexpr double RAD = PI / 180, DEG = 180 / PI, SHAPE_EPS = 1e-12;
+double wrapDegrees(double d) { d = std::remainder(d, 360.0); return d == -180 ? 180 : d; }
+/** Linear part only (translation dropped). */
+Affine linearOf(const Affine& m) { return {m.a, m.b, m.c, m.d, 0, 0}; }
+/**
+ * NoRotationOrReflection: the parent's axis lengths applied along its axes, without turning:
+ * R(phi) · diag(sx, sy) · R(-phi) with phi the parent's x-axis angle, sx its x-axis length and
+ * sy = |det| / sx (so the area scale is the parent's). A collapsed x axis falls back to the y axis.
+ */
+Affine noRotationFrame(const Affine& p) {
+  double sx = std::hypot(p.a, p.b), sy, phi;
+  if (sx > SHAPE_EPS) { sy = std::fabs(p.a * p.d - p.b * p.c) / sx; phi = std::atan2(p.b, p.a); }
+  else { sx = 0; sy = std::hypot(p.c, p.d); phi = std::atan2(-p.c, p.d); }
+  const double c = std::cos(phi), s = std::sin(phi), k = (sx - sy) * c * s;
+  return {sx * c * c + sy * s * s, k, k, sx * s * s + sy * c * c, 0, 0};
+}
+/** Mirror sign NoScale keeps from the parent (NoScaleOrReflection never mirrors). */
+double noScaleSign(const Affine& p, Inherit mode) { return mode == Inherit::NoScale && p.a * p.d - p.b * p.c < 0 ? -1 : 1; }
+/** NoScale frame: the unit direction u the parent turns the bone's rotation toward (the rig x
+ *  axis direction of the rotation when the parent collapses it), then Q = [u, sign · R(90°) u]. */
+Affine noScaleFrame(const Affine& p, double rotationDeg, double sign) {
+  const double r = rotationDeg * RAD, cs = std::cos(r), sn = std::sin(r);
+  double ux = p.a * cs + p.c * sn, uy = p.b * cs + p.d * sn;
+  const double n = std::hypot(ux, uy);
+  if (n < SHAPE_EPS) { ux = cs; uy = sn; }
+  else { ux /= n; uy /= n; }
+  return {ux, uy, -sign * uy, sign * ux, 0, 0};
+}
+/** Shear and scale alone: K(shearX, shearY) · S(scaleX, scaleY). */
+Affine shapeOf(const Transform& t) {
+  Transform k = t;
+  k.x = k.y = k.rotation = 0;
+  return localMatrix(k);
+}
+/**
+ * R(rotation) · K(shearX, shearY) · S(scaleX, scaleY) = `m` (linear), with shearX fixed to the
+ * hint's: x axis = scaleX · dir(rotation + shearX) (scaleX keeps the hint's sign), y axis = scaleY ·
+ * dir(rotation + shearY + 90) with scaleY's sign on the x axis's side (|shearY - shearX| < 90).
+ */
+void decomposeLinear(const Affine& m, const Transform& hint, Transform& t) {
+  const double len = std::hypot(m.a, m.b), det = m.a * m.d - m.b * m.c;
+  t.shearX = hint.shearX;
+  t.scaleX = hint.scaleX < 0 ? -len : len;
+  double ax = len > SHAPE_EPS ? std::atan2(m.b, m.a) * DEG : hint.rotation + hint.shearX;
+  if (hint.scaleX < 0 && len > SHAPE_EPS) ax += 180;
+  t.rotation = ax - t.shearX;
+  while (t.rotation - hint.rotation > 180) t.rotation -= 360;
+  while (t.rotation - hint.rotation < -180) t.rotation += 360;
+  const double yl = std::hypot(m.c, m.d);
+  t.scaleY = (det < 0) != (t.scaleX < 0) ? -yl : yl;
+  if (yl < SHAPE_EPS) { t.shearY = hint.shearY; return; }
+  // y axis = scaleY · (-sin(phi), cos(phi)), phi = rotation + shearY.
+  const double phi = std::atan2(-m.c / t.scaleY, m.d / t.scaleY) * DEG;
+  t.shearY = wrapDegrees(phi - t.rotation);
+}
+}  // namespace
+
+const char* inheritName(Inherit i) {
+  switch (i) {
+    case Inherit::Normal: return "normal"; case Inherit::OnlyTranslation: return "onlyTranslation";
+    case Inherit::NoRotationOrReflection: return "noRotationOrReflection"; case Inherit::NoScale: return "noScale";
+    case Inherit::NoScaleOrReflection: return "noScaleOrReflection";
+  }
+  return "normal";
+}
+std::optional<Inherit> parseInherit(const std::string& n) {
+  for (auto i : {Inherit::Normal, Inherit::OnlyTranslation, Inherit::NoRotationOrReflection, Inherit::NoScale, Inherit::NoScaleOrReflection})
+    if (n == inheritName(i)) return i;
+  return std::nullopt;
+}
+Affine localMatrix(const Transform& t) {
+  if (t.shearX == 0 && t.shearY == 0) return Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+  const double rx = (t.rotation + t.shearX) * RAD, ry = (t.rotation + t.shearY) * RAD;
+  return {std::cos(rx) * t.scaleX, std::sin(rx) * t.scaleX, -std::sin(ry) * t.scaleY, std::cos(ry) * t.scaleY, t.x, t.y};
+}
+Affine childWorld(const Affine& p, const Transform& t, Inherit mode) {
+  if (mode == Inherit::Normal) return p * localMatrix(t);
+  Affine linear;
+  switch (mode) {
+    case Inherit::OnlyTranslation: linear = linearOf(localMatrix(t)); break;
+    case Inherit::NoRotationOrReflection: linear = noRotationFrame(p) * linearOf(localMatrix(t)); break;
+    default: linear = noScaleFrame(p, t.rotation, noScaleSign(p, mode)) * shapeOf(t); break;
+  }
+  p.apply(t.x, t.y, linear.e, linear.f);
+  return linear;
+}
+std::optional<Transform> localFromWorld(const Affine& p, const Affine& w, Inherit mode, const Transform& hint) {
+  const auto inv = p.inverse();
+  if (!inv) return std::nullopt;
+  Transform t = hint;
+  inv->apply(w.e, w.f, t.x, t.y);
+  const Affine lw = linearOf(w);
+  if (mode == Inherit::NoScale || mode == Inherit::NoScaleOrReflection) {
+    // The x axis lies at shearX from u (a mirrored frame turns the other way): u's angle, then the
+    // rotation the parent turns toward it, then shear and scale from Q^-1 · world.
+    const double sign = noScaleSign(p, mode), len = std::hypot(w.a, w.b);
+    double ax = len > SHAPE_EPS ? std::atan2(w.b, w.a) : (hint.rotation + hint.shearX) * RAD;
+    if (hint.scaleX < 0 && len > SHAPE_EPS) ax += PI;
+    const double theta = ax - sign * hint.shearX * RAD;
+    const Affine q{std::cos(theta), std::sin(theta), -sign * std::sin(theta), sign * std::cos(theta), 0, 0};
+    Transform shape = hint;
+    shape.rotation = 0;
+    Transform k;
+    decomposeLinear(*q.inverse() * lw, shape, k);
+    double gx, gy;
+    linearOf(*inv).apply(std::cos(theta), std::sin(theta), gx, gy);
+    double r = std::hypot(gx, gy) > SHAPE_EPS ? std::atan2(gy, gx) * DEG : hint.rotation;
+    while (r - hint.rotation > 180) r -= 360;
+    while (r - hint.rotation < -180) r += 360;
+    t.rotation = r;
+    // k.rotation is 0 up to float noise (theta was chosen for it): fold it into shearY's frame.
+    t.scaleX = k.scaleX; t.scaleY = k.scaleY; t.shearX = hint.shearX; t.shearY = wrapDegrees(k.shearY + k.rotation);
+    return t;
+  }
+  Affine local = lw;
+  if (mode == Inherit::Normal) local = linearOf(*inv) * lw;
+  else if (mode == Inherit::NoRotationOrReflection) {
+    const auto m = noRotationFrame(p).inverse();
+    if (!m) return std::nullopt;
+    local = *m * lw;
+  }
+  decomposeLinear(local, hint, t);
+  return t;
+}
+bool rotationToward(const Affine& p, const Transform& t, Inherit mode, double vx, double vy, double dx, double dy, double& degrees) {
+  double ax, ay;
+  shapeOf(t).apply(vx, vy, ax, ay);  // the bone vector after shear and scale, before rotation
+  if (std::hypot(ax, ay) < SHAPE_EPS || std::hypot(dx, dy) < SHAPE_EPS) return false;
+  if (mode == Inherit::NoScale || mode == Inherit::NoScaleOrReflection) {
+    // Q(theta) = R(theta) · diag(1, sign): the frame angle that lays the vector on the direction,
+    // then the rotation whose parent image points that way.
+    const double sign = noScaleSign(p, mode), theta = std::atan2(dy, dx) - std::atan2(sign * ay, ax);
+    const auto inv = linearOf(p).inverse();
+    if (!inv) return false;
+    double gx, gy;
+    inv->apply(std::cos(theta), std::sin(theta), gx, gy);
+    degrees = std::atan2(gy, gx) * DEG;
+    return true;
+  }
+  const Affine frame = mode == Inherit::Normal ? linearOf(p) : mode == Inherit::OnlyTranslation ? Affine{} : noRotationFrame(p);
+  const auto inv = frame.inverse();
+  if (!inv) return false;
+  double mx, my;
+  inv->apply(dx, dy, mx, my);
+  degrees = (std::atan2(my, mx) - std::atan2(ay, ax)) * DEG;
+  return true;
+}
+Affine inheritFrame(const Affine& p, Inherit mode) {
+  return mode == Inherit::OnlyTranslation ? Affine{} : mode == Inherit::NoRotationOrReflection ? noRotationFrame(p) : linearOf(p);
+}
+int transformMixChannel(Property p) {
+  switch (p) {
+    case Property::MixRotate: return 0; case Property::MixX: return 1; case Property::MixY: return 2;
+    case Property::MixScaleX: return 3; case Property::MixScaleY: return 4; case Property::MixShearY: return 5;
+    default: return -1;
+  }
+}
+
 const char* propertyName(Property p) {
   switch (p) {
     case Property::X: return "x"; case Property::Y: return "y"; case Property::Rotation: return "rotation";
@@ -483,6 +736,9 @@ const char* propertyName(Property p) {
     case Property::Alpha: return "alpha"; case Property::Attachment: return "attachment"; case Property::Expression: return "expression";
     case Property::Mix: return "mix"; case Property::BendPositive: return "bendPositive"; case Property::Deform: return "deform";
     case Property::Sequence: return "sequence";
+    case Property::ShearX: return "shearX"; case Property::ShearY: return "shearY";
+    case Property::MixRotate: return "mixRotate"; case Property::MixX: return "mixX"; case Property::MixY: return "mixY";
+    case Property::MixScaleX: return "mixScaleX"; case Property::MixScaleY: return "mixScaleY"; case Property::MixShearY: return "mixShearY";
   }
   return "";
 }
@@ -501,7 +757,8 @@ std::optional<SequenceMode> parseSequenceMode(const std::string& n) {
 }
 std::optional<Property> parseProperty(const std::string& n) {
   for (auto p : {Property::X, Property::Y, Property::Rotation, Property::ScaleX, Property::ScaleY, Property::Alpha, Property::Attachment, Property::Expression,
-                 Property::Mix, Property::BendPositive, Property::Deform, Property::Sequence})
+                 Property::Mix, Property::BendPositive, Property::Deform, Property::Sequence, Property::ShearX, Property::ShearY,
+                 Property::MixRotate, Property::MixX, Property::MixY, Property::MixScaleX, Property::MixScaleY, Property::MixShearY})
     if (n == propertyName(p)) return p;
   return std::nullopt;
 }
@@ -513,6 +770,7 @@ int Rig::skinIndex(const std::string& id) const { for (size_t i = 0; i < skins.s
 int Rig::expressionIndex(const std::string& id) const { for (size_t i = 0; i < expressions.size(); i++) if (expressions[i].id == id) return int(i); return -1; }
 int Rig::ikIndex(const std::string& id) const { for (size_t i = 0; i < ik.size(); i++) if (ik[i].id == id) return int(i); return -1; }
 int Rig::physicsIndex(const std::string& id) const { for (size_t i = 0; i < physics.size(); i++) if (physics[i].id == id) return int(i); return -1; }
+int Rig::transformIndex(const std::string& id) const { for (size_t i = 0; i < transforms.size(); i++) if (transforms[i].id == id) return int(i); return -1; }
 int Rig::eventIndex(const std::string& name) const { for (size_t i = 0; i < events.size(); i++) if (events[i].name == name) return int(i); return -1; }
 const Attachment* Rig::attachment(const std::string& slot, const std::string& name, int skin) const {
   if (skin >= 0 && skin < int(skins.size()))
@@ -557,6 +815,10 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     }
     if (bones[i].contains("color") && !validColor(bones[i].at("color")))
       c.error(at(p, "color"), "ANIM_BONE_COLOR", "본 색(color)은 \"#rrggbb\" 또는 \"#rrggbbaa\" 형식입니다.");
+    // Shear and inheritance (plugin 1.16.0).
+    number(c, bones[i], p, "shearX", 0); number(c, bones[i], p, "shearY", 0);
+    if (bones[i].contains("inherit") && (!bones[i].at("inherit").is_string() || !parseInherit(bones[i].at("inherit").get<std::string>())))
+      c.error(at(p, "inherit"), "ANIM_BONE_INHERIT", "상속(inherit)은 normal, onlyTranslation, noRotationOrReflection, noScale, noScaleOrReflection 중 하나입니다.");
   }
   if (bones.empty()) c.error("/bones", "ANIM_NO_BONES", "본이 하나 이상 필요합니다.");
   for (const auto& [id, parent] : parentOf) {
@@ -571,6 +833,7 @@ std::vector<Diagnostic> validateRig(const Json& data) {
 
   const std::set<std::string> ikIds = checkIk(c, data, parentOf, lengthOf);
   const std::set<std::string> physicsIds = checkPhysics(c, data, parentOf, lengthOf);
+  const std::set<std::string> transformIds = checkTransforms(c, data, parentOf);
 
   // Slots and attachments.
   const auto& slots = arrayOr(data, "slots");
@@ -709,12 +972,13 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       const std::string tp = at(at(p, "tracks"), ti), target = text(track, "target"), propertyText = text(track, "property");
       const auto property = parseProperty(propertyText);
       const bool isBone = target.rfind("bone:", 0) == 0, isSlot = target.rfind("slot:", 0) == 0, isRig = target == "rig", isIk = target.rfind("ik:", 0) == 0;
-      const bool isPhysics = target.rfind("physics:", 0) == 0;
-      const std::string targetId = isIk ? target.substr(3) : isPhysics ? target.substr(8) : target.size() > 5 ? target.substr(5) : "";
+      const bool isPhysics = target.rfind("physics:", 0) == 0, isTransform = target.rfind("transform:", 0) == 0;
+      const std::string targetId = isIk ? target.substr(3) : isPhysics ? target.substr(8) : isTransform ? target.substr(10) : target.size() > 5 ? target.substr(5) : "";
       if (!property) { c.error(at(tp, "property"), "ANIM_PROPERTY", "알 수 없는 트랙 속성: " + propertyText); continue; }
       const bool deform = *property == Property::Deform, sequence = *property == Property::Sequence;
       const bool slotProperty = *property == Property::Alpha || *property == Property::Attachment || deform || sequence;
       const bool ikProperty = *property == Property::Mix || *property == Property::BendPositive;
+      const bool transformProperty = transformMixChannel(*property) >= 0;
       if (isRig != (*property == Property::Expression))
         c.error(at(tp, "property"), "ANIM_PROPERTY", isRig ? "rig 트랙의 속성은 expression뿐입니다." : "expression 속성은 rig 트랙에만 씁니다.");
       else if (isRig) {}
@@ -723,6 +987,12 @@ std::vector<Diagnostic> validateRig(const Json& data) {
         if (*property != Property::Mix) c.error(at(tp, "property"), "ANIM_PROPERTY", "물리 트랙의 속성은 mix뿐입니다.");
         else if (!physicsIds.count(targetId)) c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙이 없는 물리 제약을 가리킵니다: " + target);
       }
+      else if (isTransform) {
+        // Transform constraint tracks (plugin 1.16.0) key its six channel mixes.
+        if (!transformProperty) c.error(at(tp, "property"), "ANIM_PROPERTY", "변형 제약 트랙의 속성은 mixRotate, mixX, mixY, mixScaleX, mixScaleY, mixShearY입니다.");
+        else if (!transformIds.count(targetId)) c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙이 없는 변형 제약을 가리킵니다: " + target);
+      }
+      else if (transformProperty) c.error(at(tp, "property"), "ANIM_PROPERTY", "mixRotate·mixX 등은 변형 제약 트랙(transform:<id>)에만 씁니다.");
       else if (isIk != ikProperty)
         c.error(at(tp, "property"), "ANIM_PROPERTY", isIk ? "IK 트랙의 속성은 mix, bendPositive입니다." : "mix·bendPositive 속성은 IK 트랙(ik:<id>)에만 씁니다.");
       else if (isIk) { if (!ikIds.count(targetId)) c.error(at(tp, "target"), "ANIM_TARGET_MISSING", "트랙이 없는 IK 제약을 가리킵니다: " + target); }
@@ -799,6 +1069,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
         else if (*property == Property::Alpha && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1)) c.error(at(kp(), "value"), "ANIM_ALPHA_RANGE", "투명도는 0..1이어야 합니다.");
         else if (*property == Property::Mix && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1))
           c.error(at(kp(), "value"), isPhysics ? "ANIM_PHYSICS_MIX" : "ANIM_IK_MIX", isPhysics ? "물리 혼합(mix)은 0..1이어야 합니다." : "IK 혼합(mix)은 0..1이어야 합니다.");
+        else if (transformProperty && (key.at("value").get<double>() < 0 || key.at("value").get<double>() > 1))
+          c.error(at(kp(), "value"), "ANIM_TRANSFORM_MIX", "변형 제약 혼합은 0..1이어야 합니다.");
       }
     }
     const auto& events = arrayOr(clip, "events");
@@ -854,6 +1126,8 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
   }
   for (const auto& b : data.at("bones")) {
     Bone bone; bone.id = b.at("id"); bone.setup = readTransform(b);
+    bone.setup.shearX = b.value("shearX", 0.0); bone.setup.shearY = b.value("shearY", 0.0);
+    if (b.contains("inherit") && b.at("inherit").is_string()) bone.inherit = parseInherit(b.at("inherit").get<std::string>()).value_or(Inherit::Normal);
     if (b.contains("parent") && b.at("parent").is_string()) bone.parent = b.at("parent");
     bone.length = b.value("length", 0.0);
     bone.color = b.value("color", std::string());
@@ -871,13 +1145,13 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
     slot.boneIndex = rig.boneIndex(slot.bone);
     rig.slots.push_back(slot);
   }
-  // Bind pose of weighted meshes: forward kinematics of the setup transforms (no IK, no expression).
+  // Bind pose of weighted meshes: forward kinematics of the setup transforms (no IK, no expression;
+  // shear and inheritance included, plugin 1.16.0).
   std::vector<Affine> setupWorld(rig.bones.size());
   for (int i : rig.evalOrder) {
     const auto& t = rig.bones[size_t(i)].setup;
-    const Affine local = Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
     const int p = rig.bones[size_t(i)].parentIndex;
-    setupWorld[size_t(i)] = p < 0 ? local : setupWorld[size_t(p)] * local;
+    setupWorld[size_t(i)] = p < 0 ? localMatrix(t) : childWorld(setupWorld[size_t(p)], t, rig.bones[size_t(i)].inherit);
   }
   auto readRegion = [](const Json& r) {
     AtlasRegion region;
@@ -1014,6 +1288,34 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
   // Parents first: a hair tip on a swinging hair root sees the root's motion of the same step.
   for (size_t i = 0; i < rig.physics.size(); i++) rig.physicsOrder.push_back(int(i));
   std::stable_sort(rig.physicsOrder.begin(), rig.physicsOrder.end(), [&](int a, int b) { return depth[size_t(rig.physics[size_t(a)].bone)] < depth[size_t(rig.physics[size_t(b)].bone)]; });
+  // Transform constraints (plugin 1.16.0): bones parents first, so a constrained child sees its
+  // constrained parent's new place.
+  for (const auto& k : arrayOr(data, "transform")) {
+    TransformConstraint x; x.id = k.at("id"); x.name = k.value("name", x.id);
+    for (const auto& b : k.at("bones")) x.bones.push_back(rig.boneIndex(b.get<std::string>()));
+    std::stable_sort(x.bones.begin(), x.bones.end(), [&](int a, int b) { return depth[size_t(a)] < depth[size_t(b)]; });
+    x.target = rig.boneIndex(k.at("target").get<std::string>());
+    x.order = k.value("order", 0);
+    for (size_t m = 0; m < TRANSFORM_MIXES; m++) x.mix[m] = k.value(TRANSFORM_MIX_KEYS[m], TRANSFORM_MIX_DEFAULTS[m]);
+    x.offsetRotation = k.value("offsetRotation", 0.0); x.offsetX = k.value("offsetX", 0.0); x.offsetY = k.value("offsetY", 0.0);
+    x.offsetScaleX = k.value("offsetScaleX", 0.0); x.offsetScaleY = k.value("offsetScaleY", 0.0); x.offsetShearY = k.value("offsetShearY", 0.0);
+    x.local = k.value("local", false); x.relative = k.value("relative", false);
+    std::vector<char> inside(rig.bones.size(), 0);
+    for (int b : x.bones) inside[size_t(b)] = 1;
+    for (int i : rig.evalOrder) {
+      const int p = rig.bones[size_t(i)].parentIndex;
+      inside[size_t(i)] = inside[size_t(i)] || (p >= 0 && inside[size_t(p)]);
+      if (inside[size_t(i)]) x.affected.push_back(i);
+    }
+    rig.transforms.push_back(x);
+  }
+  // One order for IK and transform constraints: (order; IK before transform; array index).
+  for (int i : rig.ikOrder) rig.constraintOrder.push_back({false, i});
+  for (size_t i = 0; i < rig.transforms.size(); i++) rig.constraintOrder.push_back({true, int(i)});
+  std::stable_sort(rig.constraintOrder.begin(), rig.constraintOrder.end(), [&](const ConstraintRef& a, const ConstraintRef& b) {
+    const int oa = a.transform ? rig.transforms[size_t(a.index)].order : rig.ik[size_t(a.index)].order, ob = b.transform ? rig.transforms[size_t(b.index)].order : rig.ik[size_t(b.index)].order;
+    return oa != ob ? oa < ob : !a.transform && b.transform;
+  });
   for (const auto& e : arrayOr(data, "events")) {
     EventDef d; d.name = e.at("name");
     if (e.contains("int")) d.intValue = e.at("int").get<int64_t>();
@@ -1030,8 +1332,10 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
       track.rig = target == "rig";
       track.ik = target.rfind("ik:", 0) == 0;
       track.physics = target.rfind("physics:", 0) == 0;
-      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(track.ik ? 3 : track.physics ? 8 : 5);
-      track.targetIndex = track.rig ? -1 : track.ik ? rig.ikIndex(track.target) : track.physics ? rig.physicsIndex(track.target) : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
+      track.transform = target.rfind("transform:", 0) == 0;
+      track.bone = target.rfind("bone:", 0) == 0; track.target = track.rig ? "" : target.substr(track.ik ? 3 : track.physics ? 8 : track.transform ? 10 : 5);
+      track.targetIndex = track.rig ? -1 : track.ik ? rig.ikIndex(track.target) : track.physics ? rig.physicsIndex(track.target) : track.transform ? rig.transformIndex(track.target)
+                        : track.bone ? rig.boneIndex(track.target) : rig.slotIndex(track.target);
       track.property = *parseProperty(t.at("property"));
       if (track.property == Property::Deform) track.attachment = t.at("attachment").get<std::string>();
       for (const auto& k : arrayOr(t, "keys")) {

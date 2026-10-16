@@ -4601,6 +4601,167 @@ class StudioTests : public QObject {
     pump();
   }
 
+  // Plugin 1.16.0: the 기울이기 fields (setup values, keys in Animate), the 상속 combo (setup only,
+  // world axes and compensation through the mode), and the 변형 제약 page: 제약 추가 from the
+  // selection (the last picked bone is the target, nothing jumps), fields, local/relative, mix
+  // keys (pending + K, 혼합 키), the dopesheet row, the canvas line, the palette, rename/delete.
+  void transformConstraintsAndInherit() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "shape"); };
+    auto pose = [&] { const cutout::Rig r = cutout::parseRig("shape", data()); return std::make_pair(r, cutout::samplePose(r, -1, 0)); };
+    auto worldOf = [&](const char* bone) { const auto [r, p] = pose(); return p.world[size_t(r.boneIndex(bone))]; };
+    auto boneJson = [&](const char* id) { const Json d = data(); for (const auto& b : d["bones"]) if (b["id"] == id) return b; return Json(); };
+    answers = {"shape"};
+    QVERIFY(gesture("new shape character", 1, [&] { click("cutoutNewCharacter"); }));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->selectItem("bone:root");
+    answers = {"arm"};
+    QVERIFY(gesture("add arm", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("arm x", 1, [&] { setSpin("cutoutPropX", 60); }));
+    QVERIFY(gesture("arm scale", 1, [&] { setSpin("cutoutPropScaleX", 1.6); }));
+    answers = {"hand"};
+    QVERIFY(gesture("add hand", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("hand x", 1, [&] { setSpin("cutoutPropX", 40); }));
+    panel->selectItem("bone:root");
+    answers = {"badge"};
+    QVERIFY(gesture("add badge", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("badge x", 1, [&] { setSpin("cutoutPropX", -50); }));
+    // ---- 기울이기: a setup value, undoable.
+    panel->selectItem("bone:arm");
+    QVERIFY(find<QDoubleSpinBox>("cutoutPropShearX")->isEnabled() && find<QDoubleSpinBox>("cutoutPropShearY")->isEnabled());
+    QVERIFY(gesture("arm shearX 12", 1, [&] { setSpin("cutoutPropShearX", 12); }));
+    QVERIFY(boneJson("arm")["shearX"] == 12);
+    undo();
+    QVERIFY(!boneJson("arm").contains("shearX"));
+    redo();
+    QCOMPARE(find<QDoubleSpinBox>("cutoutPropShearX")->value(), 12.0);
+    // ---- 상속: setup only; the hand under the scaled arm loses the scale with noScale.
+    panel->selectItem("bone:hand");
+    auto* inherit = find<QComboBox>("cutoutPropInherit");
+    QVERIFY(inherit && inherit->count() == 5 && inherit->isEnabled() && inherit->currentData().toString() == "normal");
+    const cutout::Affine before = worldOf("hand");
+    QVERIFY(gesture("hand inherit noScale", 1, [&] { inherit->setCurrentIndex(3); Q_EMIT inherit->activated(3); }));
+    QVERIFY(boneJson("hand")["inherit"] == "noScale");
+    const cutout::Affine after = worldOf("hand");
+    QVERIFY(std::fabs(std::hypot(after.a, after.b) - 1) < 1e-9 && std::fabs(std::hypot(before.a, before.b) - 1.6) < 1e-6 && std::fabs(after.e - before.e) < 1e-9);
+    QCOMPARE(inherit->currentData().toString(), QString("noScale"));
+    // World axes convert through the mode: the hand's on-screen angle becomes the typed value.
+    panel->setAxes(cutout::Axes::World);
+    QVERIFY(gesture("hand world rotation 40", 1, [&] { setSpin("cutoutPropRotation", 40); }));
+    { const auto w = worldOf("hand"); QVERIFY2(std::fabs(std::atan2(w.b, w.a) * 180 / 3.14159265358979323846 - 40) < 1e-4, "world angle"); }
+    panel->setAxes(cutout::Axes::Local);
+    // Compensation keeps the noScale child where it was while its parent turns.
+    const cutout::Affine handWorld = worldOf("hand");
+    panel->selectItem("bone:arm");
+    click("cutoutCompensateBones");
+    QVERIFY(gesture("turn arm, hand compensated", 1, [&] { setSpin("cutoutPropRotation", 35); }));
+    click("cutoutCompensateBones");
+    { const auto w = worldOf("hand"); QVERIFY(std::fabs(w.e - handWorld.e) < 1e-5 && std::fabs(w.f - handWorld.f) < 1e-5 && std::fabs(w.a - handWorld.a) < 1e-6 && std::fabs(w.b - handWorld.b) < 1e-6); }
+    // ---- 변형 제약: badge follows hand (picked last), nothing jumps.
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutTransformPage"));
+    pump();
+    QVERIFY(!find<QWidget>("cutoutTransformMixRotate")->isEnabled() && find<QListWidget>("cutoutTransformList")->count() == 0);
+    panel->setSelection({"bone:badge"});
+    answers = {""};
+    QVERIFY(gesture("one bone: the target is asked (cancelled)", 0, [&] { click("cutoutAddTransform"); }));
+    const cutout::Affine badge = worldOf("badge");
+    panel->setSelection({"bone:badge", "bone:hand"}, "bone:hand");
+    QVERIFY(gesture("제약 추가", 1, [&] { click("cutoutAddTransform"); }));
+    Json k = data()["transform"][0];
+    QVERIFY2(k["id"] == "badge-transform" && k["bones"] == Json::array({"badge"}) && k["target"] == "hand", k.dump().c_str());
+    { const auto w = worldOf("badge"); QVERIFY(std::fabs(w.e - badge.e) < 1e-5 && std::fabs(w.f - badge.f) < 1e-5 && std::fabs(w.b - badge.b) < 1e-6); }
+    QCOMPARE(panel->transformId(), QString("badge-transform"));
+    QCOMPARE(find<QListWidget>("cutoutTransformList")->count(), 1);
+    QVERIFY(find<QListWidget>("cutoutTransformList")->item(0)->text().contains("badge → hand"));
+    QVERIFY(find<QLabel>("cutoutTransformInfo")->text().contains("hand"));
+    // The target now carries the badge along.
+    panel->selectItem("bone:hand");
+    QVERIFY(gesture("move hand", 1, [&] { setSpin("cutoutPropY", 30); }));
+    { const auto h0 = handWorld, h1 = worldOf("hand"), b1 = worldOf("badge"); QVERIFY(std::fabs((b1.f - badge.f) - (h1.f - h0.f)) < 1e-4 && std::fabs(b1.f - badge.f) > 1); }
+    // Fields: one setup edit each; local / relative keep the pose; order.
+    QVERIFY(gesture("mixScaleX 0.5", 1, [&] { setSpin("cutoutTransformMixScaleX", 0.5); }));
+    QVERIFY(data()["transform"][0]["mixScaleX"] == 0.5);
+    QVERIFY(gesture("order 2", 1, [&] { setSpin("cutoutTransformOrder", 2); }));
+    QVERIFY(data()["transform"][0]["order"] == 2);
+    const cutout::Affine held = worldOf("badge");
+    QVERIFY(gesture("local on", 1, [&] { click("cutoutTransformLocal"); }));
+    QVERIFY(data()["transform"][0]["local"] == true && find<QCheckBox>("cutoutTransformLocal")->isChecked());
+    { const auto w = worldOf("badge"); QVERIFY2(std::fabs(w.e - held.e) < 1e-4 && std::fabs(w.f - held.f) < 1e-4, "switching to local keeps the drawn pose"); }
+    QVERIFY(gesture("relative on", 1, [&] { click("cutoutTransformRelative"); }));
+    QVERIFY(data()["transform"][0]["relative"] == true);
+    undo();
+    undo();
+    QVERIFY(!data()["transform"][0].contains("local") && !data()["transform"][0].contains("relative"));
+    // The canvas draws the pink link and the target diamond.
+    panel->selectItem("");
+    pump();
+    {
+      const auto h = worldOf("hand");
+      const QPointF at = panel->canvas()->rigToWidget(QPointF(h.e, h.f));
+      const QImage shot = panel->canvas()->grab().toImage();
+      const qreal dpr = shot.devicePixelRatio();
+      int pink = 0;
+      for (int dx = -8; dx <= 8; dx++)
+        for (int dy = -8; dy <= 8; dy++) {
+          const QColor c = shot.pixelColor(int((at.x() + dx) * dpr), int((at.y() + dy) * dpr));
+          pink += c.red() > 200 && c.green() < 150 && c.blue() > 140;
+        }
+      QVERIFY2(pink > 4, "pink transform constraint diamond at the target");
+    }
+    // The palette finds the page's commands.
+    QVERIFY(!panel->findCommands("제약 추가").isEmpty() && panel->findCommands("제약 추가")[0].id == "cutoutAddTransform");
+    QVERIFY(!panel->findCommands("변형 제약 혼합 키").isEmpty());
+    // ---- Animate: a mix edit is pending until K; 혼합 키 keys the used channels; shear keys.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    answers = {"reach"};
+    QVERIFY(gesture("new reach clip", 1, [&] { click("cutoutNewClip"); }));
+    QVERIFY(!find<QComboBox>("cutoutPropInherit")->isEnabled());
+    panel->selectTransform("badge-transform");
+    panel->setPlayhead(0);
+    QVERIFY(find<QWidget>("cutoutTransformKey")->isEnabled());
+    QVERIFY(gesture("mixRotate 0.5 at 0 (pending)", 0, [&] { setSpin("cutoutTransformMixRotate", 0.5); }));
+    QVERIFY(panel->hasPending());
+    QVERIFY(gesture("K commits the mix key", 1, [&] { click("cutoutKeyButton"); }));
+    QVERIFY(keyOfRig(data(), "reach", "transform:badge-transform", "mixRotate", 0)["value"] == 0.5);
+    QVERIFY(gesture("혼합 키 at 500", 1, [&] { panel->setPlayhead(500); click("cutoutTransformKey"); }));
+    QCOMPARE(timesOfRig(data(), "reach", "transform:badge-transform", "mixRotate"), QVector<int>({0, 500}));
+    QCOMPARE(timesOfRig(data(), "reach", "transform:badge-transform", "mixScaleX"), QVector<int>({500}));  // non-zero channels
+    QVERIFY(timesOfRig(data(), "reach", "transform:badge-transform", "mixShearY").isEmpty());          // 0 and unkeyed
+    const int row = rowOf("transform:badge-transform", "mixRotate");
+    QVERIFY(row >= 0 && panel->dopesheet()->rows()[row].label.contains("회전 혼합"));
+    panel->selectItem("bone:arm");
+    panel->setAutoKey(true);
+    panel->setPlayhead(200);
+    QVERIFY(gesture("arm shearY key", 1, [&] { setSpin("cutoutPropShearY", 9); }));
+    panel->setAutoKey(false);
+    QVERIFY(keyOfRig(data(), "reach", "bone:arm", "shearY", 200)["value"] == 9);
+    panel->setPlayhead(700);
+    QVERIFY(gesture("K on the sheared arm", 1, [&] { click("cutoutKeyButton"); }));
+    QVERIFY(keyOfRig(data(), "reach", "bone:arm", "shearX", 700)["value"] == 12 && keyOfRig(data(), "reach", "bone:arm", "shearY", 700).is_object());
+    QVERIFY(keyOfRig(data(), "reach", "bone:hand", "shearX", 0).is_null());
+    // The dopesheet row opens the page with its constraint.
+    panel->selectTransform("badge-transform");
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(0);
+    panel->dopesheet()->onRowSelected(row, false);
+    QCOMPARE(find<QTabWidget>("cutoutLookTabs")->currentWidget()->objectName(), QString("cutoutTransformPage"));
+    // ---- rename / delete (one edit each); deleting drops the mix keys.
+    panel->setMode(CutoutPanel::Mode::Setup);
+    answers = {"badge-follow"};
+    QVERIFY(gesture("rename transform", 1, [&] { click("cutoutRenameTransform"); }));
+    QVERIFY(data()["transform"][0]["id"] == "badge-follow" && timesOfRig(data(), "reach", "transform:badge-follow", "mixRotate").size() == 2);
+    QVERIFY(gesture("select target", 0, [&] { click("cutoutTransformSelectTarget"); }));
+    QCOMPARE(panel->selection(), QString("bone:hand"));
+    QVERIFY(gesture("delete transform", 1, [&] { click("cutoutDeleteTransform"); }));
+    QVERIFY(!data().contains("transform") && timesOfRig(data(), "reach", "transform:badge-follow", "mixRotate").isEmpty());
+    undo();
+    QCOMPARE(find<QListWidget>("cutoutTransformList")->count(), 1);
+    for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
+    panel->selectRig(keepRig);
+    pump();
+  }
+
   void largeRigPerformance() {
     const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
     const auto keepHistory = host.history, keepFuture = host.future;

@@ -15,7 +15,9 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * Rig space is the authoring canvas in pixels, y down, origin at canvas top-left.
   `canvas.originX/Y` is the instance anchor (usually between the feet).
 * Bone local matrix = `T(x,y) · R(rotation°, clockwise on screen) · S(scaleX,scaleY)`;
-  world = parent world · local. Root bones are in rig space.
+  world = parent world · local. Root bones are in rig space. Plugin 1.16.0 adds bone shear
+  (`T · R · K(shearX, shearY) · S`) and inheritance modes: see "Shear, inherit and transform
+  constraints".
 * The bone origin **is** the rotation center (pivot). Moving a pivot in the editor moves
   the bone and compensates child bones/attachments so nothing jumps.
 * An attachment places image point `(pivotX·width, pivotY·height)` at `(x,y)` in bone
@@ -408,6 +410,156 @@ through a damped spring. **Presentation only**: never in saves, never a signal, 
   `cutoutPhysicsOrientBone` runs 본 방향 맞추기 (`orientBones`) on that bone in Setup mode (one
   edit). The canvas marks physics bones with a teal spring ring at their tip and, while
   simulating, a dashed tether from the unsimulated tip.
+
+## Shear, inherit and transform constraints (plugin 1.16.0)
+
+All new fields are optional. A rig without them takes the pre-1.16 code paths and draws, samples
+and replies **bit for bit** as 1.15.0 did (core test `1.15 golden`: FNV hashes of every core-test
+rig's poses, draw items, `sample` reply text and an irregularly updated instance, recorded by the
+1.15.0 build; `ik golden` still holds the 1.12 IK bits).
+
+### Shear
+
+* Bone fields `shearX`, `shearY` (degrees, default 0; `ANIM_NONFINITE`), keyable as bone tracks
+  `shearX` / `shearY` (numeric, any interp, cross-fade like rotation). Attachment offsets ignore
+  shear (their placement is unchanged).
+* **Local matrix** (`cutout::localMatrix`) = `T(x, y) · R(rotation) · K(shearX, shearY) ·
+  S(scaleX, scaleY)` where `K` turns the x axis by shearX and the y axis by shearY:
+  `a = cos(rotation + shearX) · scaleX`, `b = sin(rotation + shearX) · scaleX`,
+  `c = −sin(rotation + shearY) · scaleY`, `d = cos(rotation + shearY) · scaleY`, `e = x`, `f = y`
+  (degrees, y down: the x axis points at rotation + shearX, the y axis at rotation + 90 + shearY).
+  Without shear it is `Affine::compose` bit for bit.
+* `sample` replies add `shearX` / `shearY` to a bone only when the sampled value is not 0.
+
+### Inherit
+
+Bone field `inherit` (`ANIM_BONE_INHERIT` for an unknown name; roots ignore it — every mode equals
+the local matrix there). With P = the parent's world (linear part P₂, translation via P), L = the
+bone's local matrix and `(x, y)` its local position, the world matrix (`cutout::childWorld`) is:
+
+| mode | origin | axes (2×2) |
+|---|---|---|
+| `normal` (default) | P · (x, y) | P₂ · L₂ (= P · L bit for bit) |
+| `onlyTranslation` | P · (x, y) | L₂ — the local axes in rig space |
+| `noRotationOrReflection` | P · (x, y) | M · L₂ with M = R(φ) · diag(sx, sy) · R(−φ): φ = angle of P's x axis, sx = its length, sy = \|det P₂\| / sx (P's scale along its own axes, no turn, no mirror; a collapsed x axis uses the y axis) |
+| `noScale` | P · (x, y) | Q · K · S with u = unit(P₂ · (cos rotation, sin rotation)) (the rig axis of the rotation when P collapses it) and Q = [u, σ · R(90°) · u], σ = −1 when det P₂ < 0 (the parent's mirror kept) |
+| `noScaleOrReflection` | P · (x, y) | as `noScale` with σ = 1 (never mirrored) |
+
+* Descendants of a non-normal bone inherit from its world normally (per their own mode).
+* The inverse `cutout::localFromWorld(P, W, mode, hint)` returns the local transform whose world
+  is W: position P⁻¹ · origin; axes decomposed as R · K · S with **shearX fixed to the hint's**
+  (rotation = x-axis angle − shearX, the hint's mirror sign of scaleX kept, rotation within ±180°
+  of the hint), skew going into shearY (scaleY's sign on the x axis's side). `rotationToward(P, t,
+  mode, v, d)` gives the local rotation that lays the bone vector v (after its shear and scale) on
+  the rig direction d in any mode; `inheritFrame(P, mode)` maps the rotated +x direction (P₂ for
+  normal/noScale*, identity for onlyTranslation, M for noRotationOrReflection).
+* Every runtime path uses these: forward kinematics, IK and transform constraint world updates,
+  physics descendants, the mesh bind pose (setup FK), clipping polygons and draw items, and the
+  editing ops (below). Evaluation order is unchanged (parents first).
+* **IK**: a bone with shear or a non-normal mode solves through `rotationToward` (one/two-bone
+  "shaped" paths, FABRIK per-bone placement), others keep the 1.13 code. Aim: the axis (after
+  shear/scale) points at the target exactly in every mode; stretch measures the reach in rig
+  space. Two bones: the law of cosines on the rig-space links (joint on the `bendPositive` side
+  on screen), the upper bone turns its child origin toward the joint, the lower bone (under the
+  turned upper) its effector toward the target; a turn that stretches a link (a non-uniform
+  parent, a sheared parent) is re-measured and solved again, at most `IK_CHAIN_ITERATIONS`
+  passes until the effector is within `IK_CHAIN_TOLERANCE` (rigid links: exact in one pass).
+  FABRIK measures its link lengths once (as in 1.13), so links that stretch while turning land
+  near the target.
+
+### Transform constraints
+
+* `transform: [{id, name?, bones, target, order?, mixRotate?, mixX?, mixY?, mixScaleX?,
+  mixScaleY?, mixShearY?, offsetRotation?, offsetX?, offsetY?, offsetScaleX?, offsetScaleY?,
+  offsetShearY?, local?, relative?}]`. Mixes 0..1 (`ANIM_TRANSFORM_MIX`); defaults **mixRotate =
+  mixX = mixY = 1** (follow the target's place and turn) and **mixScaleX = mixScaleY =
+  mixShearY = 0** (keep the own size and shape); offsets default 0.
+* **Solving order**: IK and transform constraints share one `order` sequence
+  (`Rig::constraintOrder`): `order` ascending, at equal order every IK before every transform
+  constraint (back-compat: an IK-only rig keeps `ikOrder`), then array order; physics after all
+  of them, as before. Each constraint sees the ones before it applied. A constraint solved
+  before one that moves its target (or, for an IK, its chain base) warns `ANIM_TRANSFORM_ORDER`.
+* **Per constraint**: the target's world matrix T (world mode) or local values (local mode,
+  after the earlier constraints) are read once; then each constrained bone, **parents first**:
+  * world absolute: rotate the bone's world axes about its origin by
+    `wrap(angle(Tx) + ρ·offsetRotation − angle(Wx)) · mixRotate` (ρ = −1 when T is mirrored, so
+    offsets turn with the target); origin `+= (T·(offsetX, offsetY) − origin) · (mixX, mixY)`;
+    x-axis length `s → s + (|Tx| − s + offsetScaleX) · mixScaleX` (y likewise);
+    the y axis turns by `wrap(skew(T) + ρ·offsetShearY − skew(W)) · mixShearY`, where skew = the
+    y axis's angle from orthogonal to the x axis (mirror-aware).
+  * world relative: the same channels **add** the target's: turn by
+    `wrap(angle(Tx) + ρ·offsetRotation) · mixRotate`, origin `+= T·(offsetX, offsetY) · mix`,
+    axis lengths `×= 1 + (|T axis| − 1 + offset) · mix`, y axis by
+    `wrap(skew(T) + ρ·offsetShearY) · mixShearY`.
+  * The new world goes back to local values through the bone's inherit mode
+    (`localFromWorld`, hint = its current values), so later constraints, IK and children see it.
+  * local absolute: `rotation += wrap(t.rotation − rotation + offsetRotation) · mixRotate`,
+    `x += (t.x − x + offsetX) · mixX` (y likewise), `scaleX += (t.scaleX − scaleX +
+    offsetScaleX) · mixScaleX` (scaleY likewise), `shearY += wrap(t.shearY − shearY +
+    offsetShearY) · mixShearY`.
+  * local relative: `rotation += (t.rotation + offsetRotation) · mixRotate`, `x += (t.x +
+    offsetX) · mixX`, `scaleX ×= 1 + (t.scaleX − 1 + offsetScaleX) · mixScaleX`,
+    `shearY += (t.shearY + offsetShearY) · mixShearY`.
+  * then the bone's subtree gets its world recomputed before the next bone.
+* Results are in `Pose.applied` / `Pose.world` like IK (`Pose.bones` stay the keyable values);
+  `Pose.transformMix[i]` holds the sampled mixes. `sample` adds `transform: {<id>: {mixRotate,
+  mixX, mixY, mixScaleX, mixScaleY, mixShearY}}` and `bones.<id>.applied: {x, y, rotation,
+  scaleX, scaleY, shearX, shearY}` for every constrained bone (rigs without constraints keep
+  their reply shape).
+* **Validation**: `ANIM_TRANSFORM_DUP_ID`, `ANIM_TRANSFORM_BONES` (none, more than 256, a bone
+  twice), `ANIM_TRANSFORM_BONE_MISSING` (unknown bone or target), `ANIM_TRANSFORM_TARGET` (the
+  target among the bones: it would chase itself), `ANIM_TRANSFORM_MIX`, `ANIM_NONFINITE`
+  (offsets), `ANIM_STRUCTURE` (local/relative booleans, order integer −1000..1000). A target
+  **below** a constrained bone is allowed (warning `ANIM_TRANSFORM_TARGET_DESCENDANT`): it is read
+  before the constraint moves anything, the bones reach where it was, then it moves with them
+  (one pass, no cycle).
+* **Keys**: tracks `{"target": "transform:<id>", "property": "mixRotate" | "mixX" | "mixY" |
+  "mixScaleX" | "mixScaleY" | "mixShearY"}` (numeric 0..1, any interp; other properties
+  `ANIM_PROPERTY`, unknown id `ANIM_TARGET_MISSING`, values `ANIM_TRANSFORM_MIX`); mixes
+  cross-fade like IK mix.
+* **Determinism**: pure functions of the pose; physics rigs keep their fixed-step grid, so frames
+  are identical bits for any dt partition (core test, `tests/plugins/cutout-transform-parity` for
+  native ≡ Wasm and pacing, `cutout-transform-players` for both players).
+
+### Editing ops and editor
+
+* `addBone` / `setBone` take `shearX`, `shearY` (0 drops the key) and `inherit` (null / `normal`
+  drops it); shear keys use `setKey` with property `shearX` / `shearY`; `copyPose` carries
+  shear only when non-zero, `pastePose` / `applySetupDeltaToKeys` take it.
+* World-keeping ops invert the bone's mode: `reparentBone`, `deleteBone` (children move up),
+  compensation (`compensateBones` on setBone / transformBones), `setPivot` (the origin moves to
+  the bone's world point; position keys of non-normal bones shift as measured under the setup
+  parent), and `setBone {axes: world | parent}` (`toAxes` / `fromAxes` take the mode: the world
+  rotation is the on-screen angle of the rotated +x axis through `inheritFrame`). Bones without
+  shear and with normal inheritance keep the 1.7 decomposition (skew dropped with
+  `ANIM_REPARENT_SKEW` / `ANIM_COMPENSATE_SKEW`); shaped bones keep their world exactly (skew in
+  shearY). `transformBones` turns: a mirrored parent reverses the local turn only for `normal` /
+  `noScale` bones. `orientBones` skips sheared / non-normal bones and bones with an
+  `onlyTranslation` / `noRotationOrReflection` child.
+* `addTransform {bones, target, id? ("<first bone>-transform"), name?, order?, mix*?, offset*?,
+  local?, relative?, keepPose?}` (`extra.transform`), `setTransform {transform, name?, bones?,
+  target?, ...fields (null = default), keepPose?}`, `renameTransform {transform, id?, name?}`
+  (renames its tracks, `extra.tracks`), `deleteTransform {transform}` (and its keys,
+  `extra.keys`). **keepPose** computes the offsets so the setup pose stays as drawn before the
+  edit (measured on the first bone: no jump when added, none when switching local / relative);
+  a channel with mix 0 gets the offset that changes nothing. `deleteBone` of a target needs
+  `cascade` (the constraint goes: `ANIM_TRANSFORM_REMOVED`); a constrained bone leaves the list
+  (`ANIM_TRANSFORM_BONE_REMOVED`; an emptied constraint goes).
+* Editor: bone properties `cutoutPropShearX`, `cutoutPropShearY` (기울이기 X/Y°: setup values,
+  keys in Animate mode; `K` keys them when the bone uses shear) and `cutoutPropInherit` (상속:
+  일반 · 위치만 · 회전·뒤집기 제외 · 크기 제외 · 크기·뒤집기 제외; Setup mode only, one setBone
+  per selected bone in one edit). The `변형 제약` page (`cutoutTransformPage`):
+  `cutoutAddTransform` (제약 추가: the selected bones follow the primary — last picked — bone, or
+  with one bone selected the asked target id; keepPose), `cutoutDeleteTransform`,
+  `cutoutRenameTransform`, `cutoutTransformList`, `cutoutTransformKey` (혼합 키: the mixes at the
+  playhead that are non-zero or already keyed, one edit), `cutoutTransformSelectTarget`,
+  `cutoutTransformSelectBones`, the checkboxes `cutoutTransformLocal`, `cutoutTransformRelative`
+  (setup values, keepPose) and the fields `cutoutTransformMixRotate|MixX|MixY|MixScaleX|
+  MixScaleY|MixShearY|OffsetRotation|OffsetX|OffsetY|OffsetScaleX|OffsetScaleY|OffsetShearY|Order`
+  (one edit each; in Animate mode a mix is a pending key that `K` commits), `cutoutTransformInfo`.
+  The dopesheet labels rows `변형 <id> <channel>` and opens the page; the graph editor shows the
+  mix and shear curves. The canvas draws a dashed pink line from every constrained bone to its
+  target (a diamond), the selected constraint thicker. The page's buttons are palette commands.
 
 ## Mesh attachments and weights (plugin 1.4.0)
 

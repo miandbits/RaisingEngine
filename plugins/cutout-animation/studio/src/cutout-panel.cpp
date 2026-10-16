@@ -13,7 +13,7 @@
 namespace cutout_studio {
 using cutout::Json;
 namespace {
-const char* PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "alpha", "length"};
+const char* PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "alpha", "length", "shearX", "shearY"};
 QString refKind(const QString& ref) { return ref.section(':', 0, 0); }
 QString refId(const QString& ref) { return ref.section(':', 1); }
 const Json* findIn(const Json& data, const char* list, const std::string& id) {
@@ -27,10 +27,13 @@ const Json& listOf(const Json& data, const char* key) {
 }
 Json batch(const std::vector<Json>& ops) { return ops.size() == 1 ? ops[0] : Json{{"op", "batch"}, {"operations", ops}}; }
 QString capital(const QString& s) { return s.left(1).toUpper() + s.mid(1); }
-const char* NUMERIC_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "alpha", "mix"};
+const char* NUMERIC_PROPS[] = {"x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY", "alpha", "mix",
+                               "mixRotate", "mixX", "mixY", "mixScaleX", "mixScaleY", "mixShearY"};  // shear / transform mixes: plugin 1.16.0
 QString propertyLabel(const QString& property) {
   static const QMap<QString, QString> names = {{"x", "X"}, {"y", "Y"}, {"rotation", "회전"}, {"scaleX", "크기 X"}, {"scaleY", "크기 Y"}, {"alpha", "투명도"}, {"attachment", "그림"},
-                                               {"mix", "혼합"}, {"bendPositive", "굽힘"}, {"sequence", "시퀀스"}};
+                                               {"mix", "혼합"}, {"bendPositive", "굽힘"}, {"sequence", "시퀀스"}, {"shearX", "기울이기 X"}, {"shearY", "기울이기 Y"},
+                                               {"mixRotate", "회전 혼합"}, {"mixX", "X 혼합"}, {"mixY", "Y 혼합"}, {"mixScaleX", "크기 X 혼합"}, {"mixScaleY", "크기 Y 혼합"},
+                                               {"mixShearY", "기울이기 혼합"}};
   return names.value(property, property);
 }
 std::string interpOf(const Json& key) { return key.contains("interp") && key.at("interp").is_string() ? key.at("interp").get<std::string>() : "linear"; }
@@ -1461,7 +1464,8 @@ QWidget* CutoutPanel::buildLooks() {
   lookTabs_->addTab(buildClipping(), "클리핑");
   lookTabs_->addTab(buildSequence(), "시퀀스");
   lookTabs_->addTab(buildPhysics(), "물리");  // plugin 1.13.0
-  return section("스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스 · 물리", "cutoutSectionLooks", lookTabs_);
+  lookTabs_->addTab(buildTransform(), "변형 제약");  // plugin 1.16.0
+  return section("스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스 · 물리 · 변형", "cutoutSectionLooks", lookTabs_);
 }
 QWidget* CutoutPanel::lookPage(const char* name) {
   auto* page = new QWidget;
@@ -2214,14 +2218,19 @@ QWidget* CutoutPanel::buildWorkspace() {
   selectionLabel_->setWordWrap(true);
   auto* form = new QFormLayout;
   form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-  const char* labels[] = {"X", "Y", "회전°", "크기 X", "크기 Y", "이미지 기준점 X", "이미지 기준점 Y", "투명도", "본 길이"};
-  for (int i = 0; i < 9; i++) {
+  const char* labels[] = {"X", "Y", "회전°", "크기 X", "크기 Y", "이미지 기준점 X", "이미지 기준점 Y", "투명도", "본 길이", "기울이기 X°", "기울이기 Y°"};
+  for (int i = 0; i < 11; i++) {
     const QString key = PROPS[i];
     auto* s = new QDoubleSpinBox;
     s->setObjectName("cutoutProp" + capital(key));
     s->setKeyboardTracking(false);
     if (key == "x" || key == "y") { s->setRange(-100000, 100000); s->setDecimals(2); }
     else if (key == "rotation") { s->setRange(-36000, 36000); s->setDecimals(2); }
+    else if (key.startsWith("shear")) {
+      s->setRange(-36000, 36000); s->setDecimals(2);
+      s->setToolTip(key == "shearX" ? "기울이기 X(도, plugin 1.16.0): 본의 x축을 회전보다 이만큼 더 돌립니다(그림이 비스듬히 밀림). 애니메이션 모드에서는 키가 됩니다."
+                                    : "기울이기 Y(도): 본의 y축을 회전 + 90°보다 이만큼 더 돌립니다. 애니메이션 모드에서는 키가 됩니다.");
+    }
     else if (key.startsWith("scale")) { s->setRange(-100, 100); s->setDecimals(3); s->setSingleStep(0.01); }
     else if (key.startsWith("pivot")) { s->setRange(-4, 4); s->setDecimals(3); s->setSingleStep(0.05); }
     else if (key == "length") {
@@ -2233,6 +2242,19 @@ QWidget* CutoutPanel::buildWorkspace() {
     props_[key] = s;
     form->addRow(labels[i], s);
   }
+  // Bone inheritance (plugin 1.16.0): setup data, not keyable.
+  inheritCombo_ = new QComboBox;
+  inheritCombo_->setObjectName("cutoutPropInherit");
+  for (auto [id, text] : {std::pair{"normal", "일반 (모두 상속)"}, {"onlyTranslation", "위치만"}, {"noRotationOrReflection", "회전·뒤집기 제외"},
+                          {"noScale", "크기 제외"}, {"noScaleOrReflection", "크기·뒤집기 제외"}})
+    inheritCombo_->addItem(text, QString(id));
+  inheritCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  inheritCombo_->setMinimumContentsLength(8);
+  inheritCombo_->setToolTip("상속: 부모 본에게서 무엇을 물려받는지(원점 위치는 언제나 부모를 따름).\n"
+                            "일반 = 회전·크기·뒤집기 모두 · 위치만 = 화면 축 그대로 · 회전·뒤집기 제외 = 부모 크기만 · 크기 제외 = 부모 회전(뒤집기 포함)만 · 크기·뒤집기 제외 = 부모 회전만.\n"
+                            "조립 모드 전용(키가 아닙니다).");
+  connect(inheritCombo_, &QComboBox::activated, this, [this] { if (!filling_) setBoneInherit(inheritCombo_->currentData().toString()); });
+  form->addRow("상속", inheritCombo_);
   attachmentCombo_ = new QComboBox;
   attachmentCombo_->setObjectName("cutoutPropAttachment");
   attachmentCombo_->setToolTip("애니메이션 모드에서 바꾸면 그림 교체 키(눈 깜빡임·입 모양)가 됩니다.");
@@ -2515,6 +2537,13 @@ QWidget* CutoutPanel::buildAnimateTab() {
     if (dopesheet_->rows()[row].property == "sequence") {
       selectItem(dopesheet_->rows()[row].target);
       if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutSequencePage"));
+      return;
+    }
+    // A transform constraint row (plugin 1.16.0): its constraint in the 변형 제약 page.
+    if (refKind(dopesheet_->rows()[row].target) == "transform") {
+      if (lookTabs_) lookTabs_->setCurrentWidget(lookTabs_->findChild<QWidget*>("cutoutTransformPage"));
+      selectTransform(refId(dopesheet_->rows()[row].target));
+      selectItem(QString());
       return;
     }
     // A physics row (plugin 1.13.0): its constraint in the 물리 page, like an IK row.
@@ -3334,6 +3363,7 @@ void CutoutPanel::refreshProperties() {
   const QStringList bones = selectedBones();
   const bool boneFields = rig_ && !bones.isEmpty() && (kind == "bone" || bones.size() > 1);
   QSet<QString> mixed;
+  QSet<int> inherits;  // plugin 1.16.0: the selected bones' modes (several = shown blank)
   if (boneFields) {
     const auto setupWorld = animate ? std::map<std::string, cutout::Affine>() : cutout::setupWorld(data);
     QMap<QString, QVector<double>> all;
@@ -3341,14 +3371,16 @@ void CutoutPanel::refreshProperties() {
       const int i = rig_->boneIndex(ss(b));
       if (i < 0) continue;
       const cutout::Transform t = shownBone(i, pose, setupWorld);
-      for (auto [p, v] : {std::pair{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}, {"length", rig_->bones[size_t(i)].length}}) all[p] << v;
+      for (auto [p, v] : {std::pair{"x", t.x}, {"y", t.y}, {"rotation", t.rotation}, {"scaleX", t.scaleX}, {"scaleY", t.scaleY}, {"length", rig_->bones[size_t(i)].length},
+                          {"shearX", t.shearX}, {"shearY", t.shearY}}) all[p] << v;
+      inherits.insert(int(rig_->bones[size_t(i)].inherit));
     }
     for (auto it = all.begin(); it != all.end(); ++it) {
       values[it.key()] = it.value().value(0);
       const double tolerance = 0.5 * std::pow(10.0, -props_.value(it.key())->decimals());
       for (double v : it.value()) if (std::fabs(v - it.value().value(0)) >= tolerance) mixed.insert(it.key());
     }
-    for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY"}) enabled[p] = true;
+    for (const char* p : {"x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY"}) enabled[p] = true;
     enabled["length"] = !animate;  // setup data, never keyed
     const QString when = animate ? QString(" · %1ms 자세").arg(playheadMs_) : QString(" · 기본 자세");
     label = bones.size() == 1 ? QString("본 %1%2").arg(bones[0], when) : QString("본 %1개 · %2%3").arg(bones.size()).arg(bones.join(", "), when);
@@ -3390,6 +3422,11 @@ void CutoutPanel::refreshProperties() {
     spin->setProperty("mixed", isMixed);
     spin->setEnabled(enabled.value(it.key()));
   }
+  {
+    QSignalBlocker block(inheritCombo_);
+    inheritCombo_->setCurrentIndex(inherits.size() == 1 ? *inherits.begin() : -1);
+    inheritCombo_->setEnabled(boneFields && !animate);
+  }
   selectionLabel_->setText(label);
   (void)data;
   // Key indicator: none / keyed / modified.
@@ -3407,6 +3444,7 @@ void CutoutPanel::refreshProperties() {
   refreshClipping();
   refreshSequence();
   refreshPhysics();
+  refreshTransform();
 }
 
 QString CutoutPanel::keyState() const {
@@ -3459,6 +3497,7 @@ void CutoutPanel::refreshDopesheet() {
       row.label = row.target == "rig" ? QString("표정 (리그)")
                   : refKind(row.target) == "ik" ? QString("IK %1 %2").arg(refId(row.target), propertyLabel(row.property))
                   : refKind(row.target) == "physics" ? QString("물리 %1 %2").arg(refId(row.target), propertyLabel(row.property))
+                  : refKind(row.target) == "transform" ? QString("변형 %1 %2").arg(refId(row.target), propertyLabel(row.property))
                   : row.property.startsWith("deform:") ? QString("%1 변형 (%2)").arg(refId(row.target), row.property.mid(7))
                                                         : QString("%1 %2").arg(refId(row.target), propertyLabel(row.property));
       for (const auto& k : listOf(t, "keys")) {
@@ -3527,7 +3566,9 @@ QString CutoutPanel::graphTarget() const {
 void CutoutPanel::refreshGraph() {
   // Numeric tracks of the selected bone/slot in the current clip, one colored channel each.
   static const QMap<QString, QColor> colors = {{"x", QColor("#f87171")}, {"y", QColor("#4ade80")}, {"rotation", QColor("#60a5fa")},
-                                               {"scaleX", QColor("#fb923c")}, {"scaleY", QColor("#c084fc")}, {"alpha", QColor("#e5e7eb")}, {"mix", RigCanvas::ikColor()}};
+                                               {"scaleX", QColor("#fb923c")}, {"scaleY", QColor("#c084fc")}, {"alpha", QColor("#e5e7eb")}, {"mix", RigCanvas::ikColor()},
+                                               {"shearX", QColor("#facc15")}, {"shearY", QColor("#2dd4bf")}, {"mixRotate", QColor("#60a5fa")}, {"mixX", QColor("#f87171")},
+                                               {"mixY", QColor("#4ade80")}, {"mixScaleX", QColor("#fb923c")}, {"mixScaleY", QColor("#c084fc")}, {"mixShearY", RigCanvas::transformColor()}};
   QVector<GraphEditor::Channel> channels;
   int duration = 1000;
   const QString target = graphTarget();
@@ -3779,6 +3820,7 @@ void CutoutPanel::updateCanvas() {
     }
   }
   canvas_->setPhysicsView(physicsId_, rest);
+  canvas_->setSelectedTransform(transformId_);
   updateOnion();
 }
 
@@ -4618,13 +4660,17 @@ std::vector<Json> CutoutPanel::dragOps(const RigCanvas::Drag& d) const {
   const cutout::Transform cur = pose.bones[size_t(bi)];
   const int parent = rig.bones[size_t(bi)].parentIndex;
   const cutout::Affine pw = parent >= 0 ? pose.world[size_t(parent)] : cutout::Affine{};
+  // The local turn of an on-screen turn: reversed under a mirrored parent only for bones that inherit
+  // its mirror (plugin 1.16.0: transformBones applies the same rule).
+  const cutout::Inherit inherit = parent >= 0 ? rig.bones[size_t(bi)].inherit : cutout::Inherit::Normal;
+  const bool mirrors = inherit == cutout::Inherit::Normal || inherit == cutout::Inherit::NoScale;
   Json change = Json::object();
   if (d.tool == RigCanvas::Move) {
     if (delta.isNull()) return {};
     change = {{"x", delta.x()}, {"y", delta.y()}};
   } else if (d.tool == RigCanvas::Rotate) {
     // Shift snaps the grabbed bone's own rotation to 15° (a group: the turn itself).
-    const double sign = pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1, turn = group ? snap(d.angle) : sign * (snap(cur.rotation + sign * d.angle) - cur.rotation);
+    const double sign = mirrors && pw.a * pw.d - pw.b * pw.c < 0 ? -1 : 1, turn = group ? snap(d.angle) : sign * (snap(cur.rotation + sign * d.angle) - cur.rotation);
     if (std::fabs(turn) < 1e-9) return {};
     change = {{"rotation", turn}};
   } else {
@@ -4734,7 +4780,7 @@ cutout::Transform CutoutPanel::shownBone(int i, const cutout::Pose& pose, const 
     if (animate) { if (size_t(b.parentIndex) < pose.world.size()) parent = pose.world[size_t(b.parentIndex)]; }
     else if (auto it = setupWorld.find(rig_->bones[size_t(b.parentIndex)].id); it != setupWorld.end()) parent = it->second;
   }
-  return cutout::toAxes(local, parent, axes_);
+  return cutout::toAxes(local, parent, axes_, b.parentIndex >= 0 ? b.inherit : cutout::Inherit::Normal);
 }
 /**
  * A bone field typed for the selected bones (one edit). Setup: setBone per bone, parents first, in
@@ -4761,7 +4807,8 @@ void CutoutPanel::commitBoneProperty(const QString& property, double value) {
   }
   if (animate && clipId_.isEmpty()) { setStatus("키를 넣을 클립을 먼저 만드세요.", true); return; }
   auto field = [&](cutout::Transform& t) -> double& {
-    return property == "x" ? t.x : property == "y" ? t.y : property == "rotation" ? t.rotation : property == "scaleX" ? t.scaleX : t.scaleY;
+    return property == "x" ? t.x : property == "y" ? t.y : property == "rotation" ? t.rotation : property == "scaleX" ? t.scaleX
+         : property == "shearX" ? t.shearX : property == "shearY" ? t.shearY : t.scaleY;
   };
   const bool spatial = axes_ != cutout::Axes::Local && (property == "x" || property == "y" || property == "rotation");
   const cutout::Pose pose = currentPose(false);
@@ -4798,11 +4845,12 @@ void CutoutPanel::commitBoneProperty(const QString& property, double value) {
   for (int i : rig_->evalOrder) {
     const int p = rig_->bones[size_t(i)].parentIndex;
     const cutout::Affine pw = p >= 0 ? world[size_t(p)] : cutout::Affine{};
+    const cutout::Inherit inherit = p >= 0 ? rig_->bones[size_t(i)].inherit : cutout::Inherit::Normal;
     if (chosen.contains(i)) {
       const cutout::Transform local = pose.bones[size_t(i)];
-      cutout::Transform before = cutout::toAxes(local, p >= 0 ? pose.world[size_t(p)] : cutout::Affine{}, axes_), shown = cutout::toAxes(local, pw, axes_);
+      cutout::Transform before = cutout::toAxes(local, p >= 0 ? pose.world[size_t(p)] : cutout::Affine{}, axes_, inherit), shown = cutout::toAxes(local, pw, axes_, inherit);
       field(shown) = relative_ ? field(before) + value : value;
-      const auto back = cutout::fromAxes(shown, pw, axes_, local);
+      const auto back = cutout::fromAxes(shown, pw, axes_, local, inherit);
       if (!back) { setStatus("부모 본의 크기가 0이라 이 축으로 바꿀 수 없습니다.", true); refreshProperties(); return; }
       const std::string target = "bone:" + rig_->bones[size_t(i)].id;
       auto key = [&](const char* prop, double v) {
@@ -4811,11 +4859,10 @@ void CutoutPanel::commitBoneProperty(const QString& property, double value) {
       if (spatial && property != "rotation") { key("x", back->x); key("y", back->y); }
       else if (spatial) key("rotation", back->rotation);
       else { cutout::Transform next = *back; key(property.toUtf8().constData(), field(next)); }
-      world[size_t(i)] = pw * cutout::Affine::compose(back->x, back->y, back->rotation, back->scaleX, back->scaleY);
+      world[size_t(i)] = cutout::boneWorld(*rig_, world, size_t(i), *back);  // shear / inherit (plugin 1.16.0)
       dirty[size_t(i)] = 1;
     } else if (p >= 0 && dirty[size_t(p)]) {
-      const cutout::Transform& t = pose.local(size_t(i));
-      world[size_t(i)] = pw * cutout::Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+      world[size_t(i)] = cutout::boneWorld(*rig_, world, size_t(i), pose.local(size_t(i)));
       dirty[size_t(i)] = 1;
     }
   }
@@ -4856,6 +4903,14 @@ bool CutoutPanel::keySelected() {
       if (i < 0) continue;
       const auto& t = pose.bones[size_t(i)];
       key("x", t.x); key("y", t.y); key("rotation", t.rotation); key("scaleX", t.scaleX); key("scaleY", t.scaleY);
+      // Shear (plugin 1.16.0) only where the bone uses it: unsheared rigs keep five channels.
+      const Json* clip = findIn(displayData(), "clips", ss(clipId_));
+      auto tracked = [&](const char* prop) {
+        if (clip) for (const auto& tr : listOf(*clip, "tracks")) if (tr.value("target", std::string()) == ss(ref) && tr.value("property", std::string()) == prop) return true;
+        return false;
+      };
+      if (t.shearX != 0 || tracked("shearX")) key("shearX", t.shearX);
+      if (t.shearY != 0 || tracked("shearY")) key("shearY", t.shearY);
     } else if (kind == "slot") {
       const int i = rig_->slotIndex(ss(id));
       if (i < 0) continue;
