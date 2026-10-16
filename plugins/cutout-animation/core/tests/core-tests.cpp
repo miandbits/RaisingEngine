@@ -469,6 +469,11 @@ Json outlineParityScript() {
 #include "clip-sequence-tests.hpp"
 #include "ik-golden.hpp"
 #include "ik-physics-tests.hpp"
+#include "golden-1-15.hpp"
+#include "constraint-tests.hpp"
+#include "box-tests.hpp"
+#include "weight-tests.hpp"
+#include "duplicate-tests.hpp"
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--physics-parity") {
@@ -478,6 +483,38 @@ int main(int argc, char** argv) {
     const Json script = ikphys::parityScript();
     for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
     std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--transform-parity") {
+    // Native reference for shear, inherit and transform constraints at two pacings (plugin 1.16.0).
+    Host host;
+    Json replies = Json::array();
+    const Json script = xform::parityScript();
+    for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--box-parity") {
+    // Native reference for bounding boxes / points / hit tests and partClicked (plugin 1.17.0).
+    Host host;
+    Json replies = Json::array();
+    const Json script = boxes::parityScript();
+    for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--weight-parity") {
+    // Native reference for painted weights and linked meshes at two pacings (plugin 1.18.0).
+    Host host;
+    Json replies = Json::array();
+    const Json script = weights::parityScript();
+    for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--golden-1-15") {
+    // Hashes of every pre-1.16 scenario (golden-1-15-data.hpp was written by the 1.15.0 build).
+    std::cout << golden115::dump().dump() << "\n";
     return 0;
   }
   if (argc > 1 && std::string(argv[1]) == "--ik-golden") {
@@ -3193,6 +3230,11 @@ int main(int argc, char** argv) {
   clipseq::run();
   ikgolden::run();
   ikphys::run();
+  golden115::run();
+  xform::run();
+  boxes::run();
+  weights::run();
+  duplicate::run();
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;

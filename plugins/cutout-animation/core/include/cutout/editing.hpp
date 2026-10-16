@@ -100,6 +100,38 @@ struct EditResult {
  * {physics, preset?, bone?, name?, ...fields (null = default)} renamePhysics {physics, id?, name?}
  * deletePhysics {physics}; keys setKey {target: "physics:<id>", property: "mix"}. deleteBone drops
  * the bone's physics (warning ANIM_PHYSICS_REMOVED).
+ * Shear / inherit (plugin 1.16.0): addBone/setBone take shearX, shearY (degrees, 0 drops the key)
+ * and inherit (normal | onlyTranslation | noRotationOrReflection | noScale | noScaleOrReflection;
+ * null / normal drops it); shear keys setKey {target: "bone:<id>", property: shearX | shearY}. Ops
+ * that turn a world pose into local values (reparentBone, deleteBone children, compensation,
+ * setPivot, setBone `axes`) invert the bone's mode exactly (skew of shaped bones goes into shearY).
+ * Transform constraints (plugin 1.16.0): addTransform {bones, target, id?, name?, order?, mixRotate?,
+ * mixX?, mixY?, mixScaleX?, mixScaleY?, mixShearY? (0..1), offsetRotation?, offsetX?, offsetY?,
+ * offsetScaleX?, offsetScaleY?, offsetShearY?, local?, relative?, keepPose?} (extra.transform; keepPose
+ * = offsets so nothing moves now) setTransform {transform, ...same (null = default)} renameTransform
+ * {transform, id?, name?} (renames transform:<id> tracks) deleteTransform {transform}; keys setKey
+ * {target: "transform:<id>", property: mixRotate..mixShearY}. deleteBone of a target needs cascade
+ * (the constraint goes, ANIM_TRANSFORM_REMOVED); a constrained bone just leaves the list.
+ * Bounding boxes / points (plugin 1.17.0): addBoundingBox {slot (new), bone?, from? (a part: right above
+ * it, its picture's outline from `mask` + alphaThreshold?/detail?, else its rectangle), fromName?,
+ * before? | index?, name? ("box"), vertices | worldVertices, color?} setBoundingBox {slot, name?, skin?,
+ * vertices? | worldVertices?, color? (null removes)} addPoint {slot (new), bone, before? | index?, name?
+ * ("point"), x?, y?, rotation? | worldX?, worldY?, worldRotation?} setPoint {slot, name?, skin?, ...same}.
+ * Weight painting (plugin 1.18.0; the attachment as {slot, name? | attachment?, skin?}): paintWeights
+ * {mode: add | subtract | replace | smooth, vertices, amounts? (per vertex 0..1), strength?, bone, weight?,
+ * locked?, maxInfluences? (4), prune? (0.01)} (one brush stroke) normalizeWeights {vertices?,
+ * maxInfluences?, prune?, locked?} mirrorWeights {axis? (x | y), center?, from? (left | right | top |
+ * bottom), map? ({bone: bone}), tolerance?, locked?...} (bone names paired by mirrorBoneId) copyWeights
+ * {from: {slot, name?, skin?}, vertices?, locked?...} (nearest setup-pose position). Every vertex they
+ * touch settles: locked bones keep their shares, the unlocked ones fill the rest, shares below
+ * `prune` go, at most maxInfluences, sum 1. Linked meshes (plugin 1.18.0): linkMesh {slot, name?, skin?,
+ * parent: "<slot>/<name>", parentSkin?, deform?, imageAssetId?, width?, height?} unlinkMesh {slot,
+ * name?, skin?}; mesh shape/weight ops refuse linked meshes (edit the parent), deleting / converting a
+ * parent turns its linked meshes into independent copies (ANIM_LINKED_UNLINKED), renameSkin follows.
+ * Duplicate (plugin 1.19.0): duplicateBones {bones?, slots?} copies bone subtrees (+ their slots,
+ * attachments of every list, constraints entirely inside) and listed slots; ids get the next free
+ * "-N", copied slots go right after the last original in draw order; clips/keys/expressions are not
+ * copied. extra.bones / extra.slots = {original: copy}.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */
@@ -114,11 +146,12 @@ EditResult applyEdit(const Json& rig, const Json& operation, const Json& control
  */
 enum class Axes { Local, Parent, World };
 std::optional<Axes> parseAxes(const std::string& name);  // "local" | "parent" | "world"
-/** `local` shown in `axes` given the parent's world matrix (identity for a root). */
-Transform toAxes(const Transform& local, const Affine& parentWorld, Axes axes);
+/** `local` shown in `axes` given the parent's world matrix (identity for a root). `inherit`
+ *  (plugin 1.16.0) is the bone's mode: the world angle follows inheritFrame (roots: Normal). */
+Transform toAxes(const Transform& local, const Affine& parentWorld, Axes axes, Inherit inherit = Inherit::Normal);
 /** Inverse of toAxes; the rotation stays within ±180° of `hint` (the current local value).
  *  nullopt when the parent matrix is singular. */
-std::optional<Transform> fromAxes(const Transform& shown, const Affine& parentWorld, Axes axes, const Transform& hint);
+std::optional<Transform> fromAxes(const Transform& shown, const Affine& parentWorld, Axes axes, const Transform& hint, Inherit inherit = Inherit::Normal);
 
 /** Physics presets (plugin 1.13.0): [{id, label (Korean), fields}] for addPhysics/setPhysics `preset`. */
 const Json& physicsPresets();
@@ -128,6 +161,10 @@ Transform decompose(const Affine& m, double* skew = nullptr);
 std::map<std::string, Affine> setupWorld(const Json& rig);
 /** Controller ids (from [{id,data}]) whose defaultClip, layers or bindings use `clip`. */
 std::vector<std::string> controllerClipRefs(const Json& controllers, const std::string& clip);
+/** Mirror counterpart of a bone id (plugin 1.18.0, mirrorWeights): '-' separated tokens left/right,
+ *  l/r, lt/rt and transliterated levyy/pravyy (levyj, levy, levaya, levoe, lev / prav...) swap, else
+ *  "left"/"right" inside the id; the id itself when nothing matches. */
+std::string mirrorBoneId(const std::string& id);
 bool validId(const std::string& id);
 bool validName(const std::string& name);
 /** Lowercase id derived from free text ("Eye L.png" -> "eye-l"), never empty. */

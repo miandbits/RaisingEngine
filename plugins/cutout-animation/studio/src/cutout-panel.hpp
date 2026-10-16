@@ -29,6 +29,7 @@ class QDoubleSpinBox;
 class QFrame;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QListWidget;
 class QMimeData;
 class QPushButton;
@@ -269,6 +270,23 @@ class CutoutPanel : public QWidget {
   /** The preview simulation (empty bodies while not playing); `running` = it drives the canvas. */
   const cutout::PhysicsSim& physicsSim() const { return editorPhysics_; }
   bool physicsRunning() const { return physicsRunning_; }
+  // ---- Transform constraints (plugin 1.16.0; the 변형 제약 page). Setup values via addTransform /
+  // setTransform; Animate mode keys the mixes (transform:<id>). One core edit per gesture.
+  /** 제약 추가: the selected bones follow a target — the primary (last picked) bone when two or more
+   *  are selected, else the bone id asked for. keepPose offsets: nothing jumps when it is added. */
+  bool addTransform();
+  bool selectTransform(const QString& id);
+  QString transformId() const { return transformId_; }
+  /** mixRotate..mixShearY / offsetRotation..offsetShearY / order; Animate mode: a mix is a key. */
+  bool setTransformField(const QString& field, double value);
+  bool setTransformFlag(const QString& flag, bool on);  // local / relative (setup values)
+  bool renameTransform();
+  bool deleteTransform();
+  bool keyTransformMixes();                             // 혼합 키: the mixes at the playhead (non-zero or keyed)
+  bool selectTransformTarget();
+  bool selectTransformBones();
+  /** 상속 of the selected bones (setup data, one setBone per bone in one edit). */
+  bool setBoneInherit(const QString& inherit);
   // ---- Meshes (plugin 1.4.0) on the selected part's shown attachment (the preview skin's own when
   // it provides it). Setup mode edits the mesh (vertices, weights); Animate mode makes deform keys.
   enum class MeshEdit { Off = 0, Vertices = 1, Weights = 2 };
@@ -286,6 +304,34 @@ class CutoutPanel : public QWidget {
   bool paintWeights(const QVector<int>& vertices);  // brush: bone/weight/strength of the weight tools
   bool unbindMesh();
   void setBrush(const QString& bone, double weight, double strength, double radius);
+  // ---- Weight painting (plugin 1.18.0, cutout-weights.cpp): brush modes and falloff, bone locks,
+  // the weight table, 정리 / 좌우 복사 / 메시에서 복사, 자세 미리 보기. Every finished gesture is ONE
+  // core edit (paintWeights, normalizeWeights, mirrorWeights, copyWeights): the LLM `edit` op's ops.
+  void setWeightMode(int mode);                           // RigCanvas::WeightMode (더하기 · 빼기 · 바꾸기 · 부드럽게)
+  int weightMode() const { return weightMode_; }
+  void setWeightFalloff(int falloff);                     // RigCanvas::Falloff
+  void setBoneLocked(const QString& bone, bool locked);   // editor state, sent as the ops' `locked`
+  QStringList lockedBones() const;
+  bool paintStroke(const RigCanvas::PaintStroke& stroke);  // a finished stroke: one paintWeights
+  bool normalizeWeights();                                // 정리: prune / max influences of the fields
+  bool mirrorWeights();                                   // 좌우 복사: axis and side of cutoutMirrorAxis
+  bool copyWeights(const QString& from = {});             // 메시에서 복사: "slot/name" or "slot/name@skin" ("" = the combo)
+  bool setVertexWeight(const QString& bone, double weight);  // weight table edit: every selected vertex
+  /** Weight table rows: bone, shown weight (mean over the selected vertices, -1 = none selected), lock. */
+  struct WeightRow { QString bone; double weight = -1; bool locked = false; };
+  QVector<WeightRow> weightRows() const;
+  void stepBrushRadius(int direction);                    // [ smaller / ] larger
+  /** 자세 미리 보기 (editor-only, never saved): while painting in setup mode the canvas shows the
+   *  brush bone turned by `angle` degrees (IK re-solved), so the deformation shows as you paint. */
+  void setWeightPosePreview(bool on, double angle);
+  // ---- Linked meshes (plugin 1.18.0): 링크드 메시 만들기 / 연결 끊기 (linkMesh / unlinkMesh).
+  /** A region picks a mesh `parent` ("slot/name" in skin parentSkin, "" = default list) to link to;
+   *  a mesh makes a linked copy in `skin` ("" = default list) named `name` showing `assetId`. */
+  struct LinkedMeshChoice { QString parent, parentSkin, skin, name, assetId; bool deform = true; QStringList parents, skins, images; };
+  std::function<bool(LinkedMeshChoice&)> askLinkedMesh;
+  bool runLinkedMeshDialog(LinkedMeshChoice& choice);
+  bool makeLinkedMesh();
+  bool unlinkMesh();
   bool keyDeform();          // deform key of the shown offsets at the playhead
   bool deleteDeformKey();    // the deform key at the playhead
   // ---- Freeform meshes (plugin 1.6.0, setup mode, selected part): every finished gesture is one
@@ -318,6 +364,28 @@ class CutoutPanel : public QWidget {
   bool deleteClipping();                                    // 클리핑 삭제: the selected clip slot
   QString clipSlot() const;                                 // the selection when it shows a clipping attachment
   void setClipOutlines(bool on);                            // 윤곽 보기 (editor-only)
+  // ---- Bounding boxes and points (plugin 1.17.0; the 판정 page). Setup-mode gestures, one core edit
+  // each (addBoundingBox, setBoundingBox, addPoint, setAttachment drags, deleteSlot). Neither draws in
+  // any runtime; the canvas shows them as editor-only overlays (보기 ▾ toggles, QSettings).
+  /** 판정 상자: a new box slot right above the selected part outlining its picture (the 자동 윤곽 alpha
+   *  tracing; no picture: its rectangle), or on the selected bone (a square). */
+  bool addBoundingBox();
+  bool beginPointPlacement();                    // 기준점: the next canvas click places a point (selected bone; a part: its bone)
+  bool addPointAt(const QPointF& rigPoint);      // what that click does (also automation)
+  bool deleteHitPart();                          // the selected box / point slot
+  /** 정점 편집 of the selected box: the mesh vertex tools (select / drag / band, 점 추가, Delete). */
+  void setBoxVertexEdit(bool on);
+  bool boxVertexEdit() const { return boxEdit_; }
+  QString boxSlot() const;                       // the selection when it shows a bounding box
+  QString pointSlot() const;                     // the selection when it shows a point
+  void setShowBoxes(bool on);                    // 보기 ▾ 판정 상자 보이기 (editor-only)
+  void setShowPoints(bool on);                   // 보기 ▾ 기준점 보이기 (editor-only)
+  /** Game-connection preview: a click at a rig point on a shown box fires `partClicked {box, slot}`
+   *  into the preview instance (the players' hitTest dispatch). False = no box there. */
+  bool previewClick(const QPointF& rigPoint);
+  struct PreviewClick { QString box, slot; QStringList matched; };
+  PreviewClick lastPreviewClick() const { return lastPreviewClick_; }
+  QStringList rigBoxNames() const;               // box attachment names of the rig (binding editor hints)
   // ---- Image sequences (plugin 1.12.0; the 시퀀스 page) on the selected part's shown attachment
   // (the preview skin's own entry when it provides it). Frames are image assets of one size.
   std::function<QStringList()> askSequenceFiles;            // PNG files in frame order (empty = cancel)
@@ -418,6 +486,33 @@ class CutoutPanel : public QWidget {
   bool runCommand(const QString& id);  // false: unknown or disabled
   void showCommandPalette();
   QWidget* commandPalette() const;
+  // ---- Direct manipulation on the canvas (plugin 1.19.0). Keys and gestures only choose what an
+  // existing gesture does; every edit is still ONE core op batch (transformBones, duplicateBones...).
+  /** Arrow-key nudge of the selection by `step` px in the axis space of the numeric fields (world:
+   *  rig px; local/parent: the parent's axes, a part's bone axes). Presses within NUDGE_IDLE_MS are
+   *  one gesture: previewed live, ONE edit when the keys rest (Animate: keys, as a drag does). */
+  static constexpr int NUDGE_IDLE_MS = 400;
+  bool nudgeSelection(const QPoint& step);
+  bool flushNudge();             // commit a pending nudge now (false = nothing pending / refused)
+  bool nudgePending() const { return nudge_.has_value(); }
+  /** 복제 (Ctrl+D, setup mode): the selected bones with their subtrees and the selected parts (core
+   *  duplicateBones, one edit); the copies become the selection. */
+  bool duplicateSelected();
+  /** Double-click on the canvas: a part selects its bone, a bone its first part (draw order). */
+  void canvasDoubleClick(const QString& ref);
+  /** Esc on the canvas with nothing to cancel there: mesh/box vertex editing off, else the select
+   *  tool, else the selection cleared (one step per press). */
+  void canvasEscape();
+  /** Right-click menu for `ref` (the item under the cursor, "" = none): existing commands only,
+   *  objectNames cutoutCanvasMenu*. The caller owns (exec / deletes) the menu. */
+  QMenu* canvasMenu(const QString& ref);
+  /** Every bound shortcut: the panel's QShortcuts (their key, group, text) and the canvas's own
+   *  keys and gestures (RigCanvas::keyBindings). The overlay shows exactly this list. */
+  struct ShortcutInfo { QString keys, group, text, source; };
+  QVector<ShortcutInfo> shortcutList() const;
+  /** ? on the canvas / 보기 ▾ 단축키 모음: the overlay cutoutShortcutOverlay (Esc or ? closes it). */
+  void showShortcutOverlay(bool on);
+  bool shortcutOverlayVisible() const;
   /** First-run hint strip (dismissed = editor-only QSettings flag). */
   void setHintVisible(bool on);
   bool hintVisible() const;
@@ -501,6 +596,7 @@ class CutoutPanel : public QWidget {
   QString previewSkin_, previewExpression_;  // editor-only canvas look (never stored)
   QString ikId_;                              // IK constraint shown in the IK section (editor state)
   QString physicsId_;                         // physics constraint shown in the 물리 page (editor state)
+  QString transformId_;                       // transform constraint shown in the 변형 제약 page (editor state)
   cutout::PhysicsSim editorPhysics_;          // preview playback simulation (editor-only)
   bool physicsPreview_ = true, physicsRunning_ = false;
   double physicsWind_ = 0, physicsGravity_ = 0;
@@ -571,6 +667,15 @@ class CutoutPanel : public QWidget {
   bool applyingLayout_ = false;
   QWidget *canvasPane_ = nullptr, *clipsPane_ = nullptr, *timelinePane_ = nullptr, *mixPane_ = nullptr, *modeBar_ = nullptr;
   QFrame* hintStrip_ = nullptr;
+  QFrame* shortcutOverlay_ = nullptr;   // plugin 1.19.0
+  QTreeWidget* shortcutTree_ = nullptr;
+  void buildShortcutOverlay();
+  struct Nudge { QString ref; QPointF total; };  // plugin 1.19.0: arrow keys being coalesced
+  std::optional<Nudge> nudge_;
+  QTimer* nudgeTimer_ = nullptr;
+  bool flushingNudge_ = false;
+  std::vector<cutout::Json> nudgeOps() const;
+  void toggleMeshHotkey(MeshEdit mode);  // M / W
   QFrame* palette_ = nullptr;
   QLineEdit* paletteSearch_ = nullptr;
   QListWidget* paletteList_ = nullptr;
@@ -667,6 +772,16 @@ class CutoutPanel : public QWidget {
   void refreshPhysics();
   void refreshPhysicsInfo();
   const cutout::Json* currentPhysics() const;
+  // transform constraints and inherit (plugin 1.16.0)
+  QListWidget* transformList_ = nullptr;
+  QMap<QString, QDoubleSpinBox*> transformFields_;
+  QCheckBox *transformLocal_ = nullptr, *transformRelative_ = nullptr;
+  QLabel* transformInfo_ = nullptr;
+  QVector<QWidget*> transformEditors_, transformAnimateTools_;
+  QComboBox* inheritCombo_ = nullptr;
+  QWidget* buildTransform();
+  void refreshTransform();
+  const cutout::Json* currentTransform() const;
   // events (plugin 1.8.0)
   QListWidget *eventList_ = nullptr, *eventLogList_ = nullptr;
   QSpinBox* eventInt_ = nullptr;
@@ -690,6 +805,26 @@ class CutoutPanel : public QWidget {
   QDoubleSpinBox *brushWeight_ = nullptr, *brushStrength_ = nullptr, *brushRadius_ = nullptr;
   QLabel* meshInfo_ = nullptr;
   QVector<QWidget*> meshTools_, meshSetupTools_, meshAnimateTools_;
+  // weight painting + linked meshes (plugin 1.18.0, editor state; cutout-weights.cpp)
+  int weightMode_ = 2, weightFalloff_ = 2;  // RigCanvas::WeightReplace / FalloffSmooth
+  QSet<QString> weightLocks_;
+  QToolButton* weightModeButtons_[4] = {};
+  QComboBox *weightFalloffCombo_ = nullptr, *mirrorAxis_ = nullptr, *copyWeightsFrom_ = nullptr;
+  QSpinBox* weightMaxInfluences_ = nullptr;
+  QDoubleSpinBox *weightPrune_ = nullptr, *weightPreviewAngle_ = nullptr;
+  QCheckBox *weightShowValue_ = nullptr, *weightPosePreview_ = nullptr;
+  QWidget *weightSection_ = nullptr, *weightTable_ = nullptr;
+  QString weightTableKey_;
+  QPushButton *normalizeButton_ = nullptr, *mirrorButton_ = nullptr, *copyButton_ = nullptr, *makeLinkedButton_ = nullptr, *unlinkButton_ = nullptr;
+  QTimer* paintPreviewTimer_ = nullptr;
+  std::optional<RigCanvas::PaintStroke> pendingStroke_;
+  void buildWeightTools(QWidget* weightTools, QVBoxLayout* fixed, QVBoxLayout* form);
+  void refreshWeights(int slot, const cutout::Attachment* attachment, bool mesh, bool linked, bool animate);
+  void previewStroke();
+  std::optional<cutout::Json> strokeOp(const RigCanvas::PaintStroke& stroke, QString* error = nullptr) const;
+  cutout::Json withWeightRules(cutout::Json op) const;  // + locked / maxInfluences / prune of the fields
+  cutout::Pose weightPreviewPose(cutout::Pose pose) const;
+  QString linkedInfo(const cutout::Attachment& attachment) const;
   QVector<QWidget*> meshModeRows_;  // button rows shown in one mode only (property cutoutModeRow)
   // freeform mesh tools (plugin 1.6.0, editor state)
   int meshTool_ = 0;          // RigCanvas::MeshTool
@@ -722,6 +857,23 @@ class CutoutPanel : public QWidget {
   QVector<QWidget*> sequencePartTools_, sequenceFrameTools_, sequenceKeyTools_;
   QWidget* buildClipping();
   void refreshClipping();
+  // bounding boxes and points (plugin 1.17.0, editor state only)
+  bool boxEdit_ = false;
+  int boxTool_ = 0;  // RigCanvas::MeshSelect / MeshAddVertex while 정점 편집 of a box is on
+  PreviewClick lastPreviewClick_;
+  QListWidget* hitList_ = nullptr;
+  QLabel* hitInfo_ = nullptr;
+  QPushButton *hitBoxButton_ = nullptr, *hitPointButton_ = nullptr, *hitVerticesButton_ = nullptr, *hitDeleteButton_ = nullptr, *hitAddVertexButton_ = nullptr;
+  QWidget* hitVertexRow_ = nullptr;
+  QAction *showBoxesAction_ = nullptr, *showPointsAction_ = nullptr;
+  QWidget* buildHits();
+  void refreshHits();
+  void buildHitViewActions(QMenu* menu);
+  bool boxEditing() const;  // 정점 편집 on, Setup mode, a box selected
+  std::vector<cutout::Json> boxMoveOps(const QPointF& rigDelta) const;
+  bool boxAddVertex(const QPointF& rigPoint);
+  bool boxDeleteVertices();
+  QString uniqueSlotId(const QString& base) const;
   QWidget* buildSequence();
   void refreshSequence();
   void showSequenceFrame();
@@ -789,6 +941,7 @@ class CutoutPanel : public QWidget {
   /** `accepted` runs after the core accepted the ops and before the commit (selection follow-up). */
   bool runOps(const std::vector<cutout::Json>& ops, bool keyGesture, const std::function<void(const cutout::EditResult&)>& accepted = {});
   bool refusePending();  // true (and a status) while uncommitted pose changes exist
+  const cutout::Json& editBase() const;  // working_, else the in-flight edit of this rig, else the document
   cutout::Json refsJson(const QVector<KeyRef>& keys) const;
   void selectKeysFrom(const cutout::Json& refs);
   void keyCommand(const QString& command);

@@ -15,7 +15,9 @@ Documents (engine envelope, see `packages/plugin-host/CONTRACT.md`):
 * Rig space is the authoring canvas in pixels, y down, origin at canvas top-left.
   `canvas.originX/Y` is the instance anchor (usually between the feet).
 * Bone local matrix = `T(x,y) · R(rotation°, clockwise on screen) · S(scaleX,scaleY)`;
-  world = parent world · local. Root bones are in rig space.
+  world = parent world · local. Root bones are in rig space. Plugin 1.16.0 adds bone shear
+  (`T · R · K(shearX, shearY) · S`) and inheritance modes: see "Shear, inherit and transform
+  constraints".
 * The bone origin **is** the rotation center (pivot). Moving a pivot in the editor moves
   the bone and compensates child bones/attachments so nothing jumps.
 * An attachment places image point `(pivotX·width, pivotY·height)` at `(x,y)` in bone
@@ -409,6 +411,156 @@ through a damped spring. **Presentation only**: never in saves, never a signal, 
   edit). The canvas marks physics bones with a teal spring ring at their tip and, while
   simulating, a dashed tether from the unsimulated tip.
 
+## Shear, inherit and transform constraints (plugin 1.16.0)
+
+All new fields are optional. A rig without them takes the pre-1.16 code paths and draws, samples
+and replies **bit for bit** as 1.15.0 did (core test `1.15 golden`: FNV hashes of every core-test
+rig's poses, draw items, `sample` reply text and an irregularly updated instance, recorded by the
+1.15.0 build; `ik golden` still holds the 1.12 IK bits).
+
+### Shear
+
+* Bone fields `shearX`, `shearY` (degrees, default 0; `ANIM_NONFINITE`), keyable as bone tracks
+  `shearX` / `shearY` (numeric, any interp, cross-fade like rotation). Attachment offsets ignore
+  shear (their placement is unchanged).
+* **Local matrix** (`cutout::localMatrix`) = `T(x, y) · R(rotation) · K(shearX, shearY) ·
+  S(scaleX, scaleY)` where `K` turns the x axis by shearX and the y axis by shearY:
+  `a = cos(rotation + shearX) · scaleX`, `b = sin(rotation + shearX) · scaleX`,
+  `c = −sin(rotation + shearY) · scaleY`, `d = cos(rotation + shearY) · scaleY`, `e = x`, `f = y`
+  (degrees, y down: the x axis points at rotation + shearX, the y axis at rotation + 90 + shearY).
+  Without shear it is `Affine::compose` bit for bit.
+* `sample` replies add `shearX` / `shearY` to a bone only when the sampled value is not 0.
+
+### Inherit
+
+Bone field `inherit` (`ANIM_BONE_INHERIT` for an unknown name; roots ignore it — every mode equals
+the local matrix there). With P = the parent's world (linear part P₂, translation via P), L = the
+bone's local matrix and `(x, y)` its local position, the world matrix (`cutout::childWorld`) is:
+
+| mode | origin | axes (2×2) |
+|---|---|---|
+| `normal` (default) | P · (x, y) | P₂ · L₂ (= P · L bit for bit) |
+| `onlyTranslation` | P · (x, y) | L₂ — the local axes in rig space |
+| `noRotationOrReflection` | P · (x, y) | M · L₂ with M = R(φ) · diag(sx, sy) · R(−φ): φ = angle of P's x axis, sx = its length, sy = \|det P₂\| / sx (P's scale along its own axes, no turn, no mirror; a collapsed x axis uses the y axis) |
+| `noScale` | P · (x, y) | Q · K · S with u = unit(P₂ · (cos rotation, sin rotation)) (the rig axis of the rotation when P collapses it) and Q = [u, σ · R(90°) · u], σ = −1 when det P₂ < 0 (the parent's mirror kept) |
+| `noScaleOrReflection` | P · (x, y) | as `noScale` with σ = 1 (never mirrored) |
+
+* Descendants of a non-normal bone inherit from its world normally (per their own mode).
+* The inverse `cutout::localFromWorld(P, W, mode, hint)` returns the local transform whose world
+  is W: position P⁻¹ · origin; axes decomposed as R · K · S with **shearX fixed to the hint's**
+  (rotation = x-axis angle − shearX, the hint's mirror sign of scaleX kept, rotation within ±180°
+  of the hint), skew going into shearY (scaleY's sign on the x axis's side). `rotationToward(P, t,
+  mode, v, d)` gives the local rotation that lays the bone vector v (after its shear and scale) on
+  the rig direction d in any mode; `inheritFrame(P, mode)` maps the rotated +x direction (P₂ for
+  normal/noScale*, identity for onlyTranslation, M for noRotationOrReflection).
+* Every runtime path uses these: forward kinematics, IK and transform constraint world updates,
+  physics descendants, the mesh bind pose (setup FK), clipping polygons and draw items, and the
+  editing ops (below). Evaluation order is unchanged (parents first).
+* **IK**: a bone with shear or a non-normal mode solves through `rotationToward` (one/two-bone
+  "shaped" paths, FABRIK per-bone placement), others keep the 1.13 code. Aim: the axis (after
+  shear/scale) points at the target exactly in every mode; stretch measures the reach in rig
+  space. Two bones: the law of cosines on the rig-space links (joint on the `bendPositive` side
+  on screen), the upper bone turns its child origin toward the joint, the lower bone (under the
+  turned upper) its effector toward the target; a turn that stretches a link (a non-uniform
+  parent, a sheared parent) is re-measured and solved again, at most `IK_CHAIN_ITERATIONS`
+  passes until the effector is within `IK_CHAIN_TOLERANCE` (rigid links: exact in one pass).
+  FABRIK measures its link lengths once (as in 1.13), so links that stretch while turning land
+  near the target.
+
+### Transform constraints
+
+* `transform: [{id, name?, bones, target, order?, mixRotate?, mixX?, mixY?, mixScaleX?,
+  mixScaleY?, mixShearY?, offsetRotation?, offsetX?, offsetY?, offsetScaleX?, offsetScaleY?,
+  offsetShearY?, local?, relative?}]`. Mixes 0..1 (`ANIM_TRANSFORM_MIX`); defaults **mixRotate =
+  mixX = mixY = 1** (follow the target's place and turn) and **mixScaleX = mixScaleY =
+  mixShearY = 0** (keep the own size and shape); offsets default 0.
+* **Solving order**: IK and transform constraints share one `order` sequence
+  (`Rig::constraintOrder`): `order` ascending, at equal order every IK before every transform
+  constraint (back-compat: an IK-only rig keeps `ikOrder`), then array order; physics after all
+  of them, as before. Each constraint sees the ones before it applied. A constraint solved
+  before one that moves its target (or, for an IK, its chain base) warns `ANIM_TRANSFORM_ORDER`.
+* **Per constraint**: the target's world matrix T (world mode) or local values (local mode,
+  after the earlier constraints) are read once; then each constrained bone, **parents first**:
+  * world absolute: rotate the bone's world axes about its origin by
+    `wrap(angle(Tx) + ρ·offsetRotation − angle(Wx)) · mixRotate` (ρ = −1 when T is mirrored, so
+    offsets turn with the target); origin `+= (T·(offsetX, offsetY) − origin) · (mixX, mixY)`;
+    x-axis length `s → s + (|Tx| − s + offsetScaleX) · mixScaleX` (y likewise);
+    the y axis turns by `wrap(skew(T) + ρ·offsetShearY − skew(W)) · mixShearY`, where skew = the
+    y axis's angle from orthogonal to the x axis (mirror-aware).
+  * world relative: the same channels **add** the target's: turn by
+    `wrap(angle(Tx) + ρ·offsetRotation) · mixRotate`, origin `+= T·(offsetX, offsetY) · mix`,
+    axis lengths `×= 1 + (|T axis| − 1 + offset) · mix`, y axis by
+    `wrap(skew(T) + ρ·offsetShearY) · mixShearY`.
+  * The new world goes back to local values through the bone's inherit mode
+    (`localFromWorld`, hint = its current values), so later constraints, IK and children see it.
+  * local absolute: `rotation += wrap(t.rotation − rotation + offsetRotation) · mixRotate`,
+    `x += (t.x − x + offsetX) · mixX` (y likewise), `scaleX += (t.scaleX − scaleX +
+    offsetScaleX) · mixScaleX` (scaleY likewise), `shearY += wrap(t.shearY − shearY +
+    offsetShearY) · mixShearY`.
+  * local relative: `rotation += (t.rotation + offsetRotation) · mixRotate`, `x += (t.x +
+    offsetX) · mixX`, `scaleX ×= 1 + (t.scaleX − 1 + offsetScaleX) · mixScaleX`,
+    `shearY += (t.shearY + offsetShearY) · mixShearY`.
+  * then the bone's subtree gets its world recomputed before the next bone.
+* Results are in `Pose.applied` / `Pose.world` like IK (`Pose.bones` stay the keyable values);
+  `Pose.transformMix[i]` holds the sampled mixes. `sample` adds `transform: {<id>: {mixRotate,
+  mixX, mixY, mixScaleX, mixScaleY, mixShearY}}` and `bones.<id>.applied: {x, y, rotation,
+  scaleX, scaleY, shearX, shearY}` for every constrained bone (rigs without constraints keep
+  their reply shape).
+* **Validation**: `ANIM_TRANSFORM_DUP_ID`, `ANIM_TRANSFORM_BONES` (none, more than 256, a bone
+  twice), `ANIM_TRANSFORM_BONE_MISSING` (unknown bone or target), `ANIM_TRANSFORM_TARGET` (the
+  target among the bones: it would chase itself), `ANIM_TRANSFORM_MIX`, `ANIM_NONFINITE`
+  (offsets), `ANIM_STRUCTURE` (local/relative booleans, order integer −1000..1000). A target
+  **below** a constrained bone is allowed (warning `ANIM_TRANSFORM_TARGET_DESCENDANT`): it is read
+  before the constraint moves anything, the bones reach where it was, then it moves with them
+  (one pass, no cycle).
+* **Keys**: tracks `{"target": "transform:<id>", "property": "mixRotate" | "mixX" | "mixY" |
+  "mixScaleX" | "mixScaleY" | "mixShearY"}` (numeric 0..1, any interp; other properties
+  `ANIM_PROPERTY`, unknown id `ANIM_TARGET_MISSING`, values `ANIM_TRANSFORM_MIX`); mixes
+  cross-fade like IK mix.
+* **Determinism**: pure functions of the pose; physics rigs keep their fixed-step grid, so frames
+  are identical bits for any dt partition (core test, `tests/plugins/cutout-transform-parity` for
+  native ≡ Wasm and pacing, `cutout-transform-players` for both players).
+
+### Editing ops and editor
+
+* `addBone` / `setBone` take `shearX`, `shearY` (0 drops the key) and `inherit` (null / `normal`
+  drops it); shear keys use `setKey` with property `shearX` / `shearY`; `copyPose` carries
+  shear only when non-zero, `pastePose` / `applySetupDeltaToKeys` take it.
+* World-keeping ops invert the bone's mode: `reparentBone`, `deleteBone` (children move up),
+  compensation (`compensateBones` on setBone / transformBones), `setPivot` (the origin moves to
+  the bone's world point; position keys of non-normal bones shift as measured under the setup
+  parent), and `setBone {axes: world | parent}` (`toAxes` / `fromAxes` take the mode: the world
+  rotation is the on-screen angle of the rotated +x axis through `inheritFrame`). Bones without
+  shear and with normal inheritance keep the 1.7 decomposition (skew dropped with
+  `ANIM_REPARENT_SKEW` / `ANIM_COMPENSATE_SKEW`); shaped bones keep their world exactly (skew in
+  shearY). `transformBones` turns: a mirrored parent reverses the local turn only for `normal` /
+  `noScale` bones. `orientBones` skips sheared / non-normal bones and bones with an
+  `onlyTranslation` / `noRotationOrReflection` child.
+* `addTransform {bones, target, id? ("<first bone>-transform"), name?, order?, mix*?, offset*?,
+  local?, relative?, keepPose?}` (`extra.transform`), `setTransform {transform, name?, bones?,
+  target?, ...fields (null = default), keepPose?}`, `renameTransform {transform, id?, name?}`
+  (renames its tracks, `extra.tracks`), `deleteTransform {transform}` (and its keys,
+  `extra.keys`). **keepPose** computes the offsets so the setup pose stays as drawn before the
+  edit (measured on the first bone: no jump when added, none when switching local / relative);
+  a channel with mix 0 gets the offset that changes nothing. `deleteBone` of a target needs
+  `cascade` (the constraint goes: `ANIM_TRANSFORM_REMOVED`); a constrained bone leaves the list
+  (`ANIM_TRANSFORM_BONE_REMOVED`; an emptied constraint goes).
+* Editor: bone properties `cutoutPropShearX`, `cutoutPropShearY` (기울이기 X/Y°: setup values,
+  keys in Animate mode; `K` keys them when the bone uses shear) and `cutoutPropInherit` (상속:
+  일반 · 위치만 · 회전·뒤집기 제외 · 크기 제외 · 크기·뒤집기 제외; Setup mode only, one setBone
+  per selected bone in one edit). The `변형 제약` page (`cutoutTransformPage`):
+  `cutoutAddTransform` (제약 추가: the selected bones follow the primary — last picked — bone, or
+  with one bone selected the asked target id; keepPose), `cutoutDeleteTransform`,
+  `cutoutRenameTransform`, `cutoutTransformList`, `cutoutTransformKey` (혼합 키: the mixes at the
+  playhead that are non-zero or already keyed, one edit), `cutoutTransformSelectTarget`,
+  `cutoutTransformSelectBones`, the checkboxes `cutoutTransformLocal`, `cutoutTransformRelative`
+  (setup values, keepPose) and the fields `cutoutTransformMixRotate|MixX|MixY|MixScaleX|
+  MixScaleY|MixShearY|OffsetRotation|OffsetX|OffsetY|OffsetScaleX|OffsetScaleY|OffsetShearY|Order`
+  (one edit each; in Animate mode a mix is a pending key that `K` commits), `cutoutTransformInfo`.
+  The dopesheet labels rows `변형 <id> <channel>` and opens the page; the graph editor shows the
+  mix and shear curves. The canvas draws a dashed pink line from every constrained bone to its
+  target (a diamond), the selected constraint thicker. The page's buttons are palette commands.
+
 ## Mesh attachments and weights (plugin 1.4.0)
 
 * An attachment (default list or a skin) may be `type: "mesh"` (absent / `"region"` = the image
@@ -776,6 +928,8 @@ in 1.7):
 Signals are derived **only from committed game transitions** (one call per command), never
 from frames. Clip events are not signals: a binding can never depend on an animation event
 (game logic stays independent of presentation timing). Hosts call the core's `observe` op; all hosts use the same C++ derivation.
+The one presentation-side signal is `partClicked` (plugin 1.17.0): a click on a bounding box,
+dispatched inside the element by `hitTest` — it reaches only that instance's bindings, never the game.
 
 | Signal | Params | When |
 |---|---|---|
@@ -787,6 +941,7 @@ from frames. Clip events are not signals: a binding can never depend on an anima
 | `dialogueEnded` | `speakerId` | narrative left dialogue |
 | `portraitChanged` | `characterId`, `portraitId`, `position` | a scene node changed a portrait (expression) |
 | `phaseChanged` | `phase` | state phase changed |
+| `partClicked` | `box`, `slot` | plugin 1.17.0: a click on a bounding box in the player: UI-only, handled inside the element, never derived from a game transition (see "Bounding boxes and points") |
 
 If the controller sets `characterId`, every signal also gets `self=true|false`
 (`speakerId` or `characterId` equals it). Binding fields: `signal`, `match` (all listed
@@ -921,7 +1076,7 @@ pictures larger than a page. Packing is deterministic (skyline, tallest first).
   page). Screenshots with and without atlas differ by a mean of 0.0013/255 (native) and 0.004/255
   (web) (`tests/plugins/cutout-atlas.test.mjs`).
 
-## Layer import (plugin 1.11.0)
+## Layer import (plugin 1.11.0; production files 1.15.0)
 
 Layered art becomes a rig whose setup pose looks exactly like the document. One implementation
 (`service/psd.mjs` reader + `service/layer-import.mjs` mapping) serves every path: the service
@@ -936,12 +1091,26 @@ is ordinary schemaVersion 1 data plus editor metadata.
   leading number `01-` only sorts). PSD: 8-bit RGB only — 16/32-bit, CMYK, indexed, grayscale,
   Lab, … are refused with a message saying how to re-save; raw and PackBits channels (ZIP channels
   refused); Unicode names (`luni`); section dividers (`lsct`/`lsdk`) = groups; a document without
-  layer records imports its merged image as one layer. Canvas ≤ 8192 px, ≤ 64 Mpx of layers.
+  layer records imports its merged image as one layer. Canvas ≤ 8192 px, file ≤ 512 MiB, decoded
+  pictures ≤ 64 Mpx **after scaling** (the layer rectangles at the import resolution; 1.14 counted
+  them at full size). The reader parses records first and decodes one layer at a time, row by row,
+  downscaling while it reads (below), so a 5656×8000 file with 511 records and ~190 Mpx of layer
+  rectangles never exists decoded at full size.
 * **Payload**: `file`, `id` (new character, default from the file name; an existing rig or
   controller id is refused) **or** `rig` (re-import onto that rig), `name?`, `origin?`
   (`bottom-center` default, `center`, `top-center`, `top-left`, `{x, y}` in document px),
-  `trim?` (default true), `scale?` (0.05..4, default 1), `exclude?` (report layer keys),
-  `boneDirection?` (`auto` default, `none` = the 1.11.0 mapping; plugin 1.14.0).
+  `trim?` (default true), `scale?` (0.05..4 or `"auto"`, default 1), `exclude?` (report layer keys),
+  `boneDirection?` (`auto` default, `none` = the 1.11.0 mapping; plugin 1.14.0), `merge?` (report
+  keys of groups to flatten, 1.15.0), `effects?` (`keep` default | `skip`, 1.15.0).
+* **Scale** (1.15.0): `"auto"` = the largest of 1, 0.75, 0.5, 0.375, 0.25, 0.125 whose canvas long
+  edge is ≤ 2048 px and whose layer rectangles at that scale are ≤ 64 Mpx (a document ≤ 2048 px gets
+  1: the 1.14 result). Pictures are read at `resolution` = min(1, scale): below 1 every output
+  pixel is the area average of the document pixels it covers (box filter with fractional coverage,
+  in premultiplied alpha, so antialiased edges keep their colour and only fade in alpha; output
+  rectangle = floor/ceil of the layer rectangle × resolution) and is placed 1:1 (attachment scale
+  1); above 1 pictures keep their resolution and the attachment scale is the scale. A re-import
+  uses the first import's scale and resolution (`editor.layerImport.scale/resolution`; a record
+  without `resolution`, i.e. from 1.11–1.14, means full-size pictures placed at the scale).
 * **Mapping** (new character): canvas = document size × scale, root bone `root` at the origin;
   a top-level `[pivot]` layer's centre overrides the origin.
   * group → bone (id from the name, nested groups = child bones, local = world − parent); origin =
@@ -957,26 +1126,89 @@ is ordinary schemaVersion 1 data plus editor metadata.
     `direction: {angle, length, from: child | content | up}`. `none`: rotation 0, no length.
   * layer → region attachment, picture trimmed to its pixels (alpha > 0) plus a 1 px transparent
     ring (linear filtering at the edge blends to transparency like the document), placed with
-    pivot 0.5 at its centre in the bone's space; `scale` ≠ 1 sets the attachment scale (the
-    pictures keep their resolution). `trim: false` keeps the whole layer rectangle.
+    pivot 0.5 at its centre in the bone's space (see Scale for the resolution and the attachment
+    scale). `trim: false` keeps the whole layer rectangle.
   * names: `slot/attachment` or `slot@attachment` → one slot (`eyes/open`, `eyes/closed`); the
     layers of a `[slot]` group are attachments of the slot named after the group; every plain
     layer is its own slot (attachment named like the slot). Ids are lowercase kebab-case from
-    the name (accents dropped); names without Latin letters fall back to `part-N` / `bone-N`; a
-    slot name used under two bones becomes `<bone>-<slot>`, later duplicates `-2`.
+    the name (accents dropped; 1.15.0: Cyrillic — Russian readings plus Ukrainian є/і/ї/ґ — and
+    Greek transliterated first, `рука левая` → `ruka-levaya`, `Layer 12 Copy 3` →
+    `layer-12-copy-3`); other names without Latin letters (CJK, Hangul) fall back to `part-N` /
+    `bone-N`; a slot name used under two bones becomes `<bone>-<slot>`, later duplicates `-2`.
+  * **clipping** (1.15.0): a clipped layer belongs to the nearest unclipped sibling below it (the
+    base; a clipped layer with nothing below is drawn normally). The base and its visible clipped
+    layers (hidden or left-out ones skipped) become ONE picture: each clipped layer paints inside
+    the base's alpha with its blend mode and opacity (transparency locked:
+    `t = αs·opacity, C = (1 − t)·Cb + t·B(Cb, Cs)`, alpha stays the base's), then the result is
+    the base layer's picture (its opacity → slot alpha). Report items of clipped layers have
+    `role: "clipped"`, `clippedTo: <base key>`.
+  * **clipping onto a group** (1.19.1): when the base is a group that is not merged (it stays bones
+    / slots, e.g. legs with a left and a right slot), its visible clipped layers (layers or groups,
+    composited as in a merge) are painted into the group's pictures at the import resolution,
+    after the slots are known and before the pixel hashes, innermost base group first, in layer
+    order, with their blend modes and opacities. Photoshop clips to the group's composite alpha;
+    at each pixel the effect goes into the topmost picture of the group covering it and, where
+    that picture is partly transparent (soft edge, opacity < 1 relative to the group), also into
+    the pictures showing through it, down to the first opaque one, each with the full
+    `t = αs·opacity` (transparency locked as above). Without semi-transparent overlap (one picture
+    per pixel) every picture equals Photoshop's result in its region; with it the setup frame
+    equals Photoshop's for modes linear in the backdrop (normal, multiply, screen, linear dodge
+    below its clamp) and is within a few levels for overlay / soft light / lighten / darken and a
+    clamping linear dodge (each picture is blended on its own colour, not the mix). Pixels of a
+    picture under an opaque picture of the group get nothing (only uncovered by animation).
+    The group's shown stack is, per slot, the topmost picture visible inside the group (the
+    group's own visibility does not matter: a hidden group's pictures are baked as it would
+    show); every other picture of the group — hidden variants (`eyes/closed`, a fist), a covered
+    second visible layer of a slot — gets the effect within its own alpha as if it were shown in
+    place of its slot's shown picture (pictures above that one still cover it), or at its own
+    draw position when its slot shows nothing in the group, so swapping a variant in keeps the
+    shading. Clipped layers are never "effects" (`effects: "skip"` keeps them). Report: the
+    clipped items `role: "clipped"`, `clippedTo: <group key>`, counted in `summary.baked`. A
+    preview reading only alpha paints nothing (rectangles are unchanged by baking). A clipping base
+    that is excluded, `[ignore]`d or a skipped effect takes its clipped layers with it (as for
+    layer bases). `ANIM_IMPORT_CLIPPING` is no longer reported (every clipping base is baked).
+  * **merge** (1.15.0): a group whose name has `[merge]` or whose key is in `merge` is flattened
+    into one picture, mapped like a layer named after the group (`hair [merge]` → slot `hair`;
+    `mouth/smile [merge]` → attachment `smile` of slot `mouth`; inside a `[slot]` group one
+    attachment) on the enclosing bone; it makes no bone. Its visible children (not hidden, not
+    `[ignore]`/excluded, not markers) are composited back to front, isolated (like a "Normal"
+    group; a pass-through group whose children blend with art below the group can differ there),
+    nested groups recursively, clipping as above, blending with source-over
+    `mix = (1 − αb)·Cs + αb·B(Cb, Cs)`, `αo = αs + αb(1 − αs)`, `Co = (αs·mix + αb(1 − αs)·Cb) / αo`.
+    The group's opacity → slot alpha. Report: `role: "merged"`, `merge: "tag" | "key"`, children
+    `role: "in-merge"` (or clipped / excluded / ignored).
+  * **blend modes** baked (clipping and merge): normal, multiply, screen, overlay, linear dodge (add,
+    clamped), lighten, darken, soft light (W3C formula; Photoshop's curve differs by a few levels in
+    the mid tones); opacity always mixes linearly (Photoshop's fill behaviour of add-like modes is
+    not reproduced); other modes are computed as normal (one `ANIM_IMPORT_BLEND` line).
+  * **effects** (1.15.0): a layer, merged group or group outside a merged group with a blend mode
+    other than normal / pass-through cannot be drawn by the rig: `effects: "keep"` draws it normal,
+    `"skip"` leaves it (and a group's children) out (`role: "effect"`). One `ANIM_IMPORT_BLEND`
+    warning counts them by mode.
+  * empty layers (0×0 or fully transparent) and groups without pictures are skipped quietly (roles
+    `empty` / `empty-group`, one `ANIM_IMPORT_EMPTY` summary line).
   * draw order = layer order (a slot sits where its shown layer is); the topmost visible layer of a
     slot is its setup attachment, hidden layers (or layers of hidden groups) are attachments that
     are not shown (expression / key swaps); a slot with only hidden layers has `attachment: null`.
     Layer opacity × group opacities → slot `alpha` (overlapping children of a translucent group can
     differ slightly from Photoshop's isolated group).
   * `[ignore]` / `[skip]` drop a layer or a whole group; `exclude` keys likewise.
-  * Warnings (report): blend modes other than normal/pass-through (`ANIM_IMPORT_BLEND`, drawn
-    normal), clipping masks (`ANIM_IMPORT_CLIPPING`), layer masks (`ANIM_IMPORT_MASK`, not applied),
-    translucent groups, two visible layers in one slot, empty layers/groups, more than one marker.
+  * Warnings (report; one summary line per kind where a production file has hundreds): unbaked
+    blend modes (`ANIM_IMPORT_BLEND`), layer masks
+    (`ANIM_IMPORT_MASK`, not applied), empty layers/groups (`ANIM_IMPORT_EMPTY`), over the limits
+    (`ANIM_IMPORT_LIMIT`), translucent groups, two visible layers in one slot, more than one marker.
+  * **Limits**: bones 256, slots 256, attachments 1024 (rig totals). Over them an import is refused;
+    a preview (`dryRun`) is not: `report.limits = {bones|slots|attachments: {count, max}, exceeded}`
+    and `report.autoMerge = {keys, fits}`, a proposal for `merge`: repeatedly the leaf bone group
+    (all bone groups under it already proposed) with the most pictures, groups holding hidden
+    variants last, until the counts fit (merging a group removes its bones and turns its slots and
+    attachments into one each; a proposed group replaces proposed groups under it). New characters
+    only (a re-import keeps existing slots, so merging cannot shrink it).
   * New rig: `idle` clip, mix 150 ms; new controller `{rig: id, defaultClip: "idle"}`.
 * **Provenance**: `editor.layerImport = {source, format, width, height, scale, layers: {"slot/name":
-  {x, y, width, height, pixels}}}` (picture rectangle in document px and a pixel hash). Runtimes
-  ignore `editor`.
+  {x, y, width, height, pixels}}, resolution}` (picture rectangle in picture px = document px ×
+  resolution, and a pixel hash of the baked picture: a changed clipped layer, also one clipped onto
+  a group, changes the hash and updates the picture on re-import). Runtimes ignore `editor`.
 * **Re-import** (`rig`): bones, slots, keys, skins, expressions, IK and every placement stay.
   Matching is by id: groups map to bones of the same id (kept, never moved; new groups become new
   bones placed through the current setup pose), `slot/name` to existing attachments.
@@ -995,19 +1227,32 @@ is ordinary schemaVersion 1 data plus editor metadata.
   report}`; image ids are `image-<sha256 of the PNG, 24 hex>` (the same as `importImage`), so an
   unchanged picture is the same asset. `report`: `mode` (`create`/`update`), `rigId`, `source`,
   `options`, `canvas`, `layers` (tree, back → front: `key`, `name`, `kind`, `visible`, `opacity`,
-  `blend`, `bounds`, `include`, `role` = image/bone/pivot/slot-group/ignored/excluded/empty/…,
-  `bone`, `slot`, `attachment`, `setup`, `status` = add/update/same/skip/kept, `warnings`),
-  `warnings`, `changes` (bones added/kept, slots added/kept, attachments added/updated/unchanged/
-  skipped/missing) and `summary`. The rig passes core validation before it is returned. A preview
-  (`dryRun`) has no images and empty `imageAssetId`s.
+  `blend`, `bounds` (document px), `include`, `role` = image/bone/pivot/slot-group/ignored/
+  excluded/empty/empty-group/clipped/merged/in-merge/effect/…, `clippedTo`, `merge`, `bone`,
+  `slot`, `attachment`, `setup`, `status` = add/update/same/skip/kept, `warnings`), `warnings`,
+  `changes` (bones added/kept, slots added/kept, attachments added/updated/unchanged/skipped/
+  missing), `summary` (+ 1.15.0 `baked` clipped layers, `merged` groups, `effects`, `empty`,
+  `pixels` of the pictures), `limits`, `autoMerge` (over the limits only); `options` carries the
+  chosen `scale`, `scaleMode` (`auto` | `fixed` | `kept`), `resolution`, `merge`, `effects`;
+  `source.layerPixels` = the layer rectangles in document px. The rig passes core validation before
+  it is returned. A preview (`dryRun`) has no images and empty `imageAssetId`s; for a new character it
+  reads only the alpha of each layer (trimmed bounds, empty checks, placements are exact; colour,
+  clipping and merge compositing and PNG encoding happen on import only), a re-import preview also
+  decodes colour (unchanged pictures are found by their pixel hash). Measured on the generated
+  5000×7000, 496-layer / 162 Mpx file (`tests/plugins/fixtures-gen/real-like-psd.mjs`): preview
+  ≈ 0.5 s, import ≈ 3 s at scale 0.25 (test budget 10 s / 20 s).
 * `plugin_call` op `importLayers`: the same with `target: {id, rig}` for a re-import preview of rig
   data and `includeImages: true` for base64 PNGs; it never writes anything.
 * Editor: `PSD 가져오기…` (character row `cutoutImportLayers`, plugin menu
   `cutoutImportLayersAction`, command palette) → file → preview → dialog
   `cutoutLayerImportDialog` (`cutoutLayerImportSource`, `…Target` new / update, `…Id`, `…Origin`,
-  `…Scale`, `…Trim`, `…AimBones` (boneDirection), layer tree `…Tree` with include boxes and bone/slot/attachment/status columns,
-  `…Warnings`, `…Summary`, `…Refresh` = preview again) → `가져오기` = one edit (one Ctrl+Z). The
-  file the selected character was imported from defaults to updating it.
+  `…Scale`, `…AutoScale` (default on = `scale: "auto"`) + `…ScaleInfo` (the chosen scale and
+  canvas), `…Trim`, `…AimBones` (boneDirection), `…SkipEffects` (effects), layer tree `…Tree` with
+  include boxes, bone/slot/attachment/status columns and the group column 「한 그림으로」 (= `merge`;
+  a `[merge]` row stays checked; row context action `cutoutLayerImportMergeAction`), `…Warnings`,
+  `…Summary` (red with the counts when over the limits; 가져오기 disabled), `…Refresh` = preview
+  again, `…AutoMerge` 「자동 합치기」 = add `report.autoMerge.keys` and preview again) → `가져오기` =
+  one edit (one Ctrl+Z). The file the selected character was imported from defaults to updating it.
 
 ## Clipping (plugin 1.12.0)
 
@@ -1102,3 +1347,340 @@ Spine sequences: one attachment shows one of several same-size pictures, picked 
   Animate mode `시퀀스 키` / `키 삭제` (`cutoutSequenceKey` / `DeleteKey`) at the playhead; the
   dopesheet shows a `<slot> 시퀀스` row (step keys). The canvas draws the pose's frame while
   scrubbing (`attachmentImage`).
+
+## Bounding boxes and points (plugin 1.17.0)
+
+Hit areas and anchors that follow the rig. Neither is ever drawn, packed or checked as a picture.
+
+* **Data**: attachments (default list or a skin) of `type: "boundingBox"` with `vertices: [x, y, …]`
+  (3..256 points; placed exactly like a clip polygon: in the slot bone's space through the
+  attachment's `x, y, rotation, scaleX, scaleY`, or `weights` with 1..4 bones per point (bind pose =
+  setup pose, the mesh rules: binds derived at parse, sums normalised with `ANIM_MESH_WEIGHT_SUM`),
+  and deform keys (`property: "deform"`, `attachment` = the box's name) move them) and an optional
+  editor-only `color` (`#rrggbb[aa]`), and `type: "point"` whose `x, y, rotation` are a place and a
+  direction in the slot bone's space (scale unused). They live in slots like pictures: a slot may
+  show one as its setup attachment, attachment keys / expressions / skins swap or hide them. A slot
+  showing nothing (null, a key or expression hiding it, a name the skin does not resolve) has no box
+  or point; slot alpha does not matter (Spine semantics).
+* **Validation**: `ANIM_BOX_VERTICES` (missing, pairs, 3..256), `ANIM_NONFINITE`, weights as meshes
+  (`ANIM_MESH_WEIGHTS`, `ANIM_MESH_INFLUENCES`, `ANIM_MESH_BONE_MISSING`, `ANIM_MESH_WEIGHT_SUM`),
+  names unique per slot and list (`ANIM_DUP_ID`), `ANIM_BOX_COLOR`, `ANIM_BOX_POLYGON` (warning: a
+  crossing polygon is still well defined, see the hit test), `ANIM_BOX_UNUSED` / `ANIM_POINT_UNUSED`
+  (warnings: picture or shape fields that would do nothing), `ANIM_SEQUENCE_TYPE` (no sequences).
+  Controllers: a `partClicked` binding whose `match.box` / `match.slot` names no box of the rig is
+  `ANIM_PART_UNKNOWN` (warning: it can never fire).
+* **Runtime** (`cutout::boxPolygons`, `pointWorlds`, `hitBox`; every runtime, the same code): for the
+  instance's current pose (after expressions, IK, transform constraints and physics) each shown box
+  is its rig-space polygon (`meshPositions`), each point its rig-space place and direction (the
+  rotation through the slot bone's linear part, so scale, shear and mirror count). `drawItems`
+  skips both: documented and compact frames of a rig are byte-identical with or without them.
+  Hit test: even-odd crossing rule, half-open in y (a point on a shared edge belongs to one side),
+  no epsilon; the topmost box (last in draw order) containing the point wins.
+* **Host ops** (generic extension protocol additions, CONTRACT.md §7; coordinates in the space of
+  `frame`: element px for mounted instances, rig-origin px otherwise): `points {instance}` →
+  `{points: [{slot, name, x, y, rotation}]}` (rotation in degrees, clockwise on y-down screens; a
+  mirrored element mirrors it), `boxes {instance}` → `{boxes: [{slot, name, polygon}]}`, `hitTest
+  {instance, x, y, dispatch?}` → `{hit: {slot, name} | null, hits: [...] (topmost first), matched?}`.
+  `init` replies list `ops: ["points", "hitTest"]`; `mount` replies add `interactive: true` when the
+  rig (or a skin) has a bounding box (absent otherwise: older replies keep their shape).
+* **Game use** (`partClicked`): `hitTest` with `dispatch: true` sends the instance the presentation
+  signal `partClicked {box: <attachment name>, slot: <slot id>}` (the topmost box; a miss sends
+  nothing), which controller bindings match like any signal (`match: {box: "head"}` → a clip, skin
+  or expression). **Determinism**: the click is a UI-only signal handled inside the element. It
+  never becomes a game command, an `observe` transition or an RNG draw; players only observe the
+  click (it still reaches the screen under the element) and nothing of it reaches the game
+  session. What it changes is presentation state only (the instance's tracks / look, saved in
+  `playerPresentation.extensions` like any binding), so game results and replays are unchanged.
+* **Players** (both; tests/plugins/cutout-box-players.test.mjs): a mouse click inside an
+  interactive plugin element is mapped to element px (native: the document's `click` event,
+  `ExtensionElement::observe_click`; web: a capturing document listener through the layer's box,
+  stage scale undone) and sent as `hitTest` with `dispatch`. `ExtensionHost::points(instance)`
+  (native) / `host.points(instance)` (web) give the anchors in element px for UI that follows a
+  part (a speech bubble…); reports list `points`, `interactive` and `lastClick` per instance and a
+  `clicks` counter. Native automation: `{clickPoint: {id?, x, y}}` (element-local with `id`).
+* **Editing ops**: `addBoundingBox {slot (new), bone?, from?, fromName?, before? | index?, name?
+  ("box"), vertices | worldVertices | mask? (+ alphaThreshold?, detail?), color?}` (`from` = a part:
+  the box goes on its bone right above it and, without vertices, outlines its picture: the alpha
+  `mask` traced like `autoOutline` (the service fills it from `imagePath`), else its rectangle; no
+  part and no vertices: a 64 px square around the bone origin; `extra.attachment`, `extra.vertices`),
+  `setBoundingBox {slot, name?, skin?, vertices? | worldVertices?, color? (null removes)}` (a new
+  point count drops weights `ANIM_BOX_WEIGHTS_DROPPED` and deform keys), `addPoint {slot (new),
+  bone, before? | index?, name? ("point"), x?, y?, rotation? | worldX?, worldY?, worldRotation?}`
+  (on top by default), `setPoint {slot, name?, skin?, …same}`; `setAttachment` moves / turns them
+  (canvas drags), `deleteSlot` removes them. `convertToMesh`, mesh ops and `setSequence` refuse them.
+* **Editor** (look page `판정`, `cutoutHitPage`): `판정 상자` (`cutoutAddBoundingBox`: the selected
+  part's alpha outline with the 메시 page's threshold / detail, or its rectangle; a selected bone gets
+  a square), `기준점` (`cutoutAddPoint`, checkable: the next canvas click places a point on the
+  selected bone (a part: its bone), Esc cancels), `정점 편집` (`cutoutBoxVertices`: the mesh vertex
+  tools on the box's points: click / Shift / band select, drag, Delete; row `cutoutBoxVertexTools`
+  with `점 추가` (`cutoutBoxAddVertex`, onto the nearest edge) and `점 삭제`
+  (`cutoutBoxDeleteVertices`, at least 3 stay)), `삭제` (`cutoutHitDelete`), list `cutoutHitList`,
+  info `cutoutHitInfo`. The canvas draws boxes as translucent dashed polygons (their colour, else
+  lime) and points as a violet crosshair with a direction line ending in a round handle; a box is
+  picked by its outline, a point by its centre (drag = move) or its handle (drag = turn), each
+  gesture one edit. `보기 ▾` toggles `판정 상자 보이기` (`cutoutShowBoxes`) and `기준점 보이기`
+  (`cutoutShowPoints`), editor-only (QSettings). In the 게임 연결 tab the canvas shows the preview
+  instance: a click on a box fires `partClicked` into it (the players' dispatch) and the result
+  line names the matched bindings; the binding editor lists `partClicked · 판정 상자 클릭` and offers
+  `box=<name>` for the rig's boxes (tooltip, completer). Every command is in the palette.
+* **Atlas, PSD re-import, meshes**: boxes and points have no image: the atlas packer and the image
+  checks skip them (even with a stray `imageAssetId`), mesh tools ignore them, and a re-imported
+  picture layer that lands on a box / point / clipping of the same slot and name is skipped
+  (`ANIM_IMPORT_KIND`), never turned into a picture.
+* **Layer import tags**: a layer named `head [box]` becomes slot `head-box` showing bounding box
+  `head` that outlines its pixels (the core's alpha tracing; without the core, the pixels'
+  rectangle), a layer `mouth [point]` slot `mouth-point` showing point `mouth` at the centre of its
+  pixels; both on the bone of their group, in layer order, hidden layers not shown, never moving
+  bone centres. Re-import updates the outline / place (weights stay unless the point count
+  changed). The report marks them `role: "box"` / `"point"` and counts `summary.boxes` / `points`.
+
+## Weight painting and linked meshes (plugin 1.18.0)
+
+### Weight ops
+
+Every weight op names the mesh like the other mesh ops (`{slot, name?, skin?}`; `attachment` is an
+alias of `name`) and refuses linked meshes (their weights are the parent's). Each vertex an op
+touches **settles**: locked bones (`locked: [bone ids]`, editor state sent with the op) keep their
+shares; the unlocked shares scale to fill the rest (locked shares alone over 1, or alone left, are
+normalised among themselves); unlocked shares below `prune` (default **0.01**) are removed — never
+the last one that still has to fill; then the smallest unlocked shares beyond `maxInfluences`
+(1..4, default **4**) go (a locked one only once no unlocked share is left, after which the rest is
+normalised plainly); largest first, rounded to 1e-6 with the last share taking the remainder so
+every vertex sums to exactly 1. A vertex that cannot settle (nothing unlocked can take the rest)
+keeps its weights (`extra.skipped`). Only the touched vertices' weight lists are rewritten (the
+rest of the document stays byte-identical); an unweighted mesh starts from 100 % its slot bone and
+gets a full `weights` list.
+
+* `paintWeights {…, mode? (add | subtract | replace (default) | smooth), vertices, amounts? (per
+  listed vertex 0..1: the brush falloff), strength? (0..1, 1), bone (not smooth), weight? (replace
+  target, 1), locked?, maxInfluences?, prune?}` — one brush stroke. Per vertex `a = strength ·
+  amount`: add raises `bone`'s share by `a`, subtract lowers it by `a`, replace moves it toward
+  `weight` by `a` (clamped to what the locked shares leave); the other unlocked bones are rescaled
+  to fill the rest — a vertex with no other unlocked bone hands it to the slot bone (the 1.4
+  brush rule; skipped when that is `bone` or locked). smooth moves every unlocked share toward the
+  mean of the vertex's mesh neighbours (triangle edges; the values **before** the stroke, so the
+  vertex order does not matter) by `a`. A locked `bone` is refused. `extra.vertices` (changed),
+  `extra.skipped`.
+* `normalizeWeights {…, vertices?, maxInfluences?, prune?, locked?}` — settles the listed vertices
+  (all by default); refused for unweighted meshes. `extra.pruned` (shares removed), `extra.vertices`.
+* `mirrorWeights {…, axis? ("x" = left ↔ right across a vertical line, "y" = top ↔ bottom),
+  center? (rig px on that axis; default the middle of the mesh's setup-pose bounding box), from?
+  (the source side: left | right, top | bottom; default left / top), map? ({bone: bone}, each pair
+  works both ways, before the automatic names), tolerance? (px, 0.5), locked?, maxInfluences?,
+  prune?}` — every vertex farther than `tolerance` on the other side takes the weights at its
+  mirror point: barycentric in the setup-pose mesh (the nearest triangle when outside), each bone
+  renamed to its counterpart: `map`, else `mirrorBoneId` when that bone exists, else itself.
+  Locked bones keep the vertex's own shares. `mirrorBoneId` (core, also used by the editor) swaps
+  whole `-`-separated tokens `left`↔`right`, `l`↔`r`, `lt`↔`rt` and the transliterated Russian
+  pairs `levyy`↔`pravyy`, `levyj`↔`pravyj`, `levy`↔`pravy`, `levaya`↔`pravaya`, `levoe`↔`pravoe`,
+  `lev`↔`prav` (`arm-l`, `l-arm`, `ruka-levyy`); without such a token the first `left` / `right`
+  inside the id (`armleft`). `extra.vertices`, `extra.center`, `extra.mapping` (bone → the
+  counterpart used), `extra.unmapped` (bones without one: they keep their name).
+* `copyWeights {…, from: {slot, name? | attachment?, skin?}, vertices?, locked?, maxInfluences?,
+  prune?}` — each listed vertex (all by default) takes the source mesh's weights at the same
+  setup-pose rig position (barycentric inside its triangles, the nearest triangle outside). A
+  linked source reads its parent's; an unweighted source is 100 % its slot bone. Refused: the mesh
+  itself, a non-mesh source.
+* `setWeights` / `autoWeights` keep their 1.4 behaviour (they rewrite every vertex, prune 1e-4).
+
+### Linked meshes
+
+* **Data**: a mesh attachment (default list or a skin) with `linkedMesh: {parent: "<slot>/<name>",
+  skin?, deform? = true}` has its own picture — `imageAssetId`, `width`/`height` (the size of that
+  picture: PNG checks, atlas), `atlas`, and optionally its own `uvs` (one pair per parent vertex) —
+  and **shares the parent mesh's** `vertices`, `triangles`, `weights` (and the binds derived from
+  them), `hull`/`edges` and placement (`x … scaleY`, pivot, and the parent's width/height for the
+  pivot): it draws the parent's outline with its own picture through the shared (or own) uvs, so a
+  half-size outfit picture of the same aspect covers the same shape. `parent` names an attachment
+  of the default list, or of skin `skin`. A linked mesh's own shape / placement fields are ignored
+  (warning `ANIM_LINKED_UNUSED`).
+* **Resolution** (parse time, every runtime): parents first; a chain (a linked mesh's parent may
+  be linked) resolves to its first own mesh. A **weighted** linked mesh sits where the shared binds
+  put it, whatever slot shows it; an **unweighted** one is placed by the bone of the slot showing
+  it (the parent's offset in that bone's space), like the parent in its own slot.
+* **Deform**: with `deform` true (default) the deform track of the slot showing the linked mesh
+  whose `attachment` is the parent's name (the chain's `deformName`) moves it — the main case, a
+  skin variant in the parent's slot, simply shares the parent's track; with `deform: false` its own
+  name's track (if any). Validation counts its vertices under both names.
+* **Validation**: `ANIM_LINKED_PARENT` (malformed link, unknown skin, missing parent, a parent that
+  is not a mesh), `ANIM_LINKED_CYCLE`, `ANIM_LINKED_TYPE` (`linkedMesh` on a non-mesh),
+  `ANIM_LINKED_VERTICES` (own uvs of another vertex count), `ANIM_LINKED_SEQUENCE` (a sequence on
+  either side), `ANIM_LINKED_UNUSED` (warning); deform key counts as for meshes (`ANIM_MESH_DEFORM`).
+* **Editing ops**: `linkMesh {slot, name? | attachment?, skin?, parent, parentSkin?, deform?,
+  imageAssetId?, width?, height?}` — the attachment of the default list (or skin `skin`) becomes a
+  linked mesh of `parent` (in the default list, or skin `parentSkin`), keeping its picture and
+  dropping its own shape, weights and placement; a missing entry is created from imageAssetId /
+  width / height (an outfit variant of a mesh: the skin entry of the same name). Refused: a
+  non-mesh or sequence parent, itself, a picture whose aspect differs from the parent's by more
+  than 2 %, pictureless attachments and sequences; a link closing a cycle fails validation.
+  `extra.attachment`, `extra.parent`, `extra.created`.
+* `unlinkMesh {slot, name?, skin?}` — an independent copy drawing exactly what it drew: the root's
+  geometry, weights and placement (in another slot a weighted copy's offset is re-expressed in
+  that slot bone's setup space). A picture of another pixel size gets its vertices scaled into its
+  own pixels and the offset scale divided by the factor, unless deform keys already address its
+  name (possibly shared, in the parent's pixels): then the pivot absorbs the size difference.
+  Inherited deform keys are copied to its own name (the inherited track goes when nothing else on
+  the slot reads it).
+* Shape / weight ops (`convertToMesh`, `setMeshVertices`, `autoWeights`, `setWeights`, the freeform
+  and weight ops, `setSequence`) and placement edits (`setAttachment` / `setSkinAttachment` x …
+  pivotY) refuse linked meshes; `convertToRegion` of a linked mesh gives a picture at its parent's
+  placement. Parents that go away (`deleteSlot`, `removeSkinAttachment`, `deleteSkin`,
+  `convertToRegion` of the parent) first turn their linked meshes into copies
+  (`ANIM_LINKED_UNLINKED`); `renameSkin` rewrites `linkedMesh.skin`; `orientBones`, pivot and
+  slot-bone compensation leave linked entries alone (their placement is the parent's).
+* **Export / import**: the atlas packs a linked mesh's own picture (a mesh: whole picture, no
+  trim); PSD re-import swaps a linked mesh's picture only at the same size and place
+  (`ANIM_IMPORT_MESH` otherwise); bounding boxes are unaffected.
+
+### Editor (메시 page)
+
+* Weight mode rows: `cutoutMeshWeightTools` (`자동 웨이트`, `웨이트 해제`, `정리` =
+  `cutoutNormalizeWeights`), `cutoutWeightModes` (`더하기` `cutoutWeightModeAdd`, `빼기`
+  `cutoutWeightModeSubtract`, `바꾸기` `cutoutWeightModeReplace` (default), `부드럽게`
+  `cutoutWeightModeSmooth`); setup row `cutoutMeshLinkTools` (`좌우 복사` `cutoutMirrorWeights`,
+  `메시에서 복사` `cutoutCopyWeights`, `링크드 메시` `cutoutMakeLinkedMesh`, `연결 끊기`
+  `cutoutUnlinkMesh`). Section `cutoutWeightSection` (setup only): `감쇠` `cutoutWeightFalloff`
+  (hard: 1 inside the brush; linear: 1 − r; smooth (default): 1 − r²(3 − 2r), r = distance /
+  radius), `최대 본` `cutoutWeightMaxInfluences`, `작은 웨이트 지우기` `cutoutWeightPrune`,
+  `좌우 복사 방향` `cutoutMirrorAxis`, `가져올 메시` `cutoutCopyWeightsFrom`, `커서 아래 값`
+  `cutoutWeightShowValue`, `자세 미리 보기` `cutoutWeightPosePreview` + `cutoutWeightPreviewAngle`,
+  and the weight table `cutoutWeightTable`: per bone weighting the mesh (plus the brush bone and
+  locked bones) a label `cutoutWeightBone-<id>`, the mean weight of the selected vertices
+  `cutoutWeightValue-<id>` (editable: one `paintWeights` replace on every selected vertex; "—"
+  without a selection) and the lock `cutoutWeightBoneLock-<id>`.
+* A stroke records per vertex its closest approach to the brush centre (r = distance / radius)
+  and the modifiers at the press: **Shift = smooth, Ctrl = subtract** for that stroke; the panel
+  turns r into `amounts` through the falloff and sends ONE `paintWeights` on release (the live
+  heat map previews the same op, at most once per event-loop pass). `[` / `]` (panel shortcuts
+  `cutoutShortcutBrushSmaller` / `cutoutShortcutBrushLarger`, also handled by the canvas) shrink /
+  grow the brush by 25 % in weight mode; no other shortcut uses them.
+* Heat map of the brush bone (blue 0 → red 1) with a ramp legend, influence counts beside the dots
+  of 2+ bones (meshes up to 400 vertices), a hover tooltip with the vertex's weights (locked bones
+  marked), the value under the cursor (`커서 아래 값`). A 2025-vertex mesh paints at ~17 ms per brush
+  move offscreen (studio test `weightPaintPerformance`).
+* 자세 미리 보기 is editor-only and never saved: in setup weight mode the canvas shows the setup
+  pose with the brush bone turned by the angle (IK re-solved); strokes on it still edit the setup
+  weights.
+* A linked mesh shows `링크드 메시 「…」 · 부모 「slot/name」(…) · 변형 키 …` in `cutoutMeshInfo`;
+  its vertex / weight tools are disabled in setup mode (animate mode keys the shared deform track).
+  `cutoutMakeLinkedMesh` opens `cutoutLinkedMeshDialog`: for a picture `cutoutLinkedParent` (meshes
+  of the same aspect), for a mesh `cutoutLinkedSkin`, `cutoutLinkedName`, `cutoutLinkedImage`
+  (images of the same aspect); `cutoutLinkedDeform`. Locks, the brush, the mode and the preview
+  pose are editor state.
+
+## Canvas shortcuts and direct manipulation (plugin 1.19.0)
+
+No data change: keys, modifiers, the readout, the shortcut overlay and the right-click menu only
+choose which existing gesture runs. Every edit is still ONE core op batch (the LLM `edit` op gets
+the same ops) and one undo step; every 1.18 document loads and plays bit-identically.
+
+### `duplicateBones {bones?, slots?}` (복제, Ctrl+D)
+
+* Every listed bone is copied with its whole subtree; a copied top bone keeps the original's
+  parent, so the copy sits exactly on top (same setup world). Every slot on a copied bone is
+  copied; listed `slots` whose bone is not copied are copied on the same bone. A bone listed with
+  its own descendant is copied once.
+* Ids: the next free `-N` of the id without a numeric suffix (`arm` → `arm-2`, `arm-2` → `arm-3`),
+  unique among bones and slots; a too long id is refused.
+* Draw order: the copied slots (in their own order) go right after the last original slot of the
+  set, so the copy draws above the originals with its own layering kept.
+* Attachments of the copied slots in the default list and in every skin are copied; mesh weights
+  of copied bones, linked-mesh parents (`linkedMesh.parent` slot) and clip ends (`end`) point at the
+  copies when those are copied too (else they keep naming the originals). A clipping slot whose
+  `end` is not copied is left out (warning `ANIM_DUPLICATE_CLIP_SKIPPED`).
+* IK, physics and transform constraints are copied (id: the next free `-N`) only when every bone
+  they name (`bones`, `bone`, `target`, `tip`) is inside the copy.
+* Clips, keys and expressions are not copied: the copy starts unanimated.
+* `extra.bones` / `extra.slots` = `{original id: copy id}`. Refused: neither list, unknown ids, a
+  non-array list. The editor runs it in setup mode only and selects the copies.
+
+### Keys (shortcut overlay `cutoutShortcutOverlay`)
+
+The overlay (`?` on the canvas, `보기 ▾ › 단축키 모음` = `cutoutShortcutOverlayAction`, closed by
+Esc / `?` / `cutoutShortcutOverlayClose`) lists in `cutoutShortcutList`, grouped by 도구 · 선택 ·
+변형 · 보기 · 편집 · 애니메이션 · 메시 · 도움말 · 작업 공간, exactly `CutoutPanel::shortcutList()`:
+every panel `QShortcut` named `cutoutShortcut*` (its key and the properties `cutoutShortcutGroup` /
+`cutoutShortcutText`) plus every `RigCanvas::keyBindings()` entry (the keys the canvas's key handler
+dispatches from, and the mouse gestures). The studio test `canvasDirectManipulation` compares the
+two, so the overlay cannot drift from what is bound.
+
+| Key | Where | Does |
+| --- | --- | --- |
+| V R S P | workspace | 선택·이동 / 회전 / 크기 / 회전 중심 tools (P setup only) |
+| B (and C) | workspace | 본 만들기 tool (setup only); C keeps working for 1.18 habits |
+| M | workspace | 메시 정점 편집 on/off (a part showing a mesh) |
+| W | workspace | 웨이트 칠하기 on/off (a mesh part, setup mode) |
+| G | workspace | 판정 상자 정점 편집 on/off (a bounding-box part, setup mode) |
+| K · O · Space · , . | workspace | key · onion skin · play/stop · step (unchanged) |
+| [ ] | workspace | brush size in weight mode (unchanged) |
+| Ctrl+K, F1 · Ctrl+= / Ctrl++ / Ctrl+- / Ctrl+0 | workspace | command palette · UI scale (unchanged) |
+| Esc | canvas | cancels a drag (the preview goes back, zero edits), a band, a mesh drag / stroke, outline drawing, point placing; else steps back: mesh / box vertex editing off → select tool → selection cleared |
+| F | canvas | 선택 맞춤: the selected bones (origin + tip) and parts (drawn bounds) fill the view (at least 80 rig px framed, zoom ≤ 8); nothing selected = 전체 맞춤 |
+| Shift+F, Home | canvas | 전체 맞춤 (the fit button `cutoutFitView`, now `전체 맞춤 (Home)`) |
+| Space held | canvas | hand tool: a left drag pans in any tool and mode (open / closed hand cursor), nothing is picked; a tap (press + release, no drag) is the panel's Space (play/stop in Animate). Middle / right drags still pan |
+| ← ↑ → ↓ (Shift = 10 px) | canvas | nudge (below); not while a mesh mode, outline drawing or point placing owns the canvas |
+| Ctrl+A | canvas | all bones (unchanged); Ctrl+Shift+A stays the host's workspace toggle (clearing = Esc) |
+| Delete / Backspace | canvas | deletes the selection like the 삭제 button `cutoutDeleteItem` (same confirmation; `deleteBone` cascade / `deleteSlot`); in vertex mode still the selected vertices |
+| Ctrl+D | canvas | `duplicateBones` of the selected bones (subtrees) and parts, setup mode |
+| ? (Shift+/) | canvas | the shortcut overlay |
+| Tab | canvas, dopesheet, graph | 캔버스 크게 (unchanged) |
+
+Letter keys are `QShortcut`s of the workspace (`Qt::WidgetWithChildrenShortcut`): a focused text or
+number field accepts the key as typing (`ShortcutOverride`), so they never fire while typing. The
+canvas claims its own keys through `ShortcutOverride` while it has the focus (Space is then the
+hand tool instead of the panel's play shortcut; during a drag also digits, `-`, `.`, `,`, `;`,
+Backspace and Enter, so `,` / `.` do not step the playhead mid-drag). Conflicts resolved in 1.19.0:
+F was 화면 맞춤 (now 선택 맞춤, the whole canvas without a selection); Space was play only (on the
+canvas now hold = pan, tap = play); Shift while dragging was fine ×0.25 (now constrain; Ctrl =
+fine); a right click only panned (now a click opens the menu, a drag still pans); B joins C for
+본 만들기; Ctrl+Shift+A was not taken for clearing (the host's toggle).
+
+### Drag modifiers, readout and typed values
+
+`RigCanvas::gestureValue(drag)` is the one interpretation of a drag (the readout and the panel's
+`dragOps` both read it):
+
+* **Shift** (held after the press: a Shift/Ctrl press toggles the selection): move = the dominant
+  axis of the mouse motion in rig axes; rotate = the grabbed bone's rotation in 15° steps (a group
+  or a part: the turn); scale = the factor in 10 % steps (never 0). Scale stays uniform.
+* **Ctrl**: fine, delta / angle / (factor − 1) × 0.1; with Shift the steps are 1° and 1 %.
+* Pressing or releasing Shift / Ctrl mid-drag re-previews at once.
+* **Typed value** (Move / Rotate / Scale drags): digits, `-`, `.` and `,` / `;` build the value,
+  Backspace edits, Enter (or keypad Enter) commits that ONE edit at once (the later release adds
+  nothing), Esc cancels. Move: `dx,dy` in rig px (one number = along the dominant axis of the drag
+  so far); rotate: degrees clockwise; scale: the factor. Typed values are exact (no snap).
+* Readout (editor-only, beside the cursor while dragging): `Δx · Δy`, `회전 …°`, `크기 ×…`,
+  `길이 · 각도` for 본 만들기, with the active modifiers and the typed text.
+
+### Nudge (arrow keys)
+
+* The selection (`transformBones` for bones, the topmost selected ones as in a drag; a part in
+  setup mode: its attachment offset) moves 1 px per press (Shift: 10 px) in the axis space of the
+  numeric fields (`숫자 축`): 월드 = rig px (`space: "world"`), 로컬 / 부모 = the parent's axes
+  (`space: "parent"`; a part: its bone's axes).
+* Presses (auto-repeat included) less than `CutoutPanel::NUDGE_IDLE_MS` (400 ms) apart are one
+  gesture: previewed live, ONE edit when the keys rest. Any other gesture (a drag, K, a selection,
+  mode or character change, any op) commits a resting nudge first, so its edit comes first and the
+  next edit builds on it.
+* Animate mode keys like a drag (`clip` + `timeMs`; with 자동 키 off the change is pending).
+
+### Canvas selection and menu
+
+* Double-click (select / rotate / scale tools): a part selects its bone; a bone selects its first
+  part in draw order (a bone without parts stays selected).
+* A right click on the canvas (no drag; the menu key: the selection) opens `cutoutCanvasMenu` for
+  the item under the cursor. An action on an item outside the selection selects it first; inside a
+  multi-selection it acts on the selection. Entries (only those that apply):
+  `cutoutCanvasMenuSelect`, `cutoutCanvasMenuSelectBone` (part) / `cutoutCanvasMenuSelectPart`
+  (a bone with parts), the submenu `cutoutCanvasMenuParent` (setup: 부모 본 바꾸기 = `reparentBone`
+  keeping the world pose, the bone's own subtree not offered; for a part 붙을 본 바꾸기 = `setSlot`
+  bone; entries `cutoutCanvasMenuParentTo` with the bone id as data, `cutoutCanvasMenuParentNone`),
+  `cutoutCanvasMenuKey` (Animate: K), `cutoutCanvasMenuOrient` (setup, bone: 본 방향 맞추기),
+  `cutoutCanvasMenuBox` (setup: 판정 상자), `cutoutCanvasMenuMesh` (setup, a part showing a plain
+  picture: 메시로 변환 with the 메시 page's grid), `cutoutCanvasMenuHide` (part: the editor-only eye
+  toggle), `cutoutCanvasMenuShowAll`, `cutoutCanvasMenuDuplicate` (setup), `cutoutCanvasMenuDelete`;
+  on empty canvas `cutoutCanvasMenuFrame`, `cutoutCanvasMenuFitAll`, `cutoutCanvasMenuSelectNone`;
+  always `cutoutCanvasMenuShortcuts`.
+* 보기 ▾ adds `cutoutFrameSelectionAction` (선택 맞춤, F) and `cutoutShortcutOverlayAction`. Tool
+  tooltips name their keys (`cutoutToolCreate` B · C, `cutoutMeshVertices` M, `cutoutMeshWeights`
+  W, `cutoutBoxVertices` G); the hint strip and the canvas hint line name V / R / S / Space / ?.

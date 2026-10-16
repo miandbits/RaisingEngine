@@ -17,7 +17,8 @@ double lerp(double a, double b, double t) { return a + (b - a) * t; }
 double& field(Transform& t, Property p) {
   switch (p) {
     case Property::X: return t.x; case Property::Y: return t.y; case Property::Rotation: return t.rotation;
-    case Property::ScaleX: return t.scaleX; default: return t.scaleY;
+    case Property::ScaleX: return t.scaleX; case Property::ShearX: return t.shearX; case Property::ShearY: return t.shearY;
+    default: return t.scaleY;
   }
 }
 const Json& arrayOr(const Json& obj, const char* key) {
@@ -142,17 +143,18 @@ static Pose setupPose(const Rig& rig) {
   for (const auto& s : rig.slots) { pose.attachments.push_back(s.attachment); pose.alpha.push_back(s.alpha); }
   for (const auto& k : rig.ik) { pose.ikMix.push_back(k.mix); pose.ikBend.push_back(k.bendPositive); }
   for (const auto& k : rig.physics) pose.physicsMix.push_back(k.mix);
+  for (const auto& k : rig.transforms) pose.transformMix.push_back({k.mix[0], k.mix[1], k.mix[2], k.mix[3], k.mix[4], k.mix[5]});
   pose.sequence.assign(rig.slots.size(), SequenceState{});
   return pose;
 }
+Affine boneWorld(const Rig& rig, const std::vector<Affine>& world, size_t i, const Transform& t) {
+  // Without shear and with normal inheritance: compose and parent * local, the pre-1.16 bits.
+  const int p = rig.bones[i].parentIndex;
+  return p < 0 ? localMatrix(t) : childWorld(world[size_t(p)], t, rig.bones[i].inherit);
+}
 static void computeWorld(const Rig& rig, Pose& pose) {
   pose.world.assign(rig.bones.size(), Affine{});
-  for (int i : rig.evalOrder) {
-    const auto& t = pose.bones[i];
-    const Affine local = Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
-    const int p = rig.bones[i].parentIndex;
-    pose.world[i] = p < 0 ? local : pose.world[p] * local;
-  }
+  for (int i : rig.evalOrder) pose.world[size_t(i)] = boneWorld(rig, pose.world, size_t(i), pose.bones[size_t(i)]);
 }
 static double clipTime(const Clip& clip, double timeMs, bool loop) {
   const double d = double(clip.durationMs);
@@ -166,6 +168,12 @@ static void applyClip(const Rig& rig, const Clip& clip, double t, Pose& pose) {
     if (tr.physics) {
       const size_t i = size_t(tr.targetIndex);
       if (i < pose.physicsMix.size()) pose.physicsMix[i] = sampleTrack(tr, t, pose.physicsMix[i]);
+      continue;
+    }
+    if (tr.transform) {
+      const size_t i = size_t(tr.targetIndex);
+      const int ch = transformMixChannel(tr.property);
+      if (i < pose.transformMix.size() && ch >= 0) pose.transformMix[i][size_t(ch)] = sampleTrack(tr, t, pose.transformMix[i][size_t(ch)]);
       continue;
     }
     if (tr.ik) {
@@ -189,7 +197,10 @@ static Pose blend(const Pose& a, const Pose& b, double alpha) {
     auto& o = out.bones[i]; const auto& x = a.bones[i];
     o.x = lerp(x.x, o.x, alpha); o.y = lerp(x.y, o.y, alpha); o.rotation = lerp(x.rotation, o.rotation, alpha);
     o.scaleX = lerp(x.scaleX, o.scaleX, alpha); o.scaleY = lerp(x.scaleY, o.scaleY, alpha);
+    o.shearX = lerp(x.shearX, o.shearX, alpha); o.shearY = lerp(x.shearY, o.shearY, alpha);
   }
+  for (size_t i = 0; i < out.transformMix.size() && i < a.transformMix.size(); i++)
+    for (size_t m = 0; m < TRANSFORM_MIXES; m++) out.transformMix[i][m] = lerp(a.transformMix[i][m], out.transformMix[i][m], alpha);
   for (size_t i = 0; i < out.alpha.size(); i++) out.alpha[i] = lerp(a.alpha[i], out.alpha[i], alpha);
   for (size_t i = 0; i < out.ikMix.size() && i < a.ikMix.size(); i++) out.ikMix[i] = lerp(a.ikMix[i], out.ikMix[i], alpha);
   for (size_t i = 0; i < out.physicsMix.size() && i < a.physicsMix.size(); i++) out.physicsMix[i] = lerp(a.physicsMix[i], out.physicsMix[i], alpha);
@@ -222,7 +233,103 @@ static double blendAngle(double from, double to, double mix) {
  * bit for bit. Stretch / compress (plugin 1.13.0, aimAxis 0, a bone length): scaleX makes the
  * bone's tip reach the target (`uniform`: scaleY too), blended by mix; exact in parent space.
  */
+/** Shear or a non-normal inherit mode (plugin 1.16.0): the bone takes the rotationToward path. */
+static bool shaped(const Rig& rig, const Pose& pose, int b) {
+  const Transform& t = pose.applied[size_t(b)];
+  return rig.bones[size_t(b)].inherit != Inherit::Normal || t.shearX != 0 || t.shearY != 0;
+}
+static Affine parentWorldOf(const Rig& rig, const Pose& pose, int b) {
+  const int p = rig.bones[size_t(b)].parentIndex;
+  return p < 0 ? Affine{} : pose.world[size_t(p)];
+}
+/**
+ * Aim of a shaped bone (plugin 1.16.0): the rotation that lays its axis (after its shear and
+ * scale) on the direction from its world origin to the target, through its inherit mode; stretch
+ * measures the tip's reach in rig space after the turn.
+ */
+static bool solveAimShaped(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, IkSolve& solve) {
+  const int b = k.bones[0];
+  const Affine pw = parentWorldOf(rig, pose, b);
+  const Inherit mode = rig.bones[size_t(b)].inherit;
+  Transform& t = pose.applied[size_t(b)];
+  double ox, oy, r;
+  pw.apply(t.x, t.y, ox, oy);
+  const double dx = tx - ox, dy = ty - oy, dist = std::hypot(dx, dy);
+  if (dist < IK_EPS || !rotationToward(pw, t, mode, std::cos(k.aimAxis * RAD), std::sin(k.aimAxis * RAD), dx, dy, r)) return false;
+  t.rotation = blendAngle(t.rotation, r, mix);
+  if ((k.stretch || k.compress) && k.stretchable) {
+    const Affine w = childWorld(pw, t, mode);
+    const double reach = rig.bones[size_t(b)].length * std::hypot(w.a, w.b);
+    if (reach > IK_EPS && ((k.stretch && dist > reach) || (k.compress && dist < reach))) {
+      const double f = 1 + (dist / reach - 1) * mix;
+      t.scaleX *= f;
+      if (k.uniform) t.scaleY *= f;
+      solve.stretch = f;
+    }
+  }
+  return true;
+}
+/**
+ * Two-bone limb with a shaped bone (plugin 1.16.0): the law of cosines on the rig-space links
+ * (upper origin -> child origin -> effector), the joint on the bendPositive side on screen; the
+ * upper bone turns its child origin toward the joint, the lower bone (under the turned upper) its
+ * effector toward the target. A turn can stretch a link (a non-uniform parent, a sheared bone), so
+ * this repeats with the links re-measured, at most IK_CHAIN_ITERATIONS passes, until the effector
+ * is within IK_CHAIN_TOLERANCE px (rigid links: the first pass is exact). The solved rotations
+ * blend from the animated ones by mix; stretch scales the upper bone's x like the 1.13 solver.
+ */
+static bool solveTwoBoneShaped(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, bool bendPositive, IkSolve& solve) {
+  const int up = k.bones[0], low = k.bones[1];
+  const Affine pw = parentWorldOf(rig, pose, up);
+  const Inherit mu = rig.bones[size_t(up)].inherit, ml = rig.bones[size_t(low)].inherit;
+  Transform& tu = pose.applied[size_t(up)];
+  Transform& tl = pose.applied[size_t(low)];
+  Transform u = tu, l = tl;  // the full (mix 1) solve
+  const double ex = k.tip >= 0 ? pose.applied[size_t(k.tip)].x : k.tipLength, ey = k.tip >= 0 ? pose.applied[size_t(k.tip)].y : 0;
+  const double ox = pose.world[size_t(up)].e, oy = pose.world[size_t(up)].f, dx = tx - ox, dy = ty - oy, dist = std::hypot(dx, dy);
+  if (dist < IK_EPS) return false;
+  double reach = -1;  // l1 + l2 of the animated pose (stretch)
+  int passes = 0;
+  for (; passes < IK_CHAIN_ITERATIONS; passes++) {
+    const Affine wu = childWorld(pw, u, mu), wl = childWorld(wu, l, ml);
+    double px, py, r, r2;
+    wl.apply(ex, ey, px, py);
+    if (passes > 0 && std::hypot(px - tx, py - ty) <= IK_CHAIN_TOLERANCE) break;
+    const double l1 = std::hypot(wl.e - ox, wl.f - oy), l2 = std::hypot(px - wl.e, py - wl.f);
+    if (reach < 0) reach = l1 + l2;
+    if (l1 < IK_EPS && l2 < IK_EPS) { if (passes == 0) return false; break; }
+    if (l2 < IK_EPS || l1 < IK_EPS) {
+      // No effector: the child origin aims; child on the upper origin: one turn of the upper reaches.
+      double vx = l.x, vy = l.y;
+      if (l1 < IK_EPS) { const auto inv = wu.inverse(); if (!inv) return false; inv->apply(px, py, vx, vy); }
+      if (!rotationToward(pw, u, mu, vx, vy, dx, dy, r)) return false;
+      u.rotation = r;
+      passes++;
+      break;
+    }
+    const double cosine = std::clamp((dist * dist - l1 * l1 - l2 * l2) / (2 * l1 * l2), -1.0, 1.0);
+    const double bend = (bendPositive ? 1 : -1) * std::acos(cosine);
+    const double first = std::atan2(dy, dx) - std::atan2(l2 * std::sin(bend), l1 + l2 * std::cos(bend));
+    if (!rotationToward(pw, u, mu, l.x, l.y, std::cos(first), std::sin(first), r)) return false;
+    u.rotation = r;
+    double jx, jy;
+    const Affine wf = childWorld(pw, u, mu);
+    wf.apply(l.x, l.y, jx, jy);
+    if (rotationToward(wf, l, ml, ex, ey, tx - jx, ty - jy, r2)) l.rotation = r2;
+  }
+  solve.iterations = passes;
+  tu.rotation = blendAngle(tu.rotation, u.rotation, mix);
+  tl.rotation = blendAngle(tl.rotation, l.rotation, mix);
+  if (k.stretch && k.stretchable && reach > IK_EPS && dist > reach) {
+    const double f = 1 + (dist / reach - 1) * mix;
+    tu.scaleX *= f;
+    if (k.uniform) tu.scaleY *= f;
+    solve.stretch = f;
+  }
+  return true;
+}
 static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, IkSolve& solve) {
+  if (shaped(rig, pose, k.bones[0])) return solveAimShaped(rig, pose, k, tx, ty, mix, solve);
   const int b = k.bones[0], parent = rig.bones[size_t(b)].parentIndex;
   const auto inv = (parent < 0 ? Affine{} : pose.world[size_t(parent)]).inverse();
   if (!inv) return false;
@@ -258,6 +365,7 @@ static bool solveAim(const Rig& rig, Pose& pose, const IkConstraint& k, double t
  * when the lower bone sits on it (bones drawn with a length), so both links reach exactly.
  */
 static bool solveTwoBone(const Rig& rig, Pose& pose, const IkConstraint& k, double tx, double ty, double mix, bool bendPositive, IkSolve& solve) {
+  if (shaped(rig, pose, k.bones[0]) || shaped(rig, pose, k.bones[1])) return solveTwoBoneShaped(rig, pose, k, tx, ty, mix, bendPositive, solve);
   const int up = k.bones[0], low = k.bones[1], parent = rig.bones[size_t(up)].parentIndex;
   const Affine pw = parent < 0 ? Affine{} : pose.world[size_t(parent)];
   const auto inv = pw.inverse();
@@ -359,6 +467,15 @@ static bool solveChain(const Rig& rig, Pose& pose, const IkConstraint& k, double
     const Affine pw = parent < 0 ? Affine{} : pose.world[size_t(parent)];
     const auto inv = pw.inverse();
     Transform& t = pose.applied[size_t(b)];
+    if (shaped(rig, pose, b)) {
+      // Shear / inherit (plugin 1.16.0): turn the next joint toward its solved place in rig space.
+      const double nx = i + 1 < n ? pose.applied[size_t(k.bones[i + 1])].x : ex, ny = i + 1 < n ? pose.applied[size_t(k.bones[i + 1])].y : ey;
+      double ox, oy, r;
+      pw.apply(t.x, t.y, ox, oy);
+      if (rotationToward(pw, t, rig.bones[size_t(b)].inherit, nx, ny, px[i + 1] - ox, py[i + 1] - oy, r)) t.rotation = blendAngle(t.rotation, r, mix);
+      pose.world[size_t(b)] = boneWorld(rig, pose.world, size_t(b), t);
+      continue;
+    }
     if (inv) {
       // Next joint in this bone's space: the child's origin, or the effector for the last link.
       const double nx = i + 1 < n ? pose.applied[size_t(k.bones[i + 1])].x : ex, ny = i + 1 < n ? pose.applied[size_t(k.bones[i + 1])].y : ey;
@@ -380,11 +497,110 @@ static bool solveChain(const Rig& rig, Pose& pose, const IkConstraint& k, double
   }
   return true;
 }
+// ---- Transform constraints (plugin 1.16.0) ----
+static double angleOf(double x, double y) { return std::atan2(y, x) * DEG; }
+/** How far a matrix's y axis is turned from orthogonal to its x axis (degrees, 0 = no skew; a
+ *  mirrored matrix's y axis sits at -90 instead of +90). */
+static double skewOf(const Affine& m) {
+  return std::remainder(angleOf(m.c, m.d) - angleOf(m.a, m.b) - (m.a * m.d - m.b * m.c < 0 ? -90 : 90), 360.0);
+}
+/** World mode: bone world `w` moved toward (absolute) or by (relative) the target world `t`. */
+static void transformWorld(const TransformConstraint& k, const std::array<double, TRANSFORM_MIXES>& mix, const Affine& t, Affine& w) {
+  const double rho = t.a * t.d - t.b * t.c < 0 ? -1 : 1;  // offsets turn with a mirrored target
+  if (mix[0] != 0) {
+    const double target = angleOf(t.a, t.b) + rho * k.offsetRotation;
+    const double turn = std::remainder(k.relative ? target : target - angleOf(w.a, w.b), 360.0) * mix[0] * RAD;
+    const double c = std::cos(turn), s = std::sin(turn);
+    const Affine l = w;
+    w.a = c * l.a - s * l.b; w.b = s * l.a + c * l.b;
+    w.c = c * l.c - s * l.d; w.d = s * l.c + c * l.d;
+  }
+  if (mix[1] != 0 || mix[2] != 0) {
+    double px, py;
+    t.apply(k.offsetX, k.offsetY, px, py);
+    w.e += (k.relative ? px : px - w.e) * mix[1];
+    w.f += (k.relative ? py : py - w.f) * mix[2];
+  }
+  auto scaleAxis = [&](double& x, double& y, double tx, double ty, double offset, double m) {
+    const double s = std::hypot(x, y), ts = std::hypot(tx, ty);
+    if (m == 0 || s < IK_EPS) return;
+    const double f = k.relative ? 1 + (ts - 1 + offset) * m : (s + (ts - s + offset) * m) / s;
+    x *= f; y *= f;
+  };
+  scaleAxis(w.a, w.b, t.a, t.b, k.offsetScaleX, mix[3]);
+  scaleAxis(w.c, w.d, t.c, t.d, k.offsetScaleY, mix[4]);
+  if (mix[5] != 0) {
+    const double s = std::hypot(w.c, w.d);
+    if (s < IK_EPS) return;
+    const double target = skewOf(t) + rho * k.offsetShearY;
+    const double by = (angleOf(w.c, w.d) + std::remainder(k.relative ? target : target - skewOf(w), 360.0) * mix[5]) * RAD;
+    w.c = std::cos(by) * s; w.d = std::sin(by) * s;
+  }
+}
+/** Local mode: the bone's local values moved toward (absolute) or by (relative) the target's. */
+static void transformLocal(const TransformConstraint& k, const std::array<double, TRANSFORM_MIXES>& mix, const Transform& t, Transform& b) {
+  if (k.relative) {
+    b.rotation += (t.rotation + k.offsetRotation) * mix[0];
+    b.x += (t.x + k.offsetX) * mix[1];
+    b.y += (t.y + k.offsetY) * mix[2];
+    b.scaleX *= 1 + (t.scaleX - 1 + k.offsetScaleX) * mix[3];
+    b.scaleY *= 1 + (t.scaleY - 1 + k.offsetScaleY) * mix[4];
+    b.shearY += (t.shearY + k.offsetShearY) * mix[5];
+    return;
+  }
+  b.rotation += std::remainder(t.rotation - b.rotation + k.offsetRotation, 360.0) * mix[0];
+  b.x += (t.x - b.x + k.offsetX) * mix[1];
+  b.y += (t.y - b.y + k.offsetY) * mix[2];
+  b.scaleX += (t.scaleX - b.scaleX + k.offsetScaleX) * mix[3];
+  b.scaleY += (t.scaleY - b.scaleY + k.offsetScaleY) * mix[4];
+  b.shearY += std::remainder(t.shearY - b.shearY + k.offsetShearY, 360.0) * mix[5];
+}
+/**
+ * One transform constraint: the target is read once (world or local values, after the constraints
+ * before this one), then each bone, parents first, gets its new world (world mode: back to local
+ * values through its inherit mode, so later IK and transform constraints and children see them) or
+ * new local values, and its subtree's worlds are recomputed before the next bone.
+ */
+static void applyTransform(const Rig& rig, Pose& pose, const TransformConstraint& k, const std::array<double, TRANSFORM_MIXES>& mix) {
+  const Affine target = pose.world[size_t(k.target)];
+  const Transform targetLocal = pose.applied[size_t(k.target)];
+  std::vector<char> moved(rig.bones.size(), 0);
+  for (int b : k.bones) {
+    Transform& t = pose.applied[size_t(b)];
+    if (k.local) transformLocal(k, mix, targetLocal, t);
+    else {
+      Affine w = pose.world[size_t(b)];
+      transformWorld(k, mix, target, w);
+      if (const auto local = localFromWorld(parentWorldOf(rig, pose, b), w, rig.bones[size_t(b)].inherit, t)) t = *local;
+    }
+    std::fill(moved.begin(), moved.end(), 0);
+    for (int i : k.affected) {
+      const int p = rig.bones[size_t(i)].parentIndex;
+      if (i != b && !(p >= 0 && moved[size_t(p)])) continue;
+      pose.world[size_t(i)] = boneWorld(rig, pose.world, size_t(i), pose.applied[size_t(i)]);
+      moved[size_t(i)] = 1;
+    }
+  }
+}
+
 void applyIk(const Rig& rig, Pose& pose) {
-  if (rig.ik.empty() || pose.world.size() != rig.bones.size() || pose.bones.size() != rig.bones.size()) return;
+  if ((rig.ik.empty() && rig.transforms.empty()) || pose.world.size() != rig.bones.size() || pose.bones.size() != rig.bones.size()) return;
   pose.applied = pose.bones;
   pose.ikSolve.assign(rig.ik.size(), IkSolve{});
-  for (int ci : rig.ikOrder) {
+  for (const ConstraintRef& ref : rig.constraintOrder) {
+    if (ref.transform) {
+      const size_t ti = size_t(ref.index);
+      const TransformConstraint& k = rig.transforms[ti];
+      std::array<double, TRANSFORM_MIXES> mix;
+      bool any = false;
+      for (size_t m = 0; m < TRANSFORM_MIXES; m++) {
+        mix[m] = std::clamp(ti < pose.transformMix.size() ? pose.transformMix[ti][m] : k.mix[m], 0.0, 1.0);
+        any = any || mix[m] > 0;
+      }
+      if (any && k.target >= 0 && !k.bones.empty()) applyTransform(rig, pose, k, mix);
+      continue;
+    }
+    const int ci = ref.index;
     const IkConstraint& k = rig.ik[size_t(ci)];
     const double mix = size_t(ci) < pose.ikMix.size() ? std::clamp(pose.ikMix[size_t(ci)], 0.0, 1.0) : k.mix;
     const bool bend = size_t(ci) < pose.ikBend.size() ? pose.ikBend[size_t(ci)] != 0 : k.bendPositive;
@@ -396,12 +612,7 @@ void applyIk(const Rig& rig, Pose& pose) {
     if (!solved) continue;
     solve.solved = true;
     // Later constraints see this one's result (a spine solved before an arm moves the shoulder).
-    for (int i : k.affected) {
-      const auto& t = pose.applied[size_t(i)];
-      const Affine local = Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
-      const int p = rig.bones[size_t(i)].parentIndex;
-      pose.world[size_t(i)] = p < 0 ? local : pose.world[size_t(p)] * local;
-    }
+    for (int i : k.affected) pose.world[size_t(i)] = boneWorld(rig, pose.world, size_t(i), pose.applied[size_t(i)]);
   }
 }
 
@@ -463,6 +674,19 @@ std::vector<Diagnostic> validateController(const Json& data, const Rig* rig) {
       error(p + "/speed", "ANIM_SPEED", "속도는 0보다 크고 10 이하입니다.");
     const std::string then = b.value("then", std::string("default"));
     if (then != "default" && then != "hold" && then != "stop") error(p + "/then", "ANIM_THEN", "종료 후 동작은 default, hold, stop 중 하나입니다.");
+    // partClicked (plugin 1.17.0): a match on a box name / slot the rig does not have never fires.
+    if (rig && b.value("signal", std::string()) == "partClicked" && b.contains("match") && b.at("match").is_object()) {
+      const Json& m = b.at("match");
+      auto isBox = [&](const std::vector<Attachment>& list, const std::string& key, const std::string& v) {
+        return std::any_of(list.begin(), list.end(), [&](const Attachment& a) { return a.boundingBox && (key == "box" ? a.name : a.slot) == v; });
+      };
+      for (const char* key : {"box", "slot"}) {
+        if (!m.contains(key) || !m.at(key).is_string()) continue;
+        bool known = isBox(rig->attachments, key, m.at(key).get<std::string>());
+        for (const auto& skin : rig->skins) known = known || isBox(skin.attachments, key, m.at(key).get<std::string>());
+        if (!known) out.push_back({"ANIM_PART_UNKNOWN", "warning", p + "/match/" + key, std::string("리그에 이 ") + (key == std::string("box") ? "이름의 판정 상자" : "판정 상자 조각") + "가 없어 이 연결은 실행되지 않습니다: " + m.at(key).get<std::string>()});
+      }
+    }
   }
   return out;
 }
@@ -750,12 +974,13 @@ Affine attachmentPlacement(const Attachment& a) {
   return Affine::compose(o.x, o.y, o.rotation, o.scaleX, o.scaleY) * Affine::compose(-a.pivotX * a.width, -a.pivotY * a.height, 0, 1, 1);
 }
 const std::vector<double>* deformOf(const Pose& pose, int slot, const Attachment& a) {
-  auto it = pose.deform.find({slot, a.name});
+  // Linked meshes (plugin 1.18.0) inheriting deform read the parent's track (deformName).
+  auto it = pose.deform.find({slot, a.deformName.empty() ? a.name : a.deformName});
   return it != pose.deform.end() && it->second.size() == a.vertices.size() ? &it->second : nullptr;
 }
 std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, const Attachment& a) {
   std::vector<double> out;
-  if ((!a.mesh && !a.clipping) || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
+  if ((!a.mesh && !a.clipping && !a.boundingBox) || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
   const std::vector<double>* d = deformOf(pose, slot, a);
   const Affine rigid = pose.world[size_t(rig.slots[size_t(slot)].boneIndex)] * attachmentPlacement(a);
   // world(bone) · bind per influencing bone, once per call rather than once per vertex.
@@ -812,7 +1037,10 @@ std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose) {
   for (size_t i = 0; i < rig.slots.size(); i++) {
     const auto& slot = rig.slots[i];
     const Attachment* att = pose.attachments[i] && slot.boneIndex >= 0 ? rig.attachment(slot.id, *pose.attachments[i], pose.skin) : nullptr;
-    if (att && att->clipping) {
+    if (att && (att->boundingBox || att->point)) {
+      // Bounding boxes and points (plugin 1.17.0) are never drawn: frames of rigs with them keep
+      // exactly the items (and compact bytes) they had without them.
+    } else if (att && att->clipping) {
       // A clip range starts here (alpha does not matter); one inside an active range is ignored.
       if (!clip) {
         std::vector<double> polygon = meshPositions(rig, pose, int(i), *att);
@@ -852,6 +1080,57 @@ std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose) {
 }
 
 std::vector<DrawItem> Instance::drawList() const { return drawItems(*rig_, pose()); }
+
+// ---- Bounding boxes and points (plugin 1.17.0) ----
+namespace {
+/** The attachment slot `i` shows in `pose` (nullptr = nothing / unknown). */
+const Attachment* shownAttachment(const Rig& rig, const Pose& pose, size_t i) {
+  const auto& slot = rig.slots[i];
+  return i < pose.attachments.size() && pose.attachments[i] && slot.boneIndex >= 0 && size_t(slot.boneIndex) < pose.world.size()
+             ? rig.attachment(slot.id, *pose.attachments[i], pose.skin) : nullptr;
+}
+}  // namespace
+std::vector<BoxWorld> boxPolygons(const Rig& rig, const Pose& pose) {
+  std::vector<BoxWorld> out;
+  if (pose.world.size() != rig.bones.size()) return out;
+  for (size_t i = 0; i < rig.slots.size(); i++)
+    if (const Attachment* a = shownAttachment(rig, pose, i); a && a->boundingBox)
+      out.push_back({int(i), a, meshPositions(rig, pose, int(i), *a)});
+  return out;
+}
+std::vector<PointWorld> pointWorlds(const Rig& rig, const Pose& pose) {
+  std::vector<PointWorld> out;
+  if (pose.world.size() != rig.bones.size()) return out;
+  constexpr double DEG = 3.14159265358979323846 / 180;
+  for (size_t i = 0; i < rig.slots.size(); i++) {
+    const Attachment* a = shownAttachment(rig, pose, i);
+    if (!a || !a->point) continue;
+    const Affine& w = pose.world[size_t(rig.slots[i].boneIndex)];
+    PointWorld p{int(i), a, 0, 0, 0};
+    w.apply(a->offset.x, a->offset.y, p.x, p.y);
+    // The direction (rotation, clockwise on y-down screens) through the bone's linear part: under
+    // a scaled, sheared or mirrored bone it is where the point's +x axis really points.
+    const double r = a->offset.rotation * DEG, dx = w.a * std::cos(r) + w.c * std::sin(r), dy = w.b * std::cos(r) + w.d * std::sin(r);
+    p.rotation = dx == 0 && dy == 0 ? a->offset.rotation : std::atan2(dy, dx) / DEG;
+    out.push_back(p);
+  }
+  return out;
+}
+bool polygonContains(const std::vector<double>& polygon, double x, double y) {
+  // Even-odd crossing test, half-open in y: a point on a shared edge belongs to exactly one side,
+  // and every runtime runs the same comparisons (no epsilon).
+  bool inside = false;
+  const size_t n = polygon.size() / 2;
+  for (size_t i = 0, j = n ? n - 1 : 0; i < n; j = i++) {
+    const double xi = polygon[2 * i], yi = polygon[2 * i + 1], xj = polygon[2 * j], yj = polygon[2 * j + 1];
+    if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+int hitBox(const std::vector<BoxWorld>& boxes, double x, double y) {
+  for (size_t k = boxes.size(); k-- > 0;) if (polygonContains(boxes[k].polygon, x, y)) return int(k);
+  return -1;
+}
 
 std::vector<Notification> Instance::takeNotifications() {
   std::vector<Notification> out(pending_.begin(), pending_.end());

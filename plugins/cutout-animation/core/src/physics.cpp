@@ -117,7 +117,7 @@ void applyBody(const Rig& rig, const PhysicsConstraint& k, const PhysicsBody& b,
   for (int i : k.affected) {
     if (i == k.bone) continue;
     const Transform& t = pose.local(size_t(i));
-    pose.world[size_t(i)] = pose.world[size_t(rig.bones[size_t(i)].parentIndex)] * Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY);
+    pose.world[size_t(i)] = childWorld(pose.world[size_t(rig.bones[size_t(i)].parentIndex)], t, rig.bones[size_t(i)].inherit);  // shear/inherit: plugin 1.16.0
   }
 }
 double mixOf(const Rig& rig, const Pose& pose, size_t c) {

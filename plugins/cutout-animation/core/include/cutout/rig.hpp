@@ -28,13 +28,44 @@ struct Affine {
   static Affine compose(double x, double y, double rotationDeg, double scaleX, double scaleY);
 };
 
-struct Transform { double x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1; };
+/** shearX / shearY (plugin 1.16.0, degrees, default 0): bones only (attachment offsets ignore them).
+ *  The local matrix is T(x, y) · R(rotation) · K(shearX, shearY) · S(scaleX, scaleY), where K
+ *  turns the x axis by shearX and the y axis by shearY: the bone's x axis points at rotation +
+ *  shearX, its y axis at rotation + 90 + shearY (see localMatrix, docs/contract.md "Shear"). */
+struct Transform { double x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1, shearX = 0, shearY = 0; };
+
+/**
+ * What a bone takes over from its parent's world matrix (plugin 1.16.0, bone field `inherit`).
+ * The origin always follows the parent fully (parent world · (x, y)); the axes:
+ * Normal = parent · local; OnlyTranslation = the local axes in rig space; NoRotationOrReflection =
+ * the parent's scale (its axis lengths, along its axes) without its rotation or mirror; NoScale /
+ * NoScaleOrReflection = the parent's rotation (and mirror, NoScale only) without its scale. Exact
+ * formulas: childWorld, docs/contract.md "Inherit".
+ */
+enum class Inherit { Normal, OnlyTranslation, NoRotationOrReflection, NoScale, NoScaleOrReflection };
+const char* inheritName(Inherit inherit);
+std::optional<Inherit> parseInherit(const std::string& name);
+/** The bone local matrix (shear included). Without shear it is Affine::compose bit for bit. */
+Affine localMatrix(const Transform& local);
+/** World matrix of a bone with local transform `local` under `parent` (its parent's world). Normal
+ *  is parent * localMatrix(local) bit for bit; roots use localMatrix (every mode agrees there). */
+Affine childWorld(const Affine& parent, const Transform& local, Inherit inherit);
+/** Inverse of childWorld: the local transform whose world is `world` (skew goes into shearY; the
+ *  hint's shearX, mirror sign (scaleX < 0) and rotation winding are kept). nullopt = singular. */
+std::optional<Transform> localFromWorld(const Affine& parent, const Affine& world, Inherit inherit, const Transform& hint);
+/** The local rotation (degrees) that makes childWorld(parent, local with it, inherit) map the bone
+ *  vector (vx, vy) onto the rig-space direction (dx, dy). false when degenerate (IK, editor aims). */
+bool rotationToward(const Affine& parent, const Transform& local, Inherit inherit, double vx, double vy, double dx, double dy, double& degrees);
+/** The linear map that takes a bone's rotated +x direction (before its shear and scale) into rig
+ *  space, up to length: the parent (normal, noScale*), identity (onlyTranslation) or the parent's
+ *  scale without its rotation (noRotationOrReflection). Editors show world angles through it. */
+Affine inheritFrame(const Affine& parent, Inherit inherit);
 
 /** `length` (plugin 1.5.0, px >= 0, default 0 = point bone): the bone reaches from its origin to
  *  (length, 0) in its own space (+x, Spine convention). Not a transform: it never moves anything
  *  except the two-bone IK effector (IkConstraint::tipLength). `color` is an editor-only display
  *  hint ("#rrggbb" / "#rrggbbaa", "" = default); runtimes ignore it. */
-struct Bone { std::string id; std::string parent; Transform setup; int parentIndex = -1; double length = 0; std::string color; };
+struct Bone { std::string id; std::string parent; Transform setup; int parentIndex = -1; double length = 0; std::string color; Inherit inherit = Inherit::Normal; };
 struct Slot { std::string id; std::string bone; std::optional<std::string> attachment; double alpha = 1; int boneIndex = -1; };
 /** One bone's share of a weighted mesh vertex; `bind` indexes Attachment::binds. */
 struct Influence { int bind = -1; double weight = 0; };
@@ -95,7 +126,32 @@ struct Attachment {
   std::vector<std::string> frames;
   std::vector<std::optional<AtlasRegion>> frameAtlas;
   int setupIndex = 0;
+  /**
+   * Bounding box (plugin 1.17.0, `type: "boundingBox"`): a hit polygon, never drawn. `vertices`
+   * (3..MAX_CLIP_VERTICES points) are placed exactly like a clipping polygon (slot bone · offset,
+   * or `weights`/`binds`; deform keys apply), so it follows the rig. `color` is an editor-only hint.
+   * Point (`type: "point"`): no picture either; the offset x, y, rotation is a place and a direction
+   * in the slot bone's space (scale unused). Both live in slots like pictures (skins, expressions
+   * and attachment keys show, swap or hide them): see boxPolygons / pointWorlds (runtime.hpp).
+   */
+  bool boundingBox = false, point = false;
+  std::string color;
+  /**
+   * Linked mesh (plugin 1.18.0, `linkedMesh: {parent: "<slot>/<name>", skin?, deform?}`): a mesh
+   * with its own picture (imageAssetId, atlas, optional own `uvs`) that shares the parent mesh's
+   * shape: vertices, triangles, weights/binds, hull/edges and the placement (offset, pivot and the
+   * parent's width/height, so both draw the same outline whatever the own picture's pixel size).
+   * Resolved at parse time: the shared fields above are copies of the parent's; `linkedWidth/
+   * Height` keep the own picture's size. `linkedSkin` = the list the parent lives in ("" = default
+   * attachments). `deformName` = the attachment name deform tracks address: the parent's
+   * deformName when linkedDeform (default), else the own name (every other attachment: its name).
+   */
+  bool linked = false, linkedDeform = true;
+  std::string linkedSlot, linkedName, linkedSkin, deformName;
+  double linkedWidth = 0, linkedHeight = 0;
   bool sequence() const { return !frames.empty(); }
+  /** No picture: never a draw item, never in an atlas, never an image to check or re-import. */
+  bool pictureless() const { return clipping || boundingBox || point; }
   size_t vertexCount() const { return vertices.size() / 2; }
 };
 
@@ -103,8 +159,13 @@ struct Attachment {
  *  Mix / BendPositive key IK constraints: `{"target":"ik:<id>"}` (bend is step only, value bool).
  *  Deform keys mesh vertex offsets: `{"target":"slot:<id>","property":"deform","attachment":"<name>"}`.
  *  Sequence keys (plugin 1.12.0) pick the frame of the slot's sequence attachment: `{"target":"slot:<id>","property":"sequence"}`.
- *  Physics mix keys (plugin 1.13.0): `{"target":"physics:<id>","property":"mix"}`. */
-enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive, Deform, Sequence };
+ *  Physics mix keys (plugin 1.13.0): `{"target":"physics:<id>","property":"mix"}`.
+ *  Plugin 1.16.0: bone shear keys (shearX, shearY, degrees) and transform constraint mixes
+ *  `{"target":"transform:<id>","property":"mixRotate"|"mixX"|"mixY"|"mixScaleX"|"mixScaleY"|"mixShearY"}`. */
+enum class Property { X, Y, Rotation, ScaleX, ScaleY, Alpha, Attachment, Expression, Mix, BendPositive, Deform, Sequence,
+                      ShearX, ShearY, MixRotate, MixX, MixY, MixScaleX, MixScaleY, MixShearY };
+/** Transform constraint mix channel 0..5 of a Mix* property (-1 for any other property). */
+int transformMixChannel(Property p);
 /** Sequence key playback (plugin 1.12.0, Spine SequenceMode): hold shows `index`; the others
  *  advance one frame per `delay` ms from the key's time (reverse modes count from the last frame). */
 enum class SequenceMode { Hold, Once, Loop, Pingpong, OnceReverse, LoopReverse, PingpongReverse };
@@ -120,8 +181,9 @@ struct Key { int64_t timeMs = 0; double value = 0; std::optional<std::string> na
 /** bone=false + rig=true: the rig expression track (target "", targetIndex -1, key.name = expression id).
  *  bone=false + ik=true: an IK constraint track (target = constraint id, targetIndex = Rig::ik index;
  *  bendPositive keys carry value 1/0). bone=false + physics=true: a physics mix track (targetIndex =
- *  Rig::physics index). Deform tracks are slot tracks naming `attachment`. */
-struct Track { bool bone = true; bool rig = false; bool ik = false; bool physics = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; std::string attachment; };
+ *  Rig::physics index). bone=false + transform=true (plugin 1.16.0): a transform constraint mix track
+ *  (targetIndex = Rig::transforms index). Deform tracks are slot tracks naming `attachment`. */
+struct Track { bool bone = true; bool rig = false; bool ik = false; bool physics = false; bool transform = false; std::string target; int targetIndex = -1; Property property = Property::X; std::vector<Key> keys; std::string attachment; };
 /**
  * Rig-level event definition (plugin 1.8.0, Spine-like): optional default payload of every key
  * of that name. `audio` names an audio asset the host MAY play when the event fires (with
@@ -211,6 +273,30 @@ struct PhysicsConstraint {
   std::vector<int> affected;    // the bone and its descendants, parents first
 };
 
+/**
+ * Transform constraint (plugin 1.16.0): every bone of `bones` takes over part of the transform of
+ * bone `target`, per channel by a mix 0..1: rotate, x, y (translation), scaleX, scaleY, shearY.
+ * Defaults: mixRotate = mixX = mixY = 1 (follow the target's place and turn), mixScaleX =
+ * mixScaleY = mixShearY = 0 (keep the own size and shape); offsets (degrees / px / scale delta)
+ * are added to the target's values. World (default) blends world matrices toward the target's,
+ * `local` blends the local values; `relative` adds the target's values instead of moving toward
+ * them. Solved with the IK constraints in one `order` sequence (Rig::constraintOrder), physics
+ * after. Exact semantics: docs/contract.md "Transform constraints".
+ */
+constexpr size_t TRANSFORM_MIXES = 6;  // rotate, x, y, scaleX, scaleY, shearY
+struct TransformConstraint {
+  std::string id, name;
+  std::vector<int> bones;     // constrained bones, parents first (evalOrder)
+  int target = -1;
+  int order = 0;
+  double mix[TRANSFORM_MIXES] = {1, 1, 1, 0, 0, 0};
+  double offsetRotation = 0, offsetX = 0, offsetY = 0, offsetScaleX = 0, offsetScaleY = 0, offsetShearY = 0;
+  bool local = false, relative = false;
+  std::vector<int> affected;  // the bones and their descendants, parents first: world recomputed
+};
+/** One entry of the shared IK / transform constraint order. */
+struct ConstraintRef { bool transform = false; int index = -1; };
+
 struct Rig {
   std::string id;
   double originX = 0, originY = 0;  // instance anchor in rig space
@@ -229,7 +315,10 @@ struct Rig {
   std::vector<EventDef> events;     // event definitions (plugin 1.8.0); empty = any key name
   std::vector<PhysicsConstraint> physics;  // plugin 1.13.0
   std::vector<int> physicsOrder;    // evaluation order: the bone's place in evalOrder, then array index
-
+  std::vector<TransformConstraint> transforms;  // plugin 1.16.0
+  /** IK and transform constraints in solving order: (order ascending; at equal order every IK
+   *  before every transform constraint; then array index). Equals ikOrder without transforms. */
+  std::vector<ConstraintRef> constraintOrder;
   int boneIndex(const std::string& id) const;
   int slotIndex(const std::string& id) const;
   int clipIndex(const std::string& id) const;
@@ -238,6 +327,7 @@ struct Rig {
   int ikIndex(const std::string& id) const;
   int eventIndex(const std::string& name) const;     // -1 = not defined
   int physicsIndex(const std::string& id) const;
+  int transformIndex(const std::string& id) const;
   /** Lookup order: skin `skin` (when >= 0) first, then the rig's default attachments. */
   const Attachment* attachment(const std::string& slot, const std::string& name, int skin = -1) const;
   int64_t mixDuration(const std::string& from, const std::string& to) const;
@@ -247,6 +337,10 @@ struct Diagnostic {
   std::string code, severity, pointer, message;
   Json toJson() const { return {{"code", code}, {"severity", severity}, {"pointer", pointer}, {"message", message}}; }
 };
+
+/** A linkedMesh parent reference "<slot>/<name>" (plugin 1.18.0): false unless exactly one '/'
+ *  separates two non-empty parts (slot ids and attachment names never contain one). */
+bool splitLinkedParent(const std::string& ref, std::string& slot, std::string& name);
 
 /** Semantic validation of a rig `data` object. Never throws on bad input. */
 std::vector<Diagnostic> validateRig(const Json& data);

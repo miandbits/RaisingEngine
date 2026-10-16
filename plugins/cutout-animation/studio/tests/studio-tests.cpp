@@ -218,6 +218,77 @@ class StudioTests : public QObject {
     for (int i = 1; i <= 4; i++) mouse(w, QEvent::MouseMove, from + (to - from) * (i / 4.0), Qt::NoButton, Qt::LeftButton);
     mouse(w, QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton);
   }
+  /** drag() with modifiers held for the whole gesture (weight brush: Shift = smooth, Ctrl = subtract). */
+  void dragWith(QWidget* w, QPointF from, QPointF to, Qt::KeyboardModifiers mods) {
+    auto send = [&](QEvent::Type type, QPointF pos, Qt::MouseButton button, Qt::MouseButtons buttons) {
+      QMouseEvent e(type, pos, w->mapToGlobal(pos), button, buttons, mods);
+      QCoreApplication::sendEvent(w, &e);
+    };
+    send(QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
+    for (int i = 1; i <= 4; i++) send(QEvent::MouseMove, from + (to - from) * (i / 4.0), Qt::NoButton, Qt::LeftButton);
+    send(QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton);
+  }
+  /** A small weights rig (plugin 1.18.0 tests) next to the hero: 300x300, root at the centre with a
+   *  left/right bone pair (wing-l / wing-r, ±60 px) and a 160x80 cape picture on root; documents,
+   *  assets and history come back afterwards (`restore`). */
+  void addWeightsRig() {
+    QImage cape(160, 80, QImage::Format_ARGB32);
+    cape.fill(QColor("#6d597a"));
+    QImage red(80, 40, QImage::Format_ARGB32);
+    red.fill(QColor("#e63946"));
+    QImage badge(40, 20, QImage::Format_ARGB32);
+    badge.fill(QColor("#f4a261"));
+    for (const auto& [id, img] : {std::pair<QString, QImage>{"img-w-cape", cape}, {"img-w-cape-red", red}, {"img-w-badge", badge}}) {
+      const QString file = dir.filePath(id + ".png");
+      QVERIFY(img.save(file));
+      host.assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", "assets/" + id + ".png"}, {"absolutePath", file}});
+    }
+    const Json data = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 300, "height": 300, "originX": 150, "originY": 280},
+      "bones": [{"id": "root", "parent": null, "x": 150, "y": 150}, {"id": "wing-l", "parent": "root", "x": -60}, {"id": "wing-r", "parent": "root", "x": 60},
+                {"id": "tail", "parent": "root", "y": 60}],
+      "slots": [{"id": "cape", "bone": "root", "attachment": "cape"}, {"id": "badge", "bone": "wing-r", "attachment": "badge"}],
+      "attachments": [{"slot": "cape", "name": "cape", "imageAssetId": "img-w-cape", "width": 160, "height": 80},
+                      {"slot": "badge", "name": "badge", "imageAssetId": "img-w-badge", "width": 40, "height": 20}],
+      "skins": [{"id": "cloak", "attachments": []}],
+      "clips": [{"id": "flap", "durationMs": 600, "loop": true, "tracks": [{"target": "bone:wing-r", "property": "rotation", "keys": [{"timeMs": 0, "value": 0}, {"timeMs": 300, "value": 40}]}]}]})");
+    host.documents.append(QJsonObject{{"file", "plugins/cutout-animation/rig/weights.json"}, {"kind", "extension"},
+                                      {"data", QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", "cutout-animation"}, {"type", "rig"}, {"id", "weights"}, {"data", toQtObject(data)}}}});
+    host.revision++;
+    plugin.viewChanged();
+    pump();
+    panel->selectRig("weights");
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setPreviewSkin("");
+    panel->setPreviewExpression("");
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    pump();
+  }
+  Json weightsRig() const { return host.data("rig", "weights"); }
+  static Json entryOf(const Json& data, const char* slot, const char* name, const char* skin = nullptr) {
+    const Json* list = &data["attachments"];
+    if (skin) for (const auto& s : data["skins"]) if (s["id"] == skin) list = &s["attachments"];
+    for (const auto& a : *list) if (a["slot"] == slot && a["name"] == name) return a;
+    return Json();
+  }
+  static double shareOf(const Json& a, int v, const char* bone) {
+    double w = 0;
+    if (a.contains("weights")) for (const auto& x : a["weights"][size_t(v)]) if (x["bone"] == bone) w += x["weight"].get<double>();
+    return w;
+  }
+  static int gridVertex(const Json& a, double x, double y) {
+    for (size_t i = 0; i + 1 < a["vertices"].size(); i += 2)
+      if (std::fabs(a["vertices"][i].get<double>() - x) < 1e-6 && std::fabs(a["vertices"][i + 1].get<double>() - y) < 1e-6) return int(i / 2);
+    return -1;
+  }
+  static bool settledWeights(const Json& a, size_t maxInfluences = 4) {
+    for (const auto& list : a["weights"]) {
+      double sum = 0;
+      for (const auto& w : list) sum += w["weight"].get<double>();
+      if (list.empty() || list.size() > maxInfluences || std::fabs(sum - 1) > 1e-5) return false;
+    }
+    return true;
+  }
   void setSpin(const char* name, double v) {
     auto* s = find<QDoubleSpinBox>(name);
     QVERIFY2(s, name);
@@ -229,6 +300,10 @@ class StudioTests : public QObject {
   QPointF world(const std::string& bone) const { const auto w = cutout::setupWorld(rig()).at(bone); return {w.e, w.f}; }
   std::vector<cutout::DrawItem> drawList() const {
     cutout::Instance inst(std::make_shared<const cutout::Rig>(cutout::parseRig("hero", rig())));
+    return inst.drawList();
+  }
+  static std::vector<cutout::DrawItem> drawListOf(const Json& data) {
+    cutout::Instance inst(std::make_shared<const cutout::Rig>(cutout::parseRig("x", data)));
     return inst.drawList();
   }
   const Json* track(const char* clip, const char* target, const char* property) const {
@@ -2238,6 +2313,368 @@ class StudioTests : public QObject {
     panel->setAutoOutlineParams(0.05, 0.5, 0, false);
   }
 
+  /** Weight painting (plugin 1.18.0) with real mouse drags: the four brush modes and the Shift /
+   *  Ctrl stroke modifiers, falloff, [ / ], bone locks (weight table check boxes), weight table
+   *  edits, influence counts / hover tooltip / value under the cursor, 정리, 좌우 복사, 메시에서
+   *  복사 and the editor-only pose preview. Every stroke and button = exactly one edit; undo works. */
+  void weightPainting() {
+    const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
+    const auto keepHistory = host.history, keepFuture = host.future;
+    const QString keepRig = panel->rigId();
+    auto restore = qScopeGuard([&] {
+      panel->setWeightPosePreview(false, 30);
+      for (const QString& b : panel->lockedBones()) panel->setBoneLocked(b, false);
+      panel->setWeightMode(RigCanvas::WeightReplace);
+      panel->setWeightFalloff(RigCanvas::FalloffSmooth);
+      panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+      host.documents = keepDocuments; host.assetList = keepAssets; host.history = keepHistory; host.future = keepFuture; host.revision++;
+      plugin.viewChanged();
+      panel->selectRig(keepRig);
+      pump();
+    });
+    addWeightsRig();
+    panel->selectItem("slot:cape");
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(3);
+    find<QSpinBox>("cutoutMeshRows")->setValue(4);
+    find<QSpinBox>("cutoutMeshCols")->setValue(4);
+    find<QCheckBox>("cutoutMeshTrim")->setChecked(false);
+    pump();
+    QVERIFY(gesture("convert cape", 1, [&] { click("cutoutConvertMesh"); }));
+    auto* bones = find<QListWidget>("cutoutMeshBones");
+    for (int i = 0; i < bones->count(); i++) {
+      const QString id = bones->item(i)->data(Qt::UserRole).toString();
+      bones->item(i)->setCheckState(id == "wing-l" || id == "wing-r" ? Qt::Checked : Qt::Unchecked);
+    }
+    QVERIFY(gesture("auto weights", 1, [&] { click("cutoutMeshAutoWeights"); }));
+    QVERIFY(gesture("weights mode", 0, [&] { click("cutoutMeshWeights"); }));
+    RigCanvas* canvas = panel->canvas();
+    QCOMPARE(canvas->meshMode(), int(RigCanvas::MeshWeights));
+    auto cape = [&] { return entryOf(weightsRig(), "cape", "cape"); };
+    const int mid = gridVertex(cape(), 80, 40), right = gridVertex(cape(), 120, 40), left = gridVertex(cape(), 40, 40);
+    QVERIFY(mid >= 0 && right >= 0 && left >= 0);
+    auto at = [&](int v) { return canvas->rigToWidget(canvas->meshVertices()[v]); };
+    const double spacing = QLineF(at(mid), at(right)).length();
+    QVERIFY2(spacing > 20, qPrintable(QString::number(spacing)));
+    // ---- modes: four exclusive buttons; 더하기 adds strength · falloff (hard: everything in the brush)
+    QVERIFY(gesture("mode add", 0, [&] { click("cutoutWeightModeAdd"); }));
+    QCOMPARE(panel->weightMode(), int(RigCanvas::WeightAdd));
+    QVERIFY(find<QToolButton>("cutoutWeightModeAdd")->isChecked() && !find<QToolButton>("cutoutWeightModeReplace")->isChecked());
+    panel->setWeightFalloff(RigCanvas::FalloffHard);
+    panel->setBrush("wing-l", 1, 0.25, spacing * 0.4);
+    pump();
+    double before = shareOf(cape(), mid, "wing-l");
+    const double rightUntouched = shareOf(cape(), right, "wing-l");
+    QVERIFY(gesture("add stroke", 1, [&] { drag(canvas, at(mid), at(mid) + QPointF(1, 1)); }));
+    QVERIFY2(std::fabs(shareOf(cape(), mid, "wing-l") - std::min(1.0, before + 0.25)) < 1e-6, cape()["weights"][size_t(mid)].dump().c_str());
+    QVERIFY(std::fabs(shareOf(cape(), right, "wing-l") - rightUntouched) < 1e-9);  // outside the brush
+    QVERIFY(settledWeights(cape()));
+    // Ctrl+drag subtracts for that stroke only.
+    before = shareOf(cape(), mid, "wing-l");
+    QVERIFY(gesture("ctrl+drag subtracts", 1, [&] { dragWith(canvas, at(mid), at(mid) + QPointF(1, 0), Qt::ControlModifier); }));
+    QVERIFY(std::fabs(shareOf(cape(), mid, "wing-l") - std::max(0.0, before - 0.25)) < 1e-6);
+    QVERIFY(panel->status().contains("빼기") && panel->weightMode() == int(RigCanvas::WeightAdd));
+    // Shift+drag smooths: exactly the core's smooth op on that vertex (neighbours' mean, strength 0.25).
+    const Json beforeSmooth = weightsRig();
+    // (the centre vertex is the mean of its neighbours already: smooth one off the middle)
+    QVERIFY(gesture("shift+drag smooths", 1, [&] { dragWith(canvas, at(left), at(left) + QPointF(0, 1), Qt::ShiftModifier); }));
+    const Json expected = cutout::applyEdit(beforeSmooth, {{"op", "paintWeights"}, {"slot", "cape"}, {"mode", "smooth"}, {"vertices", {left}}, {"strength", 0.25}, {"prune", 0.01}}).data;
+    QCOMPARE(qs(cape()["weights"].dump()), qs(entryOf(expected, "cape", "cape")["weights"].dump()));
+    QVERIFY(panel->status().contains("부드럽게"));
+    // 바꾸기 with a soft brush reaching the neighbours: the centre gets the full stroke, a neighbour less.
+    QVERIFY(gesture("mode replace", 0, [&] { click("cutoutWeightModeReplace"); }));
+    panel->setWeightFalloff(RigCanvas::FalloffSmooth);
+    panel->setBrush("wing-r", 1, 1, spacing * 1.6);
+    pump();
+    const double rightBefore = shareOf(cape(), right, "wing-r");
+    QVERIFY(gesture("soft replace stroke", 1, [&] { drag(canvas, at(mid), at(mid) + QPointF(0.5, 0)); }));
+    QVERIFY(std::fabs(shareOf(cape(), mid, "wing-r") - 1) < 1e-6);
+    const double reach = 1 / 1.6, factor = RigCanvas::falloffAt(RigCanvas::FalloffSmooth, reach);
+    QVERIFY2(std::fabs(shareOf(cape(), right, "wing-r") - (rightBefore + factor * (1 - rightBefore))) < 2e-3, qPrintable(QString("%1 vs %2").arg(shareOf(cape(), right, "wing-r")).arg(rightBefore + factor * (1 - rightBefore))));
+    QVERIFY(settledWeights(cape()));
+    // [ and ] resize the brush (weight mode only); no edit.
+    canvas->setFocus();
+    const double r0 = find<QDoubleSpinBox>("cutoutMeshBrushRadius")->value();
+    QVERIFY(gesture("] larger", 0, [&] { QTest::keyClick(canvas, Qt::Key_BracketRight); }));
+    QVERIFY(find<QDoubleSpinBox>("cutoutMeshBrushRadius")->value() > r0);
+    QVERIFY(gesture("[ smaller", 0, [&] { QTest::keyClick(canvas, Qt::Key_BracketLeft); QTest::keyClick(canvas, Qt::Key_BracketLeft); }));
+    QVERIFY(find<QDoubleSpinBox>("cutoutMeshBrushRadius")->value() < r0);
+    // ---- locks: the weight table's check box; a locked share survives a stroke, a locked bone cannot be painted
+    auto* lock = find<QCheckBox>("cutoutWeightBoneLock-wing-l");
+    QVERIFY(lock && lock->isVisibleTo(panel));
+    QVERIFY(gesture("lock wing-l", 0, [&] { lock->click(); }));
+    QCOMPARE(panel->lockedBones(), QStringList({"wing-l"}));
+    QVERIFY(canvas->weightView().locked.size() == 1);
+    const double lockedShare = shareOf(cape(), left, "wing-l");
+    QVERIFY(lockedShare > 0.05);
+    panel->setBrush("tail", 1, 1, spacing * 0.4);
+    panel->setWeightFalloff(RigCanvas::FalloffHard);
+    pump();
+    QVERIFY(gesture("stroke with a lock", 1, [&] { drag(canvas, at(left), at(left) + QPointF(1, 0)); }));
+    QVERIFY(std::fabs(shareOf(cape(), left, "wing-l") - lockedShare) < 1e-5 && std::fabs(shareOf(cape(), left, "tail") - (1 - lockedShare)) < 1e-5 && settledWeights(cape()));
+    undo();  // keep the cape on the wing pair for the table and mirror checks below
+    panel->setBrush("wing-l", 1, 1, spacing * 0.4);
+    QVERIFY(gesture("locked bone refused", 0, [&] { drag(canvas, at(left), at(left) + QPointF(1, 0)); }));
+    QVERIFY(panel->status().contains("잠겨"));
+    QVERIFY(gesture("unlock", 0, [&] { find<QCheckBox>("cutoutWeightBoneLock-wing-l")->click(); }));
+    QVERIFY(panel->lockedBones().isEmpty());
+    // ---- weight table: the mean of the selected vertices, an edit sets them all (one edit)
+    panel->selectVertices({left, right});
+    pump();
+    QVector<CutoutPanel::WeightRow> rows = panel->weightRows();
+    auto rowOf = [&](const QString& bone) { for (const auto& r : rows) if (r.bone == bone) return r; return CutoutPanel::WeightRow(); };
+    QVERIFY(std::fabs(rowOf("wing-r").weight - (shareOf(cape(), left, "wing-r") + shareOf(cape(), right, "wing-r")) / 2) < 1e-6);
+    QVERIFY(gesture("table edit", 1, [&] { setSpin("cutoutWeightValue-wing-r", 0.25); }));
+    QVERIFY(std::fabs(shareOf(cape(), left, "wing-r") - 0.25) < 1e-6 && std::fabs(shareOf(cape(), right, "wing-r") - 0.25) < 1e-6);
+    rows = panel->weightRows();
+    QVERIFY(std::fabs(rowOf("wing-r").weight - 0.25) < 1e-6 && std::fabs(rowOf("wing-l").weight - 0.75) < 1e-6);
+    QVERIFY(gesture("unchanged table value: no edit", 0, [&] { setSpin("cutoutWeightValue-wing-r", 0.25); }));
+    panel->selectVertices({});
+    pump();
+    QVERIFY(!find<QDoubleSpinBox>("cutoutWeightValue-wing-r")->isEnabled());  // nothing selected: "—"
+    // ---- heat map: influence counts, hover tooltip, value under the cursor (weight of the heat-map bone)
+    QCOMPARE(canvas->influenceCount(left), int(cape()["weights"][size_t(left)].size()));
+    mouse(canvas, QEvent::MouseMove, at(right), Qt::NoButton, Qt::NoButton);
+    QCOMPARE(canvas->hoverVertex(), right);
+    QVERIFY2(canvas->vertexWeightsText(right).contains("wing-r 0.250"), qPrintable(canvas->vertexWeightsText(right)));
+    find<QCheckBox>("cutoutWeightShowValue")->setChecked(true);
+    pump();
+    QVERIFY(canvas->weightView().showValue);
+    QVERIFY(std::fabs(canvas->weightAt(at(right)) - shareOf(cape(), right, "wing-l")) < 1e-6);  // brush bone wing-l
+    QVERIFY(canvas->weightAt(QPointF(2, 2)) < 0);
+    if (const QString evidence = qEnvironmentVariable("CUTOUT_STUDIO_EVIDENCE"); !evidence.isEmpty())
+      QVERIFY(QDir().mkpath(evidence) && panel->window()->grab().save(evidence + "/studio-weight-paint.png"));
+    find<QCheckBox>("cutoutWeightShowValue")->setChecked(false);
+    // ---- 정리: one influence per vertex, then undo
+    find<QSpinBox>("cutoutWeightMaxInfluences")->setValue(1);
+    QVERIFY(gesture("normalize to one bone", 1, [&] { click("cutoutNormalizeWeights"); }));
+    QVERIFY(settledWeights(cape(), 1));
+    undo();
+    QVERIFY(!settledWeights(cape(), 1) && settledWeights(cape()));
+    find<QSpinBox>("cutoutWeightMaxInfluences")->setValue(4);
+    // ---- 좌우 복사 (왼쪽 → 오른쪽): the symmetric grid gets the left side's weights with wing-l / wing-r swapped
+    QVERIFY(gesture("mirror left -> right", 1, [&] { click("cutoutMirrorWeights"); }));
+    const Json mirrored = cape();
+    bool symmetric = true;
+    for (size_t v = 0; v < mirrored["vertices"].size() / 2; v++) {
+      const double x = mirrored["vertices"][2 * v].get<double>(), y = mirrored["vertices"][2 * v + 1].get<double>();
+      if (x <= 80) continue;
+      const int m = gridVertex(mirrored, 160 - x, y);
+      symmetric = symmetric && m >= 0 && std::fabs(shareOf(mirrored, int(v), "wing-r") - shareOf(mirrored, m, "wing-l")) < 1e-6 && std::fabs(shareOf(mirrored, int(v), "wing-l") - shareOf(mirrored, m, "wing-r")) < 1e-6;
+    }
+    QVERIFY2(symmetric, mirrored["weights"].dump().c_str());
+    QVERIFY(panel->status().contains("wing-l→wing-r"));
+    // ---- 메시에서 복사: the badge (made a mesh) takes the cape's weights where it lies
+    panel->selectItem("slot:badge");
+    pump();
+    QVERIFY(gesture("badge to mesh", 1, [&] { click("cutoutConvertMesh"); }));
+    auto* from = find<QComboBox>("cutoutCopyWeightsFrom");
+    QVERIFY(from->findData("cape/cape") >= 0);
+    from->setCurrentIndex(from->findData("cape/cape"));
+    QVERIFY(gesture("copy weights from the cape", 1, [&] { click("cutoutCopyWeights"); }));
+    const Json badge = entryOf(weightsRig(), "badge", "badge");
+    QVERIFY(badge.contains("weights") && settledWeights(badge));
+    std::set<std::string> used;
+    for (const auto& list : badge["weights"]) for (const auto& w : list) used.insert(w["bone"].get<std::string>());
+    QVERIFY(used.size() >= 1 && !used.count("tail") && !used.count("root"));
+    // ---- 자세 미리 보기: the canvas shows the brush bone turned, the document never changes
+    panel->selectItem("slot:cape");
+    pump();
+    QVERIFY(gesture("weights mode again", 0, [&] { if (panel->meshEdit() != CutoutPanel::MeshEdit::Weights) click("cutoutMeshWeights"); }));
+    panel->setBrush("wing-r", 1, 1, 10);
+    const QVector<QPointF> rest = canvas->meshVertices();
+    const int edits = host.edits;
+    find<QDoubleSpinBox>("cutoutWeightPreviewAngle")->setValue(45);
+    find<QCheckBox>("cutoutWeightPosePreview")->setChecked(true);
+    pump();
+    const QVector<QPointF> posed = canvas->meshVertices();
+    QVERIFY(posed.size() == rest.size() && QLineF(posed[right], rest[right]).length() > 2);
+    // Painting on the posed mesh still edits the setup weights (one edit), the preview stays.
+    QVERIFY(gesture("paint while posed", 1, [&] { drag(canvas, canvas->rigToWidget(posed[right]), canvas->rigToWidget(posed[right]) + QPointF(1, 0)); }));
+    QVERIFY(std::fabs(shareOf(cape(), right, "wing-r") - 1) < 1e-6);
+    find<QCheckBox>("cutoutWeightPosePreview")->setChecked(false);
+    pump();
+    QVERIFY(QLineF(canvas->meshVertices()[left], rest[left]).length() < 1e-6);
+    QCOMPARE(host.edits, edits + 1);
+    for (const auto& b : weightsRig()["bones"]) if (b["id"] == "wing-r") QVERIFY(!b.contains("rotation"));  // the preview turn was never saved
+    // Undo / redo of a stroke.
+    const Json painted = cape();
+    undo();
+    QVERIFY(cape()["weights"] != painted["weights"]);
+    redo();
+    QVERIFY(cape()["weights"] == painted["weights"]);
+  }
+
+  /** Linked meshes (plugin 1.18.0): 링크드 메시 만들기 through the real dialog (an outfit variant in a
+   *  skin with its own picture), the info line, refused shape/weight editing, parent edits reaching
+   *  the linked mesh, a picture linked to a mesh of the same aspect, 연결 끊기, undo / redo. */
+  void linkedMeshes() {
+    const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
+    const auto keepHistory = host.history, keepFuture = host.future;
+    const QString keepRig = panel->rigId();
+    auto restore = qScopeGuard([&] {
+      panel->setPreviewSkin("");
+      panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+      host.documents = keepDocuments; host.assetList = keepAssets; host.history = keepHistory; host.future = keepFuture; host.revision++;
+      plugin.viewChanged();
+      panel->selectRig(keepRig);
+      pump();
+    });
+    addWeightsRig();
+    panel->selectItem("slot:cape");
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(3);
+    find<QSpinBox>("cutoutMeshRows")->setValue(2);
+    find<QSpinBox>("cutoutMeshCols")->setValue(4);
+    find<QCheckBox>("cutoutMeshTrim")->setChecked(false);
+    pump();
+    QVERIFY(gesture("convert cape", 1, [&] { click("cutoutConvertMesh"); }));
+    QVERIFY(gesture("auto weights", 1, [&] { panel->autoWeights({"wing-l", "wing-r"}); }));
+    // ---- an outfit variant: the real dialog, skin cloak, the half-size red picture
+    onDialog("cutoutLinkedMeshDialog", [](QDialog* d) {
+      auto* skin = d->findChild<QComboBox*>("cutoutLinkedSkin");
+      auto* image = d->findChild<QComboBox*>("cutoutLinkedImage");
+      if (!skin || !image || skin->findData("cloak") < 0 || image->findData("img-w-cape-red") < 0) return false;
+      skin->setCurrentIndex(skin->findData("cloak"));
+      image->setCurrentIndex(image->findData("img-w-cape-red"));
+      return d->findChild<QCheckBox*>("cutoutLinkedDeform")->isChecked();
+    });
+    QVERIFY(gesture("make linked mesh (dialog)", 1, [&] { click("cutoutMakeLinkedMesh"); }));
+    const Json linked = entryOf(weightsRig(), "cape", "cape", "cloak");
+    QVERIFY2(linked["linkedMesh"] == Json({{"parent", "cape/cape"}}) && linked["imageAssetId"] == "img-w-cape-red" && linked["width"] == 80 && linked["type"] == "mesh", linked.dump().c_str());
+    RigCanvas* canvas = panel->canvas();
+    const QVector<QPointF> plain = canvas->meshVertices();
+    panel->setPreviewSkin("cloak");
+    panel->selectItem("slot:cape");
+    pump();
+    QCOMPARE(canvas->meshVertices(), plain);  // the parent's very shape
+    QVERIFY2(find<QLabel>("cutoutMeshInfo")->text().contains("링크드 메시") && find<QLabel>("cutoutMeshInfo")->text().contains("cape/cape"), qPrintable(find<QLabel>("cutoutMeshInfo")->text()));
+    QVERIFY(find<QWidget>("cutoutUnlinkMesh")->isEnabled() && !find<QWidget>("cutoutMeshWeights")->isEnabled() && !find<QWidget>("cutoutMeshVertices")->isEnabled());
+    QVERIFY(gesture("weights refused on a linked mesh", 0, [&] { panel->setMeshEdit(CutoutPanel::MeshEdit::Weights); }));
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    // ---- the parent's weights reach it: paint on the default cape, the linked one draws the same
+    panel->setPreviewSkin("");
+    panel->selectItem("slot:cape");
+    pump();
+    QVERIFY(gesture("weights mode", 0, [&] { click("cutoutMeshWeights"); }));
+    panel->setBrush("tail", 1, 0.5, 400);
+    panel->setWeightFalloff(RigCanvas::FalloffHard);
+    pump();
+    QVERIFY(gesture("paint the parent", 1, [&] { drag(canvas, canvas->rigToWidget(canvas->meshVertices()[0]), canvas->rigToWidget(canvas->meshVertices()[0]) + QPointF(1, 0)); }));
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+    panel->setWeightFalloff(RigCanvas::FalloffSmooth);
+    {
+      const cutout::Rig parsed = cutout::parseRig("w", weightsRig());
+      const auto* parent = parsed.attachment("cape", "cape");
+      const auto* child = parsed.attachment("cape", "cape", parsed.skinIndex("cloak"));
+      QVERIFY(parent && child && child->linked && child->weights.size() == parent->weights.size() && child->binds.size() == parent->binds.size() && child->binds.size() == 3);
+      cutout::Look look;
+      look.skin = parsed.skinIndex("cloak");
+      const auto pose = cutout::samplePose(parsed, parsed.clipIndex("flap"), 300, look), basePose = cutout::samplePose(parsed, parsed.clipIndex("flap"), 300);
+      QVERIFY(cutout::meshPositions(parsed, pose, 0, *child) == cutout::meshPositions(parsed, basePose, 0, *parent));
+    }
+    // ---- a picture linked to a mesh of the same aspect (40x20 badge -> 160x80 cape), deform off
+    panel->selectItem("slot:badge");
+    pump();
+    panel->askLinkedMesh = [](CutoutPanel::LinkedMeshChoice& c) {
+      if (!c.parents.contains("cape/cape")) return false;
+      c.parent = "cape/cape";
+      c.deform = false;
+      return true;
+    };
+    QVERIFY(gesture("link the badge picture", 1, [&] { click("cutoutMakeLinkedMesh"); }));
+    panel->askLinkedMesh = [this](CutoutPanel::LinkedMeshChoice& c) { return panel->runLinkedMeshDialog(c); };
+    QVERIFY(entryOf(weightsRig(), "badge", "badge")["linkedMesh"] == Json({{"parent", "cape/cape"}, {"deform", false}}));
+    pump();
+    QCOMPARE(canvas->meshVertices().size(), plain.size());  // weighted: it sits where the cape's binds put it
+    const QVector<QPointF> linkedShape = canvas->meshVertices();
+    // ---- 연결 끊기: an independent copy drawn the same, then undo / redo
+    QVERIFY(gesture("unlink", 1, [&] { click("cutoutUnlinkMesh"); }));
+    const Json copy = entryOf(weightsRig(), "badge", "badge");
+    QVERIFY(!copy.contains("linkedMesh") && copy.contains("vertices") && copy.contains("weights"));
+    pump();
+    for (int i = 0; i < linkedShape.size(); i++) QVERIFY(QLineF(canvas->meshVertices()[i], linkedShape[i]).length() < 1e-4);
+    undo();
+    QVERIFY(entryOf(weightsRig(), "badge", "badge").contains("linkedMesh"));
+    redo();
+    QVERIFY(!entryOf(weightsRig(), "badge", "badge").contains("linkedMesh"));
+  }
+
+  /** Painting a 2025-vertex mesh stays interactive (plugin 1.18.0): every brush move (canvas hit
+   *  test + the live paintWeights preview + the redraw) and the release edit, timed like the
+   *  large-rig gestures. CUTOUT_PERF_OUT-style numbers go to the log. */
+  void weightPaintPerformance() {
+    const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
+    const auto keepHistory = host.history, keepFuture = host.future;
+    const QString keepRig = panel->rigId();
+    auto restore = qScopeGuard([&] {
+      panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+      host.documents = keepDocuments; host.assetList = keepAssets; host.history = keepHistory; host.future = keepFuture; host.revision++;
+      plugin.viewChanged();
+      panel->selectRig(keepRig);
+      pump();
+    });
+    addWeightsRig();
+    // A 44 x 44 grid (2025 vertices, the core limit is 2048) weighted by the core's auto weights.
+    Json data = weightsRig();
+    data = cutout::applyEdit(data, {{"op", "convertToMesh"}, {"slot", "cape"}, {"rows", 44}, {"cols", 44}}).data;
+    data = cutout::applyEdit(data, {{"op", "autoWeights"}, {"slot", "cape"}, {"bones", {"wing-l", "wing-r", "tail"}}}).data;
+    QCOMPARE(entryOf(data, "cape", "cape")["vertices"].size(), size_t(2 * 2025));
+    for (int i = 0; i < host.documents.size(); i++) {
+      QJsonObject doc = host.documents[i].toObject(), env = doc.value("data").toObject();
+      if (env.value("id") != "weights") continue;
+      env["data"] = toQtObject(data);
+      doc["data"] = env;
+      host.documents[i] = doc;
+    }
+    host.revision++;
+    plugin.viewChanged();
+    pump();
+    panel->selectItem("slot:cape");
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(3);
+    pump();
+    QVERIFY(gesture("weights mode", 0, [&] { click("cutoutMeshWeights"); }));
+    panel->setWeightMode(RigCanvas::WeightAdd);
+    panel->setWeightFalloff(RigCanvas::FalloffSmooth);
+    panel->setBrush("tail", 1, 0.2, 40);
+    pump();
+    RigCanvas* canvas = panel->canvas();
+    const QVector<QPointF> pts = canvas->meshVertices();
+    QCOMPARE(pts.size(), 2025);
+    const QPointF from = canvas->rigToWidget(pts[0]), to = canvas->rigToWidget(pts[2024]);
+    const int edits = host.edits;
+    QVector<double> moveMs;
+    QElapsedTimer total;
+    total.start();
+    mouse(canvas, QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
+    for (int i = 1; i <= 30; i++) {
+      QElapsedTimer t;
+      t.start();
+      mouse(canvas, QEvent::MouseMove, from + (to - from) * (i / 30.0), Qt::NoButton, Qt::LeftButton);
+      QCoreApplication::processEvents();  // the coalesced live preview runs here, then the canvas repaints
+      QCoreApplication::processEvents();
+      moveMs << t.nsecsElapsed() / 1e6;
+    }
+    QElapsedTimer release;
+    release.start();
+    mouse(canvas, QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton);
+    pump();
+    const double releaseMs = release.nsecsElapsed() / 1e6, strokeMs = total.nsecsElapsed() / 1e6;
+    QCOMPARE(host.edits, edits + 1);
+    QVERIFY(host.lastError.isEmpty() && settledWeights(entryOf(weightsRig(), "cape", "cape")));
+    std::sort(moveMs.begin(), moveMs.end());
+    const double median = moveMs[moveMs.size() / 2], worst = moveMs.back();
+    qInfo("weight paint 2025 vertices: move median %.1f ms, worst %.1f ms, release %.1f ms, stroke %.1f ms", median, worst, releaseMs, strokeMs);
+    {
+      // The parts of one move, for the report: the core op alone and a heat-map repaint.
+      auto timeIt = [](const std::function<void()>& f) { QElapsedTimer t; t.start(); for (int i = 0; i < 5; i++) f(); return t.nsecsElapsed() / 5e6; };
+      const Json d = weightsRig();
+      const Json op = {{"op", "paintWeights"}, {"slot", "cape"}, {"mode", "add"}, {"bone", "tail"}, {"vertices", {1, 2, 3, 50, 51, 52}}, {"strength", 0.2}};
+      qInfo("weight paint parts: paintWeights op %.1f ms, heat-map repaint %.1f ms", timeIt([&] { (void)cutout::applyEdit(d, op); }), timeIt([&] { canvas->repaint(); }));
+    }
+    // Budgets ~3x the development machine's medians (offscreen: move ~17 ms, release ~45 ms), like largeRigPerformance.
+    QVERIFY2(median <= 50, qPrintable(QString("brush move median %1 ms").arg(median)));
+    QVERIFY2(releaseMs <= 150, qPrintable(QString("stroke release %1 ms").arg(releaseMs)));
+  }
+
   // Canvas hit priority (Spine-like, one hit test for click, drag and hover): handles — an IK
   // crosshair, bone origins, mesh vertices in vertex mode — beat the image parts under them; a part
   // away from handles still drags; Alt+click walks the stack; editor-hidden parts are never picked.
@@ -3837,13 +4274,14 @@ class StudioTests : public QObject {
     QVERIFY(!panel->findCommands("키 복사").isEmpty() || !panel->findCommands("복사").isEmpty());
     // Every action the README authoring guide names is reachable from the palette.
     const QStringList guide{"새 캐릭터", "이미지 조각 추가", "회전 중심", "본 만들기", "자동 길이", "본 방향 맞추기", "선택/이동", "회전 (R)", "크기 (S)",
-                            "자식 본까지 선택", "모든 본 선택", "선택 해제", "본 보정", "이미지 보정", "상대값 입력", "뒤로 ↑", "앞으로 ↓", "캔버스 크게", "화면 맞춤",
+                            "자식 본까지 선택", "모든 본 선택", "선택 해제", "본 보정", "이미지 보정", "상대값 입력", "뒤로 ↑", "앞으로 ↓", "캔버스 크게", "전체 맞춤", "선택 맞춤", "단축키 모음",
                             "조립", "애니메이션 (Animate)", "새 클립", "자동 키", "키 추가", "맞춤", "[ 구간 시작", "구간 끝 ]", "구간 해제", "간격 배율", "만큼 이동",
                             "복사", "붙여넣기", "복제", "포즈 복사", "포즈 붙여넣기", "그래프", "도프시트", "둘 다", "채널별 맞춤", "값 맞춤", "이벤트 키", "키 편집",
                             "새 이벤트", "지우기", "숨쉬기", "눈깜빡임", "어니언 스킨", "어니언 스킨 설정", "궤적", "재생", "처음으로", "새 스킨", "그림 지정", "빼기",
                             "현재 상태로 표정 만들기", "다시 담기", "표정 키", "팔·다리 IK", "조준 IK", "현재 방향으로 맞추기", "대상 선택", "IK 키", "IK 결과를 키로 굽기",
                             "메시로 변환", "투명 칸 빼기", "이미지로 되돌리기", "윤곽 그리기", "자동 윤곽", "자동 윤곽 미리보기", "정점 편집", "정점 추가", "가장자리 추가",
-                            "정점 삭제", "가장자리 삭제", "다시 삼각분할", "자동 웨이트", "웨이트 칠하기", "웨이트 해제", "변형 키", "변형 키 삭제", "게임 연결 탭",
+                            "정점 삭제", "가장자리 삭제", "다시 삼각분할", "자동 웨이트", "웨이트 칠하기", "웨이트 해제", "더하기", "바꾸기", "부드럽게", "정리", "좌우 복사",
+                            "메시에서 복사", "링크드 메시", "연결 끊기", "변형 키", "변형 키 삭제", "게임 연결 탭",
                             "내보내기 탭", "레이어 추가", "연결 추가", "전환 추가", "미리 보기 신호", "미리 보기 초기화", "내보낼 때 캐릭터 그림을 아틀라스로 묶기",
                             "작업 공간 글자 크기", "크게", "레이아웃 초기화", "도움말 줄 보이기"};
     QStringList unreachable;
@@ -4030,7 +4468,9 @@ class StudioTests : public QObject {
     QCOMPARE(sent.value("id").toString(), QString("psdhero"));
     QCOMPARE(sent.value("exclude").toArray(), QJsonArray{"1.1"});
     QCOMPARE(sent.value("origin").toString(), QString("bottom-center"));
-    QVERIFY(sent.value("trim").toBool() && sent.value("scale").toDouble() == 1 && !sent.contains("rig"));
+    QVERIFY(sent.value("trim").toBool() && sent.value("scale").toString() == "auto" && !sent.contains("rig"));  // 1.15.0 default: "auto" (1 for small files)
+    QCOMPARE(sent.value("effects").toString(), QString("keep"));
+    QCOMPARE(sent.value("merge").toArray(), QJsonArray());
     QCOMPARE(sent.value("boneDirection").toString(), QString("auto"));  // plugin 1.14.0 default
     QCOMPARE(panel->rigId(), QString("psdhero"));
     QVERIFY2(panel->status().contains("가져옴") && panel->status().contains("Ctrl+Z"), qPrintable(panel->status()));
@@ -4085,6 +4525,102 @@ class StudioTests : public QObject {
     });
     QVERIFY(gesture("bad id refused", 0, [&] { click("cutoutImportLayers"); pump(); }));
     QVERIFY(kept);
+  }
+
+  /**
+   * PSD 가져오기 on production files (plugin 1.15.0), the dialog against a fake preview: scale
+   * "auto" by default with the chosen scale shown, the 「한 그림으로」 column and the row action
+   * send `merge` keys, a [merge] group stays merged, 「효과 레이어 빼기」 sends effects "skip", and a
+   * plan over the rig limits keeps 가져오기 disabled until 「자동 합치기」 adds the proposed keys.
+   */
+  void layerImportProductionDialog() {
+    LayerImportChoice choice;
+    choice.file = dir.filePath("big.psd");
+    choice.id = "big";
+    QList<QJsonObject> sent;
+    auto group = [](const QString& key, const QString& name, bool merged, const QString& merge) {
+      QJsonObject g{{"key", key}, {"name", name}, {"kind", "group"}, {"visible", true}, {"include", true}, {"role", merged ? "merged" : "bone"}, {"warnings", QJsonArray()},
+                    {"children", QJsonArray{QJsonObject{{"key", key + ".0"}, {"name", "piece"}, {"kind", "layer"}, {"visible", true}, {"include", true},
+                                                        {"role", merged ? "in-merge" : "image"}, {"warnings", QJsonArray()}}}}};
+      if (!merge.isEmpty()) g["merge"] = merge;
+      return g;
+    };
+    auto report = [&](const LayerImportChoice& c) {
+      const QJsonObject p = c.payload();
+      sent << p;
+      QSet<QString> keys;
+      for (const auto& k : p.value("merge").toArray()) keys << k.toString();
+      const bool over = !keys.contains("1");
+      return QJsonObject{{"mode", "create"}, {"rigId", "big"}, {"source", QJsonObject{{"format", "psd"}, {"file", "big.psd"}, {"width", 5656}, {"height", 8000}}},
+                         {"options", QJsonObject{{"scale", p.value("scale").isString() ? 0.25 : p.value("scale").toDouble()}, {"scaleMode", p.value("scale").isString() ? "auto" : "fixed"}, {"resolution", 0.25}}},
+                         {"canvas", QJsonObject{{"width", 1414}, {"height", 2000}}},
+                         {"layers", QJsonArray{group("0", "hair [merge]", true, "tag"), group("1", "arms", keys.contains("1"), keys.contains("1") ? "key" : ""),
+                                               group("2", "legs", keys.contains("2"), keys.contains("2") ? "key" : "")}},
+                         {"warnings", QJsonArray()},
+                         {"summary", QJsonObject{{"bones", 2}, {"slots", over ? 300 : 200}, {"attachments", 310}, {"hidden", 0}, {"baked", 120}, {"merged", 1 + int(keys.size())}}},
+                         {"limits", QJsonObject{{"exceeded", over}, {"bones", QJsonObject{{"count", 3}, {"max", 256}}}, {"slots", QJsonObject{{"count", over ? 300 : 200}, {"max", 256}}},
+                                                {"attachments", QJsonObject{{"count", 310}, {"max", 1024}}}}},
+                         {"autoMerge", QJsonObject{{"keys", over ? QJsonArray{"1"} : QJsonArray()}, {"fits", true}}}};
+    };
+    LayerImportDialog dialog(panel, choice, {}, report(choice), [&](const LayerImportChoice& c, std::function<void(const QJsonObject&, const QString&)> done) { done(report(c), QString()); });
+    dialog.show();
+    pump();
+    auto* autoScale = dialog.findChild<QCheckBox*>("cutoutLayerImportAutoScale");
+    auto* scale = dialog.findChild<QDoubleSpinBox*>("cutoutLayerImportScale");
+    auto* info = dialog.findChild<QLabel*>("cutoutLayerImportScaleInfo");
+    auto* summary = dialog.findChild<QLabel*>("cutoutLayerImportSummary");
+    auto* autoMerge = dialog.findChild<QPushButton*>("cutoutLayerImportAutoMerge");
+    auto* effects = dialog.findChild<QCheckBox*>("cutoutLayerImportSkipEffects");
+    auto* action = dialog.findChild<QAction*>("cutoutLayerImportMergeAction");
+    auto* tree = dialog.tree();
+    QPushButton* ok = dialog.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok);
+    QVERIFY(autoScale && scale && info && summary && autoMerge && effects && action && ok);
+    QCOMPARE(sent.first().value("scale").toString(), QString("auto"));
+    QVERIFY(autoScale->isChecked() && !scale->isEnabled());
+    QVERIFY2(info->text().contains("자동 0.25배") && info->text().contains("1414×2000"), qPrintable(info->text()));
+    QCOMPARE(scale->value(), 0.25);
+    auto row = [&](const QString& name) { for (int i = 0; i < tree->topLevelItemCount(); i++) if (tree->topLevelItem(i)->text(0) == name) return tree->topLevelItem(i); return (QTreeWidgetItem*)nullptr; };
+    QCOMPARE(tree->columnCount(), 7);
+    QVERIFY(row("hair [merge]") && row("arms") && row("legs"));
+    QCOMPARE(row("hair [merge]")->checkState(6), Qt::Checked);
+    row("hair [merge]")->setCheckState(6, Qt::Unchecked);  // a [merge] name cannot be unchecked here
+    QCOMPARE(row("hair [merge]")->checkState(6), Qt::Checked);
+    QCOMPARE(row("arms")->checkState(6), Qt::Unchecked);
+    QVERIFY(!row("arms")->child(0)->data(6, Qt::CheckStateRole).isValid());  // layers have no merge box
+    // Over the limits: the import is disabled, the summary says why, 자동 합치기 offers the proposal.
+    QVERIFY(!ok->isEnabled());
+    QVERIFY2(summary->text().contains("한도를 넘음") && summary->text().contains("슬롯 300/256"), qPrintable(summary->text()));
+    QVERIFY(autoMerge->isEnabled() && autoMerge->text().contains("그룹 1개"));
+    autoMerge->click();
+    pump();
+    QCOMPARE(sent.last().value("merge").toArray(), QJsonArray{"1"});
+    QCOMPARE(row("arms")->checkState(6), Qt::Checked);
+    QCOMPARE(row("arms")->text(1), layerRoleLabel("merged"));
+    QVERIFY(ok->isEnabled() && !autoMerge->isEnabled() && !summary->text().contains("넘음"));
+    // The row action merges the selected group (legs) and previews again; a [merge] row cannot be toggled.
+    tree->setCurrentItem(row("hair [merge]"));
+    QVERIFY(!action->isEnabled() && action->isChecked());
+    tree->setCurrentItem(row("legs"));
+    QVERIFY(action->isEnabled() && !action->isChecked());
+    action->trigger();
+    pump();
+    QCOMPARE(sent.last().value("merge").toArray(), (QJsonArray{"2", "1"}));
+    QCOMPARE(row("legs")->checkState(6), Qt::Checked);
+    // Unchecking the column leaves the group out of `merge`; effects "skip"; a fixed scale.
+    row("legs")->setCheckState(6, Qt::Unchecked);
+    effects->setChecked(true);
+    autoScale->setChecked(false);
+    QVERIFY(scale->isEnabled());
+    scale->setValue(0.5);
+    dialog.findChild<QPushButton*>("cutoutLayerImportRefresh")->click();
+    pump();
+    QCOMPARE(sent.last().value("merge").toArray(), QJsonArray{"1"});
+    QCOMPARE(sent.last().value("effects").toString(), QString("skip"));
+    QCOMPARE(sent.last().value("scale").toDouble(), 0.5);
+    QVERIFY2(info->text().startsWith("0.5배"), qPrintable(info->text()));
+    ok->click();
+    QCOMPARE(dialog.result(), int(QDialog::Accepted));
+    QVERIFY(choice.merge == QStringList{"1"} && choice.skipEffects && !choice.autoScale && choice.scale == 0.5);
   }
 
   /**
@@ -4503,6 +5039,725 @@ class StudioTests : public QObject {
     pump();
   }
 
+  // Plugin 1.16.0: the 기울이기 fields (setup values, keys in Animate), the 상속 combo (setup only,
+  // world axes and compensation through the mode), and the 변형 제약 page: 제약 추가 from the
+  // selection (the last picked bone is the target, nothing jumps), fields, local/relative, mix
+  // keys (pending + K, 혼합 키), the dopesheet row, the canvas line, the palette, rename/delete.
+  void transformConstraintsAndInherit() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "shape"); };
+    auto pose = [&] { const cutout::Rig r = cutout::parseRig("shape", data()); return std::make_pair(r, cutout::samplePose(r, -1, 0)); };
+    auto worldOf = [&](const char* bone) { const auto [r, p] = pose(); return p.world[size_t(r.boneIndex(bone))]; };
+    auto boneJson = [&](const char* id) { const Json d = data(); for (const auto& b : d["bones"]) if (b["id"] == id) return b; return Json(); };
+    answers = {"shape"};
+    QVERIFY(gesture("new shape character", 1, [&] { click("cutoutNewCharacter"); }));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    panel->selectItem("bone:root");
+    answers = {"arm"};
+    QVERIFY(gesture("add arm", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("arm x", 1, [&] { setSpin("cutoutPropX", 60); }));
+    QVERIFY(gesture("arm scale", 1, [&] { setSpin("cutoutPropScaleX", 1.6); }));
+    answers = {"hand"};
+    QVERIFY(gesture("add hand", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("hand x", 1, [&] { setSpin("cutoutPropX", 40); }));
+    panel->selectItem("bone:root");
+    answers = {"badge"};
+    QVERIFY(gesture("add badge", 1, [&] { click("cutoutAddBone"); }));
+    QVERIFY(gesture("badge x", 1, [&] { setSpin("cutoutPropX", -50); }));
+    // ---- 기울이기: a setup value, undoable.
+    panel->selectItem("bone:arm");
+    QVERIFY(find<QDoubleSpinBox>("cutoutPropShearX")->isEnabled() && find<QDoubleSpinBox>("cutoutPropShearY")->isEnabled());
+    QVERIFY(gesture("arm shearX 12", 1, [&] { setSpin("cutoutPropShearX", 12); }));
+    QVERIFY(boneJson("arm")["shearX"] == 12);
+    undo();
+    QVERIFY(!boneJson("arm").contains("shearX"));
+    redo();
+    QCOMPARE(find<QDoubleSpinBox>("cutoutPropShearX")->value(), 12.0);
+    // ---- 상속: setup only; the hand under the scaled arm loses the scale with noScale.
+    panel->selectItem("bone:hand");
+    auto* inherit = find<QComboBox>("cutoutPropInherit");
+    QVERIFY(inherit && inherit->count() == 5 && inherit->isEnabled() && inherit->currentData().toString() == "normal");
+    const cutout::Affine before = worldOf("hand");
+    QVERIFY(gesture("hand inherit noScale", 1, [&] { inherit->setCurrentIndex(3); Q_EMIT inherit->activated(3); }));
+    QVERIFY(boneJson("hand")["inherit"] == "noScale");
+    const cutout::Affine after = worldOf("hand");
+    QVERIFY(std::fabs(std::hypot(after.a, after.b) - 1) < 1e-9 && std::fabs(std::hypot(before.a, before.b) - 1.6) < 1e-6 && std::fabs(after.e - before.e) < 1e-9);
+    QCOMPARE(inherit->currentData().toString(), QString("noScale"));
+    // World axes convert through the mode: the hand's on-screen angle becomes the typed value.
+    panel->setAxes(cutout::Axes::World);
+    QVERIFY(gesture("hand world rotation 40", 1, [&] { setSpin("cutoutPropRotation", 40); }));
+    { const auto w = worldOf("hand"); QVERIFY2(std::fabs(std::atan2(w.b, w.a) * 180 / 3.14159265358979323846 - 40) < 1e-4, "world angle"); }
+    panel->setAxes(cutout::Axes::Local);
+    // Compensation keeps the noScale child where it was while its parent turns.
+    const cutout::Affine handWorld = worldOf("hand");
+    panel->selectItem("bone:arm");
+    click("cutoutCompensateBones");
+    QVERIFY(gesture("turn arm, hand compensated", 1, [&] { setSpin("cutoutPropRotation", 35); }));
+    click("cutoutCompensateBones");
+    { const auto w = worldOf("hand"); QVERIFY(std::fabs(w.e - handWorld.e) < 1e-5 && std::fabs(w.f - handWorld.f) < 1e-5 && std::fabs(w.a - handWorld.a) < 1e-6 && std::fabs(w.b - handWorld.b) < 1e-6); }
+    // ---- 변형 제약: badge follows hand (picked last), nothing jumps.
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutTransformPage"));
+    pump();
+    QVERIFY(!find<QWidget>("cutoutTransformMixRotate")->isEnabled() && find<QListWidget>("cutoutTransformList")->count() == 0);
+    panel->setSelection({"bone:badge"});
+    answers = {""};
+    QVERIFY(gesture("one bone: the target is asked (cancelled)", 0, [&] { click("cutoutAddTransform"); }));
+    const cutout::Affine badge = worldOf("badge");
+    panel->setSelection({"bone:badge", "bone:hand"}, "bone:hand");
+    QVERIFY(gesture("제약 추가", 1, [&] { click("cutoutAddTransform"); }));
+    Json k = data()["transform"][0];
+    QVERIFY2(k["id"] == "badge-transform" && k["bones"] == Json::array({"badge"}) && k["target"] == "hand", k.dump().c_str());
+    { const auto w = worldOf("badge"); QVERIFY(std::fabs(w.e - badge.e) < 1e-5 && std::fabs(w.f - badge.f) < 1e-5 && std::fabs(w.b - badge.b) < 1e-6); }
+    QCOMPARE(panel->transformId(), QString("badge-transform"));
+    QCOMPARE(find<QListWidget>("cutoutTransformList")->count(), 1);
+    QVERIFY(find<QListWidget>("cutoutTransformList")->item(0)->text().contains("badge → hand"));
+    QVERIFY(find<QLabel>("cutoutTransformInfo")->text().contains("hand"));
+    // The target now carries the badge along.
+    panel->selectItem("bone:hand");
+    QVERIFY(gesture("move hand", 1, [&] { setSpin("cutoutPropY", 30); }));
+    { const auto h0 = handWorld, h1 = worldOf("hand"), b1 = worldOf("badge"); QVERIFY(std::fabs((b1.f - badge.f) - (h1.f - h0.f)) < 1e-4 && std::fabs(b1.f - badge.f) > 1); }
+    // Fields: one setup edit each; local / relative keep the pose; order.
+    QVERIFY(gesture("mixScaleX 0.5", 1, [&] { setSpin("cutoutTransformMixScaleX", 0.5); }));
+    QVERIFY(data()["transform"][0]["mixScaleX"] == 0.5);
+    QVERIFY(gesture("order 2", 1, [&] { setSpin("cutoutTransformOrder", 2); }));
+    QVERIFY(data()["transform"][0]["order"] == 2);
+    const cutout::Affine held = worldOf("badge");
+    QVERIFY(gesture("local on", 1, [&] { click("cutoutTransformLocal"); }));
+    QVERIFY(data()["transform"][0]["local"] == true && find<QCheckBox>("cutoutTransformLocal")->isChecked());
+    { const auto w = worldOf("badge"); QVERIFY2(std::fabs(w.e - held.e) < 1e-4 && std::fabs(w.f - held.f) < 1e-4, "switching to local keeps the drawn pose"); }
+    QVERIFY(gesture("relative on", 1, [&] { click("cutoutTransformRelative"); }));
+    QVERIFY(data()["transform"][0]["relative"] == true);
+    undo();
+    undo();
+    QVERIFY(!data()["transform"][0].contains("local") && !data()["transform"][0].contains("relative"));
+    // The canvas draws the pink link and the target diamond.
+    panel->selectItem("");
+    pump();
+    {
+      const auto h = worldOf("hand");
+      const QPointF at = panel->canvas()->rigToWidget(QPointF(h.e, h.f));
+      const QImage shot = panel->canvas()->grab().toImage();
+      const qreal dpr = shot.devicePixelRatio();
+      int pink = 0;
+      for (int dx = -8; dx <= 8; dx++)
+        for (int dy = -8; dy <= 8; dy++) {
+          const QColor c = shot.pixelColor(int((at.x() + dx) * dpr), int((at.y() + dy) * dpr));
+          pink += c.red() > 200 && c.green() < 150 && c.blue() > 140;
+        }
+      QVERIFY2(pink > 4, "pink transform constraint diamond at the target");
+    }
+    // The palette finds the page's commands.
+    QVERIFY(!panel->findCommands("제약 추가").isEmpty() && panel->findCommands("제약 추가")[0].id == "cutoutAddTransform");
+    QVERIFY(!panel->findCommands("변형 제약 혼합 키").isEmpty());
+    // ---- Animate: a mix edit is pending until K; 혼합 키 keys the used channels; shear keys.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    answers = {"reach"};
+    QVERIFY(gesture("new reach clip", 1, [&] { click("cutoutNewClip"); }));
+    QVERIFY(!find<QComboBox>("cutoutPropInherit")->isEnabled());
+    panel->selectTransform("badge-transform");
+    panel->setPlayhead(0);
+    QVERIFY(find<QWidget>("cutoutTransformKey")->isEnabled());
+    QVERIFY(gesture("mixRotate 0.5 at 0 (pending)", 0, [&] { setSpin("cutoutTransformMixRotate", 0.5); }));
+    QVERIFY(panel->hasPending());
+    QVERIFY(gesture("K commits the mix key", 1, [&] { click("cutoutKeyButton"); }));
+    QVERIFY(keyOfRig(data(), "reach", "transform:badge-transform", "mixRotate", 0)["value"] == 0.5);
+    QVERIFY(gesture("혼합 키 at 500", 1, [&] { panel->setPlayhead(500); click("cutoutTransformKey"); }));
+    QCOMPARE(timesOfRig(data(), "reach", "transform:badge-transform", "mixRotate"), QVector<int>({0, 500}));
+    QCOMPARE(timesOfRig(data(), "reach", "transform:badge-transform", "mixScaleX"), QVector<int>({500}));  // non-zero channels
+    QVERIFY(timesOfRig(data(), "reach", "transform:badge-transform", "mixShearY").isEmpty());          // 0 and unkeyed
+    const int row = rowOf("transform:badge-transform", "mixRotate");
+    QVERIFY(row >= 0 && panel->dopesheet()->rows()[row].label.contains("회전 혼합"));
+    panel->selectItem("bone:arm");
+    panel->setAutoKey(true);
+    panel->setPlayhead(200);
+    QVERIFY(gesture("arm shearY key", 1, [&] { setSpin("cutoutPropShearY", 9); }));
+    panel->setAutoKey(false);
+    QVERIFY(keyOfRig(data(), "reach", "bone:arm", "shearY", 200)["value"] == 9);
+    panel->setPlayhead(700);
+    QVERIFY(gesture("K on the sheared arm", 1, [&] { click("cutoutKeyButton"); }));
+    QVERIFY(keyOfRig(data(), "reach", "bone:arm", "shearX", 700)["value"] == 12 && keyOfRig(data(), "reach", "bone:arm", "shearY", 700).is_object());
+    QVERIFY(keyOfRig(data(), "reach", "bone:hand", "shearX", 0).is_null());
+    // The dopesheet row opens the page with its constraint.
+    panel->selectTransform("badge-transform");
+    find<QTabWidget>("cutoutLookTabs")->setCurrentIndex(0);
+    panel->dopesheet()->onRowSelected(row, false);
+    QCOMPARE(find<QTabWidget>("cutoutLookTabs")->currentWidget()->objectName(), QString("cutoutTransformPage"));
+    // ---- rename / delete (one edit each); deleting drops the mix keys.
+    panel->setMode(CutoutPanel::Mode::Setup);
+    answers = {"badge-follow"};
+    QVERIFY(gesture("rename transform", 1, [&] { click("cutoutRenameTransform"); }));
+    QVERIFY(data()["transform"][0]["id"] == "badge-follow" && timesOfRig(data(), "reach", "transform:badge-follow", "mixRotate").size() == 2);
+    QVERIFY(gesture("select target", 0, [&] { click("cutoutTransformSelectTarget"); }));
+    QCOMPARE(panel->selection(), QString("bone:hand"));
+    QVERIFY(gesture("delete transform", 1, [&] { click("cutoutDeleteTransform"); }));
+    QVERIFY(!data().contains("transform") && timesOfRig(data(), "reach", "transform:badge-follow", "mixRotate").isEmpty());
+    undo();
+    QCOMPARE(find<QListWidget>("cutoutTransformList")->count(), 1);
+    for (const auto& d : cutout::validateRig(data())) QVERIFY2(d.severity != "error", d.message.c_str());
+    panel->selectRig(keepRig);
+    pump();
+  }
+
+  // Bounding boxes and points (plugin 1.17.0): the 판정 page, the box vertex tools, point placement,
+  // drags and its rotation handle, the 보기 toggles, the binding editor's partClicked offers and a
+  // click on a box in the game-connection preview. One edit per gesture, undo/redo.
+  void boundingBoxesAndPoints() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "hits"); };
+    auto ctrl = [&] { return host.data("controller", "hits"); };
+    auto attachment = [&](const char* slot) { const Json d = data(); for (const auto& a : d["attachments"]) if (a["slot"] == slot) return a; return Json(); };
+    auto slotIds = [&] { const Json d = data(); QStringList ids; for (const auto& s : d["slots"]) ids << qs(s["id"].get<std::string>()); return ids; };
+    auto candidates = [&](QPointF w) { QStringList refs; for (const auto& h : panel->canvas()->hitCandidates(w)) refs << h.ref; return refs; };
+    answers = {"hits"};
+    QVERIFY(gesture("new hits character", 1, [&] { click("cutoutNewCharacter"); }));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    QVERIFY(gesture("face part", 1, [&] { panel->importAndAddPart(png("hit-face", QSize(80, 60), QColor("#d1495b")), "face", "face", "root"); }));
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutHitPage"));
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    pump();
+    panel->selectItem("slot:face");
+    pump();
+    QVERIFY(find<QWidget>("cutoutAddBoundingBox")->isEnabled() && !find<QWidget>("cutoutBoxVertices")->isEnabled());
+    // ---- 판정 상자: the part's alpha outline (the ellipse, not its rectangle), right above it.
+    QVERIFY(gesture("판정 상자 from the part", 1, [&] { click("cutoutAddBoundingBox"); }));
+    QCOMPARE(slotIds(), QStringList({"face", "face-box"}));
+    Json box = attachment("face-box");
+    QCOMPARE(qs(box["type"].get<std::string>()), QString("boundingBox"));
+    QCOMPARE(qs(box["name"].get<std::string>()), QString("box"));
+    const size_t n = box["vertices"].size() / 2;
+    QVERIFY2(n > 6, box["vertices"].dump().c_str());
+    const QPointF origin = [&] { const auto w = cutout::setupWorld(data()).at("root"); return QPointF(w.e, w.f); }();  // the face ellipse: ±40 x ±30 around it
+    for (size_t i = 0; i < n; i++) {
+      const double x = box["vertices"][2 * i].get<double>(), y = box["vertices"][2 * i + 1].get<double>();
+      const double r = std::hypot(x / 40, y / 30);
+      QVERIFY2(r > 0.85 && r < 1.25, qPrintable(QString("point %1 at %2").arg(i).arg(r)));
+    }
+    QCOMPARE(panel->boxSlot(), QString("face-box"));
+    QCOMPARE(find<QListWidget>("cutoutHitList")->count(), 1);
+    QVERIFY(find<QLabel>("cutoutHitInfo")->text().contains("partClicked"));
+    // Never drawn: the runtime still draws only the face.
+    QCOMPARE(drawListOf(data()).size(), size_t(1));
+    // The canvas draws it and picks it by its outline; inside, the face is still what a click picks.
+    const QPointF edge = canvas->rigToWidget(QPointF(box["vertices"][0].get<double>() + origin.x(), box["vertices"][1].get<double>() + origin.y()));
+    QVERIFY2(candidates(edge).contains("slot:face-box"), qPrintable(candidates(edge).join(",")));
+    QCOMPARE(canvas->pick(canvas->rigToWidget(origin + QPointF(20, 10)), false), QString("slot:face"));
+    // ---- 정점 편집: the mesh vertex tools on the box's points.
+    panel->selectItem("slot:face-box");
+    pump();
+    QVERIFY(gesture("정점 편집 on (no edit)", 0, [&] { click("cutoutBoxVertices"); }));
+    QVERIFY(panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshVertices && canvas->meshVertices().size() == int(n));
+    QVERIFY(find<QWidget>("cutoutBoxVertexTools")->isVisible());
+    const QPointF v0 = canvas->meshVertices()[0];
+    const double x0 = box["vertices"][0].get<double>();
+    QVERIFY(gesture("drag a box point", 1, [&] { drag(canvas, canvas->rigToWidget(v0), canvas->rigToWidget(v0 + QPointF(10, 0))); }));
+    QVERIFY2(std::fabs(attachment("face-box")["vertices"][0].get<double>() - (x0 + 10)) < 0.25, attachment("face-box")["vertices"].dump().c_str());
+    undo();
+    QVERIFY(std::fabs(attachment("face-box")["vertices"][0].get<double>() - x0) < 1e-9);
+    redo();
+    const QPointF a = canvas->meshVertices()[0], b = canvas->meshVertices()[1];
+    QVERIFY(gesture("점 추가 on an edge", 1, [&] { click("cutoutBoxAddVertex"); tap(canvas, canvas->rigToWidget((a + b) / 2)); }));
+    QCOMPARE(attachment("face-box")["vertices"].size() / 2, n + 1);
+    QVERIFY(gesture("Delete a point", 1, [&] { click("cutoutBoxAddVertex"); panel->selectVertices({0}); QTest::keyClick(canvas, Qt::Key_Delete); }));
+    QCOMPARE(attachment("face-box")["vertices"].size() / 2, n);
+    QVERIFY(gesture("too few points refused", 0, [&] { QVector<int> all; for (int i = 0; i + 2 < int(n); i++) all << i; panel->selectVertices(all); QTest::keyClick(canvas, Qt::Key_Delete); }));
+    QVERIFY(gesture("정점 편집 off (no edit)", 0, [&] { click("cutoutBoxVertices"); }));
+    QVERIFY(!panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshOff);
+    // ---- 기준점: a click places it on the selected bone; drag = move, its handle = turn.
+    panel->selectItem("bone:root");
+    pump();
+    QVERIFY(gesture("기준점 placing (no edit yet)", 0, [&] { click("cutoutAddPoint"); }));
+    QVERIFY(canvas->pointPlacing());
+    QVERIFY(gesture("Esc cancels", 0, [&] { QTest::keyClick(canvas, Qt::Key_Escape); }));
+    QVERIFY(!canvas->pointPlacing());
+    const QPointF at = origin + QPointF(0, -70);
+    QVERIFY(gesture("place a point", 1, [&] { click("cutoutAddPoint"); tap(canvas, canvas->rigToWidget(at)); }));
+    QVERIFY(!canvas->pointPlacing());
+    Json point = attachment("root-point");
+    QCOMPARE(qs(point["type"].get<std::string>()), QString("point"));
+    QVERIFY2(std::fabs(point.value("x", 0.0)) < 0.5 && std::fabs(point.value("y", 0.0) + 70) < 0.5, point.dump().c_str());
+    QCOMPARE(panel->pointSlot(), QString("root-point"));
+    QVERIFY2(candidates(canvas->rigToWidget(at)).value(0) == "slot:root-point", qPrintable(candidates(canvas->rigToWidget(at)).join(",")));
+    QVERIFY(gesture("drag the point", 1, [&] { drag(canvas, canvas->rigToWidget(at), canvas->rigToWidget(at + QPointF(20, 0))); }));
+    point = attachment("root-point");
+    QVERIFY2(std::fabs(point.value("x", 0.0) - 20) < 0.5, point.dump().c_str());
+    const QPointF moved = canvas->rigToWidget(at + QPointF(20, 0)), handle = canvas->pointHandle(at + QPointF(20, 0), 0);
+    QVERIFY(gesture("turn the point by its handle", 1, [&] {
+      mouse(canvas, QEvent::MouseButtonPress, handle, Qt::LeftButton, Qt::LeftButton);
+      const double len = QLineF(moved, handle).length();
+      for (int i = 1; i <= 8; i++) { const double t = i * 3.14159265358979323846 / 16; mouse(canvas, QEvent::MouseMove, moved + QPointF(std::cos(t), std::sin(t)) * len, Qt::NoButton, Qt::LeftButton); }
+      mouse(canvas, QEvent::MouseButtonRelease, moved + QPointF(0, len), Qt::LeftButton, Qt::NoButton);
+    }));
+    point = attachment("root-point");
+    QVERIFY2(std::fabs(point.value("rotation", 0.0) - 90) < 3, point.dump().c_str());
+    undo();
+    QVERIFY(std::fabs(attachment("root-point").value("rotation", 0.0)) < 1e-9);
+    redo();
+    // ---- 보기 ▾ toggles: editor-only, no edit; hidden overlays are not pickable.
+    auto* showBoxes = find<QAction>("cutoutShowBoxes");
+    auto* showPoints = find<QAction>("cutoutShowPoints");
+    QVERIFY(showBoxes && showPoints && showBoxes->isChecked() && showPoints->isChecked());
+    QVERIFY(gesture("hide boxes and points (no edit)", 0, [&] { showBoxes->trigger(); showPoints->trigger(); }));
+    QVERIFY(!canvas->showBoxes() && !canvas->showPoints());
+    QVERIFY(!candidates(edge).contains("slot:face-box") && !candidates(canvas->rigToWidget(at + QPointF(20, 0))).contains("slot:root-point"));
+    QVERIFY(gesture("show them again (no edit)", 0, [&] { showBoxes->trigger(); showPoints->trigger(); }));
+    QVERIFY(canvas->showBoxes() && canvas->showPoints());
+    // ---- 게임 연결: partClicked with the rig's box names, and a box click in the preview.
+    panel->showControllerTab();
+    QVERIFY(gesture("add binding", 1, [&] { click("cutoutBindingAdd"); }));
+    auto* signal = find<QComboBox>("cutoutBindingSignal0");
+    QVERIFY(signal && signal->findData("partClicked") >= 0);
+    QVERIFY(gesture("binding signal partClicked", 1, [&] { signal->setCurrentIndex(signal->findData("partClicked")); Q_EMIT signal->activated(signal->currentIndex()); }));
+    auto* match = find<QLineEdit>("cutoutBindingMatch0");
+    QVERIFY(match && match->toolTip().contains("box") && match->property("cutoutBoxOffers").toStringList() == QStringList({"box=box"}));
+    QVERIFY(gesture("match box=box", 1, [&] { match->setText("box=box"); Q_EMIT match->editingFinished(); }));
+    const Json binding = ctrl()["bindings"][0];
+    QVERIFY2(binding["signal"] == "partClicked" && binding["match"] == Json({{"box", "box"}}), binding.dump().c_str());
+    pump();
+    QVERIFY(canvas->previewClicks());
+    QVERIFY(gesture("a click beside the box fires nothing (no edit)", 0, [&] { tap(canvas, canvas->rigToWidget(origin + QPointF(150, -300))); }));
+    QVERIFY(panel->lastPreviewClick().box.isEmpty());
+    QVERIFY(gesture("click the box in the preview (no edit)", 0, [&] { tap(canvas, canvas->rigToWidget(origin)); }));
+    QCOMPARE(panel->lastPreviewClick().box, QString("box"));
+    QCOMPARE(panel->lastPreviewClick().slot, QString("face-box"));
+    QCOMPARE(panel->lastPreviewClick().matched, QStringList({qs(binding["id"].get<std::string>())}));
+    QVERIFY(find<QLabel>("cutoutPreviewResult")->text().contains("box"));
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    pump();
+    QVERIFY(!canvas->previewClicks());
+    // ---- command palette: every new command is there by its Korean name.
+    auto ids = [&](const QString& query) { QStringList out; for (const auto& c : panel->findCommands(query)) out << c.id; return out; };
+    QVERIFY(ids("판정 상자").contains("cutoutAddBoundingBox") && ids("판정 상자").contains("cutoutShowBoxes"));
+    QVERIFY(ids("기준점").contains("cutoutAddPoint") && ids("기준점").contains("cutoutShowPoints"));
+    QVERIFY(ids("판정").contains("cutoutHitDelete") && ids("정점 편집").contains("cutoutBoxVertices"));
+    // ---- 삭제
+    panel->selectItem("slot:face-box");
+    pump();
+    QVERIFY(gesture("delete the box", 1, [&] { click("cutoutHitDelete"); }));
+    QVERIFY(!slotIds().contains("face-box"));
+    QCOMPARE(find<QListWidget>("cutoutHitList")->count(), 1);  // the point is left
+    panel->selectRig(keepRig);
+    pump();
+  }
+  /** Right-click `at` on `w` and trigger the menu action `name` whose data is `data` (submenus too). */
+  void contextTrigger(QWidget* w, QPoint at, const char* name, const QString& data) {
+    QTimer::singleShot(50, [name, data] {
+      auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+      if (!menu) return;
+      QAction* hit = nullptr;
+      for (QAction* a : menu->findChildren<QAction*>(name)) if (a->data().toString() == data) hit = a;
+      menu->close();
+      if (hit) hit->trigger();
+    });
+    QTimer::singleShot(3000, [] { if (auto* m = QApplication::activePopupWidget()) m->close(); });  // never hang
+    QContextMenuEvent e(QContextMenuEvent::Mouse, at, w->mapToGlobal(at));
+    QCoreApplication::sendEvent(w, &e);
+  }
+  /** Canvas direct manipulation (plugin 1.19.0): tool keys, Space pan, framing, drag modifiers and
+   *  typed values, Esc cancel, nudges, double-click, Ctrl+A, Delete, Ctrl+D, the context menu and the
+   *  shortcut overlay, all through real key / mouse events on the canvas. */
+  void canvasDirectManipulation() {
+    const QString keepRig = panel->rigId();
+    for (const auto& [id, size, color] : {std::tuple<QString, QSize, QColor>{"img-d-body", QSize(60, 100), QColor("#2a9d8f")}, {"img-d-glove", QSize(20, 20), QColor("#e9c46a")}}) {
+      QImage img(size, QImage::Format_ARGB32);
+      img.fill(color);
+      const QString file = dir.filePath(id + ".png");
+      QVERIFY(img.save(file));
+      host.assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", "assets/" + id + ".png"}, {"absolutePath", file}});
+    }
+    // root (200, 200) · arm (100, 200) turned 90° (its body points down to hand at (100, 260)) · tail
+    // (200, 300). body on root, glove (a mesh) on hand 30 px further down, a hit box on root.
+    Json start = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 400, "height": 400, "originX": 200, "originY": 380},
+      "bones": [{"id": "root", "parent": null, "x": 200, "y": 200}, {"id": "arm", "parent": "root", "x": -100, "rotation": 90, "length": 60},
+                {"id": "hand", "parent": "arm", "x": 60}, {"id": "tail", "parent": "root", "y": 100}],
+      "slots": [{"id": "body", "bone": "root", "attachment": "body"}, {"id": "glove", "bone": "hand", "attachment": "glove"}],
+      "attachments": [{"slot": "body", "name": "body", "imageAssetId": "img-d-body", "width": 60, "height": 100},
+                      {"slot": "glove", "name": "glove", "imageAssetId": "img-d-glove", "width": 20, "height": 20, "x": 30}],
+      "clips": [{"id": "move", "durationMs": 1000, "loop": true, "tracks": []}]})");
+    start = cutout::applyEdit(start, {{"op", "convertToMesh"}, {"slot", "glove"}, {"rows", 1}, {"cols", 1}}).data;
+    start = cutout::applyEdit(start, {{"op", "addBoundingBox"}, {"slot", "hit"}, {"bone", "root"}, {"vertices", {60, -100, 100, -100, 100, -60, 60, -60}}}).data;
+    host.documents.append(QJsonObject{{"file", "plugins/cutout-animation/rig/direct.json"}, {"kind", "extension"},
+                                      {"data", QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", "cutout-animation"}, {"type", "rig"}, {"id", "direct"}, {"data", toQtObject(start)}}}});
+    host.revision++;
+    plugin.viewChanged();
+    pump();
+    panel->selectRig("direct");
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setMeshEdit(CutoutPanel::MeshEdit::Off);
+    panel->setAxes(cutout::Axes::World);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    host.mainWindow.activateWindow();
+    canvas->setFocus();
+    pump();
+    QCOMPARE(panel->rigId(), QString("direct"));
+    auto data = [&] { return host.data("rig", "direct"); };
+    auto boneOf = [&](const char* id) { const Json d = data(); for (const auto& b : d["bones"]) if (b["id"] == id) return b; return Json(); };
+    auto worldOf = [&](const std::string& id) { const auto w = cutout::setupWorld(data()).at(id); return QPointF(w.e, w.f); };
+    auto at = [&](QPointF rig) { return canvas->rigToWidget(rig); };
+    auto has = [&](const char* list, const char* id) { const Json d = data(); for (const auto& x : d[list]) if (x["id"] == id) return true; return false; };
+    // Press without modifiers (a Ctrl/Shift press toggles the selection), move with `mods` held.
+    auto dragMid = [&](QPointF from, QPointF to, Qt::KeyboardModifiers mods) {
+      QMouseEvent p(QEvent::MouseButtonPress, from, canvas->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(canvas, &p);
+      for (int i = 1; i <= 4; i++) {
+        const QPointF m = from + (to - from) * (i / 4.0);
+        QMouseEvent e(QEvent::MouseMove, m, canvas->mapToGlobal(m), Qt::NoButton, Qt::LeftButton, mods);
+        QCoreApplication::sendEvent(canvas, &e);
+      }
+      QMouseEvent r(QEvent::MouseButtonRelease, to, canvas->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, mods);
+      QCoreApplication::sendEvent(canvas, &r);
+    };
+    auto pressMove = [&](QPointF from, QPointF to) {
+      mouse(canvas, QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton);
+      for (int i = 1; i <= 2; i++) mouse(canvas, QEvent::MouseMove, from + (to - from) * (i / 2.0), Qt::NoButton, Qt::LeftButton);
+    };
+    auto release = [&](QPointF to) { mouse(canvas, QEvent::MouseButtonRelease, to, Qt::LeftButton, Qt::NoButton); };
+
+    // ---- tool hotkeys (the panel's shortcuts) from the canvas; Esc steps back to the select tool
+    const QList<QPair<int, int>> keys{{Qt::Key_R, RigCanvas::Rotate}, {Qt::Key_S, RigCanvas::Scale}, {Qt::Key_P, RigCanvas::Pivot}, {Qt::Key_B, RigCanvas::Create},
+                                      {Qt::Key_V, RigCanvas::Move}, {Qt::Key_C, RigCanvas::Create}};
+    for (const auto& [key, tool] : keys) {
+      QVERIFY(gesture("tool key", 0, [&] { QTest::keyClick(canvas, Qt::Key(key)); }));
+      QVERIFY2(panel->tool() == tool, qPrintable(QString("key %1 -> tool %2, got %3").arg(key).arg(tool).arg(panel->tool())));
+      QVERIFY(find<QToolButton>(QList<const char*>{"cutoutToolSelect", "cutoutToolRotate", "cutoutToolScale", "cutoutToolPivot", "cutoutToolCreate"}[tool])->isChecked());
+    }
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    // Never while typing: a number field and a text field take the letters.
+    panel->selectItem("bone:arm");
+    pump();
+    auto* spin = find<QDoubleSpinBox>("cutoutPropRotation");
+    QVERIFY(spin && spin->isVisible());
+    spin->setFocus();
+    pump();
+    for (int key : {Qt::Key_R, Qt::Key_S, Qt::Key_B, Qt::Key_M, Qt::Key_W, Qt::Key_G}) QTest::keyClick(spin, Qt::Key(key));
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    panel->showCommandPalette();
+    auto* search = find<QLineEdit>("cutoutCommandSearch");
+    QVERIFY(search->hasFocus());
+    QTest::keyClick(search, Qt::Key_R);
+    QTest::keyClick(search, Qt::Key_B);
+    QCOMPARE(panel->tool(), int(RigCanvas::Move));
+    QCOMPARE(search->text(), QString("rb"));
+    QTest::keyClick(search, Qt::Key_Escape);
+    QVERIFY(!panel->commandPalette()->isVisible() && canvas->hasFocus());
+    // M / W need a mesh part, G a hit box; Esc turns the mode off again.
+    panel->selectItem("slot:body");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_M);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    QVERIFY(panel->status().contains("메시"));
+    panel->selectItem("slot:glove");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_M);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Vertices);
+    QTest::keyClick(canvas, Qt::Key_W);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Weights);
+    QTest::keyClick(canvas, Qt::Key_W);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    QTest::keyClick(canvas, Qt::Key_M);
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QCOMPARE(panel->meshEdit(), CutoutPanel::MeshEdit::Off);
+    panel->selectItem("slot:hit");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_G);
+    QVERIFY(panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshVertices);
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshOff);
+    QTest::keyClick(canvas, Qt::Key_Escape);  // nothing else on: Esc clears the selection
+    QVERIFY(panel->selection().isEmpty());
+
+    // ---- Space held = hand tool (any tool, no edit, no selection); middle drag still pans
+    const QPointF empty = at(QPointF(350, 60));
+    QVERIFY(canvas->hitCandidates(empty).isEmpty());
+    QPointF pan0 = canvas->panOffset();
+    QTest::keyPress(canvas, Qt::Key_Space);
+    QVERIFY(canvas->spaceHeld() && canvas->cursor().shape() == Qt::OpenHandCursor);
+    QVERIFY(gesture("space + drag pans", 0, [&] { drag(canvas, at(worldOf("tail")), at(worldOf("tail")) + QPointF(40, 20)); }));
+    QTest::keyRelease(canvas, Qt::Key_Space);
+    QVERIFY(!canvas->spaceHeld());
+    QVERIFY(std::hypot(canvas->panOffset().x() - pan0.x() - 40, canvas->panOffset().y() - pan0.y() - 20) < 1e-6);
+    QVERIFY2(panel->selection().isEmpty(), "the hand drag picked nothing");
+    pan0 = canvas->panOffset();
+    QVERIFY(gesture("middle drag pans", 0, [&] {
+      mouse(canvas, QEvent::MouseButtonPress, empty, Qt::MiddleButton, Qt::MiddleButton);
+      mouse(canvas, QEvent::MouseMove, empty + QPointF(-30, 10), Qt::NoButton, Qt::MiddleButton);
+      mouse(canvas, QEvent::MouseButtonRelease, empty + QPointF(-30, 10), Qt::MiddleButton, Qt::NoButton);
+    }));
+    QVERIFY(std::hypot(canvas->panOffset().x() - pan0.x() + 30, canvas->panOffset().y() - pan0.y() - 10) < 1e-6);
+
+    // ---- F = 선택 맞춤, Home / Shift+F = 전체 맞춤
+    canvas->fitToCanvas();
+    const double fitZoom = canvas->zoom();
+    panel->selectItem("slot:glove");
+    pump();
+    QTest::keyClick(canvas, Qt::Key_F);
+    QVERIFY2(canvas->zoom() > fitZoom * 2, qPrintable(QString("framed zoom %1 vs fit %2").arg(canvas->zoom()).arg(fitZoom)));
+    const QPointF gloveCenter = at(worldOf("hand") + QPointF(0, 30));
+    QVERIFY(std::hypot(gloveCenter.x() - canvas->width() / 2.0, gloveCenter.y() - canvas->height() / 2.0) < 1.0);
+    QTest::keyClick(canvas, Qt::Key_Home);
+    QVERIFY(std::fabs(canvas->zoom() - fitZoom) < 1e-9);
+    QTest::keyClick(canvas, Qt::Key_F);
+    QTest::keyClick(canvas, Qt::Key_F, Qt::ShiftModifier);
+    QVERIFY(std::fabs(canvas->zoom() - fitZoom) < 1e-9);
+    panel->selectItem(QString());
+    QTest::keyClick(canvas, Qt::Key_F);  // nothing selected: the whole canvas
+    QVERIFY(std::fabs(canvas->zoom() - fitZoom) < 1e-9);
+    pump();
+
+    // ---- drag modifiers: Shift = one axis / 15° / 10 %, Ctrl = ×0.1 (exact), readout while dragging
+    const double z = canvas->zoom();
+    const Json tail0 = boneOf("tail");
+    QVERIFY(gesture("shift move = one axis", 1, [&] { dragMid(at(worldOf("tail")), at(worldOf("tail")) + QPointF(40, 6), Qt::ShiftModifier); }));
+    QVERIFY(std::fabs(boneOf("tail")["x"].get<double>() - (tail0.value("x", 0.0) + 40 / z)) < 1e-5);
+    QVERIFY(std::fabs(boneOf("tail")["y"].get<double>() - tail0["y"].get<double>()) < 1e-9);
+    const Json tail1 = boneOf("tail");
+    QVERIFY(gesture("ctrl move = fine", 1, [&] { dragMid(at(worldOf("tail")), at(worldOf("tail")) + QPointF(40, 20), Qt::ControlModifier); }));
+    QVERIFY(std::fabs(boneOf("tail")["x"].get<double>() - (tail1["x"].get<double>() + 4 / z)) < 1e-5);
+    QVERIFY(std::fabs(boneOf("tail")["y"].get<double>() - (tail1["y"].get<double>() + 2 / z)) < 1e-5);
+    // Rotate: the arm body (pointing down) turned about its origin.
+    panel->setTool(RigCanvas::Rotate);
+    panel->selectItem("bone:arm");
+    pump();
+    const QPointF armO = worldOf("arm"), bodyAt = armO + QPointF(0, 30), turned = armO + QPointF(-25, 30);
+    const double rot0 = boneOf("arm")["rotation"].get<double>();
+    QVERIFY(gesture("shift rotate = 15° steps", 1, [&] { dragMid(at(bodyAt), at(turned), Qt::ShiftModifier); }));
+    const double rot1 = boneOf("arm")["rotation"].get<double>();
+    QVERIFY2(std::fabs(std::remainder(rot1, 15.0)) < 1e-9 && std::fabs(rot1 - rot0) > 1, qPrintable(QString::number(rot1)));
+    const QPointF armO1 = worldOf("arm");
+    const QPointF from = at(armO1 + QPointF(0, 30)) , to = at(armO1 + QPointF(-25, 30));
+    const QPointF rf = canvas->widgetToRig(from) - armO1, rt = canvas->widgetToRig(to) - armO1;
+    const double turn = (std::atan2(rt.y(), rt.x()) - std::atan2(rf.y(), rf.x())) * 180 / 3.14159265358979323846;
+    QVERIFY(gesture("ctrl rotate = fine", 1, [&] { dragMid(from, to, Qt::ControlModifier); }));
+    QVERIFY2(std::fabs(boneOf("arm")["rotation"].get<double>() - (rot1 + turn * 0.1)) < 1e-4, qPrintable(QString("%1 vs %2").arg(boneOf("arm")["rotation"].get<double>()).arg(rot1 + turn * 0.1)));
+    // Scale: Shift snaps the factor to 10 % steps (the tail, pressed beside it).
+    panel->setTool(RigCanvas::Scale);
+    panel->selectItem("bone:tail");
+    pump();
+    QVERIFY(gesture("shift scale = 10 % steps", 1, [&] { dragMid(at(worldOf("tail") + QPointF(30, 0)), at(worldOf("tail") + QPointF(50, 0)), Qt::ShiftModifier); }));
+    QVERIFY2(std::fabs(boneOf("tail").value("scaleX", 1.0) - 1.7) < 1e-6, boneOf("tail").dump().c_str());
+    // Readout: what the drag means, near the cursor.
+    panel->setTool(RigCanvas::Move);
+    pressMove(at(worldOf("tail")), at(worldOf("tail")) + QPointF(30, 0));
+    QVERIFY2(canvas->readoutText().contains("Δx"), qPrintable(canvas->readoutText()));
+    // ---- Esc during a drag: the preview goes back, zero edits.
+    const Json beforeCancel = data();
+    QVERIFY(std::fabs(panel->displayData()["bones"][3]["x"].get<double>() - beforeCancel["bones"][3]["x"].get<double>()) > 1);
+    QVERIFY(gesture("Esc cancels the drag", 0, [&] { QTest::keyClick(canvas, Qt::Key_Escape); release(at(worldOf("tail")) + QPointF(30, 0)); }));
+    QVERIFY(!canvas->dragging() && data() == beforeCancel && panel->displayData()["bones"][3] == beforeCancel["bones"][3]);
+    // Typed value: digits then Enter (one edit, exact; the release adds nothing).
+    const QPointF tailW = worldOf("tail");
+    QVERIFY(gesture("typed move 12,-5", 1, [&] {
+      pressMove(at(tailW), at(tailW) + QPointF(6, 0));
+      for (int k : {Qt::Key_1, Qt::Key_2, Qt::Key_Comma, Qt::Key_Minus, Qt::Key_5}) QTest::keyClick(canvas, Qt::Key(k));
+      QVERIFY2(canvas->readoutText().contains("입력 12,-5"), qPrintable(canvas->readoutText()));
+      QTest::keyClick(canvas, Qt::Key_Return);
+      release(at(tailW) + QPointF(6, 0));
+    }));
+    QVERIFY(std::hypot(worldOf("tail").x() - tailW.x() - 12, worldOf("tail").y() - tailW.y() + 5) < 1e-5);
+    panel->setTool(RigCanvas::Rotate);
+    panel->selectItem("bone:arm");
+    pump();
+    const double rot2 = boneOf("arm")["rotation"].get<double>();
+    const QPointF armBody = worldOf("arm") + QPointF(std::cos(rot2 * 3.14159265358979323846 / 180), std::sin(rot2 * 3.14159265358979323846 / 180)) * 30;
+    QVERIFY(gesture("typed rotate 30", 1, [&] {
+      pressMove(at(armBody), at(armBody) + QPointF(4, 4));
+      QTest::keyClick(canvas, Qt::Key_3);
+      QTest::keyClick(canvas, Qt::Key_0);
+      QTest::keyClick(canvas, Qt::Key_Enter);
+      release(at(armBody) + QPointF(4, 4));
+    }));
+    QVERIFY2(std::fabs(boneOf("arm")["rotation"].get<double>() - (rot2 + 30)) < 1e-6, boneOf("arm").dump().c_str());
+    panel->setTool(RigCanvas::Move);
+
+    // ---- nudge: 5 presses = ONE edit when the keys rest; Shift = 10 px; local axes follow the parent
+    panel->selectItem("bone:tail");
+    pump();
+    const QPointF n0 = worldOf("tail");
+    QVERIFY(gesture("5 x Right (pending)", 0, [&] { for (int i = 0; i < 5; i++) QTest::keyClick(canvas, Qt::Key_Right); }));
+    QVERIFY(panel->nudgePending());
+    QVERIFY(std::fabs(panel->displayData()["bones"][3]["x"].get<double>() - (boneOf("tail")["x"].get<double>() + 5)) < 1e-6);  // previewed live
+    QVERIFY(gesture("nudge rests = one edit", 1, [&] { QTest::qWait(CutoutPanel::NUDGE_IDLE_MS + 250); }));
+    QVERIFY(!panel->nudgePending() && std::hypot(worldOf("tail").x() - n0.x() - 5, worldOf("tail").y() - n0.y()) < 1e-6);
+    QVERIFY(gesture("2 x Shift+Up, then a drag commits the nudge first", 2, [&] {
+      for (int i = 0; i < 2; i++) QTest::keyClick(canvas, Qt::Key_Up, Qt::ShiftModifier);
+      drag(canvas, at(worldOf("tail") + QPointF(0, -20)), at(worldOf("tail") + QPointF(0, -20)) + QPointF(10, 0));  // the drag commits the nudge first
+    }));
+    QVERIFY2(std::fabs(worldOf("tail").y() - n0.y() + 20) < 1e-6, qPrintable(QString("tail moved %1, %2").arg(worldOf("tail").x() - n0.x()).arg(worldOf("tail").y() - n0.y())));
+    undo();
+    // Local axes: Right moves the hand along its parent's (the turned arm's) x axis.
+    panel->setAxes(cutout::Axes::Local);
+    panel->selectItem("bone:hand");
+    pump();
+    const QPointF h0 = worldOf("hand");
+    const double armRot = boneOf("arm")["rotation"].get<double>() * 3.14159265358979323846 / 180;
+    QVERIFY(gesture("local nudge", 1, [&] { for (int i = 0; i < 3; i++) QTest::keyClick(canvas, Qt::Key_Right); QVERIFY(panel->flushNudge()); }));
+    QVERIFY2(std::hypot(worldOf("hand").x() - h0.x() - 3 * std::cos(armRot), worldOf("hand").y() - h0.y() - 3 * std::sin(armRot)) < 1e-5, qPrintable(QString("%1,%2").arg(worldOf("hand").x() - h0.x()).arg(worldOf("hand").y() - h0.y())));
+    QCOMPARE(boneOf("hand")["x"].get<double>(), 63.0);
+    panel->setAxes(cutout::Axes::World);
+
+    // ---- double-click: a part selects its bone, a bone its first part
+    auto doubleClick = [&](QPointF w) {
+      mouse(canvas, QEvent::MouseButtonPress, w, Qt::LeftButton, Qt::LeftButton);
+      mouse(canvas, QEvent::MouseButtonRelease, w, Qt::LeftButton, Qt::NoButton);
+      mouse(canvas, QEvent::MouseButtonDblClick, w, Qt::LeftButton, Qt::LeftButton);
+      mouse(canvas, QEvent::MouseButtonRelease, w, Qt::LeftButton, Qt::NoButton);
+    };
+    const QPointF glovePart = at(worldOf("hand") + QPointF(std::cos(armRot), std::sin(armRot)) * 30);
+    QCOMPARE(canvas->hitTest(glovePart), QString("slot:glove"));
+    QVERIFY(gesture("double-click part -> bone", 0, [&] { doubleClick(glovePart); }));
+    QCOMPARE(panel->selection(), QString("bone:hand"));
+    QVERIFY(gesture("double-click bone -> part", 0, [&] { doubleClick(at(worldOf("hand"))); }));
+    QCOMPARE(panel->selection(), QString("slot:glove"));
+    // ---- Ctrl+A
+    QTest::keyClick(canvas, Qt::Key_A, Qt::ControlModifier);
+    QCOMPARE(int(panel->selectedBones().size()), 4);
+
+    // ---- Ctrl+D: the arm with its subtree and parts (core duplicateBones), one edit, copies selected
+    panel->selectItem("bone:arm");
+    pump();
+    QVERIFY(gesture("Ctrl+D duplicates", 1, [&] { QTest::keyClick(canvas, Qt::Key_D, Qt::ControlModifier); }));
+    QVERIFY(has("bones", "arm-2") && has("bones", "hand-2") && has("slots", "glove-2"));
+    QCOMPARE(panel->selection(), QString("bone:arm-2"));
+    QVERIFY(std::hypot(worldOf("hand-2").x() - worldOf("hand").x(), worldOf("hand-2").y() - worldOf("hand").y()) < 1e-9);
+    undo();
+    QVERIFY(!has("bones", "arm-2"));
+    // ---- Delete (asks like the 삭제 button)
+    panel->selectItem("slot:hit");
+    pump();
+    panel->askConfirm = [](const QString&, const QString&) { return false; };
+    QVERIFY(gesture("Delete declined", 0, [&] { QTest::keyClick(canvas, Qt::Key_Delete); }));
+    panel->askConfirm = [](const QString&, const QString&) { return true; };
+    QVERIFY(gesture("Delete", 1, [&] { QTest::keyClick(canvas, Qt::Key_Delete); }));
+    QVERIFY(!has("slots", "hit"));
+    undo();
+
+    // ---- right-click menu (existing commands, one edit each); a right drag pans and opens nothing
+    const QPoint tailAt = at(worldOf("tail")).toPoint(), bodyAt2 = at(worldOf("root") + QPointF(0, -30)).toPoint();
+    QVERIFY(gesture("menu: select the part's bone", 0, [&] { contextPick(canvas, glovePart.toPoint(), "cutoutCanvasMenuSelectBone"); }));
+    QCOMPARE(panel->selection(), QString("bone:hand"));
+    QVERIFY(gesture("menu: hide (editor only)", 0, [&] { contextPick(canvas, bodyAt2, "cutoutCanvasMenuHide"); }));
+    QVERIFY(canvas->hitTest(QPointF(bodyAt2)) != "slot:body");
+    QVERIFY(gesture("menu: show all", 0, [&] { contextPick(canvas, empty.toPoint(), "cutoutCanvasMenuShowAll"); }));
+    QCOMPARE(canvas->hitTest(QPointF(bodyAt2)), QString("slot:body"));
+    QVERIFY(gesture("menu: duplicate", 1, [&] { contextPick(canvas, tailAt, "cutoutCanvasMenuDuplicate"); }));
+    QVERIFY(has("bones", "tail-2"));
+    undo();
+    const QPointF tailWorld = worldOf("tail");
+    QVERIFY(gesture("menu: parent -> arm", 1, [&] { contextTrigger(canvas, tailAt, "cutoutCanvasMenuParentTo", "arm"); }));
+    QCOMPARE(qs(boneOf("tail")["parent"].get<std::string>()), QString("arm"));
+    QVERIFY(std::hypot(worldOf("tail").x() - tailWorld.x(), worldOf("tail").y() - tailWorld.y()) < 1e-5);
+    undo();
+    QVERIFY(gesture("menu: hit box from the part", 1, [&] { contextPick(canvas, bodyAt2, "cutoutCanvasMenuBox"); }));
+    QVERIFY(has("slots", "body-box"));
+    undo();
+    const int beforeOrient = host.edits;  // a point bone with nothing to point at: at most one (no-op) edit
+    contextPick(canvas, tailAt, "cutoutCanvasMenuOrient");
+    pump();
+    QVERIFY(host.edits - beforeOrient <= 1 && host.lastError.isEmpty());
+    bool opened = false;
+    QTimer::singleShot(50, [&] { if (auto* m = QApplication::activePopupWidget()) { opened = true; m->close(); } });
+    pan0 = canvas->panOffset();
+    QVERIFY(gesture("right drag pans", 0, [&] {
+      mouse(canvas, QEvent::MouseButtonPress, empty, Qt::RightButton, Qt::RightButton);
+      mouse(canvas, QEvent::MouseMove, empty + QPointF(25, 0), Qt::NoButton, Qt::RightButton);
+      mouse(canvas, QEvent::MouseButtonRelease, empty + QPointF(25, 0), Qt::RightButton, Qt::NoButton);
+      QContextMenuEvent e(QContextMenuEvent::Mouse, (empty + QPointF(25, 0)).toPoint(), canvas->mapToGlobal((empty + QPointF(25, 0)).toPoint()));
+      QCoreApplication::sendEvent(canvas, &e);
+    }));
+    QTest::qWait(100);
+    QVERIFY2(!opened, "a right drag never opens the menu");
+    QVERIFY(std::fabs(canvas->panOffset().x() - pan0.x() - 25) < 1e-6);
+    // Animate mode: 키 넣기, nudges make keys, a Space tap plays.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("move");
+    panel->setPlayhead(0);
+    panel->setAutoKey(true);
+    pump();
+    QVERIFY(gesture("menu: key", 1, [&] { contextPick(canvas, at(worldOf("tail")).toPoint(), "cutoutCanvasMenuKey"); }));  // (the right drag panned the view)
+    QVERIFY(!keyOfRig(data(), "move", "bone:tail", "rotation", 0).is_null());
+    panel->selectItem("bone:tail");
+    pump();
+    const double ty = boneOf("tail")["y"].get<double>();
+    QVERIFY(gesture("animate nudge = keys", 1, [&] { for (int i = 0; i < 3; i++) QTest::keyClick(canvas, Qt::Key_Up); QTest::qWait(CutoutPanel::NUDGE_IDLE_MS + 250); }));
+    QVERIFY(std::fabs(keyOfRig(data(), "move", "bone:tail", "y", 0)["value"].get<double>() - (ty - 3)) < 1e-6);
+    QCOMPARE(boneOf("tail")["y"].get<double>(), ty);  // the setup pose is untouched
+    auto* play = find<QPushButton>("cutoutPlay");
+    panel->setManualClock(true);
+    QVERIFY(gesture("Space tap plays", 0, [&] { canvas->setFocus(); QTest::keyPress(canvas, Qt::Key_Space); QTest::keyRelease(canvas, Qt::Key_Space); }));
+    QVERIFY(play->isChecked());
+    QTest::keyPress(canvas, Qt::Key_Space);
+    QTest::keyRelease(canvas, Qt::Key_Space);
+    QVERIFY(!play->isChecked());
+    panel->setManualClock(false);
+    QVERIFY(gesture("Ctrl+D refused in Animate", 0, [&] { QTest::keyClick(canvas, Qt::Key_D, Qt::ControlModifier); }));
+    panel->setAutoKey(false);
+    panel->setMode(CutoutPanel::Mode::Setup);
+    pump();
+
+    // ---- discoverability: the overlay lists every bound shortcut (from the panel's registry and the
+    // canvas's table, so it cannot drift), tooltips name the keys, the hint strip names V/R/S/Space.
+    canvas->setFocus();
+    QTest::keyClick(canvas, Qt::Key_Question);
+    QVERIFY(panel->shortcutOverlayVisible());
+    auto* list = find<QTreeWidget>("cutoutShortcutList");
+    QVERIFY(list && list->isVisible() && find<QWidget>("cutoutShortcutOverlay")->isVisible());
+    QStringList shown;
+    for (int g = 0; g < list->topLevelItemCount(); g++)
+      for (int i = 0; i < list->topLevelItem(g)->childCount(); i++) shown << list->topLevelItem(g)->child(i)->text(0) + "|" + list->topLevelItem(g)->child(i)->text(1);
+    QStringList expected;
+    int shortcuts = 0;
+    for (QShortcut* s : panel->findChildren<QShortcut*>()) {
+      if (!s->objectName().startsWith("cutoutShortcut")) continue;
+      shortcuts++;
+      QVERIFY2(!s->property("cutoutShortcutGroup").toString().isEmpty() && !s->property("cutoutShortcutText").toString().isEmpty(), qPrintable(s->objectName()));
+      expected << s->key().toString(QKeySequence::NativeText) + "|" + s->property("cutoutShortcutText").toString();
+    }
+    for (const auto& b : RigCanvas::keyBindings()) expected << QString::fromUtf8(b.keys) + "|" + QString::fromUtf8(b.text);
+    QVERIFY(shortcuts >= 22);
+    std::sort(shown.begin(), shown.end());
+    std::sort(expected.begin(), expected.end());
+    QCOMPARE(shown, expected);
+    QCOMPARE(int(panel->shortcutList().size()), int(expected.size()));
+    for (const char* key : {"V", "R", "S", "P", "B", "M", "W", "G", "F", "Home", "Esc", "Ctrl+D", "Delete", "?", "Space 누른 채 끌기", "끄는 중 Shift", "끄는 중 Ctrl"}) {
+      bool found = false;
+      for (const QString& row : shown) found = found || row.section('|', 0, 0) == QString::fromUtf8(key);
+      QVERIFY2(found, key);
+    }
+    // Every canvas key in the table is dispatched (its id is what a press of it matches).
+    for (const auto& b : RigCanvas::keyBindings())
+      for (int code : b.codes) QCOMPARE(RigCanvas::bindingFor(code, Qt::KeyboardModifiers(b.modifiers)), QString::fromUtf8(b.id));
+    QCOMPARE(RigCanvas::bindingFor(Qt::Key_Slash, Qt::ShiftModifier), QString("overlay"));
+    QCOMPARE(RigCanvas::bindingFor(Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier), QString());  // the host's workspace toggle
+    QTest::keyClick(list, Qt::Key_Escape);
+    QVERIFY(!panel->shortcutOverlayVisible() && canvas->hasFocus());
+    QTest::keyClick(canvas, Qt::Key_Slash, Qt::ShiftModifier);
+    QVERIFY(panel->shortcutOverlayVisible());
+    click("cutoutShortcutOverlayClose");
+    QVERIFY(!panel->shortcutOverlayVisible());
+    QVERIFY(panel->runCommand("cutoutShortcutOverlayAction"));
+    pump();
+    QVERIFY(panel->shortcutOverlayVisible());
+    panel->showShortcutOverlay(false);
+    QVERIFY(find<QToolButton>("cutoutToolCreate")->toolTip().contains("B"));
+    QVERIFY(find<QToolButton>("cutoutToolSelect")->toolTip().contains("단축키: V"));
+    QVERIFY(find<QWidget>("cutoutMeshVertices")->toolTip().contains("단축키: M") && find<QWidget>("cutoutMeshWeights")->toolTip().contains("단축키: W"));
+    QVERIFY(find<QWidget>("cutoutBoxVertices")->toolTip().contains("단축키: G"));
+    const QString hint = find<QLabel>("cutoutHintText")->text();
+    QVERIFY(hint.contains("V 선택") && hint.contains("R 회전") && hint.contains("S 크기") && hint.contains("Space"));
+    QVERIFY(!panel->findCommands("단축키 모음").isEmpty() && !panel->findCommands("선택 맞춤").isEmpty());
+    panel->setAxes(cutout::Axes::Local);
+    panel->selectRig(keepRig);
+    pump();
+  }
   void largeRigPerformance() {
     const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
     const auto keepHistory = host.history, keepFuture = host.future;

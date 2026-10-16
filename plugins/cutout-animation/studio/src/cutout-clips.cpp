@@ -233,7 +233,7 @@ void CutoutPanel::refreshClipping() {
   int si = -1;
   const cutout::Attachment* att = nullptr;
   Json fields;
-  const bool part = meshTarget(si, att, fields) && !att->clipping;
+  const bool part = meshTarget(si, att, fields) && !att->pictureless();
   {
     QSignalBlocker block(clippingList_);
     clippingList_->clear();
@@ -284,7 +284,7 @@ bool CutoutPanel::beginClipping() {
   int si;
   const cutout::Attachment* att;
   Json fields;
-  if (!meshTarget(si, att, fields) || att->clipping) { setStatus("클리핑할 조각(▣)을 먼저 고르세요.", true); return false; }
+  if (!meshTarget(si, att, fields) || att->pictureless()) { setStatus("클리핑할 조각(▣)을 먼저 고르세요.", true); return false; }
   outlineSlot_ = refId(selection_);
   outlineForClip_ = true;
   meshEdit_ = MeshEdit::Off;
@@ -376,7 +376,7 @@ void CutoutPanel::refreshSequence() {
   int si = -1;
   const cutout::Attachment* att = nullptr;
   Json fields;
-  const bool part = meshTarget(si, att, fields) && !att->clipping;
+  const bool part = meshTarget(si, att, fields) && !att->pictureless();
   const bool sequence = part && att->sequence();
   const int count = sequence ? int(att->frames.size()) : 0;
   // The list is rebuilt only for other frames (scrubbing refreshes this page on every move).
@@ -547,7 +547,7 @@ bool CutoutPanel::setSequenceFrames(const QStringList& ids, int setupIndex) {
   int si;
   const cutout::Attachment* att;
   Json op;
-  if (meshTarget(si, att, op) && !att->clipping) {
+  if (meshTarget(si, att, op) && !att->pictureless()) {
     op["op"] = "setSequence";
     op["frames"] = frames;
     op["width"] = size.width();

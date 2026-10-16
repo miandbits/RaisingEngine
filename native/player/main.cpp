@@ -233,6 +233,8 @@ public:
     if(preview())return;
     auto& markup=active_markup();
     const auto eventType=event.GetType();
+    // Plugin hit tests (CONTRACT.md §7): observed for the animation, never consumed; the click goes on below.
+    if(eventType=="click")ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
@@ -597,6 +599,16 @@ public:
     // Identical RmlUi input path used by SDL pointer events, after logical-coordinate conversion.
     context->ProcessMouseMove(x,y,0);context->ProcessMouseButtonDown(0,0);context->ProcessMouseButtonUp(0,0);
   }
+  /** Automation: a real mouse click at {x, y} context px, or element-local px of {id, x, y}. */
+  void point_click(const Json& at) {
+    float x=at.value("x",0.f),y=at.value("y",0.f);
+    if(at.contains("id")){auto* element=find_element(at.at("id").get<std::string>());if(!element)throw std::runtime_error("UI element missing: "+at.at("id").get<std::string>());const auto o=element->GetAbsoluteOffset(Rml::BoxArea::Content);x+=o.x;y+=o.y;}
+    float wx,wy;if(!SDL_RenderCoordinatesToWindow(renderer,x,y,&wx,&wy))throw std::runtime_error(SDL_GetError());
+    const auto window_id=SDL_GetWindowID(window);
+    SDL_Event input{};input.type=SDL_EVENT_MOUSE_MOTION;input.motion.windowID=window_id;input.motion.x=wx;input.motion.y=wy;event(input);
+    input={};input.type=SDL_EVENT_MOUSE_BUTTON_DOWN;input.button.windowID=window_id;input.button.button=SDL_BUTTON_LEFT;input.button.x=wx;input.button.y=wy;event(input);
+    input={};input.type=SDL_EVENT_MOUSE_BUTTON_UP;input.button.windowID=window_id;input.button.button=SDL_BUTTON_LEFT;input.button.x=wx;input.button.y=wy;event(input);
+  }
   void window_click(const std::string& id,bool touch=false,bool cancel=false) {
     auto* element=find_element(id);if(!element)throw std::runtime_error("UI element missing: "+id);
     auto position=element->GetAbsoluteOffset();auto size=element->GetBox().GetSize();float x,y;
@@ -709,6 +721,7 @@ int main(int argc,char** argv) {
           if(command.contains("click"))app.click(command.at("click"));
           if(command.contains("hover")){auto* e=app.document->GetElementById(command.at("hover").get<std::string>());if(!e)throw std::runtime_error("Hover target missing");const auto p=e->GetAbsoluteOffset(),size=e->GetBox().GetSize();app.context->ProcessMouseMove(int(p.x+size.x/2),int(p.y+size.y/2),0);}
           if(command.contains("clickWindow"))app.window_click(command.at("clickWindow"));
+          if(command.contains("clickPoint"))app.point_click(command.at("clickPoint"));
           if(command.contains("textInput")){const auto text=command.at("textInput").get<std::string>();SDL_Event input{};input.type=SDL_EVENT_TEXT_INPUT;input.text.windowID=SDL_GetWindowID(window);input.text.text=text.c_str();app.event(input);}
           if(command.contains("wheelWindow")) {
             const auto wheel=command.at("wheelWindow");SDL_Event input{};input.type=SDL_EVENT_MOUSE_MOTION;input.motion.windowID=SDL_GetWindowID(window);input.motion.x=wheel.at("x");input.motion.y=wheel.at("y");app.event(input);

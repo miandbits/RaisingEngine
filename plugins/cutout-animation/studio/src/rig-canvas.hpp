@@ -26,7 +26,26 @@ class RigCanvas : public QWidget {
     double ratio = 1;       // |current-origin| / |start-origin|
     bool shift = false, moved = false;
     bool body = false;      // the press grabbed a bone's body (length shape / axis): rotates around its origin
+    bool ctrl = false;      // plugin 1.19.0: Ctrl held while dragging = fine (×0.1)
+    QString typed;          // plugin 1.19.0: digits typed while dragging (exact value; Enter commits)
+    bool parentSpace = false;  // nudge (plugin 1.19.0): the delta is in the parent's axes, not rig px
   };
+  /** What a drag means once its modifiers / typed value are applied (plugin 1.19.0): the one place
+   *  the canvas readout and the panel's ops read it from, so what is shown is what is committed.
+   *  Shift = constrain (move along the dominant axis, rotation in 15° steps, scale in 10 % steps),
+   *  Ctrl = fine (×0.1; with Shift the steps are 1° / 1 %). A typed value replaces the mouse:
+   *  move "dx,dy" (one number = along the dominant axis), rotate degrees, scale a factor. */
+  struct GestureValue { QPointF delta; double angle = 0, ratio = 1, snapStep = 15; bool snapRotation = false, typed = false; };
+  static GestureValue gestureValue(const Drag& d);
+  /** The on-canvas readout of the drag in progress ("" = none): Δx Δy / 회전 / 크기 / 길이. */
+  QString readoutText() const;
+  const std::optional<Drag>& currentDrag() const { return drag_; }
+  /** Canvas keys and gestures (plugin 1.19.0): THE list the key handler dispatches from and the
+   *  shortcut overlay shows (`codes` empty = a mouse gesture or a key handled elsewhere, listed only). */
+  struct KeyBinding { const char* id; const char* keys; const char* group; const char* text; QVector<int> codes; int modifiers = 0; bool anyShift = false; };
+  static const QVector<KeyBinding>& keyBindings();
+  /** id of the keyBindings() entry a key press matches ("" = none). */
+  static QString bindingFor(int key, Qt::KeyboardModifiers modifiers);
   /** Create tool: where the new bone's tip is (rig space), Shift snapping the angle to 15°. */
   static QPointF createEnd(const Drag& d);
   /** Onion-skin ghost: a pose of `rig` drawn behind the live pose, tinted (invalid tint =
@@ -74,12 +93,23 @@ class RigCanvas : public QWidget {
   void setPhysicsView(const QString& selected, const QHash<int, QPointF>& rest) { selectedPhysics_ = selected; physicsRest_ = rest; update(); }
   const QHash<int, QPointF>& physicsRest() const { return physicsRest_; }
   static QColor physicsColor();
+  /** Transform constraints (plugin 1.16.0): a dashed pink line from every constrained bone to its
+   *  target (a diamond), the `selected` constraint's drawn thicker. */
+  void setSelectedTransform(const QString& id) { if (id != selectedTransform_) { selectedTransform_ = id; update(); } }
+  static QColor transformColor();
   /** Workspace UI scale (plugin 1.10.0, editor-only): handles, gizmos, pick radii and the hint
    *  line grow with it, so a large-text workspace also gets larger targets. */
   void setUiScale(double scale) { ui_ = scale; refreshHover(); update(); }
   double uiScale() const { return ui_; }
   /** Fit the authoring canvas into the widget (also re-enables auto fit on resize). */
   void fitToCanvas();
+  /** F (plugin 1.19.0): zoom/pan so the selected bones and parts fill the view (nothing selected =
+   *  fitToCanvas). Editor-only view state. */
+  void frameSelection();
+  double zoom() const { return zoom_; }
+  QPointF panOffset() const { return pan_; }
+  /** Space held (plugin 1.19.0): a left drag pans the view (hand cursor) instead of editing. */
+  bool spaceHeld() const { return spaceHeld_; }
   QTransform viewTransform() const;
   QPointF widgetToRig(const QPointF& p) const;
   QPointF rigToWidget(const QPointF& p) const;
@@ -128,8 +158,29 @@ class RigCanvas : public QWidget {
   std::function<void(const QVector<int>& vertices, bool add)> onMeshSelect;
   /** Drag of the selected vertices by `rigDelta` (live while !finished; one edit on finish). */
   std::function<void(const QPointF& rigDelta, bool finished)> onMeshDrag;
-  /** Weight brush stroke: every vertex the brush touched so far (one edit on finish). */
-  std::function<void(const QVector<int>& vertices, bool finished)> onMeshPaint;
+  /** Weight brush stroke (plugin 1.18.0): every vertex the brush touched so far with its closest
+   *  approach `reach` (distance / radius, 0 = under the centre: the panel turns it into the falloff)
+   *  and the modifiers held at the press (Shift = smooth, Ctrl = subtract for this stroke only). The
+   *  panel previews it live and makes ONE edit on finish. */
+  struct PaintStroke { QVector<int> vertices; QVector<double> reach; Qt::KeyboardModifiers modifiers; };
+  std::function<void(const PaintStroke& stroke, bool finished)> onMeshPaint;
+  /** Weight view (plugin 1.18.0, editor-only): brush mode / falloff drawn at the cursor, the
+   *  weight under the cursor (showValue) and the locked bones (marked in the vertex tooltip). */
+  enum WeightMode { WeightAdd = 0, WeightSubtract = 1, WeightReplace = 2, WeightSmooth = 3 };
+  enum Falloff { FalloffHard = 0, FalloffLinear = 1, FalloffSmooth = 2 };
+  struct WeightView { int mode = WeightReplace; int falloff = FalloffSmooth; bool showValue = false; QSet<int> locked; };
+  void setWeightView(const WeightView& view) { weightView_ = view; update(); }
+  const WeightView& weightView() const { return weightView_; }
+  /** Brush factor 0..1 of a vertex `reach` (distance / radius) away from the centre. */
+  static double falloffAt(int falloff, double reach);
+  /** Bones influencing vertex `v` of the edited mesh (0 = none / out of range): shown at its dot. */
+  int influenceCount(int v) const;
+  /** Vertex `v`'s weights as text, largest first ("arm-l 0.62 · arm-r 0.38", locked bones marked). */
+  QString vertexWeightsText(int v) const;
+  /** The vertex the cursor hovers in weight mode (-1 = none): its weights show as a tooltip. */
+  int hoverVertex() const { return hoverVertex_; }
+  /** Weight of the heat-map bone at a widget point inside the edited mesh (barycentric), -1 outside. */
+  double weightAt(const QPointF& widgetPos) const;
 
   // ---- Mesh shape tools (plugin 1.6.0, setup mode). In vertex mode `meshTool` picks what a left
   // press does; outline drawing works on a plain image too (it is how a freeform mesh is made).
@@ -150,11 +201,50 @@ class RigCanvas : public QWidget {
   /** Clipping polygons (plugin 1.12.0): every shown clipping slot's outline, dashed (editor-only toggle). */
   void setShowClipOutlines(bool on) { showClips_ = on; update(); }
   bool showClipOutlines() const { return showClips_; }
+  /** Bounding boxes and points (plugin 1.17.0, editor-only view toggles): boxes as translucent dashed
+   *  polygons (their `color`, else lime), points as a crosshair with a direction line ending in a
+   *  rotation handle. Shown ones are pickable: a box by its outline, a point by its centre (drag =
+   *  move) or its handle (drag = turn). */
+  void setShowBoxes(bool on) { showBoxes_ = on; refreshHover(); update(); }
+  bool showBoxes() const { return showBoxes_; }
+  void setShowPoints(bool on) { showPoints_ = on; refreshHover(); update(); }
+  bool showPoints() const { return showPoints_; }
+  static QColor boxColor();
+  static QColor pointColor();
+  /** Widget px of a shown point's rotation handle (the end of its direction line). */
+  QPointF pointHandle(const QPointF& rigAt, double rotation) const;
+  /** 기준점 놓기: the next left click places a point (onPlacePoint, rig space); Esc cancels (onPlaceCancel). */
+  void setPointPlacing(bool on);
+  bool pointPlacing() const { return placingPoint_; }
+  std::function<void(const QPointF& rigPoint)> onPlacePoint;
+  std::function<void()> onPlaceCancel;
+  /** Game-connection preview (plugin 1.17.0): a left click is offered first to onPreviewClick (rig
+   *  space); returning true (it hit a bounding box) consumes it. */
+  void setPreviewClicks(bool on) { previewClicks_ = on; }
+  bool previewClicks() const { return previewClicks_; }
+  std::function<bool(const QPointF& rigPoint)> onPreviewClick;
   /** 정점 추가: a click (rig space); 가장자리 추가: a drag from vertex `a` to vertex `b`. */
   std::function<void(const QPointF& rigPoint)> onMeshAddVertex;
   std::function<void(int a, int b)> onMeshAddEdge;
+  /** [ / ] in weight mode (plugin 1.18.0): brush smaller / larger (the panel's shortcuts do the same). */
+  std::function<void(int direction)> onBrushStep;
   /** Delete / Backspace in vertex mode (the panel deletes the selected vertices). */
   std::function<void()> onMeshDelete;
+
+  // ---- Direct manipulation (plugin 1.19.0). The canvas only reports; the panel makes the edits.
+  /** Esc during a drag: the drag is dropped, the preview must go back to the data (zero edits). */
+  std::function<void()> onDragCancel;
+  /** Esc with nothing to cancel on the canvas: the panel steps back (mesh mode off, select tool, clear). */
+  std::function<void()> onEscape;
+  /** Arrow keys: a nudge of the selection by `step` px (Shift = 10); auto-repeat included, the panel coalesces. */
+  std::function<void(const QPoint& step)> onNudge;
+  std::function<void()> onDeleteSelection;  // Delete / Backspace (not in mesh vertex mode)
+  std::function<void()> onDuplicate;        // Ctrl+D
+  std::function<void(const QString& ref)> onDoubleClick;  // left double-click on an item (select tools)
+  /** Right click without a pan drag (or the menu key): `ref` = the item under the cursor ("" = none). */
+  std::function<void(const QString& ref, const QPoint& globalPos)> onContextMenu;
+  std::function<void()> onSpaceTap;          // Space pressed and released without panning (play in Animate)
+  std::function<void()> onShortcutOverlay;   // ? (Shift+/)
 
   std::function<void(const QString&)> onSelect;
   /** Ctrl/Shift+click on an item: toggle it in the multi-selection (no drag starts). */
@@ -184,6 +274,8 @@ class RigCanvas : public QWidget {
   void resizeEvent(QResizeEvent*) override;
   void keyPressEvent(QKeyEvent*) override;
   void keyReleaseEvent(QKeyEvent*) override;
+  void contextMenuEvent(QContextMenuEvent*) override;
+  void focusOutEvent(QFocusEvent*) override;
   void leaveEvent(QEvent*) override;
   bool event(QEvent*) override;
 
@@ -204,6 +296,13 @@ class RigCanvas : public QWidget {
   std::optional<Drag> drag_;
   bool panning_ = false;
   QPointF panStart_, panOrigin_, pressWidget_;
+  // plugin 1.19.0: Space-held pan, right-click vs right-drag (a pan never opens the menu)
+  bool spaceHeld_ = false, spacePanned_ = false, rightPan_ = false, suppressContext_ = false;
+  void setSpaceHeld(bool on);
+  void refreshDragModifiers(bool shift, bool ctrl);  // Shift/Ctrl pressed mid-drag: re-preview
+  bool typeIntoDrag(QKeyEvent* e);                  // digits / Enter / Backspace during a drag
+  void cancelDrag();
+  void paintReadout(QPainter& p);
   double lastAngle_ = 0;
   // Onion skin: each ghost renders once into a tinted layer (widget pixels) reused while the
   // view, size and filters stay the same, so scrubbing between keys and hover repaints are cheap.
@@ -218,6 +317,7 @@ class RigCanvas : public QWidget {
   QPolygonF trail_, trailKeys_;
   QString selectedIk_;
   QString selectedPhysics_;
+  QString selectedTransform_;
   QHash<int, QPointF> physicsRest_;
   // hover: what a click at the cursor would pick (Alt held = the cycled pick)
   QString hoverRef_;
@@ -233,7 +333,15 @@ class RigCanvas : public QWidget {
   int meshMode_ = MeshOff, meshBone_ = -1;
   QString meshSlot_;
   QSet<int> meshSelected_, meshStroke_;
+  QHash<int, double> meshReach_;  // stroke: closest approach per vertex (distance / radius)
+  Qt::KeyboardModifiers strokeModifiers_;
+  WeightView weightView_;
+  int hoverVertex_ = -1;
+  QHash<int, QImage> dotSprites_;  // heat dots (step * 2 + in-stroke), for dotScale_
+  qreal dotScale_ = 0;
   double brushRadius_ = 24;
+  void updateWeightHover(const QPointF& widgetPos);
+  void paintWeightOverlay(QPainter& p, const QVector<QPointF>& widgetPoints, const QVector<double>& weight);
   enum class MeshGesture { None, Vertices, Band, Paint, Edge };
   MeshGesture meshGesture_ = MeshGesture::None;
   QPointF meshStart_, meshCurrent_, hover_;
@@ -251,8 +359,12 @@ class RigCanvas : public QWidget {
   void paintGhosts(QPainter& p);
   void paintIk(QPainter& p);
   void paintPhysics(QPainter& p);
+  void paintTransforms(QPainter& p);
   bool showClips_ = true;
   void paintClips(QPainter& p);
+  bool showBoxes_ = true, showPoints_ = true, placingPoint_ = false, previewClicks_ = false;
+  void paintBoxes(QPainter& p);
+  void paintPoints(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;
 };
 }  // namespace cutout_studio

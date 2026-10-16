@@ -52,14 +52,22 @@ class ImageCache {
  *  For a mesh this is its undeformed rectangle: draw/hit-test meshes with meshPoints. */
 cutout::Affine attachmentMatrix(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex, const cutout::Attachment** attachment);
 /** Rig-space vertices of the mesh shown on `slotIndex` (cutout::meshPositions: skinned after IK,
- *  deform applied); empty when the slot shows a region or nothing. */
+ *  deform applied); a bounding box's points (plugin 1.17.0: the vertex editor works on both); empty
+ *  when the slot shows a region or nothing. */
 QVector<QPointF> meshPoints(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex, const cutout::Attachment** attachment = nullptr);
 /** Rig-space bounds of what the slot draws (mesh vertices or the region rectangle; a clipping
- *  attachment's polygon); empty when hidden. */
+ *  attachment's polygon); empty when hidden, and for bounding boxes and points (never drawn). */
 QRectF attachmentBounds(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex);
 /** Rig-space clip polygon of the clipping attachment shown on `slotIndex` (plugin 1.12.0; bone,
  *  weights and deform keys applied, like the runtimes); empty when the slot shows anything else. */
 QPolygonF clipPolygon(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex);
+/** Rig-space polygon of the bounding box shown on `slotIndex` (plugin 1.17.0; cutout::boxPolygons'
+ *  placement: bones, weights, deform); empty when the slot shows anything else. */
+QPolygonF boxPolygon(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex);
+/** Rig-space place and direction (degrees) of the point shown on `slotIndex` (cutout::pointWorlds). */
+bool pointOf(const cutout::Rig& rig, const cutout::Pose& pose, int slotIndex, QPointF& at, double& rotation);
+/** "#rrggbb[aa]" (bone / box colours) as a QColor; `fallback` when empty or malformed. */
+QColor dataColor(const std::string& text, const QColor& fallback);
 /** Outline of a mesh: edges used by exactly one triangle (pairs of vertex indices). */
 QVector<QPair<int, int>> meshOutline(const std::vector<int>& triangles);
 /** Weight of `bone` on vertex `vertex` (unweighted meshes: 1 on the slot bone). */

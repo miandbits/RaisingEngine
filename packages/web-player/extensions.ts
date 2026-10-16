@@ -14,6 +14,8 @@ export interface ExtensionElement { plugin: string; type: string; ref: string; p
 /** Sound named by an `event` notification (CONTRACT.md §7 event payloads): volume 0..1, balance -1..1. */
 export interface ExtensionSound { asset: string; volume: number; balance: number }
 export interface ExtensionMountSpec { type: string; ref: string; width: number; height: number; props: Record<string, unknown> }
+/** Anchor point of a mounted instance (`points`, CONTRACT.md §7): element px and direction (degrees, clockwise). */
+export interface ExtensionPoint { slot: string; name: string; x: number; y: number; rotation: number }
 interface WasmExtensionModule {
   cwrap(name: string, returns: string | null, args: string[]): (...args: unknown[]) => unknown;
   // Heap helpers (cutout runtime 1.9.0+): large requests bypass the cwrap stack copy.
@@ -23,8 +25,9 @@ interface WasmExtensionModule {
 type Request = (json: string) => string;
 interface MeshTopology { uvs: number[]; indices: number[] }
 interface Plugin { id: string; version: string; available: boolean; error: string; request: Request | null; heap: boolean; documents: unknown[]; diagnostics: unknown[];
-  frameFormat: 1 | 2; meshEpoch: number; meshes: Map<number, MeshTopology> }
-interface Mount { instance: string; plugin: string; spec: ExtensionMountSpec; key: string; mounted: boolean; error: string; items: readonly ExtensionItem[]; released: boolean; frame: number }
+  frameFormat: 1 | 2; meshEpoch: number; meshes: Map<number, MeshTopology>; ops: Set<string> }
+interface Mount { instance: string; plugin: string; spec: ExtensionMountSpec; key: string; mounted: boolean; error: string; items: readonly ExtensionItem[]; released: boolean; frame: number;
+  interactive: boolean; lastClick: unknown }
 type Reply = Record<string, unknown> & { ok?: boolean; error?: string };
 export type ModuleImporter = (url: string) => Promise<{ default?: unknown }>;
 // Emscripten cwrap copies string arguments onto the module stack (64 KiB by default).
@@ -47,6 +50,8 @@ export class ExtensionHost {
   recentEvents: Record<string, unknown>[] = []; eventCount = 0; soundCount = 0; soundsDelivered = 0;
   /** Frame reply costs (automation reports, the large-rig benchmark): request + parse + decode. */
   timing = { frames: 0, frameMs: 0, lastFrameMs: 0, bytes: 0, lastBytes: 0 };
+  /** Clicks handed to plugins (presentation only). */
+  clicks = 0;
   private soundListener: ((sound: ExtensionSound) => void) | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -58,7 +63,7 @@ export class ExtensionHost {
     for (const entry of config.plugins) {
       if (!entry || typeof entry.id !== 'string' || host.plugins.has(entry.id)) continue;
       const plugin: Plugin = { id: entry.id, version: String(entry.version ?? ''), available: false, error: '', request: null, heap: false, documents: Array.isArray(entry.documents) ? entry.documents : [], diagnostics: [],
-        frameFormat: 1, meshEpoch: 0, meshes: new Map() };
+        frameFormat: 1, meshEpoch: 0, meshes: new Map(), ops: new Set() };
       host.plugins.set(plugin.id, plugin);
       try {
         if (entry.abi !== 'raising-extension-1') throw new Error(`지원하지 않는 확장 ABI입니다: ${String(entry.abi)}`);
@@ -92,7 +97,7 @@ export class ExtensionHost {
     const key = JSON.stringify(spec);
     let mount = this.mounts.get(instance);
     if (mount && mount.plugin !== element.plugin) { this.unmount(mount); mount = undefined; }
-    if (!mount) { mount = { instance, plugin: element.plugin, spec, key: '', mounted: false, error: '', items: NO_ITEMS, released: false, frame: 0 }; this.mounts.set(instance, mount); }
+    if (!mount) { mount = { instance, plugin: element.plugin, spec, key: '', mounted: false, error: '', items: NO_ITEMS, released: false, frame: 0, interactive: false, lastClick: null }; this.mounts.set(instance, mount); }
     mount.released = false;
     if (mount.mounted && mount.key === key) return true;
     mount.spec = spec; mount.key = key;
@@ -133,6 +138,28 @@ export class ExtensionHost {
     }
     for (const listener of this.listeners) listener();
   }
+  /** The element wants clicks (its rig has bounding boxes; mount reply `interactive`). */
+  interactive(instance: string): boolean { const m = this.mounts.get(instance); return !!m?.mounted && m.interactive && this.plugins.get(m.plugin)?.ops.has('hitTest') === true; }
+  /**
+   * A click at element-local px (CONTRACT.md §7 `hitTest`): the plugin hit-tests its shapes and on a
+   * hit routes its UI-only signal (cutout: `partClicked`) to that instance. Observed only (the click
+   * still reaches the screen) and presentation only: it can start animation, never touch the run.
+   */
+  click(instance: string, x: number, y: number): Reply | null {
+    const mount = this.mounts.get(instance), plugin = mount ? this.plugins.get(mount.plugin) : undefined;
+    if (!mount || !plugin || !this.interactive(instance) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const reply = this.call(plugin, { op: 'hitTest', instance, x, y, dispatch: true });
+    this.clicks++;
+    mount.lastClick = { x, y, hit: reply.hit ?? null, matched: reply.matched ?? [] };
+    return reply;
+  }
+  /** Anchor points of a mounted instance in element px (a speech bubble...); [] when the plugin has none. */
+  points(instance: string): ExtensionPoint[] {
+    const mount = this.mounts.get(instance), plugin = mount ? this.plugins.get(mount.plugin) : undefined;
+    if (!mount?.mounted || !plugin?.available || !plugin.ops.has('points')) return [];
+    const reply = this.call(plugin, { op: 'points', instance });
+    return reply.ok && Array.isArray(reply.points) ? reply.points as ExtensionPoint[] : [];
+  }
   /** Stable reference between ticks (React external-store snapshot). */
   items(instance: string): readonly ExtensionItem[] { return this.mounts.get(instance)?.items ?? NO_ITEMS; }
   /** Re-initializes plugins (new game / load) and re-mounts what is currently on screen. */
@@ -161,10 +188,16 @@ export class ExtensionHost {
     const described: Record<string, Record<string, unknown>> = {};
     for (const plugin of this.plugins.values()) if (plugin.available) described[plugin.id] = (this.call(plugin, { op: 'describeAll' }).instances ?? {}) as Record<string, unknown>;
     return { active: this.active, observations: this.observations, clockMs: this.clockMs, lastObserve: this.lastObserve,
-      events: this.recentEvents, eventCount: this.eventCount, soundCount: this.soundCount, soundsDelivered: this.soundsDelivered, timing: { ...this.timing },
+      events: this.recentEvents, eventCount: this.eventCount, soundCount: this.soundCount, soundsDelivered: this.soundsDelivered, timing: { ...this.timing }, clicks: this.clicks,
       plugins: [...this.plugins.values()].map(p => ({ id: p.id, version: p.version, available: p.available, error: p.error, diagnostics: p.diagnostics, frameFormat: p.frameFormat, heap: p.heap })),
       instances: [...this.mounts.values()].map(m => ({ instance: m.instance, plugin: m.plugin, available: m.mounted && this.available(m.plugin), error: m.error, element: m.spec,
-        items: m.items.map(i => ({ imageAssetId: i.imageAssetId, matrix: i.matrix, width: i.width, height: i.height, alpha: i.alpha, ...(i.mesh ? { mesh: i.mesh } : {}), ...(i.region ? { region: i.region } : {}) })), state: described[m.plugin]?.[m.instance] ?? null })) };
+        items: m.items.map(i => ({ imageAssetId: i.imageAssetId, matrix: i.matrix, width: i.width, height: i.height, alpha: i.alpha, ...(i.mesh ? { mesh: i.mesh } : {}), ...(i.region ? { region: i.region } : {}) })), state: described[m.plugin]?.[m.instance] ?? null,
+        // Anchors and the newest click: only where there are some (older reports keep their shape).
+        ...this.reportExtras(m) })) };
+  }
+  private reportExtras(m: Mount): Record<string, unknown> {
+    const points = this.points(m.instance);
+    return { ...(points.length ? { points } : {}), ...(m.interactive ? { interactive: true } : {}), ...(m.lastClick ? { lastClick: m.lastClick } : {}) };
   }
   /**
    * Compact frame (format 2, CONTRACT.md §7): [image, a..f, width, height, alpha(, region|null(, meshId,
@@ -237,6 +270,7 @@ export class ExtensionHost {
     if (!reply.ok) { plugin.error = String(reply.error ?? 'init'); return false; }
     plugin.diagnostics = Array.isArray(reply.diagnostics) ? reply.diagnostics : [];
     plugin.frameFormat = reply.frameFormat === 2 ? 2 : 1; plugin.meshes.clear(); plugin.meshEpoch = typeof reply.meshEpoch === 'number' ? reply.meshEpoch : 0;
+    plugin.ops = new Set(Array.isArray(reply.ops) ? reply.ops.filter((op): op is string => typeof op === 'string') : []);
     if (plugin.frameFormat === 2) this.storeMeshes(plugin, reply.meshes);
     return plugin.available;
   }
@@ -245,10 +279,10 @@ export class ExtensionHost {
     if (!plugin?.available) { mount.error = plugin?.error || '플러그인이 없습니다.'; return false; }
     const reply = this.call(plugin, { op: 'mount', instance: mount.instance, element: mount.spec });
     if (!reply.ok) { mount.error = String(reply.error ?? 'mount'); return false; }
-    mount.error = ''; mount.mounted = true; return true;
+    mount.error = ''; mount.mounted = true; mount.interactive = reply.interactive === true; return true;
   }
   private unmount(mount: Mount): void {
-    if (!mount.mounted) return; mount.mounted = false; mount.items = NO_ITEMS;
+    if (!mount.mounted) return; mount.mounted = false; mount.items = NO_ITEMS; mount.interactive = false;
     const plugin = this.plugins.get(mount.plugin); if (plugin?.available) this.call(plugin, { op: 'unmount', instance: mount.instance });
   }
   /** Never throws: a broken module is disabled and the game keeps running. */

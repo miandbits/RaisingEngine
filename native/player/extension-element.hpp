@@ -7,6 +7,9 @@
 // Atlas items (plugin-atlas-v1) name a page and the sub-image (region) that is their picture:
 // their texture coordinates are mapped into that rectangle of the page texture.
 // Items are decoded once per frame reply by the host (ExtensionDrawItem): no JSON is read here.
+// Clicks (plugin hit tests, CONTRACT.md §7): plugin elements are pointer-events:none, so a click goes
+// to whatever is under them; the document's click handler passes its position to observe_click,
+// which hands it to every interactive plugin element under it in element-local px.
 #include <RmlUi/Core.h>
 #include "extension-host.hpp"
 
@@ -56,6 +59,20 @@ protected:
       }
       mesh.indices={0,1,2,0,2,3};
       render->MakeGeometry(std::move(mesh)).Render(origin,found->second);
+    }
+  }
+public:
+  /** A click (context px, the document's `click` event) observed for the plugin elements under it. */
+  static void observe_click(Rml::ElementDocument* document,const Rml::Event& event) {
+    if(!host||!document)return;
+    const float x=event.GetParameter<float>("mouse_x",-1.f),y=event.GetParameter<float>("mouse_y",-1.f);
+    Rml::ElementList list;document->GetElementsByTagName(list,"raising-extension");
+    for(auto* e:list) {
+      if(!e->IsVisible(true))continue;
+      const auto origin=e->GetAbsoluteOffset(Rml::BoxArea::Content);const auto size=e->GetBox().GetSize(Rml::BoxArea::Content);
+      if(x<origin.x||y<origin.y||x>=origin.x+size.x||y>=origin.y+size.y)continue;
+      // Element px = the frame's coordinate space (items are element-local): the plugin hit-tests there.
+      host->click(e->GetAttribute<Rml::String>("data-instance",""),double(x-origin.x),double(y-origin.y));
     }
   }
 private:

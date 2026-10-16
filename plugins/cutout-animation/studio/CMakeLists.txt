@@ -5,7 +5,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Test)
 set(CMAKE_AUTOMOC ON)
 
 add_library(cutout_studio_obj OBJECT
-  src/rig-render.cpp src/onion-skin.cpp src/rig-canvas.cpp src/time-view.cpp src/dopesheet.cpp src/graph-editor.cpp src/cutout-panel.cpp src/cutout-clips.cpp src/cutout-physics.cpp src/cutout-plugin.cpp src/layer-import.cpp
+  src/rig-render.cpp src/onion-skin.cpp src/rig-canvas.cpp src/time-view.cpp src/dopesheet.cpp src/graph-editor.cpp src/cutout-panel.cpp src/cutout-clips.cpp src/cutout-physics.cpp src/cutout-transform.cpp src/cutout-hits.cpp src/cutout-direct.cpp src/cutout-weights.cpp src/cutout-plugin.cpp src/layer-import.cpp
   src/rig-render.hpp src/onion-skin.hpp src/rig-canvas.hpp src/time-view.hpp src/dopesheet.hpp src/graph-editor.hpp src/cutout-panel.hpp src/cutout-plugin.hpp src/layer-import.hpp)
 target_include_directories(cutout_studio_obj PUBLIC src "${RAISING_ENGINE_ROOT}/native/studio")
 target_link_libraries(cutout_studio_obj PUBLIC Qt6::Widgets cutout_core)

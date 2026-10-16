@@ -152,9 +152,24 @@ export function ExtensionView({ instance, extension, width, height, assetUrl, ed
   }, [usable, host, instance, key]);
   useEffect(() => usable && host ? retainLoop(host,playbackRate) : undefined, [usable, host,playbackRate]);
   const items = useSyncExternalStore(listener => host ? host.subscribe(listener) : () => {}, () => host?.items(instance) ?? NO_ITEMS);
+  // Clicks (plugin hit tests, CONTRACT.md §7): the layer is pointer-events:none so clicks keep reaching
+  // the screen; a capturing document listener only observes them and hands those inside this element to
+  // the plugin in element px (the stage may be scaled: the layer's box maps back to width x height).
+  const layer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!usable || !host || error) return;
+    const observe = (event: MouseEvent) => {
+      const box = layer.current?.getBoundingClientRect();
+      if (!box || !box.width || !box.height || !host.interactive(instance)) return;
+      const x = (event.clientX - box.left) * width / box.width, y = (event.clientY - box.top) * height / box.height;
+      if (x >= 0 && y >= 0 && x < width && y < height) host.click(instance, x, y);
+    };
+    document.addEventListener('click', observe, true);
+    return () => document.removeEventListener('click', observe, true);
+  }, [usable, host, error, instance, width, height]);
   const plugin = extension?.plugin ?? '?';
   if (!usable || error) return <div className="visual-plugin-placeholder" data-instance={instance} role="note">{!usable ? `플러그인 필요: ${plugin}` : `플러그인 오류: ${plugin}`}{error && <small>{error}</small>}</div>;
-  return <div className="visual-plugin-layer" data-instance={instance}>
+  return <div ref={layer} className="visual-plugin-layer" data-instance={instance}>
     {items.map((item, index) => item.mesh ? <MeshItem key={index} item={item} src={assetUrl(item.imageAssetId)}/> : <RegionItem key={index} item={item} src={assetUrl(item.imageAssetId)}/>)}
   </div>;
 }

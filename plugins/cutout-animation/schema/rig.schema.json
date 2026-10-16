@@ -29,7 +29,10 @@
           "rotation": { "$ref": "#/$defs/angle" },
           "scaleX": { "$ref": "#/$defs/scale" }, "scaleY": { "$ref": "#/$defs/scale" },
           "length": { "description": "Bone length in px along its local +x (plugin 1.5.0; 0/absent = point bone). Drawn by the editor; the two-bone IK effector when the lower bone has no explicit tip.", "type": "number", "minimum": 0, "maximum": 100000 },
-          "color": { "description": "Editor-only display colour (#rrggbb or #rrggbbaa). Ignored by runtimes.", "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" }
+          "color": { "description": "Editor-only display colour (#rrggbb or #rrggbbaa). Ignored by runtimes.", "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
+          "shearX": { "description": "Plugin 1.16.0: degrees the bone's x axis turns beyond its rotation (local matrix T·R·K(shearX, shearY)·S, docs/contract.md \"Shear\").", "$ref": "#/$defs/angle" },
+          "shearY": { "description": "Plugin 1.16.0: degrees the bone's y axis turns beyond rotation + 90.", "$ref": "#/$defs/angle" },
+          "inherit": { "description": "Plugin 1.16.0: what the bone takes from its parent's world (the origin always follows): normal (default), onlyTranslation, noRotationOrReflection, noScale, noScaleOrReflection. Exact math in docs/contract.md \"Inherit\".", "enum": ["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"] }
         }
       }
     },
@@ -139,6 +142,34 @@
         }
       }
     },
+    "transform": {
+      "description": "Transform constraints (plugin 1.16.0): the listed bones take over part of the target bone's transform per channel mix (world or local values, absolute or relative). Solved with the IK constraints in one order (order ascending, IK first at equal order), physics after. Semantics in docs/contract.md.",
+      "type": "array", "maxItems": 128,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "bones", "target"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "name": { "type": "string", "maxLength": 80 },
+          "bones": { "description": "Constrained bones (solved parents first).", "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+          "target": { "description": "The bone followed; never one of `bones`.", "$ref": "#/$defs/id" },
+          "order": { "description": "Solving order shared with IK (default 0).", "type": "integer", "minimum": -1000, "maximum": 1000 },
+          "mixRotate": { "description": "0..1, default 1; keyable as transform:<id> tracks like every mix.", "type": "number", "minimum": 0, "maximum": 1 },
+          "mixX": { "description": "0..1, default 1.", "type": "number", "minimum": 0, "maximum": 1 },
+          "mixY": { "description": "0..1, default 1.", "type": "number", "minimum": 0, "maximum": 1 },
+          "mixScaleX": { "description": "0..1, default 0.", "type": "number", "minimum": 0, "maximum": 1 },
+          "mixScaleY": { "description": "0..1, default 0.", "type": "number", "minimum": 0, "maximum": 1 },
+          "mixShearY": { "description": "0..1, default 0.", "type": "number", "minimum": 0, "maximum": 1 },
+          "offsetRotation": { "description": "Degrees added to the target's rotation.", "$ref": "#/$defs/angle" },
+          "offsetX": { "description": "px in the target's space (world) or added to its local x (local).", "$ref": "#/$defs/coord" },
+          "offsetY": { "$ref": "#/$defs/coord" },
+          "offsetScaleX": { "description": "Added to the target's scale.", "type": "number", "minimum": -1000000, "maximum": 1000000 },
+          "offsetScaleY": { "type": "number", "minimum": -1000000, "maximum": 1000000 },
+          "offsetShearY": { "description": "Degrees added to the target's shearY / skew.", "$ref": "#/$defs/angle" },
+          "local": { "description": "Blend local values instead of world matrices.", "type": "boolean" },
+          "relative": { "description": "Add the target's values instead of moving toward them.", "type": "boolean" }
+        }
+      }
+    },
     "events": {
       "description": "Event definitions (plugin 1.8.0, Spine-like). Optional; once present every clip event key must name one. int/float/string are the default payload of its keys; audio names an audio asset a host may play when the event fires. Presentation only: never a controller binding signal.",
       "type": "array", "maxItems": 256,
@@ -169,8 +200,8 @@
             "items": {
               "type": "object", "additionalProperties": false, "required": ["target", "property", "keys"],
               "properties": {
-                "target": { "description": "bone:<id>, slot:<id>, rig (property expression, step keys of expression ids / null), ik:<id> (mix 0..1, bendPositive step bool) or physics:<id> (plugin 1.13.0, mix 0..1).", "type": "string", "pattern": "^(?:(bone|slot|ik|physics):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
-                "property": { "description": "sequence (plugin 1.12.0): slot tracks picking frames of the slot's sequence attachment (step keys {mode, index, delay}).", "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive", "deform", "sequence"] },
+                "target": { "description": "bone:<id>, slot:<id>, rig (property expression, step keys of expression ids / null), ik:<id> (mix 0..1, bendPositive step bool), physics:<id> (plugin 1.13.0, mix 0..1) or transform:<id> (plugin 1.16.0, mixRotate..mixShearY 0..1).", "type": "string", "pattern": "^(?:(bone|slot|ik|physics|transform):[a-z][a-z0-9]*(?:-[a-z0-9]+)*|rig)$" },
+                "property": { "description": "sequence (plugin 1.12.0): slot tracks picking frames of the slot's sequence attachment (step keys {mode, index, delay}). shearX/shearY (plugin 1.16.0): bone tracks. mixRotate..mixShearY (plugin 1.16.0): transform:<id> tracks.", "enum": ["x", "y", "rotation", "scaleX", "scaleY", "alpha", "attachment", "expression", "mix", "bendPositive", "deform", "sequence", "shearX", "shearY", "mixRotate", "mixX", "mixY", "mixScaleX", "mixScaleY", "mixShearY"] },
                 "attachment": { "description": "Deform tracks (plugin 1.4.0): the slot's mesh attachment whose vertices the keys offset.", "$ref": "#/$defs/name" },
                 "keys": {
                   "type": "array", "maxItems": 4096,
@@ -234,9 +265,12 @@
   "$defs": {
     "attachment": {
       "type": "object", "additionalProperties": false, "required": ["slot", "name"],
-      "if": { "required": ["type"], "properties": { "type": { "const": "clipping" } } },
-      "then": { "required": ["vertices", "end"] },
-      "else": { "required": ["imageAssetId", "width", "height"] },
+      "allOf": [
+        { "if": { "required": ["type"], "properties": { "type": { "const": "clipping" } } }, "then": { "required": ["vertices", "end"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "boundingBox" } } }, "then": { "required": ["vertices"] } },
+        { "if": { "required": ["linkedMesh"] }, "then": { "required": ["type"], "properties": { "type": { "const": "mesh" } } } },
+        { "if": { "not": { "required": ["type"], "properties": { "type": { "enum": ["clipping", "boundingBox", "point"] } } } }, "then": { "required": ["imageAssetId", "width", "height"] } }
+      ],
       "properties": {
         "slot": { "$ref": "#/$defs/id" },
         "name": { "$ref": "#/$defs/name" },
@@ -248,8 +282,9 @@
         "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
         "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
         "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
-        "type": { "description": "region (default: the image rectangle), mesh (plugin 1.4.0) or clipping (plugin 1.12.0: no picture; the slots after it through `end` draw only inside its polygon). Semantics in docs/contract.md.", "enum": ["region", "mesh", "clipping"] },
-        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices). Clipping: the clip polygon (3..256 points, simple, concave allowed) in the slot bone's space (through x..scaleY).", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "type": { "description": "region (default: the image rectangle), mesh (plugin 1.4.0) clipping (plugin 1.12.0: no picture; the slots after it through `end` draw only inside its polygon), boundingBox (plugin 1.17.0: a hit polygon, never drawn) or point (plugin 1.17.0: a place + direction x, y, rotation in the slot bone's space, never drawn). Semantics in docs/contract.md.", "enum": ["region", "mesh", "clipping", "boundingBox", "point"] },
+        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices). Clipping: the clip polygon (3..256 points, simple, concave allowed) in the slot bone's space (through x..scaleY). boundingBox: the hit polygon, placed like a clip polygon.", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "color": { "description": "boundingBox (plugin 1.17.0): editor-only outline colour (#rrggbb or #rrggbbaa). Ignored by runtimes.", "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
         "end": { "description": "Clipping (plugin 1.12.0): the last slot (draw order, inclusive) the polygon clips; must come after the clipping slot.", "$ref": "#/$defs/id" },
         "sequence": {
           "description": "Image sequence (plugin 1.12.0): frames of one size drawn with this attachment's placement (imageAssetId = frames[0]); slot sequence keys pick the frame, setupIndex without keys. atlas: written by the export packer, one region (or null) per frame.",
@@ -273,6 +308,15 @@
             "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 },
             "trim": { "type": "object", "additionalProperties": false, "required": ["x", "y", "width", "height"],
               "properties": { "x": { "type": "number", "minimum": 0 }, "y": { "type": "number", "minimum": 0 }, "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 } } }
+          }
+        },
+        "linkedMesh": {
+          "description": "Linked mesh (plugin 1.18.0, type mesh only): this attachment keeps its own picture (imageAssetId, width/height of that picture, atlas, optional own uvs of the parent's vertex count) and shares the parent mesh's vertices, triangles, weights/binds, hull/edges and placement (offset, pivot, the parent's size). parent = \"<slot>/<attachment>\" in the default list, or in skin `skin`; chains resolve, cycles are refused. deform (default true): deform tracks addressed to the parent's name (on the slot showing this attachment) move it too; false = its own name. Semantics in docs/contract.md.",
+          "type": "object", "additionalProperties": false, "required": ["parent"],
+          "properties": {
+            "parent": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*/[A-Za-z0-9][A-Za-z0-9_-]*$", "maxLength": 129 },
+            "skin": { "$ref": "#/$defs/id" },
+            "deform": { "type": "boolean" }
           }
         },
         "weights": {

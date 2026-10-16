@@ -3,12 +3,14 @@
 
 namespace cutout_studio {
 namespace {
-constexpr int KEY_ROLE = Qt::UserRole, ROLE_ROLE = Qt::UserRole + 1;
+constexpr int KEY_ROLE = Qt::UserRole, ROLE_ROLE = Qt::UserRole + 1, MERGE_TAG_ROLE = Qt::UserRole + 2;
+constexpr int COLUMNS = 7, MERGE_COLUMN = 6;
 const char* const ORIGINS[][2] = {{"bottom-center", "아래 가운데 (발 사이)"}, {"center", "가운데"}, {"top-center", "위 가운데"}, {"top-left", "왼쪽 위"}};
 }  // namespace
 
 QJsonObject LayerImportChoice::payload() const {
-  QJsonObject p{{"file", file}, {"origin", origin}, {"trim", trim}, {"scale", scale}, {"boneDirection", aimBones ? "auto" : "none"}, {"exclude", QJsonArray::fromStringList(exclude)}};
+  QJsonObject p{{"file", file}, {"origin", origin}, {"trim", trim}, {"scale", autoScale ? QJsonValue("auto") : QJsonValue(scale)}, {"boneDirection", aimBones ? "auto" : "none"},
+                {"exclude", QJsonArray::fromStringList(exclude)}, {"merge", QJsonArray::fromStringList(merge)}, {"effects", skipEffects ? "skip" : "keep"}};
   if (target.isEmpty()) p["id"] = id;
   else p["rig"] = target;
   return p;
@@ -16,7 +18,9 @@ QJsonObject LayerImportChoice::payload() const {
 
 QString layerRoleLabel(const QString& role) {
   static const QHash<QString, QString> labels{{"image", "그림"}, {"bone", "본"}, {"pivot", "회전 중심 표시"}, {"slot-group", "슬롯 묶음"}, {"group-in-slot", "슬롯 묶음 안"},
-                                             {"ignored", "무시([ignore])"}, {"excluded", "빼기"}, {"empty", "빈 레이어"}, {"empty-group", "빈 그룹"}};
+                                             {"ignored", "무시([ignore])"}, {"excluded", "빼기"}, {"empty", "빈 레이어"}, {"empty-group", "빈 그룹"},
+                                             {"clipped", "클리핑 (아래 그림에 합침)"}, {"merged", "합친 그림"}, {"in-merge", "합친 그림 안"}, {"effect", "효과 (뺌)"},
+                                             {"box", "판정 상자 ([box])"}, {"point", "기준점 ([point])"}};
   return labels.value(role, role);
 }
 QString layerStatusLabel(const QString& status) {
@@ -30,6 +34,18 @@ QString layerImportSummary(const QJsonObject& report) {
     text += QString(" · 새 그림 %1 · 교체 %2 · 같음 %3").arg(s.value("added").toInt()).arg(s.value("updated").toInt()).arg(s.value("unchanged").toInt());
   const int missing = report.value("changes").toObject().value("attachments").toObject().value("missing").toArray().size();
   if (missing) text += QString(" · PSD에 없는 첨부 %1(그대로 둠)").arg(missing);
+  if (const int baked = s.value("baked").toInt()) text += QString(" · 클리핑 %1개 합침").arg(baked);
+  if (const int merged = s.value("merged").toInt()) text += QString(" · 그룹 %1개 한 그림으로").arg(merged);
+  // Over the rig limits (plugin 1.15.0): the preview still shows, the import is refused until it fits.
+  const QJsonObject limits = report.value("limits").toObject();
+  if (limits.value("exceeded").toBool()) {
+    QStringList over;
+    for (const auto& [key, label] : {std::pair{"bones", "본"}, {"slots", "슬롯"}, {"attachments", "첨부"}}) {
+      const QJsonObject l = limits.value(key).toObject();
+      if (l.value("count").toInt() > l.value("max").toInt()) over << QString("%1 %2/%3").arg(label).arg(l.value("count").toInt()).arg(l.value("max").toInt());
+    }
+    text += QString(" · 한도를 넘음(%1): 그룹을 합쳐야 가져올 수 있습니다").arg(over.join(", "));
+  }
   return text;
 }
 
@@ -71,25 +87,68 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
   scale_->setDecimals(2);
   scale_->setSingleStep(0.25);
   scale_->setValue(choice.scale);
-  scale_->setToolTip("그림은 원본 해상도 그대로 두고 배치에 배율을 곱합니다(갱신할 때는 처음 배율을 씁니다).");
+  scale_->setToolTip("1보다 작으면 그림을 읽으면서 그 배율로 줄입니다(가장자리 알파가 깨끗한 면적 평균). 1보다 크면 그림은 그대로 두고 배치에 배율을 곱합니다.\n"
+                     "갱신할 때는 처음 가져올 때의 배율을 씁니다.");
+  scale_->setEnabled(!choice.autoScale);
+  autoScale_ = new QCheckBox("자동");
+  autoScale_->setObjectName("cutoutLayerImportAutoScale");
+  autoScale_->setChecked(choice.autoScale);
+  autoScale_->setToolTip("캔버스 긴 변이 2048 px 이하, 그림이 64메가픽셀 이하가 되는 가장 큰 배율(1, 0.75, 0.5, 0.375, 0.25, 0.125)을 고릅니다. 작은 PSD는 1입니다.");
+  connect(autoScale_, &QCheckBox::toggled, this, [this](bool on) { scale_->setEnabled(!on); });
+  scaleInfo_ = new QLabel;
+  scaleInfo_->setObjectName("cutoutLayerImportScaleInfo");
+  auto* scaleRow = new QHBoxLayout;
+  scaleRow->addWidget(scale_);
+  scaleRow->addWidget(autoScale_);
+  scaleRow->addWidget(scaleInfo_, 1);
+  skipEffects_ = new QCheckBox("효과 레이어 빼기 (곱하기·선형 닷지·스크린 같은 덧칠 레이어)");
+  skipEffects_->setObjectName("cutoutLayerImportSkipEffects");
+  skipEffects_->setChecked(choice.skipEffects);
+  skipEffects_->setToolTip("클리핑되지 않은, 표준이 아닌 혼합 모드 레이어(그림자·빛 덧칠)는 리그에서 표준으로만 그릴 수 있습니다.\n"
+                           "켜면 가져오지 않습니다(effects \"skip\"). 살리려면 그 그룹을 한 그림으로 합치세요. 클리핑 레이어는 항상 아래 그림에 합칩니다.");
   form->addRow("가져올 곳", target_);
   form->addRow("캐릭터 ID", id_);
   form->addRow("원점", origin_);
-  form->addRow("배율", scale_);
+  form->addRow("배율", scaleRow);
   form->addRow(QString(), trim_);
   form->addRow(QString(), aimBones_);
+  form->addRow(QString(), skipEffects_);
   layout->addLayout(form);
   connect(target_, &QComboBox::currentIndexChanged, this, [this] { id_->setEnabled(target_->currentData().toString().isEmpty()); });
   id_->setEnabled(choice.target.isEmpty());
 
   tree_ = new QTreeWidget;
   tree_->setObjectName("cutoutLayerImportTree");
-  tree_->setHeaderLabels({"레이어 (체크 = 가져오기)", "역할", "본", "슬롯", "첨부", "상태"});
+  tree_->setHeaderLabels({"레이어 (체크 = 가져오기)", "역할", "본", "슬롯", "첨부", "상태", "한 그림으로"});
+  tree_->headerItem()->setToolTip(MERGE_COLUMN, "그룹을 체크하면 그 안의 보이는 레이어를 혼합 모드·클리핑까지 합성해 그림 하나(슬롯 하나)로 가져옵니다(merge). 이름에 [merge]를 붙여도 됩니다.");
   tree_->setRootIsDecorated(true);
   tree_->setUniformRowHeights(true);
   tree_->setMinimumSize(560, 260);
+  // The same toggle as the column, from the row's context menu.
+  mergeAction_ = new QAction("한 그림으로 합치기", tree_);
+  mergeAction_->setObjectName("cutoutLayerImportMergeAction");
+  mergeAction_->setCheckable(true);
+  tree_->addAction(mergeAction_);
+  tree_->setContextMenuPolicy(Qt::ActionsContextMenu);
+  connect(tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* item) {
+    const bool group = item && item->data(MERGE_COLUMN, Qt::CheckStateRole).isValid();
+    mergeAction_->setEnabled(group && !item->data(0, MERGE_TAG_ROLE).toBool());
+    mergeAction_->setChecked(group && item->checkState(MERGE_COLUMN) == Qt::Checked);
+  });
+  connect(mergeAction_, &QAction::triggered, this, [this](bool on) {
+    QTreeWidgetItem* item = tree_->currentItem();
+    if (!item || !item->data(MERGE_COLUMN, Qt::CheckStateRole).isValid()) return;
+    item->setCheckState(MERGE_COLUMN, on ? Qt::Checked : Qt::Unchecked);
+    refresh();
+  });
   connect(tree_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* item, int column) {
-    if (filling_ || column != 0) return;
+    if (filling_) return;
+    if (column == MERGE_COLUMN) {
+      // A [merge] name always merges: its box stays checked.
+      if (item->data(0, MERGE_TAG_ROLE).toBool() && item->checkState(MERGE_COLUMN) != Qt::Checked) { filling_ = true; item->setCheckState(MERGE_COLUMN, Qt::Checked); filling_ = false; }
+      return;
+    }
+    if (column != 0) return;
     // A left-out group leaves out everything under it: the children follow its box.
     filling_ = true;
     std::function<void(QTreeWidgetItem*, bool)> follow = [&](QTreeWidgetItem* at, bool on) {
@@ -112,17 +171,24 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
   summary_->setObjectName("cutoutLayerImportSummary");
   summary_->setWordWrap(true);
   layout->addWidget(summary_);
-  auto* hint = new QLabel("그룹 = 본, 레이어 = 슬롯·그림(ID는 영문 이름에서, 한글만 있으면 part-N). 「eyes/open」「eyes@closed」처럼 나누면 같은 슬롯의 바꿔 끼우는 그림이 되고, "
-                          "숨긴 레이어는 숨긴 첨부(표정용)로 들어옵니다. [pivot] 레이어 = 그 그룹 본의 회전 중심, [slot] 그룹 = 한 슬롯, [ignore] = 빼기. 가져오기는 편집 한 번이라 Ctrl+Z로 되돌립니다.");
+  auto* hint = new QLabel("그룹 = 본, 레이어 = 슬롯·그림(ID는 영문 이름에서, 러시아어·그리스어는 로마자로, 한글만 있으면 part-N). 「eyes/open」「eyes@closed」처럼 나누면 같은 슬롯의 바꿔 끼우는 그림이 되고, "
+                          "숨긴 레이어는 숨긴 첨부(표정용)로 들어옵니다. 클리핑 레이어는 아래 그림에 합쳐집니다. [pivot] 레이어 = 그 그룹 본의 회전 중심, [slot] 그룹 = 한 슬롯, [merge] 그룹 = 한 그림, "
+                          "[ignore] = 빼기. 가져오기는 편집 한 번이라 Ctrl+Z로 되돌립니다.");
   hint->setObjectName("cutoutLayerImportHint");
   hint->setWordWrap(true);
   layout->addWidget(hint);
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-  buttons->button(QDialogButtonBox::Ok)->setText("가져오기");
+  ok_ = buttons->button(QDialogButtonBox::Ok);
+  ok_->setText("가져오기");
   auto* again = buttons->addButton("미리 보기 갱신", QDialogButtonBox::ActionRole);
   again->setObjectName("cutoutLayerImportRefresh");
-  again->setToolTip("빼기·원점·배율·잘라내기·본 방향을 바꾼 뒤 본·슬롯 배치를 다시 계산해 봅니다.");
+  again->setToolTip("빼기·합치기·원점·배율·잘라내기·본 방향·효과를 바꾼 뒤 본·슬롯 배치를 다시 계산해 봅니다.");
   connect(again, &QPushButton::clicked, this, [this] { refresh(); });
+  autoMerge_ = buttons->addButton("자동 합치기", QDialogButtonBox::ActionRole);
+  autoMerge_->setObjectName("cutoutLayerImportAutoMerge");
+  autoMerge_->setToolTip("본·슬롯·첨부 한도(256·256·1024)를 넘을 때: 그림이 가장 많은 맨 아래 그룹부터 한 그림으로 합쳐 한도 안에 들게 합니다\n"
+                         "(숨긴 표정 그림이 있는 그룹은 마지막에). 합친 그룹은 「한 그림으로」 칸에서 다시 풀 수 있습니다.");
+  connect(autoMerge_, &QPushButton::clicked, this, [this] { autoMerge(); });
   connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
   layout->addWidget(buttons);
@@ -150,12 +216,19 @@ void LayerImportDialog::addItems(QTreeWidgetItem* parent, const QJsonArray& laye
     const bool own = choice_.exclude.contains(l.value("key").toString());
     item->setCheckState(0, own || role == "ignored" ? Qt::Unchecked : Qt::Checked);
     if (role == "ignored" || (parent && (parent->checkState(0) != Qt::Checked || parent->isDisabled()))) item->setDisabled(true);
+    // "한 그림으로" (plugin 1.15.0): any group outside a merged one; a [merge] name is always on.
+    if (l.value("kind").toString() == "group" && role != "in-merge" && role != "clipped" && role != "ignored") {
+      const bool tag = l.value("merge").toString() == "tag";
+      item->setData(0, MERGE_TAG_ROLE, tag);
+      item->setCheckState(MERGE_COLUMN, tag || choice_.merge.contains(l.value("key").toString()) ? Qt::Checked : Qt::Unchecked);
+    }
     QStringList tip;
     const QJsonObject b = l.value("bounds").toObject();
     if (!b.isEmpty()) tip << QString("위치 %1, %2 · 크기 %3×%4").arg(b.value("x").toInt()).arg(b.value("y").toInt()).arg(b.value("width").toInt()).arg(b.value("height").toInt());
     if (l.value("opacity").toDouble(1) < 1) tip << QString("불투명도 %1%").arg(qRound(l.value("opacity").toDouble() * 100));
+    if (l.value("blend").toString() != "norm" && l.value("blend").toString() != "pass" && !l.value("blend").toString().isEmpty()) tip << "혼합 모드 " + l.value("blend").toString().trimmed();
     for (const auto& w : l.value("warnings").toArray()) tip << w.toString();
-    if (!tip.isEmpty()) for (int c = 0; c < 6; c++) item->setToolTip(c, tip.join("\n"));
+    if (!tip.isEmpty()) for (int c = 0; c < COLUMNS; c++) item->setToolTip(c, tip.join("\n"));
     if (!l.value("warnings").toArray().isEmpty()) item->setForeground(1, QColor(200, 120, 0));
     addItems(item, l.value("children").toArray());
   }
@@ -163,16 +236,31 @@ void LayerImportDialog::addItems(QTreeWidgetItem* parent, const QJsonArray& laye
 
 void LayerImportDialog::showReport(const QJsonObject& report) {
   filling_ = true;
+  report_ = report;
   const QJsonObject s = report.value("source").toObject();
   source_->setText(QString("%1 · %2 %3×%4 px").arg(s.value("file").toString(), s.value("format").toString().toUpper()).arg(s.value("width").toInt()).arg(s.value("height").toInt()));
+  // The scale the service chose ("auto" on a big file = a downscale; the preview has no pixels yet).
+  const QJsonObject o = report.value("options").toObject(), canvas = report.value("canvas").toObject();
+  const QString mode = o.value("scaleMode").toString();
+  const double scale = o.value("scale").toDouble(choice_.scale);
+  if (mode == "auto") scale_->setValue(scale);
+  QString info = QString("%1%2배 → 캔버스 %3×%4 px").arg(mode == "auto" ? "자동 " : mode == "kept" ? "처음 배율 " : "").arg(scale).arg(canvas.value("width").toDouble()).arg(canvas.value("height").toDouble());
+  if (o.value("resolution").toDouble(1) < 1) info += QString(" · 그림을 %1배로 줄여 읽음").arg(o.value("resolution").toDouble());
+  scaleInfo_->setText(o.isEmpty() ? QString() : info);
   tree_->clear();
   addItems(nullptr, report.value("layers").toArray());
   tree_->expandAll();
-  for (int c = 0; c < 6; c++) tree_->resizeColumnToContents(c);
+  for (int c = 0; c < COLUMNS; c++) tree_->resizeColumnToContents(c);
   warnings_->clear();
   for (const auto& w : report.value("warnings").toArray()) warnings_->addItem(w.toObject().value("message").toString());
   if (!warnings_->count()) warnings_->addItem("없음");
+  const bool over = report.value("limits").toObject().value("exceeded").toBool();
+  const QJsonArray proposal = report.value("autoMerge").toObject().value("keys").toArray();
+  autoMerge_->setEnabled(over && !proposal.isEmpty());
+  autoMerge_->setText(over && !proposal.isEmpty() ? QString("자동 합치기 (그룹 %1개)").arg(proposal.size()) : QString("자동 합치기"));
+  ok_->setEnabled(!over);
   summary_->setText(layerImportSummary(report));
+  summary_->setStyleSheet(over ? "color: rgb(200, 60, 40);" : QString());
   filling_ = false;
 }
 
@@ -182,8 +270,14 @@ void LayerImportDialog::collect() {
   choice_.origin = origin_->currentData().toString();
   choice_.trim = trim_->isChecked();
   choice_.aimBones = aimBones_->isChecked();
+  choice_.autoScale = autoScale_->isChecked();
   choice_.scale = scale_->value();
+  choice_.skipEffects = skipEffects_->isChecked();
   choice_.exclude.clear();
+  choice_.merge.clear();
+  for (QTreeWidgetItemIterator m(tree_); *m; ++m)
+    if ((*m)->data(MERGE_COLUMN, Qt::CheckStateRole).isValid() && (*m)->checkState(MERGE_COLUMN) == Qt::Checked && !(*m)->data(0, MERGE_TAG_ROLE).toBool())
+      choice_.merge << (*m)->data(0, KEY_ROLE).toString();
   QTreeWidgetItemIterator it(tree_);
   for (; *it; ++it)
     if ((*it)->checkState(0) != Qt::Checked && (*it)->data(0, ROLE_ROLE).toString() != "ignored") {
@@ -194,8 +288,8 @@ void LayerImportDialog::collect() {
     }
 }
 
-void LayerImportDialog::refresh() {
-  collect();
+void LayerImportDialog::refresh(bool fromWidgets) {
+  if (fromWidgets) collect();
   if (!preview_) return;
   QPointer<LayerImportDialog> self(this);
   preview_(choice_, [self](const QJsonObject& report, const QString& error) {
@@ -205,8 +299,19 @@ void LayerImportDialog::refresh() {
   });
 }
 
+void LayerImportDialog::autoMerge() {
+  collect();
+  for (const auto& key : report_.value("autoMerge").toObject().value("keys").toArray())
+    if (!choice_.merge.contains(key.toString())) choice_.merge << key.toString();
+  refresh(false);  // the tree does not show the proposal yet: preview the choice as it is
+}
+
 void LayerImportDialog::accept() {
   collect();
+  if (report_.value("limits").toObject().value("exceeded").toBool()) {
+    summary_->setText(layerImportSummary(report_) + ". 「자동 합치기」나 「한 그림으로」 칸으로 그룹을 합친 뒤 미리 보기를 갱신하세요.");
+    return;
+  }
   if (choice_.target.isEmpty() && !QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(choice_.id).hasMatch()) {
     summary_->setText("캐릭터 ID는 영문 소문자로 시작하고 소문자·숫자·하이픈만 쓸 수 있습니다.");
     id_->setFocus();

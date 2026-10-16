@@ -1,25 +1,32 @@
 // Tiny PSD/PSB writer for the layer-import tests (plugin 1.11.0): RGBA layers, groups (section
 // dividers), hidden layers, opacity, blend keys, clipping, layer masks, Unicode names, raw and
-// PackBits channels, and the merged composite (flattened here with the importer's semantics:
-// straight-alpha "over", group opacity multiplied into each layer). No external dependency.
+// PackBits channels, and the merged composite. The composite is computed independently of the
+// importer (plugin 1.15.0): straight-alpha W3C blending (normal, multiply, screen, overlay, linear
+// dodge, lighten, darken, soft light), Photoshop clipping (a clipped layer paints inside its
+// base's alpha), pass-through groups (group opacity multiplied into each layer), isolated
+// groups (`blend: 'norm'`) and groups as clipping bases (1.19.1: the group's composite alpha). Big sparse documents: layers given as `rows(y, r, g, b, a)` row
+// fillers and `composite: 'none'` write a 5000×7000, 500-layer file in seconds. No dependency.
 
 /** PackBits rows of one plane (Apple/Adobe RLE): returns [counts per row, bytes]. */
 export function packBits(plane, width, height) {
-  const counts = [], parts = [];
+  const counts = new Array(height), out = Buffer.alloc(height * (width + Math.ceil(width / 128) + 1));
+  let o = 0;
   for (let y = 0; y < height; y++) {
-    const row = plane.subarray(y * width, (y + 1) * width), out = [];
-    let i = 0;
-    while (i < row.length) {
+    const start = o, row = y * width, end = row + width;
+    let i = row;
+    while (i < end) {
       let run = 1;
-      while (i + run < row.length && run < 128 && row[i + run] === row[i]) run++;
-      if (run >= 2) { out.push(257 - run, row[i]); i += run; continue; }
+      while (i + run < end && run < 128 && plane[i + run] === plane[i]) run++;
+      if (run >= 2) { out[o++] = 257 - run; out[o++] = plane[i]; i += run; continue; }
       let lit = 1;
-      while (i + lit < row.length && lit < 128 && !(i + lit + 1 < row.length && row[i + lit] === row[i + lit + 1])) lit++;
-      out.push(lit - 1, ...row.subarray(i, i + lit)); i += lit;
+      while (i + lit < end && lit < 128 && !(i + lit + 1 < end && plane[i + lit] === plane[i + lit + 1])) lit++;
+      out[o++] = lit - 1;
+      for (let k = 0; k < lit; k++) out[o++] = plane[i + k];
+      i += lit;
     }
-    counts.push(out.length); parts.push(Buffer.from(out));
+    counts[y] = o - start;
   }
-  return [counts, Buffer.concat(parts)];
+  return [counts, out.subarray(0, o)];
 }
 
 const u16 = v => { const b = Buffer.alloc(2); b.writeUInt16BE(v); return b; };
@@ -28,12 +35,28 @@ const u32 = v => { const b = Buffer.alloc(4); b.writeUInt32BE(v); return b; };
 const i32 = v => { const b = Buffer.alloc(4); b.writeInt32BE(v); return b; };
 const u64 = v => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(v)); return b; };
 
-/** Pixels of a layer spec: `rgba` Buffer or `pixel(x, y) → [r, g, b, a]` over width × height. */
-function pixelsOf(layer) {
+/** Pixels of a layer spec: `rgba` Buffer, `pixel(x, y) → [r, g, b, a]` or `rows(y, r, g, b, a)` over width × height. */
+export function pixelsOf(layer) {
   if (layer.rgba) return layer.rgba;
   const px = Buffer.alloc(layer.width * layer.height * 4);
+  if (layer.rows) {
+    const [r, g, b, a] = planesOf(layer);
+    for (let i = 0; i < layer.width * layer.height; i++) { px[i * 4] = r[i]; px[i * 4 + 1] = g[i]; px[i * 4 + 2] = b[i]; px[i * 4 + 3] = a[i]; }
+    return px;
+  }
   for (let y = 0; y < layer.height; y++) for (let x = 0; x < layer.width; x++) px.set(layer.pixel(x, y), (y * layer.width + x) * 4);
   return px;
+}
+/** [r, g, b, a] planes of a layer spec (row fillers write straight into them). */
+function planesOf(layer) {
+  const count = layer.width * layer.height, planes = [0, 1, 2, 3].map(() => Buffer.alloc(count));
+  if (layer.rows) {
+    for (let y = 0; y < layer.height; y++) layer.rows(y, ...planes.map(p => p.subarray(y * layer.width, (y + 1) * layer.width)));
+    return planes;
+  }
+  const px = pixelsOf(layer);
+  for (let i = 0; i < count; i++) for (let k = 0; k < 4; k++) planes[k][i] = px[i * 4 + k];
+  return planes;
 }
 function channelData(plane, width, height, rle, psb) {
   if (!rle) return Buffer.concat([u16(0), plane]);
@@ -60,36 +83,89 @@ function flatten(nodes, out = []) {
   return out;
 }
 
-/** Straight-alpha composite of visible layers (group opacity multiplied in), RGBA width × height. */
+/** W3C separable blend functions on 0..1 (backdrop b, source s); unknown keys draw normal. */
+export const BLEND = {
+  'mul ': (b, s) => b * s,
+  scrn: (b, s) => b + s - b * s,
+  over: (b, s) => (b <= 0.5 ? 2 * b * s : 1 - 2 * (1 - b) * (1 - s)),
+  lddg: (b, s) => Math.min(1, b + s),
+  lite: (b, s) => Math.max(b, s),
+  dark: (b, s) => Math.min(b, s),
+  sLit: (b, s) => {
+    if (s <= 0.5) return b - (1 - 2 * s) * b * (1 - b);
+    const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
+    return b + (2 * s - 1) * (d - b);
+  },
+};
+const blendFn = key => BLEND[key] ?? ((b, s) => s);
+
+/**
+ * The document's merged image (what Photoshop would show), RGBA width × height: visible layers
+ * back to front, each blended onto what is below it; clipped layers paint inside their base's
+ * alpha (transparency locked) before the clipping group is drawn with the base's blend mode and
+ * opacity; a pass-through group multiplies its opacity into its layers; a `blend: 'norm'` group
+ * — or any group with layers clipped to it — is composited on its own first. Colour is straight (0..255), alpha 0..1, rounded once.
+ */
 export function flattenImage(width, height, nodes) {
-  const dst = new Float64Array(width * height * 4);
-  const draw = (list, visible, opacity) => {
-    for (const n of list) {
-      const shown = visible && n.visible !== false, o = opacity * (n.opacity ?? 1);
-      if (n.children) { draw(n.children, shown, o); continue; }
-      if (!shown || n.ignoreInComposite) continue;
-      const px = pixelsOf(n);
-      for (let y = 0; y < n.height; y++) for (let x = 0; x < n.width; x++) {
-        const cx = n.x + x, cy = n.y + y;
-        if (cx < 0 || cy < 0 || cx >= width || cy >= height) continue;
-        const s = (y * n.width + x) * 4, d = (cy * width + cx) * 4, sa = px[s + 3] / 255 * o, da = dst[d + 3];
-        const oa = sa + da * (1 - sa);
-        if (oa <= 0) continue;
-        for (let k = 0; k < 3; k++) dst[d + k] = (px[s + k] * sa + dst[d + k] * da * (1 - sa)) / oa;
-        dst[d + 3] = oa;
-      }
+  const canvas = () => new Float64Array(width * height * 4);
+  // One source pixel (colour 0..255, alpha `sa` 0..1) onto dst[d] with blend B.
+  const over = (dst, d, sr, sg, sb, sa, B) => {
+    const da = dst[d + 3], oa = sa + da * (1 - sa);
+    if (oa <= 0) return;
+    const s = [sr, sg, sb];
+    for (let k = 0; k < 3; k++) {
+      const cs = s[k] / 255, cb = dst[d + k] / 255, mix = (1 - da) * cs + da * B(cb, cs);
+      dst[d + k] = (sa * mix + da * (1 - sa) * cb) / oa * 255;
     }
+    dst[d + 3] = oa;
   };
-  draw(nodes, true, 1);
+  const layerCanvas = n => {
+    const c = canvas(), px = pixelsOf(n);
+    for (let y = 0; y < n.height; y++) for (let x = 0; x < n.width; x++) {
+      const cx = n.x + x, cy = n.y + y;
+      if (cx < 0 || cy < 0 || cx >= width || cy >= height) continue;
+      const s = (y * n.width + x) * 4, d = (cy * width + cx) * 4;
+      c[d] = px[s]; c[d + 1] = px[s + 1]; c[d + 2] = px[s + 2]; c[d + 3] = px[s + 3] / 255;
+    }
+    return c;
+  };
+  const draw = (list, dst, visible, opacity) => {
+    let base = -1;
+    const baseOf = list.map((n, i) => (n.clipping && base >= 0 ? base : ((base = n.clipping ? base : i), -1)));
+    list.forEach((n, i) => {
+      if (baseOf[i] >= 0) return;  // drawn with its base
+      const shown = visible && n.visible !== false;
+      if (!shown || n.ignoreInComposite) return;
+      let c, o = opacity * (n.opacity ?? 1);
+      // A group with layers clipped to it is their base: composited on its own first (its alpha is
+      // the clipping mask), even a pass-through one.
+      const clipped = list.some((m, j) => baseOf[j] === i && m.visible !== false && !m.ignoreInComposite);
+      if (n.children && (n.blend ?? 'pass') === 'pass' && !clipped) { draw(n.children, dst, shown, o); return; }
+      if (n.children) { c = canvas(); draw(n.children, c, true, 1); } else c = layerCanvas(n);
+      list.forEach((m, j) => {
+        if (baseOf[j] !== i || m.visible === false || m.ignoreInComposite) return;
+        const p = m.children ? (() => { const g = canvas(); draw(m.children, g, true, 1); return g; })() : layerCanvas(m), B = blendFn(m.blend), mo = m.opacity ?? 1;
+        for (let d = 0; d < c.length; d += 4) {
+          const t = p[d + 3] * mo;
+          if (t <= 0 || c[d + 3] <= 0) continue;
+          for (let k = 0; k < 3; k++) { const cb = c[d + k] / 255, cs = p[d + k] / 255; c[d + k] = ((1 - t) * cb + t * B(cb, cs)) * 255; }
+        }
+      });
+      const B = blendFn(n.blend);
+      for (let d = 0; d < c.length; d += 4) if (c[d + 3] > 0) over(dst, d, c[d], c[d + 1], c[d + 2], c[d + 3] * o, B);
+    });
+  };
+  const dst = canvas();
+  draw(nodes, dst, true, 1);
   const out = Buffer.alloc(width * height * 4);
   for (let i = 0; i < width * height; i++) { for (let k = 0; k < 3; k++) out[i * 4 + k] = Math.round(dst[i * 4 + k]); out[i * 4 + 3] = Math.round(dst[i * 4 + 3] * 255); }
   return out;
 }
 
 /**
- * PSD bytes. `layers`: tree of {name, x, y, width, height, rgba | pixel, visible?, opacity?,
+ * PSD bytes. `layers`: tree of {name, x, y, width, height, rgba | pixel | rows, visible?, opacity?,
  * blend?, clipping?, mask?, rle?, compression?, children?} (bottom first). Options: psb, rle (default for every
- * channel), depth, mode, channels, composite (default: flattenImage), noLayers.
+ * channel), depth, mode, channels, composite (default: flattenImage; 'none' = transparent), noLayers.
  */
 export function writePsd({ width, height, layers = [], psb = false, rle = true, depth = 8, mode = 3, channels = 4, noLayers = false, composite } = {}) {
   const header = Buffer.concat([Buffer.from('8BPS'), u16(psb ? 2 : 1), Buffer.alloc(6), u16(channels), u32(height), u32(width), u16(depth), u16(mode)]);
@@ -98,9 +174,8 @@ export function writePsd({ width, height, layers = [], psb = false, rle = true, 
     const layer = n.divider || n.folder ? { x: 0, y: 0, width: 0, height: 0 } : n;
     const useRle = n.rle ?? rle, planes = [];
     if (layer.width && layer.height) {
-      const px = pixelsOf(layer), count = layer.width * layer.height;
-      const plane = k => { const p = Buffer.alloc(count); for (let i = 0; i < count; i++) p[i] = px[i * 4 + k]; return p; };
-      planes.push([-1, plane(3)], [0, plane(0)], [1, plane(1)], [2, plane(2)]);
+      const [r, g, b, a] = planesOf(layer);
+      planes.push([-1, a], [0, r], [1, g], [2, b]);
     } else planes.push([-1, Buffer.alloc(0)], [0, Buffer.alloc(0)], [1, Buffer.alloc(0)], [2, Buffer.alloc(0)]);
     const data = planes.map(([id, p]) => [id, layer.width && layer.height ? channelData(p, layer.width, layer.height, useRle, psb) : u16(0)]);
     // `compression: 2` marks the first channel as ZIP (the reader must refuse it).
@@ -130,8 +205,9 @@ export function writePsd({ width, height, layers = [], psb = false, rle = true, 
     layerInfo = Buffer.concat([psb ? u64(body.length) : u32(body.length), body]);
   }
   const layerSection = Buffer.concat([layerInfo, records.length ? u32(0) : Buffer.alloc(0)]);
-  const merged = composite ?? flattenImage(width, height, layers);
-  const plane = k => { const p = Buffer.alloc(width * height); for (let i = 0; i < width * height; i++) p[i] = merged[i * 4 + k]; return p; };
+  // `composite: 'none'`: a transparent merged image (big documents whose composite no test reads).
+  const merged = composite === 'none' ? null : composite ?? flattenImage(width, height, layers);
+  const plane = k => { const p = Buffer.alloc(width * height); if (merged) for (let i = 0; i < width * height; i++) p[i] = merged[i * 4 + k]; return p; };
   const mergedPlanes = Array.from({ length: channels }, (_, k) => plane(k < 4 ? [0, 1, 2, 3][k] : 3));
   let image;
   if (rle) {
