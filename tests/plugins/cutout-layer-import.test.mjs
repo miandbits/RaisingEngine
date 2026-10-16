@@ -273,6 +273,83 @@ test('joint guess (1.20.0): groups without a marker attach at the edge they hang
   assert.deepEqual(again.bones, rig.bones);
 });
 
+test('joint guess (1.21.0): from the own pictures of a group, a dominant one alone; child groups reaching far below do not move it', async () => {
+  // A head group with its face (and small eyes / mouth) plus child hair groups whose strands reach
+  // the knees: the bounds of everything end far below the neck, the face's own lower edge is the neck.
+  const strand = (name, x) => ({ name, children: [{ name: `${name}-art`, x, y: 30, ...block(16, 260, [90, 60, 20]) }] });
+  const layers = [
+    { name: 'body', children: [
+      { name: 'chest', x: 70, y: 110, ...block(60, 120, [180, 60, 40]) },
+      { name: 'head', children: [
+        strand('hair-l', 54), strand('hair-r', 130),
+        { name: 'face', x: 72, y: 40, ...block(56, 64, [240, 200, 160]) },
+        { name: 'eyes', x: 84, y: 60, ...block(32, 8, [20, 20, 60]) },
+        { name: 'mouth', x: 92, y: 86, ...block(16, 6, [200, 40, 40]) },
+      ] },
+      // No dominant picture: two halves of a skirt side by side → their union.
+      { name: 'skirt', children: [{ name: 'skirt-l', x: 70, y: 230, ...block(30, 40, [30, 30, 160]) }, { name: 'skirt-r', x: 100, y: 230, ...block(30, 40, [30, 30, 160]) }] },
+    ] },
+    // A group with child groups only: every descendant, as in 1.20.0.
+    { name: 'tail', children: [{ name: 'tail-a', children: [{ name: 'tail-a-art', x: 150, y: 200, ...block(40, 12, [10, 10, 10]) }] }] },
+  ];
+  const size = { width: 200, height: 320 };
+  const source = { ...readPsd(writePsd({ ...size, layers })), file: '/art/hair.psd' };
+  const { rig, images, report } = planImport({ source, options: importOptions({ origin: 'top-left' }) });
+  const world = new Map([['root', { x: 0, y: 0, a: 0 }]]);
+  for (const b of rig.bones.slice(1)) {
+    const p = world.get(b.parent), r = p.a * Math.PI / 180;
+    world.set(b.id, { x: p.x + b.x * Math.cos(r) - b.y * Math.sin(r), y: p.y + b.x * Math.sin(r) + b.y * Math.cos(r), a: p.a + (b.rotation ?? 0) });
+  }
+  const flat = []; const walk = l => { for (const n of l) { flat.push(n); if (n.children) walk(n.children); } }; walk(report.layers);
+  const dir = id => flat.find(n => n.bone === id && n.kind === 'group').direction;
+  const head = world.get('head');
+  // The face's lower edge (y 104), 3 % of its 64 px inside, pointing up through the face.
+  assert.ok(Math.abs(head.x - 100) <= 1 && Math.abs(head.y - 102) <= 1.5, `head joint at the neck: ${head.x},${head.y}`);
+  const normalize = d => ((d + 180) % 360 + 360) % 360 - 180;
+  assert.equal(normalize(head.a), -90);
+  assert.deepEqual([dir('head').from, dir('head').basis], ['joint', 'picture']);
+  assert.ok(dir('head').length > 55 && dir('head').length < 66, `head length = the face, not the hair: ${dir('head').length}`);
+  // The strands still hang from their top (their parent, the head, lies within their height).
+  assert.ok(Math.abs(world.get('hair-l').y - (30 + 0.03 * 260)) <= 1.5 && normalize(world.get('hair-l').a) === 90, `hair-l ${JSON.stringify(world.get('hair-l'))}`);
+  // Skirt: the union of its two halves (below the body's centre: their top edge).
+  assert.equal(dir('skirt').basis, 'own');
+  assert.ok(Math.abs(world.get('skirt').x - 100) <= 1 && Math.abs(world.get('skirt').y - 231.2) <= 1.5, `skirt ${JSON.stringify(world.get('skirt'))}`);
+  assert.equal(dir('tail').basis, 'all');
+  // Counter-placed pictures: the setup frame is still the PSD.
+  const pngs = new Map(images.map(i => [i.id, i.bytes]));
+  assert.ok(maxDifference(await renderSetup(rig, pngs), flattenImage(size.width, size.height, layers)) <= 1);
+});
+
+test('background (1.21.0): a bottom layer covering the document in one colour is left out unless background "keep"', async () => {
+  const size = { width: 120, height: 160 };
+  // Paper with a faint grain (±3) and a soft 1 px ring of transparency at its edge: still a background.
+  const paper = { name: 'paper', x: 0, y: 0, width: 120, height: 160, pixel: (x, y) => [250 - ((x * 7 + y * 13) % 7), 248, 240, x === 0 ? 0 : 255] };
+  const art = [{ name: 'body', children: [{ name: 'torso', x: 40, y: 50, ...block(40, 80, [180, 60, 40]) }] }, { name: 'face', x: 45, y: 20, ...block(30, 30, [240, 200, 160]) }];
+  const plan = (layers, payload = {}, dryRun = false) => planImport({ source: { ...readPsd(writePsd({ ...size, layers })), file: '/art/paper.psd' }, options: importOptions({ origin: 'top-left', ...payload }), dryRun });
+  const skipped = plan([paper, ...art]);
+  assert.deepEqual(skipped.report.background, { key: '0', name: 'paper', skipped: true });
+  assert.deepEqual([skipped.report.layers[0].role, skipped.report.layers[0].include, skipped.report.layers[0].background], ['background', false, true]);
+  assert.equal(skipped.report.options.background, 'skip');
+  assert.ok(!skipped.rig.slots.some(s => s.id === 'paper'));
+  assert.ok(skipped.report.warnings.some(w => w.code === 'ANIM_IMPORT_BACKGROUND' && w.layer === '0'));
+  const pngs = new Map(skipped.images.map(i => [i.id, i.bytes]));
+  assert.ok(maxDifference(await renderSetup(skipped.rig, pngs), flattenImage(size.width, size.height, art)) <= 1, 'the art without the paper');
+  // The preview (alpha only for the rest) finds it too.
+  assert.equal(plan([paper, ...art], {}, true).report.background.key, '0');
+  // keep: imported as an ordinary picture, still flagged.
+  const kept = plan([paper, ...art], { background: 'keep' });
+  assert.deepEqual(kept.report.background, { key: '0', name: 'paper', skipped: false });
+  assert.deepEqual([kept.report.layers[0].role, kept.report.layers[0].background], ['image', true]);
+  assert.equal(kept.rig.slots[0].id, 'paper');
+  assert.throws(() => importOptions({ background: 'yes' }), /background/);
+  // Not a background: a gradient, a partial sheet, a group, a tagged layer, the only layer, a top layer.
+  const gradient = { ...paper, pixel: (x, y) => [x * 2, y, 100, 255] };
+  const partial = { ...paper, width: 100 };
+  for (const [what, layers] of [['gradient', [gradient, ...art]], ['partial', [partial, ...art]], ['group', [{ name: 'bg', children: [paper] }, ...art]],
+    ['tagged', [{ ...paper, name: 'paper [box]' }, ...art]], ['only', [paper]], ['on top', [...art, paper]]])
+    assert.equal(plan(layers, {}, true).report.background, null, what);
+});
+
 test('PNG folder: layout.json positions, groups, hidden and order; plain folders with sub-folders', async () => {
   const dir = await temp('png-layers');
   const pic = (w, h, rgb) => { const b = block(w, h, rgb), px = Buffer.alloc(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px.set(b.pixel(x, y), (y * w + x) * 4); return encodePng(w, h, px); };

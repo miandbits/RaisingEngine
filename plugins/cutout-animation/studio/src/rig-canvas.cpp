@@ -766,7 +766,7 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
     const QPolygonF polygon = boxPolygon(*rig_, pose_, int(i));
     double edge = 1e9;
     for (int k = 0; k < polygon.size(); k++) edge = std::min(edge, segmentDistance(w, rigToWidget(polygon[k]), rigToWidget(polygon[(k + 1) % polygon.size()])));
-    if (polygon.size() >= 3 && edge <= (BODY_RADIUS + 1) * ui_) out.push_back({ref, -1, HitBoneBody, edge});
+    if (polygon.size() >= 3 && edge <= boxOutlineRadius()) out.push_back({ref, -1, HitBoneBody, edge});
   }
   const QTransform view = viewTransform();
   int depth = 0;
@@ -801,9 +801,12 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
     }
     if (inside) out.push_back({"slot:" + qs(rig_->slots[i].id), -1, HitPart, double(depth++)});
   }
+  // Locked items (plugin 1.21.0) are never picked; the vertices of a mesh being edited still are.
+  if (!locked_.isEmpty()) out.erase(std::remove_if(out.begin(), out.end(), [this](const Hit& h) { return h.vertex < 0 && locked_.contains(h.ref); }), out.end());
   std::stable_sort(out.begin(), out.end(), [](const Hit& a, const Hit& b) { return a.rank != b.rank ? a.rank < b.rank : a.distance < b.distance; });
   return out;
 }
+double RigCanvas::boxOutlineRadius() const { return (BODY_RADIUS + 1) * ui_; }
 QString RigCanvas::hitTest(const QPointF& w, bool bones) const {
   for (const Hit& h : hitCandidates(w, bones)) if (h.vertex < 0) return h.ref;
   return {};
@@ -1212,6 +1215,8 @@ QString RigCanvas::hintLine() const {
                        : meshMode_ == MeshWeights ? QString("웨이트 칠하기: 끌어서 붓으로 칠함 · Shift+끌기 부드럽게 · Ctrl+끌기 빼기 · [ ] 붓 크기 · 정점에 올리면 웨이트 · 색 = 고른 본(파랑 0 → 빨강 1)")
                        : tool_ == Create ? QString("본 만들기: 끌어서 고른 본의 자식 본(길이·방향) · 클릭 = 점 본 · 본 원점 클릭 = 부모 고르기 · Shift 15° 스냅")
                                          : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Ctrl/Shift+클릭 여러 개 선택 · 빈 곳 끌기 상자 선택 · V·R·S 도구 · H 본 표시 · 끄는 중 Shift 한 축/15°, Ctrl 미세, 숫자+Enter 정확히, Esc 취소 · 화살표 1 px · Space+끌기 화면 이동 · Alt+클릭 겹친 항목 · ? 단축키").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
+  // Game-connection preview (plugin 1.21.0): what a click does there, not the edit tools.
+  if (previewClicks_) hint = QString("게임 연결 미리 보기: 판정 상자(안이나 윤곽선)를 클릭하면 partClicked 신호 · Ctrl+클릭 = 선택");
   // What a click would pick (handles beat images): named so an overlap is never a surprise.
   const QString kind = hoverRef_.startsWith("slot:") ? "조각" : rig_ && isIkTarget(rig_->boneIndex(ss(hoverRef_.section(':', 1)))) ? "IK 대상" : "본";
   if (!hoverRef_.isEmpty()) hint = QString("가리킴: %1 %2 · ").arg(kind, hoverRef_.section(':', 1)) + hint;
@@ -1241,7 +1246,7 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
   }
   if (e->button() != Qt::LeftButton) return;
   if (placingPoint_) { if (onPlacePoint) onPlacePoint(widgetToRig(e->position())); return; }
-  if (previewClicks_ && onPreviewClick && onPreviewClick(widgetToRig(e->position()))) return;
+  if (previewClicks_ && !(e->modifiers() & Qt::ControlModifier) && onPreviewClick && onPreviewClick(widgetToRig(e->position()), boxOutlineRadius() / std::max(zoom_, 1e-6))) return;
   if (outlinePress(e)) return;
   if (meshPress(e)) return;
   // One pick for every tool: handles first, Alt = the next candidate under the cursor.
@@ -1543,7 +1548,7 @@ QStringList RigCanvas::bonesIn(const QRectF& r) const {
   if (!rig_ || pose_.world.size() != rig_->bones.size()) return out;
   const QVector<bool> shown = shownBones();
   for (size_t i = 0; i < rig_->bones.size(); i++)
-    if (shown[int(i)] && r.contains(rigToWidget(QPointF(pose_.world[i].e, pose_.world[i].f)))) out << "bone:" + qs(rig_->bones[i].id);
+    if (shown[int(i)] && !locked_.contains("bone:" + qs(rig_->bones[i].id)) && r.contains(rigToWidget(QPointF(pose_.world[i].e, pose_.world[i].f)))) out << "bone:" + qs(rig_->bones[i].id);
   return out;
 }
 void RigCanvas::leaveEvent(QEvent*) {

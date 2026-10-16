@@ -7,7 +7,8 @@
 // Mapping (README "PSD 가져오기" documents the same rules for artists):
 //   * group = bone (id from the group name), nested groups = child bones; the bone origin is the
 //     centre of a `[pivot]` / `[bone]` / `#pivot` marker layer inside the group, else (plugin
-//     1.20.0, boneDirection "auto") the joint guessed at the edge facing the parent (jointAim),
+//     1.20.0, boneDirection "auto") the joint guessed at the edge facing the parent (jointAim; 1.21.0:
+//     from the group's own pictures, not its child groups'),
 //     else the centre of the group's content. A top-level marker sets the character origin (root bone).
 //   * layer = slot + attachment at its canvas position (pivot 0.5, trimmed to its pixels with a
 //     1 px transparent ring); `eyes/open`, `eyes@open` → slot `eyes`, attachment `open`; the
@@ -25,6 +26,8 @@
 //     layer a point (slot `<name>-point`) at the centre of its pixels; neither moves bone centres.
 //   * clipping onto a group (plugin 1.19.1): layers clipped to a group that stays bones / slots are
 //     painted into the group's pictures, hidden variants included (compose.mjs paintClippedGroup).
+//   * background (plugin 1.21.0): a bottom-most top-level layer that covers the document in one
+//     (near-)opaque colour (a paper sheet) is left out unless `background: "keep"` (backgroundKey).
 import { createHash } from 'node:crypto';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -254,12 +257,30 @@ function boneAim(g, children) {
   return { angle, length, from };
 }
 
-/** Joint guess thresholds (1.20.0): see jointAim. */
-const JOINT_MIN = 0.15, JOINT_LONG = 1.75, JOINT_INSET = 0.03, JOINT_ALPHA = 128;
+/** Joint guess thresholds (1.20.0; JOINT_DOMINANT 1.21.0): see jointAim and jointBasis. */
+const JOINT_MIN = 0.15, JOINT_LONG = 1.75, JOINT_INSET = 0.03, JOINT_ALPHA = 128, JOINT_DOMINANT = 0.5;
+/**
+ * The pictures a group's joint is guessed from (plugin 1.21.0): its own pictures (the layers and
+ * merged / slot groups directly in it, clipping baked in), not its child groups'. A head group whose
+ * child hair groups reach the knees still turns at the neck: with every descendant the bounds ended
+ * at the knees and the joint landed on the chest. Visible own pictures when there are any (hidden
+ * variants overlap them anyway); when one of them covers more than half of their summed area (a face
+ * among eyes, mouth and brows) that picture alone; a group without pictures of its own (only child
+ * groups) uses every descendant as before. basis: "picture" | "own" | "all".
+ */
+function jointBasis(g, k) {
+  const shown = g.own.filter(p => p.visible), own = shown.length ? shown : g.own;
+  if (!own.length) return { rects: g.rects, bounds: g.bounds, basis: 'all' };
+  const area = p => p.picture.width * p.picture.height, total = own.reduce((sum, p) => sum + area(p), 0);
+  const largest = own.reduce((a, b) => (area(b) > area(a) ? b : a));
+  const rects = own.length === 1 || area(largest) > JOINT_DOMINANT * total ? [largest.picture] : own.map(p => p.picture);
+  return { rects, bounds: rectsBounds(rects, k), basis: rects.length === 1 ? 'picture' : 'own' };
+}
 /**
  * The joint of a group without a marker (plugin 1.20.0, `boneDirection: "auto"`): hanging parts
  * (hair strands, sleeves, legs, tails, earrings) attach at an edge, so they turn around that edge
- * instead of their middle. c = centre of the group's content bounds, p = `parentAt` (the parent
+ * instead of their middle. Everything below is measured on jointBasis (1.21.0: the group's own
+ * pictures, else every descendant's). c = centre of those bounds, p = `parentAt` (the parent
  * bone's origin: its marker, its own joint or its content centre; the document's content centre
  * for a top-level group). Returns null (the centre origin stays) when |p − c| < 15 % of the
  * larger bounds side: the group sits on its parent (a torso, a face). Else the joint J is
@@ -277,12 +298,13 @@ const JOINT_MIN = 0.15, JOINT_LONG = 1.75, JOINT_INSET = 0.03, JOINT_ALPHA = 128
  * along the axis. Pictures are sampled in picture px (rig px / k).
  */
 function jointAim(g, parentAt, k) {
-  const b = g.bounds;
-  if (!b || !parentAt) return null;
+  if (!g.bounds || !parentAt) return null;
+  const { rects, bounds: b, basis } = jointBasis(g, k);
+  if (!b) return null;
   const w = b.x1 - b.x0, h = b.y1 - b.y0, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
   const dx = parentAt.x - cx, dy = parentAt.y - cy, dist = Math.hypot(dx, dy);
   if (dist < 1 || dist < JOINT_MIN * Math.max(w, h)) return null;
-  const pics = g.rects.filter(p => p.rgba);
+  const pics = rects.filter(p => p.rgba);
   const opaqueAt = (p, px, py) => px >= 0 && py >= 0 && px < p.width && py < p.height && p.rgba[(py * p.width + px) * 4 + 3] >= JOINT_ALPHA;
   const snap = a => { const s = Math.round(a / 90) * 90; return Math.abs(a - s) <= 4 ? normalizeDegrees(s) : a; };
   let jx = null, jy = null;
@@ -323,7 +345,7 @@ function jointAim(g, parentAt, k) {
   const corners = [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]].map(([x, y]) => (x - jx) * ux + (y - jy) * uy);
   const inset = JOINT_INSET * (Math.max(...corners) - Math.min(...corners));
   jx += inset * ux; jy += inset * uy;
-  return { joint: { x: jx, y: jy }, angle, length: Math.max(0, Math.max(...corners) - inset), from: 'joint' };
+  return { joint: { x: jx, y: jy }, angle, length: Math.max(0, Math.max(...corners) - inset), from: 'joint', basis };
 }
 
 /** Pixel bounds (alpha > 0) of an RGBA layer, or null when fully transparent. */
@@ -368,7 +390,37 @@ export function importOptions(payload = {}) {
   if (!['auto', 'none'].includes(boneDirection)) fail('boneDirection은 auto 또는 none입니다.');
   const effects = p.effects ?? 'keep';
   if (!['keep', 'skip'].includes(effects)) fail('effects는 keep 또는 skip입니다.');
-  return { origin, scale, trim: p.trim !== false, exclude: new Set(p.exclude ?? []), merge: new Set(p.merge ?? []), effects, boneDirection };
+  const background = p.background ?? 'skip';
+  if (!['keep', 'skip'].includes(background)) fail('background는 skip 또는 keep입니다.');
+  return { origin, scale, trim: p.trim !== false, exclude: new Set(p.exclude ?? []), merge: new Set(p.merge ?? []), effects, boneDirection, background };
+}
+
+/** Background guess (1.21.0): see backgroundKey. */
+const BG_COVER = 0.95, BG_OPAQUE = 240, BG_SPREAD = 24, BG_UNIFORM = 0.97, BG_EDGE = 256;
+/**
+ * Report key of the document's background layer, or null (plugin 1.21.0). A paper sheet under the
+ * art covers the whole canvas, so every canvas click picked it before any part. It is the
+ * bottom-most top-level node when that is a visible, untagged layer (not a group) at ≥ 90 %
+ * opacity, the document has other layers, and — read with colour at ≤ 256 px on the long edge (a
+ * box average: paper grain does not count) — pixels with alpha ≥ 240 cover ≥ 95 % of the document
+ * and ≥ 97 % of them lie within 24 (per channel) of their mean colour.
+ */
+function backgroundKey(source, read) {
+  const node = source.layers[0];
+  if (!node || node.kind !== 'layer' || source.layers.length < 2 || node.visible === false || (node.opacity ?? 1) < 0.9 || parseName(node.name).tags.size) return null;
+  const W = source.width, H = source.height;
+  const overlap = Math.max(0, Math.min(W, node.left + node.width) - Math.max(0, node.left)) * Math.max(0, Math.min(H, node.top + node.height) - Math.max(0, node.top));
+  if (overlap < BG_COVER * W * H) return null;
+  const r = Math.min(1, BG_EDGE / Math.max(W, H)), pic = read(node, r);
+  if (!pic?.rgba) return null;
+  const dw = Math.ceil(W * r - 1e-9), dh = Math.ceil(H * r - 1e-9), sum = [0, 0, 0], inside = [];
+  for (let y = Math.max(0, -pic.top); y < pic.height && pic.top + y < dh; y++)
+    for (let x = Math.max(0, -pic.left), p = (y * pic.width + x) * 4; x < pic.width && pic.left + x < dw; x++, p += 4)
+      if (pic.rgba[p + 3] >= BG_OPAQUE) { inside.push(p); sum[0] += pic.rgba[p]; sum[1] += pic.rgba[p + 1]; sum[2] += pic.rgba[p + 2]; }
+  if (!inside.length || inside.length < BG_COVER * dw * dh) return null;
+  const mean = sum.map(v => v / inside.length);
+  const near = inside.filter(p => Math.abs(pic.rgba[p] - mean[0]) <= BG_SPREAD && Math.abs(pic.rgba[p + 1] - mean[1]) <= BG_SPREAD && Math.abs(pic.rgba[p + 2] - mean[2]) <= BG_SPREAD).length;
+  return near >= BG_UNIFORM * inside.length ? '0' : null;
 }
 
 /** Area of every layer rectangle read at `resolution` (what the decoded pictures can take at most). */
@@ -423,6 +475,8 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     const r = b ? { x: node.left + b.x, y: node.top + b.y, width: b.width, height: b.height } : { x: node.left, y: node.top, width: node.width, height: node.height };
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   };
+  // A paper sheet under the art (1.21.0): left out unless background "keep"; read once, small, with colour.
+  const bgKey = backgroundKey(source, (node, r) => (lazy && !node.rgba ? source.decodeLayer(node, { resolution: r }) : node.rgba ? resampleRgba(node, r) : null));
 
   // Pass 1: the report tree + groups (future bones) + pictures, in document order (back → front).
   const groups = [], pictures = [], markers = [], marks = [], groupClips = [];
@@ -531,8 +585,10 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     const frames = ctx.frames.map(f => ({ target: f.target, visible: f.visible && node.visible !== false, opacity: f.opacity * (node.opacity ?? 1) }));
     const item = itemOf(node, key, !options.exclude.has(key) && ctx.include);
     const note = (code, message) => { item.warnings.push(message); warn(code, message, key); };
+    if (key === bgKey) item.background = true;
     if (tags.has('ignore')) { item.role = 'ignored'; item.include = false; if (node.kind === 'group') item.children = visit(node.children, { ...ctx, include: false }, key); return item; }
     if (!item.include) { item.role = 'excluded'; if (node.kind === 'group') item.children = visit(node.children, { ...ctx, include: false }, key); return item; }
+    if (item.background && options.background === 'skip') { item.role = 'background'; item.include = false; return item; }
     // Clipped onto a layer (or a merged group) below: painted into that picture (plugin 1.15.0);
     // onto a group that stays bones / slots: painted into its pictures (1.19.1, after the slots).
     if (baseOf.has(index)) {
@@ -570,7 +626,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
       if (ctx.slotGroup) note('ANIM_IMPORT_NESTED_SLOT', `'${node.name}': [slot] 그룹 안의 그룹은 같은 슬롯의 그림으로 가져옵니다([merge]면 한 그림).`);
       if (ctx.slotGroup) { item.role = 'group-in-slot'; item.children = inner({}); return item; }
       if ((node.opacity ?? 1) < 1) note('ANIM_IMPORT_GROUP_OPACITY', `'${node.name}': 그룹 불투명도는 레이어마다 곱해 적용합니다(겹친 부분은 조금 다를 수 있음).`);
-      const group = { key, text, name: node.name ?? '', parent: ctx.group, rects: [], marker: null, item };
+      const group = { key, text, name: node.name ?? '', parent: ctx.group, rects: [], own: [], marker: null, item };
       groups.push(group);
       item.role = 'bone';
       item.children = inner({ group });
@@ -609,6 +665,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     for (let g = ctx.group; g; g = g.parent) g.rects.push(picture);
     const pic = { item, key, picture, visible, opacity, group: ctx.group, slotText, attText, plain, order: order++, name: node.name ?? '' };
     pictures.push(pic);
+    ctx.group?.own.push(pic);  // the bone's own pictures (its slots), what its joint is guessed from (1.21.0)
     for (const f of frames) f.target.members.push({ pic, visible: f.visible, opacity: f.opacity });
     return item;
   });
@@ -620,6 +677,9 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     ? `표준이 아닌 혼합 모드 레이어·그룹 ${tally.effects.length}개(${byBlend(tally.effects)})를 뺐습니다(effects "skip").`
     : `표준이 아닌 혼합 모드 레이어·그룹 ${tally.effects.length}개(${byBlend(tally.effects)})는 표준으로 그립니다. 그림자·빛 효과를 빼려면 「효과 레이어 빼기」(effects "skip"), 살리려면 그 그룹을 [merge]로 합치세요.`);
   if (tally.unbaked.size) warn('ANIM_IMPORT_BLEND', `합칠 때 ${[...tally.unbaked].map(([b, n]) => `${BLEND_NAMES[b] ?? b} ${n}`).join(' · ')}개는 표준으로 계산했습니다(지원: 표준·곱하기·스크린·오버레이·선형 닷지·밝게·어둡게·소프트 라이트).`);
+  if (bgKey !== null) warn('ANIM_IMPORT_BACKGROUND', options.background === 'skip'
+    ? `맨 아래 레이어 '${source.layers[0].name ?? ''}'는 문서 전체를 한 색으로 덮어 배경으로 보고 뺐습니다. 가져오려면 그 줄을 체크하세요(background "keep").`
+    : `맨 아래 레이어 '${source.layers[0].name ?? ''}'는 배경으로 보이지만 가져옵니다(background "keep"). 캔버스에서 클릭을 가로채면 계층의 「잠금」을 켜세요.`, '0');
   if (tally.masks.length) warn('ANIM_IMPORT_MASK', `레이어 마스크 ${tally.masks.length}개(${list(tally.masks)})는 무시됩니다. 마스크를 적용(병합)한 뒤 다시 가져오세요.`);
 
   // Canvas and origin (rig space = PSD px × scale).
@@ -691,7 +751,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
       if (rotation !== 0) bone.rotation = rotation;
       const sx = Math.hypot(parentWorld[0], parentWorld[1]) || 1;
       if (aim.length > 0) bone.length = Math.round(aim.length / sx * 100) / 100;
-      g.item.direction = { angle: round(aim.angle), length: bone.length ?? 0, from: aim.from };
+      g.item.direction = { angle: round(aim.angle), length: bone.length ?? 0, from: aim.from, ...(aim.basis ? { basis: aim.basis } : {}) };
     }
     rig.bones.push(bone);
     world.set(g.id, mul(parentWorld, compose(x, y, rotation, 1, 1)));
@@ -888,13 +948,15 @@ export function planImport({ source, options, existing = null, rigName = '', dry
   const hidden = pictures.filter(p => p.slot.setup !== p).length;
   const report = {
     source: { format: source.format, file: path.basename(source.file), width: source.width, height: source.height, layerPixels: layerArea(source.layers, 1) },
-    options: { origin, scale, scaleMode, resolution, trim: options.trim, exclude: [...options.exclude], merge: [...options.merge], effects: options.effects, boneDirection: options.boneDirection },
+    options: { origin, scale, scaleMode, resolution, trim: options.trim, exclude: [...options.exclude], merge: [...options.merge], effects: options.effects, boneDirection: options.boneDirection, background: options.background },
     canvas: rig.canvas, layers, warnings, changes,
     summary: { bones: changes.bones.added.length, joints: made.filter(g => g.joint).length, slots: slots.length, attachments: pictures.length, hidden, images: dryRun ? null : images.size,
       added: changes.attachments.added.length, updated: changes.attachments.updated.length, unchanged: changes.attachments.unchanged.length,
       ...(marks.length ? { boxes: marks.filter(m => m.kind === 'box').length, points: marks.filter(m => m.kind === 'point').length } : {}),
       baked: tally.baked, merged: tally.merged, effects: tally.effects.length, empty: tally.empty + tally.emptyGroups, pixels: pictures.reduce((s, p) => s + p.picture.width * p.picture.height, 0) },
     limits, ...(autoMerge ? { autoMerge } : {}),
+    // The layer taken for the background (1.21.0), null when none: `skipped` = left out (background "skip").
+    background: bgKey === null ? null : { key: bgKey, name: source.layers[0].name ?? '', skipped: options.background === 'skip' && !options.exclude.has(bgKey) },
   };
   return { rig, images: dryRun ? [] : [...images].map(([id, bytes]) => ({ id, bytes })), report };
 }

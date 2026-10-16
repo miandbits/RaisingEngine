@@ -34,6 +34,9 @@ struct LayerImportChoice {
   bool autoScale = true;
   double scale = 1;
   bool skipEffects = false;  // effects "skip": leave out layers whose blend mode cannot be drawn
+  // background "keep" (plugin 1.21.0): import the bottom layer the service takes for a paper sheet
+  // (default "skip": its row is unchecked, 「배경으로 보여 뺐음」; checking it sets this).
+  bool keepBackground = false;
   QStringList exclude;  // report layer keys left out
   QStringList merge;    // report keys of groups flattened into one picture (plugin 1.15.0)
   QJsonObject payload() const;

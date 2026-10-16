@@ -51,8 +51,15 @@ QStringList workspaceLayoutProblems(QWidget *page, QWidget *panel) {
     auto widget = panel->findChild<QWidget *>(name);
     if (!widget || !widget->isVisible()) { problems << QString(name) + " hidden"; continue; }
     const QRect r(widget->mapTo(panel, QPoint(0, 0)), widget->size());
-    // The key button lives in a scroll area; everything else must be fully inside the panel.
-    if (QString(name) != "cutoutKeyButton" && !panel->rect().contains(r)) problems << QString(name) + " cut off " + text(r);
+    // Plugin 1.21.0: the key button is in the properties footer (never scrolled), so it is checked too.
+    if (!panel->rect().contains(r)) problems << QString(name) + " cut off " + text(r);
+  }
+  // Plugin 1.21.0: the key row sits outside the property scroll area, inside its section.
+  if (auto key = panel->findChild<QWidget *>("cutoutKeyButton"); key && key->isVisible()) {
+    for (QWidget *p = key->parentWidget(); p && p != panel; p = p->parentWidget())
+      if (qobject_cast<QScrollArea *>(p)) { problems << "cutoutKeyButton inside a scroll area"; break; }
+    if (auto props = panel->findChild<QWidget *>("cutoutSectionProperties"); props && props->isVisible() && !props->rect().contains(QRect(key->mapTo(props, QPoint(0, 0)), key->size())))
+      problems << "cutoutKeyButton outside 속성 · 키";
   }
   return problems;
 }
@@ -407,6 +414,27 @@ void StudioTests::pluginWorkspaceSwitch() {
   }
   auto canvas = panel->findChild<QWidget *>("cutoutCanvas");
   QVERIFY2(canvas->width() >= 240 && canvas->height() >= 150, qPrintable(QString("%1x%2").arg(canvas->width()).arg(canvas->height())));
+  // Plugin 1.21.0, the real editor at 1456x819 (menu bar, toolbar, status bar): the hierarchy gets
+  // most of the left column, the draw order | characters pages keep their rows and buttons.
+  {
+    w.resize(1456, 819);
+    QTest::qWait(150);
+    auto tree = panel->findChild<QTreeView *>("cutoutBoneTree");
+    auto lower = panel->findChild<QTabWidget *>("cutoutLeftTabs");
+    QVERIFY(tree && lower);
+    const int rowHeight = std::max(tree->sizeHintForRow(0), tree->fontMetrics().height() + 2);
+    const int rows = tree->viewport()->height() / std::max(1, rowHeight), column = panel->findChild<QWidget *>("cutoutLeftSplitter")->height();
+    qInfo("1456x819 real editor: tree %d rows (%d px), left column %d px, lower block %d px, timeline %d px", rows, tree->viewport()->height(), column, lower->height(),
+          panel->findChild<QWidget *>("cutoutBottomTabs")->height());
+    // The studio test window (no toolbar / status bar) gets 15 rows; here the host chrome and the
+    // real fonts leave the timeline at its minimum and the tree 10 rows of 19 px (1.20.0: ~6).
+    QVERIFY2(rows >= 10, qPrintable(QString("tree shows %1 rows at 1456x819").arg(rows)));
+    QVERIFY2(panel->findChild<QWidget *>("cutoutSectionHierarchy")->height() >= column * 45 / 100, "hierarchy under 45 % of the left column");
+    problems = workspaceLayoutProblems(page, panel) + (realFonts ? allToolRowProblems(panel) : QStringList());
+    QVERIFY2(problems.isEmpty(), qPrintable("1456x819: " + problems.join(" | ")));
+    w.resize(1280, 720);
+    QTest::qWait(120);
+  }
   // Ctrl+Shift+A toggles back to 화면 편집 with exactly the previous dock layout.
   QTest::keyClick(canvas, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
   QCOMPARE(w.currentWorkspace(), QString());

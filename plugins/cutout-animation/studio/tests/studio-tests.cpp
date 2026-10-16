@@ -3997,8 +3997,9 @@ class StudioTests : public QObject {
     host.mainWindow.resize(1700, 1200);
     pump();
     // Layouts saved by plugin <= 1.9.0 (version 1/2: fixed pixel sizes from before the regrouped
-    // rows) come back as the automatic defaults. A version-3 user layout is restored, but a pane
-    // narrower than its rows need is widened (sanitized) instead of hiding tools behind ».
+    // rows) and <= 1.20.0 (version 3: three left sections) come back as the automatic defaults. A
+    // version-4 user layout is restored, but a pane narrower than its rows need is widened
+    // (sanitized) instead of hiding tools behind ».
     {
       auto* right = find<QSplitter>("cutoutRightSplitter");
       auto* outer = find<QSplitter>("cutoutOuterSplitter");
@@ -4015,7 +4016,7 @@ class StudioTests : public QObject {
       q.beginGroup("plugins/cutout-animation/layout");
       for (QSplitter* s : {right, outer, workspace}) q.setValue(s->objectName(), s->saveState());
       q.setValue("custom", true);
-      for (int version : {1, 2}) {
+      for (int version : {1, 2, 3}) {
         q.setValue("version", version);
         q.sync();
         panel->restoreLayout();
@@ -4026,7 +4027,7 @@ class StudioTests : public QObject {
         QCOMPARE(workspace->sizes(), workspaceDefaults);
         QVERIFY(rowProblems().isEmpty() && lookPageProblems().isEmpty());
       }
-      q.setValue("version", 3);
+      q.setValue("version", 4);
       q.sync();
       panel->restoreLayout();
       pump();
@@ -4076,23 +4077,23 @@ class StudioTests : public QObject {
     QSettings settings;
     QVERIFY(settings.contains("plugins/cutout-animation/layout/cutoutWorkspaceSplitter"));
     QVERIFY(settings.value("plugins/cutout-animation/layout/custom").toBool());
-    find<QToolButton>("cutoutSectionDrawOrderToggle")->click();
+    find<QToolButton>("cutoutSectionDiagnosticsToggle")->click();
     pump();
-    QVERIFY(!find<QWidget>("cutoutDrawOrder")->isVisible());
-    QVERIFY(find<QWidget>("cutoutSectionDrawOrder")->height() <= find<QToolButton>("cutoutSectionDrawOrderToggle")->height() + 4);
-    QVERIFY(QSettings().value("plugins/cutout-animation/layout/collapsed").toStringList().contains("cutoutSectionDrawOrderToggle"));
+    QVERIFY(!find<QWidget>("cutoutDiagnostics")->isVisible());
+    QVERIFY(find<QWidget>("cutoutSectionDiagnostics")->height() <= find<QToolButton>("cutoutSectionDiagnosticsToggle")->height() + 4);
+    QVERIFY(QSettings().value("plugins/cutout-animation/layout/collapsed").toStringList().contains("cutoutSectionDiagnosticsToggle"));
     split->setSizes({300, 900, 300});
     {
-      QSignalBlocker quiet(find<QToolButton>("cutoutSectionDrawOrderToggle"));  // no save: restored below
-      find<QToolButton>("cutoutSectionDrawOrderToggle")->setChecked(true);
+      QSignalBlocker quiet(find<QToolButton>("cutoutSectionDiagnosticsToggle"));  // no save: restored below
+      find<QToolButton>("cutoutSectionDiagnosticsToggle")->setChecked(true);
     }
     panel->restoreLayout();
     pump();
     QCOMPARE(split->sizes(), moved);
-    QVERIFY(!find<QWidget>("cutoutDrawOrder")->isVisible());
-    find<QToolButton>("cutoutSectionDrawOrderToggle")->click();
+    QVERIFY(!find<QWidget>("cutoutDiagnostics")->isVisible());
+    find<QToolButton>("cutoutSectionDiagnosticsToggle")->click();
     pump();
-    QVERIFY(find<QWidget>("cutoutDrawOrder")->isVisible());
+    QVERIFY(find<QWidget>("cutoutDiagnostics")->isVisible());
     // Back on the dock side: the launcher shows the current pose and opens the workspace.
     workspaceHost.current.clear();
     plugin.workspaceChanged("character", false);
@@ -6067,6 +6068,290 @@ class StudioTests : public QObject {
     QVERIFY(hint.contains("V 선택") && hint.contains("R 회전") && hint.contains("S 크기") && hint.contains("Space"));
     QVERIFY(!panel->findCommands("단축키 모음").isEmpty() && !panel->findCommands("선택 맞춤").isEmpty());
     panel->setAxes(cutout::Axes::Local);
+    panel->selectRig(keepRig);
+    pump();
+  }
+  /**
+   * Plugin 1.21.0, through real mouse and key events: 잠금 (a paper sheet covering the canvas stops
+   * catching clicks and box selection; the tree still selects it), box clicks in the 게임 연결 tab
+   * (on the drawn outline too, with a preview rebuilt after an edit made while the tab was open)
+   * fire partClicked and play the bound clip, Ctrl+click selects; value fields select their text
+   * when clicked (typing 600 into 1000 gives 600); K keys from a value field (committing it first)
+   * and from the tree, but types in a filter; the key row stays visible and the tree gets ≥ 14 rows.
+   */
+  void workspaceInputAndLayout() {
+    const QString keepRig = panel->rigId();
+    QWidget* page = workspacePage();
+    QVERIFY(page && page->isAncestorOf(panel));
+    // ---- PSD dialog: the background row is unchecked (「배경으로 보여 뺐음」); checking it previews background "keep".
+    {
+      LayerImportChoice choice;
+      choice.file = "/art/paper.psd";
+      QList<QJsonObject> payloads;
+      auto bgReport = [](bool kept) {
+        return QJsonObject{{"layers", QJsonArray{QJsonObject{{"key", "0"}, {"name", "paper"}, {"kind", "layer"}, {"visible", true}, {"include", kept}, {"background", true}, {"role", kept ? "image" : "background"}},
+                                                 QJsonObject{{"key", "1"}, {"name", "body"}, {"kind", "layer"}, {"visible", true}, {"include", true}, {"role", "image"}}}},
+                           {"background", QJsonObject{{"key", "0"}, {"name", "paper"}, {"skipped", !kept}}}, {"summary", QJsonObject{{"attachments", kept ? 2 : 1}}}};
+      };
+      LayerImportDialog dialog(panel, choice, {}, bgReport(false), [&](const LayerImportChoice& c, std::function<void(const QJsonObject&, const QString&)> done) {
+        payloads << c.payload();
+        done(bgReport(c.keepBackground), QString());
+      });
+      QCOMPARE(choice.payload().value("background").toString(), QString("skip"));
+      QTreeWidgetItem* paper = nullptr;
+      for (QTreeWidgetItemIterator it(dialog.tree()); *it; ++it) if ((*it)->text(0).startsWith("paper")) paper = *it;
+      QVERIFY(paper && paper->checkState(0) == Qt::Unchecked && paper->text(1) == QString("배경으로 보여 뺐음") && paper->toolTip(0).contains("배경"));
+      paper->setCheckState(0, Qt::Checked);
+      pump();
+      QVERIFY(!payloads.isEmpty() && payloads.last().value("background").toString() == "keep");
+      QVERIFY(!payloads.last().value("exclude").toArray().contains("0"));
+      for (QTreeWidgetItemIterator it(dialog.tree()); *it; ++it) if ((*it)->text(0).startsWith("paper")) paper = *it;
+      QVERIFY(paper->checkState(0) == Qt::Checked && choice.keepBackground);
+      paper->setCheckState(0, Qt::Unchecked);
+      pump();
+      QCOMPARE(payloads.last().value("background").toString(), QString("skip"));
+    }
+    for (const auto& [id, size, color] : {std::tuple<QString, QSize, QColor>{"img-i-paper", QSize(400, 400), QColor("#fbfaf5")}, {"img-i-body", QSize(60, 100), QColor("#2a9d8f")}}) {
+      QImage img(size, QImage::Format_ARGB32);
+      img.fill(color);
+      const QString file = dir.filePath(id + ".png");
+      QVERIFY(img.save(file));
+      host.assetList.append(QJsonObject{{"id", id}, {"kind", "image"}, {"path", "assets/" + id + ".png"}, {"absolutePath", file}});
+    }
+    // root (200, 200) · arm (100, 200) · paper (the whole canvas, drawn first) · body on root · a hit box at (260..300, 100..140).
+    Json start = Json::parse(R"({"schemaVersion": 1, "canvas": {"width": 400, "height": 400, "originX": 200, "originY": 380},
+      "bones": [{"id": "root", "parent": null, "x": 200, "y": 200}, {"id": "arm", "parent": "root", "x": -100, "length": 60}],
+      "slots": [{"id": "paper", "bone": "root", "attachment": "paper"}, {"id": "body", "bone": "root", "attachment": "body"}],
+      "attachments": [{"slot": "paper", "name": "paper", "imageAssetId": "img-i-paper", "width": 400, "height": 400},
+                      {"slot": "body", "name": "body", "imageAssetId": "img-i-body", "width": 60, "height": 100}],
+      "clips": [{"id": "idle", "durationMs": 1000, "loop": true, "tracks": []}, {"id": "wave", "durationMs": 1000, "loop": true, "tracks": []}]})");
+    start = cutout::applyEdit(start, {{"op", "addBoundingBox"}, {"slot", "hit"}, {"bone", "root"}, {"vertices", {60, -100, 100, -100, 100, -60, 60, -60}}}).data;
+    QString boxName;
+    for (const auto& a : start["attachments"]) if (a["slot"] == "hit") boxName = qs(a["name"].get<std::string>());
+    QVERIFY(!boxName.isEmpty());
+    const Json control = Json::parse(R"({"schemaVersion": 1, "rig": "inputs", "defaultClip": "idle", "layers": [], "bindings": []})");
+    auto envelope = [&](const char* type, const Json& data) { return QJsonObject{{"formatVersion", "0.1.0"}, {"plugin", "cutout-animation"}, {"type", type}, {"id", "inputs"}, {"data", toQtObject(data)}}; };
+    host.documents.append(QJsonObject{{"file", "plugins/cutout-animation/rig/inputs.json"}, {"kind", "extension"}, {"data", envelope("rig", start)}});
+    host.documents.append(QJsonObject{{"file", "plugins/cutout-animation/controller/inputs.json"}, {"kind", "extension"}, {"data", envelope("controller", control)}});
+    host.revision++;
+    plugin.viewChanged();
+    pump();
+    panel->selectRig("inputs");
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setTool(RigCanvas::Move);
+    auto* bottom = find<QTabWidget>("cutoutBottomTabs");
+    bottom->setCurrentIndex(0);
+    host.mainWindow.resize(1700, 1200);
+    host.mainWindow.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&host.mainWindow));
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    pump();
+    QCOMPARE(panel->rigId(), QString("inputs"));
+    QCOMPARE(panel->controllerId(), QString("inputs"));
+    auto at = [&](QPointF rig) { return canvas->rigToWidget(rig).toPoint(); };
+    auto candidates = [&](QPoint w) { QStringList refs; for (const auto& h : canvas->hitCandidates(w)) refs << h.ref; return refs; };
+    auto treeItem = [&](const QString& ref) -> QTreeWidgetItem* {
+      for (QTreeWidgetItemIterator it(find<QTreeWidget>("cutoutBoneTree")); *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == ref) return *it;
+      return nullptr;
+    };
+
+    // ---- 잠금: the paper caught every click on empty canvas.
+    const QPoint empty = at(QPointF(40, 360));
+    QCOMPARE(canvas->pick(empty, false), QString("slot:paper"));
+    QVERIFY(gesture("click on the paper selects it (no edit)", 0, [&] { QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, empty); }));
+    QCOMPARE(panel->selection(), QString("slot:paper"));
+    QCOMPARE(find<QTreeWidget>("cutoutBoneTree")->headerItem()->text(2), QString("잠금"));
+    QVERIFY(treeItem("slot:paper") && treeItem("slot:paper")->checkState(2) == Qt::Unchecked);
+    QVERIFY(gesture("lock the paper in the tree (no edit)", 0, [&] { treeItem("slot:paper")->setCheckState(2, Qt::Checked); }));
+    QVERIFY(panel->isLocked("slot:paper") && canvas->lockedRefs().contains("slot:paper"));
+    QVERIFY(!candidates(empty).contains("slot:paper"));
+    QVERIFY(gesture("click on empty canvas clears (no edit)", 0, [&] { QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, empty); }));
+    QCOMPARE(panel->selection(), QString());
+    QCOMPARE(canvas->pick(at(QPointF(210, 230)), false), QString("slot:body"));  // other parts still pick
+    // Box selection skips a locked bone; the tree still selects locked items.
+    QVERIFY(gesture("lock arm (no edit)", 0, [&] { treeItem("bone:arm")->setCheckState(2, Qt::Checked); }));
+    QVERIFY(gesture("band over both origins (no edit)", 0, [&] {
+      QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, at(QPointF(60, 150)));
+      QTest::mouseMove(canvas, at(QPointF(150, 190)));
+      QTest::mouseMove(canvas, at(QPointF(240, 240)));
+      QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, at(QPointF(240, 240)));
+    }));
+    QCOMPARE(panel->selectedItems(), QStringList({"bone:root"}));
+    QVERIFY(clickTreeRow("slot:paper"));
+    QCOMPARE(panel->selection(), QString("slot:paper"));
+    QCOMPARE(panel->lockedItems(), QStringList({"bone:arm", "slot:paper"}));
+    // The 선택 ▾ commands (palette entries): toggle the selection's lock, unlock everything.
+    auto ids = [&](const QString& query) { QStringList out; for (const auto& c : panel->findCommands(query)) out << c.id; return out; };
+    QVERIFY(ids("잠금").contains("cutoutLockSelected") && ids("잠금").contains("cutoutUnlockAll"));
+    QVERIFY(gesture("unlock the selection (no edit)", 0, [&] { QVERIFY(panel->runCommand("cutoutLockSelected")); }));
+    QVERIFY(!panel->isLocked("slot:paper") && treeItem("slot:paper")->checkState(2) == Qt::Unchecked);
+    QVERIFY(gesture("unlock all (no edit)", 0, [&] { QVERIFY(panel->runCommand("cutoutUnlockAll")); }));
+    QVERIFY(panel->lockedItems().isEmpty() && treeItem("bone:arm")->checkState(2) == Qt::Unchecked);
+    // The canvas menu locks what is under the cursor (and offers 잠금 모두 풀기 once something is locked).
+    QVERIFY(gesture("canvas menu: lock the paper (no edit)", 0, [&] { contextPick(canvas, empty, "cutoutCanvasMenuLock"); }));
+    QVERIFY(panel->isLocked("slot:paper") && treeItem("slot:paper")->checkState(2) == Qt::Checked);
+    {
+      std::unique_ptr<QMenu> menu(panel->canvasMenu(QString()));
+      QVERIFY(menu->findChild<QAction*>("cutoutCanvasMenuUnlockAll"));
+    }
+
+    // ---- 게임 연결: the tab opened first, then a binding edited while it is open (the preview must follow).
+    QTest::mouseClick(bottom->tabBar(), Qt::LeftButton, Qt::NoModifier, bottom->tabBar()->tabRect(1).center());
+    pump();
+    QCOMPARE(bottom->currentIndex(), 1);
+    auto clipOnTrack0 = [&] {
+      const Json state = panel->previewState();
+      if (state.is_object() && state.contains("tracks"))
+        for (const auto& t : state["tracks"]) if (t.value("track", -1) == 0) return qs(t.value("clip", std::string()));
+      return QString();
+    };
+    QCOMPARE(clipOnTrack0(), QString("idle"));
+    Json bound = control;
+    bound["bindings"].push_back(Json::parse(R"({"id": "poke", "signal": "partClicked", "match": {"box": "BOX"}, "clip": "wave"})"));
+    bound["bindings"][0]["match"]["box"] = ss(boxName);
+    host.request("edit", {{"edit", QJsonObject{{"type", "replace"}, {"file", "plugins/cutout-animation/controller/inputs.json"}, {"data", envelope("controller", bound)}}}}, {});
+    pump();
+    QVERIFY(canvas->previewClicks());
+    QVERIFY(canvas->hintLine().contains("partClicked"));
+    const QString selectedBefore = panel->selection();
+    // On the drawn outline, 2 px outside the box (hover names the box there): partClicked, no selection.
+    const QPoint outline = canvas->rigToWidget(QPointF(300, 120)).toPoint() + QPoint(2, 0);
+    QVERIFY2(candidates(outline).contains("slot:hit"), qPrintable(candidates(outline).join(",")));
+    QVERIFY(gesture("click the box outline in the preview (no edit)", 0, [&] { QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, outline); }));
+    QCOMPARE(panel->lastPreviewClick().box, boxName);
+    QCOMPARE(panel->lastPreviewClick().slot, QString("hit"));
+    QCOMPARE(panel->lastPreviewClick().matched, QStringList({"poke"}));
+    QCOMPARE(clipOnTrack0(), QString("wave"));
+    QCOMPARE(panel->selection(), selectedBefore);
+    QVERIFY(find<QLabel>("cutoutPreviewResult")->text().contains("poke"));
+    // Inside it too; Ctrl+click selects instead (no signal).
+    QVERIFY(gesture("click inside the box (no edit)", 0, [&] { QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, at(QPointF(280, 120))); }));
+    QCOMPARE(panel->lastPreviewClick().matched, QStringList({"poke"}));
+    panel->previewSignal("nothing", {});
+    const QString log = find<QLabel>("cutoutPreviewResult")->text();
+    QVERIFY(gesture("Ctrl+click the box selects it (no edit)", 0, [&] { QTest::mouseClick(canvas, Qt::LeftButton, Qt::ControlModifier, outline); }));
+    QVERIFY(panel->selectedItems().contains("slot:hit"));
+    QCOMPARE(find<QLabel>("cutoutPreviewResult")->text(), log);  // no partClicked
+    // Other tabs: clicks select as always.
+    bottom->setCurrentIndex(0);
+    pump();
+    QVERIFY(!canvas->previewClicks());
+    panel->selectItem(QString());
+    QVERIFY(gesture("outline click in the animation tab selects (no edit)", 0, [&] { QTest::mouseClick(canvas, Qt::LeftButton, Qt::NoModifier, outline); }));
+    QCOMPARE(panel->selection(), QString("slot:hit"));
+    panel->unlockAll();
+
+    // ---- value fields select their text when clicked: typing replaces the value.
+    panel->setMode(CutoutPanel::Mode::Animate);
+    panel->selectClip("idle");
+    pump();
+    auto* duration = find<QSpinBox>("cutoutClipDuration");
+    QVERIFY(duration && duration->isVisible() && duration->value() == 1000);
+    QLineEdit* durationText = duration->findChild<QLineEdit*>();
+    QVERIFY(gesture("type 600 into the clip length", 1, [&] {
+      QTest::mouseClick(durationText, Qt::LeftButton, Qt::NoModifier, QPoint(durationText->width() - 6, durationText->height() / 2));
+      pump();
+      QVERIFY(duration->hasFocus());
+      QCOMPARE(durationText->selectedText(), QString("1000"));
+      QTest::keyClicks(durationText, "600");
+      QTest::keyClick(durationText, Qt::Key_Return);
+    }));
+    QCOMPARE(duration->value(), 600);
+    QCOMPARE(host.data("rig", "inputs")["clips"][0]["durationMs"].get<int>(), 600);
+    // A second click in the focused field places the cursor (no select-all).
+    QTest::mouseClick(durationText, Qt::LeftButton, Qt::NoModifier, QPoint(durationText->width() - 6, durationText->height() / 2));
+    pump();
+    QVERIFY(durationText->selectedText().isEmpty());
+    // Tab into the next field selects it too.
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+    pump();
+    if (auto* next = qobject_cast<QLineEdit*>(QApplication::focusWidget()); next && qobject_cast<QAbstractSpinBox*>(next->parentWidget()))
+      QCOMPARE(next->selectedText(), next->text());
+
+    // ---- K from a value field: the typed rotation is committed, then keyed (one edit).
+    auto* rotation = find<QDoubleSpinBox>("cutoutPropRotation");
+    panel->selectItem("bone:arm");
+    panel->setPlayhead(200);
+    pump();
+    QVERIFY(rotation->isVisible() && rotation->isEnabled());
+    QLineEdit* rotationText = rotation->findChild<QLineEdit*>();
+    QVERIFY(gesture("K from the rotation field keys the typed value", 1, [&] {
+      QTest::mouseClick(rotationText, Qt::LeftButton, Qt::NoModifier, QPoint(rotationText->width() / 2, rotationText->height() / 2));
+      pump();
+      QVERIFY(rotation->hasFocus());
+      QVERIFY(!rotationText->selectedText().isEmpty());
+      QTest::keyClicks(rotationText, "45");
+      QTest::keyClick(QApplication::focusWidget(), Qt::Key_K);
+    }));
+    auto rotationKeyAt = [&](int ms) {
+      const Json d = host.data("rig", "inputs");
+      for (const auto& t : d["clips"][0]["tracks"])
+        if (t["target"] == "bone:arm" && t["property"] == "rotation") for (const auto& k : t["keys"]) if (k["timeMs"] == ms) return k["value"].get<double>();
+      return -1.0;
+    };
+    QCOMPARE(rotationKeyAt(200), 45.0);
+    // ---- K from the tree (focus there after a click on a row): keys the selected bone.
+    panel->setPlayhead(600);
+    pump();
+    QVERIFY(clickTreeRow("bone:arm"));
+    QVERIFY(find<QTreeWidget>("cutoutBoneTree")->hasFocus());
+    QVERIFY(gesture("K from the tree", 1, [&] { QTest::keyClick(QApplication::focusWidget(), Qt::Key_K); }));
+    QVERIFY(rotationKeyAt(600) >= 0);
+    // ---- A free-text field types the letter: the hierarchy filter.
+    auto* filter = find<QLineEdit>("cutoutTreeFilter");
+    QVERIFY(gesture("K in the filter types (no edit)", 0, [&] {
+      QTest::mouseClick(filter, Qt::LeftButton);
+      pump();
+      QTest::keyClick(QApplication::focusWidget(), Qt::Key_K);
+    }));
+    QCOMPARE(filter->text(), QString("k"));
+    filter->clear();
+    panel->setMode(CutoutPanel::Mode::Setup);
+    pump();
+
+    // ---- layout at the real editor sizes: the key row never scrolls away, the tree gets most of the left column.
+    panel->resetLayout();
+    for (const QSize size : {QSize(1456, 819), QSize(1280, 720)}) {
+      host.mainWindow.resize(size);
+      pump();
+      QTest::qWait(20);
+      const QString where = QString("%1x%2: ").arg(size.width()).arg(size.height());
+      auto* key = find<QPushButton>("cutoutKeyButton");
+      auto* props = find<QWidget>("cutoutSectionProperties");
+      QVERIFY2(key->isVisible() && props->isVisible(), qPrintable(where + "key row hidden"));
+      const QRect inProps(key->mapTo(props, QPoint(0, 0)), key->size()), inPanel(key->mapTo(panel, QPoint(0, 0)), key->size());
+      QVERIFY2(props->rect().contains(inProps) && panel->rect().contains(inPanel), qPrintable(where + QString("key button at %1,%2 outside %3x%4").arg(inProps.x()).arg(inProps.y()).arg(props->width()).arg(props->height())));
+      for (QWidget* p = key->parentWidget(); p && p != panel; p = p->parentWidget()) QVERIFY2(!qobject_cast<QScrollArea*>(p), qPrintable(where + "key button inside a scroll area"));
+      for (const char* name : {"cutoutAutoKey", "cutoutDiscardPending"}) {
+        auto* w = find<QWidget>(name);
+        QVERIFY2(w->isVisible() && props->rect().contains(QRect(w->mapTo(props, QPoint(0, 0)), w->size())), qPrintable(where + name));
+      }
+      auto* tree = find<QTreeWidget>("cutoutBoneTree");
+      const int rowHeight = std::max(1, tree->sizeHintForRow(0));
+      const int rows = tree->viewport()->height() / rowHeight;
+      const int column = panel->leftPane()->height();
+      qInfo("%s tree %d rows (%d px of a %d px left column), lower block %d px, timeline %d px", qPrintable(where), rows, tree->viewport()->height(), column,
+            find<QWidget>("cutoutLeftTabs")->height(), find<QWidget>("cutoutBottomTabs")->height());
+      if (size == QSize(1456, 819)) QVERIFY2(rows >= 14, qPrintable(where + QString("tree shows %1 rows").arg(rows)));
+      QVERIFY2(find<QWidget>("cutoutSectionHierarchy")->height() >= column * 45 / 100, qPrintable(where + "hierarchy under 45 % of the left column"));
+      // The lower block's two pages (draw order | characters) each show at least two rows and their buttons.
+      auto* leftTabs = find<QTabWidget>("cutoutLeftTabs");
+      QVERIFY(leftTabs && leftTabs->count() == 2);
+      for (int pageIndex : {1, 0}) {
+        leftTabs->setCurrentIndex(pageIndex);
+        pump();
+        auto* list = find<QWidget>(pageIndex ? "cutoutCharacterList" : "cutoutDrawOrder");
+        auto* button = find<QWidget>(pageIndex ? "cutoutImportLayers" : "cutoutDrawDown");
+        QVERIFY2(list->isVisible() && list->height() >= 2 * rowHeight + 4, qPrintable(where + list->objectName() + QString(" %1 px").arg(list->height())));
+        QVERIFY2(button->isVisible() && panel->leftPane()->rect().contains(QRect(button->mapTo(panel->leftPane(), QPoint(0, 0)), button->size())), qPrintable(where + button->objectName()));
+      }
+      QVERIFY(find<QLineEdit>("cutoutDrawOrderFilter")->isVisible());
+      const QStringList problems = fullLayoutProblems(page);
+      QVERIFY2(problems.isEmpty(), qPrintable(where + problems.mid(0, 6).join(" | ")));
+    }
+    host.mainWindow.resize(1700, 1200);
+    pump();
     panel->selectRig(keepRig);
     pump();
   }

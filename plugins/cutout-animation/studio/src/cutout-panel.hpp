@@ -383,8 +383,12 @@ class CutoutPanel : public QWidget {
   void setShowBoxes(bool on);                    // 보기 ▾ 판정 상자 보이기 (editor-only)
   void setShowPoints(bool on);                   // 보기 ▾ 기준점 보이기 (editor-only)
   /** Game-connection preview: a click at a rig point on a shown box fires `partClicked {box, slot}`
-   *  into the preview instance (the players' hitTest dispatch). False = no box there. */
-  bool previewClick(const QPointF& rigPoint);
+   *  into the preview instance (the players' hitTest dispatch). False = no box there. Plugin 1.21.0:
+   *  a point outside every box but within `tolerance` rig px of a box outline (the canvas's grab
+   *  radius) counts for the nearest such box; the preview is rebuilt first when the documents changed. */
+  bool previewClick(const QPointF& rigPoint, double tolerance = 0);
+  /** The preview instance's state (Instance::saveState: tracks, clips, skin...; null = none). */
+  cutout::Json previewState() const;
   struct PreviewClick { QString box, slot; QStringList matched; };
   PreviewClick lastPreviewClick() const { return lastPreviewClick_; }
   QStringList rigBoxNames() const;               // box attachment names of the rig (binding editor hints)
@@ -537,6 +541,16 @@ class CutoutPanel : public QWidget {
   QStringList filterMatchRefs(bool tree) const;
   /** Original layer names of a part / group name of a bone recorded by the PSD import (editor.layerImport). */
   QStringList importedNames(const QString& ref) const;
+  // ---- Picking locks (plugin 1.21.0, editor-only like the 보기 eye toggle: never stored) ----
+  /** 잠금 (the hierarchy's third column): a locked bone / part is drawn but never picked, hovered or
+   *  box-selected on the canvas (a paper sheet under the art stops catching every click); the
+   *  hierarchy and the draw order still select it, and its fields still edit it. One item each: a
+   *  bone's lock leaves its parts and children pickable. */
+  void setLocked(const QString& ref, bool on);
+  bool isLocked(const QString& ref) const { return locked_.contains(ref); }
+  QStringList lockedItems() const;
+  bool lockSelected();  // 선택 ▾ 고른 항목 잠금 켜기 · 끄기: every selected item locked (all locked already: unlocked)
+  void unlockAll();     // 잠금 모두 풀기
   /** Layout: until the user drags a splitter, the panes follow the window size (proportional, never
    *  below what their widest tool row needs); 레이아웃 초기화 goes back to that. */
   bool autoLayout() const { return autoLayout_; }
@@ -653,6 +667,8 @@ class CutoutPanel : public QWidget {
   std::shared_ptr<const cutout::Rig> rig_;   // parse of displayData(); clips forced non-looping for scrubbing
   QString rigError_;
   QSet<QString> hidden_;                     // editor-only eye toggles: never stored
+  QSet<QString> locked_;                     // editor-only picking locks (plugin 1.21.0): never stored
+  void installInputGuard();                  // cutout-input.cpp: spin box select-all, workspace-wide K
   std::unique_ptr<cutout::Instance> preview_;
   QString previewKey_;
   TimeView* timeView_ = nullptr;             // zoom/scroll/playhead/loop/selection of dopesheet + graph
@@ -719,6 +735,8 @@ class CutoutPanel : public QWidget {
   QWidget* commandWidget(const QString& id) const;
   void revealWidget(QWidget* w);    // open the tab / section / side panel that holds `w`
   QTreeWidget* characterList_ = nullptr;
+  QTabWidget* leftTabs_ = nullptr;  // plugin 1.21.0: 그리는 순서 | 캐릭터 pages under the hierarchy
+  bool noCharacters_ = false;       // the project had no character at the last refresh
   QListWidget* diagnostics_ = nullptr;
   QPushButton *setupButton_ = nullptr, *animateButton_ = nullptr;
   QLabel *banner_ = nullptr, *statusLabel_ = nullptr;

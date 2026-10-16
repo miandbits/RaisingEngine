@@ -404,6 +404,7 @@ CutoutPanel::CutoutPanel(raising::StudioHost* host, QWidget* parent) : QWidget(p
   // later (property pages are rebuilt) are covered too: the guard is app-wide but only acts on
   // this panel's widgets, and it goes away with the panel.
   qApp->installEventFilter(new WheelGuard(this));
+  installInputGuard();
 }
 CutoutPanel::~CutoutPanel() = default;
 bool CutoutPanel::runPartDialog(PartChoice& choice) {
@@ -443,8 +444,10 @@ constexpr const char* LAYOUT_GROUP = "plugins/cutout-animation/layout";
  *  column under the canvas only and could give the look pages so little height that their
  *  buttons were scrolled away; v2 (plugin <= 1.9.0) states were fixed pixel sizes from before the
  *  rows were regrouped and the UI scale existed (a narrow left pane hid 자동 길이 behind »). v3
- *  states are only saved once the user dragged a splitter (`custom`) and are sanitized on restore. */
-constexpr int LAYOUT_VERSION = 3;
+ *  states are only saved once the user dragged a splitter (`custom`) and are sanitized on restore.
+ *  v4 (plugin 1.21.0): the left column has two parts (hierarchy | draw order · characters pages),
+ *  v3 states held three. */
+constexpr int LAYOUT_VERSION = 4;
 constexpr const char* VIEW_GROUP = "plugins/cutout-animation/view";
 /** Tool row that never forces the panel wider: what does not fit goes behind its » button. */
 QToolBar* toolRow(const char* name) {
@@ -605,7 +608,8 @@ void CutoutPanel::buildUi() {
   root->addWidget(statusLabel_);
   // Every workspace shortcut is a QShortcut named cutoutShortcut* with its group and meaning
   // (plugin 1.19.0): the shortcut overlay lists exactly these plus the canvas's own keys. Letter keys
-  // never fire while a text or number field has the focus (those fields take the key as typing).
+  // never fire while a text or number field has the focus (those fields take the key as typing),
+  // except K (plugin 1.21.0, cutout-input.cpp): a number field commits its value, then keys.
   auto shortcut = [this](const QKeySequence& key, const char* name, const char* group, const char* text, std::function<void()> fn) {
     auto* s = new QShortcut(key, this);
     s->setObjectName(name);
@@ -627,7 +631,7 @@ void CutoutPanel::buildUi() {
     if (boxSlot().isEmpty() && !boxEdit_) { setStatus("G: 판정 상자 조각을 먼저 고르세요(판정 페이지의 「판정 상자」).", true); return; }
     setBoxVertexEdit(!boxEdit_);
   });
-  shortcut(Qt::Key_K, "cutoutShortcutKey", "애니메이션", "키 넣기 (고른 본·조각, 메시 편집 중이면 변형 키)", [this] { keySelected(); });
+  shortcut(Qt::Key_K, "cutoutShortcutKey", "애니메이션", "키 넣기 (고른 본·조각, 메시 편집 중이면 변형 키; 작업 공간 어디서나, 숫자 칸은 값을 확정한 뒤)", [this] { keySelected(); });
   shortcut(Qt::Key_O, "cutoutShortcutOnion", "보기", "어니언 스킨 켜기·끄기", [this] { setOnionSkin(!onion_.enabled); });
   // Plugin 1.20.0: H = 본 표시 모두 → 선택·관련만 → 숨김 (a free letter: V R S P B C M W G K O are tools).
   shortcut(Qt::Key_H, "cutoutShortcutBoneDisplay", "보기", "본 표시 바꾸기: 모두 → 선택·관련만 → 숨김", [this] { cycleBoneDisplay(); });
@@ -729,7 +733,7 @@ void CutoutPanel::restoreLayout() {
   q.beginGroup(LAYOUT_GROUP);
   // Splitter states of an older layout come back as the defaults (collapsed sections are kept):
   // v1 states hold three panes in the workspace splitter and right-column sizes that could
-  // starve the look pages; v2 states predate the regrouped rows. The next save writes v3.
+  // starve the look pages; v2 states predate the regrouped rows; v3 states hold three left sections. The next save writes v4.
   bool restored = false;
   if (q.value("version", 1).toInt() >= LAYOUT_VERSION && q.value("custom", false).toBool())
     for (QSplitter* s : splitters())
@@ -1250,7 +1254,8 @@ int CutoutPanel::paneNeed(const QString& pane) const {
   if (pane == "canvas") return std::max(rowsNeed(canvasPane_) + 4, canvasPane_->minimumWidth());
   if (pane == "right") {
     // The look pages' button rows (the column's minimum) and the property form without scrolling sideways.
-    const int form = propertiesScroll_->widget()->sizeHint().width() + propertiesScroll_->verticalScrollBar()->sizeHint().width() + 8;
+    const QWidget* footer = findChild<QWidget*>("cutoutKeyFooter");
+    const int form = std::max(propertiesScroll_->widget()->sizeHint().width() + propertiesScroll_->verticalScrollBar()->sizeHint().width() + 8, footer ? footer->sizeHint().width() : 0);
     return std::max(rightPane_->minimumSizeHint().width(), form);
   }
   if (pane == "clips") return std::max(clipsPane_->minimumSizeHint().width(), clipsPane_->minimumWidth());
@@ -1310,7 +1315,15 @@ void CutoutPanel::applyDefaultLayout() {
   const int u = int(std::lround(ui_ * 100));
   const int hM = mainSplit_->handleWidth();
   const int bottomMin = bottomTabs_->minimumSizeHint().height();
-  const int topPref = canvasPane_->minimumSizeHint().height() + 150 * u / 100;
+  // The left column sits above the timeline too (plugin 1.21.0): the top also wants ~14 hierarchy
+  // rows above the lower block's three (at 1456x819 the timeline's share left the tree 6 rows);
+  // the timeline gives that back down to its own minimum, never below.
+  const int rowH = std::max(tree_->sizeHintForRow(0), QFontMetrics(tree_->font()).height() + 2);
+  QWidget* hierarchy = leftSplit_->widget(0);
+  const int treeChrome = hierarchy->minimumSizeHint().height() - tree_->minimumHeight() + tree_->header()->sizeHint().height() + 2 * tree_->frameWidth();
+  const int lowerMin = leftTabs_->minimumSizeHint().height(), lowerPref = lowerMin + 2 * rowH;
+  const int leftPref = treeChrome + 14 * rowH + leftSplit_->handleWidth() + lowerPref;
+  const int topPref = std::max(canvasPane_->minimumSizeHint().height() + 150 * u / 100, leftPref);
   int bottom = std::max(int(H * 0.42), bottomMin + 140 * u / 100);
   bottom = std::max(bottomMin, std::min(bottom, H - hM - topPref));
   mainSplit_->setSizes({std::max(1, H - hM - bottom), bottom});
@@ -1321,8 +1334,11 @@ void CutoutPanel::applyDefaultLayout() {
   int propsH = H - 2 * hR - diagH - looksH;
   if (propsH < props->minimumSizeHint().height()) { looksH = std::max(looks->minimumSizeHint().height(), looksH - (props->minimumSizeHint().height() - propsH)); propsH = H - 2 * hR - diagH - looksH; }
   rightSplit_->setSizes({std::max(1, propsH), looksH, diagH});
+  // Left: the hierarchy takes what the lower block (draw order | characters, ~3 rows, a quarter of
+  // a tall column) leaves.
   const int leftH = H - mainSplit_->sizes().value(1) - hM;  // the left column sits above the timeline
-  leftSplit_->setSizes({leftH * 50 / 100, leftH * 28 / 100, leftH * 22 / 100});
+  const int lower = std::max(lowerMin, std::min(std::max(lowerPref, leftH / 4), leftH - leftSplit_->handleWidth() - hierarchy->minimumSizeHint().height()));
+  leftSplit_->setSizes({std::max(1, leftH - leftSplit_->handleWidth() - lower), lower});
   applyingLayout_ = false;
 }
 void CutoutPanel::sanitizeLayout() {
@@ -1417,7 +1433,7 @@ QWidget* CutoutPanel::buildCharacters() {
   button("삭제", "cutoutDeleteCharacter", [this] { return deleteCharacter(); })->setToolTip("고른 캐릭터의 리그와 연결 문서를 삭제합니다(먼저 묻습니다).");
   layout->addWidget(characterList_, 1);
   layout->addWidget(buttons);
-  return section("캐릭터 · 게임 연결", "cutoutSectionCharacters", body);
+  return body;  // a page of the left tabs (plugin 1.21.0)
 }
 
 // Skins (outfits), expressions, IK and meshes: one tabbed section. Every page keeps its action
@@ -1977,11 +1993,17 @@ QWidget* CutoutPanel::buildWorkspace() {
   tree_ = new BoneTree;
   treeBase_ = tree_;
   tree_->setObjectName("cutoutBoneTree");
-  tree_->setHeaderLabels({"본 · 조각", "보기"});
-  tree_->setColumnWidth(0, 170);
+  tree_->setHeaderLabels({"본 · 조각", "보기", "잠금"});
+  // The name column takes what the two check columns leave (plugin 1.21.0: a third column must not
+  // add a horizontal scroll bar to the narrow left pane).
+  tree_->header()->setStretchLastSection(false);
+  tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+  tree_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+  tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+  tree_->headerItem()->setToolTip(2, "잠금: 캔버스에서 클릭·상자 선택으로 고를 수 없게 합니다(편집기 전용, 저장되지 않음). 계층에서는 그대로 고릅니다.");
   tree_->setMinimumHeight(36);
   tree_->setDragDropMode(QAbstractItemView::InternalMove);
-  tree_->setToolTip("끌어서 놓으면 부모 본이 바뀝니다(화면 위치 유지). 보기 체크는 편집기에서만 숨깁니다.");
+  tree_->setToolTip("끌어서 놓으면 부모 본이 바뀝니다(화면 위치 유지). 보기 체크는 편집기에서만 숨기고, 잠금 체크는 캔버스에서 고를 수 없게 합니다(둘 다 저장되지 않음).");
   tree_->onDrop = [this](const QString& dragged, const QString& bone) {
     if (refKind(dragged) == "bone") requestReparent(refId(dragged), bone);
     else if (refKind(dragged) == "slot" && !bone.isEmpty()) requestSlotBone(refId(dragged), bone);
@@ -1998,7 +2020,10 @@ QWidget* CutoutPanel::buildWorkspace() {
     setSelection(refs, current && current->isSelected() ? current->data(0, Qt::UserRole).toString() : QString());
   });
   connect(tree_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* item, int column) {
-    if (filling_ || column != 1) return;
+    if (filling_) return;
+    // Lock toggle (plugin 1.21.0): this item only; the check box already shows it (no rebuild).
+    if (column == 2) { setLocked(item->data(0, Qt::UserRole).toString(), item->checkState(2) == Qt::Checked); return; }
+    if (column != 1) return;
     // Eye toggle: editor-only visibility, never written to the document.
     const bool visible = item->checkState(1) == Qt::Checked;
     std::function<void(QTreeWidgetItem*)> apply = [&](QTreeWidgetItem* it) {
@@ -2077,13 +2102,29 @@ QWidget* CutoutPanel::buildWorkspace() {
   orderFilter_ = buildFilterField("cutoutDrawOrderFilter", "그리는 순서에서 조각을 이름(ID, 그림 이름, PSD 레이어 이름)으로 찾습니다.", drawOrder_);
   orderLayout->addWidget(drawOrder_, 1);
   orderLayout->addWidget(orderButtons);
+  // Plugin 1.21.0: the draw order and the character list share one block as two pages, so the
+  // hierarchy gets most of the column. Three stacked sections left the tree ~6 rows at 1456x819
+  // (each section costs a header and a tool row); the draw-order filter sits beside the page tabs.
+  leftTabs_ = new QTabWidget;
+  leftTabs_->setObjectName("cutoutLeftTabs");
+  leftTabs_->setDocumentMode(true);
+  orderBody->setObjectName("cutoutDrawOrderPage");
+  leftTabs_->addTab(orderBody, "그리는 순서");
+  leftTabs_->setTabToolTip(0, "그리는 순서 (위 = 뒤, 아래 = 앞) · 이미지 조각 추가 · 앞뒤로 옮기기");
+  QWidget* characters = buildCharacters();
+  characters->setObjectName("cutoutCharactersPage");
+  leftTabs_->addTab(characters, "캐릭터 · 연결");
+  leftTabs_->setTabToolTip(1, "캐릭터(리그)와 게임 연결 문서 · 새 캐릭터 · PSD 가져오기 · 이름 변경 · 삭제");
+  leftTabs_->setCornerWidget(orderFilter_, Qt::TopRightCorner);
+  connect(leftTabs_, &QTabWidget::currentChanged, this, [this](int page) { orderFilter_->setVisible(page == 0); });
   leftSplit_ = new QSplitter(Qt::Vertical);
   leftSplit_->setObjectName("cutoutLeftSplitter");
   leftSplit_->setChildrenCollapsible(false);
   leftSplit_->addWidget(section("계층 (본 · 조각)", "cutoutSectionHierarchy", treeBody, treeFilter_));
-  leftSplit_->addWidget(section("그리는 순서 (뒤 → 앞)", "cutoutSectionDrawOrder", orderBody, orderFilter_));
-  leftSplit_->addWidget(buildCharacters());
-  leftSplit_->setSizes({500, 300, 200});
+  leftSplit_->addWidget(leftTabs_);
+  leftSplit_->setStretchFactor(0, 1);
+  leftSplit_->setStretchFactor(1, 0);
+  leftSplit_->setSizes({700, 300});
   leftPane_ = leftSplit_;
   leftPane_->setMinimumWidth(170);
 
@@ -2221,7 +2262,7 @@ QWidget* CutoutPanel::buildWorkspace() {
   // Bounding boxes and points (plugin 1.17.0).
   canvas_->onPlacePoint = [this](const QPointF& at) { addPointAt(at); };
   canvas_->onPlaceCancel = [this] { setStatus("기준점 놓기를 취소했습니다."); refreshHits(); };
-  canvas_->onPreviewClick = [this](const QPointF& at) { return previewClick(at); };
+  canvas_->onPreviewClick = [this](const QPointF& at, double tolerance) { return previewClick(at, tolerance); };
   // Direct manipulation (plugin 1.19.0, cutout-direct.cpp).
   canvas_->onDragCancel = [this] {
     // Esc mid-drag: the preview goes, the data never changed (zero edits).
@@ -2265,6 +2306,10 @@ QWidget* CutoutPanel::buildWorkspace() {
   menuAction("cutoutSelectChildren", "자식 본까지 선택 (계층: Ctrl+Shift+A)", [this] { selectChildren(); });
   menuAction("cutoutSelectAllBones", "모든 본 선택\tCtrl+A", [this] { selectAllBones(); });
   menuAction("cutoutSelectNone", "선택 해제", [this] { selectItem(QString()); });
+  // Plugin 1.21.0: picking locks (the hierarchy's 잠금 column) from the menu and the palette.
+  selectMenu->addSeparator();
+  menuAction("cutoutLockSelected", "고른 항목 잠금 켜기 · 끄기 (캔버스에서 안 골라짐)", [this] { lockSelected(); });
+  menuAction("cutoutUnlockAll", "잠금 모두 풀기", [this] { unlockAll(); });
   selectMenu->findChild<QAction*>("cutoutSelectChildren")->setProperty("cutoutShortcut", "Ctrl+Shift+A");
   selectMenu->findChild<QAction*>("cutoutSelectAllBones")->setProperty("cutoutShortcut", "Ctrl+A");
   selectMenuButton_->setMenu(selectMenu);
@@ -2395,19 +2440,34 @@ QWidget* CutoutPanel::buildWorkspace() {
   rightLayout->addWidget(selectionLabel_);
   rightLayout->addWidget(relativeCheck_);
   rightLayout->addLayout(form);
-  rightLayout->addWidget(keyButton_);
+  rightLayout->addStretch();
+  // Keying row (plugin 1.21.0): a footer under the scrolling fields, never scrolled away. At
+  // 1456x819 the eleven fields filled the section and 키 추가 / 자동 키 / 변경 취소 sat below them.
+  auto* keyFooter = new QWidget;
+  keyFooter->setObjectName("cutoutKeyFooter");
+  keyFooter->setProperty("cutoutGroup", "속성 · 키");
+  keyFooter->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+  auto* footerLayout = new QVBoxLayout(keyFooter);
+  footerLayout->setContentsMargins(0, 2, 4, 0);
+  footerLayout->setSpacing(2);
   auto* keyRow = new QHBoxLayout;
+  keyRow->addWidget(keyButton_, 1);
   keyRow->addWidget(autoKeyCheck_);
   keyRow->addWidget(discardButton_);
-  rightLayout->addLayout(keyRow);
-  rightLayout->addWidget(deltaButton_);
-  rightLayout->addStretch();
+  footerLayout->addLayout(keyRow);
+  footerLayout->addWidget(deltaButton_);
   auto* propertiesScroll = propertiesScroll_ = new QScrollArea;
   propertiesScroll->setObjectName("cutoutPropertiesScroll");
   propertiesScroll->setWidgetResizable(true);
   propertiesScroll->setFrameShape(QFrame::NoFrame);
   propertiesScroll->setWidget(right);
   propertiesScroll->setMinimumHeight(60);
+  auto* propertiesBody = new QWidget;
+  auto* propertiesLayout = new QVBoxLayout(propertiesBody);
+  propertiesLayout->setContentsMargins(0, 0, 0, 0);
+  propertiesLayout->setSpacing(0);
+  propertiesLayout->addWidget(propertiesScroll, 1);
+  propertiesLayout->addWidget(keyFooter);
   diagnostics_ = new QListWidget;
   diagnostics_->setObjectName("cutoutDiagnostics");
   diagnostics_->setToolTip("검증 결과 · 클릭하면 해당 항목을 선택합니다.");
@@ -2419,9 +2479,9 @@ QWidget* CutoutPanel::buildWorkspace() {
   rightSplit_ = new QSplitter(Qt::Vertical);
   rightSplit_->setObjectName("cutoutRightSplitter");
   rightSplit_->setChildrenCollapsible(false);
-  rightSplit_->addWidget(section("속성 · 키", "cutoutSectionProperties", propertiesScroll));
+  rightSplit_->addWidget(section("속성 · 키", "cutoutSectionProperties", propertiesBody));
   // Skins/expressions sit by the properties (the look of the selected part); the left column
-  // already holds three sections at the 1280x720 minimum.
+  // is full at the 1280x720 minimum.
   rightSplit_->addWidget(buildLooks());
   rightSplit_->addWidget(section("진단", "cutoutSectionDiagnostics", diagnostics_));
   // Extra height goes to properties and the look pages; diagnostics stay a small strip (its
@@ -3320,6 +3380,8 @@ void CutoutPanel::rebuildDisplay(bool full) {
 }
 
 void CutoutPanel::refreshCharacters() {
+  // No character yet: the 캐릭터 page (새 캐릭터 / PSD 가져오기) shows; the first one brings the draw order back.
+  if (leftTabs_ && rigs_.isEmpty() != noCharacters_) { noCharacters_ = rigs_.isEmpty(); leftTabs_->setCurrentIndex(noCharacters_ ? 1 : 0); }
   QSignalBlocker block(characterList_);
   filling_ = true;
   characterList_->clear();
@@ -3375,6 +3437,7 @@ void CutoutPanel::refreshTree() {
     item->setText(0, "◉ " + qs(id));
     item->setData(0, Qt::UserRole, "bone:" + qs(id));
     item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled);
+    item->setCheckState(2, locked_.contains("bone:" + qs(id)) ? Qt::Checked : Qt::Unchecked);
     items[id] = item;
     for (const auto& s : listOf(data, "slots")) {
       if (s.value("bone", std::string()) != id) continue;
@@ -3384,6 +3447,7 @@ void CutoutPanel::refreshTree() {
       slot->setData(0, Qt::UserRole, "slot:" + sid);
       slot->setFlags((slot->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsDragEnabled) & ~Qt::ItemIsDropEnabled);
       slot->setCheckState(1, hidden_.contains(sid) ? Qt::Unchecked : Qt::Checked);
+      slot->setCheckState(2, locked_.contains("slot:" + sid) ? Qt::Checked : Qt::Unchecked);
       slot->setForeground(0, QColor("#c9b6ff"));
     }
     for (const auto& c : children[id]) add(c, item, depth + 1);
@@ -3929,7 +3993,12 @@ void CutoutPanel::refreshModeUi() {
 
 void CutoutPanel::updateCanvas() {
   if (!canvas_) return;
+  // The 게임 연결 tab shows (and clicks go to) a preview of the current documents (plugin 1.21.0:
+  // an edit or another character while the tab was open left a stale or missing preview, and box
+  // clicks fell through to the select tool). Cheap when nothing changed.
+  if (bottomTabs_ && bottomTabs_->currentIndex() == 1) ensurePreview();
   canvas_->setHiddenSlots(hidden_);
+  canvas_->setLockedRefs(locked_);
   canvas_->setSelection(selection_);
   const QStringList refs = selectedItems();
   canvas_->setMultiSelection(QSet<QString>(refs.begin(), refs.end()));
@@ -5557,7 +5626,9 @@ void CutoutPanel::ensurePreview() {
   const Doc* rig = rigDoc();
   const Doc* controller = controllerDoc();
   const QString key = QString("%1/%2/%3").arg(lastRevision_).arg(rigId_, controllerId_);
-  if (key == previewKey_ && preview_) return;
+  // Once per documents state (plugin 1.21.0: called from updateCanvas while the tab is open): a rig
+  // the preview cannot parse is not retried every frame; 다시 시작 clears the key.
+  if (key == previewKey_) return;
   previewKey_ = key;
   preview_.reset();
   if (!rig || !controller) return;

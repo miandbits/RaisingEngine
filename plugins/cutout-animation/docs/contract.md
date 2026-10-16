@@ -784,9 +784,10 @@ bone's local matrix and `(x, y)` its local position, the world matrix (`cutout::
   the Tab full view never send an edit and never reach documents or the game.
   * Plugin 1.10.0: until the user drags a splitter the layout is automatic (pane sizes are
     proportional to the window, never below the width the pane's widest tool row needs, side
-    panes capped at a multiple of it); only a dragged layout is saved (`layout/version` 3,
-    `layout/custom`). Older (v1/v2) states are ignored; a v3 state is restored and widened
-    where a row would hide tools behind the overflow `»`. `레이아웃 초기화` returns to automatic.
+    panes capped at a multiple of it); only a dragged layout is saved (`layout/version` 4,
+    `layout/custom`). Older (v1/v2, and v3 = the three left sections before 1.21.0) states are
+    ignored; a v4 state is restored and widened where a row would hide tools behind the overflow
+    `»`. `레이아웃 초기화` returns to automatic.
   * 작업 공간 글자 크기 (`view/uiScale`: 0.9 / 1 / 1.25 / 1.5, Ctrl+= / Ctrl+- / Ctrl+0) scales the
     workspace text over the host font, plus icons, row paddings, the dopesheet row height,
     ruler and label column, graph key/handle radii, canvas gizmos and their pick radii. Absent,
@@ -797,6 +798,10 @@ bone's local matrix and `(x, y)` its local position, the world matrix (`cutout::
   * Plugin 1.14.0: a wheel over a spin box or combo box of the workspace that has no keyboard
     focus goes to its parent (the page scrolls) and never changes the value; fields use
     `Qt::StrongFocus`, so the wheel steps a value only after a click or Tab into it.
+  * Plugin 1.21.0: a spin box of the workspace that gets the focus by a mouse click or Tab
+    selects its whole text (deferred until the press has placed the cursor), so typing replaces
+    the value (600 typed into 1000 used to give 61000); later clicks in the focused field place the
+    cursor as usual.
   * The first-run hint strip (`view/hintDismissed`) and the command palette (Ctrl+K / F1: every
     workspace button, menu command and page by name, group or shortcut; running one is the
     same as clicking it, so an editing command is exactly one edit) are presentation only.
@@ -1101,7 +1106,19 @@ is ordinary schemaVersion 1 data plus editor metadata.
   (`bottom-center` default, `center`, `top-center`, `top-left`, `{x, y}` in document px),
   `trim?` (default true), `scale?` (0.05..4 or `"auto"`, default 1), `exclude?` (report layer keys),
   `boneDirection?` (`auto` default, `none` = the 1.11.0 mapping; plugin 1.14.0), `merge?` (report
-  keys of groups to flatten, 1.15.0), `effects?` (`keep` default | `skip`, 1.15.0).
+  keys of groups to flatten, 1.15.0), `effects?` (`keep` default | `skip`, 1.15.0), `background?`
+  (`skip` default | `keep`, 1.21.0: below).
+* **Background** (plugin 1.21.0): a paper sheet under the art covers the whole canvas, so every
+  canvas click picked it before any part. The bottom-most top-level node is the **background**
+  when it is a layer (not a group), visible, untagged, at ≥ 90 % opacity, the document has other
+  layers, and — read once with colour at ≤ 256 px on the long edge (area average: paper grain does
+  not count) — pixels with alpha ≥ 240 cover ≥ 95 % of the document and ≥ 97 % of them lie within
+  24 (per channel) of their mean colour. `background: "skip"` (default) leaves it out: report role
+  `background`, `include: false`, no slot; `"keep"` imports it as an ordinary picture. Either way
+  its report layer has `background: true`, `report.background = {key, name, skipped}` (null when
+  none) and a warning `ANIM_IMPORT_BACKGROUND` (layer `"0"`) says what happened. An `exclude` of
+  its key still leaves it out. The dialog shows the row unchecked with role 「배경으로 보여 뺐음」;
+  checking it previews again with `background: "keep"` (`LayerImportChoice::keepBackground`).
 * **Scale** (1.15.0): `"auto"` = the largest of 1, 0.75, 0.5, 0.375, 0.25, 0.125 whose canvas long
   edge is ≤ 2048 px and whose layer rectangles at that scale are ≤ 64 Mpx (a document ≤ 2048 px gets
   1: the 1.14 result). Pictures are read at `resolution` = min(1, scale): below 1 every output
@@ -1118,9 +1135,17 @@ is ordinary schemaVersion 1 data plus editor metadata.
     picture; always authoritative), else with `boneDirection: "auto"` the guessed **joint**
     (below, plugin 1.20.0), else the centre of its content. A group without pictures makes no bone.
   * **joint guess** (plugin 1.20.0, `boneDirection: "auto"`, new bones without a marker): hanging
-    parts turn around the edge they hang from instead of their middle. In rig px (document px ×
-    scale): c = centre of the group's content bounds (own and descendants' pictures, hidden
-    variants included), p = the parent bone's origin (its marker, its own joint or its content
+    parts turn around the edge they hang from instead of their middle. **Basis** (plugin 1.21.0):
+    the group's own pictures — the layers, merged groups and `[slot]` groups directly in it, after
+    clipping bakes — not its child groups' (a head group whose child hair groups reach the knees
+    still turns at the neck; with every descendant its bounds ended at the knees and the joint
+    landed on the chest): the visible ones when there are any, else all of them; when the largest
+    of them covers more than half of their summed area (a face among eyes, mouth and brows), or
+    there is only one, that picture alone (`direction.basis: "picture"`), else their union
+    (`"own"`); a group with no picture of its own (only child groups) uses every descendant's
+    pictures as in 1.20.0 (`"all"`). Below, "bounds" and "pictures" are the basis'. In rig px
+    (document px × scale): c = centre of the basis bounds (hidden variants included in `"all"`),
+    p = the parent bone's origin (its marker, its own joint or its content
     centre); for a top-level group p = the centre of all pictures' bounds (the root origin is only
     the character's feet). If |p − c| < 15 % of the larger bounds side the group keeps the centre
     origin (it sits on its parent: a torso, a face; aimed as before). Else the joint J is:
@@ -1148,8 +1173,8 @@ is ordinary schemaVersion 1 data plus editor metadata.
     within 4° of an axis snap to it. `rotation` is local (aim − parent world angle), `length` in
     the parent's scale. Attachments are placed through the rotated bone (their `rotation` is the
     opposite), so the setup frame is unchanged. Report layers of bones carry
-    `direction: {angle, length, from: child | content | up | joint}` (`joint`: the 1.20.0 joint
-    guess above decides origin and aim). `none`: rotation 0, no length.
+    `direction: {angle, length, from: child | content | up | joint, basis?}` (`joint`: the 1.20.0
+    joint guess above decides origin and aim; `basis` its pictures, 1.21.0). `none`: rotation 0, no length.
   * layer → region attachment, picture trimmed to its pixels (alpha > 0) plus a 1 px transparent
     ring (linear filtering at the edge blends to transparency like the document), placed with
     pivot 0.5 at its centre in the bone's space (see Scale for the resolution and the attachment
@@ -1459,6 +1484,14 @@ Hit areas and anchors that follow the rig. Neither is ever drawn, packed or chec
   instance: a click on a box fires `partClicked` into it (the players' dispatch) and the result
   line names the matched bindings; the binding editor lists `partClicked · 판정 상자 클릭` and offers
   `box=<name>` for the rig's boxes (tooltip, completer). Every command is in the palette.
+  Plugin 1.21.0: in that tab a plain left click inside a box **or on its drawn outline** (within
+  the canvas's outline grab radius, `RigCanvas::boxOutlineRadius()` widget px: where hovering names
+  the box) fires `partClicked` for the topmost box (outside every polygon: the nearest outline) and
+  never selects or drags; **Ctrl+click** skips it and selects like the other tabs; clicks outside
+  boxes select as usual; the hint line says so. While the tab is open the preview instance is
+  rebuilt whenever the documents changed (an edit, another character), so a click never falls
+  through to the select tool on a stale preview. `CutoutPanel::previewState()` = the instance's
+  `saveState()` (tests: the bound clip plays).
 * **Atlas, PSD re-import, meshes**: boxes and points have no image: the atlas packer and the image
   checks skip them (even with a stray `imageAssetId`), mesh tools ignore them, and a re-imported
   picture layer that lands on a box / point / clipping of the same slot and name is skipped
@@ -1714,7 +1747,8 @@ fine); a right click only panned (now a click opens the menu, a drag still pans)
   `cutoutCanvasMenuKey` (Animate: K), `cutoutCanvasMenuOrient` (setup, bone: 본 방향 맞추기),
   `cutoutCanvasMenuBox` (setup: 판정 상자), `cutoutCanvasMenuMesh` (setup, a part showing a plain
   picture: 메시로 변환 with the 메시 page's grid), `cutoutCanvasMenuHide` (part: the editor-only eye
-  toggle), `cutoutCanvasMenuShowAll`, `cutoutCanvasMenuDuplicate` (setup), `cutoutCanvasMenuDelete`;
+  toggle), `cutoutCanvasMenuShowAll`, `cutoutCanvasMenuLock` (1.21.0: 캔버스에서 잠그기),
+  `cutoutCanvasMenuUnlockAll` (1.21.0, when something is locked), `cutoutCanvasMenuDuplicate` (setup), `cutoutCanvasMenuDelete`;
   on empty canvas `cutoutCanvasMenuFrame`, `cutoutCanvasMenuFitAll`, `cutoutCanvasMenuSelectNone`;
   always `cutoutCanvasMenuShortcuts`.
 * 보기 ▾ adds `cutoutFrameSelectionAction` (선택 맞춤, F) and `cutoutShortcutOverlayAction`. Tool
@@ -1758,7 +1792,7 @@ presentation, remembered per user in QSettings `plugins/cutout-animation/view` (
   (`RigCanvas::hintLineText()` = what is drawn, "" when hidden), so it reads over any artwork and
   never runs past the canvas.
 * **Hierarchy and draw-order filters**: `cutoutTreeFilter` (in the `계층` section's header row) and
-  `cutoutDrawOrderFilter` (in the `그리는 순서` header row), placeholder 「본·조각 찾기」. A row
+  `cutoutDrawOrderFilter` (1.20.0: the `그리는 순서` header row; 1.21.0: beside the page tabs), placeholder 「본·조각 찾기」. A row
   matches when every whitespace-separated word occurs, case-insensitively, in its id, the names of
   its attachments (parts) or the original PSD names in `rig.editor.layerImport` (`layers[ref].name`
   of the part's attachments, `bones[id]` of a bone; rigs imported before 1.20.0 match by id only).
@@ -1767,3 +1801,45 @@ presentation, remembered per user in QSettings `plugins/cutout-animation/view` (
   (an empty field: back to its list), **Ctrl+F** focuses the hierarchy filter from the hierarchy or
   the canvas and the draw-order filter from the draw order (the host binds no Ctrl+F; listed once
   in the shortcut overlay from the canvas table).
+
+## Workspace input and left column (plugin 1.21.0)
+
+No data change; editor-only state, never an edit.
+
+* **잠금 (picking locks)**: the hierarchy (`cutoutBoneTree`) has a third column 「잠금」 (header
+  tooltip; columns 1–2 size to their check boxes, the name column takes the rest). A checked bone
+  or part is still drawn but is never a canvas hit candidate (click, hover, Alt cycling, drops),
+  nor box-selected (`RigCanvas::setLockedRefs`, `lockedRefs()`; the vertices of a mesh being
+  edited stay pickable). The hierarchy, the draw order, the filters and the fields still select
+  and edit it. One item each: a bone's lock leaves its parts and children pickable. Like the 보기
+  eye toggle it lives only in the session (`CutoutPanel::setLocked / isLocked / lockedItems`),
+  never in QSettings or the documents. `선택 ▾` (palette entries) has `cutoutLockSelected` (고른
+  항목 잠금 켜기 · 끄기: locks the selection, or unlocks it when all of it is locked) and
+  `cutoutUnlockAll` (잠금 모두 풀기); the canvas menu has `cutoutCanvasMenuLock` for the item under
+  the cursor and `cutoutCanvasMenuUnlockAll`. Use: a paper sheet kept from a PSD (`background: "keep"`) or
+  a large body part that covers what you want to click.
+* **K from anywhere in the workspace**: K / Shift+K (키 추가, `keySelected`) works whatever widget
+  of the panel has the focus, not only the canvas (whose click changes the selection): the panel's
+  `cutoutShortcutKey` as before, plus an application filter for the widgets that keep letter keys
+  from shortcuts. In a **spin box** K first commits what was typed (the field's `editingFinished`:
+  a property becomes a pending change or, with 자동 키, a key) and then keys, one edit with a
+  pending change; in a **free-text field** (`QLineEdit` ids, names, filters, the palette search;
+  `QTextEdit`) K is typed; dialogs (their own windows) are not affected. Other letter shortcuts
+  (V R S P B C M W G O H) still never fire while a field has the focus.
+* **Properties footer**: 「◇ 키 추가 (K)」 (`cutoutKeyButton`), 「자동 키」 (`cutoutAutoKey`) and
+  「변경 취소」 (`cutoutDiscardPending`) are one row in `cutoutKeyFooter` under the scrolling field
+  list (`cutoutPropertiesScroll`), with 「기존 키에도 같은 변화 적용」 below it when shown: always
+  visible without scrolling (studio test at 1456x819 and 1280x720).
+* **Left column**: the hierarchy section and one block of two pages, the QTabWidget
+  `cutoutLeftTabs` (document mode): `cutoutDrawOrderPage` 「그리는 순서」 (list, 이미지 조각 추가 ·
+  뒤로 · 앞으로; the draw-order filter `cutoutDrawOrderFilter` is its corner widget, shown on this
+  page) and `cutoutCharactersPage` 「캐릭터 · 연결」 (list and character tools). The sections
+  `cutoutSectionDrawOrder` / `cutoutSectionCharacters` are gone: three stacked sections cost a
+  header and a tool row each and left the tree ~6 rows at 1456x819. A project without characters
+  shows the 캐릭터 page; the first character brings the draw order back; the palette's 「… 탭
+  열기」 and `revealWidget` open either page. Automatic layout: the top (canvas + left column)
+  wants ~14 hierarchy rows above the lower block's three (rows from the tree's font), taken from
+  the timeline down to its minimum; the lower block gets those three rows or a quarter of a tall
+  column, the hierarchy the rest (studio test window 1456x819: 15 rows, 1280x720: 10; the real
+  editor at 1456x819, with its toolbar, status bar and real fonts: 10 rows of 19 px, the timeline
+  at its minimum — 1.20.0 gave ~6).

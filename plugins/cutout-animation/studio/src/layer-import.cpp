@@ -3,14 +3,15 @@
 
 namespace cutout_studio {
 namespace {
-constexpr int KEY_ROLE = Qt::UserRole, ROLE_ROLE = Qt::UserRole + 1, MERGE_TAG_ROLE = Qt::UserRole + 2;
+constexpr int KEY_ROLE = Qt::UserRole, ROLE_ROLE = Qt::UserRole + 1, MERGE_TAG_ROLE = Qt::UserRole + 2, BACKGROUND_ROLE = Qt::UserRole + 3;
 constexpr int COLUMNS = 7, MERGE_COLUMN = 6;
 const char* const ORIGINS[][2] = {{"bottom-center", "아래 가운데 (발 사이)"}, {"center", "가운데"}, {"top-center", "위 가운데"}, {"top-left", "왼쪽 위"}};
 }  // namespace
 
 QJsonObject LayerImportChoice::payload() const {
   QJsonObject p{{"file", file}, {"origin", origin}, {"trim", trim}, {"scale", autoScale ? QJsonValue("auto") : QJsonValue(scale)}, {"boneDirection", aimBones ? "auto" : "none"},
-                {"exclude", QJsonArray::fromStringList(exclude)}, {"merge", QJsonArray::fromStringList(merge)}, {"effects", skipEffects ? "skip" : "keep"}};
+                {"exclude", QJsonArray::fromStringList(exclude)}, {"merge", QJsonArray::fromStringList(merge)}, {"effects", skipEffects ? "skip" : "keep"},
+                {"background", keepBackground ? "keep" : "skip"}};
   if (target.isEmpty()) p["id"] = id;
   else p["rig"] = target;
   return p;
@@ -20,7 +21,7 @@ QString layerRoleLabel(const QString& role) {
   static const QHash<QString, QString> labels{{"image", "그림"}, {"bone", "본"}, {"pivot", "회전 중심 표시"}, {"slot-group", "슬롯 묶음"}, {"group-in-slot", "슬롯 묶음 안"},
                                              {"ignored", "무시([ignore])"}, {"excluded", "빼기"}, {"empty", "빈 레이어"}, {"empty-group", "빈 그룹"},
                                              {"clipped", "클리핑 (아래 그림에 합침)"}, {"merged", "합친 그림"}, {"in-merge", "합친 그림 안"}, {"effect", "효과 (뺌)"},
-                                             {"box", "판정 상자 ([box])"}, {"point", "기준점 ([point])"}};
+                                             {"box", "판정 상자 ([box])"}, {"point", "기준점 ([point])"}, {"background", "배경으로 보여 뺐음"}};
   return labels.value(role, role);
 }
 QString layerStatusLabel(const QString& status) {
@@ -154,6 +155,9 @@ LayerImportDialog::LayerImportDialog(QWidget* parent, LayerImportChoice& choice,
       return;
     }
     if (column != 0) return;
+    // The background row (plugin 1.21.0) is the payload's background keep / skip: preview it again
+    // next turn (the reply rebuilds the tree, which must not happen inside this signal).
+    if (item->data(0, BACKGROUND_ROLE).toBool()) { QTimer::singleShot(0, this, [this] { refresh(); }); return; }
     // A left-out group leaves out everything under it: the children follow its box.
     filling_ = true;
     std::function<void(QTreeWidgetItem*, bool)> follow = [&](QTreeWidgetItem* at, bool on) {
@@ -239,7 +243,9 @@ void LayerImportDialog::addItems(QTreeWidgetItem* parent, const QJsonArray& laye
     // Unchecked = left out by its own key; under a left-out group an item stays checked but greyed,
     // so checking the group again brings the whole group back.
     const bool own = choice_.exclude.contains(l.value("key").toString());
-    item->setCheckState(0, own || role == "ignored" ? Qt::Unchecked : Qt::Checked);
+    const bool background = l.value("background").toBool();
+    item->setData(0, BACKGROUND_ROLE, background);
+    item->setCheckState(0, own || role == "ignored" || (background && !choice_.keepBackground) ? Qt::Unchecked : Qt::Checked);
     if (role == "ignored" || (parent && (parent->checkState(0) != Qt::Checked || parent->isDisabled()))) item->setDisabled(true);
     // "한 그림으로" (plugin 1.15.0): any group outside a merged one; a [merge] name is always on.
     if (l.value("kind").toString() == "group" && role != "in-merge" && role != "clipped" && role != "ignored") {
@@ -253,6 +259,7 @@ void LayerImportDialog::addItems(QTreeWidgetItem* parent, const QJsonArray& laye
     if (l.value("opacity").toDouble(1) < 1) tip << QString("불투명도 %1%").arg(qRound(l.value("opacity").toDouble() * 100));
     if (l.value("blend").toString() != "norm" && l.value("blend").toString() != "pass" && !l.value("blend").toString().isEmpty()) tip << "혼합 모드 " + l.value("blend").toString().trimmed();
     for (const auto& w : l.value("warnings").toArray()) tip << w.toString();
+    if (background) tip << "문서 전체를 한 색으로 덮는 맨 아래 레이어라 배경(종이)으로 보고 뺐습니다. 체크하면 가져옵니다(캔버스 클릭을 가로채면 계층의 「잠금」).";
     if (!tip.isEmpty()) for (int c = 0; c < COLUMNS; c++) item->setToolTip(c, tip.join("\n"));
     if (!l.value("warnings").toArray().isEmpty()) item->setForeground(1, QColor(200, 120, 0));
     addItems(item, l.value("children").toArray());
@@ -306,7 +313,8 @@ void LayerImportDialog::collect() {
       choice_.merge << (*m)->data(0, KEY_ROLE).toString();
   QTreeWidgetItemIterator it(tree_);
   for (; *it; ++it)
-    if ((*it)->checkState(0) != Qt::Checked && (*it)->data(0, ROLE_ROLE).toString() != "ignored") {
+    if ((*it)->data(0, BACKGROUND_ROLE).toBool()) choice_.keepBackground = (*it)->checkState(0) == Qt::Checked;  // never an exclude key
+    else if ((*it)->checkState(0) != Qt::Checked && (*it)->data(0, ROLE_ROLE).toString() != "ignored") {
       // Only the topmost left-out item: its subtree goes with it.
       bool covered = false;
       for (QTreeWidgetItem* p = (*it)->parent(); p && !covered; p = p->parent()) covered = p->checkState(0) != Qt::Checked;

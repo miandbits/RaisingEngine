@@ -66,6 +66,11 @@ class RigCanvas : public QWidget {
   const cutout::Rig* rig() const { return rig_.get(); }
   void setImages(ImageCache* images) { images_ = images; }
   void setHiddenSlots(const QSet<QString>& hidden) { hidden_ = hidden; refreshHover(); update(); }
+  /** 잠금 (plugin 1.21.0, editor-only): these refs ("bone:<id>" / "slot:<id>") are still drawn but
+   *  never hit candidates nor box-selected, so a paper sheet or a big body part stops catching the
+   *  clicks meant for what lies on it. The panel's tree still selects them. */
+  void setLockedRefs(const QSet<QString>& refs) { locked_ = refs; refreshHover(); update(); }
+  const QSet<QString>& lockedRefs() const { return locked_; }
   void setSelection(const QString& ref) { selection_ = ref; refreshHover(); update(); }
   /** Multi-selection (plugin 1.7.0): every selected ref is highlighted; setSelection() stays the
    *  primary item (its gizmo, Alt-cycling start). Editor-only, owned by the panel. */
@@ -245,10 +250,14 @@ class RigCanvas : public QWidget {
   std::function<void(const QPointF& rigPoint)> onPlacePoint;
   std::function<void()> onPlaceCancel;
   /** Game-connection preview (plugin 1.17.0): a left click is offered first to onPreviewClick (rig
-   *  space); returning true (it hit a bounding box) consumes it. */
-  void setPreviewClicks(bool on) { previewClicks_ = on; }
+   *  space, plus `rigTolerance` = the box outline's grab radius in rig px, plugin 1.21.0: a click on
+   *  the drawn outline counts, as hovering it names the box); returning true (it hit a bounding box)
+   *  consumes it. Ctrl+click skips it: the click selects as in the other tabs. */
+  void setPreviewClicks(bool on) { if (on != previewClicks_) { previewClicks_ = on; update(); } }
   bool previewClicks() const { return previewClicks_; }
-  std::function<bool(const QPointF& rigPoint)> onPreviewClick;
+  std::function<bool(const QPointF& rigPoint, double rigTolerance)> onPreviewClick;
+  /** Grab radius of box outlines (widget px, at the UI scale): hover, pick and preview clicks. */
+  double boxOutlineRadius() const;
   /** 정점 추가: a click (rig space); 가장자리 추가: a drag from vertex `a` to vertex `b`. */
   std::function<void(const QPointF& rigPoint)> onMeshAddVertex;
   std::function<void(int a, int b)> onMeshAddEdge;
@@ -309,7 +318,7 @@ class RigCanvas : public QWidget {
   std::shared_ptr<const cutout::Rig> rig_;
   cutout::Pose pose_;
   ImageCache* images_ = nullptr;
-  QSet<QString> hidden_;
+  QSet<QString> hidden_, locked_;
   QString selection_, message_;
   QSet<QString> multi_;
   std::optional<QRectF> band_;  // box selection (widget px)

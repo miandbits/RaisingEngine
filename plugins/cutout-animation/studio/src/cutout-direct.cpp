@@ -207,6 +207,8 @@ QMenu* CutoutPanel::canvasMenu(const QString& ref) {
     }
     if (kind == "slot")
       add(menu, "cutoutCanvasMenuHide", "편집기에서 숨기기", [this, id] { hidden_.insert(id); updateCanvas(); refreshTree(); setStatus(QString("조각 「%1」을 편집기에서 숨겼습니다(저장되지 않음, 계층의 보기 체크로 되돌림).").arg(id)); });
+    // Plugin 1.21.0: the item stays drawn but stops catching clicks (a paper sheet, a big body part).
+    add(menu, "cutoutCanvasMenuLock", "캔버스에서 잠그기 (안 골라짐)", [this, ref] { setLocked(ref, true); });
     menu->addSeparator();
     if (setup) add(menu, "cutoutCanvasMenuDuplicate", "복제 (Ctrl+D)", [this] { duplicateSelected(); });
     add(menu, "cutoutCanvasMenuDelete", "삭제… (Delete)", [this] { deleteSelected(); });
@@ -216,6 +218,7 @@ QMenu* CutoutPanel::canvasMenu(const QString& ref) {
     if (!selection_.isEmpty()) add(menu, "cutoutCanvasMenuSelectNone", "선택 해제 (Esc)", [this] { selectItem(QString()); });
   }
   if (!hidden_.isEmpty()) add(menu, "cutoutCanvasMenuShowAll", "숨긴 조각 모두 보이기", [this] { hidden_.clear(); updateCanvas(); refreshTree(); });
+  if (!locked_.isEmpty()) add(menu, "cutoutCanvasMenuUnlockAll", "잠금 모두 풀기", [this] { unlockAll(); });
   menu->addSeparator();
   add(menu, "cutoutCanvasMenuShortcuts", "단축키 모음 (?)", [this] { showShortcutOverlay(true); });
   return menu;

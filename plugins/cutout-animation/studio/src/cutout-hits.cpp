@@ -359,11 +359,28 @@ bool CutoutPanel::boxDeleteVertices() {
 }
 
 // ---------------------------------------------------------------- preview
-bool CutoutPanel::previewClick(const QPointF& rigPoint) {
+bool CutoutPanel::previewClick(const QPointF& rigPoint, double tolerance) {
+  if (bottomTabs_ && bottomTabs_->currentIndex() == 1) ensurePreview();
   if (!showingPreview() || !preview_) return false;
   const cutout::Pose pose = preview_->pose();
   const auto boxes = cutout::boxPolygons(preview_->rig(), pose);
-  const int hit = cutout::hitBox(boxes, rigPoint.x(), rigPoint.y());
+  int hit = cutout::hitBox(boxes, rigPoint.x(), rigPoint.y());
+  // On the drawn outline (plugin 1.21.0): the canvas names the box while hovering its line, so a
+  // click there must not fall through to the select tool (it did: the click selected the box part).
+  if (hit < 0 && tolerance > 0) {
+    double nearest = tolerance * (1 + 1e-9);  // topmost first: a lower box wins only when nearer
+    for (size_t k = boxes.size(); k-- > 0;) {
+      const auto& p = boxes[k].polygon;
+      const size_t n = p.size() / 2;
+      for (size_t i = 0; n >= 3 && i < n; i++) {
+        const double ax = p[2 * i], ay = p[2 * i + 1], bx = p[2 * ((i + 1) % n)], by = p[2 * ((i + 1) % n) + 1];
+        const double dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+        const double t = len > 0 ? std::clamp(((rigPoint.x() - ax) * dx + (rigPoint.y() - ay) * dy) / len, 0.0, 1.0) : 0;
+        const double d = std::hypot(rigPoint.x() - (ax + t * dx), rigPoint.y() - (ay + t * dy));
+        if (d < nearest) { nearest = d; hit = int(k); }
+      }
+    }
+  }
   if (hit < 0) return false;
   // The same signal a player's click sends (hitTest dispatch): partClicked {box, slot}, topmost box.
   const auto& b = boxes[size_t(hit)];
@@ -374,6 +391,7 @@ bool CutoutPanel::previewClick(const QPointF& rigPoint) {
   lastPreviewClick_ = {box, slot, matched};
   return true;
 }
+cutout::Json CutoutPanel::previewState() const { return preview_ ? preview_->saveState() : cutout::Json(); }
 QStringList CutoutPanel::rigBoxNames() const {
   QStringList out;
   auto scan = [&](const std::vector<cutout::Attachment>& list) { for (const auto& a : list) if (a.boundingBox && !out.contains(qs(a.name))) out << qs(a.name); };

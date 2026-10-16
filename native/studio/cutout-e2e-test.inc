@@ -653,7 +653,16 @@ void StudioTests::cutoutEndToEnd() {
   }
   // Draw order: hair-back to the very back, body in front of both arms.
   auto order = panel->findChild<QListWidget *>("cutoutDrawOrder");
+  // Plugin 1.21.0: the draw order and the character list are two pages under the hierarchy; a user
+  // clicks the page's tab first.
+  auto leftPage = [&](int page) {
+    auto leftTabs = panel->findChild<QTabWidget *>("cutoutLeftTabs");
+    if (!leftTabs) { errors << "cutoutLeftTabs missing"; return false; }
+    if (leftTabs->currentIndex() != page) QTest::mouseClick(leftTabs->tabBar(), Qt::LeftButton, Qt::NoModifier, leftTabs->tabBar()->tabRect(page).center());
+    return waitFor([&] { return leftTabs->currentIndex() == page && leftTabs->currentWidget()->isVisible(); }, 2000);
+  };
   auto pickOrder = [&](const QString &slot) {
+    if (!leftPage(0)) return false;
     for (int i = 0; i < order->count(); ++i)
       if (order->item(i)->data(Qt::UserRole).toString() == slot) {
         order->scrollToItem(order->item(i));
@@ -1179,6 +1188,7 @@ void StudioTests::cutoutEndToEnd() {
   }
   {
     ask("rename character", QString::fromUtf8("히어로"));
+    QVERIFY(leftPage(1));
     click("cutoutRenameCharacter");
     QVERIFY(waitFor([&] { return !w->busy() && rig().value("name") == QString::fromUtf8("히어로"); }));
     QVERIFY(settle());
@@ -1290,6 +1300,7 @@ void StudioTests::cutoutEndToEnd() {
       d->grab().save(evidence + "/09-layer-import-dialog.png");
       QTest::mouseClick(d->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok), Qt::LeftButton);
     });
+    QVERIFY(leftPage(1));
     click("cutoutImportLayers");
     QVERIFY2(waitFor([&] { return !w->busy() && !pluginData(w->currentView(), psdRig).isEmpty(); }, 40000), qPrintable(w->lastError + noErrors()));
     QVERIFY(settle());
