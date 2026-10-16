@@ -1,0 +1,27 @@
+void StudioTests::replayUiAuthoring(){
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
+  const auto root=engine+"/.cache/replay-ui-editor-"+QString::number(QDateTime::currentMSecsSinceEpoch());
+  const auto evidence=engine+"/.cache/replay-ui";QDir().mkpath(evidence);
+  StudioWindow w(engine);w.resize(1500,960);w.show();
+  QTimer::singleShot(100,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto mode=d->findChild<QComboBox*>("newProjectTemplate");mode->setCurrentIndex(mode->findData("existing"));d->findChild<QLineEdit*>("newProjectSource")->setText(engine+"/examples/last-grandson-polished");d->findChild<QLineEdit*>("newProjectDestination")->setText(root);d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
+  w.findChild<QAction*>("newProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),30000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
+  const auto original=w.projectData();QString replayId;
+  QTimer::singleShot(100,&w,[&]{auto d=w.findChild<QDialog*>("projectSettingsDialog");QVERIFY(d);QTimer::singleShot(20000,d,&QDialog::reject);d->resize(1160,850);d->findChild<QTabWidget*>()->setCurrentIndex(2);d->findChild<QPushButton*>("projectGalleryCreateReplayUi")->click();replayId=d->findChild<QComboBox*>("projectGalleryReplayScreen")->currentData().toString();QVERIFY(!replayId.isEmpty());d->grab().save(evidence+"/editor-settings.png");d->findChild<QDialogButtonBox*>("projectSettingsButtons")->button(QDialogButtonBox::Ok)->click();});
+  w.findChild<QAction*>("projectSettings")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),20000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
+  const auto generated=w.projectData();QCOMPARE(generated.value("gallery").toObject().value("replayControlsScreenId").toString(),replayId);
+  w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),original);
+  w.findChild<QAction*>("redoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),generated);
+  auto l=w.findChild<QListWidget*>("projectList");bool opened=false;for(int i=0;i<l->count();i++)if(l->item(i)->data(Qt::UserRole)==replayId){auto item=l->item(i);l->scrollToItem(item);QTest::mouseClick(l->viewport(),Qt::LeftButton,Qt::NoModifier,l->visualItemRect(item).center());QTest::mouseDClick(l->viewport(),Qt::LeftButton,Qt::NoModifier,l->visualItemRect(item).center());opened=true;break;}QVERIFY(opened);
+  auto select=[&](QString id){auto tree=w.findChild<QTreeWidget*>("hierarchy");QTreeWidgetItemIterator it(tree);while(*it){if((*it)->data(0,Qt::UserRole).toString()==id){tree->scrollToItem(*it);QTest::mouseClick(tree->viewport(),Qt::LeftButton,Qt::NoModifier,tree->visualItemRect(*it).center());return;}++it;}QFAIL("Missing replay element");};
+  select("next");auto action=w.findChild<QComboBox*>("buttonAction");QCOMPARE(action->currentData().toString(),QString("recollectionNext"));
+  for(auto type:{"recollectionPrev","recollectionNext","recollectionClose","recollectionSave","recollectionLoad"})QVERIFY(action->findData(type)>=0);
+  auto label=w.findChild<QLineEdit*>("buttonText");label->setText("다음 기억");QMetaObject::invokeMethod(label,"editingFinished");QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  action->setCurrentIndex(action->findData("recollectionPrev"));QMetaObject::invokeMethod(action,"activated",Q_ARG(int,action->currentIndex()));QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(action->currentData().toString(),QString("recollectionNext"));
+  select("position");auto binding=w.findChild<QComboBox*>("textBinding");QVERIFY(binding);QCOMPARE(binding->currentData().toString(),QString("replay-position"));
+  w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
+  const auto authored=w.projectData();w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),20000);QCOMPARE(w.projectData(),authored);
+  w.findChild<QAction*>("validateProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);for(auto v:w.currentView().value("diagnostics").toArray())QVERIFY2(v.toObject().value("severity")!="error",qPrintable(QString::fromUtf8(QJsonDocument(v.toObject()).toJson())));
+  QTest::qWait(500);w.grab().save(evidence+"/editor-canvas.png");
+  QFile proof(evidence+"/editor-project.txt");QVERIFY(proof.open(QIODevice::WriteOnly));proof.write(root.toUtf8());
+}

@@ -46,6 +46,7 @@ private slots:
   void galleryAuthoring();
   void galleryMediaAuthoring();
   void galleryUiAuthoring();
+  void replayUiAuthoring();
   void authoringWorkspaceRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();
@@ -974,5 +975,6 @@ private slots:
 #include "short-polish-test.inc"
 #include "gallery-test.inc"
 #include "gallery-ui-test.inc"
+#include "replay-ui-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"

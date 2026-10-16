@@ -54,6 +54,8 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
       (typeof obj.binding==='string'&&obj.binding.startsWith('gallery-')) ||
       obj.type==='galleryEntries'||obj.type==='gallerySelection'||Object.values(obj).some(hasGalleryUi);
   };
+  const hasReplayUi=(value:unknown):boolean=>{if(!value||typeof value!=='object')return false;const obj=value as Record<string,unknown>;return (typeof obj.action==='string'&&obj.action.startsWith('recollection'))||(typeof obj.binding==='string'&&obj.binding.startsWith('replay-'))||Object.values(obj).some(hasReplayUi);};
+  if(content.project.gallery?.replayControlsScreenId||hasReplayUi(visual))requiredFeatures.push('authored-recollection-v1');
   if(content.project.gallery?.screenId||hasGalleryUi(visual))requiredFeatures.push('authored-gallery-v1');
   if(content.project.gallery){requiredFeatures.push('narrative-gallery-v1');if(content.project.gallery.entries.some(e=>e.kind==='cg'||e.kind==='music'||e.unlockCondition||e.lockedDisplay))requiredFeatures.push('media-gallery-v2');}
   if(visual?.resultPlayback)requiredFeatures.push('inline-result-playback-v1');

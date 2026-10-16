@@ -2908,7 +2908,10 @@ export type Element = {
     | "selected-field"
     | "gallery-summary"
     | "gallery-filter"
-    | "gallery-error";
+    | "gallery-error"
+    | "replay-position"
+    | "replay-notice"
+    | "replay-title";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -3773,7 +3776,12 @@ export type Element = {
     | "galleryFilter"
     | "galleryMusicToggle"
     | "galleryMusicStop"
-    | "galleryVariant";
+    | "galleryVariant"
+    | "recollectionPrev"
+    | "recollectionNext"
+    | "recollectionClose"
+    | "recollectionSave"
+    | "recollectionLoad";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -3862,7 +3870,12 @@ export type Element = {
         | "galleryFilter"
         | "galleryMusicToggle"
         | "galleryMusicStop"
-        | "galleryVariant";
+        | "galleryVariant"
+        | "recollectionPrev"
+        | "recollectionNext"
+        | "recollectionClose"
+        | "recollectionSave"
+        | "recollectionLoad";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -7912,7 +7925,10 @@ export type ComponentChild = {
     | "selected-field"
     | "gallery-summary"
     | "gallery-filter"
-    | "gallery-error";
+    | "gallery-error"
+    | "replay-position"
+    | "replay-notice"
+    | "replay-title";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -8773,7 +8789,12 @@ export type ComponentChild = {
     | "galleryFilter"
     | "galleryMusicToggle"
     | "galleryMusicStop"
-    | "galleryVariant";
+    | "galleryVariant"
+    | "recollectionPrev"
+    | "recollectionNext"
+    | "recollectionClose"
+    | "recollectionSave"
+    | "recollectionLoad";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -10839,7 +10860,12 @@ export type ComponentChild = {
         | "galleryFilter"
         | "galleryMusicToggle"
         | "galleryMusicStop"
-        | "galleryVariant";
+        | "galleryVariant"
+        | "recollectionPrev"
+        | "recollectionNext"
+        | "recollectionClose"
+        | "recollectionSave"
+        | "recollectionLoad";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -12915,6 +12941,7 @@ export interface CrossRunNarrativeGallery {
   }[];
   screenId?: string;
   detailScreenId?: string;
+  replayControlsScreenId?: string;
 }
 export interface Overrides {
   attributes: {

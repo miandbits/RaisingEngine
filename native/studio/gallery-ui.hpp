@@ -49,3 +49,20 @@ inline QJsonObject makeGalleryUi(QJsonObject project) {
   for(int i=0;i<screens.size()-2;++i){auto screen=screens[i].toObject();if(screen.value("modal").toBool())continue;auto es=screen.value("elements").toArray();QSet<QString> used;for(auto e:es)used.insert(e.toObject().value("id").toString());QString id="open-gallery";while(used.contains(id))id+="-new";auto entry=button(id,"추억 도감","galleryOpen",w-190,88);entry["anchorX"]="right";es.append(entry);screen["elements"]=es;screens[i]=screen;}
   visual["screens"]=screens;visual["components"]=components;project["visual"]=visual;auto gallery=project.value("gallery").toObject();gallery["screenId"]=listId;gallery["detailScreenId"]=detailId;project["gallery"]=gallery;return project;
 }
+
+inline QJsonObject makeRecollectionUi(QJsonObject project) {
+  auto visual=project.value("visual").toObject();auto screens=visual.value("screens").toArray();
+  QSet<QString> ids;for(auto v:screens)ids.insert(v.toObject().value("id").toString());
+  QString id="replay-controls";int n=2;while(ids.contains(id))id="replay-controls-"+QString::number(n++);
+  const int w=visual.value("width").toInt(1280),h=visual.value("height").toInt(720),gap=8,margin=16,bw=(w-2*margin-4*gap)/5;
+  auto node=[](QString id,QString kind,int x,int y,int w,int h){return QJsonObject{{"id",id},{"kind",kind},{"x",x},{"y",y},{"width",w},{"height",h}};};
+  auto bg=node("background","panel",margin,12,w-2*margin,128);bg["fill"]="#15232ff5";bg["anchorX"]="stretch";bg["radius"]=8;QJsonArray elements{bg};
+  int i=0;for(auto pair:QList<QPair<QString,QString>>{{"이전","recollectionPrev"},{"다음","recollectionNext"},{"회상 종료","recollectionClose"},{"회상 저장","recollectionSave"},{"회상 불러오기","recollectionLoad"}}){
+    const QStringList names{"previous","next","close","save","load"};auto e=node(names[i],"button",margin+i*(bw+gap),24,bw,44);e["text"]=pair.first;e["action"]=pair.second;e["fontSize"]=18;e["color"]="#fff2da";e["fill"]="#304d51";e["hoverFill"]="#55736b";e["radius"]=6;elements.append(e);++i;
+  }
+  auto text=[&](QString id,QString binding,int x,int y,int width){auto e=node(id,"text",x,y,width,30);e["text"]="";e["binding"]=binding;e["fontSize"]=18;e["color"]="#eee5d2";return e;};
+  elements.append(text("title","replay-title",margin+12,76,w-220));auto position=text("position","replay-position",w-180,76,140);position["anchorX"]="right";elements.append(position);
+  auto notice=text("notice","replay-notice",margin+12,106,w-2*margin-24);notice["anchorX"]="stretch";elements.append(notice);
+  screens.append(QJsonObject{{"id",id},{"label","회상 · 재생 조작"},{"elements",elements}});visual["screens"]=screens;project["visual"]=visual;
+  auto gallery=project.value("gallery").toObject();gallery["replayControlsScreenId"]=id;project["gallery"]=gallery;return project;
+}

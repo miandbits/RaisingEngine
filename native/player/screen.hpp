@@ -41,6 +41,9 @@ inline std::string css_color(std::string hex) {
 class ScreenMarkup {
 public:
   GameSession& game;
+  bool replay_controls=false;
+  size_t replay_cursor=0,replay_count=0;
+  std::string replay_notice,replay_title;
   Json assets,display_content,display_projection,render_elements=Json::array();
   Json user_values_draft=Json::object();
   Json preview_scene=nullptr;
@@ -303,6 +306,9 @@ public:
   }
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
     const auto& project=display_content.at("project");
+    if(name=="replay-position")return replay_controls?std::to_string(replay_cursor+1)+" / "+std::to_string(replay_count):"";
+    if(name=="replay-notice")return replay_controls?replay_notice:"";
+    if(name=="replay-title")return replay_controls?replay_title:"";
     if(name=="gallery-error")return game.gallery.error;
     if(name=="gallery-filter"){const std::map<std::string,std::string> kinds={{"all","전체 종류"},{"cg","CG"},{"music","음악"},{"event","사건"},{"ending","엔딩"}},statuses={{"all","모든 기록"},{"locked","미해금"},{"unlocked","해금됨"}};return kinds.at(gallery_kind)+" · "+statuses.at(gallery_status)+(gallery_category.empty()?"":" · "+gallery_category);}
     if(name=="gallery-summary"){size_t unlocked=0,total=0;for(const auto& e:project.value("gallery",Json::object()).value("entries",Json::array())){++total;if(!game.gallery.records(e).empty())++unlocked;}return std::to_string(unlocked)+" / "+std::to_string(total)+" 해금";}
@@ -640,6 +646,7 @@ public:
       }
       if(type=="equip"||type=="unequip"||type=="acceptQuest"||type=="claimQuest"||type=="moveExpedition"||type=="returnFromExpedition"||type=="battleAction")enabled=game.available(action);
       if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction")enabled=game.battle_ui_available(action);
+      if(type.rfind("recollection",0)==0)enabled=replay_controls&&(type!="recollectionPrev"||replay_cursor>0);
       enabled=enabled&&hasSelection&&e.value("_boundEnabled",true)&&(!e.contains("enabledCondition")||visual_condition(e.at("enabledCondition")));
       auto result=button(e.value("id","button"),label,action,enabled);
       const std::string style="font-size:"+number(e.value("fontSize",20.0))+"px;";

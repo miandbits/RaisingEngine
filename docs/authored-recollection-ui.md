@@ -1,0 +1,57 @@
+# 편집 가능한 회상 재생 조작
+
+`프로젝트 설정 → 도감 → 편집 가능한 회상 조작 화면 만들기`로 기본 화면을 만듭니다. 적용 후 화면 목록의 `회상 · 재생 조작`을 열어 일반 캔버스와 속성 창에서 버튼·문구·위치·앵커·색·폰트를 편집합니다. 기존 화면을 직접 만들어 `회상 조작 화면`에 연결할 수도 있습니다.
+
+이 화면은 기록 당시의 배경·캐릭터·대사 위에 겹치는 UI입니다. 화면 전체 배경을 바꾸려면 패널이나 이미지를 배치합니다. 원본 사건 화면을 바꾸거나 과거 기록을 다시 해금할 필요가 없습니다. 재사용 부품과 그룹도 사용할 수 있습니다.
+
+## 데이터 계약
+
+선택 설정: `project.gallery.replayControlsScreenId`. 미설정 프로젝트는 기존 고정 조작 막대를 사용합니다. 저장 형식 변경이나 기존 프로젝트 마이그레이션은 필요하지 않습니다.
+
+| 버튼 행동 | 동작 |
+| --- | --- |
+| `recollectionPrev` | 이전에 방문한 기록 프레임. 첫 프레임에서는 비활성 |
+| `recollectionNext` | 다음 기록 프레임. 마지막 프레임에서는 회상 종료 |
+| `recollectionClose` | 회상을 종료하고 도감으로 복귀 |
+| `recollectionSave` | 회상 위치·연출 상태를 별도 파일에 저장 |
+| `recollectionLoad` | 같은 기록의 저장 위치·연출 상태 복원 |
+
+텍스트 연결: `replay-title`(항목 제목), `replay-position`(현재/전체 프레임), `replay-notice`(저장·불러오기 성공/실패 메시지).
+
+회상 조작 화면은 패널·텍스트·버튼·이미지·그룹·게이지와 이들로 구성한 부품을 지원합니다. 검증기는 다섯 행동의 누락, 없는 화면 참조, 본편 저장/게임 시작 등 잘못된 행동, 게임 진행 위젯을 진단합니다. 부품 덮어쓰기까지 검사합니다. 조건으로 모든 버튼을 숨기는 배치는 피하세요. Esc/F5/F9 단축키는 유지됩니다. 일반 본편 화면에 회상 전용 버튼을 배치하면 비활성화됩니다.
+
+## 상태 격리와 호환성
+
+- 원본 연출은 기록된 콘텐츠와 방문한 상태로 별도의 세션·애니메이션 호스트에서 재생합니다. 능력치·비용·보상·난수·해금 효과를 다시 실행하지 않습니다.
+- 현재 프로젝트의 조작 화면만 원본 연출 위에 합성합니다. 요소 ID에는 별도 접두사를 붙여 원본 장면의 버튼과 충돌하지 않습니다.
+- 회상 저장 파일은 `recollection-<gameId>.json`입니다. 본편 슬롯과 `collection-<gameId>.json` 해금 프로필은 쓰지 않습니다.
+- 이전 형식의 대사 기록과 원본 에셋/플러그인 변경 시의 기존 동작을 유지합니다. 원본 미디어 구성이 바뀐 기록은 기존 정책대로 원본 연출 재생이 제한될 수 있습니다.
+- 이번 실행 지원은 Windows 네이티브 플레이어입니다. `authored-recollection-v1` 기능이 없는 런타임으로 내보내기를 시도하면 거부합니다. 웹·모바일·콘솔에서 검증했다고 주장하지 않습니다.
+
+## 적용 및 검증 — 2026-10-15
+
+`examples/last-grandson-polished/project.json`에 실제 Qt 편집기에서 생성하고 `다음 기억`으로 편집한 화면을 반영했습니다. 화면을 파일에서 수작업 생성한 뒤 GUI 제작이라고 처리하지 않았습니다. 공개 샘플 반영은 GUI에서 저장한 화면 데이터 복사입니다.
+
+- 실제 Qt `replayUiAuthoring`: 새 프로젝트 복사, 화면 생성, 버튼 문구·행동 편집, 실행 취소/재실행, 텍스트 연결 확인, 저장/재열기, 오류 0건.
+- 네이티브 `replay-ui.test.mjs`: 2개월 진행 → 인증 엔딩, 중간 본편 저장/복원, 사건 회상 이전/다음/종료/마지막 프레임 종료, 회상 저장/복원, 프로세스 재시작, 과거 기록에 최신 UI 반영, 일반 화면의 회상 버튼 비활성, 손상된 회상 저장 처리.
+- 회상 전후 본편 상태(난수 포함), 명령 기록, 해금 프로필, 살아 있는 애니메이션 인스턴스 비교. 본편 슬롯과 해금 프로필 파일 내용도 동일함을 확인.
+- `gallery-media.test.mjs`, `gallery-ui.test.mjs`: 고정 회상 조작 막대, 편집형 카드/필터, 원본 연출·음악, 기존 기록 호환성 회귀 통과.
+- JSON Schema/의미 검증 및 부품·데이터 UI·중첩 UI 계약 검사.
+
+로컬 증거: `.cache/replay-ui/`의 `editor-authored-controls.jpg`, `replay-first.png`, `replay-loaded.png`, `replay-updated.png`, `*-report.json`. 테스트 보고서와 개인 저장 파일은 공개 커밋에서 제외합니다.
+
+## 재현 명령
+
+```powershell
+$env:NATIVE_PLAYER_OUT='dist/native-player-replay-ui'
+node scripts/build-native-player.mjs
+$env:QT_STUDIO_OUT='dist/qt-studio-replay-ui'
+node scripts/build-qt-studio.mjs
+$env:QT_UI_TEST_LOG='.cache/replay-ui-qt-test.txt'
+node scripts/test-qt-studio.mjs replayUiAuthoring
+$env:RAISING_NATIVE_PLAYER_RUNTIME='dist/native-player-replay-ui'
+node --test tests/native-player/replay-ui.test.mjs
+node --test tests/validation/replay-ui.test.mjs
+```
+
+GUI 시험에서 만든 별도 프로젝트로 플레이를 확인하려면 `RAISING_REPLAY_UI_PROJECT`에 `.cache/replay-ui/editor-project.txt`의 경로를 지정합니다. 기본 플레이 시험은 공개 샘플을 사용하므로 GUI 산출물이 없는 CI에서도 건너뛰지 않습니다.

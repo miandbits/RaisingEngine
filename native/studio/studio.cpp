@@ -495,6 +495,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                                       {"story", tr("대사")}})
     bindingField->addItem(p.second, p.first);
   bindingField->addItem(tr("도감 해금 수"),"gallery-summary");bindingField->addItem(tr("도감 필터 상태"),"gallery-filter");bindingField->addItem(tr("도감 오류"),"gallery-error");
+  bindingField->addItem(tr("회상 진행 위치"),"replay-position");
+  bindingField->addItem(tr("회상 저장 알림"),"replay-notice");
+  bindingField->addItem(tr("회상 제목"),"replay-title");
   builtinBindingCount=bindingField->count();
   userFieldField=new QComboBox;userFieldField->setObjectName("bindingUserField");
   attributeField = new QComboBox;
@@ -600,6 +603,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField->addItem(tr("도감 음악 재생 · 일시정지"),"galleryMusicToggle");
   actionField->addItem(tr("도감 음악 정지"),"galleryMusicStop");
   actionField->addItem(tr("도감 다른 기록"),"galleryVariant");
+  actionField->addItem(tr("이전 회상"),"recollectionPrev");
+  actionField->addItem(tr("다음 회상"),"recollectionNext");
+  actionField->addItem(tr("회상 종료"),"recollectionClose");
+  actionField->addItem(tr("회상 위치 저장"),"recollectionSave");
+  actionField->addItem(tr("회상 위치 불러오기"),"recollectionLoad");
   actionField->setProperty("builtinActionCount", actionField->count());
   targetField = new QComboBox;
   targetField->setObjectName("actionTarget");

@@ -28,7 +28,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
-      if((String(e.action).startsWith('gallery')||String(e.binding).startsWith('gallery-'))&&!root.gallery)ctx.report(doc,ep,'UI_GALLERY_REQUIRED','도감 설정이 필요합니다.');
+      if((String(e.action).startsWith('gallery')||String(e.binding).startsWith('gallery-')||String(e.action).startsWith('recollection')||String(e.binding).startsWith('replay-'))&&!root.gallery)ctx.report(doc,ep,'UI_GALLERY_REQUIRED','도감 설정이 필요합니다.');
       if(e.entryId&&!objectItems((root.gallery as JsonObject|undefined)?.entries).some(x=>x.id===e.entryId))ctx.report(doc,ep+'/entryId','UI_GALLERY_ENTRY_REFERENCE','도감 항목이 없습니다.');
       if(e.action==='galleryFilter'&&!e.galleryFilter)ctx.report(doc,ep+'/galleryFilter','UI_GALLERY_FILTER_REQUIRED','도감 탭 또는 필터 값을 선택하세요.');
       if (e.kind === 'input' || e.binding === 'user-field' || e.userFieldId !== undefined) {

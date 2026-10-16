@@ -717,7 +717,10 @@
             "selected-field",
             "gallery-summary",
             "gallery-filter",
-            "gallery-error"
+            "gallery-error",
+            "replay-position",
+            "replay-notice",
+            "replay-title"
           ]
         },
         "imageSource": {
@@ -847,7 +850,12 @@
             "galleryFilter",
             "galleryMusicToggle",
             "galleryMusicStop",
-            "galleryVariant"
+            "galleryVariant",
+            "recollectionPrev",
+            "recollectionNext",
+            "recollectionClose",
+            "recollectionSave",
+            "recollectionLoad"
           ]
         },
         "screenId": {
@@ -1096,7 +1104,12 @@
                       "galleryFilter",
                       "galleryMusicToggle",
                       "galleryMusicStop",
-                      "galleryVariant"
+                      "galleryVariant",
+                      "recollectionPrev",
+                      "recollectionNext",
+                      "recollectionClose",
+                      "recollectionSave",
+                      "recollectionLoad"
                     ]
                   },
                   "screenId": {
@@ -2522,7 +2535,10 @@
             "selected-field",
             "gallery-summary",
             "gallery-filter",
-            "gallery-error"
+            "gallery-error",
+            "replay-position",
+            "replay-notice",
+            "replay-title"
           ]
         },
         "imageSource": {
@@ -2648,7 +2664,12 @@
             "galleryFilter",
             "galleryMusicToggle",
             "galleryMusicStop",
-            "galleryVariant"
+            "galleryVariant",
+            "recollectionPrev",
+            "recollectionNext",
+            "recollectionClose",
+            "recollectionSave",
+            "recollectionLoad"
           ]
         },
         "screenId": {
@@ -3070,7 +3091,12 @@
                       "galleryFilter",
                       "galleryMusicToggle",
                       "galleryMusicStop",
-                      "galleryVariant"
+                      "galleryVariant",
+                      "recollectionPrev",
+                      "recollectionNext",
+                      "recollectionClose",
+                      "recollectionSave",
+                      "recollectionLoad"
                     ]
                   },
                   "screenId": {

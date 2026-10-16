@@ -37,7 +37,10 @@ test('authored gallery: Qt cards, kind/status/category filters and isolated orig
   let projectPath=process.env.RAISING_GALLERY_UI_PROJECT;
   if(!projectPath){try{projectPath=(await readFile('.cache/gallery-ui/editor-project.txt','utf8')).trim();}catch(error){if(error.code!=='ENOENT')throw error;t.skip('Run Qt galleryUiAuthoring or set RAISING_GALLERY_UI_PROJECT to its authored project');return;}}
   const project=resolve(projectPath);
-  const loaded=await loadProject(project);const built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const content=built.snapshot;
+  const loaded=await loadProject(project);
+  // An authored gallery can still use the legacy replay toolbar.
+  delete loaded.documents.find(d=>d.kind==='project').data.gallery.replayControlsScreenId;
+  const built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const content=built.snapshot;
   assert.equal(content.project.gallery.screenId,'gallery');assert.equal(content.project.gallery.detailScreenId,'gallery-detail');
   const root=await mkdtemp(resolve('.cache/gallery-ui-native-')),game=resolve(root,'game'),evidence=resolve('.cache/gallery-ui');await mkdir(evidence,{recursive:true});
   const capabilities=JSON.parse(await readFile(resolve(runtime,'capabilities.json'),'utf8'));

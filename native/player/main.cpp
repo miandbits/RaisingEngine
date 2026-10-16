@@ -41,13 +41,13 @@ public:
     auto& r=*recollection;
     if(type=="recollectionClose"||type=="uiBack"||(type=="recollectionNext"&&r.cursor+1==r.record.at("replayFrames").size())){r.active=false;gallery_audio.sync_music("",muted);gallery_audio.suspend(true);ExtensionElement::host=&extensions;}
     else if(type=="recollectionNext"||type=="recollectionPrev"){r.seek(type=="recollectionNext"?r.cursor+1:(r.cursor>0?r.cursor-1:0));recollection_sound();}
-    else if(type=="save"){
+    else if(type=="save"||type=="recollectionSave"){
       Json value={{"version",1},{"gameId",game.content.at("project").at("gameId")},{"kind",r.record.at("kind")},{"sourceId",r.record.at("sourceId")},{"unlockedAt",r.record.at("unlockedAt")},{"contentFingerprint",r.record.at("contentFingerprint")},{"frames",r.record.at("frames")},{"cursor",r.cursor},{"extensions",r.extensions.save()},{"musicCursor",gallery_audio.cursor()}};
       const auto file=recollection_file(),temp=fs::path(file.u8string()+".tmp"),backup=fs::path(file.u8string()+".bak");fs::create_directories(file.parent_path());
       {std::ofstream out(temp,std::ios::binary|std::ios::trunc);out<<value.dump(2);out.flush();if(!out)throw std::runtime_error("회상 저장에 실패했습니다.");}
       if(fs::exists(file)){std::error_code ec;fs::remove(backup,ec);fs::rename(file,backup);}try{fs::rename(temp,file);}catch(...){if(fs::exists(backup)&&!fs::exists(file))fs::rename(backup,file);throw;}
       r.notice="회상 저장 완료";
-    } else if(type=="load"){
+    } else if(type=="load"||type=="recollectionLoad"){
       const auto value=read_json(recollection_file());
       if(value.value("frames",Json())!=r.record.at("frames"))throw std::runtime_error("다른 선택 경로의 회상 저장입니다.");
       if(value.value("version",0)!=1||value.value("gameId",Json())!=game.content.at("project").at("gameId")||value.value("kind",Json())!=r.record.at("kind")||value.value("sourceId",Json())!=r.record.at("sourceId")||value.value("unlockedAt",Json())!=r.record.at("unlockedAt")||value.value("contentFingerprint",Json())!=r.record.at("contentFingerprint")||!value.value("cursor",Json()).is_number_unsigned()||value.at("cursor").get<size_t>()>=r.record.at("replayFrames").size()||!value.value("musicCursor",Json()).is_number_unsigned()||!(value.value("extensions",Json()).is_null()||value.at("extensions").is_object()))throw std::runtime_error("이 회상과 호환되는 저장 위치가 아닙니다.");
