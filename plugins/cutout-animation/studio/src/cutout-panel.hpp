@@ -304,6 +304,34 @@ class CutoutPanel : public QWidget {
   bool paintWeights(const QVector<int>& vertices);  // brush: bone/weight/strength of the weight tools
   bool unbindMesh();
   void setBrush(const QString& bone, double weight, double strength, double radius);
+  // ---- Weight painting (plugin 1.18.0, cutout-weights.cpp): brush modes and falloff, bone locks,
+  // the weight table, 정리 / 좌우 복사 / 메시에서 복사, 자세 미리 보기. Every finished gesture is ONE
+  // core edit (paintWeights, normalizeWeights, mirrorWeights, copyWeights): the LLM `edit` op's ops.
+  void setWeightMode(int mode);                           // RigCanvas::WeightMode (더하기 · 빼기 · 바꾸기 · 부드럽게)
+  int weightMode() const { return weightMode_; }
+  void setWeightFalloff(int falloff);                     // RigCanvas::Falloff
+  void setBoneLocked(const QString& bone, bool locked);   // editor state, sent as the ops' `locked`
+  QStringList lockedBones() const;
+  bool paintStroke(const RigCanvas::PaintStroke& stroke);  // a finished stroke: one paintWeights
+  bool normalizeWeights();                                // 정리: prune / max influences of the fields
+  bool mirrorWeights();                                   // 좌우 복사: axis and side of cutoutMirrorAxis
+  bool copyWeights(const QString& from = {});             // 메시에서 복사: "slot/name" or "slot/name@skin" ("" = the combo)
+  bool setVertexWeight(const QString& bone, double weight);  // weight table edit: every selected vertex
+  /** Weight table rows: bone, shown weight (mean over the selected vertices, -1 = none selected), lock. */
+  struct WeightRow { QString bone; double weight = -1; bool locked = false; };
+  QVector<WeightRow> weightRows() const;
+  void stepBrushRadius(int direction);                    // [ smaller / ] larger
+  /** 자세 미리 보기 (editor-only, never saved): while painting in setup mode the canvas shows the
+   *  brush bone turned by `angle` degrees (IK re-solved), so the deformation shows as you paint. */
+  void setWeightPosePreview(bool on, double angle);
+  // ---- Linked meshes (plugin 1.18.0): 링크드 메시 만들기 / 연결 끊기 (linkMesh / unlinkMesh).
+  /** A region picks a mesh `parent` ("slot/name" in skin parentSkin, "" = default list) to link to;
+   *  a mesh makes a linked copy in `skin` ("" = default list) named `name` showing `assetId`. */
+  struct LinkedMeshChoice { QString parent, parentSkin, skin, name, assetId; bool deform = true; QStringList parents, skins, images; };
+  std::function<bool(LinkedMeshChoice&)> askLinkedMesh;
+  bool runLinkedMeshDialog(LinkedMeshChoice& choice);
+  bool makeLinkedMesh();
+  bool unlinkMesh();
   bool keyDeform();          // deform key of the shown offsets at the playhead
   bool deleteDeformKey();    // the deform key at the playhead
   // ---- Freeform meshes (plugin 1.6.0, setup mode, selected part): every finished gesture is one
@@ -741,6 +769,26 @@ class CutoutPanel : public QWidget {
   QDoubleSpinBox *brushWeight_ = nullptr, *brushStrength_ = nullptr, *brushRadius_ = nullptr;
   QLabel* meshInfo_ = nullptr;
   QVector<QWidget*> meshTools_, meshSetupTools_, meshAnimateTools_;
+  // weight painting + linked meshes (plugin 1.18.0, editor state; cutout-weights.cpp)
+  int weightMode_ = 2, weightFalloff_ = 2;  // RigCanvas::WeightReplace / FalloffSmooth
+  QSet<QString> weightLocks_;
+  QToolButton* weightModeButtons_[4] = {};
+  QComboBox *weightFalloffCombo_ = nullptr, *mirrorAxis_ = nullptr, *copyWeightsFrom_ = nullptr;
+  QSpinBox* weightMaxInfluences_ = nullptr;
+  QDoubleSpinBox *weightPrune_ = nullptr, *weightPreviewAngle_ = nullptr;
+  QCheckBox *weightShowValue_ = nullptr, *weightPosePreview_ = nullptr;
+  QWidget *weightSection_ = nullptr, *weightTable_ = nullptr;
+  QString weightTableKey_;
+  QPushButton *normalizeButton_ = nullptr, *mirrorButton_ = nullptr, *copyButton_ = nullptr, *makeLinkedButton_ = nullptr, *unlinkButton_ = nullptr;
+  QTimer* paintPreviewTimer_ = nullptr;
+  std::optional<RigCanvas::PaintStroke> pendingStroke_;
+  void buildWeightTools(QWidget* weightTools, QVBoxLayout* fixed, QVBoxLayout* form);
+  void refreshWeights(int slot, const cutout::Attachment* attachment, bool mesh, bool linked, bool animate);
+  void previewStroke();
+  std::optional<cutout::Json> strokeOp(const RigCanvas::PaintStroke& stroke, QString* error = nullptr) const;
+  cutout::Json withWeightRules(cutout::Json op) const;  // + locked / maxInfluences / prune of the fields
+  cutout::Pose weightPreviewPose(cutout::Pose pose) const;
+  QString linkedInfo(const cutout::Attachment& attachment) const;
   QVector<QWidget*> meshModeRows_;  // button rows shown in one mode only (property cutoutModeRow)
   // freeform mesh tools (plugin 1.6.0, editor state)
   int meshTool_ = 0;          // RigCanvas::MeshTool

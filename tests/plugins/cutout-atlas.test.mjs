@@ -136,6 +136,31 @@ test('packing: exact copies, edge padding, trimmed rings, and the same draw geom
   }
 });
 
+test('linked mesh (1.18.0): its own picture is packed whole (no trim) and drawn with the parent mesh shape', async () => {
+  const images = new Map(Object.entries({ ...IMAGES, 'atlas-arm-alt': () => body(60, 15, [30, 200, 90]) }).map(([id, make]) => [id, decodePng(make())]));
+  const rig = atlasRig();
+  rig.skins[0].attachments.push({ slot: 'arm', name: 'arm', type: 'mesh', imageAssetId: 'atlas-arm-alt', width: 60, height: 15, linkedMesh: { parent: 'arm/arm' } });
+  const documents = [{ type: 'rig', id: 'hero', data: rig }, { type: 'controller', id: 'hero-main', data: controller }];
+  const ids = [];
+  const atlas = buildAtlas({ documents, images, settings: { maxPageSize: 256, padding: 2 }, pageId: i => (ids[i] ??= `cutout-atlas-${i + 1}`) });
+  assert.ok(atlas.packed.includes('atlas-arm-alt'), 'the linked mesh picture is packed');
+  assert.equal(atlas.regions['atlas-arm-alt'].trim, undefined, 'a mesh picture is never trimmed (its uvs address all of it)');
+  const linked = atlas.documents[0].data.skins[0].attachments.find(a => a.slot === 'arm');
+  assert.deepEqual(linked.linkedMesh, { parent: 'arm/arm' });
+  assert.equal(linked.atlas.page, atlas.regions['atlas-arm-alt'].page);
+  const request = await referenceRuntime();
+  const arm = rigData => {
+    request({ op: 'init', documents: [{ type: 'rig', id: 'hero', data: rigData }, { type: 'controller', id: 'hero-main', data: controller }] });
+    request({ op: 'mount', instance: 'a', element: { type: 'character', ref: 'hero-main', width: 450, height: 450, props: { skin: 'alt' } } });
+    return request({ op: 'frame', instance: 'a' }).items.find(i => i.slot === 'arm');
+  };
+  const plain = arm(rig), packed = arm(atlas.documents[0].data), parent = arm(atlasRig());
+  assert.equal(plain.imageAssetId, 'atlas-arm-alt');
+  assert.deepEqual(plain.mesh, parent.mesh, 'the linked mesh draws the parent mesh (shape and uvs)');
+  assert.equal(packed.imageAssetId, atlas.regions['atlas-arm-alt'].page);
+  assert.deepEqual(packed.mesh, plain.mesh);
+});
+
 /** Project with the atlas rig on the title screen (450×450 box: scale 1.5), its images, and a store. */
 async function atlasProject({ atlas } = {}) {
   const root = await newProject(), store = await temp('atlas-store');

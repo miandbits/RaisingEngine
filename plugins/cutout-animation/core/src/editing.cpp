@@ -407,13 +407,65 @@ bool isBox(const Json& a) { return a.is_object() && optStr(a, "type") == "boundi
 bool isPoint(const Json& a) { return a.is_object() && optStr(a, "type") == "point"; }
 /** No picture (clipping, bounding box, point): mesh/sequence/image ops refuse them. */
 bool isPictureless(const Json& a) { return isClipping(a) || isBox(a) || isPoint(a); }
+// ---- Linked meshes (plugin 1.18.0): JSON-level resolution for the edit ops ----
+bool isLinked(const Json& a) { return isMesh(a) && a.contains("linkedMesh") && a.at("linkedMesh").is_object(); }
+/** A linked mesh is placed by its parent: offset/pivot edits of its own would do nothing. */
+void refuseLinkedPlacement(const Json& a, const Json& op) {
+  if (!isLinked(a)) return;
+  for (const char* k : {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY"})
+    if (has(op, k)) throw EditError("링크드 메시는 부모 메시 「" + optStr(a.at("linkedMesh"), "parent") + "」의 배치를 따릅니다. 부모를 옮기거나 「연결 끊기」를 하세요.");
+}
+/** The attachment list `skin` names ("" = the default list); nullptr for an unknown skin. */
+const Json* listNamed(const Json& d, const Str& skin) {
+  if (skin.empty()) return &listOr(d, "attachments");
+  for (const auto& s : listOr(d, "skins")) if (optStr(s, "id") == skin) return &listOr(s, "attachments");
+  return nullptr;
+}
+const Json* entryIn(const Json* list, const Str& slotId, const Str& name) {
+  if (list) for (const auto& a : *list) if (optStr(a, "slot") == slotId && optStr(a, "name") == name) return &a;
+  return nullptr;
+}
+/** The direct parent entry of linked mesh `a` (nullptr = broken link). */
+const Json* linkedParent(const Json& d, const Json& a) {
+  if (!isLinked(a)) return nullptr;
+  Str slotId, name;
+  const Json& l = a.at("linkedMesh");
+  if (!splitLinkedParent(optStr(l, "parent"), slotId, name)) return nullptr;
+  return entryIn(listNamed(d, optStr(l, "skin")), slotId, name);
+}
+/** The mesh whose shape `a` draws: `a` itself, or the first non-linked mesh up its chain (nullptr = broken or cyclic). */
+const Json* linkedRoot(const Json& d, const Json& a) {
+  const Json* cur = &a;
+  for (int depth = 0; cur && isLinked(*cur); depth++) {
+    if (depth > 64) return nullptr;
+    cur = linkedParent(d, *cur);
+  }
+  return cur && isMesh(*cur) ? cur : nullptr;
+}
+/** The attachment name the deform tracks of `a` address (Attachment::deformName). */
+Str deformNameOf(const Json& d, const Json& a) {
+  Str name = optStr(a, "name");
+  const Json* cur = &a;
+  for (int depth = 0; cur && isLinked(*cur) && cur->at("linkedMesh").value("deform", true) == true && depth <= 64; depth++) {
+    cur = linkedParent(d, *cur);
+    if (cur) name = optStr(*cur, "name");
+  }
+  return name;
+}
 /** Vertex counts of the meshes (and clip polygons, plugin 1.12.0: deform keys move them too) named (slot, name) in the default list and in every skin. */
 std::set<size_t> meshCounts(const Json& d, const Str& slotId, const Str& name) {
   std::set<size_t> out;
   auto scan = [&](const Json& list) {
-    for (const auto& a : list)
+    for (const auto& a : list) {
+      if (isLinked(a)) {
+        // A linked mesh (plugin 1.18.0) has the parent's vertices, keyed by its own or its deform name.
+        if (optStr(a, "slot") != slotId || (optStr(a, "name") != name && deformNameOf(d, a) != name)) continue;
+        if (const Json* root = linkedRoot(d, a); root && root->contains("vertices") && root->at("vertices").is_array()) out.insert(root->at("vertices").size() / 2);
+        continue;
+      }
       if ((isMesh(a) || isClipping(a) || isBox(a)) && optStr(a, "slot") == slotId && optStr(a, "name") == name && a.contains("vertices") && a.at("vertices").is_array())
         out.insert(a.at("vertices").size() / 2);
+    }
   };
   scan(listOr(d, "attachments"));
   for (const auto& s : listOr(d, "skins")) scan(listOr(s, "attachments"));
@@ -438,6 +490,96 @@ size_t purgeDeform(EditResult& r) {
   }
   if (removed) warn(r, "ANIM_MESH_DEFORM_REMOVED", "", "메시 정점이 바뀌어 맞지 않게 된 변형 키 " + std::to_string(removed) + "개를 지웠습니다.");
   return removed;
+}
+/**
+ * Turn linked mesh `a` (plugin 1.18.0) into an independent mesh drawing exactly what it draws now
+ * (unlinkMesh, and the dependents of a parent that goes away): the root's geometry, weights and
+ * placement with its own picture. A picture of another pixel size gets its vertices scaled into
+ * its own pixels and the offset scale divided by the same factor (placement · vertex unchanged,
+ * uvs stay valid for later vertex edits) — unless deform keys already address its name (they may
+ * be shared and are in the parent's pixels): then the pivot absorbs the size difference. Deform
+ * keys it inherited are copied to its own name (scaled alike). false when the link is broken.
+ */
+bool unlinkCopy(Json& d, Json& a) {
+  const Json* rootPtr = linkedRoot(d, a);
+  if (!rootPtr) return false;
+  const Json root = *rootPtr;  // copied: `a` and the clips change below
+  const Str slotId = optStr(a, "slot"), name = optStr(a, "name"), deformName = deformNameOf(d, a);
+  const double rw = num(root, "width", 0), rh = num(root, "height", 0);
+  double kx = rw > 0 && num(a, "width", 0) > 0 ? num(a, "width", 0) / rw : 1, ky = rh > 0 && num(a, "height", 0) > 0 ? num(a, "height", 0) / rh : 1;
+  for (const char* k : {"triangles", "weights", "hull", "edges", "x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY"}) { if (root.contains(k)) a[k] = root.at(k); else a.erase(k); }
+  if (!a.contains("uvs") && root.contains("uvs")) a["uvs"] = root.at("uvs");
+  // A weighted shape sits where its binds put it: the root's slot. In another slot (its own bone's
+  // setup world differs) the copied offset is re-expressed there, so the bind pose stays the same.
+  auto boneOfSlot = [&](const Str& id) { for (const auto& s : listOr(d, "slots")) if (optStr(s, "id") == id) return optStr(s, "bone"); return Str(); };
+  if (const Str rootBone = boneOfSlot(optStr(root, "slot")), ownBone = boneOfSlot(slotId); root.contains("weights") && rootBone != ownBone) {
+    auto world = setupWorld(d);
+    if (const auto inv = world[ownBone].inverse()) {
+      const Transform t = decomposeNear(*inv * world[rootBone] * local(readT(root)), readT(root), nullptr);
+      a["x"] = fine(t.x); a["y"] = fine(t.y);
+      auto opt = [&](const char* k, double v, double def) { v = fine(v); if (v == def) a.erase(k); else a[k] = v; };
+      opt("rotation", t.rotation, 0); opt("scaleX", t.scaleX, 1); opt("scaleY", t.scaleY, 1);
+    }
+  }
+  auto scaled = [&](const Json& list) {
+    Json out = Json::array();
+    for (size_t i = 0; i < list.size(); i++) out.push_back(fine(list[i].get<double>() * (i % 2 ? ky : kx)));
+    return out;
+  };
+  // Deform keys under its own name may be shared (a skin entry and the default one of the same
+  // name read the same track) and stay in the parent's pixels: then the vertices stay there too
+  // and the pivot carries the size difference (pivot · size unchanged).
+  bool ownKeys = false;
+  for (const auto& c : listOr(d, "clips"))
+    for (const auto& t : listOr(c, "tracks")) ownKeys = ownKeys || (optStr(t, "target") == "slot:" + slotId && optStr(t, "property") == "deform" && optStr(t, "attachment") == name);
+  if ((kx != 1 || ky != 1) && ownKeys) {
+    a["vertices"] = root.at("vertices");
+    auto pivot = [&](const char* k, double factor) { const double p = fine(num(root, k, 0.5) / factor); if (p == 0.5) a.erase(k); else a[k] = p; };
+    pivot("pivotX", kx);
+    pivot("pivotY", ky);
+    kx = ky = 1;  // copied keys below stay in the parent's pixels as well
+  } else {
+    a["vertices"] = kx == 1 && ky == 1 ? root.at("vertices") : scaled(root.at("vertices"));
+    if (kx != 1) { const double v = fine(num(a, "scaleX", 1) / kx); if (v == 1) a.erase("scaleX"); else a["scaleX"] = v; }
+    if (ky != 1) { const double v = fine(num(a, "scaleY", 1) / ky); if (v == 1) a.erase("scaleY"); else a["scaleY"] = v; }
+  }
+  a.erase("linkedMesh");
+  if (deformName == name) return true;
+  for (auto& c : arr(d, "clips")) {
+    const Json* from = findTrack(c, "slot:" + slotId, "deform", deformName);
+    if (!from || findTrack(c, "slot:" + slotId, "deform", name)) continue;
+    Json copy = *from;
+    copy["attachment"] = name;
+    if (kx != 1 || ky != 1) for (auto& k : arr(copy, "keys")) if (k.contains("offsets") && k.at("offsets").is_array()) k["offsets"] = scaled(k.at("offsets"));
+    arr(c, "tracks").push_back(copy);
+  }
+  // The inherited track goes once nothing on this slot reads it any more (it was only this mesh's).
+  if (meshCounts(d, slotId, deformName).empty())
+    for (auto& c : arr(d, "clips")) {
+      auto& tracks = arr(c, "tracks");
+      tracks.erase(std::remove_if(tracks.begin(), tracks.end(), [&](const Json& t) {
+        return optStr(t, "target") == "slot:" + slotId && optStr(t, "property") == "deform" && optStr(t, "attachment") == deformName;
+      }), tracks.end());
+    }
+  return true;
+}
+/** Every linked mesh whose direct parent (its list's skin id, slot, name) matches `gone` becomes an
+ *  independent copy (before that parent is removed or stops being a mesh). Returns the count. */
+size_t unlinkDependents(EditResult& r, const std::function<bool(const Str& skin, const Str& slot, const Str& name)>& gone) {
+  Json& d = r.data;
+  size_t count = 0;
+  auto scan = [&](Json& list) {
+    for (auto& a : list) {
+      if (!isLinked(a)) continue;
+      Str slotId, name;
+      if (!splitLinkedParent(optStr(a.at("linkedMesh"), "parent"), slotId, name) || !gone(optStr(a.at("linkedMesh"), "skin"), slotId, name)) continue;
+      if (unlinkCopy(d, a)) { count++; r.affected.push_back("slot:" + optStr(a, "slot")); }
+    }
+  };
+  scan(arr(d, "attachments"));
+  if (d.contains("skins") && d["skins"].is_array()) for (auto& sk : d["skins"]) if (sk.is_object() && sk.contains("attachments") && sk["attachments"].is_array()) scan(sk["attachments"]);
+  if (count) warn(r, "ANIM_LINKED_UNLINKED", "", "부모 메시가 없어져 링크드 메시 " + std::to_string(count) + "개를 독립 메시(같은 모양의 복사본)로 바꿨습니다.");
+  return count;
 }
 /** Weights of every mesh drop `boneId` (renormalized); a vertex left without bones follows its slot bone. */
 void dropBoneWeights(EditResult& r, const Str& boneId) {
@@ -571,7 +713,8 @@ void compensate(EditResult& r, const Json& before, const std::set<Str>& changed,
     for (const auto& s : arr(d, "slots")) if (changed.count(s.value("bone", Str()))) slotBone[s.value("id", Str())] = s.value("bone", Str());
     auto place = [&](Json& list) {
       for (auto& a : list) {
-        if (!a.is_object() || !slotBone.count(a.value("slot", Str()))) continue;
+        // Linked meshes (plugin 1.18.0) are placed by their parent's offset: nothing of their own to move.
+        if (!a.is_object() || !slotBone.count(a.value("slot", Str())) || isLinked(a)) continue;
         const Str b = slotBone[a.value("slot", Str())];
         if (!oldWorld.count(b) || !newWorld.count(b)) continue;
         writeT(a, rebase(b, local(readT(a)), readT(a)), fine);
@@ -793,7 +936,7 @@ void setPivot(EditResult& r, const Json& op) {
   }
   std::set<Str> slotsOn;
   for (auto& s : arr(d, "slots")) if (s.value("bone", Str()) == id) slotsOn.insert(s.value("id", Str()));
-  for (auto& a : arr(d, "attachments")) if (slotsOn.count(a.value("slot", Str()))) {
+  for (auto& a : arr(d, "attachments")) if (slotsOn.count(a.value("slot", Str())) && !isLinked(a)) {
     a["x"] = clean(num(a, "x", 0) - px); a["y"] = clean(num(a, "y", 0) - py);
   }
   // Keys are absolute local values: child offsets shift exactly; the bone's own position
@@ -969,7 +1112,7 @@ void setSlot(EditResult& r, const Json& op) {
     auto world = setupWorld(d);
     const Affine from = world[s.value("bone", Str())], inv = inverseOr(world[newBone], "새 본");
     // Attachments keep their on-screen placement under the new bone.
-    for (auto& a : arr(d, "attachments")) if (a.value("slot", Str()) == id) {
+    for (auto& a : arr(d, "attachments")) if (a.value("slot", Str()) == id && !isLinked(a)) {
       const Transform old = readT(a);
       const Transform t = decomposeNear(inv * from * local(old), old, nullptr);
       a["x"] = clean(t.x); a["y"] = clean(t.y);
@@ -986,6 +1129,7 @@ void setAttachment(EditResult& r, const Json& op) {
   slot(d, id);
   for (auto& a : arr(d, "attachments")) {
     if (a.value("slot", Str()) != id || a.value("name", Str()) != name) continue;
+    refuseLinkedPlacement(a, op);
     for (const char* k : {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "width", "height"})
       if (has(op, k)) a[k] = clean(num(op, k, 0));
     if (has(op, "imageAssetId")) a["imageAssetId"] = reqStr(op, "imageAssetId");
@@ -1002,6 +1146,7 @@ void deleteSlot(EditResult& r, const Json& op) {
   // Clipping slots whose range ended here and is now empty go with it (nothing left to clip).
   std::set<Str> ids = retargetClipEnds(r, id);
   ids.insert(id);
+  unlinkDependents(r, [&](const Str&, const Str& s, const Str&) { return ids.count(s) > 0; });  // plugin 1.18.0
   auto& slots = arr(d, "slots");
   for (const auto& s : ids) {
     slots.erase(slots.begin() + findIndex(slots, "id", s));
@@ -1869,6 +2014,10 @@ void renameSkin(EditResult& r, const Json& op, const Json& controllers) {
   if (to == from) return;
   ensureUniqueIn(d, "skins", to, "스킨");
   s["id"] = to;
+  // Linked meshes (plugin 1.18.0) naming the skin their parent lives in follow the new id.
+  auto relink = [&](Json& list) { for (auto& a : list) if (isLinked(a) && optStr(a.at("linkedMesh"), "skin") == from) a["linkedMesh"]["skin"] = to; };
+  relink(arr(d, "attachments"));
+  for (auto& sk : arr(d, "skins")) if (sk.is_object() && sk.contains("attachments") && sk["attachments"].is_array()) relink(sk["attachments"]);
   rewriteControllers(r, controllers, [&](Json& c) { return retargetLook(c, "defaultSkin", "skin", from, to); });
 }
 void deleteSkin(EditResult& r, const Json& op, const Json& controllers) {
@@ -1878,6 +2027,7 @@ void deleteSkin(EditResult& r, const Json& op, const Json& controllers) {
   const auto refs = controllerLookRefs(controllers, "defaultSkin", "skin", id);
   if (!refs.empty() && !(has(op, "force") && op.at("force").is_boolean() && op.at("force").get<bool>()))
     throw EditError("게임 연결에서 사용 중인 스킨입니다: " + refList(refs) + " (force로 연결에서도 지웁니다)");
+  unlinkDependents(r, [&](const Str& k, const Str&, const Str&) { return k == id; });  // plugin 1.18.0
   eraseFrom(d, "skins", id);
   if (!refs.empty()) rewriteControllers(r, controllers, [&](Json& c) { return retargetLook(c, "defaultSkin", "skin", id, ""); });
   else r.extra["controllerRefs"] = Json::array();
@@ -1915,6 +2065,7 @@ void setSkinAttachment(EditResult& r, const Json& op) {
     att = &list.back();
     r.extra["created"] = true;
   } else if (has(op, "imageAssetId")) (*att)["imageAssetId"] = reqStr(op, "imageAssetId");
+  refuseLinkedPlacement(*att, op);
   for (const char* k : {"x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY", "width", "height"}) if (has(op, k)) (*att)[k] = clean(num(op, k, 0));
   r.affected.push_back("skin:" + skinId);
   r.affected.push_back("slot:" + slotId);
@@ -1923,6 +2074,8 @@ void setSkinAttachment(EditResult& r, const Json& op) {
 void removeSkinAttachment(EditResult& r, const Json& op) {
   Json& d = r.data;
   const Str skinId = reqStr(op, "skin"), slotId = reqStr(op, "slot"), name = reqStr(op, "name");
+  skinAt(d, skinId);
+  unlinkDependents(r, [&](const Str& k, const Str& s, const Str& n) { return k == skinId && s == slotId && n == name; });  // plugin 1.18.0
   auto& list = arr(skinAt(d, skinId), "attachments");
   const auto before = list.size();
   list.erase(std::remove_if(list.begin(), list.end(), [&](const Json& a) { return optStr(a, "slot") == slotId && optStr(a, "name") == name; }), list.end());
@@ -2348,7 +2501,7 @@ void turnFrame(EditResult& r, const Str& id, double delta) {
   for (const auto& sl : arr(d, "slots")) if (sl.value("bone", Str()) == id) slotsOn.insert(sl.value("id", Str()));
   auto place = [&](Json& list) {
     for (auto& a : list) {
-      if (!a.is_object() || !slotsOn.count(a.value("slot", Str()))) continue;
+      if (!a.is_object() || !slotsOn.count(a.value("slot", Str())) || isLinked(a)) continue;
       double x = a.value("x", 0.0), y = a.value("y", 0.0);
       unturn(delta, x, y);
       a["x"] = fine(x);
@@ -2982,10 +3135,16 @@ Json& attachmentEntry(Json& d, const Json& op, Str& slotId, Str& name) {
   for (auto& a : list) if (optStr(a, "slot") == slotId && optStr(a, "name") == name) return a;
   throw EditError("없는 첨부입니다: " + slotId + "/" + name + (skin.empty() ? Str() : " (스킨 「" + skin + "」)"));
 }
+/** A mesh entry whose own shape/weights an op edits: linked meshes (plugin 1.18.0) are refused (their parent's). */
 Json& meshEntry(Json& d, const Json& op, Str& slotId, Str& name) {
   Json& a = attachmentEntry(d, op, slotId, name);
   if (!isMesh(a)) throw EditError("메시가 아닌 첨부입니다: " + slotId + "/" + name + " (먼저 「메시로 변환」하세요)");
+  if (isLinked(a))
+    throw EditError("링크드 메시입니다: 모양·웨이트는 부모 메시 「" + optStr(a.at("linkedMesh"), "parent") + "」에서 편집합니다(바꾸려면 「연결 끊기」).");
   return a;
+}
+void refuseLinked(const Json& a, const Str& what) {
+  if (isLinked(a)) throw EditError("링크드 메시는 " + what + " 수 없습니다(부모 「" + optStr(a.at("linkedMesh"), "parent") + "」의 모양을 씀). 먼저 「연결 끊기」를 하세요.");
 }
 std::vector<double> numbersOf(const Json& a, const char* k) {
   std::vector<double> out;
@@ -3032,20 +3191,27 @@ void normalizeWeights(std::vector<std::pair<Str, double>>& w) {
   for (const auto& x : w) sum += x.second;
   for (auto& x : w) x.second /= sum;
 }
+Json weightListJson(const std::vector<std::pair<Str, double>>& list) {
+  Json v = Json::array();
+  double rest = 1;
+  for (size_t i = 0; i < list.size(); i++) {
+    // Rounded shares, the last one takes the remainder: every vertex sums to exactly 1.
+    const double w = i + 1 == list.size() ? clean(rest) : clean(list[i].second);
+    rest -= w;
+    v.push_back({{"bone", list[i].first}, {"weight", w}});
+  }
+  return v;
+}
 void writeWeights(Json& a, const Weights& weights) {
   Json out = Json::array();
-  for (const auto& list : weights) {
-    Json v = Json::array();
-    double rest = 1;
-    for (size_t i = 0; i < list.size(); i++) {
-      // Rounded shares, the last one takes the remainder: every vertex sums to exactly 1.
-      const double w = i + 1 == list.size() ? clean(rest) : clean(list[i].second);
-      rest -= w;
-      v.push_back({{"bone", list[i].first}, {"weight", w}});
-    }
-    out.push_back(v);
-  }
+  for (const auto& list : weights) out.push_back(weightListJson(list));
   a["weights"] = out;
+}
+/** Plugin 1.18.0 weight ops: only the vertices they changed are rewritten (a brush stroke on a dense
+ *  mesh stays cheap and the rest of the document byte-identical); a mesh without weights gets all. */
+void writeWeightsAt(Json& a, const Weights& weights, const std::vector<size_t>& changed) {
+  if (!a.contains("weights") || !a.at("weights").is_array() || a.at("weights").size() != weights.size()) { writeWeights(a, weights); return; }
+  for (size_t v : changed) a["weights"][v] = weightListJson(weights[v]);
 }
 /** Edges used by exactly one triangle (the outline, holes included), as sorted index pairs. */
 std::vector<int> boundaryEdges(const std::vector<int>& tris) {
@@ -3071,6 +3237,7 @@ void convertToMesh(EditResult& r, const Json& op) {
   Json& d = r.data;
   Str slotId, name;
   Json& a = attachmentEntry(d, op, slotId, name);
+  refuseLinked(a, "격자 메시로 바꿀");
   if (isClipping(a)) throw EditError("클리핑 첨부는 메시로 바꿀 수 없습니다(그림이 없음). 모양은 「모양 다시 그리기」로 바꿉니다.");
   if (isBox(a) || isPoint(a)) throw EditError("판정 상자·기준점은 메시로 바꿀 수 없습니다(그림이 없음).");
   const int64_t rows = has(op, "rows") ? int64_t(num(op, "rows", 4)) : 4, cols = has(op, "cols") ? int64_t(num(op, "cols", 4)) : 4;
@@ -3135,7 +3302,13 @@ void convertToMesh(EditResult& r, const Json& op) {
 void convertToRegion(EditResult& r, const Json& op) {
   Json& d = r.data;
   Str slotId, name;
-  Json& a = meshEntry(d, op, slotId, name);
+  Json& a = attachmentEntry(d, op, slotId, name);
+  if (!isMesh(a)) throw EditError("메시가 아닌 첨부입니다: " + slotId + "/" + name);
+  // Plugin 1.18.0: its linked meshes keep their shape as copies; a linked mesh itself takes its
+  // parent's placement first, so the picture stays where it was drawn.
+  const Str skin = optStr(op, "skin");
+  unlinkDependents(r, [&](const Str& k, const Str& s, const Str& n) { return k == skin && s == slotId && n == name; });
+  if (isLinked(a)) unlinkCopy(d, a);
   for (const char* k : {"type", "vertices", "uvs", "triangles", "hull", "edges", "weights"}) a.erase(k);
   r.extra["keys"] = purgeDeform(r);
   r.affected.push_back("slot:" + slotId);
@@ -3508,6 +3681,7 @@ void outlineMesh(EditResult& r, const Json& op, const std::vector<double>& hull)
   Json& d = r.data;
   Str slotId, name;
   Json& a = attachmentEntry(d, op, slotId, name);
+  refuseLinked(a, "윤곽으로 다시 만들");
   const double w = num(a, "width", 0), h = num(a, "height", 0);
   if (!(w > 0 && h > 0)) throw EditError("그림 크기(width, height)가 없는 첨부입니다.");
   MeshShape m;
@@ -4022,6 +4196,7 @@ void setSequence(EditResult& r, const Json& op) {
   Str slotId, name;
   Json& a = attachmentEntry(d, op, slotId, name);
   if (isPictureless(a)) throw EditError("그림이 없는 첨부(클리핑·판정 상자·기준점)에는 시퀀스를 쓸 수 없습니다.");
+  refuseLinked(a, "이미지 시퀀스를 가질");
   const bool clear = !has(op, "frames") || (op.at("frames").is_array() && op.at("frames").empty());
   if (clear) {
     if (!a.contains("sequence")) throw EditError("시퀀스가 없는 첨부입니다: " + slotId + "/" + name);
@@ -4053,6 +4228,463 @@ void setSequence(EditResult& r, const Json& op) {
   }
   if (clamped) warn(r, "ANIM_SEQUENCE_INDEX_CLAMPED", "", "프레임 수가 줄어 시퀀스 키 " + std::to_string(clamped) + "개를 마지막 프레임으로 맞췄습니다.");
   if (removed) warn(r, "ANIM_SEQUENCE_KEYS_REMOVED", "", "시퀀스가 없어져 시퀀스 키 " + std::to_string(removed) + "개를 지웠습니다.");
+  r.affected.push_back("slot:" + slotId);
+}
+
+// ---- Weight painting (plugin 1.18.0) ----
+/** Weight/link ops name the attachment `name`, or `attachment` (the LLM-friendly alias). */
+Json withName(const Json& op) {
+  Json o = op;
+  if (!has(o, "name") && has(o, "attachment")) o["name"] = o.at("attachment");
+  return o;
+}
+using Shares = std::vector<std::pair<Str, double>>;
+/** How painted / mirrored / copied weights settle per vertex (op fields maxInfluences, prune, locked). */
+struct WeightRules { size_t maxInfluences = MAX_INFLUENCES; double prune = 0.01; std::set<Str> locked; };
+WeightRules weightRules(Json& d, const Json& op) {
+  WeightRules w;
+  if (has(op, "maxInfluences")) {
+    const double m = num(op, "maxInfluences", 4);
+    if (m != std::floor(m) || m < 1 || m > double(MAX_INFLUENCES)) throw EditError("maxInfluences(정점당 본 수)는 1..4 정수입니다.");
+    w.maxInfluences = size_t(m);
+  }
+  if (has(op, "prune")) {
+    w.prune = num(op, "prune", 0.01);
+    if (w.prune < 0 || w.prune > 0.5) throw EditError("prune(지울 작은 웨이트의 기준)은 0..0.5입니다.");
+  }
+  if (has(op, "locked")) {
+    if (!op.at("locked").is_array()) throw EditError("locked는 잠근 본 ID 배열입니다.");
+    for (const auto& b : op.at("locked")) { const Str id = b.is_string() ? b.get<Str>() : Str(); bone(d, id); w.locked.insert(id); }
+  }
+  return w;
+}
+/**
+ * Normalise one vertex under `rules`: locked bones keep their shares, the unlocked ones scale to
+ * fill the rest (the locked ones alone over 1, or alone left, are normalised among themselves);
+ * unlocked shares below `prune` go (never the last one that still has to fill), then the
+ * smallest unlocked shares beyond maxInfluences (locked ones only once no unlocked is left).
+ * Largest first. false = nothing unlocked can take the rest (the caller keeps the old shares).
+ */
+bool settle(Shares& w, const WeightRules& rules) {
+  Shares m;
+  for (const auto& x : w) {
+    if (!(x.second > 0)) continue;
+    auto it = std::find_if(m.begin(), m.end(), [&](const auto& y) { return y.first == x.first; });
+    if (it == m.end()) m.push_back(x); else it->second += x.second;
+  }
+  auto locked = [&](const Str& b) { return rules.locked.count(b) > 0; };
+  auto freeCount = [&] { size_t n = 0; for (const auto& x : m) n += !locked(x.first); return n; };
+  auto rescale = [&]() -> bool {
+    double ls = 0, fs = 0;
+    for (const auto& x : m) (locked(x.first) ? ls : fs) += x.second;
+    if (fs <= 1e-12 || ls >= 1) {
+      if (ls < 1 - 1e-6) return false;
+      m.erase(std::remove_if(m.begin(), m.end(), [&](const auto& x) { return !locked(x.first); }), m.end());
+      for (auto& x : m) x.second /= ls;
+      return true;
+    }
+    for (auto& x : m) if (!locked(x.first)) x.second *= (1 - ls) / fs;
+    return true;
+  };
+  if (m.empty() || !rescale()) return false;
+  auto smallestFree = [&]() {
+    size_t best = m.size();
+    for (size_t i = 0; i < m.size(); i++) if (!locked(m[i].first) && (best == m.size() || m[i].second < m[best].second)) best = i;
+    return best;
+  };
+  for (;;) {
+    const size_t i = smallestFree();
+    if (i == m.size() || !(m[i].second < rules.prune) || freeCount() < 2) break;
+    m.erase(m.begin() + long(i));
+    if (!rescale()) return false;
+  }
+  while (m.size() > rules.maxInfluences) {
+    const size_t i = smallestFree();
+    if (i != m.size() && freeCount() > 1) {
+      m.erase(m.begin() + long(i));
+      if (!rescale()) return false;
+      continue;
+    }
+    // Over the limit with locked shares only (plus at most the one unlocked share that fills the
+    // rest): the smallest locked share goes and what is left is normalised plainly.
+    size_t j = m.size();
+    for (size_t q = 0; q < m.size(); q++) if (locked(m[q].first) && (j == m.size() || m[q].second < m[j].second)) j = q;
+    m.erase(m.begin() + long(j == m.size() ? i : j));
+    double sum = 0;
+    for (const auto& x : m) sum += x.second;
+    for (auto& x : m) x.second /= sum;
+  }
+  std::stable_sort(m.begin(), m.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+  w = m;
+  return true;
+}
+/** Setup-pose rig positions of mesh entry `a`'s vertices (its own geometry; slot `slotId`). */
+std::vector<double> setupPositions(const Json& d, const Json& a, const Str& slotId, std::map<Str, Affine>& world) {
+  Str slotBone;
+  for (const auto& s : listOr(d, "slots")) if (optStr(s, "id") == slotId) slotBone = optStr(s, "bone");
+  const Affine placed = world[slotBone] * Affine::compose(num(a, "x", 0), num(a, "y", 0), num(a, "rotation", 0), num(a, "scaleX", 1), num(a, "scaleY", 1)) *
+                        Affine::compose(-num(a, "pivotX", 0.5) * num(a, "width", 0), -num(a, "pivotY", 0.5) * num(a, "height", 0), 0, 1, 1);
+  std::vector<double> xy = numbersOf(a, "vertices");
+  for (size_t i = 0; i + 1 < xy.size(); i += 2) placed.apply(xy[i], xy[i + 1], xy[i], xy[i + 1]);
+  return xy;
+}
+/** Shares blended from mesh `weights` at a located point (barycentric of its triangle). */
+Shares blendAt(const Weights& weights, const Origin& o, const std::function<Str(const Str&)>& rename) {
+  Shares out;
+  for (int k = 0; k < 3; k++) {
+    if (o.v[k] < 0 || size_t(o.v[k]) >= weights.size() || !(o.w[k] > 0)) continue;
+    for (const auto& [b, w] : weights[size_t(o.v[k])]) {
+      const Str to = rename ? rename(b) : b;
+      auto it = std::find_if(out.begin(), out.end(), [&](const auto& y) { return y.first == to; });
+      if (it == out.end()) out.push_back({to, w * o.w[k]}); else it->second += w * o.w[k];
+    }
+  }
+  return out;
+}
+/** Locked bones keep the vertex's own shares when weights are replaced by mirrored / copied ones. */
+void keepLocked(Shares& next, const Shares& own, const WeightRules& rules) {
+  next.erase(std::remove_if(next.begin(), next.end(), [&](const auto& x) { return rules.locked.count(x.first) > 0; }), next.end());
+  for (const auto& x : own) if (rules.locked.count(x.first)) next.push_back(x);
+}
+/**
+ * paintWeights {slot, name? | attachment?, skin?, mode? (add | subtract | replace (default) |
+ * smooth), vertices, amounts? (per listed vertex 0..1: the brush falloff), strength? (0..1, 1),
+ * bone (not smooth), weight? (replace target 0..1, 1), locked?, maxInfluences? (4), prune? (0.01)}:
+ * one weight-brush stroke. Per vertex a = strength · amount: add raises `bone`'s share by a,
+ * subtract lowers it by a, replace moves it toward `weight` by a, the other unlocked bones rescale
+ * to fill the rest (a vertex with no other unlocked bone hands it to the slot bone); smooth moves
+ * every share toward the mean of the vertex's mesh neighbours (values before the stroke) by a.
+ * Then settle(): locked bones keep their shares, prune, at most maxInfluences, sum 1. A locked
+ * `bone` cannot be painted. extra.vertices = changed vertices, extra.skipped = unchangeable ones.
+ */
+void paintWeights(EditResult& r, const Json& opIn) {
+  const Json op = withName(opIn);
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const size_t n = listOr(a, "vertices").size() / 2;
+  const Str mode = optStr(op, "mode", "replace");
+  if (mode != "add" && mode != "subtract" && mode != "replace" && mode != "smooth") throw EditError("mode는 add(더하기), subtract(빼기), replace(바꾸기), smooth(부드럽게) 가운데 하나입니다.");
+  const WeightRules rules = weightRules(d, op);
+  const std::vector<size_t> list = vertexList(op, n, true);
+  std::vector<double> amounts(list.size(), 1.0);
+  if (has(op, "amounts")) {
+    if (!op.at("amounts").is_array() || op.at("amounts").size() != list.size()) throw EditError("amounts는 고른 정점마다 0..1 값 하나씩입니다.");
+    for (size_t i = 0; i < list.size(); i++) {
+      const Json& v = op.at("amounts")[i];
+      if (!v.is_number() || !(v.get<double>() >= 0 && v.get<double>() <= 1)) throw EditError("amounts 값은 0..1입니다.");
+      amounts[i] = v.get<double>();
+    }
+  }
+  const double strength = num(op, "strength", 1);
+  if (strength < 0 || strength > 1) throw EditError("strength(세기)는 0..1입니다.");
+  const Str slotBone = optStr(slot(d, slotId), "bone");
+  const Weights before = weightsOf(d, a, n);
+  Weights weights = before;
+  std::vector<size_t> touched;
+  size_t skipped = 0;
+  if (mode == "smooth") {
+    std::vector<std::set<size_t>> near(n);
+    const std::vector<int> tris = intsOf(a, "triangles");
+    for (size_t t = 0; t + 2 < tris.size(); t += 3)
+      for (int k = 0; k < 3; k++) {
+        const int u = tris[t + size_t(k)], v = tris[t + size_t((k + 1) % 3)];
+        if (u < 0 || v < 0 || size_t(u) >= n || size_t(v) >= n) continue;
+        near[size_t(u)].insert(size_t(v));
+        near[size_t(v)].insert(size_t(u));
+      }
+    for (size_t i = 0; i < list.size(); i++) {
+      const size_t v = list[i];
+      const double t = strength * amounts[i];
+      if (near[v].empty() || !(t > 0)) continue;
+      Shares next;
+      auto add = [&](const Str& b, double w) {
+        auto it = std::find_if(next.begin(), next.end(), [&](const auto& y) { return y.first == b; });
+        if (it == next.end()) next.push_back({b, w}); else it->second += w;
+      };
+      for (const auto& [b, w] : before[v]) add(b, rules.locked.count(b) ? w : (1 - t) * w);
+      for (size_t u : near[v])
+        for (const auto& [b, w] : before[u]) if (!rules.locked.count(b)) add(b, t * w / double(near[v].size()));
+      if (settle(next, rules)) { weights[v] = next; touched.push_back(v); } else skipped++;
+    }
+  } else {
+    const Str b = reqStr(op, "bone");
+    bone(d, b);
+    if (rules.locked.count(b)) throw EditError("잠긴 본은 칠할 수 없습니다: " + b + " (잠금을 풀거나 다른 본을 고르세요)");
+    const double target = num(op, "weight", 1);
+    if (target < 0 || target > 1) throw EditError("weight(바꿀 웨이트)는 0..1입니다.");
+    for (size_t i = 0; i < list.size(); i++) {
+      const size_t v = list[i];
+      double cur = 0, lockedSum = 0, others = 0;
+      for (const auto& [x, w] : before[v]) (x == b ? cur : rules.locked.count(x) ? lockedSum : others) += w;
+      const double t = strength * amounts[i];
+      double next = mode == "add" ? cur + t : mode == "subtract" ? cur - t : cur + t * (target - cur);
+      next = std::clamp(next, 0.0, std::max(0.0, 1 - lockedSum));
+      if (std::fabs(next - cur) < 1e-12) continue;
+      Shares out;
+      for (const auto& [x, w] : before[v]) if (rules.locked.count(x)) out.push_back({x, w});
+      const double rest = 1 - lockedSum - next;
+      if (others > 1e-12) {
+        for (const auto& [x, w] : before[v]) if (x != b && !rules.locked.count(x)) out.push_back({x, w * rest / others});
+      } else if (rest > 1e-12) {
+        // Nothing else unlocked holds this vertex: the rest goes to the slot bone (the 1.4 brush rule).
+        if (slotBone == b || rules.locked.count(slotBone)) { skipped++; continue; }
+        out.push_back({slotBone, rest});
+      }
+      if (next > 0) out.push_back({b, next});
+      if (settle(out, rules)) { weights[v] = out; touched.push_back(v); } else skipped++;
+    }
+  }
+  writeWeightsAt(a, weights, touched);
+  r.extra["vertices"] = touched.size();
+  r.extra["skipped"] = skipped;
+  r.affected.push_back("slot:" + slotId);
+}
+/** normalizeWeights {slot, name? | attachment?, skin?, vertices?, maxInfluences? (4), prune? (0.01),
+ *  locked?}: settle() every listed vertex (all by default): extra.pruned = shares removed. */
+void normalizeWeightsOp(EditResult& r, const Json& opIn) {
+  const Json op = withName(opIn);
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  if (!a.contains("weights")) throw EditError("웨이트가 없는 메시입니다(먼저 「자동 웨이트」를 주거나 칠하세요).");
+  const size_t n = listOr(a, "vertices").size() / 2;
+  const WeightRules rules = weightRules(d, op);
+  Weights weights = weightsOf(d, a, n);
+  size_t pruned = 0;
+  std::vector<size_t> touched;
+  for (size_t v : vertexList(op, n, false)) {
+    Shares w = weights[v];
+    if (!settle(w, rules)) continue;
+    pruned += weights[v].size() > w.size() ? weights[v].size() - w.size() : 0;
+    if (w != weights[v]) touched.push_back(v);
+    weights[v] = w;
+  }
+  // Every listed vertex is rewritten (its rounding settles too), the others stay as they are.
+  writeWeightsAt(a, weights, vertexList(op, n, false));
+  r.extra["pruned"] = pruned;
+  r.extra["vertices"] = touched.size();
+  r.affected.push_back("slot:" + slotId);
+}
+}  // namespace
+Str mirrorBoneId(const Str& id) {
+  // Token pairs first (arm-l, l-arm, leg-left, ruka-levyy), then "left"/"right" inside the id.
+  static const std::vector<std::pair<Str, Str>> pairs = {{"left", "right"}, {"l", "r"}, {"lt", "rt"}, {"levyy", "pravyy"}, {"levyj", "pravyj"},
+                                                         {"levy", "pravy"}, {"levaya", "pravaya"}, {"levoe", "pravoe"}, {"lev", "prav"}};
+  std::vector<Str> tokens(1);
+  for (char c : id) { if (c == '-') tokens.emplace_back(); else tokens.back() += c; }
+  bool swapped = false;
+  for (auto& t : tokens)
+    for (const auto& [l, rr] : pairs) {
+      if (t == l) { t = rr; swapped = true; break; }
+      if (t == rr) { t = l; swapped = true; break; }
+    }
+  if (swapped) {
+    Str out;
+    for (size_t i = 0; i < tokens.size(); i++) out += (i ? "-" : "") + tokens[i];
+    return out;
+  }
+  for (const auto& [l, rr] : {std::pair<Str, Str>{"left", "right"}, std::pair<Str, Str>{"right", "left"}})
+    if (const size_t at = id.find(l); at != Str::npos) return id.substr(0, at) + rr + id.substr(at + l.size());
+  return id;
+}
+namespace {
+/**
+ * mirrorWeights {slot, name? | attachment?, skin?, axis? ("x" = left ↔ right across a vertical
+ * line, "y" = top ↔ bottom), center? (rig px on that axis, default the mesh's setup bounding-box
+ * centre), from? (source side: left | right for x, top | bottom for y; default left / top), map?
+ * ({bone: bone}, before the automatic names; each pair works both ways), tolerance? (px, 0.5),
+ * locked?, maxInfluences?, prune?}: every vertex beyond `tolerance` on the other side takes the
+ * weights at its mirror point (barycentric in the setup mesh, the nearest triangle outside) with
+ * each bone renamed to its counterpart (map, else mirrorBoneId when that bone exists, else the
+ * bone itself). Locked bones keep the vertex's own shares. extra.vertices, extra.mapping (bone ->
+ * counterpart used), extra.unmapped (bones without a counterpart).
+ */
+void mirrorWeights(EditResult& r, const Json& opIn) {
+  const Json op = withName(opIn);
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  const Str axis = optStr(op, "axis", "x");
+  if (axis != "x" && axis != "y") throw EditError("axis는 x(좌우) 또는 y(위아래)입니다.");
+  const Str from = optStr(op, "from", axis == "x" ? "left" : "top");
+  if (axis == "x" ? from != "left" && from != "right" : from != "top" && from != "bottom")
+    throw EditError(axis == "x" ? "from은 left 또는 right입니다(웨이트를 가져올 쪽)." : "from은 top 또는 bottom입니다(웨이트를 가져올 쪽).");
+  const double tolerance = num(op, "tolerance", 0.5);
+  if (tolerance < 0 || tolerance > 10000) throw EditError("tolerance는 0 이상의 px입니다.");
+  std::map<Str, Str> map;
+  if (has(op, "map")) {
+    if (!op.at("map").is_object()) throw EditError("map은 {본: 짝 본} 객체입니다.");
+    for (auto it = op.at("map").begin(); it != op.at("map").end(); ++it) {
+      bone(d, it.key());
+      const Str to = it.value().is_string() ? it.value().get<Str>() : Str();
+      bone(d, to);
+      map[it.key()] = to;
+    }
+    for (const auto& [x, y] : std::map<Str, Str>(map)) if (!map.count(y)) map[y] = x;
+  }
+  const size_t n = listOr(a, "vertices").size() / 2;
+  auto world = setupWorld(d);
+  const std::vector<double> xy = setupPositions(d, a, slotId, world);
+  const std::vector<int> tris = intsOf(a, "triangles");
+  const size_t k = axis == "x" ? 0 : 1;
+  double lo = std::numeric_limits<double>::infinity(), hi = -lo;
+  for (size_t v = 0; v < n; v++) { lo = std::min(lo, xy[2 * v + k]); hi = std::max(hi, xy[2 * v + k]); }
+  const double center = has(op, "center") ? num(op, "center", 0) : (lo + hi) / 2;
+  const double sign = from == "left" || from == "top" ? 1 : -1;  // the target side lies at sign · (p - center) > tolerance
+  std::map<Str, Str> used;
+  std::set<Str> unmapped;
+  auto counterpart = [&](const Str& b) -> Str {
+    Str to = b;
+    if (auto it = map.find(b); it != map.end()) to = it->second;
+    else if (const Str m = mirrorBoneId(b); m != b && findIndex(listOr(d, "bones"), "id", m) >= 0) to = m;
+    else unmapped.insert(b);
+    used[b] = to;
+    return to;
+  };
+  const WeightRules rules = weightRules(d, op);
+  const Weights before = weightsOf(d, a, n);
+  Weights weights = before;
+  std::vector<size_t> touched;
+  for (size_t v = 0; v < n; v++) {
+    const double off = xy[2 * v + k] - center;
+    if (!(sign * off > tolerance)) continue;
+    double p[2] = {xy[2 * v], xy[2 * v + 1]};
+    p[k] = center - off;
+    Shares next = blendAt(before, locateIn(xy, tris, p[0], p[1]), counterpart);
+    keepLocked(next, before[v], rules);
+    if (settle(next, rules)) { weights[v] = next; touched.push_back(v); }
+  }
+  writeWeightsAt(a, weights, touched);
+  const size_t changed = touched.size();
+  Json mapping = Json::object();
+  for (const auto& [x, y] : used) mapping[x] = y;
+  r.extra["vertices"] = changed;
+  r.extra["center"] = clean(center);
+  r.extra["mapping"] = mapping;
+  r.extra["unmapped"] = std::vector<Str>(unmapped.begin(), unmapped.end());
+  r.affected.push_back("slot:" + slotId);
+}
+/**
+ * copyWeights {slot, name? | attachment?, skin?, from: {slot, name? | attachment?, skin?},
+ * vertices?, locked?, maxInfluences?, prune?}: every listed vertex (all by default) takes the
+ * source mesh's weights at the same setup-pose position (barycentric inside its triangles, the
+ * nearest triangle outside). A linked source reads its parent's; an unweighted one is 100 % its
+ * slot bone. Locked bones keep the vertex's own shares.
+ */
+void copyWeights(EditResult& r, const Json& opIn) {
+  const Json op = withName(opIn);
+  Json& d = r.data;
+  if (!has(op, "from") || !op.at("from").is_object()) throw EditError("from = {slot, name?, skin?}(웨이트를 가져올 메시)이 필요합니다.");
+  const Json fromOp = withName(op.at("from"));
+  Str fromSlot, fromName;
+  const Json source = attachmentEntry(d, fromOp, fromSlot, fromName);  // copied: the target changes below
+  if (!isMesh(source)) throw EditError("웨이트를 가져올 첨부가 메시가 아닙니다: " + fromSlot + "/" + fromName);
+  const Json* rootPtr = linkedRoot(d, source);
+  if (!rootPtr) throw EditError("웨이트를 가져올 링크드 메시의 부모를 찾을 수 없습니다.");
+  const Json root = *rootPtr;
+  Str slotId, name;
+  Json& a = meshEntry(d, op, slotId, name);
+  if (slotId == fromSlot && name == fromName && optStr(op, "skin") == optStr(fromOp, "skin")) throw EditError("같은 메시에서는 가져올 수 없습니다.");
+  auto world = setupWorld(d);
+  // A weighted source sits where its binds put it (its own slot); unweighted, the showing slot places it.
+  const Str sourceSlot = root.contains("weights") ? optStr(root, "slot") : fromSlot;
+  const std::vector<double> src = setupPositions(d, root, sourceSlot, world), xy = setupPositions(d, a, slotId, world);
+  const std::vector<int> tris = intsOf(root, "triangles");
+  Json rootForWeights = root;
+  rootForWeights["slot"] = sourceSlot;
+  const Weights sourceWeights = weightsOf(d, rootForWeights, src.size() / 2);
+  const size_t n = xy.size() / 2;
+  const WeightRules rules = weightRules(d, op);
+  const Weights before = weightsOf(d, a, n);
+  Weights weights = before;
+  std::vector<size_t> touched;
+  for (size_t v : vertexList(op, n, false)) {
+    Shares next = blendAt(sourceWeights, locateIn(src, tris, xy[2 * v], xy[2 * v + 1]), nullptr);
+    keepLocked(next, before[v], rules);
+    if (settle(next, rules)) { weights[v] = next; touched.push_back(v); }
+  }
+  writeWeightsAt(a, weights, touched);
+  r.extra["vertices"] = touched.size();
+  r.affected.push_back("slot:" + slotId);
+}
+
+// ---- Linked meshes (plugin 1.18.0) ----
+/**
+ * linkMesh {slot, name? | attachment?, skin?, parent: "<slot>/<name>", parentSkin?, deform? (true),
+ * imageAssetId?, width?, height?}: the attachment (slot, name) of the default list (or skin
+ * `skin`) becomes a linked mesh of the parent mesh (default list, or skin `parentSkin`): it keeps
+ * its picture and drops its own shape, weights and placement. A missing entry is created from
+ * imageAssetId / width / height (an outfit variant of a mesh). Refused: a parent that is not a mesh
+ * (or a sequence), the attachment itself, a picture whose aspect differs from the parent's by more
+ * than 2 %, sequences, pictureless attachments; a link that closes a cycle is refused by validation.
+ */
+void linkMesh(EditResult& r, const Json& opIn) {
+  const Json op = withName(opIn);
+  Json& d = r.data;
+  const Str slotId = reqStr(op, "slot");
+  const Json& sl = slot(d, slotId);
+  const Str skin = optStr(op, "skin"), name = has(op, "name") ? reqStr(op, "name") : optStr(sl, "attachment");
+  if (name.empty()) throw EditError("첨부 이름(name)이 필요합니다(이 조각에는 기본 첨부가 없습니다).");
+  if (!validName(name)) throw EditError("첨부 이름 형식이 올바르지 않습니다: " + name);
+  const Str parentRef = reqStr(op, "parent"), parentSkin = optStr(op, "parentSkin");
+  Str ps, pn;
+  if (!splitLinkedParent(parentRef, ps, pn)) throw EditError("parent는 \"슬롯 ID/첨부 이름\"입니다: " + parentRef);
+  const Json* parentList = listNamed(d, parentSkin);
+  if (!parentList) throw EditError("없는 스킨입니다: " + parentSkin);
+  const Json* parent = entryIn(parentList, ps, pn);
+  const Str where = parentRef + (parentSkin.empty() ? Str() : " (스킨 「" + parentSkin + "」)");
+  if (!parent) throw EditError("없는 부모 메시입니다: " + where);
+  if (!isMesh(*parent)) throw EditError("부모가 메시가 아닙니다: " + where + " (먼저 「메시로 변환」하세요)");
+  if (parent->contains("sequence")) throw EditError("이미지 시퀀스 메시는 부모가 될 수 없습니다: " + where);
+  if (skin == parentSkin && slotId == ps && name == pn) throw EditError("자기 자신에게는 연결할 수 없습니다.");
+  const Json* root = linkedRoot(d, *parent);
+  if (!root) throw EditError("부모 메시의 연결이 끊겨 있습니다: " + where);
+  const double rw = num(*root, "width", 0), rh = num(*root, "height", 0);  // read before the list may grow
+  Json& list = skin.empty() ? arr(d, "attachments") : arr(skinAt(d, skin), "attachments");
+  Json* a = nullptr;
+  for (auto& x : list) if (optStr(x, "slot") == slotId && optStr(x, "name") == name) a = &x;
+  auto size = [&](const char* k) {
+    const double v = num(op, k, 0);
+    if (!(v > 0)) throw EditError(Str(k) + "(그림 크기)는 0보다 커야 합니다.");
+    return clean(v);
+  };
+  if (!a) {
+    const Str asset = reqStr(op, "imageAssetId");
+    const double w = size("width"), h = size("height");
+    list.push_back(Json{{"slot", slotId}, {"name", name}, {"imageAssetId", asset}, {"width", w}, {"height", h}});
+    a = &list.back();
+    r.extra["created"] = true;
+  } else {
+    if (isPictureless(*a)) throw EditError("그림이 없는 첨부(클리핑·판정 상자·기준점)는 링크드 메시가 될 수 없습니다.");
+    if (a->contains("sequence")) throw EditError("이미지 시퀀스 첨부는 링크드 메시가 될 수 없습니다(먼저 시퀀스를 지우세요).");
+    if (has(op, "imageAssetId")) (*a)["imageAssetId"] = reqStr(op, "imageAssetId");
+    for (const char* k : {"width", "height"}) if (has(op, k)) (*a)[k] = size(k);
+  }
+  const double w = num(*a, "width", 0), h = num(*a, "height", 0);
+  if (rw > 0 && rh > 0 && w > 0 && h > 0 && std::fabs((w / h) / (rw / rh) - 1) > 0.02)
+    throw EditError("그림 비율(" + std::to_string(int(std::lround(w))) + "×" + std::to_string(int(std::lround(h))) + ")이 부모 메시(" + std::to_string(int(std::lround(rw))) + "×" +
+                    std::to_string(int(std::lround(rh))) + ")와 다릅니다. 같은 비율의 그림만 링크드 메시가 될 수 있습니다.");
+  for (const char* k : {"vertices", "uvs", "triangles", "weights", "hull", "edges", "x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY"}) a->erase(k);
+  (*a)["type"] = "mesh";
+  Json link = {{"parent", ps + "/" + pn}};
+  if (!parentSkin.empty()) link["skin"] = parentSkin;
+  if (has(op, "deform") && op.at("deform") == false) link["deform"] = false;
+  (*a)["linkedMesh"] = link;
+  r.extra["keys"] = purgeDeform(r);
+  r.extra["attachment"] = name;
+  r.extra["parent"] = ps + "/" + pn;
+  r.affected.push_back("slot:" + slotId);
+  if (!skin.empty()) r.affected.push_back("skin:" + skin);
+}
+/** unlinkMesh {slot, name? | attachment?, skin?}: the linked mesh becomes an independent copy of
+ *  the shape it draws (unlinkCopy: geometry, weights, placement; inherited deform keys copied). */
+void unlinkMesh(EditResult& r, const Json& opIn) {
+  const Json op = withName(opIn);
+  Str slotId, name;
+  Json& a = attachmentEntry(r.data, op, slotId, name);
+  if (!isLinked(a)) throw EditError("링크드 메시가 아닙니다: " + slotId + "/" + name);
+  if (!unlinkCopy(r.data, a)) throw EditError("부모 메시를 찾을 수 없어 연결을 끊을 수 없습니다.");
   r.affected.push_back("slot:" + slotId);
 }
 
@@ -4094,6 +4726,8 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"removeMeshVertex", removeMeshVertex}, {"retriangulate", retriangulate},
     {"addClipping", addClipping}, {"setClipping", setClipping}, {"setSequence", setSequence},
     {"addBoundingBox", addBoundingBox}, {"setBoundingBox", setBoundingBox}, {"addPoint", addPoint}, {"setPoint", setPoint},
+    {"paintWeights", paintWeights}, {"normalizeWeights", normalizeWeightsOp}, {"mirrorWeights", mirrorWeights}, {"copyWeights", copyWeights},
+    {"linkMesh", linkMesh}, {"unlinkMesh", unlinkMesh},
     {"addMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, true); }},
     {"removeMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, false); }},
   };

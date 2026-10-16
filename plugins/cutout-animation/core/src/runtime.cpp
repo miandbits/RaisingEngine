@@ -974,7 +974,8 @@ Affine attachmentPlacement(const Attachment& a) {
   return Affine::compose(o.x, o.y, o.rotation, o.scaleX, o.scaleY) * Affine::compose(-a.pivotX * a.width, -a.pivotY * a.height, 0, 1, 1);
 }
 const std::vector<double>* deformOf(const Pose& pose, int slot, const Attachment& a) {
-  auto it = pose.deform.find({slot, a.name});
+  // Linked meshes (plugin 1.18.0) inheriting deform read the parent's track (deformName).
+  auto it = pose.deform.find({slot, a.deformName.empty() ? a.name : a.deformName});
   return it != pose.deform.end() && it->second.size() == a.vertices.size() ? &it->second : nullptr;
 }
 std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, const Attachment& a) {

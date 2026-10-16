@@ -472,6 +472,7 @@ Json outlineParityScript() {
 #include "golden-1-15.hpp"
 #include "constraint-tests.hpp"
 #include "box-tests.hpp"
+#include "weight-tests.hpp"
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--physics-parity") {
@@ -497,6 +498,15 @@ int main(int argc, char** argv) {
     Host host;
     Json replies = Json::array();
     const Json script = boxes::parityScript();
+    for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--weight-parity") {
+    // Native reference for painted weights and linked meshes at two pacings (plugin 1.18.0).
+    Host host;
+    Json replies = Json::array();
+    const Json script = weights::parityScript();
     for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
     std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
     return 0;
@@ -3195,6 +3205,7 @@ int main(int argc, char** argv) {
   golden115::run();
   xform::run();
   boxes::run();
+  weights::run();
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;

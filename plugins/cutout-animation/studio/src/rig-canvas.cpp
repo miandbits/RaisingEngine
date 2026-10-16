@@ -4,6 +4,8 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QGuiApplication>
+#include <QToolTip>
 #include <QWheelEvent>
 #include <algorithm>
 #include <cmath>
@@ -26,6 +28,8 @@ constexpr double VERTEX_RADIUS = 7, IK_RADIUS = 12, BONE_RADIUS = 8, SELECTED_RA
 // Bone bodies (plugin 1.5.0): a press within BODY_RADIUS of the origin->tip line (or inside the
 // drawn diamond) grabs the body; shorter than MIN_BODY on screen a bone is drawn as a point.
 constexpr double BODY_RADIUS = 4, MIN_BODY = 6;
+/** Weight heat map (blue 0 -> red 1). */
+QColor heatColor(double w, int alpha) { w = std::clamp(w, 0.0, 1.0); return QColor::fromHsvF((1 - w) * 0.66, 0.85, 0.95, alpha / 255.0); }
 double segmentDistance(const QPointF& p, const QPointF& a, const QPointF& b) {
   const QPointF ab = b - a;
   const double len2 = QPointF::dotProduct(ab, ab);
@@ -157,6 +161,10 @@ bool RigCanvas::meshPress(QMouseEvent* e) {
   if (meshMode_ == MeshWeights) {
     meshGesture_ = MeshGesture::Paint;
     meshStroke_.clear();
+    meshReach_.clear();
+    strokeModifiers_ = e->modifiers() & (Qt::ShiftModifier | Qt::ControlModifier);
+    hoverVertex_ = -1;
+    QToolTip::hideText();
     meshMove(e->position());
     return true;
   }
@@ -182,18 +190,32 @@ bool RigCanvas::meshPress(QMouseEvent* e) {
 }
 void RigCanvas::meshMove(const QPointF& w) {
   hover_ = w;
-  if (meshGesture_ == MeshGesture::None) { update(); return; }
+  if (meshGesture_ == MeshGesture::None) { updateWeightHover(w); update(); return; }
   meshCurrent_ = w;
   if ((w - meshStart_).manhattanLength() > 2) meshMoved_ = true;
   if (meshGesture_ == MeshGesture::Vertices && meshMoved_ && onMeshDrag) onMeshDrag(widgetToRig(w) - widgetToRig(meshStart_), false);
   if (meshGesture_ == MeshGesture::Paint) {
+    // Each vertex keeps its closest approach to the brush centre over the stroke (the falloff):
+    // a stroke paints every vertex once, at most as strongly as the brush came near it.
     const QVector<QPointF> pts = meshVertices();
-    const int before = int(meshStroke_.size());
+    bool changed = false;
     for (int i = 0; i < pts.size(); i++) {
       const QPointF o = rigToWidget(pts[i]);
-      if (std::hypot(o.x() - w.x(), o.y() - w.y()) <= brushRadius_) meshStroke_.insert(i);
+      const double d = std::hypot(o.x() - w.x(), o.y() - w.y());
+      if (d > brushRadius_) continue;
+      const double reach = brushRadius_ > 0 ? d / brushRadius_ : 0;
+      auto it = meshReach_.find(i);
+      if (it == meshReach_.end()) { meshReach_.insert(i, reach); meshStroke_.insert(i); changed = true; }
+      else if (reach < *it - 0.02) { *it = reach; changed = true; }  // 2 %: no preview for sub-pixel creeps
     }
-    if (int(meshStroke_.size()) != before && onMeshPaint) onMeshPaint(QVector<int>(meshStroke_.begin(), meshStroke_.end()), false);
+    if (changed && onMeshPaint) {
+      PaintStroke s;
+      for (int v : meshStroke_) s.vertices << v;
+      std::sort(s.vertices.begin(), s.vertices.end());
+      for (int v : s.vertices) s.reach << meshReach_.value(v);
+      s.modifiers = strokeModifiers_;
+      onMeshPaint(s, false);
+    }
   }
   update();
 }
@@ -216,10 +238,14 @@ void RigCanvas::meshRelease(const QPointF& w) {
     }
     onMeshSelect(inside, meshAdd_ && meshMoved_);
   } else if (g == MeshGesture::Paint) {
-    QVector<int> stroke(meshStroke_.begin(), meshStroke_.end());
-    std::sort(stroke.begin(), stroke.end());
+    PaintStroke s;
+    for (int v : meshStroke_) s.vertices << v;
+    std::sort(s.vertices.begin(), s.vertices.end());
+    for (int v : s.vertices) s.reach << meshReach_.value(v);
+    s.modifiers = strokeModifiers_;
     meshStroke_.clear();
-    if (!stroke.isEmpty() && onMeshPaint) onMeshPaint(stroke, true);
+    meshReach_.clear();
+    if (!s.vertices.isEmpty() && onMeshPaint) onMeshPaint(s, true);
   }
   update();
 }
@@ -285,23 +311,34 @@ void RigCanvas::paintMesh(QPainter& p) {
   const cutout::Attachment* att = nullptr;
   const QVector<QPointF> pts = si >= 0 ? meshPoints(*rig_, pose_, si, &att) : QVector<QPointF>();
   if (!att || pts.isEmpty()) return;
-  auto heat = [](double w, int alpha) { w = std::clamp(w, 0.0, 1.0); return QColor::fromHsvF((1 - w) * 0.66, 0.85, 0.95, alpha / 255.0); };
+  auto heat = heatColor;
   QVector<double> weight(pts.size(), 0.0);
   if (meshMode_ == MeshWeights && meshBone_ >= 0)
     for (int i = 0; i < pts.size(); i++) weight[i] = vertexWeight(*rig_, si, *att, size_t(i), meshBone_);
+  // Dense meshes (plugin 1.18.0: up to 2048 vertices painted live): widget points once, the heat
+  // fill without antialiasing (adjacent triangles would show seams anyway), the wireframe as one
+  // batch of unique edges.
+  QVector<QPointF> wp(pts.size());
+  for (int i = 0; i < pts.size(); i++) wp[i] = rigToWidget(pts[i]);
+  QVector<QLineF> wire;
+  QSet<quint64> seen;
+  const bool aa = p.testRenderHint(QPainter::Antialiasing);
+  if (meshMode_ == MeshWeights) { p.setRenderHint(QPainter::Antialiasing, false); p.setPen(Qt::NoPen); }
   for (size_t t = 0; t + 2 < att->triangles.size(); t += 3) {
     const int a = att->triangles[t], b = att->triangles[t + 1], c = att->triangles[t + 2];
-    if (a >= pts.size() || b >= pts.size() || c >= pts.size()) continue;
-    const QPolygonF tri({rigToWidget(pts[a]), rigToWidget(pts[b]), rigToWidget(pts[c])});
+    if (a < 0 || b < 0 || c < 0 || a >= pts.size() || b >= pts.size() || c >= pts.size()) continue;
     if (meshMode_ == MeshWeights) {
-      p.setPen(Qt::NoPen);
       p.setBrush(heat((weight[a] + weight[b] + weight[c]) / 3, 120));
-      p.drawPolygon(tri);
+      const QPointF tri[3] = {wp[a], wp[b], wp[c]};
+      p.drawPolygon(tri, 3);
     }
-    p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(QColor(255, 255, 255, meshMode_ == MeshVertices ? 90 : 120), 1));
-    p.drawPolygon(tri);
+    for (const auto& [u, v] : {std::pair<int, int>{a, b}, {b, c}, {c, a}})
+      if (const quint64 k = (quint64(std::min(u, v)) << 32) | quint64(std::max(u, v)); !seen.contains(k)) { seen.insert(k); wire << QLineF(wp[u], wp[v]); }
   }
+  p.setBrush(Qt::NoBrush);
+  p.setPen(QPen(QColor(255, 255, 255, meshMode_ == MeshVertices ? 90 : 120), 1));
+  p.drawLines(wire);
+  p.setRenderHint(QPainter::Antialiasing, aa);
   if (meshMode_ == MeshVertices && att->boundingBox) {
     // A bounding box (plugin 1.17.0) has no triangles: its closed polygon is the outline.
     p.setPen(QPen(OUTLINE_COLOR, 2));
@@ -329,22 +366,154 @@ void RigCanvas::paintMesh(QPainter& p) {
       p.drawLine(rigToWidget(pts[edgeFrom_]), meshCurrent_);
     }
   }
-  for (int i = 0; i < pts.size(); i++) {
-    const QPointF o = rigToWidget(pts[i]);
-    const bool picked = meshSelected_.contains(i) || (meshGesture_ == MeshGesture::Paint && meshStroke_.contains(i));
-    p.setPen(QPen(meshMode_ == MeshVertices && size_t(i) < att->hull ? OUTLINE_COLOR.darker(160) : QColor("#0b1220"), 1));
-    p.setBrush(meshMode_ == MeshWeights ? heat(weight[i], 255) : picked ? SELECT_COLOR : QColor("#f8fafc"));
-    p.drawEllipse(o, (picked ? 4.5 : 3.0) * ui_, (picked ? 4.5 : 3.0) * ui_);
-  }
+  if (meshMode_ == MeshWeights) {
+    // Heat dots as cached sprites (32 heat steps x normal / in-stroke size): blits, not 2000 paths.
+    const qreal dpr = devicePixelRatioF();
+    if (dotScale_ != ui_ * dpr) { dotSprites_.clear(); dotScale_ = ui_ * dpr; }
+    for (int i = 0; i < pts.size(); i++) {
+      const int big = meshGesture_ == MeshGesture::Paint && meshStroke_.contains(i) ? 1 : 0, step = int(std::lround(std::clamp(weight[i], 0.0, 1.0) * 31));
+      const int key = step * 2 + big;
+      auto it = dotSprites_.find(key);
+      if (it == dotSprites_.end()) {
+        const double r = (big ? 4.5 : 3.0) * ui_;
+        const int side = int(std::ceil(2 * r + 3));
+        QImage img(QSize(side, side) * dpr, QImage::Format_ARGB32_Premultiplied);
+        img.setDevicePixelRatio(dpr);
+        img.fill(Qt::transparent);
+        QPainter q(&img);
+        q.setRenderHint(QPainter::Antialiasing);
+        q.setPen(QPen(QColor("#0b1220"), 1));
+        q.setBrush(heat(step / 31.0, 255));
+        q.drawEllipse(QPointF(side / 2.0, side / 2.0), r, r);
+        q.end();
+        it = dotSprites_.insert(key, img);
+      }
+      const double half = it->width() / dpr / 2.0;
+      p.drawImage(wp[i] - QPointF(half, half), *it);
+    }
+  } else
+    for (int i = 0; i < pts.size(); i++) {
+      const bool picked = meshSelected_.contains(i);
+      p.setPen(QPen(size_t(i) < att->hull ? OUTLINE_COLOR.darker(160) : QColor("#0b1220"), 1));
+      p.setBrush(picked ? SELECT_COLOR : QColor("#f8fafc"));
+      p.drawEllipse(wp[i], (picked ? 4.5 : 3.0) * ui_, (picked ? 4.5 : 3.0) * ui_);
+    }
   p.setBrush(Qt::NoBrush);
   if (meshGesture_ == MeshGesture::Band && meshMoved_) {
     p.setPen(QPen(SELECT_COLOR, 1, Qt::DashLine));
     p.drawRect(QRectF(meshStart_, meshCurrent_).normalized());
   }
-  if (meshMode_ == MeshWeights && rect().contains(hover_.toPoint())) {
-    p.setPen(QPen(QColor(255, 255, 255, 200), 1.5, Qt::DashLine));
-    p.drawEllipse(hover_, brushRadius_, brushRadius_);
+  if (meshMode_ == MeshWeights) paintWeightOverlay(p, wp, weight);
+}
+// ---- Weight painting view (plugin 1.18.0): influence counts, brush, ramp legend, value under the cursor.
+double RigCanvas::falloffAt(int falloff, double reach) {
+  const double r = std::clamp(reach, 0.0, 1.0);
+  if (falloff == FalloffHard) return 1;
+  if (falloff == FalloffLinear) return 1 - r;
+  return 1 - r * r * (3 - 2 * r);  // smoothstep: full near the centre, soft edge
+}
+int RigCanvas::influenceCount(int v) const {
+  if (!rig_ || meshSlot_.isEmpty() || pose_.world.size() != rig_->bones.size()) return 0;
+  const cutout::Attachment* att = nullptr;
+  attachmentMatrix(*rig_, pose_, rig_->slotIndex(ss(meshSlot_)), &att);
+  if (!att || !att->mesh || v < 0 || size_t(v) >= att->vertexCount()) return 0;
+  return att->weights.empty() || size_t(v) >= att->weights.size() ? 1 : int(att->weights[size_t(v)].size());
+}
+QString RigCanvas::vertexWeightsText(int v) const {
+  if (!rig_ || meshSlot_.isEmpty() || pose_.world.size() != rig_->bones.size()) return {};
+  const int si = rig_->slotIndex(ss(meshSlot_));
+  const cutout::Attachment* att = nullptr;
+  attachmentMatrix(*rig_, pose_, si, &att);
+  if (!att || !att->mesh || v < 0 || size_t(v) >= att->vertexCount()) return {};
+  QVector<QPair<double, int>> shares;
+  if (att->weights.empty() || size_t(v) >= att->weights.size()) shares << qMakePair(1.0, rig_->slots[size_t(si)].boneIndex);
+  else for (const auto& w : att->weights[size_t(v)]) shares << qMakePair(w.weight, att->binds[size_t(w.bind)].first);
+  std::stable_sort(shares.begin(), shares.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+  QStringList parts;
+  for (const auto& [w, b] : shares)
+    if (b >= 0) parts << QString("%1 %2%3").arg(qs(rig_->bones[size_t(b)].id)).arg(w, 0, 'f', 3).arg(weightView_.locked.contains(b) ? " (잠금)" : "");
+  return QString("정점 %1 · ").arg(v) + parts.join(" · ");
+}
+double RigCanvas::weightAt(const QPointF& w) const {
+  if (!rig_ || meshSlot_.isEmpty() || meshBone_ < 0) return -1;
+  const int si = rig_->slotIndex(ss(meshSlot_));
+  const cutout::Attachment* att = nullptr;
+  const QVector<QPointF> pts = si >= 0 ? meshPoints(*rig_, pose_, si, &att) : QVector<QPointF>();
+  if (!att || !att->mesh) return -1;
+  for (size_t t = 0; t + 2 < att->triangles.size(); t += 3) {
+    const int i[3] = {att->triangles[t], att->triangles[t + 1], att->triangles[t + 2]};
+    if (i[0] >= pts.size() || i[1] >= pts.size() || i[2] >= pts.size()) continue;
+    const QPointF a = rigToWidget(pts[i[0]]), b = rigToWidget(pts[i[1]]), c = rigToWidget(pts[i[2]]);
+    const double det = (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x());
+    if (std::fabs(det) < 1e-9) continue;
+    const double l0 = ((b.x() - w.x()) * (c.y() - w.y()) - (b.y() - w.y()) * (c.x() - w.x())) / det;
+    const double l1 = ((c.x() - w.x()) * (a.y() - w.y()) - (c.y() - w.y()) * (a.x() - w.x())) / det, l2 = 1 - l0 - l1;
+    if (l0 < -1e-9 || l1 < -1e-9 || l2 < -1e-9) continue;
+    return l0 * vertexWeight(*rig_, si, *att, size_t(i[0]), meshBone_) + l1 * vertexWeight(*rig_, si, *att, size_t(i[1]), meshBone_) + l2 * vertexWeight(*rig_, si, *att, size_t(i[2]), meshBone_);
   }
+  return -1;
+}
+void RigCanvas::updateWeightHover(const QPointF& w) {
+  int best = -1;
+  if (meshMode_ == MeshWeights) {
+    double bestD = VERTEX_RADIUS * ui_;
+    const QVector<QPointF> pts = meshVertices();
+    for (int i = 0; i < pts.size(); i++) {
+      const QPointF o = rigToWidget(pts[i]);
+      if (const double d = std::hypot(o.x() - w.x(), o.y() - w.y()); d <= bestD) { bestD = d; best = i; }
+    }
+  }
+  if (best == hoverVertex_) return;
+  hoverVertex_ = best;
+  if (best >= 0 && isVisible()) QToolTip::showText(mapToGlobal(w.toPoint()), vertexWeightsText(best), this);
+  else QToolTip::hideText();
+}
+void RigCanvas::paintWeightOverlay(QPainter& p, const QVector<QPointF>& pts, const QVector<double>& weight) {
+  // Influence counts beside the dots (2+ bones), legible while the mesh is not too dense.
+  if (pts.size() <= 400) {
+    QFont f = p.font();
+    f.setPixelSize(std::max(8, int(9 * ui_)));
+    p.setFont(f);
+    for (int i = 0; i < pts.size(); i++) {
+      const int n = influenceCount(i);
+      if (n < 2) continue;
+      p.setPen(QColor("#0b1220"));
+      p.drawText(pts[i] + QPointF(4 * ui_ + 1, -3 * ui_ + 1), QString::number(n));
+      p.setPen(QColor("#f8fafc"));
+      p.drawText(pts[i] + QPointF(4 * ui_, -3 * ui_), QString::number(n));
+    }
+  }
+  Q_UNUSED(weight);
+  // Colour ramp legend of the heat-map bone (bottom-left, above the hint line).
+  const int hintHeight = fontMetrics().height() + 4;
+  const QRectF ramp(12, height() - hintHeight - 26 * ui_, 120 * ui_, 8 * ui_);
+  QLinearGradient g(ramp.topLeft(), ramp.topRight());
+  for (double t : {0.0, 0.25, 0.5, 0.75, 1.0}) g.setColorAt(t, heatColor(t, 255));
+  p.setPen(QPen(QColor("#0b1220"), 1));
+  p.setBrush(g);
+  p.drawRect(ramp);
+  p.setBrush(Qt::NoBrush);
+  p.setPen(QColor("#e2e8f0"));
+  const QString bone = rig_ && meshBone_ >= 0 && size_t(meshBone_) < rig_->bones.size() ? qs(rig_->bones[size_t(meshBone_)].id) : QString("본 없음");
+  p.drawText(QPointF(ramp.left(), ramp.top() - 3), QString("0 → 1 · %1").arg(bone));
+  if (!rect().contains(hover_.toPoint())) return;
+  // Brush: the outer ring is its reach, the inner one where the falloff starts to fade; the mode
+  // the stroke would use (Shift = smooth, Ctrl = subtract) beside it.
+  int mode = weightView_.mode;
+  const Qt::KeyboardModifiers mods = meshGesture_ == MeshGesture::Paint ? strokeModifiers_ : QGuiApplication::keyboardModifiers();
+  if (mods & Qt::ShiftModifier) mode = WeightSmooth;
+  else if (mods & Qt::ControlModifier) mode = WeightSubtract;
+  p.setPen(QPen(QColor(255, 255, 255, 200), 1.5, Qt::DashLine));
+  p.drawEllipse(hover_, brushRadius_, brushRadius_);
+  if (weightView_.falloff != FalloffHard) {
+    p.setPen(QPen(QColor(255, 255, 255, 110), 1, Qt::DotLine));
+    p.drawEllipse(hover_, brushRadius_ * 0.5, brushRadius_ * 0.5);
+  }
+  static const char* glyphs[] = {"+", "−", "=", "~"};
+  p.setPen(QColor("#f8fafc"));
+  QString label = glyphs[std::clamp(mode, 0, 3)];
+  if (weightView_.showValue) if (const double v = weightAt(hover_); v >= 0) label += QString(" %1").arg(v, 0, 'f', 2);
+  p.drawText(hover_ + QPointF(brushRadius_ * 0.72 + 4, -brushRadius_ * 0.72), label);
 }
 
 QColor RigCanvas::ikColor() { return IK_COLOR; }
@@ -851,7 +1020,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
                  : meshMode_ == MeshVertices && meshTool_ == MeshAddVertex ? QString("정점 추가: 메시 안(안쪽 정점)이나 윤곽 가까이(윤곽 정점)를 클릭 · 다시 삼각분할됩니다")
                  : meshMode_ == MeshVertices && meshTool_ == MeshAddEdge ? QString("가장자리 추가: 정점에서 다른 정점으로 끌면 그 안쪽 가장자리가 고정됩니다(하늘색) · 주황 = 윤곽")
                  : meshMode_ == MeshVertices ? QString("메시 정점: 클릭·Shift+클릭 선택 · 빈 곳 끌기 상자 선택 · 정점 끌기로 이동") + (animate_ ? " (K로 변형 키)" : " · Delete 정점 삭제")
-                       : meshMode_ == MeshWeights ? QString("웨이트 칠하기: 끌어서 붓으로 칠함 · 색 = 고른 본의 웨이트(파랑 0 → 빨강 1)")
+                       : meshMode_ == MeshWeights ? QString("웨이트 칠하기: 끌어서 붓으로 칠함 · Shift+끌기 부드럽게 · Ctrl+끌기 빼기 · [ ] 붓 크기 · 정점에 올리면 웨이트 · 색 = 고른 본(파랑 0 → 빨강 1)")
                        : tool_ == Create ? QString("본 만들기: 끌어서 고른 본의 자식 본(길이·방향) · 클릭 = 점 본 · 본 원점 클릭 = 부모 고르기 · Shift 15° 스냅")
                                          : QString("도구: %1 · 본 몸통 끌기 = 회전, 원점 끌기 = 이동 · Ctrl/Shift+클릭 여러 개 선택 · 빈 곳 끌기 상자 선택 · 끄는 중 Shift 미세 조정/15° 스냅 · Alt+클릭 겹친 항목 차례로").arg(names[std::clamp(tool_, 0, TOOL_COUNT - 1)]);
   // What a click would pick (handles beat images): named so an overlap is never a surprise.
@@ -1016,6 +1185,7 @@ void RigCanvas::keyPressEvent(QKeyEvent* e) {
     if (e->key() == Qt::Key_Escape) { setOutlineDrawing(QString()); if (onOutlineCancel) onOutlineCancel(); return; }
   }
   if (meshMode_ == MeshVertices && (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) && onMeshDelete) { onMeshDelete(); return; }
+  if (meshMode_ == MeshWeights && (e->key() == Qt::Key_BracketLeft || e->key() == Qt::Key_BracketRight) && onBrushStep) { onBrushStep(e->key() == Qt::Key_BracketRight ? 1 : -1); return; }
   const int tools[] = {Qt::Key_V, Qt::Key_R, Qt::Key_S, Qt::Key_P, Qt::Key_C};
   for (int i = 0; i < TOOL_COUNT; i++) if (e->key() == tools[i] && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier))) { if (onTool) onTool(i); return; }
   if (e->key() == Qt::Key_A && e->modifiers() == Qt::ControlModifier && onSelectAll) { onSelectAll(); return; }
@@ -1048,6 +1218,7 @@ QStringList RigCanvas::bonesIn(const QRectF& r) const {
 }
 void RigCanvas::leaveEvent(QEvent*) {
   hoverInside_ = false;
+  if (hoverVertex_ >= 0) { hoverVertex_ = -1; QToolTip::hideText(); }
   if (hoverRef_.isEmpty()) return;
   hoverRef_.clear();
   unsetCursor();

@@ -1387,3 +1387,137 @@ Hit areas and anchors that follow the rig. Neither is ever drawn, packed or chec
   pixels; both on the bone of their group, in layer order, hidden layers not shown, never moving
   bone centres. Re-import updates the outline / place (weights stay unless the point count
   changed). The report marks them `role: "box"` / `"point"` and counts `summary.boxes` / `points`.
+
+## Weight painting and linked meshes (plugin 1.18.0)
+
+### Weight ops
+
+Every weight op names the mesh like the other mesh ops (`{slot, name?, skin?}`; `attachment` is an
+alias of `name`) and refuses linked meshes (their weights are the parent's). Each vertex an op
+touches **settles**: locked bones (`locked: [bone ids]`, editor state sent with the op) keep their
+shares; the unlocked shares scale to fill the rest (locked shares alone over 1, or alone left, are
+normalised among themselves); unlocked shares below `prune` (default **0.01**) are removed — never
+the last one that still has to fill; then the smallest unlocked shares beyond `maxInfluences`
+(1..4, default **4**) go (a locked one only once no unlocked share is left, after which the rest is
+normalised plainly); largest first, rounded to 1e-6 with the last share taking the remainder so
+every vertex sums to exactly 1. A vertex that cannot settle (nothing unlocked can take the rest)
+keeps its weights (`extra.skipped`). Only the touched vertices' weight lists are rewritten (the
+rest of the document stays byte-identical); an unweighted mesh starts from 100 % its slot bone and
+gets a full `weights` list.
+
+* `paintWeights {…, mode? (add | subtract | replace (default) | smooth), vertices, amounts? (per
+  listed vertex 0..1: the brush falloff), strength? (0..1, 1), bone (not smooth), weight? (replace
+  target, 1), locked?, maxInfluences?, prune?}` — one brush stroke. Per vertex `a = strength ·
+  amount`: add raises `bone`'s share by `a`, subtract lowers it by `a`, replace moves it toward
+  `weight` by `a` (clamped to what the locked shares leave); the other unlocked bones are rescaled
+  to fill the rest — a vertex with no other unlocked bone hands it to the slot bone (the 1.4
+  brush rule; skipped when that is `bone` or locked). smooth moves every unlocked share toward the
+  mean of the vertex's mesh neighbours (triangle edges; the values **before** the stroke, so the
+  vertex order does not matter) by `a`. A locked `bone` is refused. `extra.vertices` (changed),
+  `extra.skipped`.
+* `normalizeWeights {…, vertices?, maxInfluences?, prune?, locked?}` — settles the listed vertices
+  (all by default); refused for unweighted meshes. `extra.pruned` (shares removed), `extra.vertices`.
+* `mirrorWeights {…, axis? ("x" = left ↔ right across a vertical line, "y" = top ↔ bottom),
+  center? (rig px on that axis; default the middle of the mesh's setup-pose bounding box), from?
+  (the source side: left | right, top | bottom; default left / top), map? ({bone: bone}, each pair
+  works both ways, before the automatic names), tolerance? (px, 0.5), locked?, maxInfluences?,
+  prune?}` — every vertex farther than `tolerance` on the other side takes the weights at its
+  mirror point: barycentric in the setup-pose mesh (the nearest triangle when outside), each bone
+  renamed to its counterpart: `map`, else `mirrorBoneId` when that bone exists, else itself.
+  Locked bones keep the vertex's own shares. `mirrorBoneId` (core, also used by the editor) swaps
+  whole `-`-separated tokens `left`↔`right`, `l`↔`r`, `lt`↔`rt` and the transliterated Russian
+  pairs `levyy`↔`pravyy`, `levyj`↔`pravyj`, `levy`↔`pravy`, `levaya`↔`pravaya`, `levoe`↔`pravoe`,
+  `lev`↔`prav` (`arm-l`, `l-arm`, `ruka-levyy`); without such a token the first `left` / `right`
+  inside the id (`armleft`). `extra.vertices`, `extra.center`, `extra.mapping` (bone → the
+  counterpart used), `extra.unmapped` (bones without one: they keep their name).
+* `copyWeights {…, from: {slot, name? | attachment?, skin?}, vertices?, locked?, maxInfluences?,
+  prune?}` — each listed vertex (all by default) takes the source mesh's weights at the same
+  setup-pose rig position (barycentric inside its triangles, the nearest triangle outside). A
+  linked source reads its parent's; an unweighted source is 100 % its slot bone. Refused: the mesh
+  itself, a non-mesh source.
+* `setWeights` / `autoWeights` keep their 1.4 behaviour (they rewrite every vertex, prune 1e-4).
+
+### Linked meshes
+
+* **Data**: a mesh attachment (default list or a skin) with `linkedMesh: {parent: "<slot>/<name>",
+  skin?, deform? = true}` has its own picture — `imageAssetId`, `width`/`height` (the size of that
+  picture: PNG checks, atlas), `atlas`, and optionally its own `uvs` (one pair per parent vertex) —
+  and **shares the parent mesh's** `vertices`, `triangles`, `weights` (and the binds derived from
+  them), `hull`/`edges` and placement (`x … scaleY`, pivot, and the parent's width/height for the
+  pivot): it draws the parent's outline with its own picture through the shared (or own) uvs, so a
+  half-size outfit picture of the same aspect covers the same shape. `parent` names an attachment
+  of the default list, or of skin `skin`. A linked mesh's own shape / placement fields are ignored
+  (warning `ANIM_LINKED_UNUSED`).
+* **Resolution** (parse time, every runtime): parents first; a chain (a linked mesh's parent may
+  be linked) resolves to its first own mesh. A **weighted** linked mesh sits where the shared binds
+  put it, whatever slot shows it; an **unweighted** one is placed by the bone of the slot showing
+  it (the parent's offset in that bone's space), like the parent in its own slot.
+* **Deform**: with `deform` true (default) the deform track of the slot showing the linked mesh
+  whose `attachment` is the parent's name (the chain's `deformName`) moves it — the main case, a
+  skin variant in the parent's slot, simply shares the parent's track; with `deform: false` its own
+  name's track (if any). Validation counts its vertices under both names.
+* **Validation**: `ANIM_LINKED_PARENT` (malformed link, unknown skin, missing parent, a parent that
+  is not a mesh), `ANIM_LINKED_CYCLE`, `ANIM_LINKED_TYPE` (`linkedMesh` on a non-mesh),
+  `ANIM_LINKED_VERTICES` (own uvs of another vertex count), `ANIM_LINKED_SEQUENCE` (a sequence on
+  either side), `ANIM_LINKED_UNUSED` (warning); deform key counts as for meshes (`ANIM_MESH_DEFORM`).
+* **Editing ops**: `linkMesh {slot, name? | attachment?, skin?, parent, parentSkin?, deform?,
+  imageAssetId?, width?, height?}` — the attachment of the default list (or skin `skin`) becomes a
+  linked mesh of `parent` (in the default list, or skin `parentSkin`), keeping its picture and
+  dropping its own shape, weights and placement; a missing entry is created from imageAssetId /
+  width / height (an outfit variant of a mesh: the skin entry of the same name). Refused: a
+  non-mesh or sequence parent, itself, a picture whose aspect differs from the parent's by more
+  than 2 %, pictureless attachments and sequences; a link closing a cycle fails validation.
+  `extra.attachment`, `extra.parent`, `extra.created`.
+* `unlinkMesh {slot, name?, skin?}` — an independent copy drawing exactly what it drew: the root's
+  geometry, weights and placement (in another slot a weighted copy's offset is re-expressed in
+  that slot bone's setup space). A picture of another pixel size gets its vertices scaled into its
+  own pixels and the offset scale divided by the factor, unless deform keys already address its
+  name (possibly shared, in the parent's pixels): then the pivot absorbs the size difference.
+  Inherited deform keys are copied to its own name (the inherited track goes when nothing else on
+  the slot reads it).
+* Shape / weight ops (`convertToMesh`, `setMeshVertices`, `autoWeights`, `setWeights`, the freeform
+  and weight ops, `setSequence`) and placement edits (`setAttachment` / `setSkinAttachment` x …
+  pivotY) refuse linked meshes; `convertToRegion` of a linked mesh gives a picture at its parent's
+  placement. Parents that go away (`deleteSlot`, `removeSkinAttachment`, `deleteSkin`,
+  `convertToRegion` of the parent) first turn their linked meshes into copies
+  (`ANIM_LINKED_UNLINKED`); `renameSkin` rewrites `linkedMesh.skin`; `orientBones`, pivot and
+  slot-bone compensation leave linked entries alone (their placement is the parent's).
+* **Export / import**: the atlas packs a linked mesh's own picture (a mesh: whole picture, no
+  trim); PSD re-import swaps a linked mesh's picture only at the same size and place
+  (`ANIM_IMPORT_MESH` otherwise); bounding boxes are unaffected.
+
+### Editor (메시 page)
+
+* Weight mode rows: `cutoutMeshWeightTools` (`자동 웨이트`, `웨이트 해제`, `정리` =
+  `cutoutNormalizeWeights`), `cutoutWeightModes` (`더하기` `cutoutWeightModeAdd`, `빼기`
+  `cutoutWeightModeSubtract`, `바꾸기` `cutoutWeightModeReplace` (default), `부드럽게`
+  `cutoutWeightModeSmooth`); setup row `cutoutMeshLinkTools` (`좌우 복사` `cutoutMirrorWeights`,
+  `메시에서 복사` `cutoutCopyWeights`, `링크드 메시` `cutoutMakeLinkedMesh`, `연결 끊기`
+  `cutoutUnlinkMesh`). Section `cutoutWeightSection` (setup only): `감쇠` `cutoutWeightFalloff`
+  (hard: 1 inside the brush; linear: 1 − r; smooth (default): 1 − r²(3 − 2r), r = distance /
+  radius), `최대 본` `cutoutWeightMaxInfluences`, `작은 웨이트 지우기` `cutoutWeightPrune`,
+  `좌우 복사 방향` `cutoutMirrorAxis`, `가져올 메시` `cutoutCopyWeightsFrom`, `커서 아래 값`
+  `cutoutWeightShowValue`, `자세 미리 보기` `cutoutWeightPosePreview` + `cutoutWeightPreviewAngle`,
+  and the weight table `cutoutWeightTable`: per bone weighting the mesh (plus the brush bone and
+  locked bones) a label `cutoutWeightBone-<id>`, the mean weight of the selected vertices
+  `cutoutWeightValue-<id>` (editable: one `paintWeights` replace on every selected vertex; "—"
+  without a selection) and the lock `cutoutWeightBoneLock-<id>`.
+* A stroke records per vertex its closest approach to the brush centre (r = distance / radius)
+  and the modifiers at the press: **Shift = smooth, Ctrl = subtract** for that stroke; the panel
+  turns r into `amounts` through the falloff and sends ONE `paintWeights` on release (the live
+  heat map previews the same op, at most once per event-loop pass). `[` / `]` (panel shortcuts
+  `cutoutShortcutBrushSmaller` / `cutoutShortcutBrushLarger`, also handled by the canvas) shrink /
+  grow the brush by 25 % in weight mode; no other shortcut uses them.
+* Heat map of the brush bone (blue 0 → red 1) with a ramp legend, influence counts beside the dots
+  of 2+ bones (meshes up to 400 vertices), a hover tooltip with the vertex's weights (locked bones
+  marked), the value under the cursor (`커서 아래 값`). A 2025-vertex mesh paints at ~17 ms per brush
+  move offscreen (studio test `weightPaintPerformance`).
+* 자세 미리 보기 is editor-only and never saved: in setup weight mode the canvas shows the setup
+  pose with the brush bone turned by the angle (IK re-solved); strokes on it still edit the setup
+  weights.
+* A linked mesh shows `링크드 메시 「…」 · 부모 「slot/name」(…) · 변형 키 …` in `cutoutMeshInfo`;
+  its vertex / weight tools are disabled in setup mode (animate mode keys the shared deform track).
+  `cutoutMakeLinkedMesh` opens `cutoutLinkedMeshDialog`: for a picture `cutoutLinkedParent` (meshes
+  of the same aspect), for a mesh `cutoutLinkedSkin`, `cutoutLinkedName`, `cutoutLinkedImage`
+  (images of the same aspect); `cutoutLinkedDeform`. Locks, the brush, the mode and the preview
+  pose are editor state.

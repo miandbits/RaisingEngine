@@ -268,6 +268,7 @@
       "allOf": [
         { "if": { "required": ["type"], "properties": { "type": { "const": "clipping" } } }, "then": { "required": ["vertices", "end"] } },
         { "if": { "required": ["type"], "properties": { "type": { "const": "boundingBox" } } }, "then": { "required": ["vertices"] } },
+        { "if": { "required": ["linkedMesh"] }, "then": { "required": ["type"], "properties": { "type": { "const": "mesh" } } } },
         { "if": { "not": { "required": ["type"], "properties": { "type": { "enum": ["clipping", "boundingBox", "point"] } } } }, "then": { "required": ["imageAssetId", "width", "height"] } }
       ],
       "properties": {
@@ -307,6 +308,15 @@
             "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 },
             "trim": { "type": "object", "additionalProperties": false, "required": ["x", "y", "width", "height"],
               "properties": { "x": { "type": "number", "minimum": 0 }, "y": { "type": "number", "minimum": 0 }, "width": { "type": "number", "exclusiveMinimum": 0 }, "height": { "type": "number", "exclusiveMinimum": 0 } } }
+          }
+        },
+        "linkedMesh": {
+          "description": "Linked mesh (plugin 1.18.0, type mesh only): this attachment keeps its own picture (imageAssetId, width/height of that picture, atlas, optional own uvs of the parent's vertex count) and shares the parent mesh's vertices, triangles, weights/binds, hull/edges and placement (offset, pivot, the parent's size). parent = \"<slot>/<attachment>\" in the default list, or in skin `skin`; chains resolve, cycles are refused. deform (default true): deform tracks addressed to the parent's name (on the slot showing this attachment) move it too; false = its own name. Semantics in docs/contract.md.",
+          "type": "object", "additionalProperties": false, "required": ["parent"],
+          "properties": {
+            "parent": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*/[A-Za-z0-9][A-Za-z0-9_-]*$", "maxLength": 129 },
+            "skin": { "$ref": "#/$defs/id" },
+            "deform": { "type": "boolean" }
           }
         },
         "weights": {

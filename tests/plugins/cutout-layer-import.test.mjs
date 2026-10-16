@@ -575,3 +575,26 @@ test('[box] / [point] layers (1.17.0): a traced bounding box and a point instead
   const rect = planImport({ source: { ...readPsd(writePsd({ width: W, height: H, layers: tagged() })), file: '/art/b.psd' }, options: importOptions({}) });
   assert.equal(rect.rig.attachments.find(a => a.slot === 'face-box').vertices.length, 8);
 });
+
+test('linked meshes (1.18.0): re-import swaps a linked mesh picture only at the same size, keeping the link', () => {
+  // A 40x60 chest made a mesh by rig work, a 20x30 patch (same aspect) linked to it.
+  const layers = (patch = block(20, 30, [20, 60, 140])) => [{ name: 'body', children: [
+    { name: 'chest', x: 50, y: 100, ...block(40, 60, [180, 60, 40]) }, { name: 'patch', x: 52, y: 102, ...patch }] }];
+  const source = l => ({ ...readPsd(writePsd({ width: W, height: H, layers: l })), file: '/art/link.psd' });
+  const rig = structuredClone(planImport({ source: source(layers()), options: importOptions({}) }).rig);
+  const chest = rig.attachments.find(a => a.slot === 'chest'), patch = rig.attachments.find(a => a.slot === 'patch');
+  Object.assign(chest, { type: 'mesh', vertices: [0, 0, 40, 0, 40, 60, 0, 60], uvs: [0, 0, 1, 0, 1, 1, 0, 1], triangles: [0, 1, 2, 0, 2, 3] });
+  for (const k of ['x', 'y', 'rotation', 'pivotX', 'pivotY']) delete patch[k];
+  Object.assign(patch, { type: 'mesh', linkedMesh: { parent: 'chest/chest' } });
+  // Same size, new colour: the picture swaps, the link stays (no placement fields come back).
+  const same = planImport({ source: source(layers(block(20, 30, [200, 200, 20]))), options: importOptions({}), existing: rig });
+  const swapped = same.rig.attachments.find(a => a.slot === 'patch');
+  assert.deepEqual(swapped.linkedMesh, { parent: 'chest/chest' });
+  assert.notEqual(swapped.imageAssetId, patch.imageAssetId);
+  assert.ok(same.report.changes.attachments.updated.includes('patch/patch') && !('x' in swapped));
+  // Another size: skipped, with the linked-mesh reason.
+  const other = planImport({ source: source(layers(block(24, 30, [200, 200, 20]))), options: importOptions({}), existing: rig, dryRun: true });
+  assert.ok(other.report.changes.attachments.skipped.includes('patch/patch'));
+  assert.ok(other.report.warnings.some(w => w.code === 'ANIM_IMPORT_MESH' && w.message.includes('링크드 메시')), JSON.stringify(other.report.warnings));
+  assert.deepEqual(other.rig.attachments.find(a => a.slot === 'patch'), patch);
+});

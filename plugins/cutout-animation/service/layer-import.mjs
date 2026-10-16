@@ -703,7 +703,10 @@ export function planImport({ source, options, existing = null, rigName = '', dry
         const moved = before ? before.x !== r.x || before.y !== r.y : false;
         if (old.width !== r.width || old.height !== r.height || moved) {
           changes.attachments.skipped.push(ref); pic.item.status = 'skip';
-          warn('ANIM_IMPORT_MESH', `메시 첨부 '${ref}'는 그림 크기나 위치가 바뀌어 바꾸지 않았습니다. 메시를 영역으로 되돌리거나 같은 크기로 그려 주세요.`, pic.key);
+          // A linked mesh (plugin 1.18.0) keeps its parent's shape: only a same-size picture can swap in.
+          warn('ANIM_IMPORT_MESH', old.linkedMesh
+            ? `링크드 메시 '${ref}'는 그림 크기나 위치가 바뀌어 바꾸지 않았습니다(부모 메시의 모양을 쓰므로 같은 크기의 그림만 바꿉니다).`
+            : `메시 첨부 '${ref}'는 그림 크기나 위치가 바뀌어 바꾸지 않았습니다. 메시를 영역으로 되돌리거나 같은 크기로 그려 주세요.`, pic.key);
           continue;
         }
         const next = { ...old, imageAssetId: dryRun ? old.imageAssetId : imageOf(pic) };

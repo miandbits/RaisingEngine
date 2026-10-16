@@ -132,8 +132,29 @@ class RigCanvas : public QWidget {
   std::function<void(const QVector<int>& vertices, bool add)> onMeshSelect;
   /** Drag of the selected vertices by `rigDelta` (live while !finished; one edit on finish). */
   std::function<void(const QPointF& rigDelta, bool finished)> onMeshDrag;
-  /** Weight brush stroke: every vertex the brush touched so far (one edit on finish). */
-  std::function<void(const QVector<int>& vertices, bool finished)> onMeshPaint;
+  /** Weight brush stroke (plugin 1.18.0): every vertex the brush touched so far with its closest
+   *  approach `reach` (distance / radius, 0 = under the centre: the panel turns it into the falloff)
+   *  and the modifiers held at the press (Shift = smooth, Ctrl = subtract for this stroke only). The
+   *  panel previews it live and makes ONE edit on finish. */
+  struct PaintStroke { QVector<int> vertices; QVector<double> reach; Qt::KeyboardModifiers modifiers; };
+  std::function<void(const PaintStroke& stroke, bool finished)> onMeshPaint;
+  /** Weight view (plugin 1.18.0, editor-only): brush mode / falloff drawn at the cursor, the
+   *  weight under the cursor (showValue) and the locked bones (marked in the vertex tooltip). */
+  enum WeightMode { WeightAdd = 0, WeightSubtract = 1, WeightReplace = 2, WeightSmooth = 3 };
+  enum Falloff { FalloffHard = 0, FalloffLinear = 1, FalloffSmooth = 2 };
+  struct WeightView { int mode = WeightReplace; int falloff = FalloffSmooth; bool showValue = false; QSet<int> locked; };
+  void setWeightView(const WeightView& view) { weightView_ = view; update(); }
+  const WeightView& weightView() const { return weightView_; }
+  /** Brush factor 0..1 of a vertex `reach` (distance / radius) away from the centre. */
+  static double falloffAt(int falloff, double reach);
+  /** Bones influencing vertex `v` of the edited mesh (0 = none / out of range): shown at its dot. */
+  int influenceCount(int v) const;
+  /** Vertex `v`'s weights as text, largest first ("arm-l 0.62 · arm-r 0.38", locked bones marked). */
+  QString vertexWeightsText(int v) const;
+  /** The vertex the cursor hovers in weight mode (-1 = none): its weights show as a tooltip. */
+  int hoverVertex() const { return hoverVertex_; }
+  /** Weight of the heat-map bone at a widget point inside the edited mesh (barycentric), -1 outside. */
+  double weightAt(const QPointF& widgetPos) const;
 
   // ---- Mesh shape tools (plugin 1.6.0, setup mode). In vertex mode `meshTool` picks what a left
   // press does; outline drawing works on a plain image too (it is how a freeform mesh is made).
@@ -179,6 +200,8 @@ class RigCanvas : public QWidget {
   /** 정점 추가: a click (rig space); 가장자리 추가: a drag from vertex `a` to vertex `b`. */
   std::function<void(const QPointF& rigPoint)> onMeshAddVertex;
   std::function<void(int a, int b)> onMeshAddEdge;
+  /** [ / ] in weight mode (plugin 1.18.0): brush smaller / larger (the panel's shortcuts do the same). */
+  std::function<void(int direction)> onBrushStep;
   /** Delete / Backspace in vertex mode (the panel deletes the selected vertices). */
   std::function<void()> onMeshDelete;
 
@@ -260,7 +283,15 @@ class RigCanvas : public QWidget {
   int meshMode_ = MeshOff, meshBone_ = -1;
   QString meshSlot_;
   QSet<int> meshSelected_, meshStroke_;
+  QHash<int, double> meshReach_;  // stroke: closest approach per vertex (distance / radius)
+  Qt::KeyboardModifiers strokeModifiers_;
+  WeightView weightView_;
+  int hoverVertex_ = -1;
+  QHash<int, QImage> dotSprites_;  // heat dots (step * 2 + in-stroke), for dotScale_
+  qreal dotScale_ = 0;
   double brushRadius_ = 24;
+  void updateWeightHover(const QPointF& widgetPos);
+  void paintWeightOverlay(QPainter& p, const QVector<QPointF>& widgetPoints, const QVector<double>& weight);
   enum class MeshGesture { None, Vertices, Band, Paint, Edge };
   MeshGesture meshGesture_ = MeshGesture::None;
   QPointF meshStart_, meshCurrent_, hover_;

@@ -136,6 +136,19 @@ struct Attachment {
    */
   bool boundingBox = false, point = false;
   std::string color;
+  /**
+   * Linked mesh (plugin 1.18.0, `linkedMesh: {parent: "<slot>/<name>", skin?, deform?}`): a mesh
+   * with its own picture (imageAssetId, atlas, optional own `uvs`) that shares the parent mesh's
+   * shape: vertices, triangles, weights/binds, hull/edges and the placement (offset, pivot and the
+   * parent's width/height, so both draw the same outline whatever the own picture's pixel size).
+   * Resolved at parse time: the shared fields above are copies of the parent's; `linkedWidth/
+   * Height` keep the own picture's size. `linkedSkin` = the list the parent lives in ("" = default
+   * attachments). `deformName` = the attachment name deform tracks address: the parent's
+   * deformName when linkedDeform (default), else the own name (every other attachment: its name).
+   */
+  bool linked = false, linkedDeform = true;
+  std::string linkedSlot, linkedName, linkedSkin, deformName;
+  double linkedWidth = 0, linkedHeight = 0;
   bool sequence() const { return !frames.empty(); }
   /** No picture: never a draw item, never in an atlas, never an image to check or re-import. */
   bool pictureless() const { return clipping || boundingBox || point; }
@@ -324,6 +337,10 @@ struct Diagnostic {
   std::string code, severity, pointer, message;
   Json toJson() const { return {{"code", code}, {"severity", severity}, {"pointer", pointer}, {"message", message}}; }
 };
+
+/** A linkedMesh parent reference "<slot>/<name>" (plugin 1.18.0): false unless exactly one '/'
+ *  separates two non-empty parts (slot ids and attachment names never contain one). */
+bool splitLinkedParent(const std::string& ref, std::string& slot, std::string& name);
 
 /** Semantic validation of a rig `data` object. Never throws on bad input. */
 std::vector<Diagnostic> validateRig(const Json& data);

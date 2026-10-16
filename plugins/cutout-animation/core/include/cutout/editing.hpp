@@ -117,6 +117,17 @@ struct EditResult {
  * before? | index?, name? ("box"), vertices | worldVertices, color?} setBoundingBox {slot, name?, skin?,
  * vertices? | worldVertices?, color? (null removes)} addPoint {slot (new), bone, before? | index?, name?
  * ("point"), x?, y?, rotation? | worldX?, worldY?, worldRotation?} setPoint {slot, name?, skin?, ...same}.
+ * Weight painting (plugin 1.18.0; the attachment as {slot, name? | attachment?, skin?}): paintWeights
+ * {mode: add | subtract | replace | smooth, vertices, amounts? (per vertex 0..1), strength?, bone, weight?,
+ * locked?, maxInfluences? (4), prune? (0.01)} (one brush stroke) normalizeWeights {vertices?,
+ * maxInfluences?, prune?, locked?} mirrorWeights {axis? (x | y), center?, from? (left | right | top |
+ * bottom), map? ({bone: bone}), tolerance?, locked?...} (bone names paired by mirrorBoneId) copyWeights
+ * {from: {slot, name?, skin?}, vertices?, locked?...} (nearest setup-pose position). Every vertex they
+ * touch settles: locked bones keep their shares, the unlocked ones fill the rest, shares below
+ * `prune` go, at most maxInfluences, sum 1. Linked meshes (plugin 1.18.0): linkMesh {slot, name?, skin?,
+ * parent: "<slot>/<name>", parentSkin?, deform?, imageAssetId?, width?, height?} unlinkMesh {slot,
+ * name?, skin?}; mesh shape/weight ops refuse linked meshes (edit the parent), deleting / converting a
+ * parent turns its linked meshes into independent copies (ANIM_LINKED_UNLINKED), renameSkin follows.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */
@@ -146,6 +157,10 @@ Transform decompose(const Affine& m, double* skew = nullptr);
 std::map<std::string, Affine> setupWorld(const Json& rig);
 /** Controller ids (from [{id,data}]) whose defaultClip, layers or bindings use `clip`. */
 std::vector<std::string> controllerClipRefs(const Json& controllers, const std::string& clip);
+/** Mirror counterpart of a bone id (plugin 1.18.0, mirrorWeights): '-' separated tokens left/right,
+ *  l/r, lt/rt and transliterated levyy/pravyy (levyj, levy, levaya, levoe, lev / prav...) swap, else
+ *  "left"/"right" inside the id; the id itself when nothing matches. */
+std::string mirrorBoneId(const std::string& id);
 bool validId(const std::string& id);
 bool validName(const std::string& name);
 /** Lowercase id derived from free text ("Eye L.png" -> "eye-l"), never empty. */

@@ -6,6 +6,7 @@
 #include <functional>
 #include <set>
 #include <stdexcept>
+#include <tuple>
 
 namespace cutout {
 namespace {
@@ -100,6 +101,30 @@ const Json& arrayOr(const Json& obj, const char* key) {
 }
 
 /**
+ * Own fields of a linked mesh (plugin 1.18.0): the link object, an optional own `uvs` (its count
+ * is checked against the parent once every list is known) and the fields the parent provides,
+ * which would silently do nothing here (warning).
+ */
+void checkLinkedFields(Checker& c, const Json& a, const std::string& p) {
+  const Json& l = a.at("linkedMesh");
+  const std::string lp = at(p, "linkedMesh");
+  std::string slot, name;
+  if (!l.is_object() || !l.contains("parent") || !l.at("parent").is_string() || !splitLinkedParent(l.at("parent").get<std::string>(), slot, name))
+    c.error(l.is_object() ? at(lp, "parent") : lp, "ANIM_LINKED_PARENT", "linkedMesh는 {parent: \"슬롯/첨부\", skin?, deform?} 객체입니다(parent = 부모 메시의 슬롯 ID/첨부 이름).");
+  if (l.is_object() && l.contains("skin") && (!l.at("skin").is_string() || l.at("skin").get<std::string>().empty()))
+    c.error(at(lp, "skin"), "ANIM_LINKED_PARENT", "linkedMesh.skin은 부모 메시가 있는 스킨 ID입니다(없으면 기본 첨부 목록).");
+  if (l.is_object() && l.contains("deform") && !l.at("deform").is_boolean()) c.error(at(lp, "deform"), "ANIM_LINKED_PARENT", "linkedMesh.deform은 true 또는 false입니다.");
+  if (a.contains("sequence")) c.error(at(p, "sequence"), "ANIM_LINKED_SEQUENCE", "링크드 메시에는 이미지 시퀀스를 줄 수 없습니다(그림 한 장만).");
+  for (const char* k : {"vertices", "triangles", "weights", "hull", "edges", "x", "y", "rotation", "scaleX", "scaleY", "pivotX", "pivotY"})
+    if (a.contains(k)) { c.warn(at(p, k), "ANIM_LINKED_UNUSED", std::string("링크드 메시는 부모 메시의 모양·웨이트·배치를 씁니다(쓰이지 않는 값): ") + k); break; }
+  if (!a.contains("uvs")) return;
+  const Json& uvs = a.at("uvs");
+  if (!uvs.is_array() || uvs.size() % 2) { c.error(at(p, "uvs"), "ANIM_MESH_UVS", "uvs는 정점마다 u, v인 숫자 배열입니다."); return; }
+  for (size_t i = 0; i < uvs.size(); i++)
+    if (!finiteNumber(uvs[i]) || uvs[i].get<double>() < 0 || uvs[i].get<double>() > 1) { c.error(at(at(p, "uvs"), i), "ANIM_MESH_UVS", "uv 값은 0..1입니다."); return; }
+}
+
+/**
  * Mesh fields of one attachment (plugin 1.4.0): counts, index ranges, uv range and weights.
  * Returns the vertex count of a mesh that runtimes can use (0 for regions and broken meshes),
  * which deform keys are checked against. Weights whose sum is off are normalized at load
@@ -109,6 +134,12 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
   const std::string type = text(a, "type");
   if (a.contains("type") && type != "region" && type != "mesh" && type != "clipping" && type != "boundingBox" && type != "point") {
     c.error(at(p, "type"), "ANIM_MESH_TYPE", "첨부 종류(type)는 region, mesh, clipping, boundingBox 또는 point입니다.");
+    return 0;
+  }
+  if (a.is_object() && a.contains("linkedMesh")) {
+    // Linked mesh (plugin 1.18.0): no shape of its own; its vertex count is the parent's (resolved later).
+    if (type != "mesh") { c.error(at(p, "linkedMesh"), "ANIM_LINKED_TYPE", "linkedMesh는 메시 첨부(type: \"mesh\")에만 씁니다."); return 0; }
+    checkLinkedFields(c, a, p);
     return 0;
   }
   // Bounding boxes (plugin 1.17.0) are polygons placed like clip polygons; points have no shape.
@@ -231,6 +262,79 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
     }
   }
   return ok ? n : 0;
+}
+
+/**
+ * Parents of the linked meshes (plugin 1.18.0) once every attachment list is known: the parent is
+ * a mesh of the named list (default attachments, or skin `skin`), not an image sequence; chains
+ * resolve to their first own mesh, cycles are refused. A resolved linked mesh adds its vertex
+ * count under its own name and, inheriting deform, under the name its deform tracks address (the
+ * chain's deformName), so deform keys are checked against what they will move. Own uvs must match.
+ */
+void checkLinkedMeshes(Checker& c, const Json& attachments, const Json& skins, std::map<std::pair<std::string, std::string>, std::set<size_t>>& meshCounts) {
+  using ListKey = std::tuple<int, std::string, std::string>;  // list (-1 = default), slot, name
+  struct Entry { const Json* a; std::string pointer; };
+  std::map<ListKey, Entry> entries;  // first entry wins (duplicates are ANIM_DUP_ID errors)
+  std::map<std::string, int> skinOf;
+  bool any = false;
+  auto add = [&](int list, const Json& a, const std::string& p) {
+    entries.emplace(ListKey{list, text(a, "slot"), text(a, "name")}, Entry{&a, p});
+    any = any || (a.is_object() && a.contains("linkedMesh"));
+  };
+  for (size_t i = 0; i < attachments.size(); i++) add(-1, attachments[i], at("/attachments", i));
+  for (size_t s = 0; s < skins.size(); s++) {
+    if (!text(skins[s], "id").empty()) skinOf.emplace(text(skins[s], "id"), int(s));
+    const auto& list = arrayOr(skins[s], "attachments");
+    for (size_t k = 0; k < list.size(); k++) add(int(s), list[k], at(at(at("/skins", s), "attachments"), k));
+  }
+  if (!any) return;
+  for (const auto& [key, e] : entries) {
+    const Json& a = *e.a;
+    if (!a.is_object() || !a.contains("linkedMesh") || text(a, "type") != "mesh") continue;
+    const std::string pp = at(at(e.pointer, "linkedMesh"), "parent");
+    const Json* cur = &a;
+    std::set<ListKey> seen{key};
+    std::string deformName = std::get<2>(key);
+    bool inheriting = true;
+    size_t count = 0;
+    for (;;) {
+      const Json& l = cur->at("linkedMesh");
+      std::string ps, pn;
+      // A malformed link was reported by checkLinkedFields (its own entry).
+      if (!l.is_object() || !l.contains("parent") || !l.at("parent").is_string() || !splitLinkedParent(l.at("parent").get<std::string>(), ps, pn)) break;
+      const bool own = cur == &a;
+      const std::string skin = text(l, "skin");
+      int list = -1;
+      if (!skin.empty()) {
+        const auto it = skinOf.find(skin);
+        if (it == skinOf.end()) { if (own) c.error(at(at(e.pointer, "linkedMesh"), "skin"), "ANIM_LINKED_PARENT", "링크드 메시의 부모 스킨이 없습니다: " + skin); break; }
+        list = it->second;
+      }
+      const std::string where = ps + "/" + pn + (skin.empty() ? std::string() : " (스킨 「" + skin + "」)");
+      const ListKey pk{list, ps, pn};
+      const auto found = entries.find(pk);
+      if (found == entries.end()) { if (own) c.error(pp, "ANIM_LINKED_PARENT", "링크드 메시의 부모 메시가 없습니다: " + where); break; }
+      const Json& parent = *found->second.a;
+      if (text(parent, "type") != "mesh") { if (own) c.error(pp, "ANIM_LINKED_PARENT", "링크드 메시의 부모가 메시가 아닙니다: " + where); break; }
+      if (!seen.insert(pk).second) { c.error(pp, "ANIM_LINKED_CYCLE", "링크드 메시의 부모 관계가 순환합니다: " + where); break; }
+      if (own && parent.contains("sequence")) c.error(pp, "ANIM_LINKED_SEQUENCE", "이미지 시퀀스 메시는 링크드 메시의 부모가 될 수 없습니다: " + where);
+      const bool deform = !(l.contains("deform") && l.at("deform") == false);
+      if (inheriting && deform) deformName = pn; else inheriting = false;
+      if (!parent.contains("linkedMesh")) {
+        const Json& v = parent.contains("vertices") ? parent.at("vertices") : Json();
+        if (v.is_array() && v.size() % 2 == 0 && v.size() >= 6 && v.size() <= 2 * MAX_MESH_VERTICES) count = v.size() / 2;
+        break;
+      }
+      cur = &parent;
+    }
+    if (!count) continue;
+    if (a.contains("uvs") && a.at("uvs").is_array() && a.at("uvs").size() != 2 * count) {
+      c.error(at(e.pointer, "uvs"), "ANIM_LINKED_VERTICES", "링크드 메시의 uvs(정점 " + std::to_string(a.at("uvs").size() / 2) + "개)가 부모 메시의 정점 수(" + std::to_string(count) + "개)와 다릅니다.");
+      continue;
+    }
+    meshCounts[{std::get<1>(key), std::get<2>(key)}].insert(count);
+    meshCounts[{std::get<1>(key), deformName}].insert(count);
+  }
 }
 
 /**
@@ -783,6 +887,13 @@ std::optional<Property> parseProperty(const std::string& n) {
   return std::nullopt;
 }
 
+bool splitLinkedParent(const std::string& ref, std::string& slot, std::string& name) {
+  const size_t cut = ref.find('/');
+  if (cut == std::string::npos || cut == 0 || cut + 1 >= ref.size() || ref.find('/', cut + 1) != std::string::npos) return false;
+  slot = ref.substr(0, cut);
+  name = ref.substr(cut + 1);
+  return true;
+}
 int Rig::boneIndex(const std::string& id) const { for (size_t i = 0; i < bones.size(); i++) if (bones[i].id == id) return int(i); return -1; }
 int Rig::slotIndex(const std::string& id) const { for (size_t i = 0; i < slots.size(); i++) if (slots[i].id == id) return int(i); return -1; }
 int Rig::clipIndex(const std::string& id) const { for (size_t i = 0; i < clips.size(); i++) if (clips[i].id == id) return int(i); return -1; }
@@ -913,6 +1024,7 @@ std::vector<Diagnostic> validateRig(const Json& data) {
     for (size_t k = 0; k < list.size(); k++) checkAttachment(list[k], at(at(p, "attachments"), k), skinNames[i]);
     anySkin.insert(skinNames[i].begin(), skinNames[i].end());
   }
+  checkLinkedMeshes(c, attachments, skins, meshCounts);
   // A name is usable when the default list or any skin provides it (an outfit-only part).
   auto knownName = [&](const std::string& slot, const std::string& name) { return attachmentIds.count({slot, name}) || anySkin.count({slot, name}); };
   std::set<SlotName> referenced;  // names that setup/keys/expressions show: every skin should resolve them
@@ -1190,6 +1302,19 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
     Attachment att; att.slot = a.at("slot"); att.name = a.at("name"); att.imageAssetId = a.value("imageAssetId", std::string());
     att.offset = readTransform(a); att.pivotX = a.value("pivotX", 0.5); att.pivotY = a.value("pivotY", 0.5);
     att.width = a.value("width", 0.0); att.height = a.value("height", 0.0);
+    att.deformName = att.name;
+    if (a.contains("linkedMesh") && a.at("linkedMesh").is_object()) {
+      // Linked mesh (plugin 1.18.0): its own picture only; the shape is copied from the parent below.
+      const Json& l = a.at("linkedMesh");
+      att.mesh = att.linked = true;
+      splitLinkedParent(l.at("parent").get<std::string>(), att.linkedSlot, att.linkedName);
+      att.linkedSkin = l.value("skin", std::string());
+      att.linkedDeform = l.value("deform", true);
+      att.linkedWidth = att.width; att.linkedHeight = att.height;
+      if (a.contains("uvs")) for (const auto& v : a.at("uvs")) att.uvs.push_back(v.get<double>());
+      if (a.contains("atlas") && a.at("atlas").is_object()) att.atlas = readRegion(a.at("atlas"));
+      return att;
+    }
     if (type == "clipping") {
       // No picture: the placement is the offset alone (no size, no pivot), vertices in that space.
       att.clipping = true;
@@ -1254,6 +1379,27 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
     for (const auto& a : arrayOr(s, "attachments")) skin.attachments.push_back(readAttachment(a));
     rig.skins.push_back(skin);
   }
+  // Linked meshes (plugin 1.18.0): copy the parent's shape and placement (validation guarantees a
+  // mesh parent and no cycle; chains resolve their parents first). The lists are complete, so the
+  // pointers stay valid.
+  std::set<const Attachment*> resolved;
+  std::function<void(Attachment&, int)> resolve = [&](Attachment& a, int depth) {
+    if (!a.linked || resolved.count(&a) || depth > 256) return;
+    resolved.insert(&a);
+    std::vector<Attachment>* list = &rig.attachments;
+    if (!a.linkedSkin.empty()) { const int s = rig.skinIndex(a.linkedSkin); if (s < 0) return; list = &rig.skins[size_t(s)].attachments; }
+    Attachment* p = nullptr;
+    for (auto& x : *list) if (!p && x.slot == a.linkedSlot && x.name == a.linkedName) p = &x;
+    if (!p || p == &a) return;
+    resolve(*p, depth + 1);
+    a.vertices = p->vertices; a.triangles = p->triangles; a.weights = p->weights; a.binds = p->binds;
+    a.hull = p->hull; a.edges = p->edges;
+    a.offset = p->offset; a.pivotX = p->pivotX; a.pivotY = p->pivotY; a.width = p->width; a.height = p->height;
+    if (a.uvs.size() != p->vertices.size()) a.uvs = p->uvs;  // own uvs only when they fit (validated)
+    if (a.linkedDeform) a.deformName = p->deformName;
+  };
+  for (auto& a : rig.attachments) resolve(a, 0);
+  for (auto& s : rig.skins) for (auto& a : s.attachments) resolve(a, 0);
   for (const auto& e : arrayOr(data, "expressions")) {
     Expression x; x.id = e.at("id"); x.name = e.value("name", x.id);
     if (e.contains("slots") && e.at("slots").is_object())
