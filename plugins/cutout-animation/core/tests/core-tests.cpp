@@ -471,6 +471,7 @@ Json outlineParityScript() {
 #include "ik-physics-tests.hpp"
 #include "golden-1-15.hpp"
 #include "constraint-tests.hpp"
+#include "box-tests.hpp"
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::string(argv[1]) == "--physics-parity") {
@@ -487,6 +488,15 @@ int main(int argc, char** argv) {
     Host host;
     Json replies = Json::array();
     const Json script = xform::parityScript();
+    for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
+    std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
+    return 0;
+  }
+  if (argc > 1 && std::string(argv[1]) == "--box-parity") {
+    // Native reference for bounding boxes / points / hit tests and partClicked (plugin 1.17.0).
+    Host host;
+    Json replies = Json::array();
+    const Json script = boxes::parityScript();
     for (const auto& op : script) replies.push_back(Json::parse(host.requestText(op.dump())));
     std::cout << Json({{"script", script}, {"replies", replies}}).dump() << "\n";
     return 0;
@@ -3184,6 +3194,7 @@ int main(int argc, char** argv) {
   ikphys::run();
   golden115::run();
   xform::run();
+  boxes::run();
 
   std::cout << (checks - failures) << "/" << checks << " checks passed\n";
   return failures ? 1 : 0;

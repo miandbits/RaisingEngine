@@ -928,6 +928,8 @@ in 1.7):
 Signals are derived **only from committed game transitions** (one call per command), never
 from frames. Clip events are not signals: a binding can never depend on an animation event
 (game logic stays independent of presentation timing). Hosts call the core's `observe` op; all hosts use the same C++ derivation.
+The one presentation-side signal is `partClicked` (plugin 1.17.0): a click on a bounding box,
+dispatched inside the element by `hitTest` — it reaches only that instance's bindings, never the game.
 
 | Signal | Params | When |
 |---|---|---|
@@ -939,6 +941,7 @@ from frames. Clip events are not signals: a binding can never depend on an anima
 | `dialogueEnded` | `speakerId` | narrative left dialogue |
 | `portraitChanged` | `characterId`, `portraitId`, `position` | a scene node changed a portrait (expression) |
 | `phaseChanged` | `phase` | state phase changed |
+| `partClicked` | `box`, `slot` | plugin 1.17.0: a click on a bounding box in the player: UI-only, handled inside the element, never derived from a game transition (see "Bounding boxes and points") |
 
 If the controller sets `characterId`, every signal also gets `self=true|false`
 (`speakerId` or `characterId` equals it). Binding fields: `signal`, `match` (all listed
@@ -1298,3 +1301,89 @@ Spine sequences: one attachment shows one of several same-size pictures, picked 
   Animate mode `시퀀스 키` / `키 삭제` (`cutoutSequenceKey` / `DeleteKey`) at the playhead; the
   dopesheet shows a `<slot> 시퀀스` row (step keys). The canvas draws the pose's frame while
   scrubbing (`attachmentImage`).
+
+## Bounding boxes and points (plugin 1.17.0)
+
+Hit areas and anchors that follow the rig. Neither is ever drawn, packed or checked as a picture.
+
+* **Data**: attachments (default list or a skin) of `type: "boundingBox"` with `vertices: [x, y, …]`
+  (3..256 points; placed exactly like a clip polygon: in the slot bone's space through the
+  attachment's `x, y, rotation, scaleX, scaleY`, or `weights` with 1..4 bones per point (bind pose =
+  setup pose, the mesh rules: binds derived at parse, sums normalised with `ANIM_MESH_WEIGHT_SUM`),
+  and deform keys (`property: "deform"`, `attachment` = the box's name) move them) and an optional
+  editor-only `color` (`#rrggbb[aa]`), and `type: "point"` whose `x, y, rotation` are a place and a
+  direction in the slot bone's space (scale unused). They live in slots like pictures: a slot may
+  show one as its setup attachment, attachment keys / expressions / skins swap or hide them. A slot
+  showing nothing (null, a key or expression hiding it, a name the skin does not resolve) has no box
+  or point; slot alpha does not matter (Spine semantics).
+* **Validation**: `ANIM_BOX_VERTICES` (missing, pairs, 3..256), `ANIM_NONFINITE`, weights as meshes
+  (`ANIM_MESH_WEIGHTS`, `ANIM_MESH_INFLUENCES`, `ANIM_MESH_BONE_MISSING`, `ANIM_MESH_WEIGHT_SUM`),
+  names unique per slot and list (`ANIM_DUP_ID`), `ANIM_BOX_COLOR`, `ANIM_BOX_POLYGON` (warning: a
+  crossing polygon is still well defined, see the hit test), `ANIM_BOX_UNUSED` / `ANIM_POINT_UNUSED`
+  (warnings: picture or shape fields that would do nothing), `ANIM_SEQUENCE_TYPE` (no sequences).
+  Controllers: a `partClicked` binding whose `match.box` / `match.slot` names no box of the rig is
+  `ANIM_PART_UNKNOWN` (warning: it can never fire).
+* **Runtime** (`cutout::boxPolygons`, `pointWorlds`, `hitBox`; every runtime, the same code): for the
+  instance's current pose (after expressions, IK, transform constraints and physics) each shown box
+  is its rig-space polygon (`meshPositions`), each point its rig-space place and direction (the
+  rotation through the slot bone's linear part, so scale, shear and mirror count). `drawItems`
+  skips both: documented and compact frames of a rig are byte-identical with or without them.
+  Hit test: even-odd crossing rule, half-open in y (a point on a shared edge belongs to one side),
+  no epsilon; the topmost box (last in draw order) containing the point wins.
+* **Host ops** (generic extension protocol additions, CONTRACT.md §7; coordinates in the space of
+  `frame`: element px for mounted instances, rig-origin px otherwise): `points {instance}` →
+  `{points: [{slot, name, x, y, rotation}]}` (rotation in degrees, clockwise on y-down screens; a
+  mirrored element mirrors it), `boxes {instance}` → `{boxes: [{slot, name, polygon}]}`, `hitTest
+  {instance, x, y, dispatch?}` → `{hit: {slot, name} | null, hits: [...] (topmost first), matched?}`.
+  `init` replies list `ops: ["points", "hitTest"]`; `mount` replies add `interactive: true` when the
+  rig (or a skin) has a bounding box (absent otherwise: older replies keep their shape).
+* **Game use** (`partClicked`): `hitTest` with `dispatch: true` sends the instance the presentation
+  signal `partClicked {box: <attachment name>, slot: <slot id>}` (the topmost box; a miss sends
+  nothing), which controller bindings match like any signal (`match: {box: "head"}` → a clip, skin
+  or expression). **Determinism**: the click is a UI-only signal handled inside the element. It
+  never becomes a game command, an `observe` transition or an RNG draw; players only observe the
+  click (it still reaches the screen under the element) and nothing of it reaches the game
+  session. What it changes is presentation state only (the instance's tracks / look, saved in
+  `playerPresentation.extensions` like any binding), so game results and replays are unchanged.
+* **Players** (both; tests/plugins/cutout-box-players.test.mjs): a mouse click inside an
+  interactive plugin element is mapped to element px (native: the document's `click` event,
+  `ExtensionElement::observe_click`; web: a capturing document listener through the layer's box,
+  stage scale undone) and sent as `hitTest` with `dispatch`. `ExtensionHost::points(instance)`
+  (native) / `host.points(instance)` (web) give the anchors in element px for UI that follows a
+  part (a speech bubble…); reports list `points`, `interactive` and `lastClick` per instance and a
+  `clicks` counter. Native automation: `{clickPoint: {id?, x, y}}` (element-local with `id`).
+* **Editing ops**: `addBoundingBox {slot (new), bone?, from?, fromName?, before? | index?, name?
+  ("box"), vertices | worldVertices | mask? (+ alphaThreshold?, detail?), color?}` (`from` = a part:
+  the box goes on its bone right above it and, without vertices, outlines its picture: the alpha
+  `mask` traced like `autoOutline` (the service fills it from `imagePath`), else its rectangle; no
+  part and no vertices: a 64 px square around the bone origin; `extra.attachment`, `extra.vertices`),
+  `setBoundingBox {slot, name?, skin?, vertices? | worldVertices?, color? (null removes)}` (a new
+  point count drops weights `ANIM_BOX_WEIGHTS_DROPPED` and deform keys), `addPoint {slot (new),
+  bone, before? | index?, name? ("point"), x?, y?, rotation? | worldX?, worldY?, worldRotation?}`
+  (on top by default), `setPoint {slot, name?, skin?, …same}`; `setAttachment` moves / turns them
+  (canvas drags), `deleteSlot` removes them. `convertToMesh`, mesh ops and `setSequence` refuse them.
+* **Editor** (look page `판정`, `cutoutHitPage`): `판정 상자` (`cutoutAddBoundingBox`: the selected
+  part's alpha outline with the 메시 page's threshold / detail, or its rectangle; a selected bone gets
+  a square), `기준점` (`cutoutAddPoint`, checkable: the next canvas click places a point on the
+  selected bone (a part: its bone), Esc cancels), `정점 편집` (`cutoutBoxVertices`: the mesh vertex
+  tools on the box's points: click / Shift / band select, drag, Delete; row `cutoutBoxVertexTools`
+  with `점 추가` (`cutoutBoxAddVertex`, onto the nearest edge) and `점 삭제`
+  (`cutoutBoxDeleteVertices`, at least 3 stay)), `삭제` (`cutoutHitDelete`), list `cutoutHitList`,
+  info `cutoutHitInfo`. The canvas draws boxes as translucent dashed polygons (their colour, else
+  lime) and points as a violet crosshair with a direction line ending in a round handle; a box is
+  picked by its outline, a point by its centre (drag = move) or its handle (drag = turn), each
+  gesture one edit. `보기 ▾` toggles `판정 상자 보이기` (`cutoutShowBoxes`) and `기준점 보이기`
+  (`cutoutShowPoints`), editor-only (QSettings). In the 게임 연결 tab the canvas shows the preview
+  instance: a click on a box fires `partClicked` into it (the players' dispatch) and the result
+  line names the matched bindings; the binding editor lists `partClicked · 판정 상자 클릭` and offers
+  `box=<name>` for the rig's boxes (tooltip, completer). Every command is in the palette.
+* **Atlas, PSD re-import, meshes**: boxes and points have no image: the atlas packer and the image
+  checks skip them (even with a stray `imageAssetId`), mesh tools ignore them, and a re-imported
+  picture layer that lands on a box / point / clipping of the same slot and name is skipped
+  (`ANIM_IMPORT_KIND`), never turned into a picture.
+* **Layer import tags**: a layer named `head [box]` becomes slot `head-box` showing bounding box
+  `head` that outlines its pixels (the core's alpha tracing; without the core, the pixels'
+  rectangle), a layer `mouth [point]` slot `mouth-point` showing point `mouth` at the centre of its
+  pixels; both on the bone of their group, in layer order, hidden layers not shown, never moving
+  bone centres. Re-import updates the outline / place (weights stay unless the point count
+  changed). The report marks them `role: "box"` / `"point"` and counts `summary.boxes` / `points`.

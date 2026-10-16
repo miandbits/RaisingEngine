@@ -126,7 +126,19 @@ struct Attachment {
   std::vector<std::string> frames;
   std::vector<std::optional<AtlasRegion>> frameAtlas;
   int setupIndex = 0;
+  /**
+   * Bounding box (plugin 1.17.0, `type: "boundingBox"`): a hit polygon, never drawn. `vertices`
+   * (3..MAX_CLIP_VERTICES points) are placed exactly like a clipping polygon (slot bone · offset,
+   * or `weights`/`binds`; deform keys apply), so it follows the rig. `color` is an editor-only hint.
+   * Point (`type: "point"`): no picture either; the offset x, y, rotation is a place and a direction
+   * in the slot bone's space (scale unused). Both live in slots like pictures (skins, expressions
+   * and attachment keys show, swap or hide them): see boxPolygons / pointWorlds (runtime.hpp).
+   */
+  bool boundingBox = false, point = false;
+  std::string color;
   bool sequence() const { return !frames.empty(); }
+  /** No picture: never a draw item, never in an atlas, never an image to check or re-import. */
+  bool pictureless() const { return clipping || boundingBox || point; }
   size_t vertexCount() const { return vertices.size() / 2; }
 };
 

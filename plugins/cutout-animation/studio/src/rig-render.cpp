@@ -108,7 +108,7 @@ QVector<QPointF> meshPoints(const cutout::Rig& rig, const cutout::Pose& pose, in
   attachmentMatrix(rig, pose, i, &att);
   if (out) *out = att;
   QVector<QPointF> points;
-  if (!att || !att->mesh) return points;
+  if (!att || (!att->mesh && !att->boundingBox)) return points;
   const auto pos = cutout::meshPositions(rig, pose, i, *att);
   for (size_t v = 0; v + 1 < pos.size(); v += 2) points << QPointF(pos[v], pos[v + 1]);
   return points;
@@ -122,10 +122,34 @@ QPolygonF clipPolygon(const cutout::Rig& rig, const cutout::Pose& pose, int i) {
   for (size_t v = 0; v + 1 < pos.size(); v += 2) out << QPointF(pos[v], pos[v + 1]);
   return out;
 }
+QPolygonF boxPolygon(const cutout::Rig& rig, const cutout::Pose& pose, int i) {
+  const cutout::Attachment* att = nullptr;
+  attachmentMatrix(rig, pose, i, &att);
+  QPolygonF out;
+  if (!att || !att->boundingBox) return out;
+  const auto pos = cutout::meshPositions(rig, pose, i, *att);
+  for (size_t v = 0; v + 1 < pos.size(); v += 2) out << QPointF(pos[v], pos[v + 1]);
+  return out;
+}
+bool pointOf(const cutout::Rig& rig, const cutout::Pose& pose, int i, QPointF& at, double& rotation) {
+  const cutout::Attachment* att = nullptr;
+  attachmentMatrix(rig, pose, i, &att);
+  if (!att || !att->point) return false;
+  for (const auto& p : cutout::pointWorlds(rig, pose))
+    if (p.slot == i) { at = QPointF(p.x, p.y); rotation = p.rotation; return true; }
+  return false;
+}
+QColor dataColor(const std::string& c, const QColor& fallback) {
+  if (c.size() != 7 && c.size() != 9) return fallback;
+  bool ok = true;
+  const uint v = QString::fromStdString(c.substr(1)).toUInt(&ok, 16);
+  if (!ok) return fallback;
+  return c.size() == 7 ? QColor((v >> 16) & 255, (v >> 8) & 255, v & 255) : QColor((v >> 24) & 255, (v >> 16) & 255, (v >> 8) & 255, v & 255);
+}
 QRectF attachmentBounds(const cutout::Rig& rig, const cutout::Pose& pose, int i) {
   const cutout::Attachment* att = nullptr;
   const cutout::Affine m = attachmentMatrix(rig, pose, i, &att);
-  if (!att) return {};
+  if (!att || att->boundingBox || att->point) return {};
   if (att->clipping) return clipPolygon(rig, pose, i).boundingRect();
   if (!att->mesh) return qtTransform(m).mapRect(QRectF(0, 0, att->width, att->height));
   return QPolygonF(meshPoints(rig, pose, i)).boundingRect();
@@ -297,7 +321,7 @@ void drawRig(QPainter& p, const cutout::Rig& rig, const cutout::Pose& pose, Imag
         p.setClipPath(path, Qt::IntersectClip);
         clipEnd = att->clipEndIndex >= 0 ? att->clipEndIndex : int(rig.slots.size()) - 1;
       }
-    } else if (shown && att && alpha > 0) {
+    } else if (shown && att && alpha > 0 && !att->boundingBox && !att->point) {  // boxes / points (1.17.0) draw nothing
       p.setOpacity(baseOpacity * alpha);
       // Sequences (plugin 1.12.0): the frame the pose shows (clip time picks it while scrubbing).
       const QImage img = images.image(qs(cutout::attachmentImage(pose, int(i), *att)));

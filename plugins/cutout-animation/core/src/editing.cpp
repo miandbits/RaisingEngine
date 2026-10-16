@@ -1,5 +1,6 @@
 #include "cutout/editing.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -402,12 +403,16 @@ size_t removeTransform(Json& d, const Str& id) {
 // ---- Mesh helpers (plugin 1.4.0; ops near the end) ----
 bool isMesh(const Json& a) { return a.is_object() && optStr(a, "type") == "mesh"; }
 bool isClipping(const Json& a) { return a.is_object() && optStr(a, "type") == "clipping"; }
+bool isBox(const Json& a) { return a.is_object() && optStr(a, "type") == "boundingBox"; }
+bool isPoint(const Json& a) { return a.is_object() && optStr(a, "type") == "point"; }
+/** No picture (clipping, bounding box, point): mesh/sequence/image ops refuse them. */
+bool isPictureless(const Json& a) { return isClipping(a) || isBox(a) || isPoint(a); }
 /** Vertex counts of the meshes (and clip polygons, plugin 1.12.0: deform keys move them too) named (slot, name) in the default list and in every skin. */
 std::set<size_t> meshCounts(const Json& d, const Str& slotId, const Str& name) {
   std::set<size_t> out;
   auto scan = [&](const Json& list) {
     for (const auto& a : list)
-      if ((isMesh(a) || isClipping(a)) && optStr(a, "slot") == slotId && optStr(a, "name") == name && a.contains("vertices") && a.at("vertices").is_array())
+      if ((isMesh(a) || isClipping(a) || isBox(a)) && optStr(a, "slot") == slotId && optStr(a, "name") == name && a.contains("vertices") && a.at("vertices").is_array())
         out.insert(a.at("vertices").size() / 2);
   };
   scan(listOr(d, "attachments"));
@@ -3067,6 +3072,7 @@ void convertToMesh(EditResult& r, const Json& op) {
   Str slotId, name;
   Json& a = attachmentEntry(d, op, slotId, name);
   if (isClipping(a)) throw EditError("클리핑 첨부는 메시로 바꿀 수 없습니다(그림이 없음). 모양은 「모양 다시 그리기」로 바꿉니다.");
+  if (isBox(a) || isPoint(a)) throw EditError("판정 상자·기준점은 메시로 바꿀 수 없습니다(그림이 없음).");
   const int64_t rows = has(op, "rows") ? int64_t(num(op, "rows", 4)) : 4, cols = has(op, "cols") ? int64_t(num(op, "cols", 4)) : 4;
   if (rows < 1 || cols < 1 || rows > 64 || cols > 64) throw EditError("격자 칸 수(rows, cols)는 1..64입니다.");
   if (size_t((rows + 1) * (cols + 1)) > MAX_MESH_VERTICES) throw EditError("정점이 너무 많습니다(최대 " + std::to_string(MAX_MESH_VERTICES) + "개). 칸 수를 줄이세요.");
@@ -3833,6 +3839,177 @@ void setClipping(EditResult& r, const Json& op) {
   r.affected.push_back("slot:" + slotId);
 }
 
+// ---- Bounding boxes and points (plugin 1.17.0) ----
+/** Box polygon of op `vertices` (bone px) / `worldVertices` (rig px, setup pose): 3..256 points.
+ *  A crossing polygon is allowed (validation warns; hit tests use the even-odd rule). */
+std::vector<double> boxPolygonOf(Json& d, const Json& op, const Str& boneId) {
+  const bool world = has(op, "worldVertices");
+  std::vector<double> pts = pointList(op, world ? "worldVertices" : "vertices");
+  if (world) {
+    const Affine inv = inverseOr(setupWorld(d)[boneId], "본");
+    for (size_t i = 0; i + 1 < pts.size(); i += 2) { double x, y; inv.apply(pts[i], pts[i + 1], x, y); pts[i] = clean(x); pts[i + 1] = clean(y); }
+  }
+  if (pts.size() / 2 < 3 || pts.size() / 2 > MAX_CLIP_VERTICES) throw EditError("판정 상자 다각형은 점 3.." + std::to_string(MAX_CLIP_VERTICES) + "개입니다.");
+  return pts;
+}
+/** Optional `color` of a box op: "#rrggbb[aa]"; null / "" = none. */
+void boxColor(Json& a, const Json& op) {
+  if (!op.contains("color")) return;
+  const Json& c = op.at("color");
+  if (c.is_null() || (c.is_string() && c.get<Str>().empty())) { a.erase("color"); return; }
+  const Str v = c.is_string() ? c.get<Str>() : Str();
+  bool ok = (v.size() == 7 || v.size() == 9) && v[0] == '#';
+  for (size_t i = 1; ok && i < v.size(); i++) ok = std::isxdigit(static_cast<unsigned char>(v[i])) != 0;
+  if (!ok) throw EditError("판정 상자 색은 \"#rrggbb\" 또는 \"#rrggbbaa\"입니다: " + c.dump());
+  a["color"] = v;
+}
+/**
+ * The polygon a box made `from` part `fromSlot` gets (in bone `boneId`'s px): the outline of the
+ * part's picture traced from `mask` (its alpha: autoOutline's tracing, `alphaThreshold`/`detail`),
+ * else the picture's rectangle; placed where the part is at the setup pose. Empty when the part
+ * shows no picture.
+ */
+std::vector<double> boxFromPart(Json& d, const Json& op, const Str& fromSlot, const Str& boneId) {
+  const Json& s = slot(d, fromSlot);
+  const Str name = has(op, "fromName") ? reqStr(op, "fromName") : optStr(s, "attachment");
+  const Json* a = nullptr;
+  for (const auto& x : listOr(d, "attachments")) if (optStr(x, "slot") == fromSlot && optStr(x, "name") == name) a = &x;
+  if (!a || isPictureless(*a) || !(num(*a, "width", 0) > 0) || !(num(*a, "height", 0) > 0)) return {};
+  const double w = num(*a, "width", 0), h = num(*a, "height", 0);
+  std::vector<double> px = {0, 0, w, 0, w, h, 0, h};
+  if (has(op, "mask") && op.at("mask").is_object()) {
+    const Json& mask = op.at("mask");
+    const double mw = num(mask, "width", 0), mh = num(mask, "height", 0);
+    if (mw < 1 || mh < 1 || mw > 8192 || mh > 8192 || mw != std::floor(mw) || mh != std::floor(mh)) throw EditError("mask 크기는 1..8192 정수입니다.");
+    const std::vector<uint8_t> alpha = decodeBase64(optStr(mask, "alpha"));
+    if (alpha.size() != size_t(mw) * size_t(mh)) throw EditError("mask.alpha 길이(" + std::to_string(alpha.size()) + ")가 width × height와 다릅니다.");
+    const double threshold = num(op, "alphaThreshold", 0.05), detail = num(op, "detail", 0.5);
+    if (threshold < 0 || threshold > 1 || detail < 0 || detail > 1) throw EditError("alphaThreshold와 detail은 0..1입니다.");
+    // The same tracing as 자동 윤곽 (autoOutline), at most MAX_CLIP_VERTICES points.
+    px = traceAlphaOutline(alpha, int(mw), int(mh), threshold, detail, MAX_CLIP_VERTICES);
+    for (size_t i = 0; i + 1 < px.size(); i += 2) { px[i] *= w / mw; px[i + 1] *= h / mh; }
+  }
+  auto world = setupWorld(d);
+  const Transform t = readT(*a);
+  const Affine placed = inverseOr(world[boneId], "본") * world[optStr(s, "bone")] * Affine::compose(t.x, t.y, t.rotation, t.scaleX, t.scaleY) *
+                        Affine::compose(-num(*a, "pivotX", 0.5) * w, -num(*a, "pivotY", 0.5) * h, 0, 1, 1);
+  std::vector<double> out(px.size());
+  for (size_t i = 0; i + 1 < px.size(); i += 2) { double x, y; placed.apply(px[i], px[i + 1], x, y); out[i] = clean(x); out[i + 1] = clean(y); }
+  return out;
+}
+/** Index for a new slot: before `before`, else right above `above`, else `index`, else on top. */
+int64_t newSlotIndex(const Json& op, const Json& slots, const Str& before, const Str& above) {
+  if (!before.empty()) return findIndex(slots, "id", before);
+  if (!above.empty()) return findIndex(slots, "id", above) + 1;
+  return std::clamp<int64_t>(op.value("index", int64_t(slots.size())), 0, int64_t(slots.size()));
+}
+/**
+ * addBoundingBox {slot (new), bone?, from?, fromName?, before? | index?, name? ("box"), vertices |
+ * worldVertices | mask? (+ alphaThreshold?, detail?), color?}: a new slot showing a bounding box.
+ * `from` = a part: the box goes on its bone right above it and, without vertices, outlines its
+ * picture (traced from `mask`, else its rectangle; the service fills `mask` from `imagePath`).
+ * Without `from` and vertices: a 64 px square around the bone origin.
+ */
+void addBoundingBox(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str slotId = reqStr(op, "slot"), before = optStr(op, "before"), from = optStr(op, "from");
+  if (!validId(slotId)) throw EditError("조각 ID는 소문자 영문·숫자·하이픈 형식이어야 합니다: " + slotId);
+  auto& slots = arr(d, "slots");
+  if (findIndex(slots, "id", slotId) >= 0) throw EditError("이미 있는 조각 ID입니다: " + slotId);
+  Str boneId = optStr(op, "bone");
+  if (boneId.empty() && !from.empty()) boneId = slot(d, from).value("bone", Str());
+  if (boneId.empty() && !before.empty()) boneId = slot(d, before).value("bone", Str());
+  if (boneId.empty()) throw EditError("판정 상자를 붙일 본(bone)이나 조각(from)을 지정하세요.");
+  bone(d, boneId);
+  const Str name = optStr(op, "name", "box");
+  if (!validName(name)) throw EditError("첨부 이름 형식이 올바르지 않습니다: " + name);
+  std::vector<double> polygon;
+  if (has(op, "vertices") || has(op, "worldVertices")) polygon = boxPolygonOf(d, op, boneId);
+  else if (!from.empty()) polygon = boxFromPart(d, op, from, boneId);
+  if (polygon.empty()) polygon = {-32, -32, 32, -32, 32, 32, -32, 32};
+  Json a{{"slot", slotId}, {"name", name}, {"type", "boundingBox"}, {"vertices", numbersJson(polygon)}};
+  boxColor(a, op);
+  const int64_t index = newSlotIndex(op, slots, before, from);
+  slots.insert(slots.begin() + index, Json{{"id", slotId}, {"bone", boneId}, {"attachment", name}});
+  arr(d, "attachments").push_back(a);
+  r.affected.push_back("slot:" + slotId);
+  r.extra["attachment"] = name;
+  r.extra["vertices"] = polygon.size() / 2;
+}
+/** setBoundingBox {slot, name?, skin?, vertices? | worldVertices?, color?}: a new polygon (weights
+ *  and deform keys dropped when the point count changes) and/or the editor colour. */
+void setBoundingBox(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = attachmentEntry(d, op, slotId, name);
+  if (!isBox(a)) throw EditError("판정 상자 첨부가 아닙니다: " + slotId + "/" + name);
+  if (has(op, "vertices") || has(op, "worldVertices")) {
+    const std::vector<double> polygon = boxPolygonOf(d, op, slot(d, slotId).value("bone", Str()));
+    if (listOr(a, "vertices").size() != polygon.size() && a.contains("weights")) {
+      a.erase("weights");
+      warn(r, "ANIM_BOX_WEIGHTS_DROPPED", "", "판정 상자 점 수가 바뀌어 웨이트를 지웠습니다.");
+    }
+    a["vertices"] = numbersJson(polygon);
+    if (const size_t removed = purgeDeform(r)) warn(r, "ANIM_MESH_DEFORM_REMOVED", "", "점 수가 바뀌어 판정 상자 변형 키 트랙 " + std::to_string(removed) + "개를 지웠습니다.");
+  }
+  boxColor(a, op);
+  r.affected.push_back("slot:" + slotId);
+}
+/** Point fields of op: x, y, rotation (bone space) or worldX, worldY, worldRotation (rig space at
+ *  the setup pose; the rotation is turned through the bone's linear part, like pointWorlds). */
+void pointFields(Json& d, Json& a, const Json& op, const Str& boneId) {
+  const bool world = has(op, "worldX") || has(op, "worldY") || has(op, "worldRotation");
+  auto opt = [&](const char* k, double v) { v = clean(v); if (v == 0) a.erase(k); else a[k] = v; };
+  if (!world) {
+    for (const char* k : {"x", "y", "rotation"}) if (has(op, k)) opt(k, num(op, k, 0));
+    return;
+  }
+  const Affine w = setupWorld(d)[boneId], inv = inverseOr(w, "본");
+  if (has(op, "worldX") || has(op, "worldY")) {
+    double wx, wy;
+    w.apply(num(a, "x", 0), num(a, "y", 0), wx, wy);
+    double x, y;
+    inv.apply(has(op, "worldX") ? num(op, "worldX", 0) : wx, has(op, "worldY") ? num(op, "worldY", 0) : wy, x, y);
+    opt("x", x); opt("y", y);
+  }
+  if (has(op, "worldRotation")) {
+    constexpr double DEG = 3.14159265358979323846 / 180;
+    const double rad = num(op, "worldRotation", 0) * DEG, dx = std::cos(rad), dy = std::sin(rad);
+    opt("rotation", std::atan2(inv.b * dx + inv.d * dy, inv.a * dx + inv.c * dy) / DEG);
+  }
+}
+/** addPoint {slot (new), bone, before? | index?, name? ("point"), x?, y?, rotation? | worldX?, worldY?,
+ *  worldRotation?}: a new slot (on top by default) showing a point attachment. */
+void addPoint(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  const Str slotId = reqStr(op, "slot"), before = optStr(op, "before");
+  if (!validId(slotId)) throw EditError("조각 ID는 소문자 영문·숫자·하이픈 형식이어야 합니다: " + slotId);
+  auto& slots = arr(d, "slots");
+  if (findIndex(slots, "id", slotId) >= 0) throw EditError("이미 있는 조각 ID입니다: " + slotId);
+  Str boneId = optStr(op, "bone");
+  if (boneId.empty() && !before.empty()) boneId = slot(d, before).value("bone", Str());
+  if (boneId.empty()) throw EditError("기준점을 붙일 본(bone)을 지정하세요.");
+  bone(d, boneId);
+  const Str name = optStr(op, "name", "point");
+  if (!validName(name)) throw EditError("첨부 이름 형식이 올바르지 않습니다: " + name);
+  Json a{{"slot", slotId}, {"name", name}, {"type", "point"}};
+  pointFields(d, a, op, boneId);
+  const int64_t index = newSlotIndex(op, slots, before, Str());
+  slots.insert(slots.begin() + index, Json{{"id", slotId}, {"bone", boneId}, {"attachment", name}});
+  arr(d, "attachments").push_back(a);
+  r.affected.push_back("slot:" + slotId);
+  r.extra["attachment"] = name;
+}
+/** setPoint {slot, name?, skin?, x?, y?, rotation? | worldX?, worldY?, worldRotation?}. */
+void setPoint(EditResult& r, const Json& op) {
+  Json& d = r.data;
+  Str slotId, name;
+  Json& a = attachmentEntry(d, op, slotId, name);
+  if (!isPoint(a)) throw EditError("기준점 첨부가 아닙니다: " + slotId + "/" + name);
+  pointFields(d, a, op, slot(d, slotId).value("bone", Str()));
+  r.affected.push_back("slot:" + slotId);
+}
+
 // ---- Image sequences (plugin 1.12.0) ----
 /**
  * setSequence {slot, name?, skin?, frames, setupIndex?, width?, height?}: the attachment shows
@@ -3844,7 +4021,7 @@ void setSequence(EditResult& r, const Json& op) {
   Json& d = r.data;
   Str slotId, name;
   Json& a = attachmentEntry(d, op, slotId, name);
-  if (isClipping(a)) throw EditError("클리핑 첨부에는 시퀀스를 쓸 수 없습니다.");
+  if (isPictureless(a)) throw EditError("그림이 없는 첨부(클리핑·판정 상자·기준점)에는 시퀀스를 쓸 수 없습니다.");
   const bool clear = !has(op, "frames") || (op.at("frames").is_array() && op.at("frames").empty());
   if (clear) {
     if (!a.contains("sequence")) throw EditError("시퀀스가 없는 첨부입니다: " + slotId + "/" + name);
@@ -3916,6 +4093,7 @@ void dispatch(EditResult& r, const Json& op, const Json& controllers, int depth)
     {"createMeshFromOutline", createMeshFromOutline}, {"autoOutline", autoOutline}, {"addMeshVertex", addMeshVertex},
     {"removeMeshVertex", removeMeshVertex}, {"retriangulate", retriangulate},
     {"addClipping", addClipping}, {"setClipping", setClipping}, {"setSequence", setSequence},
+    {"addBoundingBox", addBoundingBox}, {"setBoundingBox", setBoundingBox}, {"addPoint", addPoint}, {"setPoint", setPoint},
     {"addMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, true); }},
     {"removeMeshEdge", [](EditResult& r, const Json& op) { meshEdge(r, op, false); }},
   };

@@ -674,6 +674,19 @@ std::vector<Diagnostic> validateController(const Json& data, const Rig* rig) {
       error(p + "/speed", "ANIM_SPEED", "속도는 0보다 크고 10 이하입니다.");
     const std::string then = b.value("then", std::string("default"));
     if (then != "default" && then != "hold" && then != "stop") error(p + "/then", "ANIM_THEN", "종료 후 동작은 default, hold, stop 중 하나입니다.");
+    // partClicked (plugin 1.17.0): a match on a box name / slot the rig does not have never fires.
+    if (rig && b.value("signal", std::string()) == "partClicked" && b.contains("match") && b.at("match").is_object()) {
+      const Json& m = b.at("match");
+      auto isBox = [&](const std::vector<Attachment>& list, const std::string& key, const std::string& v) {
+        return std::any_of(list.begin(), list.end(), [&](const Attachment& a) { return a.boundingBox && (key == "box" ? a.name : a.slot) == v; });
+      };
+      for (const char* key : {"box", "slot"}) {
+        if (!m.contains(key) || !m.at(key).is_string()) continue;
+        bool known = isBox(rig->attachments, key, m.at(key).get<std::string>());
+        for (const auto& skin : rig->skins) known = known || isBox(skin.attachments, key, m.at(key).get<std::string>());
+        if (!known) out.push_back({"ANIM_PART_UNKNOWN", "warning", p + "/match/" + key, std::string("리그에 이 ") + (key == std::string("box") ? "이름의 판정 상자" : "판정 상자 조각") + "가 없어 이 연결은 실행되지 않습니다: " + m.at(key).get<std::string>()});
+      }
+    }
   }
   return out;
 }
@@ -966,7 +979,7 @@ const std::vector<double>* deformOf(const Pose& pose, int slot, const Attachment
 }
 std::vector<double> meshPositions(const Rig& rig, const Pose& pose, int slot, const Attachment& a) {
   std::vector<double> out;
-  if ((!a.mesh && !a.clipping) || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
+  if ((!a.mesh && !a.clipping && !a.boundingBox) || slot < 0 || size_t(slot) >= rig.slots.size() || rig.slots[size_t(slot)].boneIndex < 0 || pose.world.size() != rig.bones.size()) return out;
   const std::vector<double>* d = deformOf(pose, slot, a);
   const Affine rigid = pose.world[size_t(rig.slots[size_t(slot)].boneIndex)] * attachmentPlacement(a);
   // world(bone) · bind per influencing bone, once per call rather than once per vertex.
@@ -1023,7 +1036,10 @@ std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose) {
   for (size_t i = 0; i < rig.slots.size(); i++) {
     const auto& slot = rig.slots[i];
     const Attachment* att = pose.attachments[i] && slot.boneIndex >= 0 ? rig.attachment(slot.id, *pose.attachments[i], pose.skin) : nullptr;
-    if (att && att->clipping) {
+    if (att && (att->boundingBox || att->point)) {
+      // Bounding boxes and points (plugin 1.17.0) are never drawn: frames of rigs with them keep
+      // exactly the items (and compact bytes) they had without them.
+    } else if (att && att->clipping) {
       // A clip range starts here (alpha does not matter); one inside an active range is ignored.
       if (!clip) {
         std::vector<double> polygon = meshPositions(rig, pose, int(i), *att);
@@ -1063,6 +1079,57 @@ std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose) {
 }
 
 std::vector<DrawItem> Instance::drawList() const { return drawItems(*rig_, pose()); }
+
+// ---- Bounding boxes and points (plugin 1.17.0) ----
+namespace {
+/** The attachment slot `i` shows in `pose` (nullptr = nothing / unknown). */
+const Attachment* shownAttachment(const Rig& rig, const Pose& pose, size_t i) {
+  const auto& slot = rig.slots[i];
+  return i < pose.attachments.size() && pose.attachments[i] && slot.boneIndex >= 0 && size_t(slot.boneIndex) < pose.world.size()
+             ? rig.attachment(slot.id, *pose.attachments[i], pose.skin) : nullptr;
+}
+}  // namespace
+std::vector<BoxWorld> boxPolygons(const Rig& rig, const Pose& pose) {
+  std::vector<BoxWorld> out;
+  if (pose.world.size() != rig.bones.size()) return out;
+  for (size_t i = 0; i < rig.slots.size(); i++)
+    if (const Attachment* a = shownAttachment(rig, pose, i); a && a->boundingBox)
+      out.push_back({int(i), a, meshPositions(rig, pose, int(i), *a)});
+  return out;
+}
+std::vector<PointWorld> pointWorlds(const Rig& rig, const Pose& pose) {
+  std::vector<PointWorld> out;
+  if (pose.world.size() != rig.bones.size()) return out;
+  constexpr double DEG = 3.14159265358979323846 / 180;
+  for (size_t i = 0; i < rig.slots.size(); i++) {
+    const Attachment* a = shownAttachment(rig, pose, i);
+    if (!a || !a->point) continue;
+    const Affine& w = pose.world[size_t(rig.slots[i].boneIndex)];
+    PointWorld p{int(i), a, 0, 0, 0};
+    w.apply(a->offset.x, a->offset.y, p.x, p.y);
+    // The direction (rotation, clockwise on y-down screens) through the bone's linear part: under
+    // a scaled, sheared or mirrored bone it is where the point's +x axis really points.
+    const double r = a->offset.rotation * DEG, dx = w.a * std::cos(r) + w.c * std::sin(r), dy = w.b * std::cos(r) + w.d * std::sin(r);
+    p.rotation = dx == 0 && dy == 0 ? a->offset.rotation : std::atan2(dy, dx) / DEG;
+    out.push_back(p);
+  }
+  return out;
+}
+bool polygonContains(const std::vector<double>& polygon, double x, double y) {
+  // Even-odd crossing test, half-open in y: a point on a shared edge belongs to exactly one side,
+  // and every runtime runs the same comparisons (no epsilon).
+  bool inside = false;
+  const size_t n = polygon.size() / 2;
+  for (size_t i = 0, j = n ? n - 1 : 0; i < n; j = i++) {
+    const double xi = polygon[2 * i], yi = polygon[2 * i + 1], xj = polygon[2 * j], yj = polygon[2 * j + 1];
+    if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+int hitBox(const std::vector<BoxWorld>& boxes, double x, double y) {
+  for (size_t k = boxes.size(); k-- > 0;) if (polygonContains(boxes[k].polygon, x, y)) return int(k);
+  return -1;
+}
 
 std::vector<Notification> Instance::takeNotifications() {
   std::vector<Notification> out(pending_.begin(), pending_.end());

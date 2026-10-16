@@ -192,6 +192,10 @@ export function attachmentsOf(data) {
   for (const skin of Array.isArray(data?.skins) ? data.skins : []) lists.push(Array.isArray(skin?.attachments) ? skin.attachments : []);
   return lists.flat().filter(a => a && typeof a === 'object');
 }
+/** Attachments without a picture (clipping 1.12.0, bounding boxes and points 1.17.0): never packed,
+ *  never an image to check, even when a stray imageAssetId is left on them (validation warns). */
+export const PICTURELESS = new Set(['clipping', 'boundingBox', 'point']);
+export const pictureless = a => PICTURELESS.has(a?.type);
 
 /**
  * Packs the images the rigs draw. `images` maps asset id -> decoded image ({width, height, rgba})
@@ -204,7 +208,7 @@ export function buildAtlas({ documents, images, settings, pageId }) {
   const size = options.maxPageSize, padding = options.padding;
   const rigs = documents.filter(d => d.type === 'rig');
   const uses = new Map();  // image id -> attachments using it (sequence frames count as the attachment's picture)
-  for (const rig of rigs) for (const a of attachmentsOf(rig.data))
+  for (const rig of rigs) for (const a of attachmentsOf(rig.data).filter(x => !pictureless(x)))
     for (const id of new Set([a.imageAssetId, ...(Array.isArray(a.sequence?.frames) ? a.sequence.frames : [])])) {
       if (typeof id !== 'string' || !id) continue;
       if (!uses.has(id)) uses.set(id, []);
@@ -237,6 +241,7 @@ export function buildAtlas({ documents, images, settings, pageId }) {
     if (d.type !== 'rig') return d;
     const data = structuredClone(d.data);
     for (const a of attachmentsOf(data)) {
+      if (pictureless(a)) continue;
       if (regions[a.imageAssetId]) a.atlas = structuredClone(regions[a.imageAssetId]);
       // Sequences (plugin 1.12.0): one region per frame (null = that frame keeps its own file);
       // runtimes draw a sequence only from these, frame 0 included.

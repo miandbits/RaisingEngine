@@ -16,6 +16,9 @@ const QColor TRANSFORM_COLOR("#f472b6");  // transform constraints (plugin 1.16.
 const QColor PHYSICS_COLOR("#2dd4bf");  // physics bones (plugin 1.13.0): teal, apart from IK orange and trail blue
 // Mesh edit (plugin 1.6.0): outline edges, pinned inside edges, outline being drawn / previewed.
 const QColor OUTLINE_COLOR("#f59e0b"), PINNED_COLOR("#22d3ee"), DRAFT_COLOR("#e879f9");
+// Bounding boxes and points (plugin 1.17.0): lime / violet, apart from every other overlay colour.
+const QColor BOX_COLOR("#84cc16"), POINT_COLOR("#a78bfa");
+constexpr double POINT_ARM = 9, POINT_HANDLE = 24;  // crosshair arm / direction line (widget px)
 double normalize(double a) { while (a > PI) a -= 2 * PI; while (a < -PI) a += 2 * PI; return a; }
 // Pick radii in widget px, matched to what is drawn: the IK crosshair's arms reach 12 px, so a
 // press anywhere on it grabs the target (the old 7 px circle let the body image under its ring win).
@@ -299,6 +302,14 @@ void RigCanvas::paintMesh(QPainter& p) {
     p.setPen(QPen(QColor(255, 255, 255, meshMode_ == MeshVertices ? 90 : 120), 1));
     p.drawPolygon(tri);
   }
+  if (meshMode_ == MeshVertices && att->boundingBox) {
+    // A bounding box (plugin 1.17.0) has no triangles: its closed polygon is the outline.
+    p.setPen(QPen(OUTLINE_COLOR, 2));
+    p.setBrush(Qt::NoBrush);
+    QPolygonF poly;
+    for (const QPointF& q : pts) poly << rigToWidget(q);
+    p.drawPolygon(poly);
+  }
   if (meshMode_ == MeshVertices) {
     // Outline (edges of one triangle) in orange, the author's pinned inside edges in cyan: the
     // two kinds re-triangulation keeps.
@@ -337,6 +348,62 @@ void RigCanvas::paintMesh(QPainter& p) {
 }
 
 QColor RigCanvas::ikColor() { return IK_COLOR; }
+QColor RigCanvas::boxColor() { return BOX_COLOR; }
+QColor RigCanvas::pointColor() { return POINT_COLOR; }
+QPointF RigCanvas::pointHandle(const QPointF& at, double rotation) const {
+  const double r = rotation * PI / 180;
+  return rigToWidget(at) + QPointF(std::cos(r), std::sin(r)) * POINT_HANDLE * ui_;
+}
+void RigCanvas::setPointPlacing(bool on) {
+  placingPoint_ = on;
+  if (on) { hoverRef_.clear(); setCursor(Qt::CrossCursor); } else unsetCursor();
+  update();
+}
+// Bounding boxes (plugin 1.17.0): translucent fill + dashed outline in the box's colour; the
+// selected one in the selection colour. Editor-hidden slots (eye toggle) are not drawn.
+void RigCanvas::paintBoxes(QPainter& p) {
+  if (!showBoxes_ || !rig_ || pose_.world.size() != rig_->bones.size()) return;
+  for (size_t i = 0; i < rig_->slots.size(); i++) {
+    if (hidden_.contains(qs(rig_->slots[i].id))) continue;
+    const QPolygonF polygon = boxPolygon(*rig_, pose_, int(i));
+    if (polygon.size() < 3) continue;
+    const cutout::Attachment* att = nullptr;
+    attachmentMatrix(*rig_, pose_, int(i), &att);
+    const bool selected = isSelected("slot:" + qs(rig_->slots[i].id));
+    QColor c = dataColor(att ? att->color : std::string(), BOX_COLOR), fill = c;
+    fill.setAlpha(selected ? 70 : 40);
+    p.setBrush(fill);
+    p.setPen(QPen(selected ? SELECT_COLOR : c, (selected ? 2.25 : 1.5) * ui_, Qt::DashLine));
+    p.drawPolygon(viewTransform().map(polygon));
+  }
+  p.setBrush(Qt::NoBrush);
+}
+// Points (plugin 1.17.0): a crosshair with a circle, and the direction as a line to a round handle.
+void RigCanvas::paintPoints(QPainter& p) {
+  if (!showPoints_ || !rig_ || pose_.world.size() != rig_->bones.size()) return;
+  for (size_t i = 0; i < rig_->slots.size(); i++) {
+    if (hidden_.contains(qs(rig_->slots[i].id))) continue;
+    QPointF at;
+    double rotation = 0;
+    if (!pointOf(*rig_, pose_, int(i), at, rotation)) continue;
+    const bool selected = isSelected("slot:" + qs(rig_->slots[i].id));
+    const QColor c = selected ? SELECT_COLOR : POINT_COLOR;
+    const QPointF w = rigToWidget(at), handle = pointHandle(at, rotation);
+    const double arm = POINT_ARM * ui_;
+    p.setPen(QPen(QColor(11, 18, 32, 200), 3.5 * ui_));
+    p.drawLine(w - QPointF(arm, 0), w + QPointF(arm, 0));
+    p.drawLine(w - QPointF(0, arm), w + QPointF(0, arm));
+    p.setPen(QPen(c, (selected ? 2.25 : 1.5) * ui_));
+    p.drawLine(w - QPointF(arm, 0), w + QPointF(arm, 0));
+    p.drawLine(w - QPointF(0, arm), w + QPointF(0, arm));
+    p.setBrush(Qt::NoBrush);
+    p.drawEllipse(w, 4.5 * ui_, 4.5 * ui_);
+    p.drawLine(w, handle);
+    p.setBrush(c);
+    p.drawEllipse(handle, 3.5 * ui_, 3.5 * ui_);
+    p.setBrush(Qt::NoBrush);
+  }
+}
 QColor RigCanvas::physicsColor() { return PHYSICS_COLOR; }
 QColor RigCanvas::transformColor() { return TRANSFORM_COLOR; }
 bool RigCanvas::isIkTarget(int bone) const {
@@ -485,6 +552,25 @@ QVector<RigCanvas::Hit> RigCanvas::hitCandidates(const QPointF& w, bool handles)
       if (line <= BODY_RADIUS * ui_ || shape.containsPoint(w, Qt::OddEvenFill)) out.push_back({ref, -1, HitBoneBody, line, true});
     }
   }
+  // Points and box outlines (plugin 1.17.0): handles like bones, only while shown. A point's centre
+  // grabs it (move), its direction handle turns it (body); a box is grabbed by its outline, so the
+  // pictures inside stay clickable.
+  for (size_t i = handles ? rig_->slots.size() : 0; i-- > 0;) {
+    const QString ref = "slot:" + qs(rig_->slots[i].id);
+    if (hidden_.contains(qs(rig_->slots[i].id))) continue;
+    QPointF at;
+    double rotation = 0;
+    if (showPoints_ && pointOf(*rig_, pose_, int(i), at, rotation)) {
+      if (const double d = dist(rigToWidget(at)); d <= BONE_RADIUS * ui_) out.push_back({ref, -1, HitBone, d});
+      if (const double d = dist(pointHandle(at, rotation)); d <= (AXIS_RADIUS + 1) * ui_) out.push_back({ref, -1, HitBone, d, true});
+      continue;
+    }
+    if (!showBoxes_) continue;
+    const QPolygonF polygon = boxPolygon(*rig_, pose_, int(i));
+    double edge = 1e9;
+    for (int k = 0; k < polygon.size(); k++) edge = std::min(edge, segmentDistance(w, rigToWidget(polygon[k]), rigToWidget(polygon[(k + 1) % polygon.size()])));
+    if (polygon.size() >= 3 && edge <= (BODY_RADIUS + 1) * ui_) out.push_back({ref, -1, HitBoneBody, edge});
+  }
   const QTransform view = viewTransform();
   int depth = 0;
   for (size_t i = rig_->slots.size(); i-- > 0;) {
@@ -575,7 +661,7 @@ void RigCanvas::updateHover(const QPointF& w, bool alt) {
   hoverAlt_ = alt;
   hoverInside_ = true;
   // Mesh modes own the left button (vertices/brush): nothing else would be picked there.
-  const Hit hit = meshMode_ != MeshOff || outlineDrawing() ? Hit{} : pickHit(w, alt);
+  const Hit hit = meshMode_ != MeshOff || outlineDrawing() || placingPoint_ ? Hit{} : pickHit(w, alt);
   const QString ref = hit.ref;
   if (ref == hoverRef_ && hit.body == hoverBody_) return;
   hoverRef_ = ref;
@@ -589,6 +675,13 @@ void RigCanvas::outlineSlot(QPainter& p, int si) const {
   const auto m = attachmentMatrix(*rig_, pose_, si, &att);
   if (!att) return;
   if (att->clipping) { p.drawPolygon(viewTransform().map(clipPolygon(*rig_, pose_, si))); return; }
+  if (att->boundingBox) { p.drawPolygon(viewTransform().map(boxPolygon(*rig_, pose_, si))); return; }
+  if (att->point) {
+    QPointF at;
+    double rotation = 0;
+    if (pointOf(*rig_, pose_, si, at, rotation)) p.drawEllipse(rigToWidget(at), (POINT_ARM + 2) * ui_, (POINT_ARM + 2) * ui_);
+    return;
+  }
   if (att->mesh) {
     const QVector<QPointF> pts = meshPoints(*rig_, pose_, si);
     for (const auto& [a, b] : meshOutline(att->triangles)) if (a < pts.size() && b < pts.size()) p.drawLine(rigToWidget(pts[a]), rigToWidget(pts[b]));
@@ -707,6 +800,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
     p.drawLine(o - QPointF(12 * ui_, 0), o + QPointF(12 * ui_, 0));
     p.drawLine(o - QPointF(0, 12 * ui_), o + QPointF(0, 12 * ui_));
     paintClips(p);
+    paintBoxes(p);
     if (pose_.world.size() == rig_->bones.size()) {
       // Selected part outline.
       p.setPen(QPen(SELECT_COLOR, 1.5, Qt::DashLine));
@@ -715,6 +809,7 @@ void RigCanvas::paintEvent(QPaintEvent*) {
       paintTransforms(p);
       paintBones(p);
       paintPhysics(p);
+      paintPoints(p);
     }
     if (pose_.world.size() == rig_->bones.size()) paintHover(p);
     paintMesh(p);
@@ -751,7 +846,8 @@ void RigCanvas::paintEvent(QPaintEvent*) {
   }
   static const char* names[] = {"이동(V)", "회전(R)", "크기(S)", "회전 중심(P)", "본 만들기(C)"};
   p.setPen(QColor("#9aa4ae"));
-  QString hint = outlineDrawing() ? QString("윤곽 그리기: 그림 둘레를 차례로 클릭 · 첫 점 클릭·더블클릭·Enter로 닫기(메시 만들기) · Backspace 마지막 점 지우기 · Esc 취소")
+  QString hint = placingPoint_ ? QString("기준점 놓기: 캔버스를 클릭한 곳에 고른 본의 기준점이 생깁니다 · 끌어서 옮기고 끝의 둥근 손잡이로 방향을 돌림 · Esc 취소")
+                 : outlineDrawing() ? QString("윤곽 그리기: 그림 둘레를 차례로 클릭 · 첫 점 클릭·더블클릭·Enter로 닫기(메시 만들기) · Backspace 마지막 점 지우기 · Esc 취소")
                  : meshMode_ == MeshVertices && meshTool_ == MeshAddVertex ? QString("정점 추가: 메시 안(안쪽 정점)이나 윤곽 가까이(윤곽 정점)를 클릭 · 다시 삼각분할됩니다")
                  : meshMode_ == MeshVertices && meshTool_ == MeshAddEdge ? QString("가장자리 추가: 정점에서 다른 정점으로 끌면 그 안쪽 가장자리가 고정됩니다(하늘색) · 주황 = 윤곽")
                  : meshMode_ == MeshVertices ? QString("메시 정점: 클릭·Shift+클릭 선택 · 빈 곳 끌기 상자 선택 · 정점 끌기로 이동") + (animate_ ? " (K로 변형 키)" : " · Delete 정점 삭제")
@@ -776,6 +872,8 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
     return;
   }
   if (e->button() != Qt::LeftButton) return;
+  if (placingPoint_) { if (onPlacePoint) onPlacePoint(widgetToRig(e->position())); return; }
+  if (previewClicks_ && onPreviewClick && onPreviewClick(widgetToRig(e->position()))) return;
   if (outlinePress(e)) return;
   if (meshPress(e)) return;
   // One pick for every tool: handles first, Alt = the next candidate under the cursor.
@@ -827,6 +925,11 @@ void RigCanvas::mousePressEvent(QMouseEvent* e) {
   if ((tool_ == Move || tool_ == Rotate) && target == hit && hit.startsWith("bone:")) {
     d.body = picked.body;
     d.tool = picked.body ? Rotate : Move;
+  } else if ((tool_ == Move || tool_ == Rotate) && target == hit && hit.startsWith("slot:")) {
+    // A point (plugin 1.17.0): its handle turns it, its centre moves it, whichever tool is on.
+    QPointF at;
+    double rotation = 0;
+    if (rig_ && pointOf(*rig_, pose_, rig_->slotIndex(ss(hit.section(':', 1))), at, rotation)) { d.body = picked.body; d.tool = picked.body ? Rotate : Move; }
   }
   d.start = d.current = widgetToRig(e->position());
   d.origin = originOf ? originOf(target) : d.start;
@@ -906,6 +1009,7 @@ void RigCanvas::dropEvent(QDropEvent* e) {
   onDropImage(e->mimeData(), hitTest(e->position(), false));
 }
 void RigCanvas::keyPressEvent(QKeyEvent* e) {
+  if (placingPoint_ && e->key() == Qt::Key_Escape) { setPointPlacing(false); if (onPlaceCancel) onPlaceCancel(); return; }
   if (outlineDrawing()) {
     if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) { finishOutline(); return; }
     if (e->key() == Qt::Key_Backspace && !outline_.isEmpty()) { outline_.removeLast(); update(); return; }

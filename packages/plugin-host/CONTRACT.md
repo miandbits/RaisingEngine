@@ -183,6 +183,8 @@ Requests (replies are `{ "ok": true, … }` or `{ "ok": false, "error": "…" }`
 | `update` | `{dtMs}` | `{notifications}` (presentation only) |
 | `frame` | `{instance}` (+ `format`, `since`: compact frames below) | `{items:[{imageAssetId, matrix:[a,b,c,d,e,f], width, height, alpha, mesh?, region?}]}` |
 | `meshes` | `{ids?}` (compact frames only) | `{meshEpoch, meshes:[{id, uvs, indices}]}` |
+| `hitTest` | `{instance, x, y, dispatch?}` (optional, listed in `init` `ops`) | `{hit, hits, matched?}` |
+| `points` | `{instance}` (optional, listed in `init` `ops`) | `{points:[{slot, name, x, y, rotation}]}` |
 | `saveAll` / `restoreAll` | — / `{state}` | opaque `state` |
 | `describeAll` | — | debug/report data |
 
@@ -237,6 +239,21 @@ image without `region`. Hosts that draw regions advertise **`plugin-atlas-v1`** 
 coordinates mapped into the page rectangle; web: the page through a clipped box (CSS sprite) for
 quads, a pixel copy of the sub-image for meshes) and a plugin that writes regions lists it in
 `requiredHostFeatures`, so `exportGame` refuses older players (§10 `prepareExport` makes the pages).
+
+**Clicks and anchors** (ABI extension, still `raising-extension-1`, plugin capability flag): a plugin
+that answers the optional requests lists them in its `init` reply, `ops: ["hitTest", "points"]`;
+hosts never send them to plugins that did not (older plugins keep working, older hosts never ask).
+A `mount` reply may carry `interactive: true` (the element has hit areas). For a click inside such
+an element the host sends `{op:"hitTest", instance, x, y, dispatch:true}` with element-local px
+(the space of `frame`; stage scaling undone): the plugin hit-tests its own shapes and, on a hit,
+routes a UI-only signal to that instance (cutout: `partClicked {box, slot}` → controller bindings).
+The click is **observed, never consumed**: it still reaches the screen element under it, and nothing
+of it reaches the game session (no command, no `observe`, no RNG), so it changes presentation only.
+`points` returns anchor points in element px (and a direction, degrees, clockwise) for host UI that
+follows a part (a speech bubble…). Hosts (native: document `click` → `ExtensionElement::observe_click`,
+`ExtensionHost::click` / `points`; web: a capturing document listener, `ExtensionHost.click` /
+`points`) report `points`, `interactive`, `lastClick` per instance and a `clicks` counter. No player
+capability is needed: an older player simply never clicks.
 
 **Wasm hosts and large requests**: `cwrap` string arguments are copied onto the module's stack
 (1 MB for cutout), which a large rig in `init`/`validate` overflows. A module that also exports

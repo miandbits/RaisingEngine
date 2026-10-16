@@ -112,6 +112,11 @@ struct EditResult {
  * {transform, id?, name?} (renames transform:<id> tracks) deleteTransform {transform}; keys setKey
  * {target: "transform:<id>", property: mixRotate..mixShearY}. deleteBone of a target needs cascade
  * (the constraint goes, ANIM_TRANSFORM_REMOVED); a constrained bone just leaves the list.
+ * Bounding boxes / points (plugin 1.17.0): addBoundingBox {slot (new), bone?, from? (a part: right above
+ * it, its picture's outline from `mask` + alphaThreshold?/detail?, else its rectangle), fromName?,
+ * before? | index?, name? ("box"), vertices | worldVertices, color?} setBoundingBox {slot, name?, skin?,
+ * vertices? | worldVertices?, color? (null removes)} addPoint {slot (new), bone, before? | index?, name?
+ * ("point"), x?, y?, rotation? | worldX?, worldY?, worldRotation?} setPoint {slot, name?, skin?, ...same}.
  * `controllers` = [{id, data}] lets clip/skin/expression rename/delete report (and rewrite) controller refs.
  * Throws EditError when refused. An edit that turns a valid rig invalid is refused too.
  */

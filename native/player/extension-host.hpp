@@ -5,6 +5,7 @@
 #include "session.hpp"
 #include <SDL3/SDL_loadso.h>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
@@ -39,6 +40,7 @@ struct ExtensionPlugin {
   // Compact frames (format 2, negotiated in init): mesh topology cached per id for the init lifetime.
   int frame_format=1;uint64_t mesh_epoch=0;
   std::map<int,std::shared_ptr<const ExtensionMeshTopology>> meshes;
+  std::set<std::string> ops;  // optional requests the plugin listed in its init reply (`hitTest`, `points`)
 };
 /** Sound of an `event` notification that names an audio asset (CONTRACT.md §7 event payloads). */
 struct ExtensionSound { std::string asset; double volume=1,balance=0; };
@@ -48,6 +50,8 @@ struct ExtensionMount {
   std::vector<ExtensionDrawItem> items;
   uint64_t frame=0;  // compact frames: the frame number these items are (delta base)
   bool mounted=false,seen=false;
+  bool interactive=false;  // mount reply: the plugin wants clicks on this element (bounding boxes)
+  Json last_click=nullptr;  // the newest click's hitTest reply (reports)
 };
 /** Frame reply costs (automation reports, the large-rig benchmark): presentation only. */
 struct ExtensionTiming { uint64_t frames=0,bytes=0,last_bytes=0;double ms=0,last_ms=0,request_ms=0; };
@@ -168,6 +172,7 @@ public:
   std::deque<Json> recent_events;uint64_t event_count=0,sound_count=0;
   std::vector<ExtensionSound> sounds;
   ExtensionTiming timing;
+  uint64_t clicks=0;  // clicks handed to plugins (presentation only)
   static constexpr size_t MAX_MESH_VERTICES=2048,MAX_MESH_INDICES=3*4096;
   ExtensionHost()=default;
   // Some ABI v1 plugins keep global state. A private module copy gives recollection
@@ -259,6 +264,31 @@ public:
       timing.frames++;timing.ms+=ms;timing.last_ms=ms;timing.bytes+=bytes;timing.last_bytes=bytes;
     }
   }
+  /**
+   * A click at element-local px (x, y) of a mounted instance (CONTRACT.md §7 `hitTest`): the plugin
+   * hit-tests its own shapes and, on a hit, routes its UI-only signal (cutout: `partClicked`) to that
+   * instance. The click is only observed — it still reaches whatever the screen has under it — and
+   * nothing here reaches the game session: it can start animation, never change game state or RNG.
+   */
+  Json click(const std::string& instance,double x,double y) {
+    auto it=mounts.find(instance);
+    if(it==mounts.end()||!it->second.mounted||!it->second.interactive||!std::isfinite(x)||!std::isfinite(y))return nullptr;
+    auto* p=plugin(it->second.plugin);
+    if(!p||!p->available||!p->ops.count("hitTest"))return nullptr;
+    auto reply=call(*p,{{"op","hitTest"},{"instance",instance},{"x",x},{"y",y},{"dispatch",true}});
+    ++clicks;it->second.last_click={{"x",x},{"y",y},{"hit",reply.value("hit",Json())},{"matched",reply.value("matched",Json::array())}};
+    return reply;
+  }
+  /** Anchor points of a mounted instance in element px ([{slot, name, x, y, rotation}]), for UI that
+   *  follows a part (a speech bubble...). Empty when the plugin has none or does not answer `points`. */
+  Json points(const std::string& instance) {
+    auto it=mounts.find(instance);
+    if(it==mounts.end()||!it->second.mounted)return Json::array();
+    auto* p=plugin(it->second.plugin);
+    if(!p||!p->available||!p->ops.count("points"))return Json::array();
+    const auto reply=call(*p,{{"op","points"},{"instance",instance}});
+    return reply.value("ok",false)&&reply.contains("points")&&reply.at("points").is_array()?reply.at("points"):Json::array();
+  }
   /** playerPresentation.extensions value, or null when no extension is in use. */
   Json save() {
     if(!active())return nullptr;
@@ -291,11 +321,15 @@ public:
       auto* p=plugin(m.plugin);
       const auto states=described.count(m.plugin)?described.at(m.plugin):Json::object();
       list.push_back({{"instance",id},{"plugin",m.plugin},{"available",p&&p->available&&m.mounted},{"error",m.error},{"element",m.element},{"items",items},{"state",states.value(id,Json())}});
+      // Anchors and the newest click (plugin hit tests): only where there are some, older reports keep their shape.
+      if(const auto anchors=points(id);!anchors.empty())list.back()["points"]=anchors;
+      if(m.interactive)list.back()["interactive"]=true;
+      if(!m.last_click.is_null())list.back()["lastClick"]=m.last_click;
     }
     Json events=Json::array();for(const auto& e:recent_events)events.push_back(e);
     std::string formats;for(const auto& p:plugins)formats+=(formats.empty()?"":",")+std::to_string(p.frame_format);
     return {{"active",active()},{"plugins",plugin_list},{"instances",list},{"observations",observations},{"clockMs",clock_ms},{"lastObserve",last_observe},
-      {"events",events},{"eventCount",event_count},{"soundCount",sound_count},
+      {"events",events},{"eventCount",event_count},{"soundCount",sound_count},{"clicks",clicks},
       {"timing",{{"frames",timing.frames},{"frameMs",timing.ms},{"lastFrameMs",timing.last_ms},{"bytes",timing.bytes},{"lastBytes",timing.last_bytes},{"requestMs",timing.request_ms},{"frameFormats",formats}}}};
   }
   /** Documented item JSON (format 1) -> draw item; meshes and regions validated here, once. */
@@ -434,6 +468,7 @@ private:
     if(!reply.value("ok",false)){p.error=reply.value("error","init");return false;}
     p.diagnostics=reply.value("diagnostics",Json::array());
     p.frame_format=reply.value("frameFormat",1)==2?2:1;p.meshes.clear();p.mesh_epoch=reply.value("meshEpoch",uint64_t(0));
+    p.ops.clear();if(reply.contains("ops")&&reply.at("ops").is_array())for(const auto& op:reply.at("ops"))if(op.is_string())p.ops.insert(op.get<std::string>());
     if(p.frame_format==2)store_meshes(p,reply.value("meshes",Json::array()));
     return p.available;
   }
@@ -442,10 +477,10 @@ private:
     if(!p||!p->available){m.error=p?p->error:"플러그인이 없습니다.";return false;}
     const auto reply=call(*p,{{"op","mount"},{"instance",m.instance},{"element",m.element}});
     if(!reply.value("ok",false)){m.error=reply.value("error","mount");return false;}
-    m.error.clear();m.mounted=true;return true;
+    m.error.clear();m.mounted=true;m.interactive=reply.value("interactive",false);return true;
   }
   void unmount(ExtensionMount& m) {
-    if(!m.mounted)return;m.mounted=false;m.items.clear();m.frame=0;
+    if(!m.mounted)return;m.mounted=false;m.items.clear();m.frame=0;m.interactive=false;
     if(auto* p=plugin(m.plugin);p&&p->available)call(*p,{{"op","unmount"},{"instance",m.instance}});
   }
   /** Never throws: a broken reply disables the plugin and leaves the game running. */

@@ -231,6 +231,10 @@ class StudioTests : public QObject {
     cutout::Instance inst(std::make_shared<const cutout::Rig>(cutout::parseRig("hero", rig())));
     return inst.drawList();
   }
+  static std::vector<cutout::DrawItem> drawListOf(const Json& data) {
+    cutout::Instance inst(std::make_shared<const cutout::Rig>(cutout::parseRig("x", data)));
+    return inst.drawList();
+  }
   const Json* track(const char* clip, const char* target, const char* property) const {
     static Json keep;
     keep = rig();
@@ -4762,6 +4766,149 @@ class StudioTests : public QObject {
     pump();
   }
 
+  // Bounding boxes and points (plugin 1.17.0): the 판정 page, the box vertex tools, point placement,
+  // drags and its rotation handle, the 보기 toggles, the binding editor's partClicked offers and a
+  // click on a box in the game-connection preview. One edit per gesture, undo/redo.
+  void boundingBoxesAndPoints() {
+    const QString keepRig = panel->rigId();
+    auto data = [&] { return host.data("rig", "hits"); };
+    auto ctrl = [&] { return host.data("controller", "hits"); };
+    auto attachment = [&](const char* slot) { const Json d = data(); for (const auto& a : d["attachments"]) if (a["slot"] == slot) return a; return Json(); };
+    auto slotIds = [&] { const Json d = data(); QStringList ids; for (const auto& s : d["slots"]) ids << qs(s["id"].get<std::string>()); return ids; };
+    auto candidates = [&](QPointF w) { QStringList refs; for (const auto& h : panel->canvas()->hitCandidates(w)) refs << h.ref; return refs; };
+    answers = {"hits"};
+    QVERIFY(gesture("new hits character", 1, [&] { click("cutoutNewCharacter"); }));
+    panel->setMode(CutoutPanel::Mode::Setup);
+    panel->setTool(RigCanvas::Move);
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    QVERIFY(gesture("face part", 1, [&] { panel->importAndAddPart(png("hit-face", QSize(80, 60), QColor("#d1495b")), "face", "face", "root"); }));
+    find<QTabWidget>("cutoutLookTabs")->setCurrentWidget(find<QWidget>("cutoutHitPage"));
+    RigCanvas* canvas = panel->canvas();
+    canvas->fitToCanvas();
+    pump();
+    panel->selectItem("slot:face");
+    pump();
+    QVERIFY(find<QWidget>("cutoutAddBoundingBox")->isEnabled() && !find<QWidget>("cutoutBoxVertices")->isEnabled());
+    // ---- 판정 상자: the part's alpha outline (the ellipse, not its rectangle), right above it.
+    QVERIFY(gesture("판정 상자 from the part", 1, [&] { click("cutoutAddBoundingBox"); }));
+    QCOMPARE(slotIds(), QStringList({"face", "face-box"}));
+    Json box = attachment("face-box");
+    QCOMPARE(qs(box["type"].get<std::string>()), QString("boundingBox"));
+    QCOMPARE(qs(box["name"].get<std::string>()), QString("box"));
+    const size_t n = box["vertices"].size() / 2;
+    QVERIFY2(n > 6, box["vertices"].dump().c_str());
+    const QPointF origin = [&] { const auto w = cutout::setupWorld(data()).at("root"); return QPointF(w.e, w.f); }();  // the face ellipse: ±40 x ±30 around it
+    for (size_t i = 0; i < n; i++) {
+      const double x = box["vertices"][2 * i].get<double>(), y = box["vertices"][2 * i + 1].get<double>();
+      const double r = std::hypot(x / 40, y / 30);
+      QVERIFY2(r > 0.85 && r < 1.25, qPrintable(QString("point %1 at %2").arg(i).arg(r)));
+    }
+    QCOMPARE(panel->boxSlot(), QString("face-box"));
+    QCOMPARE(find<QListWidget>("cutoutHitList")->count(), 1);
+    QVERIFY(find<QLabel>("cutoutHitInfo")->text().contains("partClicked"));
+    // Never drawn: the runtime still draws only the face.
+    QCOMPARE(drawListOf(data()).size(), size_t(1));
+    // The canvas draws it and picks it by its outline; inside, the face is still what a click picks.
+    const QPointF edge = canvas->rigToWidget(QPointF(box["vertices"][0].get<double>() + origin.x(), box["vertices"][1].get<double>() + origin.y()));
+    QVERIFY2(candidates(edge).contains("slot:face-box"), qPrintable(candidates(edge).join(",")));
+    QCOMPARE(canvas->pick(canvas->rigToWidget(origin + QPointF(20, 10)), false), QString("slot:face"));
+    // ---- 정점 편집: the mesh vertex tools on the box's points.
+    panel->selectItem("slot:face-box");
+    pump();
+    QVERIFY(gesture("정점 편집 on (no edit)", 0, [&] { click("cutoutBoxVertices"); }));
+    QVERIFY(panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshVertices && canvas->meshVertices().size() == int(n));
+    QVERIFY(find<QWidget>("cutoutBoxVertexTools")->isVisible());
+    const QPointF v0 = canvas->meshVertices()[0];
+    const double x0 = box["vertices"][0].get<double>();
+    QVERIFY(gesture("drag a box point", 1, [&] { drag(canvas, canvas->rigToWidget(v0), canvas->rigToWidget(v0 + QPointF(10, 0))); }));
+    QVERIFY2(std::fabs(attachment("face-box")["vertices"][0].get<double>() - (x0 + 10)) < 0.25, attachment("face-box")["vertices"].dump().c_str());
+    undo();
+    QVERIFY(std::fabs(attachment("face-box")["vertices"][0].get<double>() - x0) < 1e-9);
+    redo();
+    const QPointF a = canvas->meshVertices()[0], b = canvas->meshVertices()[1];
+    QVERIFY(gesture("점 추가 on an edge", 1, [&] { click("cutoutBoxAddVertex"); tap(canvas, canvas->rigToWidget((a + b) / 2)); }));
+    QCOMPARE(attachment("face-box")["vertices"].size() / 2, n + 1);
+    QVERIFY(gesture("Delete a point", 1, [&] { click("cutoutBoxAddVertex"); panel->selectVertices({0}); QTest::keyClick(canvas, Qt::Key_Delete); }));
+    QCOMPARE(attachment("face-box")["vertices"].size() / 2, n);
+    QVERIFY(gesture("too few points refused", 0, [&] { QVector<int> all; for (int i = 0; i + 2 < int(n); i++) all << i; panel->selectVertices(all); QTest::keyClick(canvas, Qt::Key_Delete); }));
+    QVERIFY(gesture("정점 편집 off (no edit)", 0, [&] { click("cutoutBoxVertices"); }));
+    QVERIFY(!panel->boxVertexEdit() && canvas->meshMode() == RigCanvas::MeshOff);
+    // ---- 기준점: a click places it on the selected bone; drag = move, its handle = turn.
+    panel->selectItem("bone:root");
+    pump();
+    QVERIFY(gesture("기준점 placing (no edit yet)", 0, [&] { click("cutoutAddPoint"); }));
+    QVERIFY(canvas->pointPlacing());
+    QVERIFY(gesture("Esc cancels", 0, [&] { QTest::keyClick(canvas, Qt::Key_Escape); }));
+    QVERIFY(!canvas->pointPlacing());
+    const QPointF at = origin + QPointF(0, -70);
+    QVERIFY(gesture("place a point", 1, [&] { click("cutoutAddPoint"); tap(canvas, canvas->rigToWidget(at)); }));
+    QVERIFY(!canvas->pointPlacing());
+    Json point = attachment("root-point");
+    QCOMPARE(qs(point["type"].get<std::string>()), QString("point"));
+    QVERIFY2(std::fabs(point.value("x", 0.0)) < 0.5 && std::fabs(point.value("y", 0.0) + 70) < 0.5, point.dump().c_str());
+    QCOMPARE(panel->pointSlot(), QString("root-point"));
+    QVERIFY2(candidates(canvas->rigToWidget(at)).value(0) == "slot:root-point", qPrintable(candidates(canvas->rigToWidget(at)).join(",")));
+    QVERIFY(gesture("drag the point", 1, [&] { drag(canvas, canvas->rigToWidget(at), canvas->rigToWidget(at + QPointF(20, 0))); }));
+    point = attachment("root-point");
+    QVERIFY2(std::fabs(point.value("x", 0.0) - 20) < 0.5, point.dump().c_str());
+    const QPointF moved = canvas->rigToWidget(at + QPointF(20, 0)), handle = canvas->pointHandle(at + QPointF(20, 0), 0);
+    QVERIFY(gesture("turn the point by its handle", 1, [&] {
+      mouse(canvas, QEvent::MouseButtonPress, handle, Qt::LeftButton, Qt::LeftButton);
+      const double len = QLineF(moved, handle).length();
+      for (int i = 1; i <= 8; i++) { const double t = i * 3.14159265358979323846 / 16; mouse(canvas, QEvent::MouseMove, moved + QPointF(std::cos(t), std::sin(t)) * len, Qt::NoButton, Qt::LeftButton); }
+      mouse(canvas, QEvent::MouseButtonRelease, moved + QPointF(0, len), Qt::LeftButton, Qt::NoButton);
+    }));
+    point = attachment("root-point");
+    QVERIFY2(std::fabs(point.value("rotation", 0.0) - 90) < 3, point.dump().c_str());
+    undo();
+    QVERIFY(std::fabs(attachment("root-point").value("rotation", 0.0)) < 1e-9);
+    redo();
+    // ---- 보기 ▾ toggles: editor-only, no edit; hidden overlays are not pickable.
+    auto* showBoxes = find<QAction>("cutoutShowBoxes");
+    auto* showPoints = find<QAction>("cutoutShowPoints");
+    QVERIFY(showBoxes && showPoints && showBoxes->isChecked() && showPoints->isChecked());
+    QVERIFY(gesture("hide boxes and points (no edit)", 0, [&] { showBoxes->trigger(); showPoints->trigger(); }));
+    QVERIFY(!canvas->showBoxes() && !canvas->showPoints());
+    QVERIFY(!candidates(edge).contains("slot:face-box") && !candidates(canvas->rigToWidget(at + QPointF(20, 0))).contains("slot:root-point"));
+    QVERIFY(gesture("show them again (no edit)", 0, [&] { showBoxes->trigger(); showPoints->trigger(); }));
+    QVERIFY(canvas->showBoxes() && canvas->showPoints());
+    // ---- 게임 연결: partClicked with the rig's box names, and a box click in the preview.
+    panel->showControllerTab();
+    QVERIFY(gesture("add binding", 1, [&] { click("cutoutBindingAdd"); }));
+    auto* signal = find<QComboBox>("cutoutBindingSignal0");
+    QVERIFY(signal && signal->findData("partClicked") >= 0);
+    QVERIFY(gesture("binding signal partClicked", 1, [&] { signal->setCurrentIndex(signal->findData("partClicked")); Q_EMIT signal->activated(signal->currentIndex()); }));
+    auto* match = find<QLineEdit>("cutoutBindingMatch0");
+    QVERIFY(match && match->toolTip().contains("box") && match->property("cutoutBoxOffers").toStringList() == QStringList({"box=box"}));
+    QVERIFY(gesture("match box=box", 1, [&] { match->setText("box=box"); Q_EMIT match->editingFinished(); }));
+    const Json binding = ctrl()["bindings"][0];
+    QVERIFY2(binding["signal"] == "partClicked" && binding["match"] == Json({{"box", "box"}}), binding.dump().c_str());
+    pump();
+    QVERIFY(canvas->previewClicks());
+    QVERIFY(gesture("a click beside the box fires nothing (no edit)", 0, [&] { tap(canvas, canvas->rigToWidget(origin + QPointF(150, -300))); }));
+    QVERIFY(panel->lastPreviewClick().box.isEmpty());
+    QVERIFY(gesture("click the box in the preview (no edit)", 0, [&] { tap(canvas, canvas->rigToWidget(origin)); }));
+    QCOMPARE(panel->lastPreviewClick().box, QString("box"));
+    QCOMPARE(panel->lastPreviewClick().slot, QString("face-box"));
+    QCOMPARE(panel->lastPreviewClick().matched, QStringList({qs(binding["id"].get<std::string>())}));
+    QVERIFY(find<QLabel>("cutoutPreviewResult")->text().contains("box"));
+    find<QTabWidget>("cutoutBottomTabs")->setCurrentIndex(0);
+    pump();
+    QVERIFY(!canvas->previewClicks());
+    // ---- command palette: every new command is there by its Korean name.
+    auto ids = [&](const QString& query) { QStringList out; for (const auto& c : panel->findCommands(query)) out << c.id; return out; };
+    QVERIFY(ids("판정 상자").contains("cutoutAddBoundingBox") && ids("판정 상자").contains("cutoutShowBoxes"));
+    QVERIFY(ids("기준점").contains("cutoutAddPoint") && ids("기준점").contains("cutoutShowPoints"));
+    QVERIFY(ids("판정").contains("cutoutHitDelete") && ids("정점 편집").contains("cutoutBoxVertices"));
+    // ---- 삭제
+    panel->selectItem("slot:face-box");
+    pump();
+    QVERIFY(gesture("delete the box", 1, [&] { click("cutoutHitDelete"); }));
+    QVERIFY(!slotIds().contains("face-box"));
+    QCOMPARE(find<QListWidget>("cutoutHitList")->count(), 1);  // the point is left
+    panel->selectRig(keepRig);
+    pump();
+  }
   void largeRigPerformance() {
     const QJsonArray keepDocuments = host.documents, keepAssets = host.assetList;
     const auto keepHistory = host.history, keepFuture = host.future;

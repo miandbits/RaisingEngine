@@ -512,3 +512,66 @@ test('a 5000×7000, ~500-layer production-like PSD imports at auto scale within 
   assert.ok(rig.bones.some(b => b.id === 'ruka-levaya') && rig.bones.some(b => b.id === 'golova'), rig.bones.map(b => b.id).join());
   for (const image of done.images.slice(0, 5)) assert.ok(!decodePng(image.bytes).reason);
 });
+
+test('[box] / [point] layers (1.17.0): a traced bounding box and a point instead of pictures; bones unchanged; re-import updates them, never pictures', async () => {
+  assert.ok(existsSync(wasm), 'build first: node plugins/cutout-animation/tools/build.mjs wasm');
+  const { createService } = await import('../../plugins/cutout-animation/service/index.mjs');
+  const service = await createService({ pluginDir: path.dirname(wasm), manifest: { modules: [{ role: 'runtime', platform: 'web-wasm', path: path.basename(wasm) }] } });
+  // The head gets a round hit area (a disc: traced, not its rectangle) and a mouth anchor; a hidden box too.
+  const tagged = () => {
+    const layers = characterLayers();
+    layers[4].children.splice(1, 0, { name: 'face [box]', x: 40, y: 20, width: 60, height: 70, pixel: (x, y) => [0, 0, 0, Math.hypot((x + 0.5 - 30) / 30, (y + 0.5 - 35) / 35) <= 1 ? 255 : 0], ignoreInComposite: true },
+      { name: 'mouth [point]', x: 66, y: 72, ...block(8, 4, [255, 0, 255]), ignoreInComposite: true },
+      { name: 'secret [box]', x: 0, y: 0, ...block(10, 10, [0, 0, 0]), visible: false, ignoreInComposite: true });
+    return layers;
+  };
+  const dir = await temp('psd-boxes'), file = path.join(dir, 'boxes.psd');
+  await writeFile(file, writePsd({ width: W, height: H, layers: tagged() }));
+  const plain = planImport({ source: { ...readPsd(writePsd({ width: W, height: H, layers: characterLayers() })), file: '/art/boxes.psd' }, options: importOptions({}) });
+  const done = await service.prepareImport({ op: 'importLayers', payload: { file, id: 'boxes' }, documents: [] });
+  const rig = done.documents[0].data;
+  assert.deepEqual(rig.bones, plain.rig.bones, 'boxes and points never move bones');
+  const box = rig.attachments.find(a => a.slot === 'face-box'), point = rig.attachments.find(a => a.slot === 'mouth-point');
+  assert.equal(box.type, 'boundingBox'); assert.equal(box.name, 'face'); assert.equal(point.type, 'point'); assert.equal(point.name, 'mouth');
+  assert.ok(!('imageAssetId' in box) && !('imageAssetId' in point), 'no pictures');
+  assert.equal(done.images.length, plain.images.length, 'no extra images');
+  assert.ok(box.vertices.length / 2 > 4, `traced outline (${box.vertices.length / 2} points), not the rectangle`);
+  const slots = rig.slots.map(s => s.id);
+  assert.ok(slots.indexOf('face') < slots.indexOf('face-box') && slots.indexOf('face-box') < slots.indexOf('eyes'), 'draw order = layer order');
+  assert.equal(rig.slots.find(s => s.id === 'secret-box').attachment, null, 'a hidden [box] is an attachment that is not shown');
+  const head = rig.bones.find(b => b.id === 'head'), turn = (head.rotation ?? 0) * Math.PI / 180;
+  // Document px of a head-bone point (the head is a child of the root at the canvas origin, maybe turned by the bone direction).
+  const doc = (x = 0, y = 0) => [head.x + W / 2 + Math.cos(turn) * x - Math.sin(turn) * y, head.y + H + Math.sin(turn) * x + Math.cos(turn) * y].map(v => Math.round(v * 1e6) / 1e6);
+  // The point sits at the centre of its pixels (70, 74); the box's points lie on the disc rim.
+  assert.deepEqual(doc(point.x, point.y), [70, 74]);
+  for (let i = 0; i < box.vertices.length; i += 2) {
+    const [x, y] = doc(box.vertices[i], box.vertices[i + 1]), r = Math.hypot((x - 70) / 30, (y - 55) / 35);
+    assert.ok(r > 0.85 && r < 1.2, `box point ${i / 2} on the rim (${r.toFixed(3)})`);
+  }
+  const flat = []; const walk = l => { for (const n of l) { flat.push(n); if (n.children) walk(n.children); } }; walk(done.report.layers);
+  assert.deepEqual(flat.filter(n => n.role === 'box' || n.role === 'point').map(n => [n.name, n.role, n.slot]), [['face [box]', 'box', 'face-box'], ['mouth [point]', 'point', 'mouth-point'], ['secret [box]', 'box', 'secret-box']]);
+  assert.deepEqual([done.report.summary.boxes, done.report.summary.points], [2, 1]);
+  // The rendered setup frame still equals the composite: boxes and points draw nothing.
+  const pngs = new Map(done.images.map(i => [i.id, i.bytes]));
+  assert.ok(maxDifference(await renderSetup(rig, pngs), flattenImage(W, H, tagged())) <= 1);
+  // Re-import: the art moved the mouth; the point follows, the box (weighted by rig work) keeps its weights.
+  rig.attachments.find(a => a.slot === 'face-box').weights = box.vertices.filter((_, i) => i % 2 === 0).map(() => [{ bone: 'head', weight: 1 }]);
+  const moved = tagged();
+  moved[4].children[2].x = 76;
+  await writeFile(file, writePsd({ width: W, height: H, layers: moved }));
+  const again = await service.prepareImport({ op: 'importLayers', payload: { file, rig: 'boxes' }, documents: [{ type: 'rig', id: 'boxes', data: rig }] });
+  const next = again.documents[0].data;
+  const p2 = next.attachments.find(a => a.slot === 'mouth-point');
+  assert.deepEqual(doc(p2.x, p2.y), [80, 74], 'the point follows the art');
+  assert.ok(next.attachments.find(a => a.slot === 'face-box').weights, 'same outline: weights kept');
+  assert.deepEqual(again.report.changes.attachments.updated, ['mouth-point/mouth']);
+  // A picture layer landing on a box of the same name is skipped, never turned into a picture.
+  const clash = structuredClone(rig);
+  clash.attachments.find(a => a.slot === 'face' && a.name === 'face').type = 'boundingBox';
+  Object.assign(clash.attachments.find(a => a.slot === 'face' && a.name === 'face'), { vertices: [0, 0, 10, 0, 10, 10] });
+  const kept = await service.prepareImport({ op: 'importLayers', payload: { file, rig: 'boxes' }, dryRun: true, documents: [{ type: 'rig', id: 'boxes', data: clash }] });
+  assert.ok(kept.report.changes.attachments.skipped.includes('face/face') && kept.report.warnings.some(w => w.code === 'ANIM_IMPORT_KIND'));
+  // Without a tracer (planImport alone) a box is its pixels' rectangle.
+  const rect = planImport({ source: { ...readPsd(writePsd({ width: W, height: H, layers: tagged() })), file: '/art/b.psd' }, options: importOptions({}) });
+  assert.equal(rect.rig.attachments.find(a => a.slot === 'face-box').vertices.length, 8);
+});

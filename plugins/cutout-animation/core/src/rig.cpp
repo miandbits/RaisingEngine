@@ -107,12 +107,24 @@ const Json& arrayOr(const Json& obj, const char* key) {
  */
 size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map<std::string, std::string>& parentOf) {
   const std::string type = text(a, "type");
-  if (a.contains("type") && type != "region" && type != "mesh" && type != "clipping") { c.error(at(p, "type"), "ANIM_MESH_TYPE", "첨부 종류(type)는 region, mesh 또는 clipping입니다."); return 0; }
-  const bool clipping = type == "clipping";
+  if (a.contains("type") && type != "region" && type != "mesh" && type != "clipping" && type != "boundingBox" && type != "point") {
+    c.error(at(p, "type"), "ANIM_MESH_TYPE", "첨부 종류(type)는 region, mesh, clipping, boundingBox 또는 point입니다.");
+    return 0;
+  }
+  // Bounding boxes (plugin 1.17.0) are polygons placed like clip polygons; points have no shape.
+  const bool box = type == "boundingBox", clipping = type == "clipping" || box;
+  if (type == "point") {
+    for (const char* k : {"vertices", "uvs", "triangles", "hull", "edges", "weights", "imageAssetId", "width", "height", "pivotX", "pivotY", "sequence", "atlas", "end", "color"})
+      if (a.contains(k)) { c.warn(at(p, k), "ANIM_POINT_UNUSED", std::string("기준점 첨부에는 쓰이지 않는 값입니다(x, y, rotation만 씀): ") + k); break; }
+    return 0;
+  }
+  if (box && a.contains("color") && !validColor(a.at("color"))) c.error(at(p, "color"), "ANIM_BOX_COLOR", "판정 상자 색(color)은 \"#rrggbb\" 또는 \"#rrggbbaa\" 형식입니다.");
+  const std::string kind = box ? "판정 상자" : "클리핑", code = box ? "ANIM_BOX_" : "ANIM_CLIP_";
   if (clipping) {
-    // Clipping (plugin 1.12.0): a polygon, no picture. Image fields would silently do nothing.
+    // Clipping (plugin 1.12.0) / bounding box: a polygon, no picture. Image fields would silently do nothing.
     for (const char* k : {"uvs", "triangles", "hull", "edges", "imageAssetId", "width", "height", "pivotX", "pivotY", "sequence", "atlas"})
-      if (a.contains(k)) { c.warn(at(p, k), "ANIM_CLIP_UNUSED", std::string("클리핑 첨부에는 쓰이지 않는 값입니다: ") + k); break; }
+      if (a.contains(k)) { c.warn(at(p, k), code + "UNUSED", kind + " 첨부에는 쓰이지 않는 값입니다: " + k); break; }
+    if (box && a.contains("end")) c.warn(at(p, "end"), "ANIM_BOX_UNUSED", "end는 클리핑 첨부에만 씁니다.");
   } else if (type != "mesh") {
     for (const char* k : {"vertices", "uvs", "triangles", "hull", "edges", "weights"})
       if (a.contains(k)) { c.warn(at(p, k), "ANIM_MESH_UNUSED", std::string("region 첨부의 메시 값은 쓰이지 않습니다: ") + k); break; }
@@ -128,18 +140,23 @@ size_t checkMesh(Checker& c, const Json& a, const std::string& p, const std::map
     return &list;
   };
   size_t coords = 0, uvCount = 0;
-  if (clipping && !a.contains("vertices")) { c.error(at(p, "vertices"), "ANIM_CLIP_VERTICES", "클리핑 첨부에는 다각형 정점(vertices)이 필요합니다."); return 0; }
+  if (clipping && !a.contains("vertices")) { c.error(at(p, "vertices"), code + "VERTICES", kind + " 첨부에는 다각형 정점(vertices)이 필요합니다."); return 0; }
   numbers("vertices", coords);
   const size_t n = coords / 2;
   if (clipping) {
     if (ok && (coords % 2 || n < 3 || n > MAX_CLIP_VERTICES)) {
-      c.error(at(p, "vertices"), "ANIM_CLIP_VERTICES", "클리핑 다각형 정점은 x, y 쌍으로 3.." + std::to_string(MAX_CLIP_VERTICES) + "개입니다.");
+      c.error(at(p, "vertices"), code + "VERTICES", kind + " 다각형 정점은 x, y 쌍으로 3.." + std::to_string(MAX_CLIP_VERTICES) + "개입니다.");
       ok = false;
     } else if (ok) {
-      // Self-intersecting clip polygons have no inside/outside every runtime would agree on.
+      // Self-intersecting clip polygons have no inside/outside every runtime would agree on. A
+      // bounding box only answers hit tests (even-odd rule, the same everywhere): a warning, so a
+      // vertex drag through a crossing is never refused halfway.
       std::vector<double> polygon;
       for (const auto& v : a.at("vertices")) polygon.push_back(v.get<double>());
-      if (const std::string problem = polygonProblem(polygon); !problem.empty()) { c.error(at(p, "vertices"), "ANIM_CLIP_POLYGON", "클리핑 다각형이 올바르지 않습니다: " + problem); ok = false; }
+      if (const std::string problem = polygonProblem(polygon); !problem.empty()) {
+        if (box) c.warn(at(p, "vertices"), "ANIM_BOX_POLYGON", "판정 상자 다각형이 단순하지 않습니다(겹친 곳은 짝홀 규칙으로 판정): " + problem);
+        else { c.error(at(p, "vertices"), "ANIM_CLIP_POLYGON", "클리핑 다각형이 올바르지 않습니다: " + problem); ok = false; }
+      }
     }
   } else if (ok && (coords % 2 || n < 3 || n > MAX_MESH_VERTICES)) {
     c.error(at(p, "vertices"), "ANIM_MESH_VERTICES", "메시 정점은 x, y 쌍으로 3.." + std::to_string(MAX_MESH_VERTICES) + "개입니다.");
@@ -255,7 +272,10 @@ size_t checkSequence(Checker& c, const Json& a, const std::string& p) {
   if (!a.is_object() || !a.contains("sequence")) return 0;
   const Json& q = a.at("sequence");
   const std::string sp = at(p, "sequence");
-  if (text(a, "type") == "clipping") { c.error(sp, "ANIM_SEQUENCE_TYPE", "클리핑 첨부에는 시퀀스를 쓸 수 없습니다."); return 0; }
+  if (text(a, "type") == "clipping" || text(a, "type") == "boundingBox" || text(a, "type") == "point") {
+    c.error(sp, "ANIM_SEQUENCE_TYPE", "그림이 없는 첨부(클리핑·판정 상자·기준점)에는 시퀀스를 쓸 수 없습니다.");
+    return 0;
+  }
   if (!q.is_object()) { c.error(sp, "ANIM_SEQUENCE_FRAMES", "sequence는 {frames, setupIndex?} 객체입니다."); return 0; }
   const Json frames = q.contains("frames") ? q.at("frames") : Json();
   if (!frames.is_array() || frames.empty() || frames.size() > MAX_SEQUENCE_FRAMES) {
@@ -867,6 +887,8 @@ std::vector<Diagnostic> validateRig(const Json& data) {
       else if (slotOrder.count(slot) && slotOrder[end] <= slotOrder[slot]) c.error(at(p, "end"), "ANIM_CLIP_END", "클리핑 끝 슬롯은 그리는 순서에서 클리핑 슬롯 「" + slot + "」보다 뒤(위)에 있어야 합니다: " + end);
       return;
     }
+    // Bounding boxes and points (plugin 1.17.0): no picture to check (checkMesh warned about image fields).
+    if (text(a, "type") == "boundingBox" || text(a, "type") == "point") { checkSequence(c, a, p); return; }
     if (a.contains("end")) c.warn(at(p, "end"), "ANIM_CLIP_UNUSED", "end는 클리핑 첨부에만 씁니다.");
     checkAtlas(c, a, p);
     if (const size_t frames = checkSequence(c, a, p)) sequenceCounts[slot].insert(frames);
@@ -1176,16 +1198,26 @@ Rig parseValidatedRig(const std::string& id, const Json& data) {
       att.clipEnd = a.at("end").get<std::string>();
       att.clipEndIndex = rig.slotIndex(att.clipEnd);
     }
-    if (!att.clipping && a.contains("atlas") && a.at("atlas").is_object()) att.atlas = readRegion(a.at("atlas"));
-    if (!att.clipping && a.contains("sequence") && a.at("sequence").is_object()) {
+    if (type == "boundingBox" || type == "point") {
+      // Plugin 1.17.0: no picture either; a box keeps the polygon fields below, a point only its offset.
+      att.boundingBox = type == "boundingBox";
+      att.point = !att.boundingBox;
+      att.imageAssetId.clear();
+      att.pivotX = att.pivotY = 0;
+      att.width = att.height = 0;
+      if (att.boundingBox && a.contains("color") && a.at("color").is_string()) att.color = a.at("color").get<std::string>();
+      if (att.point) return att;
+    }
+    if (!att.pictureless() && a.contains("atlas") && a.at("atlas").is_object()) att.atlas = readRegion(a.at("atlas"));
+    if (!att.pictureless() && a.contains("sequence") && a.at("sequence").is_object()) {
       const Json& q = a.at("sequence");
       for (const auto& f : q.at("frames")) att.frames.push_back(f.get<std::string>());
       att.setupIndex = q.value("setupIndex", 0);
       if (q.contains("atlas") && q.at("atlas").is_array())
         for (const auto& r : q.at("atlas")) att.frameAtlas.push_back(r.is_object() ? std::optional<AtlasRegion>(readRegion(r)) : std::nullopt);
     }
-    if (type != "mesh" && !att.clipping) return att;
-    att.mesh = !att.clipping;
+    if (type != "mesh" && !att.clipping && !att.boundingBox) return att;
+    att.mesh = type == "mesh";
     for (const auto& v : a.at("vertices")) att.vertices.push_back(v.get<double>());
     if (att.mesh) {
       for (const auto& v : a.at("uvs")) att.uvs.push_back(v.get<double>());

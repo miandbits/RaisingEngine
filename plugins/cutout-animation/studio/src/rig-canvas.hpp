@@ -154,6 +154,28 @@ class RigCanvas : public QWidget {
   /** Clipping polygons (plugin 1.12.0): every shown clipping slot's outline, dashed (editor-only toggle). */
   void setShowClipOutlines(bool on) { showClips_ = on; update(); }
   bool showClipOutlines() const { return showClips_; }
+  /** Bounding boxes and points (plugin 1.17.0, editor-only view toggles): boxes as translucent dashed
+   *  polygons (their `color`, else lime), points as a crosshair with a direction line ending in a
+   *  rotation handle. Shown ones are pickable: a box by its outline, a point by its centre (drag =
+   *  move) or its handle (drag = turn). */
+  void setShowBoxes(bool on) { showBoxes_ = on; refreshHover(); update(); }
+  bool showBoxes() const { return showBoxes_; }
+  void setShowPoints(bool on) { showPoints_ = on; refreshHover(); update(); }
+  bool showPoints() const { return showPoints_; }
+  static QColor boxColor();
+  static QColor pointColor();
+  /** Widget px of a shown point's rotation handle (the end of its direction line). */
+  QPointF pointHandle(const QPointF& rigAt, double rotation) const;
+  /** 기준점 놓기: the next left click places a point (onPlacePoint, rig space); Esc cancels (onPlaceCancel). */
+  void setPointPlacing(bool on);
+  bool pointPlacing() const { return placingPoint_; }
+  std::function<void(const QPointF& rigPoint)> onPlacePoint;
+  std::function<void()> onPlaceCancel;
+  /** Game-connection preview (plugin 1.17.0): a left click is offered first to onPreviewClick (rig
+   *  space); returning true (it hit a bounding box) consumes it. */
+  void setPreviewClicks(bool on) { previewClicks_ = on; }
+  bool previewClicks() const { return previewClicks_; }
+  std::function<bool(const QPointF& rigPoint)> onPreviewClick;
   /** 정점 추가: a click (rig space); 가장자리 추가: a drag from vertex `a` to vertex `b`. */
   std::function<void(const QPointF& rigPoint)> onMeshAddVertex;
   std::function<void(int a, int b)> onMeshAddEdge;
@@ -259,6 +281,9 @@ class RigCanvas : public QWidget {
   void paintTransforms(QPainter& p);
   bool showClips_ = true;
   void paintClips(QPainter& p);
+  bool showBoxes_ = true, showPoints_ = true, placingPoint_ = false, previewClicks_ = false;
+  void paintBoxes(QPainter& p);
+  void paintPoints(QPainter& p);
   GhostLayer renderGhost(const Ghost& ghost) const;
 };
 }  // namespace cutout_studio

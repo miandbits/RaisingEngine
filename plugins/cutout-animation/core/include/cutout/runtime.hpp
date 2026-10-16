@@ -285,4 +285,21 @@ const std::optional<AtlasRegion>& attachmentAtlas(const Pose& pose, int slot, co
  * to the clip polygon (clipItem) and become mesh items, items outside keep their shape.
  */
 std::vector<DrawItem> drawItems(const Rig& rig, const Pose& pose);
+
+// ---- Bounding boxes and points (plugin 1.17.0): never drawn, reported for hit tests and anchors ----
+/** A shown bounding box: its slot, the attachment and the rig-space polygon [x, y, ...] (bones,
+ *  weights and deform keys applied after IK, transform constraints and physics, like a mesh). */
+struct BoxWorld { int slot = -1; const Attachment* attachment = nullptr; std::vector<double> polygon; };
+/** A shown point: rig-space place and direction (degrees, clockwise on y-down screens: the
+ *  attachment's rotation through the slot bone's world matrix, so scale, shear and mirror count). */
+struct PointWorld { int slot = -1; const Attachment* attachment = nullptr; double x = 0, y = 0, rotation = 0; };
+/** Every bounding box `pose` shows, in draw order (back to front). A slot showing nothing (hidden
+ *  by a key or an expression, or a name the skin does not resolve) has none; slot alpha is ignored. */
+std::vector<BoxWorld> boxPolygons(const Rig& rig, const Pose& pose);
+/** Every point `pose` shows, in draw order. */
+std::vector<PointWorld> pointWorlds(const Rig& rig, const Pose& pose);
+/** Even-odd point-in-polygon ([x, y, ...]), the same comparisons on every runtime. */
+bool polygonContains(const std::vector<double>& polygon, double x, double y);
+/** Index of the topmost (last in draw order) box containing (x, y), -1 = none. */
+int hitBox(const std::vector<BoxWorld>& boxes, double x, double y);
 }  // namespace cutout

@@ -29,6 +29,7 @@ class QDoubleSpinBox;
 class QFrame;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QListWidget;
 class QMimeData;
 class QPushButton;
@@ -335,6 +336,28 @@ class CutoutPanel : public QWidget {
   bool deleteClipping();                                    // 클리핑 삭제: the selected clip slot
   QString clipSlot() const;                                 // the selection when it shows a clipping attachment
   void setClipOutlines(bool on);                            // 윤곽 보기 (editor-only)
+  // ---- Bounding boxes and points (plugin 1.17.0; the 판정 page). Setup-mode gestures, one core edit
+  // each (addBoundingBox, setBoundingBox, addPoint, setAttachment drags, deleteSlot). Neither draws in
+  // any runtime; the canvas shows them as editor-only overlays (보기 ▾ toggles, QSettings).
+  /** 판정 상자: a new box slot right above the selected part outlining its picture (the 자동 윤곽 alpha
+   *  tracing; no picture: its rectangle), or on the selected bone (a square). */
+  bool addBoundingBox();
+  bool beginPointPlacement();                    // 기준점: the next canvas click places a point (selected bone; a part: its bone)
+  bool addPointAt(const QPointF& rigPoint);      // what that click does (also automation)
+  bool deleteHitPart();                          // the selected box / point slot
+  /** 정점 편집 of the selected box: the mesh vertex tools (select / drag / band, 점 추가, Delete). */
+  void setBoxVertexEdit(bool on);
+  bool boxVertexEdit() const { return boxEdit_; }
+  QString boxSlot() const;                       // the selection when it shows a bounding box
+  QString pointSlot() const;                     // the selection when it shows a point
+  void setShowBoxes(bool on);                    // 보기 ▾ 판정 상자 보이기 (editor-only)
+  void setShowPoints(bool on);                   // 보기 ▾ 기준점 보이기 (editor-only)
+  /** Game-connection preview: a click at a rig point on a shown box fires `partClicked {box, slot}`
+   *  into the preview instance (the players' hitTest dispatch). False = no box there. */
+  bool previewClick(const QPointF& rigPoint);
+  struct PreviewClick { QString box, slot; QStringList matched; };
+  PreviewClick lastPreviewClick() const { return lastPreviewClick_; }
+  QStringList rigBoxNames() const;               // box attachment names of the rig (binding editor hints)
   // ---- Image sequences (plugin 1.12.0; the 시퀀스 page) on the selected part's shown attachment
   // (the preview skin's own entry when it provides it). Frames are image assets of one size.
   std::function<QStringList()> askSequenceFiles;            // PNG files in frame order (empty = cancel)
@@ -750,6 +773,23 @@ class CutoutPanel : public QWidget {
   QVector<QWidget*> sequencePartTools_, sequenceFrameTools_, sequenceKeyTools_;
   QWidget* buildClipping();
   void refreshClipping();
+  // bounding boxes and points (plugin 1.17.0, editor state only)
+  bool boxEdit_ = false;
+  int boxTool_ = 0;  // RigCanvas::MeshSelect / MeshAddVertex while 정점 편집 of a box is on
+  PreviewClick lastPreviewClick_;
+  QListWidget* hitList_ = nullptr;
+  QLabel* hitInfo_ = nullptr;
+  QPushButton *hitBoxButton_ = nullptr, *hitPointButton_ = nullptr, *hitVerticesButton_ = nullptr, *hitDeleteButton_ = nullptr, *hitAddVertexButton_ = nullptr;
+  QWidget* hitVertexRow_ = nullptr;
+  QAction *showBoxesAction_ = nullptr, *showPointsAction_ = nullptr;
+  QWidget* buildHits();
+  void refreshHits();
+  void buildHitViewActions(QMenu* menu);
+  bool boxEditing() const;  // 정점 편집 on, Setup mode, a box selected
+  std::vector<cutout::Json> boxMoveOps(const QPointF& rigDelta) const;
+  bool boxAddVertex(const QPointF& rigPoint);
+  bool boxDeleteVertices();
+  QString uniqueSlotId(const QString& base) const;
   QWidget* buildSequence();
   void refreshSequence();
   void showSequenceFrame();

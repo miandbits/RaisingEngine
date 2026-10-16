@@ -332,6 +332,9 @@ Json Host::handle(const Json& r) {
     for (const auto& d : docs) if (d.value("type", std::string()) == "controller") controllers_[d.value("id", std::string())] = d.at("data");
     resetMeshes();
     Json reply{{"ok", true}, {"api", 1}, {"diagnostics", diagnostics}};
+    // Optional requests this plugin answers (plugin 1.17.0, CONTRACT.md §7): hosts call `hitTest`
+    // on clicks and `points` for anchors only when listed, so older plugins are never asked.
+    reply["ops"] = {"points", "hitTest"};
     // Frame format negotiation (CONTRACT.md §7, plugin 1.9.0): a host listing 2 in frameFormats gets
     // the mesh topology table now and may request compact frames; others keep the documented items.
     if (r.contains("frameFormats") && r.at("frameFormats").is_array())
@@ -364,7 +367,15 @@ Json Host::handle(const Json& r) {
     if (fresh || mounts_[id].width != m.width || mounts_[id].height != m.height || mounts_[id].scale != m.scale || mounts_[id].flipX != m.flipX) frames_.erase(id);
     if (!m.skin.empty() && (fresh || mounts_[id].skin != m.skin)) instances_[id]->setSkin(m.skin);
     mounts_[id] = m;
-    return {{"ok", true}};
+    // `interactive` (plugin 1.17.0): the rig has bounding boxes, so clicks on the element may matter
+    // (hosts may skip hit tests of other elements). Absent otherwise: older replies keep their shape.
+    Json reply{{"ok", true}};
+    const Rig& mounted = *rig->second;
+    auto anyBox = [](const std::vector<Attachment>& list) { return std::any_of(list.begin(), list.end(), [](const Attachment& a) { return a.boundingBox; }); };
+    bool boxes = anyBox(mounted.attachments);
+    for (const auto& skin : mounted.skins) boxes = boxes || anyBox(skin.attachments);
+    if (boxes) reply["interactive"] = true;
+    return reply;
   }
   if (op == "saveAll") {
     Json state = Json::object();
@@ -470,6 +481,48 @@ Json Host::handle(const Json& r) {
       items.push_back(drawItemJson(item));
     }
     return {{"ok", true}, {"items", items}};
+  }
+  // ---- Bounding boxes and points (plugin 1.17.0): the space of `frame` (element px when mounted,
+  // rig-origin px otherwise), the current pose. Nothing here changes playback except a dispatching
+  // hitTest, which is a presentation signal like any other (never game state).
+  if (op == "points" || op == "boxes" || op == "hitTest") {
+    auto& inst = need("instance");
+    const Rig& rig = inst.rig();
+    const Affine place = placement(str(r, "instance"), rig) * Affine::compose(-rig.originX, -rig.originY, 0, 1, 1);
+    const Pose pose = inst.pose();
+    if (op == "points") {
+      Json list = Json::array();
+      for (const auto& p : pointWorlds(rig, pose)) {
+        double x, y;
+        place.apply(p.x, p.y, x, y);
+        const double rad = p.rotation * 3.14159265358979323846 / 180, dx = place.a * std::cos(rad) + place.c * std::sin(rad), dy = place.b * std::cos(rad) + place.d * std::sin(rad);
+        list.push_back({{"slot", rig.slots[size_t(p.slot)].id}, {"name", p.attachment->name}, {"x", x}, {"y", y}, {"rotation", std::atan2(dy, dx) * 180 / 3.14159265358979323846}});
+      }
+      return {{"ok", true}, {"points", list}};
+    }
+    std::vector<BoxWorld> boxes = boxPolygons(rig, pose);
+    for (auto& b : boxes)
+      for (size_t v = 0; v + 1 < b.polygon.size(); v += 2) { const double x = b.polygon[v], y = b.polygon[v + 1]; place.apply(x, y, b.polygon[v], b.polygon[v + 1]); }
+    auto ref = [&](const BoxWorld& b) { return Json{{"slot", rig.slots[size_t(b.slot)].id}, {"name", b.attachment->name}}; };
+    if (op == "boxes") {
+      Json list = Json::array();
+      for (const auto& b : boxes) { Json e = ref(b); e["polygon"] = b.polygon; list.push_back(e); }
+      return {{"ok", true}, {"boxes", list}};
+    }
+    if (!r.contains("x") || !r.contains("y") || !r.at("x").is_number() || !r.at("y").is_number()) throw std::runtime_error("hitTest needs numbers x, y");
+    const double x = r.at("x").get<double>(), y = r.at("y").get<double>();
+    // Every box under the point, topmost (last drawn) first; the first is the hit.
+    Json hits = Json::array();
+    for (size_t k = boxes.size(); k-- > 0;) if (polygonContains(boxes[k].polygon, x, y)) hits.push_back(ref(boxes[k]));
+    Json reply{{"ok", true}, {"hit", hits.empty() ? Json(nullptr) : hits[0]}, {"hits", hits}};
+    // dispatch: the click becomes the presentation signal `partClicked {box, slot}` of that instance.
+    if (r.value("dispatch", false)) {
+      Json matched = Json::array();
+      if (!hits.empty())
+        for (const auto& id : inst.signal("partClicked", {{"box", hits[0].at("name").get<std::string>()}, {"slot", hits[0].at("slot").get<std::string>()}})) matched.push_back(id);
+      reply["matched"] = matched;
+    }
+    return reply;
   }
   if (op == "save") return {{"ok", true}, {"state", need("instance").saveState()}};
   if (op == "restore") { need("instance").restoreState(r.at("state")); return {{"ok", true}}; }

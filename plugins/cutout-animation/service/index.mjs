@@ -5,11 +5,11 @@ import { open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
-import { ATLAS_DEFAULTS, attachmentsOf, buildAtlas, decodePng } from './atlas.mjs';
+import { ATLAS_DEFAULTS, attachmentsOf, buildAtlas, decodePng, pictureless } from './atlas.mjs';
 import { importLayers } from './layer-import.mjs';
 
 /** Image ids an attachment draws: its picture and, for sequences (plugin 1.12.0), every frame. */
-const drawnImages = a => [...new Set([a?.imageAssetId, ...(Array.isArray(a?.sequence?.frames) ? a.sequence.frames : [])].filter(id => typeof id === 'string' && id))];
+const drawnImages = a => pictureless(a) ? [] : [...new Set([a?.imageAssetId, ...(Array.isArray(a?.sequence?.frames) ? a.sequence.frames : [])].filter(id => typeof id === 'string' && id))];
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const RIG_SENTINEL = '#rig';
@@ -95,11 +95,11 @@ async function pngAlpha(file) {
   }
   return { width, height, alpha };
 }
-/** `autoOutline` ops (alone or in a batch) naming `imagePath` get the PNG's alpha as `mask`. */
+/** `autoOutline` / `addBoundingBox` (plugin 1.17.0) ops (alone or in a batch) naming `imagePath` get the PNG's alpha as `mask`. */
 async function fillOutlineMasks(operation) {
   const ops = operation?.op === 'batch' && Array.isArray(operation.operations) ? operation.operations : [operation];
   for (const op of ops) {
-    if (op?.op !== 'autoOutline' || op.mask !== undefined || typeof op.imagePath !== 'string') continue;
+    if ((op?.op !== 'autoOutline' && op?.op !== 'addBoundingBox') || op.mask !== undefined || typeof op.imagePath !== 'string') continue;
     const { width, height, alpha } = await pngAlpha(op.imagePath);
     op.mask = { width, height, alpha: alpha.toString('base64') };
     delete op.imagePath;
@@ -180,7 +180,7 @@ export async function createService({ pluginDir, manifest }) {
       const lists = [['/data/attachments', rig.data.attachments]];
       for (const [s, skin] of (Array.isArray(rig.data.skins) ? rig.data.skins : []).entries()) lists.push([`/data/skins/${s}/attachments`, skin?.attachments]);
       for (const [base, list] of lists) for (const [i, attachment] of (Array.isArray(list) ? list : []).entries()) {
-        const id = attachment?.imageAssetId, pointer = `${base}/${i}`;
+        const id = pictureless(attachment) ? undefined : attachment?.imageAssetId, pointer = `${base}/${i}`;
         if (typeof id !== 'string' || !id) continue; // empty ids are reported by the core
         const asset = images.get(id);
         if (!asset || asset.kind !== 'image') { push(rig.file, `${pointer}/imageAssetId`, 'ANIM_IMAGE_MISSING', asset ? `에셋 '${id}'는 이미지가 아닙니다.` : `이미지 에셋 '${id}'가 없습니다. 에셋 목록에 PNG를 등록하세요.`, [rig.id, id]); continue; }
@@ -252,7 +252,7 @@ export async function createService({ pluginDir, manifest }) {
 
   /**
    * Pass-through to the core JSON ops (validate, sample, template, edit, …). Never writes project
-   * files; the only reads are the PNG an `edit` → `autoOutline` names by `imagePath` (decoded here
+   * files; the only reads are the PNG an `edit` → `autoOutline` / `addBoundingBox` names by `imagePath` (decoded here
    * into the op's `mask`, plugin 1.6.0) and the layered file of `importLayers` (plugin 1.11.0).
    */
   async function call(op, payload = {}) {
@@ -265,7 +265,7 @@ export async function createService({ pluginDir, manifest }) {
       const { target, includeImages, ...rest } = payload;
       if (target !== undefined && !(target && typeof target === 'object' && typeof target.id === 'string' && target.rig && typeof target.rig === 'object')) throw new Error('target은 {id, rig}입니다.');
       const result = await importLayers({ payload: target ? { ...rest, rig: target.id } : rest, documents: target ? [{ type: 'rig', id: target.id, data: target.rig }] : [],
-        dryRun: includeImages !== true, validateRig: rigDiagnostics });
+        dryRun: includeImages !== true, validateRig: rigDiagnostics, traceOutline });
       return { ok: true, ...result.report, documents: result.documents, images: result.images.map(i => ({ id: i.id, png: Buffer.from(i.bytes).toString('base64') })) };
     }
     const body = { ...payload, op };
@@ -326,6 +326,20 @@ export async function createService({ pluginDir, manifest }) {
       report: { atlas: true, pages: atlas.pages.map(p => ({ id: pageId(p.index), width: p.width, height: p.height, bytes: p.png.length })), packed: atlas.packed, skipped: atlas.skipped },
     };
   }
+  /**
+   * Outline of a `[box]` layer's pixels ({width, height, rgba}, picture px) for the layer import
+   * (plugin 1.17.0): the core's own alpha tracing (addBoundingBox from a part with its `mask` on a
+   * one-part rig whose picture sits at 0, 0), so imported boxes match 「판정 상자」 in the editor.
+   */
+  function traceOutline(picture) {
+    const { width, height, rgba } = picture;
+    const alpha = Buffer.alloc(width * height);
+    for (let i = 0; i < width * height; i++) alpha[i] = rgba[i * 4 + 3];
+    const rig = { schemaVersion: 1, canvas: { width, height, originX: 0, originY: 0 }, bones: [{ id: 'root', parent: null }],
+      slots: [{ id: 'part', bone: 'root', attachment: 'part' }], attachments: [{ slot: 'part', name: 'part', imageAssetId: 'part', width, height, pivotX: 0, pivotY: 0 }], clips: [] };
+    const reply = request({ op: 'edit', rig, operation: { op: 'addBoundingBox', slot: 'box', from: 'part', mask: { width, height, alpha: alpha.toString('base64') } } });
+    return reply.ok ? reply.rig.attachments.find(a => a.slot === 'box')?.vertices ?? null : null;
+  }
   /** Core diagnostics of one rig (no controllers): what the layer import checks before returning. */
   function rigDiagnostics(data) {
     const reply = validateRig(data, []);
@@ -341,7 +355,7 @@ export async function createService({ pluginDir, manifest }) {
   async function prepareImport({ op, payload, dryRun, documents }) {
     if (op !== 'importLayers') throw new Error(`알 수 없는 가져오기 명령입니다: ${op}`);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('가져오기 인자는 객체여야 합니다.');
-    return importLayers({ payload, documents: (documents ?? []).filter(d => d?.type === 'rig' || d?.type === 'controller'), dryRun: dryRun === true, validateRig: rigDiagnostics });
+    return importLayers({ payload, documents: (documents ?? []).filter(d => d?.type === 'rig' || d?.type === 'controller'), dryRun: dryRun === true, validateRig: rigDiagnostics, traceOutline });
   }
   return { validate, call, requiredHostFeatures, prepareExport, prepareImport };
 }

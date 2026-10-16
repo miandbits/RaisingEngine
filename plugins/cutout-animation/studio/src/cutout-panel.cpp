@@ -98,6 +98,8 @@ const QVector<SignalInfo>& signalVocabulary() {
     {"dialogueEnded", "대화 끝", {"speakerId", "self"}},
     {"portraitChanged", "표정·초상 변경", {"characterId", "portraitId", "position", "self"}},
     {"phaseChanged", "진행 단계 변경", {"phase"}},
+    // Plugin 1.17.0: a click on a bounding box in the player (UI-only, never a game transition).
+    {"partClicked", "판정 상자 클릭", {"box", "slot"}},
   };
   return v;
 }
@@ -921,6 +923,8 @@ void CutoutPanel::buildViewMenu() {
   hintAction_->setCheckable(true);
   action(menu, "레이아웃 초기화", "cutoutResetLayoutAction", QString(), [this] { resetLayout(); });
   action(menu, "캔버스 크게", "cutoutFullViewAction", "Tab", [this] { setFullView(!fullView()); });
+  menu->addSeparator();
+  buildHitViewActions(menu);  // plugin 1.17.0: 판정 상자 / 기준점 보이기
   viewMenuButton_->setMenu(menu);
 }
 
@@ -1465,6 +1469,7 @@ QWidget* CutoutPanel::buildLooks() {
   lookTabs_->addTab(buildSequence(), "시퀀스");
   lookTabs_->addTab(buildPhysics(), "물리");  // plugin 1.13.0
   lookTabs_->addTab(buildTransform(), "변형 제약");  // plugin 1.16.0
+  lookTabs_->addTab(buildHits(), "판정");  // plugin 1.17.0: bounding boxes and points
   return section("스킨 · 표정 · IK · 메시 · 이벤트 · 클리핑 · 시퀀스 · 물리 · 변형", "cutoutSectionLooks", lookTabs_);
 }
 QWidget* CutoutPanel::lookPage(const char* name) {
@@ -2138,6 +2143,10 @@ QWidget* CutoutPanel::buildWorkspace() {
     setStatus(refs.isEmpty() ? QString("상자 안에 본이 없습니다.") : QString("상자 선택: 본 %1개 (선택 %2개)").arg(refs.size()).arg(selectedItems().size()));
   };
   canvas_->onSelectAll = [this] { selectAllBones(); };
+  // Bounding boxes and points (plugin 1.17.0).
+  canvas_->onPlacePoint = [this](const QPointF& at) { addPointAt(at); };
+  canvas_->onPlaceCancel = [this] { setStatus("기준점 놓기를 취소했습니다."); refreshHits(); };
+  canvas_->onPreviewClick = [this](const QPointF& at) { return previewClick(at); };
   connect(fit, &QToolButton::clicked, canvas_, &RigCanvas::fitToCanvas);
   // Second row (plugin 1.7.0, editor-only options): selection commands, the pivot of a
   // multi-bone rotate/scale, setup-pose compensation and the axis space of the numeric fields.
@@ -3445,6 +3454,7 @@ void CutoutPanel::refreshProperties() {
   refreshSequence();
   refreshPhysics();
   refreshTransform();
+  refreshHits();
 }
 
 QString CutoutPanel::keyState() const {
@@ -3719,6 +3729,18 @@ void CutoutPanel::refreshController() {
     if (b.contains("match") && b.at("match").is_object()) match = toQtObject(b.at("match"));
     auto* matchEdit = line("cutoutBindingMatch", joinPairs(match), "예: outcome=success");
     matchEdit->setToolTip("이 신호의 값: " + params);
+    if (sig == "partClicked") {
+      // Plugin 1.17.0: the rig's box names, offered as `box=<name>` (typing completes them).
+      const QStringList boxes = rigBoxNames();
+      QStringList offers;
+      for (const QString& name : boxes) offers << "box=" + name;
+      matchEdit->setToolTip(QString("이 신호의 값: box(판정 상자 이름), slot(그 조각) · 이 리그의 판정 상자: %1").arg(boxes.isEmpty() ? QString("없음(조립 모드 「판정」 페이지에서 만듦)") : boxes.join(", ")));
+      matchEdit->setPlaceholderText(boxes.isEmpty() ? QString("예: box=head") : "예: " + offers[0]);
+      auto* completer = new QCompleter(offers, matchEdit);
+      completer->setCaseSensitivity(Qt::CaseInsensitive);
+      matchEdit->setCompleter(completer);
+      matchEdit->setProperty("cutoutBoxOffers", offers);
+    }
     bindingTable_->setCellWidget(row, 2, matchEdit);
     auto* clip = combo("cutoutBindingClip");
     clip->addItem("— (클립 없음)", QString());
@@ -3821,6 +3843,7 @@ void CutoutPanel::updateCanvas() {
   }
   canvas_->setPhysicsView(physicsId_, rest);
   canvas_->setSelectedTransform(transformId_);
+  canvas_->setPreviewClicks(showingPreview());  // plugin 1.17.0: box clicks fire partClicked into the preview
   updateOnion();
 }
 
@@ -6027,10 +6050,12 @@ void CutoutPanel::refreshMesh() {
   const cutout::Attachment* att = nullptr;
   Json fields;
   // A clip slot (plugin 1.12.0) has no picture: the mesh tools leave it alone (its outline is still drawn).
-  const bool target = meshTarget(si, att, fields), part = target && !att->clipping, mesh = part && att->mesh, animate = mode_ == Mode::Animate;
-  const QString key = part ? qs(fields.dump()) : QString();
+  // Boxes and points (plugin 1.17.0) have no picture either; a box's points use the vertex tools (boxEdit_).
+  const bool target = meshTarget(si, att, fields), part = target && !att->pictureless(), mesh = part && att->mesh, animate = mode_ == Mode::Animate;
+  const bool box = target && att->boundingBox && boxEdit_ && !animate;
+  const QString key = part || box ? qs(fields.dump()) : QString();
   if (key != meshSelectionKey_) { meshSelection_.clear(); meshSelectionKey_ = key; }
-  if (mesh) for (auto it = meshSelection_.begin(); it != meshSelection_.end();) it = *it >= int(att->vertexCount()) ? meshSelection_.erase(it) : std::next(it);
+  if (mesh || box) for (auto it = meshSelection_.begin(); it != meshSelection_.end();) it = *it >= int(att->vertexCount()) ? meshSelection_.erase(it) : std::next(it);
   if (!mesh || (animate && meshEdit_ == MeshEdit::Weights)) meshEdit_ = MeshEdit::Off;
   // Outline drawing belongs to one part in setup mode: another selection or Animate ends it.
   if (!outlineSlot_.isEmpty() && (animate || !target || refId(selection_) != outlineSlot_)) { outlineSlot_.clear(); outlineForClip_ = false; }
@@ -6092,10 +6117,11 @@ void CutoutPanel::refreshMesh() {
   if (!outlineSlot_.isEmpty() && !outlineForClip_) info = QString("윤곽 그리기 중: 「%1」 둘레를 클릭하세요. 첫 점 클릭·더블클릭·Enter = 메시 만들기, Esc = 취소.").arg(outlineSlot_);
   meshInfo_->setText(info);
   if (canvas_) {
-    canvas_->setMeshEdit(int(meshEdit_), mesh ? refId(selection_) : QString(), meshSelection_,
-                         rig_ ? rig_->boneIndex(ss(brushBone_->currentData().toString())) : -1, brushRadius_->value());
+    if (box) canvas_->setMeshEdit(int(MeshEdit::Vertices), refId(selection_), meshSelection_, -1, brushRadius_->value());
+    else canvas_->setMeshEdit(int(meshEdit_), mesh ? refId(selection_) : QString(), meshSelection_,
+                              rig_ ? rig_->boneIndex(ss(brushBone_->currentData().toString())) : -1, brushRadius_->value());
     // Only on change: both reset the canvas gesture (a refresh can run in the middle of a drag).
-    const int tool = shaping ? meshTool_ : int(RigCanvas::MeshSelect);
+    const int tool = box ? boxTool_ : shaping ? meshTool_ : int(RigCanvas::MeshSelect);
     if (canvas_->meshTool() != tool) canvas_->setMeshTool(tool);
     if (canvas_->outlineDrawing() != !outlineSlot_.isEmpty()) canvas_->setOutlineDrawing(outlineSlot_);
   }
@@ -6175,6 +6201,7 @@ std::vector<Json> CutoutPanel::meshMoveOps(const QPointF& rigDelta) const {
   int si;
   const cutout::Attachment* shown;
   Json fields;
+  if (meshTarget(si, shown, fields) && shown->boundingBox) return boxMoveOps(rigDelta);  // plugin 1.17.0
   if (!meshTarget(si, shown, fields) || !shown->mesh) return {};
   const cutout::Attachment* att = dragRig_->attachment(ss(refId(selection_)), shown->name, dragPose_.skin);
   if (!att || !att->mesh) return {};
@@ -6417,6 +6444,7 @@ void CutoutPanel::setMeshTool(int tool) {
 }
 bool CutoutPanel::addVertexAt(const QPointF& rigPoint) {
   if (mode_ != Mode::Setup) { setStatus("정점 추가는 조립 모드에서 합니다.", true); return false; }
+  if (boxEditing()) return boxAddVertex(rigPoint);  // a bounding box (plugin 1.17.0)
   int si;
   const cutout::Attachment* att;
   Json op;
@@ -6458,6 +6486,7 @@ bool CutoutPanel::addVertexAt(const QPointF& rigPoint) {
 }
 bool CutoutPanel::deleteVertices() {
   if (mode_ != Mode::Setup) { setStatus("정점 삭제는 조립 모드에서 합니다.", true); return false; }
+  if (boxEditing()) return boxDeleteVertices();  // a bounding box (plugin 1.17.0)
   int si;
   const cutout::Attachment* att;
   Json op;

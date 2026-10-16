@@ -265,9 +265,11 @@
   "$defs": {
     "attachment": {
       "type": "object", "additionalProperties": false, "required": ["slot", "name"],
-      "if": { "required": ["type"], "properties": { "type": { "const": "clipping" } } },
-      "then": { "required": ["vertices", "end"] },
-      "else": { "required": ["imageAssetId", "width", "height"] },
+      "allOf": [
+        { "if": { "required": ["type"], "properties": { "type": { "const": "clipping" } } }, "then": { "required": ["vertices", "end"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "boundingBox" } } }, "then": { "required": ["vertices"] } },
+        { "if": { "not": { "required": ["type"], "properties": { "type": { "enum": ["clipping", "boundingBox", "point"] } } } }, "then": { "required": ["imageAssetId", "width", "height"] } }
+      ],
       "properties": {
         "slot": { "$ref": "#/$defs/id" },
         "name": { "$ref": "#/$defs/name" },
@@ -279,8 +281,9 @@
         "pivotY": { "type": "number", "minimum": -4, "maximum": 4 },
         "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
         "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 8192 },
-        "type": { "description": "region (default: the image rectangle), mesh (plugin 1.4.0) or clipping (plugin 1.12.0: no picture; the slots after it through `end` draw only inside its polygon). Semantics in docs/contract.md.", "enum": ["region", "mesh", "clipping"] },
-        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices). Clipping: the clip polygon (3..256 points, simple, concave allowed) in the slot bone's space (through x..scaleY).", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "type": { "description": "region (default: the image rectangle), mesh (plugin 1.4.0) clipping (plugin 1.12.0: no picture; the slots after it through `end` draw only inside its polygon), boundingBox (plugin 1.17.0: a hit polygon, never drawn) or point (plugin 1.17.0: a place + direction x, y, rotation in the slot bone's space, never drawn). Semantics in docs/contract.md.", "enum": ["region", "mesh", "clipping", "boundingBox", "point"] },
+        "vertices": { "description": "Mesh: image-pixel positions of the setup shape, x, y per vertex (3..2048 vertices). Clipping: the clip polygon (3..256 points, simple, concave allowed) in the slot bone's space (through x..scaleY). boundingBox: the hit polygon, placed like a clip polygon.", "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/coord" } },
+        "color": { "description": "boundingBox (plugin 1.17.0): editor-only outline colour (#rrggbb or #rrggbbaa). Ignored by runtimes.", "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
         "end": { "description": "Clipping (plugin 1.12.0): the last slot (draw order, inclusive) the polygon clips; must come after the clipping slot.", "$ref": "#/$defs/id" },
         "sequence": {
           "description": "Image sequence (plugin 1.12.0): frames of one size drawn with this attachment's placement (imageAssetId = frames[0]); slot sequence keys pick the frame, setupIndex without keys. atlas: written by the export packer, one region (or null) per frame.",

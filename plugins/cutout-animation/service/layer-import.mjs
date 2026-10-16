@@ -19,6 +19,9 @@
 //     (psd.mjs), clipping groups baked into their base, `[merge]` / `merge` groups flattened into
 //     one picture (compose.mjs), `effects: "skip"`, Cyrillic/Greek names transliterated, and a
 //     preview that reports (and proposes merges for) plans over the rig limits instead of failing.
+//   * hit areas and anchors (plugin 1.17.0): a `[box]` layer becomes a bounding box (slot
+//     `<name>-box`, attachment `<name>`) outlining its pixels instead of a picture, a `[point]`
+//     layer a point (slot `<name>-point`) at the centre of its pixels; neither moves bone centres.
 import { createHash } from 'node:crypto';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -312,7 +315,7 @@ export function autoScale(source) {
  * Plans the import of `source` (readLayerSource) into a new rig (`existing` null) or onto an
  * existing rig. Returns {rig, images: [{id, bytes}] (none when dryRun), report}.
  */
-export function planImport({ source, options, existing = null, rigName = '', dryRun = false }) {
+export function planImport({ source, options, existing = null, rigName = '', dryRun = false, traceOutline = null }) {
   const warnings = [];
   const warn = (code, message, layer) => warnings.push({ code, message, ...(layer ? { layer } : {}) });
   for (const w of source.warnings ?? []) warn(w.code, w.message);
@@ -347,7 +350,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
   };
 
   // Pass 1: the report tree + groups (future bones) + pictures, in document order (back → front).
-  const groups = [], pictures = [], markers = [];
+  const groups = [], pictures = [], markers = [], marks = [];
   const tally = { masks: [], effects: [], empty: 0, emptyGroups: 0, baked: 0, merged: 0, unbaked: new Map() };
   let order = 0;
   const keyOf = (prefix, index) => prefix ? `${prefix}.${index}` : String(index);
@@ -479,6 +482,14 @@ export function planImport({ source, options, existing = null, rigName = '', dry
       else markers.push(at);
       return item;
     }
+    // `[box]` / `[point]` (plugin 1.17.0): the layer's pixels outline a hit area / mark an anchor; no picture.
+    if (!merged && node.kind === 'layer' && (tags.has('box') || tags.has('point'))) {
+      const shape = cutPicture(pixelsOf(node), true, node.name);
+      if (!shape) { item.role = 'empty'; tally.empty++; return item; }
+      item.role = tags.has('box') ? 'box' : 'point';
+      marks.push({ item, key, kind: item.role, picture: shape, visible, group: ctx.group, text, order: order++, name: node.name ?? '' });
+      return item;
+    }
     // The picture: the layer (or the merged group), its clipped layers painted in, trimmed.
     const picture = cutPicture(bake(merged ? composeGroup(node, key) : pixelsOf(node), clipsOf(nodes, baseOf, index, prefix)), options.trim, node.name);
     if (merged) {
@@ -599,7 +610,21 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     pic.attachment = unique(pic.plain ? slot.id : toId(pic.attText, `image-${slot.pictures.length + 1}`), slot.names);
     slot.pictures.push(pic);
   }
+  // Boxes and points: a slot each, `<name>-box` / `<name>-point`, on the bone of their group.
+  for (const mark of marks) {
+    let g = mark.group;
+    while (g && !g.id) g = g.parent;
+    const base = toId(mark.text, null);
+    let id = base ? `${base}-${mark.kind}` : mark.kind;
+    if (planned.has(id)) { let n = 2; while (planned.has(`${id}-${n}`)) n++; id = `${id}-${n}`; }
+    const bone = g ? g.id : rootId;
+    const slot = { id, bone: updating && slotIds.has(id) ? slotIds.get(id) : bone, pictures: [], names: new Set(), mark };
+    mark.attachment = base ?? mark.kind;
+    mark.item.slot = id; mark.item.attachment = mark.attachment; mark.item.bone = slot.bone; mark.item.setup = mark.visible;
+    planned.set(id, slot);
+  }
   for (const slot of planned.values()) {
+    if (slot.mark) { slot.setup = slot.mark.visible ? slot.mark : null; slot.order = slot.mark.order; continue; }
     const shown = slot.pictures.filter(p => p.visible);
     if (shown.length > 1) warn('ANIM_IMPORT_SLOT_VISIBLE', `슬롯 '${slot.id}'에 보이는 레이어가 ${shown.length}개입니다. 맨 위 '${shown.at(-1).name}'만 보이고 나머지는 숨긴 첨부가 됩니다.`);
     slot.setup = shown.at(-1) ?? null;
@@ -616,9 +641,41 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     if (!images.has(id)) images.set(id, png);
     return pic.assetId = id;
   };
+  const PICTURELESS = new Set(['clipping', 'boundingBox', 'point']);
+  /** A `[box]` / `[point]` layer → its attachment (added, or the existing one's shape / place updated). */
+  const applyMark = (slot, boneWorld) => {
+    const m = slot.mark, ref = `${slot.id}/${m.attachment}`, r = m.picture, inv = invert(boneWorld) ?? IDENTITY;
+    const toBone = (px, py) => { const x = px * k, y = py * k; return [round(inv[0] * x + inv[2] * y + inv[4]), round(inv[1] * x + inv[3] * y + inv[5])]; };
+    let fields;
+    if (m.kind === 'box') {
+      // The core's alpha outline (autoOutline's tracing) when the caller has it, else the pixels' rectangle.
+      const outline = (typeof traceOutline === 'function' ? traceOutline(r) : null) ?? [1, 1, r.width - 1, 1, r.width - 1, r.height - 1, 1, r.height - 1];
+      const vertices = [];
+      for (let i = 0; i + 1 < outline.length; i += 2) vertices.push(...toBone(r.x + outline[i], r.y + outline[i + 1]));
+      fields = { type: 'boundingBox', vertices };
+    } else {
+      const [x, y] = toBone(r.x + r.width / 2, r.y + r.height / 2);
+      fields = { type: 'point', ...(x ? { x } : {}), ...(y ? { y } : {}) };
+    }
+    const at = rig.attachments.findIndex(a => a.slot === slot.id && a.name === m.attachment);
+    if (at < 0) { rig.attachments.push({ slot: slot.id, name: m.attachment, ...fields }); changes.attachments.added.push(ref); m.item.status = 'add'; return; }
+    const old = rig.attachments[at];
+    if (old.type !== fields.type) {
+      changes.attachments.skipped.push(ref); m.item.status = 'skip';
+      warn('ANIM_IMPORT_KIND', `'${ref}'는 이미 다른 종류의 첨부라 바꾸지 않았습니다.`, m.key);
+      return;
+    }
+    // Re-import: the outline / place follows the art; weights stay unless the point count changed.
+    const next = m.kind === 'box' ? { ...old, vertices: fields.vertices } : { ...old, x: fields.x ?? 0, y: fields.y ?? 0 };
+    if (m.kind === 'point') { if (!next.x) delete next.x; if (!next.y) delete next.y; }
+    if (m.kind === 'box' && old.weights && old.vertices?.length !== fields.vertices.length) delete next.weights;
+    if (JSON.stringify(next) === JSON.stringify(old)) { changes.attachments.unchanged.push(ref); m.item.status = 'same'; return; }
+    rig.attachments[at] = next; changes.attachments.updated.push(ref); m.item.status = 'update';
+  };
   for (const slot of slots) {
     const current = rig.slots.find(s => s.id === slot.id);
     const boneWorld = world.get(slot.bone) ?? IDENTITY;
+    if (slot.mark) applyMark(slot, boneWorld);
     for (const pic of slot.pictures) {
       const r = pic.picture, pixels = sha(r.rgba).slice(0, 32), ref = `${slot.id}/${pic.attachment}`;
       seen.add(ref);
@@ -633,6 +690,12 @@ export function planImport({ source, options, existing = null, rigName = '', dry
         continue;
       }
       const old = rig.attachments[at], before = provLayers[ref];
+      // A box / point / clipping (plugin 1.17.0) of the same name is rig work, never a picture to swap.
+      if (PICTURELESS.has(old.type)) {
+        changes.attachments.skipped.push(ref); pic.item.status = 'skip';
+        warn('ANIM_IMPORT_KIND', `'${ref}'는 그림이 없는 첨부(판정 상자·기준점·클리핑)라 그림으로 바꾸지 않았습니다.`, pic.key);
+        continue;
+      }
       if (before && before.pixels === pixels && before.width === r.width && before.height === r.height && before.x === r.x && before.y === r.y) {
         changes.attachments.unchanged.push(ref); pic.item.status = 'same'; continue;
       }
@@ -665,7 +728,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     }
     if (current) { changes.slots.kept.push(slot.id); continue; }
     const entry = { id: slot.id, bone: slot.bone, attachment: slot.setup ? slot.setup.attachment : null };
-    const alpha = slot.setup ? slot.setup.opacity : 1;
+    const alpha = slot.setup && !slot.mark ? slot.setup.opacity : 1;
     if (alpha < 1) entry.alpha = round(alpha);
     // Draw order: after the nearest earlier imported slot already in the rig (else before the next one).
     const index = slots.indexOf(slot);
@@ -705,6 +768,7 @@ export function planImport({ source, options, existing = null, rigName = '', dry
     canvas: rig.canvas, layers, warnings, changes,
     summary: { bones: changes.bones.added.length, slots: slots.length, attachments: pictures.length, hidden, images: dryRun ? null : images.size,
       added: changes.attachments.added.length, updated: changes.attachments.updated.length, unchanged: changes.attachments.unchanged.length,
+      ...(marks.length ? { boxes: marks.filter(m => m.kind === 'box').length, points: marks.filter(m => m.kind === 'point').length } : {}),
       baked: tally.baked, merged: tally.merged, effects: tally.effects.length, empty: tally.empty + tally.emptyGroups, pixels: pictures.reduce((s, p) => s + p.picture.width * p.picture.height, 0) },
     limits, ...(autoMerge ? { autoMerge } : {}),
   };
@@ -744,7 +808,7 @@ function proposeMerge(groups, pictures, counts) {
  * The service op: payload {file, id? | rig?, name?, origin?, trim?, scale?, exclude?, merge?, effects?} against
  * the plugin's `documents` ([{type, id, data}]). Returns {documents, images, report}.
  */
-export async function importLayers({ payload, documents = [], dryRun = false, validateRig }) {
+export async function importLayers({ payload, documents = [], dryRun = false, validateRig, traceOutline = null }) {
   const options = importOptions(payload);
   const rigs = documents.filter(d => d.type === 'rig'), controllers = documents.filter(d => d.type === 'controller');
   const source = await readLayerSource(payload?.file);
@@ -758,7 +822,7 @@ export async function importLayers({ payload, documents = [], dryRun = false, va
     if (!ID.test(id) || id.length > 64) fail(`캐릭터 ID '${id}'는 영문 소문자로 시작하고 소문자·숫자·하이픈만 쓸 수 있습니다.`);
     if (rigs.some(d => d.id === id) || controllers.some(d => d.id === id)) fail(`이미 있는 캐릭터 ID입니다: ${id}. 그 캐릭터를 갱신하려면 rig: "${id}"로 가져오세요.`);
   }
-  const plan = planImport({ source, options, existing: target ? target.data : null, rigName: payload.name, dryRun });
+  const plan = planImport({ source, options, existing: target ? target.data : null, rigName: payload.name, dryRun, traceOutline });
   // The same core validation as every rig edit (a preview has no image ids yet: not checked).
   if (validateRig && !dryRun) {
     const errors = (validateRig(plan.rig) ?? []).filter(d => d.severity !== 'warning');

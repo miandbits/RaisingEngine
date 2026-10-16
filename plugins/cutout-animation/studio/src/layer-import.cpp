@@ -19,7 +19,8 @@ QJsonObject LayerImportChoice::payload() const {
 QString layerRoleLabel(const QString& role) {
   static const QHash<QString, QString> labels{{"image", "그림"}, {"bone", "본"}, {"pivot", "회전 중심 표시"}, {"slot-group", "슬롯 묶음"}, {"group-in-slot", "슬롯 묶음 안"},
                                              {"ignored", "무시([ignore])"}, {"excluded", "빼기"}, {"empty", "빈 레이어"}, {"empty-group", "빈 그룹"},
-                                             {"clipped", "클리핑 (아래 그림에 합침)"}, {"merged", "합친 그림"}, {"in-merge", "합친 그림 안"}, {"effect", "효과 (뺌)"}};
+                                             {"clipped", "클리핑 (아래 그림에 합침)"}, {"merged", "합친 그림"}, {"in-merge", "합친 그림 안"}, {"effect", "효과 (뺌)"},
+                                             {"box", "판정 상자 ([box])"}, {"point", "기준점 ([point])"}};
   return labels.value(role, role);
 }
 QString layerStatusLabel(const QString& status) {
