@@ -3,7 +3,7 @@
   "plugins": [
     {
       "id": "cutout-animation",
-      "version": "1.13.0",
+      "version": "1.14.2",
       "enabled": true
     }
   ]

@@ -105,8 +105,8 @@ struct Pose {
  *  ik=false skips the IK constraints (world = plain forward kinematics of the animated values). */
 struct Look { int skin = -1; int expression = -1; bool expressions = true; bool ik = true; };
 
-/** One physics constraint's simulation state (rig space px, radians). Never saved: a restored
- *  instance starts settled (docs/contract.md "Physics"). */
+/** One physics constraint's simulation state (rig space px, radians). Ordinary saves omit it;
+ *  exact presentation checkpoints retain it (docs/contract.md "Save / load"). */
 struct PhysicsBody {
   bool ready = false;      // false = settle at the next input before simulating
   int64_t steps = 0;       // steps taken on the clock grid: the next one is due at (steps + 1) · stepMs
@@ -190,12 +190,15 @@ class Instance {
   std::vector<DrawItem> drawList() const;
   std::vector<Notification> takeNotifications();
 
-  Json saveState() const;
-  /** Restores clip, skin and expression state; looping clips restart at 0 by policy. */
+  /** Default: legacy game-save policy. Exact: presentation checkpoint, including loop/mix/physics clocks. */
+  Json saveState(bool exact = false) const;
+  /** Reads legacy states and exact presentation checkpoints. Restoration emits no notifications. */
   void restoreState(const Json& state);
   Json describe() const;
 
  private:
+  Json savePresentationState() const;
+  void restorePresentationState(const Json& state);
   struct Entry {
     int clip = -1; double timeMs = 0; bool loop = true; double speed = 1; Then then = Then::Default;
     uint64_t serial = 0; int64_t loops = 0; bool ended = false; std::string binding;

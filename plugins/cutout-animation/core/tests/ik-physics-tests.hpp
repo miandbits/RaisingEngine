@@ -371,6 +371,21 @@ void run() {
     check(inst.physics().steps == 60 * 2 - 2 || inst.physics().steps >= 110, "steps counted: " + std::to_string(inst.physics().steps));
   });
 
+  test("physics: exact presentation checkpoint retains spring motion and step grid", [] {
+    Instance a(parsed(hairRig())), b(parsed(hairRig()));
+    a.play(0, "sway");
+    for (int k = 0; k < 21; ++k) a.update(17);
+    check(a.physics().bodies[0].vr != 0, "fixture is swinging between physics boundaries");
+    const Json saved = Json::parse(a.saveState(true).dump());
+    b.restoreState(saved);
+    check(bitsOf(a) == bitsOf(b), "exact restored rendered pose, including hair physics");
+    for (double dt : {7., 16., 83., 250., 500.}) {
+      a.update(dt); b.update(dt);
+      check(bitsOf(a) == bitsOf(b), "continued rendered pose equals uninterrupted motion");
+      check(a.saveState(true) == b.saveState(true), "velocity and physics grid remain identical");
+    }
+  });
+
   test("physics: reset rules (resetOnStart, teleport, restore, seek, hitch)", [] {
     Json d = hairRig();
     d["physics"][0]["resetOnStart"] = true;

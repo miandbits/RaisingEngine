@@ -260,10 +260,10 @@ public:
     }
   }
   /** playerPresentation.extensions value, or null when no extension is in use. */
-  Json save() {
+  Json save(bool exact=false) {
     if(!active())return nullptr;
     Json out=preserved;
-    for(auto& p:plugins)if(p.available) {const auto reply=call(p,{{"op","saveAll"}});if(reply.value("ok",false)&&reply.contains("state"))out[p.id]=reply.at("state");}
+    for(auto& p:plugins)if(p.available) {const auto reply=call(p,{{"op","saveAll"},{"exact",exact}});if(reply.value("ok",false)&&reply.contains("state"))out[p.id]=reply.at("state");}
     return out.empty()?Json():out;
   }
   void restore(const Json& saved) {

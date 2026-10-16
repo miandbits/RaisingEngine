@@ -769,6 +769,33 @@ int main(int argc, char** argv) {
     check(threw, "unknown state version rejected");
   });
 
+  test("exact presentation checkpoint preserves loops, crossfade and continuation", [] {
+    Instance original(rig(), parseController("c", controllerData()));
+    original.update(1375);
+    original.signal("actionResult", {{"outcome", "success"}});
+    original.update(35);
+    original.takeNotifications();
+    const Json checkpoint = original.saveState(true);
+    check(checkpoint["version"] == 2, "exact checkpoint is explicitly versioned");
+    check(!checkpoint["tracks"][0]["from"].is_null(), "fixture saves during a crossfade");
+    Instance resumed(rig(), parseController("c", controllerData()));
+    resumed.restoreState(Json::parse(checkpoint.dump()));
+    check(resumed.saveState(true) == checkpoint, "all clocks, tracks and transition source restored");
+    check(resumed.takeNotifications().empty(), "loading does not replay old events");
+    for (double dt : {17., 83., 250., 700., 33.}) {
+      original.update(dt); resumed.update(dt);
+      check(original.saveState(true) == resumed.saveState(true), "future presentation state matches uninterrupted playback");
+      auto a = original.takeNotifications(), b = resumed.takeNotifications();
+      check(a.size() == b.size(), "no duplicate or lost events after restoring");
+      for (size_t i = 0; i < a.size(); ++i)
+        check(a[i].kind == b[i].kind && a[i].serial == b[i].serial, "event identity preserved");
+    }
+    const Json before = resumed.saveState(true);
+    Json bad = before; bad["tracks"][0]["current"]["timeMs"] = -1;
+    bool threw = false; try { resumed.restoreState(bad); } catch (const std::exception&) { threw = true; }
+    check(threw && resumed.saveState(true) == before, "bad checkpoint leaves playback untouched");
+  });
+
   test("signals derived from transitions", [] {
     const Json before = {{"state", {{"phase", "narrative"}, {"presentation", {{"portraits", Json::array({{{"characterId", "alice"}, {"portraitId", "face"}}})}}}}},
                          {"narrative", {{"cursor", {{"node", "a"}}}, {"node", {{"type", "dialogue"}, {"id", "a"}, {"speakerId", "bob"}}}}}};

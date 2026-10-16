@@ -45,7 +45,7 @@ public:
     else if(type=="recollectionSpeed")r.speed=r.speed==1?2:r.speed==2?4:1;
     else if(type=="recollectionSkip"){r.autoplay=false;r.seek(r.record.at("replayFrames").size()-1);recollection_sound();}
     else if(type=="save"||type=="recollectionSave"){
-      Json value={{"version",1},{"gameId",game.content.at("project").at("gameId")},{"kind",r.record.at("kind")},{"sourceId",r.record.at("sourceId")},{"unlockedAt",r.record.at("unlockedAt")},{"contentFingerprint",r.record.at("contentFingerprint")},{"frames",r.record.at("frames")},{"cursor",r.cursor},{"extensions",r.extensions.save()},{"playback",r.playback()},{"musicCursor",gallery_audio.cursor()}};
+      Json value={{"version",1},{"gameId",game.content.at("project").at("gameId")},{"kind",r.record.at("kind")},{"sourceId",r.record.at("sourceId")},{"unlockedAt",r.record.at("unlockedAt")},{"contentFingerprint",r.record.at("contentFingerprint")},{"frames",r.record.at("frames")},{"cursor",r.cursor},{"extensions",r.extensions.save(true)},{"playback",r.playback()},{"musicCursor",gallery_audio.cursor()}};
       const auto file=recollection_file(),temp=fs::path(file.u8string()+".tmp"),backup=fs::path(file.u8string()+".bak");fs::create_directories(file.parent_path());
       {std::ofstream out(temp,std::ios::binary|std::ios::trunc);out<<value.dump(2);out.flush();if(!out)throw std::runtime_error("회상 저장에 실패했습니다.");}
       if(fs::exists(file)){std::error_code ec;fs::remove(backup,ec);fs::rename(file,backup);}try{fs::rename(temp,file);}catch(...){if(fs::exists(backup)&&!fs::exists(file))fs::rename(backup,file);throw;}
