@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile,writeFile,mkdtemp,mkdir,cp } from 'node:fs/promises';
+import { resolve,join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { loadProject,buildSnapshot } from '../../dist/packages/project-service/index.js';
+import { createSession,dispatchSession } from '../../dist/packages/runtime-service/session.js';
+import { encodeSave,decodeSave } from '../../dist/packages/runtime-service/save.js';
+import { previewSaveMigration,publishMigratedSave } from '../../dist/packages/runtime-service/migration.js';
+import { exportGame } from '../../dist/packages/export-service/export.js';
+
+test('migrated save loads through F9 in native player and F5 roundtrip keeps exact state', {timeout:60000}, async()=>{
+  await mkdir('.cache/durability',{recursive:true});const root=await mkdtemp(resolve('.cache/durability/native-migration-'));
+  const project=join(root,'project');await cp(resolve('examples/academy-journey'),project,{recursive:true});
+  const old=await buildSnapshot(await loadProject(project));assert.ok(old.ok);
+  let run=createSession(old.snapshot,42);assert.ok(run.ok);
+  run=dispatchSession(old.snapshot,run.session,{type:'visit',locationId:'city'},run.session.state.stateRevision);assert.ok(run.ok,JSON.stringify(run));
+  const saved=await encodeSave(old.snapshot,run.session);assert.ok(saved.ok);
+  const loaded=await loadProject(project),attribute=loaded.documents.find(d=>d.kind==='attributes');attribute.data.attributes.find(a=>a.id==='money').initial+=10;
+  await writeFile(join(project,attribute.file),JSON.stringify(attribute.data));
+  const updated=await buildSnapshot(await loadProject(project));assert.ok(updated.ok);
+  const preview=await previewSaveMigration(old.snapshot,updated.snapshot,saved.text);assert.ok(preview.ok);
+  const slot=join(root,'save.json');assert.ok((await publishMigratedSave(slot,old.snapshot,updated.snapshot,saved.text,preview.report.approval)).ok);
+  const expected=(await decodeSave(updated.snapshot,preview.text)).session.state;
+  const game=join(root,'game');await exportGame({content:updated.snapshot,projectRoot:project,destination:game,target:'windows',runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-gallery-branches'),web:resolve('dist/web-durability')}});
+  const automation=join(root,'steps.json'),reportFile=join(root,'report.json');await writeFile(automation,JSON.stringify([{key:'F9'},{expectScreen:'city',checkpoint:'loaded'},{key:'F5'},{key:'F9'},{checkpoint:'restored',screenshot:join(root,'restored.png')}]));
+  const child=spawnSync(join(game,'RaisingPlayer.exe'),['--bundle',game,'--save',slot,'--hidden','--automation',automation,'--report',reportFile],{encoding:'utf8',timeout:45000,windowsHide:true});assert.equal(child.status,0,child.stderr);
+  const report=JSON.parse(await readFile(reportFile,'utf8'));assert.ok(report.ok);assert.deepEqual(report.final.state,expected);
+  assert.deepEqual((await decodeSave(updated.snapshot,await readFile(slot,'utf8'))).session.state,expected);
+  await writeFile('.cache/durability/native-migration-result.json',JSON.stringify({ok:true,root,report:reportFile,location:expected.gameplay.locationId},null,2));
+});

@@ -2905,7 +2905,15 @@ export type Element = {
     | "relationship-value"
     | "item-count"
     | "user-field"
-    | "selected-field";
+    | "selected-field"
+    | "gallery-summary"
+    | "gallery-filter"
+    | "gallery-error"
+    | "replay-position"
+    | "replay-notice"
+    | "replay-title"
+    | "replay-mode"
+    | "replay-speed";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -3761,7 +3769,26 @@ export type Element = {
     | "openModal"
     | "closeModal"
     | "executeActorAction"
-    | "playSequence";
+    | "playSequence"
+    | "galleryOpen"
+    | "galleryClose"
+    | "galleryBack"
+    | "galleryView"
+    | "galleryReplay"
+    | "galleryFilter"
+    | "galleryMusicToggle"
+    | "galleryMusicStop"
+    | "galleryVariant"
+    | "recollectionPrev"
+    | "recollectionNext"
+    | "recollectionClose"
+    | "recollectionSave"
+    | "recollectionLoad"
+    | "recollectionAuto"
+    | "recollectionSpeed"
+    | "recollectionSkip"
+    | "galleryBranches"
+    | "galleryBranch";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -3841,7 +3868,26 @@ export type Element = {
         | "openModal"
         | "closeModal"
         | "executeActorAction"
-        | "playSequence";
+        | "playSequence"
+        | "galleryOpen"
+        | "galleryClose"
+        | "galleryBack"
+        | "galleryView"
+        | "galleryReplay"
+        | "galleryFilter"
+        | "galleryMusicToggle"
+        | "galleryMusicStop"
+        | "galleryVariant"
+        | "recollectionPrev"
+        | "recollectionNext"
+        | "recollectionClose"
+        | "recollectionSave"
+        | "recollectionLoad"
+        | "recollectionAuto"
+        | "recollectionSpeed"
+        | "recollectionSkip"
+        | "galleryBranches"
+        | "galleryBranch";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -3882,7 +3928,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -3897,7 +3945,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -3910,48 +3960,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            }
-          ]
-        | [
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -3966,7 +3977,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -3979,7 +3992,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -3992,20 +4007,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4020,7 +4024,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4033,7 +4039,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4046,7 +4054,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4059,20 +4069,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4087,7 +4086,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4100,7 +4101,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4113,7 +4116,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4126,7 +4131,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4139,20 +4146,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4167,7 +4163,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4180,7 +4178,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4193,7 +4193,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4206,7 +4208,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4219,7 +4223,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4232,126 +4238,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            }
-          ]
-        | [
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4366,7 +4255,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4379,7 +4270,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4392,7 +4285,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4405,7 +4300,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4418,7 +4315,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4431,7 +4330,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4444,33 +4345,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4485,7 +4362,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4498,7 +4377,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4511,7 +4392,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4524,7 +4407,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4537,7 +4422,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4550,7 +4437,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4563,7 +4452,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4576,33 +4467,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4617,7 +4484,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4630,7 +4499,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4643,7 +4514,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4656,7 +4529,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4669,7 +4544,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4682,7 +4559,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4695,7 +4574,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4708,7 +4589,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4721,33 +4604,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4762,7 +4621,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4775,7 +4636,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4788,7 +4651,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4801,7 +4666,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4814,7 +4681,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4827,7 +4696,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4840,7 +4711,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4853,7 +4726,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4866,7 +4741,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4879,33 +4756,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -4920,7 +4773,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4933,7 +4788,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4946,7 +4803,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4959,7 +4818,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4972,7 +4833,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4985,7 +4848,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -4998,7 +4863,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5011,7 +4878,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5024,7 +4893,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5037,7 +4908,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5050,33 +4923,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -5091,7 +4940,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5104,7 +4955,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5117,7 +4970,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5130,7 +4985,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5143,7 +5000,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5156,7 +5015,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5169,7 +5030,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5182,7 +5045,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5195,7 +5060,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5208,7 +5075,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5221,7 +5090,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5234,33 +5105,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -5275,7 +5122,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5288,7 +5137,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5301,7 +5152,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5314,7 +5167,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5327,7 +5182,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5340,7 +5197,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5353,7 +5212,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5366,7 +5227,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5379,7 +5242,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5392,7 +5257,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5405,7 +5272,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5418,7 +5287,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5431,33 +5302,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -5472,7 +5319,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5485,7 +5334,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5498,7 +5349,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5511,7 +5364,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5524,7 +5379,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5537,7 +5394,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5550,7 +5409,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5563,7 +5424,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5576,7 +5439,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5589,7 +5454,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5602,7 +5469,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5615,7 +5484,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5628,7 +5499,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5641,7 +5514,26 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5654,7 +5546,9 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -5667,12 +5561,439 @@ export type Element = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ];
       actorId?: string;
       sequenceId?: string;
+      entryId?: string;
+      galleryFilter?: string;
+      branchId?: string;
     };
   }[];
   serviceId?: string;
@@ -5700,7 +6021,10 @@ export type Element = {
       | "battleActions"
       | "battleTargets"
       | "battleLog"
-      | "battleRewards";
+      | "battleRewards"
+      | "galleryEntries"
+      | "gallerySelection"
+      | "galleryBranches";
     shopId?: string;
     groupId?: string;
     characterId?: string;
@@ -5734,7 +6058,9 @@ export type Element = {
       | "value"
       | "maxValue"
       | "battleAction"
-      | "battleTarget";
+      | "battleTarget"
+      | "entryId"
+      | "branchId";
     field: string;
     format?: string;
   }[];
@@ -5786,7 +6112,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -5801,7 +6129,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -5814,48 +6144,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        }
-      ]
-    | [
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -5870,7 +6161,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -5883,7 +6176,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -5896,20 +6191,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -5924,7 +6208,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -5937,7 +6223,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -5950,7 +6238,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -5963,20 +6253,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -5991,7 +6270,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6004,7 +6285,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6017,7 +6300,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6030,7 +6315,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6043,20 +6330,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -6071,7 +6347,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6084,7 +6362,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6097,7 +6377,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6110,7 +6392,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6123,7 +6407,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6136,126 +6422,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        }
-      ]
-    | [
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -6270,7 +6439,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6283,7 +6454,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6296,7 +6469,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6309,7 +6484,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6322,7 +6499,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6335,7 +6514,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6348,33 +6529,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -6389,7 +6546,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6402,7 +6561,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6415,7 +6576,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6428,7 +6591,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6441,7 +6606,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6454,7 +6621,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6467,7 +6636,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6480,33 +6651,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -6521,7 +6668,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6534,7 +6683,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6547,7 +6698,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6560,7 +6713,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6573,7 +6728,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6586,7 +6743,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6599,7 +6758,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6612,7 +6773,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6625,33 +6788,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -6666,7 +6805,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6679,7 +6820,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6692,7 +6835,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6705,7 +6850,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6718,7 +6865,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6731,7 +6880,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6744,7 +6895,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6757,7 +6910,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6770,7 +6925,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6783,33 +6940,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -6824,7 +6957,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6837,7 +6972,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6850,7 +6987,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6863,7 +7002,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6876,7 +7017,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6889,7 +7032,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6902,7 +7047,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6915,7 +7062,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6928,7 +7077,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6941,7 +7092,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -6954,33 +7107,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -6995,7 +7124,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7008,7 +7139,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7021,7 +7154,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7034,7 +7169,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7047,7 +7184,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7060,7 +7199,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7073,7 +7214,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7086,7 +7229,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7099,7 +7244,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7112,7 +7259,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7125,7 +7274,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7138,33 +7289,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -7179,7 +7306,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7192,7 +7321,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7205,7 +7336,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7218,7 +7351,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7231,7 +7366,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7244,7 +7381,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7257,7 +7396,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7270,7 +7411,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7283,7 +7426,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7296,7 +7441,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7309,7 +7456,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7322,7 +7471,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7335,33 +7486,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -7376,7 +7503,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7389,7 +7518,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7402,7 +7533,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7415,7 +7548,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7428,7 +7563,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7441,7 +7578,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7454,7 +7593,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7467,7 +7608,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7480,7 +7623,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7493,7 +7638,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7506,7 +7653,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7519,7 +7668,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7532,7 +7683,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7545,7 +7698,26 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7558,7 +7730,9 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -7571,7 +7745,431 @@ export type Element = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ];
@@ -7579,6 +8177,9 @@ export type Element = {
   actorId?: string;
   tacticsPanel?: "all" | "units" | "actions" | "log" | "growth";
   sequenceId?: string;
+  entryId?: string;
+  galleryFilter?: string;
+  branchId?: string;
 };
 export type ComponentChild = {
   [k: string]: unknown;
@@ -7609,7 +8210,15 @@ export type ComponentChild = {
     | "relationship-value"
     | "item-count"
     | "user-field"
-    | "selected-field";
+    | "selected-field"
+    | "gallery-summary"
+    | "gallery-filter"
+    | "gallery-error"
+    | "replay-position"
+    | "replay-notice"
+    | "replay-title"
+    | "replay-mode"
+    | "replay-speed";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -8461,7 +9070,26 @@ export type ComponentChild = {
     | "openModal"
     | "closeModal"
     | "executeActorAction"
-    | "playSequence";
+    | "playSequence"
+    | "galleryOpen"
+    | "galleryClose"
+    | "galleryBack"
+    | "galleryView"
+    | "galleryReplay"
+    | "galleryFilter"
+    | "galleryMusicToggle"
+    | "galleryMusicStop"
+    | "galleryVariant"
+    | "recollectionPrev"
+    | "recollectionNext"
+    | "recollectionClose"
+    | "recollectionSave"
+    | "recollectionLoad"
+    | "recollectionAuto"
+    | "recollectionSpeed"
+    | "recollectionSkip"
+    | "galleryBranches"
+    | "galleryBranch";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -8551,7 +9179,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -8566,7 +9196,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8579,48 +9211,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        }
-      ]
-    | [
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -8635,7 +9228,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8648,7 +9243,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8661,20 +9258,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -8689,7 +9275,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8702,7 +9290,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8715,7 +9305,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8728,20 +9320,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -8756,7 +9337,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8769,7 +9352,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8782,7 +9367,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8795,7 +9382,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8808,20 +9397,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -8836,7 +9414,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8849,7 +9429,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8862,7 +9444,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8875,7 +9459,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8888,7 +9474,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -8901,126 +9489,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        }
-      ]
-    | [
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -9035,7 +9506,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9048,7 +9521,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9061,7 +9536,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9074,7 +9551,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9087,7 +9566,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9100,7 +9581,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9113,33 +9596,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -9154,7 +9613,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9167,7 +9628,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9180,7 +9643,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9193,7 +9658,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9206,7 +9673,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9219,7 +9688,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9232,7 +9703,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9245,33 +9718,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -9286,7 +9735,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9299,7 +9750,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9312,7 +9765,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9325,7 +9780,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9338,7 +9795,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9351,7 +9810,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9364,7 +9825,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9377,7 +9840,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9390,33 +9855,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -9431,7 +9872,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9444,7 +9887,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9457,7 +9902,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9470,7 +9917,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9483,7 +9932,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9496,7 +9947,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9509,7 +9962,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9522,7 +9977,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9535,7 +9992,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9548,33 +10007,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -9589,7 +10024,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9602,7 +10039,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9615,7 +10054,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9628,7 +10069,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9641,7 +10084,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9654,7 +10099,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9667,7 +10114,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9680,7 +10129,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9693,7 +10144,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9706,7 +10159,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9719,33 +10174,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -9760,7 +10191,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9773,7 +10206,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9786,7 +10221,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9799,7 +10236,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9812,7 +10251,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9825,7 +10266,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9838,7 +10281,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9851,7 +10296,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9864,7 +10311,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9877,7 +10326,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9890,7 +10341,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9903,33 +10356,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -9944,7 +10373,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9957,7 +10388,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9970,7 +10403,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9983,7 +10418,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -9996,7 +10433,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10009,7 +10448,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10022,7 +10463,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10035,7 +10478,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10048,7 +10493,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10061,7 +10508,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10074,7 +10523,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10087,7 +10538,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10100,33 +10553,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
-          field: string;
-        },
-        {
-          property:
-            | "actionId"
-            | "actorId"
-            | "itemId"
-            | "shopId"
-            | "characterId"
-            | "groupId"
-            | "optionId"
-            | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ]
@@ -10141,7 +10570,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10154,7 +10585,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10167,7 +10600,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10180,7 +10615,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10193,7 +10630,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10206,7 +10645,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10219,7 +10660,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10232,7 +10675,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10245,7 +10690,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10258,7 +10705,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10271,7 +10720,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10284,7 +10735,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10297,7 +10750,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10310,7 +10765,26 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10323,7 +10797,9 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         },
         {
@@ -10336,7 +10812,431 @@ export type ComponentChild = {
             | "groupId"
             | "optionId"
             | "quantity"
-            | "screenId";
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        }
+      ]
+    | [
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
+          field: string;
+        },
+        {
+          property:
+            | "actionId"
+            | "actorId"
+            | "itemId"
+            | "shopId"
+            | "characterId"
+            | "groupId"
+            | "optionId"
+            | "quantity"
+            | "screenId"
+            | "entryId"
+            | "branchId";
           field: string;
         }
       ];
@@ -10382,7 +11282,26 @@ export type ComponentChild = {
         | "openModal"
         | "closeModal"
         | "executeActorAction"
-        | "playSequence";
+        | "playSequence"
+        | "galleryOpen"
+        | "galleryClose"
+        | "galleryBack"
+        | "galleryView"
+        | "galleryReplay"
+        | "galleryFilter"
+        | "galleryMusicToggle"
+        | "galleryMusicStop"
+        | "galleryVariant"
+        | "recollectionPrev"
+        | "recollectionNext"
+        | "recollectionClose"
+        | "recollectionSave"
+        | "recollectionLoad"
+        | "recollectionAuto"
+        | "recollectionSpeed"
+        | "recollectionSkip"
+        | "galleryBranches"
+        | "galleryBranch";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -10423,7 +11342,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -10438,7 +11359,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10451,48 +11374,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            }
-          ]
-        | [
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -10507,7 +11391,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10520,7 +11406,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10533,20 +11421,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -10561,7 +11438,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10574,7 +11453,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10587,7 +11468,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10600,20 +11483,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -10628,7 +11500,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10641,7 +11515,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10654,7 +11530,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10667,7 +11545,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10680,20 +11560,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -10708,7 +11577,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10721,7 +11592,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10734,7 +11607,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10747,7 +11622,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10760,7 +11637,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10773,126 +11652,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            }
-          ]
-        | [
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -10907,7 +11669,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10920,7 +11684,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10933,7 +11699,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10946,7 +11714,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10959,7 +11729,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10972,7 +11744,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -10985,33 +11759,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -11026,7 +11776,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11039,7 +11791,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11052,7 +11806,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11065,7 +11821,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11078,7 +11836,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11091,7 +11851,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11104,7 +11866,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11117,33 +11881,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -11158,7 +11898,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11171,7 +11913,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11184,7 +11928,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11197,7 +11943,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11210,7 +11958,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11223,7 +11973,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11236,7 +11988,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11249,7 +12003,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11262,33 +12018,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -11303,7 +12035,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11316,7 +12050,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11329,7 +12065,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11342,7 +12080,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11355,7 +12095,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11368,7 +12110,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11381,7 +12125,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11394,7 +12140,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11407,7 +12155,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11420,33 +12170,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -11461,7 +12187,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11474,7 +12202,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11487,7 +12217,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11500,7 +12232,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11513,7 +12247,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11526,7 +12262,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11539,7 +12277,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11552,7 +12292,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11565,7 +12307,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11578,7 +12322,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11591,33 +12337,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -11632,7 +12354,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11645,7 +12369,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11658,7 +12384,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11671,7 +12399,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11684,7 +12414,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11697,7 +12429,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11710,7 +12444,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11723,7 +12459,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11736,7 +12474,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11749,7 +12489,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11762,7 +12504,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11775,33 +12519,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -11816,7 +12536,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11829,7 +12551,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11842,7 +12566,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11855,7 +12581,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11868,7 +12596,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11881,7 +12611,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11894,7 +12626,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11907,7 +12641,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11920,7 +12656,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11933,7 +12671,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11946,7 +12686,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11959,7 +12701,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -11972,33 +12716,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
-              field: string;
-            },
-            {
-              property:
-                | "actionId"
-                | "actorId"
-                | "itemId"
-                | "shopId"
-                | "characterId"
-                | "groupId"
-                | "optionId"
-                | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ]
@@ -12013,7 +12733,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12026,7 +12748,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12039,7 +12763,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12052,7 +12778,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12065,7 +12793,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12078,7 +12808,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12091,7 +12823,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12104,7 +12838,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12117,7 +12853,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12130,7 +12868,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12143,7 +12883,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12156,7 +12898,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12169,7 +12913,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12182,7 +12928,26 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12195,7 +12960,9 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             },
             {
@@ -12208,16 +12975,446 @@ export type ComponentChild = {
                 | "groupId"
                 | "optionId"
                 | "quantity"
-                | "screenId";
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            }
+          ]
+        | [
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
+              field: string;
+            },
+            {
+              property:
+                | "actionId"
+                | "actorId"
+                | "itemId"
+                | "shopId"
+                | "characterId"
+                | "groupId"
+                | "optionId"
+                | "quantity"
+                | "screenId"
+                | "entryId"
+                | "branchId";
               field: string;
             }
           ];
       actorId?: string;
       sequenceId?: string;
+      entryId?: string;
+      galleryFilter?: string;
+      branchId?: string;
     };
   }[];
   tacticsPanel?: "all" | "units" | "actions" | "log" | "growth";
   sequenceId?: string;
+  entryId?: string;
+  galleryFilter?: string;
+  branchId?: string;
 };
 export type Effects = (
   | {
@@ -12316,6 +13513,10 @@ export interface CrossRunNarrativeGallery {
     lockedDisplay?: "hint" | "hidden";
     fit?: "contain" | "cover";
   }[];
+  screenId?: string;
+  detailScreenId?: string;
+  replayControlsScreenId?: string;
+  branchScreenId?: string;
 }
 export interface Overrides {
   attributes: {

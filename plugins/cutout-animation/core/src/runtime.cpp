@@ -1138,7 +1138,8 @@ std::vector<Notification> Instance::takeNotifications() {
   return out;
 }
 
-Json Instance::saveState() const {
+Json Instance::saveState(bool exact) const {
+  if (exact) return savePresentationState();
   Json tracks = Json::array();
   for (const auto& [track, state] : tracks_) {
     if (!state.current) continue;
@@ -1152,6 +1153,13 @@ Json Instance::saveState() const {
 }
 
 void Instance::restoreState(const Json& state) {
+  if (state.is_object() && state.value("version", 0) == 2) {
+    // Validate the entire checkpoint before changing the playing instance.
+    Instance restored(*this);
+    restored.restorePresentationState(state);
+    *this = std::move(restored);
+    return;
+  }
   if (!state.is_object() || state.value("version", 0) != 1) throw std::runtime_error("지원하지 않는 애니메이션 상태 버전입니다.");
   tracks_.clear(); pending_.clear();
   timeScale_ = std::max(0.0, state.value("timeScale", 1.0)); paused_ = state.value("paused", false);

@@ -37,7 +37,10 @@ function route(content,ending){
 test('media gallery: Qt-authored unlocks, CG, music, original presentation and isolated replay saves', {timeout:240000}, async()=>{
   const runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
   const project=resolve(process.env.RAISING_GALLERY_MEDIA_PROJECT??'examples/last-grandson-polished');
-  const loaded=await loadProject(project),snapshot=await buildSnapshot(loaded);assert.equal(snapshot.ok,true,JSON.stringify(snapshot.diagnostics));const content=snapshot.snapshot;
+  const loaded=await loadProject(project);
+  // Keep this suite as the compatibility contract for projects with the built-in replay toolbar.
+  delete loaded.documents.find(d=>d.kind==='project').data.gallery.replayControlsScreenId;
+  const snapshot=await buildSnapshot(loaded);assert.equal(snapshot.ok,true,JSON.stringify(snapshot.diagnostics));const content=snapshot.snapshot;
   assert.equal(content.project.gallery.entries.length,5);
   assert.equal(content.project.gallery.entries.find(e=>e.id==='courtyard-cg').unlockCondition.op,'compare');
   const root=await mkdtemp(resolve('.cache/gallery-media-native-')),game=resolve(root,'game'),evidence=resolve('.cache/gallery-media');await mkdir(evidence,{recursive:true});

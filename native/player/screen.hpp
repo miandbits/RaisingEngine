@@ -41,6 +41,10 @@ inline std::string css_color(std::string hex) {
 class ScreenMarkup {
 public:
   GameSession& game;
+  bool replay_controls=false,replay_autoplay=false;
+  int replay_speed=1;
+  size_t replay_cursor=0,replay_count=0;
+  std::string replay_notice,replay_title;
   Json assets,display_content,display_projection,render_elements=Json::array();
   Json user_values_draft=Json::object();
   Json preview_scene=nullptr;
@@ -303,6 +307,14 @@ public:
   }
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
     const auto& project=display_content.at("project");
+    if(name=="replay-position")return replay_controls?std::to_string(replay_cursor+1)+" / "+std::to_string(replay_count):"";
+    if(name=="replay-notice")return replay_controls?replay_notice:"";
+    if(name=="replay-mode")return replay_controls?(replay_autoplay?"자동 재생 중":"자동 재생 멈춤"):"";
+    if(name=="replay-speed")return replay_controls?std::to_string(replay_speed)+"×":"";
+    if(name=="replay-title")return replay_controls?replay_title:"";
+    if(name=="gallery-error")return game.gallery.error;
+    if(name=="gallery-filter"){const std::map<std::string,std::string> kinds={{"all","전체 종류"},{"cg","CG"},{"music","음악"},{"event","사건"},{"ending","엔딩"}},statuses={{"all","모든 기록"},{"locked","미해금"},{"unlocked","해금됨"}};return kinds.at(gallery_kind)+" · "+statuses.at(gallery_status)+(gallery_category.empty()?"":" · "+gallery_category);}
+    if(name=="gallery-summary"){size_t unlocked=0,total=0;for(const auto& e:project.value("gallery",Json::object()).value("entries",Json::array())){++total;if(!game.gallery.records(e).empty())++unlocked;}return std::to_string(unlocked)+" / "+std::to_string(total)+" 해금";}
     if(name=="selected-field"){const auto values=selected_values(element.value("selectionKey",""));if(values.is_null())return "선택 없음";const auto value=values.value(element.value("selectionField",""),Json());std::string text=value.is_string()?value.get<std::string>():value.is_null()?"":value.dump(),format=element.value("valueFormat","{value}");size_t pos=0;while((pos=format.find("{value}",pos))!=std::string::npos){format.replace(pos,7,text);pos+=text.size();}return format;}
     if(name=="schedule-prompt") {
       if(plan_selected!=((1<<game.periods())-1))return "스케줄 결정.\n이번 달 딸의 예정은? 제 "+std::to_string(plan_slot+1)+"회";
@@ -602,7 +614,10 @@ public:
         {"executeAction",{"actionId","quantity"}},{"selectPolicy",{"groupId","optionId"}},
         {"selectBattleAction",{"battleAction","itemId"}},{"selectBattleTarget",{"battleTarget"}},
         {"unequip",{"slot"}},{"acceptQuest",{"questId"}},{"claimQuest",{"questId"}},
-        {"moveExpedition",{"nodeId"}}
+        {"moveExpedition",{"nodeId"}},
+        {"galleryBranches",{"entryId"}},{"galleryBranch",{"entryId","branchId"}},{"galleryView",{"entryId"}},{"galleryReplay",{"entryId"}},
+        {"galleryMusicToggle",{"entryId"}},{"galleryMusicStop",{"entryId"}},
+        {"galleryFilter",{"galleryFilter"}}
       };
       const auto selected=parameters.find(action.value("type",""));
       if(selected!=parameters.end())for(const auto& key:selected->second)if(e.contains(key))action[key]=e[key];
@@ -615,6 +630,10 @@ public:
       auto boundAction=action;bool hasSelection=true;try{boundAction=selection_action(action);}catch(...){hasSelection=false;}
       const auto type=action.value("type","");std::string label=e.value("text","버튼");bool enabled=hasSelection;
       const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
+      if(type=="galleryFilter"){
+        const auto filter=e.value("galleryFilter","");
+        if(filter=="kind:"+gallery_kind||filter=="status:"+gallery_status||(!gallery_category.empty()&&filter=="category:"+gallery_category))label="● "+label;
+      }
       if(type=="advance") {
         label=raw_phase=="planning"?"일정 확정":raw_phase=="ready"?"활동 시작":raw_phase=="activity-result"?"결과 확인 · 다음":raw_phase=="narrative"?"이야기 계속":"다음";
         enabled=raw_phase!="title"&&raw_phase!="finished"&&raw_phase!="battle"&&raw_phase!="expedition"&&phase()!="choice";
@@ -630,6 +649,7 @@ public:
       }
       if(type=="equip"||type=="unequip"||type=="acceptQuest"||type=="claimQuest"||type=="moveExpedition"||type=="returnFromExpedition"||type=="battleAction")enabled=game.available(action);
       if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction")enabled=game.battle_ui_available(action);
+      if(type.rfind("recollection",0)==0)enabled=replay_controls&&(type!="recollectionPrev"||replay_cursor>0);
       enabled=enabled&&hasSelection&&e.value("_boundEnabled",true)&&(!e.contains("enabledCondition")||visual_condition(e.at("enabledCondition")));
       auto result=button(e.value("id","button"),label,action,enabled);
       const std::string style="font-size:"+number(e.value("fontSize",20.0))+"px;";
@@ -725,6 +745,7 @@ public:
   }
   /** Extension elements mount per screen instance; unavailable plugins show a placeholder, never an error. */
   std::string plugin_body(const Json& e) {
+    if(authored_gallery())return "<p>도감에서는 본편 애니메이션이 일시정지됩니다.</p>"; // Preserve paused live plugin instances.
     const auto ext=e.value("extension",Json::object());const auto plugin=ext.value("plugin","");
     const auto instance=screen_id+"/"+e.value("id","");
     if(extensions&&extensions->mount(instance,e))return "<raising-extension id=\"extension-"+escape(e.value("id",""))+"\" data-instance=\""+escape(instance)+"\" style=\"display:block;position:absolute;left:0;top:0;width:100%;height:100%;\"></raising-extension>";
@@ -742,20 +763,25 @@ public:
     })}};
   }
 #include "gallery-screen.inc"
+#include "gallery-data.inc"
   std::string document() {
     refreshDisplay();
-    if(extensions)extensions->begin_sync();
+    if(extensions&&!authored_gallery())extensions->begin_sync();
     actions.clear(); labels.clear();
     const auto& visual=display_content.at("project").at("visual");
     const auto dimensions=logical_viewport(visual,viewport_width,viewport_height);width=dimensions.first;height=dimensions.second;
     const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
     screen_id=raw_phase=="title"?"title":raw_phase=="finished"?"ending":raw_phase=="narrative"?"story":raw_phase=="battle"||raw_phase=="expedition"?raw_phase:
       (raw_phase=="planning"||raw_phase=="ready")&&game.state.contains("gameplay")?game.state.at("gameplay").value("screenId","schedule"):"schedule";
+    if(authored_gallery()){
+      const auto config=display_content.at("project").at("gallery");
+      screen_id=gallery_branch_view&&config.contains("branchScreenId")?config.at("branchScreenId").get<std::string>():!gallery_entry.empty()&&config.contains("detailScreenId")?config.at("detailScreenId").get<std::string>():config.at("screenId").get<std::string>();
+    }
     if(!preview_screen.empty())screen_id=preview_screen;
     const Json* screen=nullptr;for(const auto& s:visual.at("screens"))if(s.at("id")==screen_id)screen=&s;
     render_elements=screen?expanded_collections(expanded_elements(visual,*screen,width,height,phase())):Json::array();
     Json generated_screen;
-    if(preview_screen.empty()&&(raw_phase=="battle"||raw_phase=="expedition")) {
+    if(!authored_gallery()&&preview_screen.empty()&&(raw_phase=="battle"||raw_phase=="expedition")) {
       bool has_widget=false;for(const auto& element:render_elements)if(visible(element)&&element.value("opacity",1.0)>0) {
         const auto kind=element.value("kind","");
         if(kind==raw_phase)has_widget=true;
@@ -806,10 +832,10 @@ public:
     out.insert(out.find("</style>"),extra_css);
     out.insert(out.find("</style>"),".timeline-control button{width:100%;height:44px;min-height:0;padding:6px;border-width:1px;border-color:#acc6b3;background-color:#355c4c;color:#ffffff;font-size:18px;} .timeline-disabled button{background-color:#69796e;color:#bcc9c0;}");
     std::string base;for(const auto& raw:render_elements)if(!raw.contains("_collectionParent")&&!raw.contains("_scrollParent"))base+=render_node(raw);
-    if(!ui_modal.empty()){
+    if(!authored_gallery()&&!ui_modal.empty()){
       for(const std::string tag:{"<button ","<input ","<select "})for(size_t at=0;(at=base.find(tag,at))!=std::string::npos;at+=tag.size()+21)base.insert(at+tag.size(),"disabled=\"disabled\" ");
     }out+=base;
-    if(!ui_modal.empty())for(const auto& modal:visual.at("screens"))if(modal.at("id")==ui_modal&&modal.value("modal",false)){
+    if(!authored_gallery()&&!ui_modal.empty())for(const auto& modal:visual.at("screens"))if(modal.at("id")==ui_modal&&modal.value("modal",false)){
       out+="<div id=\"ui-modal-shade\" style=\"z-index:9000;position:absolute;left:0;top:0;width:100%;height:100%;background-color:#000000aa;pointer-events:auto;\"></div><div id=\"ui-modal\" style=\"z-index:9001;position:absolute;left:0;top:0;width:100%;height:100%;\">";
       auto modal_elements=expanded_collections(expanded_elements(visual,modal,width,height,phase()));
       const auto prefix=ui_modal+"__";
@@ -817,14 +843,13 @@ public:
       for(const auto& e:modal_elements)if(!e.contains("_collectionParent")&&!e.contains("_scrollParent"))out+=render_node(e);out+="</div>";break;
     }
     out+="<div id=\"ui-tooltip\" style=\"display:none;position:absolute;pointer-events:none;width:280px;padding:10px;background-color:#202838;color:#ffffff;border-width:1px;border-color:#b9cde8;z-index:10000;\"></div>";
-    if(!pending_purchase.is_null())out+="<div class=\"transaction-shade\" style=\"z-index:10010;\"></div><div id=\"ui-confirmation\" class=\"purchase-dialog list\" style=\"z-index:10011;left:"+number(std::max(8,(width-540)/2))+"px;top:"+number(std::max(8,(height-440)/2))+"px;width:516px;\"><h3>"+escape(pending_confirmation.value("title","거래 확인"))+"</h3><p>"+escape(pending_confirmation.value("message","계속하시겠습니까?"))+"</p><p>"+escape(transaction_summary(pending_purchase))+"</p>"+button("confirm-purchase",pending_confirmation.value("confirmLabel","확인"),{{"type","confirmPurchase"}})+button("cancel-purchase",pending_confirmation.value("cancelLabel","취소"),{{"type","cancelPurchase"}})+"</div>";
+    if(!authored_gallery()&&!pending_purchase.is_null())out+="<div class=\"transaction-shade\" style=\"z-index:10010;\"></div><div id=\"ui-confirmation\" class=\"purchase-dialog list\" style=\"z-index:10011;left:"+number(std::max(8,(width-540)/2))+"px;top:"+number(std::max(8,(height-440)/2))+"px;width:516px;\"><h3>"+escape(pending_confirmation.value("title","거래 확인"))+"</h3><p>"+escape(pending_confirmation.value("message","계속하시겠습니까?"))+"</p><p>"+escape(transaction_summary(pending_purchase))+"</p>"+button("confirm-purchase",pending_confirmation.value("confirmLabel","확인"),{{"type","confirmPurchase"}})+button("cancel-purchase",pending_confirmation.value("cancelLabel","취소"),{{"type","cancelPurchase"}})+"</div>";
     const auto localization=display_content.at("project").value("localization",Json::object());
     if(screen_id=="title"&&localization.value("locales",Json::array()).size()>1){std::string label=locale;for(const auto& l:localization.at("locales"))if(l.at("id")==locale)label=l.value("label",locale);out+="<div style=\"position:absolute;right:12px;bottom:12px;width:240px;z-index:200;\">"+button("engine-language","Language: "+label+" · F2",{{"type","nextLocale"}})+"</div>";}
     if(!game.message.empty())out+="<div class=\"status\">"+escape(game.message)+"</div>";
-    out+=timeline_overlay();
-    out+=direction_overlay();
+    if(!authored_gallery()){out+=timeline_overlay();out+=direction_overlay();}
     out+=gallery_overlay();
-    if(extensions)extensions->end_sync();
+    if(extensions&&!authored_gallery())extensions->end_sync();
     return out+"</body></rml>";
   }
 };

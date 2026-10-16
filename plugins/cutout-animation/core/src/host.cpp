@@ -379,7 +379,7 @@ Json Host::handle(const Json& r) {
   }
   if (op == "saveAll") {
     Json state = Json::object();
-    for (const auto& [id, inst] : instances_) state[id] = {{"ref", mounts_.count(id) ? mounts_.at(id).ref : ""}, {"state", inst->saveState()}};
+    for (const auto& [id, inst] : instances_) state[id] = {{"ref", mounts_.count(id) ? mounts_.at(id).ref : ""}, {"state", inst->saveState(r.value("exact", false))}};
     return {{"ok", true}, {"state", {{"version", 1}, {"instances", state}}}};
   }
   if (op == "restoreAll") {

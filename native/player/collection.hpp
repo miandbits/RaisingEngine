@@ -5,6 +5,8 @@
     auto append=[&](std::string id,Json values,bool enabled=true,std::string reason="") {
       values["id"]=id;rows.push_back({{"id",id},{"values",values},{"enabled",enabled},{"reason",reason}});
     };
+    if(type=="galleryBranches")rows=gallery_branch_rows();
+    else if(type=="galleryEntries"||type=="gallerySelection")rows=gallery_rows(type=="gallerySelection");
     if(type.rfind("battle",0)==0)rows=battle_collection_rows(type);
     if(type=="shopOffers"&&!gp.is_null())for(const auto& shop:gp.value("shops",Json::array())) {
       const auto shopId=shop.value("id","");if(source.contains("shopId")&&source.at("shopId")!=shopId)continue;
@@ -46,7 +48,7 @@
         if(actual.is_number()&&expected.is_number()){const double a=actual,b=expected;if(op=="gt")matches=a>b;if(op=="gte")matches=a>=b;if(op=="lt")matches=a<b;if(op=="lte")matches=a<=b;}
         if(!matches)continue;
       }
-      filtered.push_back(row);if(filtered.size()==1000)break;
+      filtered.push_back(row);if(filtered.size()==(type=="galleryEntries"?2000:1000))break;
     }
     if(collection.contains("sort")){const auto sort=collection.at("sort");const auto field=sort.value("field","");const bool desc=sort.value("direction","asc")=="desc";std::stable_sort(filtered.begin(),filtered.end(),[&](const Json& a,const Json& b){const auto x=a.at("values").value(field,Json()),y=b.at("values").value(field,Json());if(x==y)return false;if(x.is_null())return false;if(y.is_null())return true;return desc?y<x:x<y;});}
     return filtered;

@@ -47,6 +47,20 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  const hasGalleryUi=(value:unknown):boolean=>{
+    if(!value||typeof value!=='object')return false;
+    const obj=value as Record<string,unknown>;
+    return (typeof obj.action==='string'&&obj.action.startsWith('gallery')) ||
+      (typeof obj.binding==='string'&&obj.binding.startsWith('gallery-')) ||
+      obj.type==='galleryEntries'||obj.type==='gallerySelection'||Object.values(obj).some(hasGalleryUi);
+  };
+  const hasReplayPlayback=(value:unknown):boolean=>{if(!value||typeof value!=='object')return false;const obj=value as Record<string,unknown>;return ['recollectionAuto','recollectionSpeed','recollectionSkip'].includes(String(obj.action))||['replay-mode','replay-speed'].includes(String(obj.binding))||Object.values(obj).some(hasReplayPlayback);};
+  if(hasReplayPlayback(visual))requiredFeatures.push('recollection-playback-v1');
+  const hasReplayUi=(value:unknown):boolean=>{if(!value||typeof value!=='object')return false;const obj=value as Record<string,unknown>;return (typeof obj.action==='string'&&obj.action.startsWith('recollection'))||(typeof obj.binding==='string'&&obj.binding.startsWith('replay-'))||Object.values(obj).some(hasReplayUi);};
+  if(content.project.gallery?.replayControlsScreenId||hasReplayUi(visual))requiredFeatures.push('authored-recollection-v1');
+  const hasBranches=(v:unknown):boolean=>!!v&&typeof v==='object'&&(Array.isArray(v)?v.some(hasBranches):Object.entries(v).some(([k,x])=>((k==='type'||k==='action')&&(x==='galleryBranches'||x==='galleryBranch'))||hasBranches(x)));
+  if(content.project.gallery?.branchScreenId||hasBranches(visual))requiredFeatures.push('gallery-branches-v1');
+  if(content.project.gallery?.screenId||hasGalleryUi(visual))requiredFeatures.push('authored-gallery-v1');
   if(content.project.gallery){requiredFeatures.push('narrative-gallery-v1');if(content.project.gallery.entries.some(e=>e.kind==='cg'||e.kind==='music'||e.unlockCondition||e.lockedDisplay))requiredFeatures.push('media-gallery-v2');}
   if(visual?.resultPlayback)requiredFeatures.push('inline-result-playback-v1');
   if(content.project.roster)requiredFeatures.push('roster-activities-v1');

@@ -1,10 +1,12 @@
   std::string gallery_entry;
   size_t gallery_record=0,gallery_frame=0,gallery_page=0;
-  std::string gallery_category;
-  bool gallery_music_playing=false;
+  std::string gallery_category,gallery_kind="all",gallery_status="all";
+  bool gallery_music_playing=false,gallery_branch_view=false;
   std::string gallery_overlay() {
     if(!game.content.at("project").contains("gallery")||!preview_screen.empty())return "";
     const auto config=display_content.at("project").at("gallery");
+    if(gallery_branch_view&&config.contains("branchScreenId")&&game.gallery.active)return "";
+    if(config.contains("screenId")&&(!game.gallery.active||gallery_entry.empty()||config.contains("detailScreenId")))return "";
     if(!game.gallery.active)return "<div style=\"position:absolute;right:20px;top:90px;width:180px;height:42px;z-index:11000;\">"+button("gallery-open",config.at("title"),{{"type","galleryOpen"}})+"</div>";
     // Remove all underlying actions from keyboard/gamepad navigation as well as clicks.
     actions.clear();labels.clear();
@@ -48,6 +50,7 @@
           out+=control("gallery-back","목록",{{"type","galleryBack"}},22,h-58,120);return out+"</div>";
         }
         if(r.contains("replayFrames")&&!r.at("replayFrames").empty())out+=control("gallery-replay","원본 연출 회상",{{"type","galleryReplay"}},w-244,78,220);
+        if(config.contains("branchScreenId"))out+=control("gallery-branches","선택 분기 보기",{{"type","galleryBranches"}},348,h-58,180);
         std::string body;
         if(gallery_frame<frames.size()){
           const auto& f=frames[gallery_frame];body=f.value("speaker","")+"\n\n"+f.value("text","");if(f.contains("choice"))body+="\n\n선택: "+f.at("choice").get<std::string>();

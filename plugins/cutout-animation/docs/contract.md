@@ -976,6 +976,27 @@ so it cannot duplicate a game effect.
 
 ## Save / load
 
+### Exact presentation checkpoints (1.14.2)
+
+`saveAll {exact:true}` opts into per-instance **version 2** presentation checkpoints.
+`restoreAll` recognizes them automatically. This is used by native recollection saves;
+ordinary game saves and `saveAll` without `exact` retain the version 1 policy below.
+
+Checkpoints preserve unwrapped loop times, one-shot times, track serials and completion
+state, both sides of cross-fades and their clocks, speed/pause, skin/expression, and the
+physics integrator's offsets, velocities, input positions and fixed-step grid. Loading
+does not emit notifications or replay consumed sounds. The next updates therefore
+continue from the saved presentation rather than starting a fresh loop or settling hair.
+An invalid version 2 instance checkpoint is rejected before mutating that instance.
+Exact restoration requires the same rig/controller; this is a presentation checkpoint,
+not a migration format. Legacy version 1 states remain readable, but their omitted loop
+phase, transition and physics history cannot be reconstructed.
+
+The prior physics reset rules describe ordinary saves only. No gameplay effects or RNG
+are added to this format. The native recollection host remains isolated from the live game.
+
+### Legacy game-save policy
+
 `playerPresentation.extensions["cutout-animation"]` stores per mounted instance:
 controller ref, active clip per track, binding, `then`, `stopOn`, speed, and (plugin 1.2.0)
 `skin` and `expression`. IK and meshes add no state: constraint values, weights and deform

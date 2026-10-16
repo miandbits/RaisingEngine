@@ -9,7 +9,7 @@ export interface Relation { from: string; to: string; kind: 'reference' | 'reads
 const esc = (s: string) => s.replace(/~/g, '~0').replace(/\//g, '~1');
 export function buildCatalog(documents: DraftDocument[], diagnostics: Diagnostic[] = []): CatalogItem[] {
   const byFile = new Map<string, Diagnostic[]>();
-  for (const d of diagnostics) byFile.set(d.file, [...(byFile.get(d.file) ?? []), d]);
+  for (const d of diagnostics) { const rows = byFile.get(d.file); if (rows) rows.push(d); else byFile.set(d.file, [d]); }
   return documents.flatMap(doc => {
     const root = object(doc.data);
     const field = ['attributes', 'flags', 'assets'].includes(doc.kind) ? doc.kind : null;
@@ -31,6 +31,7 @@ export function buildCatalog(documents: DraftDocument[], diagnostics: Diagnostic
     });
   });
 }
+const catalogCollator = new Intl.Collator('ko');
 export function searchCatalog(items: CatalogItem[], query: CatalogQuery = {}): CatalogItem[] {
   const tokens = (query.text ?? '').toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const selected = items.filter(i => (!query.kind || i.kind === query.kind) && (!query.tag || i.tags.includes(query.tag))
@@ -41,7 +42,7 @@ export function searchCatalog(items: CatalogItem[], query: CatalogQuery = {}): C
   return selected.sort((a, b) => {
     const x = field === 'period' ? a.from ?? Infinity : a[field] ?? -Infinity;
     const y = field === 'period' ? b.from ?? Infinity : b[field] ?? -Infinity;
-    const order = typeof x === 'number' && typeof y === 'number' ? (x === y ? 0 : x < y ? -1 : 1) : String(x).localeCompare(String(y), 'ko');
+    const order = typeof x === 'number' && typeof y === 'number' ? (x === y ? 0 : x < y ? -1 : 1) : catalogCollator.compare(String(x), String(y));
     return (query.descending ? -order : order) || a.key.localeCompare(b.key);
   });
 }
