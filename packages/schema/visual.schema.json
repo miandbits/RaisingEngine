@@ -149,11 +149,27 @@
       "description": "Show committed activity changes sequentially inside result widgets. Existing authored activity timelines take precedence.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["leadInMs", "changeMs", "holdMs"],
+      "required": [
+        "leadInMs",
+        "changeMs",
+        "holdMs"
+      ],
       "properties": {
-        "leadInMs": {"type": "integer", "minimum": 1, "maximum": 10000},
-        "changeMs": {"type": "integer", "minimum": 100, "maximum": 10000},
-        "holdMs": {"type": "integer", "minimum": 1, "maximum": 10000}
+        "leadInMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "changeMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "holdMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
       }
     },
     "timelines": {
@@ -698,7 +714,10 @@
             "relationship-value",
             "item-count",
             "user-field",
-            "selected-field"
+            "selected-field",
+            "gallery-summary",
+            "gallery-filter",
+            "gallery-error"
           ]
         },
         "imageSource": {
@@ -819,7 +838,16 @@
             "openModal",
             "closeModal",
             "executeActorAction",
-            "playSequence"
+            "playSequence",
+            "galleryOpen",
+            "galleryClose",
+            "galleryBack",
+            "galleryView",
+            "galleryReplay",
+            "galleryFilter",
+            "galleryMusicToggle",
+            "galleryMusicStop",
+            "galleryVariant"
           ]
         },
         "screenId": {
@@ -1059,7 +1087,16 @@
                       "openModal",
                       "closeModal",
                       "executeActorAction",
-                      "playSequence"
+                      "playSequence",
+                      "galleryOpen",
+                      "galleryClose",
+                      "galleryBack",
+                      "galleryView",
+                      "galleryReplay",
+                      "galleryFilter",
+                      "galleryMusicToggle",
+                      "galleryMusicStop",
+                      "galleryVariant"
                     ]
                   },
                   "screenId": {
@@ -1176,7 +1213,8 @@
                             "groupId",
                             "optionId",
                             "quantity",
-                            "screenId"
+                            "screenId",
+                            "entryId"
                           ]
                         },
                         "field": {
@@ -1198,6 +1236,14 @@
                     "type": "string",
                     "pattern": "^[a-z][a-z0-9-]*$",
                     "maxLength": 64
+                  },
+                  "entryId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "galleryFilter": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
                   }
                 }
               }
@@ -1262,7 +1308,9 @@
                 "battleActions",
                 "battleTargets",
                 "battleLog",
-                "battleRewards"
+                "battleRewards",
+                "galleryEntries",
+                "gallerySelection"
               ]
             },
             "shopId": {
@@ -1335,7 +1383,8 @@
                   "value",
                   "maxValue",
                   "battleAction",
-                  "battleTarget"
+                  "battleTarget",
+                  "entryId"
                 ]
               },
               "field": {
@@ -1545,7 +1594,8 @@
                   "groupId",
                   "optionId",
                   "quantity",
-                  "screenId"
+                  "screenId",
+                  "entryId"
                 ]
               },
               "field": {
@@ -1580,6 +1630,14 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$",
           "maxLength": 64
+        },
+        "entryId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "galleryFilter": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
         }
       },
       "required": [
@@ -2461,7 +2519,10 @@
             "relationship-value",
             "item-count",
             "user-field",
-            "selected-field"
+            "selected-field",
+            "gallery-summary",
+            "gallery-filter",
+            "gallery-error"
           ]
         },
         "imageSource": {
@@ -2578,7 +2639,16 @@
             "openModal",
             "closeModal",
             "executeActorAction",
-            "playSequence"
+            "playSequence",
+            "galleryOpen",
+            "galleryClose",
+            "galleryBack",
+            "galleryView",
+            "galleryReplay",
+            "galleryFilter",
+            "galleryMusicToggle",
+            "galleryMusicStop",
+            "galleryVariant"
           ]
         },
         "screenId": {
@@ -2905,7 +2975,8 @@
                   "groupId",
                   "optionId",
                   "quantity",
-                  "screenId"
+                  "screenId",
+                  "entryId"
                 ]
               },
               "field": {
@@ -2990,7 +3061,16 @@
                       "openModal",
                       "closeModal",
                       "executeActorAction",
-                      "playSequence"
+                      "playSequence",
+                      "galleryOpen",
+                      "galleryClose",
+                      "galleryBack",
+                      "galleryView",
+                      "galleryReplay",
+                      "galleryFilter",
+                      "galleryMusicToggle",
+                      "galleryMusicStop",
+                      "galleryVariant"
                     ]
                   },
                   "screenId": {
@@ -3107,7 +3187,8 @@
                             "groupId",
                             "optionId",
                             "quantity",
-                            "screenId"
+                            "screenId",
+                            "entryId"
                           ]
                         },
                         "field": {
@@ -3129,6 +3210,14 @@
                     "type": "string",
                     "pattern": "^[a-z][a-z0-9-]*$",
                     "maxLength": 64
+                  },
+                  "entryId": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "galleryFilter": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
                   }
                 }
               }
@@ -3148,6 +3237,14 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$",
           "maxLength": 64
+        },
+        "entryId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "galleryFilter": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(all|kind:(all|cg|music|event|ending)|status:(all|locked|unlocked)|category:.*)$"
         }
       },
       "required": [

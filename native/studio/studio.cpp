@@ -494,6 +494,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                                       {"speaker", tr("대화 인물")},
                                       {"story", tr("대사")}})
     bindingField->addItem(p.second, p.first);
+  bindingField->addItem(tr("도감 해금 수"),"gallery-summary");bindingField->addItem(tr("도감 필터 상태"),"gallery-filter");bindingField->addItem(tr("도감 오류"),"gallery-error");
   builtinBindingCount=bindingField->count();
   userFieldField=new QComboBox;userFieldField->setObjectName("bindingUserField");
   attributeField = new QComboBox;
@@ -590,6 +591,15 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField->addItem(tr("전투 대상 선택"), "selectBattleTarget");
   actionField->addItem(tr("선택한 전투 행동 실행"), "confirmBattleAction");
   actionField->addItem(tr("전투 선택 취소"), "cancelBattleAction");
+  actionField->addItem(tr("도감 열기"),"galleryOpen");
+  actionField->addItem(tr("도감 닫기"),"galleryClose");
+  actionField->addItem(tr("도감 목록으로"),"galleryBack");
+  actionField->addItem(tr("도감 항목 보기"),"galleryView");
+  actionField->addItem(tr("도감 탭 · 필터"),"galleryFilter");
+  actionField->addItem(tr("원본 연출 회상"),"galleryReplay");
+  actionField->addItem(tr("도감 음악 재생 · 일시정지"),"galleryMusicToggle");
+  actionField->addItem(tr("도감 음악 정지"),"galleryMusicStop");
+  actionField->addItem(tr("도감 다른 기록"),"galleryVariant");
   actionField->setProperty("builtinActionCount", actionField->count());
   targetField = new QComboBox;
   targetField->setObjectName("actionTarget");
@@ -945,12 +955,14 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     QString target = targetField->currentData().toString();
     updateElement([action, target](QJsonObject &e) {
       for (auto key :
-           {"screenId", "locationId", "shopId", "itemId", "interactionId", "battleAction", "battleTarget", "actionId"})
+           {"screenId", "locationId", "shopId", "itemId", "interactionId", "battleAction", "battleTarget", "actionId", "entryId", "galleryFilter"})
         e.remove(key);
       e["action"] = action == "shop" ? "visit" : action;
       if (action == "executeAction") {e["actionId"]=target;e["quantity"]=1;}
       if (action == "selectBattleAction") {e["battleAction"]=target.section(':',0,0);if(target.startsWith("useItem:"))e["itemId"]=target.section(':',1);}
       if (action == "selectBattleTarget")e["battleTarget"]=target;
+      if(action=="galleryFilter")e["galleryFilter"]=target;
+      if((action=="galleryView"||action=="galleryReplay"||action=="galleryMusicToggle"||action=="galleryMusicStop")&&!target.isEmpty())e["entryId"]=target;
       if (action == "navigate")
         e["screenId"] = target;
       if (action == "shop" || action == "visit")
@@ -964,6 +976,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
             target = targetField->currentData().toString();
     updateElement([type, target](QJsonObject &e) {
       if(type=="selectBattleAction"){e["battleAction"]=target.section(':',0,0);e.remove("itemId");if(target.startsWith("useItem:"))e["itemId"]=target.section(':',1);}
+      else if(type=="galleryFilter")e["galleryFilter"]=target;
+      else if(type=="galleryView"||type=="galleryReplay"||type=="galleryMusicToggle"||type=="galleryMusicStop"){e.remove("entryId");if(!target.isEmpty())e["entryId"]=target;}
       else e[type == "navigate" ? "screenId" : type=="selectBattleTarget"?"battleTarget":type=="executeAction"?"actionId":"locationId"] = target;
     });
   });
@@ -1249,6 +1263,14 @@ void StudioWindow::updateTargets(const QString &action, const QJsonObject &e) {
       const auto value=a.toObject();targetField->addItem(value.value("name").toString(value.value("id").toString()),value.value("id").toString());
     }
     selected=e.value("actionId").toString();
+  }
+  if(action=="galleryFilter"){
+    for(const auto& p:QList<QPair<QString,QString>>{{"all",tr("모든 필터 초기화")},{"kind:all",tr("종류: 전체")},{"kind:cg",tr("종류: CG")},{"kind:music",tr("종류: 음악")},{"kind:event",tr("종류: 사건")},{"kind:ending",tr("종류: 엔딩")},{"status:all",tr("해금: 전체")},{"status:locked",tr("해금: 미해금")},{"status:unlocked",tr("해금: 해금됨")},{"category:",tr("분류: 전체")}})targetField->addItem(p.second,p.first);
+    for(auto value:project.value("gallery").toObject().value("entries").toArray()){auto category=value.toObject().value("category").toString();if(!category.isEmpty()&&targetField->findData("category:"+category)<0)targetField->addItem(tr("분류: ")+category,"category:"+category);}
+    selected=e.value("galleryFilter").toString("all");
+  }
+  if(action=="galleryView"||action=="galleryReplay"||action=="galleryMusicToggle"||action=="galleryMusicStop"){
+    targetField->addItem(tr("현재 선택한 도감 항목"),"");for(auto value:project.value("gallery").toObject().value("entries").toArray()){auto entry=value.toObject();targetField->addItem(entry.value("title").toString(),entry.value("id").toString());}selected=e.value("entryId").toString();
   }
   if (action == "navigate") {
     for (auto s : project["visual"].toObject()["screens"].toArray()) {

@@ -218,7 +218,7 @@ public:
     if(preview())return;
     auto& markup=active_markup();
     const auto eventType=event.GetType();
-    if(recalling()&&eventType!="click")return;
+    if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
     if(event.GetType()=="change"||event.GetType()=="input") {
@@ -309,7 +309,21 @@ public:
       game.message.clear();const std::string type=action.value("type","");
       if(type=="galleryOpen"){if(!game.content.at("project").contains("gallery"))return;game.gallery.reload();game.flush_gallery();game.gallery.active=true;audio.suspend(true);gallery_audio.suspend(false);markup.gallery_entry.clear();dirty=true;return;}
       if(game.gallery.active){
-        if(type=="galleryClose"){game.gallery.active=false;auto_elapsed=0;gallery_audio.sync_music("",muted);gallery_audio.suspend(true);audio.suspend(backgrounded);markup.gallery_music_playing=false;}
+        if((type=="galleryView"||type=="galleryReplay"||type=="galleryMusicToggle"||type=="galleryMusicStop")&&action.contains("entryId")){
+          bool found=false;for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==action.at("entryId")&&!game.gallery.records(e).empty())found=true;
+          if(!found)return;
+          if(markup.gallery_entry!=action.at("entryId")){gallery_audio.sync_music("",muted);markup.gallery_music_playing=false;markup.gallery_record=0;markup.gallery_frame=0;}
+          markup.gallery_entry=action.at("entryId");
+        }
+        if(type=="galleryFilter"){
+          const auto filter=action.value("galleryFilter","all");
+          if(filter=="all"){markup.gallery_kind="all";markup.gallery_status="all";markup.gallery_category.clear();}
+          else if(filter.rfind("kind:",0)==0)markup.gallery_kind=filter.substr(5);
+          else if(filter.rfind("status:",0)==0)markup.gallery_status=filter.substr(7);
+          else if(filter.rfind("category:",0)==0)markup.gallery_category=filter.substr(9);
+          markup.gallery_page=0;markup.gallery_entry.clear();gallery_audio.sync_music("",muted);markup.gallery_music_playing=false;
+        }
+        else if(type=="galleryClose"){game.gallery.active=false;auto_elapsed=0;gallery_audio.sync_music("",muted);gallery_audio.suspend(true);audio.suspend(backgrounded);markup.gallery_music_playing=false;}
         else if(type=="galleryReplay"){
           for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==markup.gallery_entry){const auto records=game.gallery.records(e);if(markup.gallery_record>=records.size())throw std::runtime_error("회상 기록이 없습니다.");
             auto next=std::make_unique<GalleryRecollection>(gallery_bundle,markup.bundle,records.at(markup.gallery_record),markup.locale);
@@ -322,7 +336,7 @@ public:
           }
         }
         else if(type=="galleryBack"){markup.gallery_entry.clear();gallery_audio.sync_music("",muted);markup.gallery_music_playing=false;}
-        else if(type=="gallerySelect"){for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==action.value("entryId",Json())&&!game.gallery.records(e).empty()){markup.gallery_entry=e.at("id");markup.gallery_record=0;markup.gallery_frame=0;}}
+        else if(type=="gallerySelect"||type=="galleryView"){for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==action.value("entryId",Json())&&!game.gallery.records(e).empty()){markup.gallery_entry=e.at("id");markup.gallery_record=0;markup.gallery_frame=0;}}
         else if(type=="galleryFrame"){if(action.value("delta",0)>0)++markup.gallery_frame;else if(markup.gallery_frame>0)--markup.gallery_frame;}
         else if(type=="galleryVariant"){for(const auto& e:game.content.at("project").at("gallery").at("entries"))if(e.at("id")==markup.gallery_entry){const auto records=game.gallery.records(e);if(!records.empty())markup.gallery_record=(markup.gallery_record+1)%records.size();}markup.gallery_frame=0;}
         else if(type=="galleryPage"){if(action.value("delta",0)>0)++markup.gallery_page;else if(markup.gallery_page>0)--markup.gallery_page;}

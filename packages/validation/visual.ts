@@ -26,8 +26,11 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.groupId=new Set(objectItems(gameplay.policyGroups).map(x=>x.id));
   refs.equipmentId=new Set(objectItems(systems.equipment).map(x=>x.id));
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
-  const checkElement=(e:JsonObject,ep:string,width:number,height:number)=>{
+  const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      if((String(e.action).startsWith('gallery')||String(e.binding).startsWith('gallery-'))&&!root.gallery)ctx.report(doc,ep,'UI_GALLERY_REQUIRED','도감 설정이 필요합니다.');
+      if(e.entryId&&!objectItems((root.gallery as JsonObject|undefined)?.entries).some(x=>x.id===e.entryId))ctx.report(doc,ep+'/entryId','UI_GALLERY_ENTRY_REFERENCE','도감 항목이 없습니다.');
+      if(e.action==='galleryFilter'&&!e.galleryFilter)ctx.report(doc,ep+'/galleryFilter','UI_GALLERY_FILTER_REQUIRED','도감 탭 또는 필터 값을 선택하세요.');
       if (e.kind === 'input' || e.binding === 'user-field' || e.userFieldId !== undefined) {
         if (!objectItems(root.userFields).some(field => field.id === e.userFieldId)) ctx.report(doc, ep+'/userFieldId', 'UI_USER_FIELD_REFERENCE', `사용자 필드 '${e.userFieldId ?? ''}'가 없습니다.`);
       }
@@ -60,9 +63,9 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       const systemActions=['acceptQuest','claimQuest','equip','unequip','moveExpedition','returnFromExpedition','battleAction'];
       if(!root.systems&&(['equipment','quests','expedition','battle','relationship-stages'].includes(String(e.kind))||systemActions.includes(String(e.action))))ctx.report(doc,ep,'UI_SYSTEMS_REQUIRED','탐험·성장 작업실에서 시스템을 설정하세요.');
       const required:Record<string,string[]>={executeActorAction:['actionId','actorId'],openModal:['screenId'],navigate:['screenId'],visit:['locationId'],buy:['shopId','itemId'],sell:['shopId','itemId'],useService:['serviceId'],interact:['interactionId'],acceptQuest:['questId'],claimQuest:['questId'],equip:['equipmentId'],unequip:['slot'],moveExpedition:['nodeId'],battleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleTarget:['battleTarget']};
-      for(const field of required[String(e.action)]??[])if(!e[field]&&!objectItems(e.selectionBindings).some(b=>b.property===field))ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REQUIRED',`이 행동에는 ${field} 연결이 필요합니다.`);
+      for(const field of required[String(e.action)]??[])if(!e[field]&&!boundFields.has(field)&&!objectItems(e.selectionBindings).some(b=>b.property===field))ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REQUIRED',`이 행동에는 ${field} 연결이 필요합니다.`);
       if(!e.parentId&&((e.x as number)<0||(e.y as number)<0||(e.x as number)+(e.width as number)>width||(e.y as number)+(e.height as number)>height))ctx.report(doc,ep,'UI_BOUNDS','요소가 기준 화면 영역을 벗어났습니다.');
-      if(e.kind==='image'&&(e.imageSource??'asset')==='asset'&&!e.imageAssetId)ctx.report(doc,`${ep}/imageAssetId`,'UI_IMAGE_REQUIRED','고정 이미지는 이미지 에셋을 선택해야 합니다.');
+      if(e.kind==='image'&&(e.imageSource??'asset')==='asset'&&!e.imageAssetId&&!boundFields.has('imageAssetId'))ctx.report(doc,`${ep}/imageAssetId`,'UI_IMAGE_REQUIRED','고정 이미지는 이미지 에셋을 선택해야 합니다.');
       if(e.binding==='attribute-value'&&!ctx.attributes.has(String(e.attributeId)))ctx.report(doc,`${ep}/attributeId`,'UI_BINDING_REFERENCE',`능력·자원 '${e.attributeId}'가 없습니다.`);
       if(e.binding==='relationship-value'){
         const character=ctx.characters.get(String(e.characterId))?.[0];
@@ -77,6 +80,12 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
         if(shop&&!objectItems(e.action==='sell'?shop.sellOffers:shop.offers).some(x=>x.itemId===e.itemId))ctx.report(doc,`${ep}/itemId`,'UI_SHOP_OFFER','선택한 상점의 거래 목록에 없는 아이템입니다.');
       }
   };
+  const componentBindings=new Map<string,Map<string,Set<string>>>();
+  for(const screen of objectItems(visual.screens))for(const element of objectItems(screen.elements))if(element.kind==='collection'){
+    const id=String(element.componentId),children=componentBindings.get(id)??new Map<string,Set<string>>();
+    componentBindings.set(id,children);
+    for(const binding of objectItems(element.bindings)){const child=String(binding.elementId),fields=children.get(child)??new Set<string>();fields.add(String(binding.property));children.set(child,fields);}
+  }
   const components=new Map<string,{data:JsonObject,path:string}>();
   for(const [i,component] of objectItems(visual.components).entries()) {
     const cp=`/visual/components/${i}`,id=String(component.id);
@@ -88,7 +97,9 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       const ep=`${cp}/elements/${j}`;
       if(!['panel','text','image','button','meter','group','input','component'].includes(String(child.kind)))ctx.report(doc,ep+'/kind','UI_COMPONENT_CHILD_KIND','재사용 UI 안에는 패널·텍스트·이미지·버튼·게이지·그룹만 배치할 수 있습니다. 중첩 구성은 지원하지 않습니다.');
       if(ids.has(String(child.id)))ctx.report(doc,ep+'/id','UI_ELEMENT_DUPLICATE','재사용 UI 안의 요소 ID가 중복되었습니다.');
-      ids.add(String(child.id));checkElement(child,ep,Number(component.width),Number(component.height));
+      ids.add(String(child.id));
+      const boundFields=componentBindings.get(id)?.get(String(child.id));
+      checkElement(child,ep,Number(component.width),Number(component.height),boundFields);
     }
   }
   const axis=(position:number,size:number,delta:number,anchor:unknown):[number,number]=>anchor==='stretch'?[position,Math.max(16,size+delta)]:[position+(anchor==='center'?delta/2:anchor==='right'||anchor==='bottom'?delta:0),size];
@@ -117,7 +128,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       }
       for(const [k,child] of children.entries()) {
         const override=overrides.get(String(child.id)),merged={...child,...override?.values};
-        if(override)checkElement(merged,override.path,Number(component.data.width),Number(component.data.height));
+        checkElement(merged,override?.path??`${ep}/component/${child.id}`,Number(component.data.width),Number(component.data.height));
         const [x,width]=axis(Number(child.x),Number(child.width),Number(e.width)-Number(component.data.width),child.anchorX);
         const [y,height]=axis(Number(child.y),Number(child.height),Number(e.height)-Number(component.data.height),child.anchorY);
         const expanded={...merged,id:`${e.id}__${child.id}`,x:Number(e.x)+x,y:Number(e.y)+y,width,height,

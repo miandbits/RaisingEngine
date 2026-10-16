@@ -2,6 +2,11 @@ import { isObject, type JsonObject, type ProjectDocument } from './model.js';
 import { SemanticContext, objectItems } from './context.js';
 
 export function checkGallery(ctx: SemanticContext, doc: ProjectDocument, gallery: JsonObject): void {
+  const visual=doc.data as JsonObject;
+  const screens=objectItems(isObject(visual.visual)?visual.visual.screens:undefined);
+  for(const key of ['screenId','detailScreenId'])if(gallery[key]&&!screens.some(s=>s.id===gallery[key]))ctx.report(doc,`/gallery/${key}`,'GALLERY_SCREEN_REFERENCE','도감에 연결한 화면이 없습니다.');
+  if(gallery.detailScreenId&&!gallery.screenId)ctx.report(doc,'/gallery/detailScreenId','GALLERY_SCREEN_REQUIRED','상세 화면에는 도감 목록 화면도 연결하세요.');
+  if(gallery.screenId&&gallery.screenId===gallery.detailScreenId)ctx.report(doc,'/gallery/detailScreenId','GALLERY_SCREEN_DISTINCT','목록과 상세는 서로 다른 화면으로 연결하세요.');
   const seen = new Set<string>();
   objectItems(gallery.entries).forEach((entry, i) => {
     const path = `/gallery/entries/${i}`;

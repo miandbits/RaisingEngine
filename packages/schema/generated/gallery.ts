@@ -97,4 +97,6 @@ export interface CrossRunNarrativeGallery {
     lockedDisplay?: "hint" | "hidden";
     fit?: "contain" | "cover";
   }[];
+  screenId?: string;
+  detailScreenId?: string;
 }

@@ -76,6 +76,12 @@
           }
         }
       }
+    },
+    "screenId": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "detailScreenId": {
+      "$ref": "common.schema.json#/$defs/id"
     }
   }
 }

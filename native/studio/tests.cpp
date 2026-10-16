@@ -45,6 +45,7 @@ private slots:
   void shortPolishAuthoring();
   void galleryAuthoring();
   void galleryMediaAuthoring();
+  void galleryUiAuthoring();
   void authoringWorkspaceRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();
@@ -972,5 +973,6 @@ private slots:
 #include "unified-time-test.inc"
 #include "short-polish-test.inc"
 #include "gallery-test.inc"
+#include "gallery-ui-test.inc"
 QTEST_MAIN(StudioTests)
 #include "tests.moc"

@@ -1,10 +1,11 @@
   std::string gallery_entry;
   size_t gallery_record=0,gallery_frame=0,gallery_page=0;
-  std::string gallery_category;
+  std::string gallery_category,gallery_kind="all",gallery_status="all";
   bool gallery_music_playing=false;
   std::string gallery_overlay() {
     if(!game.content.at("project").contains("gallery")||!preview_screen.empty())return "";
     const auto config=display_content.at("project").at("gallery");
+    if(config.contains("screenId")&&(!game.gallery.active||gallery_entry.empty()||config.contains("detailScreenId")))return "";
     if(!game.gallery.active)return "<div style=\"position:absolute;right:20px;top:90px;width:180px;height:42px;z-index:11000;\">"+button("gallery-open",config.at("title"),{{"type","galleryOpen"}})+"</div>";
     // Remove all underlying actions from keyboard/gamepad navigation as well as clicks.
     actions.clear();labels.clear();

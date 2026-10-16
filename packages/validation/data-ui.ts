@@ -19,7 +19,7 @@ export function checkDataUi(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   }
   const refs:Record<string,Set<unknown>>={screenId:new Set(objectItems(visual.screens).map(x=>x.id)),actionId:new Set(objectItems(gameplay.actions).map(x=>x.id)),shopId:new Set(objectItems(gameplay.shops).map(x=>x.id)),itemId:new Set(objectItems(gameplay.items).map(x=>x.id)),groupId:new Set(objectItems(gameplay.policyGroups).map(x=>x.id)),locationId:new Set(objectItems(gameplay.locations).map(x=>x.id)),interactionId:new Set(objectItems(gameplay.interactions).map(x=>x.id))};
   const required:Record<string,string[]>={navigate:['screenId'],visit:['locationId'],buy:['shopId','itemId'],sell:['shopId','itemId'],executeAction:['actionId'],selectPolicy:['groupId'],interact:['interactionId'],useService:['serviceId'],equip:['equipmentId'],unequip:['slot'],acceptQuest:['questId'],claimQuest:['questId'],moveExpedition:['nodeId'],battleAction:['battleAction'],selectBattleAction:['battleAction'],selectBattleTarget:['battleTarget']};
-  const supported=['start','advance','save','load','sound','navigate','visit','buy','sell','executeAction','selectPolicy','interact','useService','setDiet','equip','unequip','acceptQuest','claimQuest','moveExpedition','returnFromExpedition','battleAction','selectBattleAction','selectBattleTarget','confirmBattleAction','cancelBattleAction','selectRow','openModal','closeModal','executeActorAction'];
+  const supported=['start','advance','save','load','sound','navigate','visit','buy','sell','executeAction','selectPolicy','interact','useService','setDiet','equip','unequip','acceptQuest','claimQuest','moveExpedition','returnFromExpedition','battleAction','selectBattleAction','selectBattleTarget','confirmBattleAction','cancelBattleAction','selectRow','openModal','closeModal','executeActorAction','galleryOpen','galleryClose','galleryBack','galleryView','galleryReplay','galleryFilter','galleryMusicToggle','galleryMusicStop','galleryVariant'];
   for(const [i,screen] of objectItems(visual.screens).entries())for(const [j,element] of objectItems(screen.elements).entries()){
     if(element.kind!=='collection')continue;
     const p=`/visual/screens/${i}/elements/${j}`,source=(element.source??{}) as JsonObject,kind=String(source.type);
@@ -31,13 +31,14 @@ export function checkDataUi(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       table=ctx.resolve(tables,String(source.tableId),doc,p+'/source/tableId','데이터 표')?.data;
       fields.id='text';for(const column of objectItems(table?.columns))fields[String(column.id)]=String(column.type);
     }
-    const allowed:Record<string,string[]>={shopOffers:['shopId'],policyOptions:['groupId'],relationships:['characterId'],table:['tableId'],battleActors:[],battleActions:[],battleTargets:[],battleLog:[],battleRewards:[]};
+    const allowed:Record<string,string[]>={shopOffers:['shopId'],policyOptions:['groupId'],relationships:['characterId'],table:['tableId'],galleryEntries:[],gallerySelection:[],battleActors:[],battleActions:[],battleTargets:[],battleLog:[],battleRewards:[]};
     for(const key of Object.keys(source))if(key!=='type'&&!(allowed[kind]??[]).includes(key))ctx.report(doc,`${p}/source/${key}`,'UI_DATA_SOURCE_FILTER','이 데이터 원본에서 사용할 수 없는 필터입니다.');
     for(const field of ['shopId','groupId'])if(source[field]&&!refs[field]!.has(source[field]))ctx.report(doc,`${p}/source/${field}`,'UI_ACTION_REFERENCE','데이터 원본의 연결 대상을 찾을 수 없습니다.');
     if(source.characterId)ctx.resolve(ctx.characters,String(source.characterId),doc,p+'/source/characterId','인물');
+    if(kind.startsWith('gallery')&&!project.gallery)ctx.report(doc,p+'/source','UI_GALLERY_REQUIRED','도감 설정이 필요합니다.');
     if(kind.startsWith('battle')&&!project.systems)ctx.report(doc,p+'/source','UI_SYSTEMS_REQUIRED','전투 데이터 원본에는 탐험·전투 시스템이 필요합니다.');
     if(['battleLog','battleRewards'].includes(kind)&&!(project.systems as JsonObject|undefined)?.battleHistoryLimit)ctx.report(doc,p+'/source','UI_BATTLE_HISTORY_REQUIRED','전투 기록·실제 보상을 표시하려면 전투 기록 한도를 설정하세요.');
-    if(kind!=='table'&&!kind.startsWith('battle')&&!project.gameplay&&kind!=='relationships')ctx.report(doc,p+'/source','UI_GAMEPLAY_REQUIRED','게임 규칙 데이터가 필요합니다.');
+    if(kind!=='table'&&!kind.startsWith('battle')&&!project.gameplay&&kind!=='relationships'&&!kind.startsWith('gallery'))ctx.report(doc,p+'/source','UI_GAMEPLAY_REQUIRED','게임 규칙 데이터가 필요합니다.');
     const seen=new Set<string>();
     for(const [k,binding] of bindings.entries()){
       const bp=`${p}/bindings/${k}`,field=String(binding.field),property=String(binding.property),child=children.find(x=>x.id===binding.elementId),key=`${binding.elementId}:${property==='label'?'text':property}`;
@@ -50,7 +51,7 @@ export function checkDataUi(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if(child&&property==='imageAssetId'&&child.kind!=='image')ctx.report(doc,bp+'/property','UI_BINDING_KIND','이미지 요소에 연결하세요.');
       if(child&&['value','maxValue'].includes(property)&&child.kind!=='meter')ctx.report(doc,bp+'/property','UI_BINDING_KIND','수치 게이지 요소에 연결하세요.');
       if(child&&!['text','label','imageAssetId','visible','value','maxValue'].includes(property)&&child.kind!=='button'&&!(property==='enabled'&&child.kind==='group'))ctx.report(doc,bp+'/property','UI_BINDING_KIND','행동은 버튼, 활성화는 버튼이나 그룹에 연결하세요.');
-      if(kind!=='table'&&(Object.hasOwn(refs,property)||property==='optionId'||property==='imageAssetId'||property==='action'||property==='battleAction'||property==='battleTarget')&&field!==property)ctx.report(doc,bp+'/field','UI_BINDING_REFERENCE_FIELD','실행 대상에는 같은 종류의 ID 필드를 연결하세요.');
+      if(kind!=='table'&&(Object.hasOwn(refs,property)||property==='optionId'||property==='imageAssetId'||property==='action'||property==='battleAction'||property==='battleTarget'||property==='entryId')&&field!==property)ctx.report(doc,bp+'/field','UI_BINDING_REFERENCE_FIELD','실행 대상에는 같은 종류의 ID 필드를 연결하세요.');
       if(kind!=='table'&&property==='quantity'&&!['quantity','maxQuantity'].includes(field))ctx.report(doc,bp+'/field','UI_BINDING_QUANTITY','수량에는 양의 정수 수량 필드를 연결하세요.');
     }
     if(isObject(element.rowFilter)){
@@ -58,11 +59,12 @@ export function checkDataUi(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if(!type)ctx.report(doc,p+'/rowFilter/field','UI_DATA_FIELD','필터 필드가 없습니다.');
       else if(typeOf(filter.value)!==type||(!['eq','ne'].includes(String(filter.operator))&&type!=='number'))ctx.report(doc,p+'/rowFilter','UI_FILTER_TYPE','비교값과 필드 자료형을 맞추세요. 수치 비교는 숫자 필드만 지원합니다.');
     }
+    for(const child of children.filter(x=>x.kind==='image'))if((child.imageSource??'asset')==='asset'&&!child.imageAssetId&&!bindings.some(b=>b.elementId===child.id&&b.property==='imageAssetId'))ctx.report(doc,p+'/bindings','UI_IMAGE_REQUIRED','목록 이미지에는 고정 에셋 또는 이미지 데이터 연결이 필요합니다.');
     for(const child of children.filter(x=>x.kind==='button')){
       const map=new Map(bindings.filter(x=>x.elementId===child.id).map(x=>[String(x.property),x]));
       const validate=(row:JsonObject|undefined,rp:string)=>{
         const resolved={...child};for(const [property,binding] of map)if(row)resolved[property]=row[String(binding.field)]!;
-        const action=String(map.has('action')&&!row?(kind==='shopOffers'?'buy':kind==='policyOptions'?'selectPolicy':kind==='battleActions'?'selectBattleAction':kind==='battleTargets'?'selectBattleTarget':child.action):resolved.action);
+        const action=String(map.has('action')&&!row?(kind==='shopOffers'?'buy':kind==='policyOptions'?'selectPolicy':kind==='battleActions'?'selectBattleAction':kind==='battleTargets'?'selectBattleTarget':kind.startsWith('gallery')?'galleryView':child.action):resolved.action);
         if(!supported.includes(action))ctx.report(doc,rp,'UI_BINDING_ACTION','지원하지 않는 버튼 행동입니다.');
         for(const field of required[action]??[])if(!resolved[field]&&(!map.has(field)||row))ctx.report(doc,rp,'UI_BINDING_ARGUMENT',`${action} 행동에 ${field} 연결이 필요합니다.`);
         if(resolved.quantity!==undefined&&(!Number.isInteger(resolved.quantity)||Number(resolved.quantity)<1||Number(resolved.quantity)>999))ctx.report(doc,rp,'UI_BINDING_QUANTITY','수량은 1..999 정수여야 합니다.');
