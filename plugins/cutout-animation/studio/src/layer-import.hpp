@@ -15,6 +15,8 @@ class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPushButton;
+class QAction;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -27,8 +29,13 @@ struct LayerImportChoice {
   QString origin = "bottom-center";
   bool trim = true;
   bool aimBones = true;  // boneDirection "auto" (plugin 1.14.0): new bones point along their part
+  // scale "auto" (plugin 1.15.0): canvas long edge <= 2048 px, pictures downscaled while reading;
+  // a small document gets 1, so it is the default for every file.
+  bool autoScale = true;
   double scale = 1;
+  bool skipEffects = false;  // effects "skip": leave out layers whose blend mode cannot be drawn
   QStringList exclude;  // report layer keys left out
+  QStringList merge;    // report keys of groups flattened into one picture (plugin 1.15.0)
   QJsonObject payload() const;
 };
 
@@ -48,19 +55,25 @@ class LayerImportDialog : public QDialog {
 
  private:
   void collect();  // widgets -> choice_
-  void refresh();
+  void refresh(bool fromWidgets = true);
+  void autoMerge();  // the report's proposal (autoMerge.keys) into the merge list, then preview again
   void addItems(QTreeWidgetItem* parent, const QJsonArray& layers);
   void accept() override;
   LayerImportChoice& choice_;
   Preview preview_;
-  QLabel *source_ = nullptr, *summary_ = nullptr;
+  QJsonObject report_;
+  QLabel *source_ = nullptr, *summary_ = nullptr, *scaleInfo_ = nullptr;
   QComboBox *target_ = nullptr, *origin_ = nullptr;
   QLineEdit* id_ = nullptr;
   QCheckBox* trim_ = nullptr;
   QCheckBox* aimBones_ = nullptr;
+  QCheckBox* autoScale_ = nullptr;
+  QCheckBox* skipEffects_ = nullptr;
   QDoubleSpinBox* scale_ = nullptr;
   QTreeWidget* tree_ = nullptr;
   QListWidget* warnings_ = nullptr;
+  QPushButton *ok_ = nullptr, *autoMerge_ = nullptr;
+  QAction* mergeAction_ = nullptr;
   bool filling_ = false;
 };
 }  // namespace cutout_studio

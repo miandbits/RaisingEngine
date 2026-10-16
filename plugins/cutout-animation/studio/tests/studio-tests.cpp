@@ -4030,7 +4030,9 @@ class StudioTests : public QObject {
     QCOMPARE(sent.value("id").toString(), QString("psdhero"));
     QCOMPARE(sent.value("exclude").toArray(), QJsonArray{"1.1"});
     QCOMPARE(sent.value("origin").toString(), QString("bottom-center"));
-    QVERIFY(sent.value("trim").toBool() && sent.value("scale").toDouble() == 1 && !sent.contains("rig"));
+    QVERIFY(sent.value("trim").toBool() && sent.value("scale").toString() == "auto" && !sent.contains("rig"));  // 1.15.0 default: "auto" (1 for small files)
+    QCOMPARE(sent.value("effects").toString(), QString("keep"));
+    QCOMPARE(sent.value("merge").toArray(), QJsonArray());
     QCOMPARE(sent.value("boneDirection").toString(), QString("auto"));  // plugin 1.14.0 default
     QCOMPARE(panel->rigId(), QString("psdhero"));
     QVERIFY2(panel->status().contains("가져옴") && panel->status().contains("Ctrl+Z"), qPrintable(panel->status()));
@@ -4085,6 +4087,102 @@ class StudioTests : public QObject {
     });
     QVERIFY(gesture("bad id refused", 0, [&] { click("cutoutImportLayers"); pump(); }));
     QVERIFY(kept);
+  }
+
+  /**
+   * PSD 가져오기 on production files (plugin 1.15.0), the dialog against a fake preview: scale
+   * "auto" by default with the chosen scale shown, the 「한 그림으로」 column and the row action
+   * send `merge` keys, a [merge] group stays merged, 「효과 레이어 빼기」 sends effects "skip", and a
+   * plan over the rig limits keeps 가져오기 disabled until 「자동 합치기」 adds the proposed keys.
+   */
+  void layerImportProductionDialog() {
+    LayerImportChoice choice;
+    choice.file = dir.filePath("big.psd");
+    choice.id = "big";
+    QList<QJsonObject> sent;
+    auto group = [](const QString& key, const QString& name, bool merged, const QString& merge) {
+      QJsonObject g{{"key", key}, {"name", name}, {"kind", "group"}, {"visible", true}, {"include", true}, {"role", merged ? "merged" : "bone"}, {"warnings", QJsonArray()},
+                    {"children", QJsonArray{QJsonObject{{"key", key + ".0"}, {"name", "piece"}, {"kind", "layer"}, {"visible", true}, {"include", true},
+                                                        {"role", merged ? "in-merge" : "image"}, {"warnings", QJsonArray()}}}}};
+      if (!merge.isEmpty()) g["merge"] = merge;
+      return g;
+    };
+    auto report = [&](const LayerImportChoice& c) {
+      const QJsonObject p = c.payload();
+      sent << p;
+      QSet<QString> keys;
+      for (const auto& k : p.value("merge").toArray()) keys << k.toString();
+      const bool over = !keys.contains("1");
+      return QJsonObject{{"mode", "create"}, {"rigId", "big"}, {"source", QJsonObject{{"format", "psd"}, {"file", "big.psd"}, {"width", 5656}, {"height", 8000}}},
+                         {"options", QJsonObject{{"scale", p.value("scale").isString() ? 0.25 : p.value("scale").toDouble()}, {"scaleMode", p.value("scale").isString() ? "auto" : "fixed"}, {"resolution", 0.25}}},
+                         {"canvas", QJsonObject{{"width", 1414}, {"height", 2000}}},
+                         {"layers", QJsonArray{group("0", "hair [merge]", true, "tag"), group("1", "arms", keys.contains("1"), keys.contains("1") ? "key" : ""),
+                                               group("2", "legs", keys.contains("2"), keys.contains("2") ? "key" : "")}},
+                         {"warnings", QJsonArray()},
+                         {"summary", QJsonObject{{"bones", 2}, {"slots", over ? 300 : 200}, {"attachments", 310}, {"hidden", 0}, {"baked", 120}, {"merged", 1 + int(keys.size())}}},
+                         {"limits", QJsonObject{{"exceeded", over}, {"bones", QJsonObject{{"count", 3}, {"max", 256}}}, {"slots", QJsonObject{{"count", over ? 300 : 200}, {"max", 256}}},
+                                                {"attachments", QJsonObject{{"count", 310}, {"max", 1024}}}}},
+                         {"autoMerge", QJsonObject{{"keys", over ? QJsonArray{"1"} : QJsonArray()}, {"fits", true}}}};
+    };
+    LayerImportDialog dialog(panel, choice, {}, report(choice), [&](const LayerImportChoice& c, std::function<void(const QJsonObject&, const QString&)> done) { done(report(c), QString()); });
+    dialog.show();
+    pump();
+    auto* autoScale = dialog.findChild<QCheckBox*>("cutoutLayerImportAutoScale");
+    auto* scale = dialog.findChild<QDoubleSpinBox*>("cutoutLayerImportScale");
+    auto* info = dialog.findChild<QLabel*>("cutoutLayerImportScaleInfo");
+    auto* summary = dialog.findChild<QLabel*>("cutoutLayerImportSummary");
+    auto* autoMerge = dialog.findChild<QPushButton*>("cutoutLayerImportAutoMerge");
+    auto* effects = dialog.findChild<QCheckBox*>("cutoutLayerImportSkipEffects");
+    auto* action = dialog.findChild<QAction*>("cutoutLayerImportMergeAction");
+    auto* tree = dialog.tree();
+    QPushButton* ok = dialog.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok);
+    QVERIFY(autoScale && scale && info && summary && autoMerge && effects && action && ok);
+    QCOMPARE(sent.first().value("scale").toString(), QString("auto"));
+    QVERIFY(autoScale->isChecked() && !scale->isEnabled());
+    QVERIFY2(info->text().contains("자동 0.25배") && info->text().contains("1414×2000"), qPrintable(info->text()));
+    QCOMPARE(scale->value(), 0.25);
+    auto row = [&](const QString& name) { for (int i = 0; i < tree->topLevelItemCount(); i++) if (tree->topLevelItem(i)->text(0) == name) return tree->topLevelItem(i); return (QTreeWidgetItem*)nullptr; };
+    QCOMPARE(tree->columnCount(), 7);
+    QVERIFY(row("hair [merge]") && row("arms") && row("legs"));
+    QCOMPARE(row("hair [merge]")->checkState(6), Qt::Checked);
+    row("hair [merge]")->setCheckState(6, Qt::Unchecked);  // a [merge] name cannot be unchecked here
+    QCOMPARE(row("hair [merge]")->checkState(6), Qt::Checked);
+    QCOMPARE(row("arms")->checkState(6), Qt::Unchecked);
+    QVERIFY(!row("arms")->child(0)->data(6, Qt::CheckStateRole).isValid());  // layers have no merge box
+    // Over the limits: the import is disabled, the summary says why, 자동 합치기 offers the proposal.
+    QVERIFY(!ok->isEnabled());
+    QVERIFY2(summary->text().contains("한도를 넘음") && summary->text().contains("슬롯 300/256"), qPrintable(summary->text()));
+    QVERIFY(autoMerge->isEnabled() && autoMerge->text().contains("그룹 1개"));
+    autoMerge->click();
+    pump();
+    QCOMPARE(sent.last().value("merge").toArray(), QJsonArray{"1"});
+    QCOMPARE(row("arms")->checkState(6), Qt::Checked);
+    QCOMPARE(row("arms")->text(1), layerRoleLabel("merged"));
+    QVERIFY(ok->isEnabled() && !autoMerge->isEnabled() && !summary->text().contains("넘음"));
+    // The row action merges the selected group (legs) and previews again; a [merge] row cannot be toggled.
+    tree->setCurrentItem(row("hair [merge]"));
+    QVERIFY(!action->isEnabled() && action->isChecked());
+    tree->setCurrentItem(row("legs"));
+    QVERIFY(action->isEnabled() && !action->isChecked());
+    action->trigger();
+    pump();
+    QCOMPARE(sent.last().value("merge").toArray(), (QJsonArray{"2", "1"}));
+    QCOMPARE(row("legs")->checkState(6), Qt::Checked);
+    // Unchecking the column leaves the group out of `merge`; effects "skip"; a fixed scale.
+    row("legs")->setCheckState(6, Qt::Unchecked);
+    effects->setChecked(true);
+    autoScale->setChecked(false);
+    QVERIFY(scale->isEnabled());
+    scale->setValue(0.5);
+    dialog.findChild<QPushButton*>("cutoutLayerImportRefresh")->click();
+    pump();
+    QCOMPARE(sent.last().value("merge").toArray(), QJsonArray{"1"});
+    QCOMPARE(sent.last().value("effects").toString(), QString("skip"));
+    QCOMPARE(sent.last().value("scale").toDouble(), 0.5);
+    QVERIFY2(info->text().startsWith("0.5배"), qPrintable(info->text()));
+    ok->click();
+    QCOMPARE(dialog.result(), int(QDialog::Accepted));
+    QVERIFY(choice.merge == QStringList{"1"} && choice.skipEffects && !choice.autoScale && choice.scale == 0.5);
   }
 
   /**
