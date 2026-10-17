@@ -30,6 +30,7 @@ class StudioTests : public QObject {
   Q_OBJECT
 private slots:
   void freeScreenAuthoring();
+  void presentationVariantsAuthoring();
   void projectManagerRoundtrip();
   void designerQuickRules();
   void designerSmallGameAuthoring();
@@ -988,4 +989,5 @@ private slots:
 #include "replay-ui-test.inc"
 QTEST_MAIN(StudioTests)
 #include "free-screens-test.inc"
+#include "presentation-variants-test.inc"
 #include "tests.moc"

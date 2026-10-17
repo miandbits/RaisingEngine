@@ -1,3 +1,4 @@
+import { resolvePresentation, presentationActivity } from '../../../packages/visual/variants.js';
 import React, { useEffect, useRef, useState } from 'react';
 import type { Element, ScreenId, ReadonlyDesign } from '../../../packages/visual/model.js';
 import './visual.css';
@@ -35,7 +36,7 @@ export interface VisualContext {
 export function isVisible(element:Pick<Element,'hidden'|'visibleWhen'>, context:Pick<VisualContext, 'phase'>): boolean {
   if(element.hidden)return false;
   const when=element.visibleWhen??'always';
-  return when==='always'||when==='planning'&&['planning','ready'].includes(context.phase)||when==='result'&&['activity-result','period-end'].includes(context.phase)||when==='dialogue'&&context.phase==='dialogue'||when==='choice'&&context.phase==='choice'||when==='finished'&&context.phase==='finished';
+  return when==='always'||when===context.phase||when==='planning'&&['planning','ready'].includes(context.phase)||when==='result'&&['activity-result','period-end'].includes(context.phase)||when==='dialogue'&&context.phase==='dialogue'||when==='choice'&&context.phase==='choice'||when==='finished'&&context.phase==='finished';
 }
 export function imageFor(element:Element,context:VisualContext):string|undefined {
   const source=element.imageSource??'asset';
@@ -56,6 +57,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const scale=fitViewport?Math.min(viewport.width/size.width,viewport.height/size.height):viewport.width/design.width;
   const offset=fitViewport?{x:(viewport.width-size.width*scale)/2,y:(viewport.height-size.height*scale)/2}:{x:0,y:0};
   const elements=resolveScreenElements(design,screenId,size);
+  useEffect(()=>{window.raisingExtensions?.commitPresentation();},[context.dataState,screenId]);
   const planning=useSchedulePlanner(context);
   const calendarBinding=(binding:Element['binding']):string|null=>{
     if(!binding?.startsWith('calendar-'))return null;
@@ -72,7 +74,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const fontCss=fontIds.map(id=>`@font-face{font-family:"engine-${id}";src:url(${JSON.stringify(assetUrl(id))});font-display:block;}`).join('\n');
   const conditionPasses=(condition:Element['visibleCondition'])=>!condition||context.dataUi?.conditions[JSON.stringify(condition)]===true;
   const renderElement=(raw:BoundElement):React.ReactNode=>{
-      let element=resolveElementStyle(design,raw);
+      let element=resolveElementStyle(design,editing?raw:resolvePresentation(raw,presentationActivity(context.dataState),conditionPasses));
       const portrait=element.kind==='image'&&element.imageSource?.startsWith('portrait-')?context.portraitTransforms?.[element.imageSource.slice(9)]:undefined;
       if(portrait){const scale=portrait.scale??1,w=element.width,h=element.height;element={...element,x:element.x+(w-w*scale)/2+w*(portrait.offsetX??0),y:element.y+h-h*scale+h*(portrait.offsetY??0),width:w*scale,height:h*scale};}
       if(!editing&&(!isVisible(element,context)||!conditionPasses(element.visibleCondition)))return null;

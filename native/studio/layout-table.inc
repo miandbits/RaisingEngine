@@ -31,4 +31,3 @@
     if(root!=view.value("root")||revision!=view.value("revision")){errorLabel->setText(tr("프로젝트가 변경되었습니다. 다시 입력하세요."));return;}
     visual["screens"]=screens;project["visual"]=visual;replaceProject(project);
   })->setObjectName("layoutTable");
-

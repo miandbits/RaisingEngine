@@ -485,6 +485,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   appearance->addRow(tr("글자 크기"), fontField);
   auto dataForm = group(tr("이미지 · 데이터 연결"));
   auto dataBindingButton=new QPushButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
+  auto variantsButton=new QPushButton(tr("조건별 표현 · 이미지·동작 연결…"));variantsButton->setObjectName("presentationVariants");dataForm->addRow(variantsButton);connect(variantsButton,&QPushButton::clicked,this,&StudioWindow::editPresentationVariants);
   imageField = new QComboBox;
   imageField->setObjectName("imageAsset");
   bindingField = new QComboBox;

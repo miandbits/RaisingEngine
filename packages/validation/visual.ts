@@ -30,6 +30,14 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
       checkScreenBinding(ctx,doc,e,ep);
+      for(const [i,rule] of objectItems(e.variants).entries()) {
+        const at=`${ep}/variants/${i}`,values=rule.values as JsonObject;
+        for(const [j,id] of ((rule.activityIds??[]) as string[]).entries())ctx.resolve(ctx.activities,id,doc,`${at}/activityIds/${j}`,'활동');
+        for(const [field,kinds] of Object.entries({text:['text','button'],imageAssetId:['image'],extensionRef:['plugin']}))
+          if(values[field]!==undefined&&!kinds.includes(String(e.kind)))ctx.report(doc,`${at}/values/${field}`,'UI_VARIANT_KIND','선택한 요소 종류에 사용할 수 없는 표현입니다.');
+        if(values.imageAssetId){const asset=ctx.resolve(ctx.assets,String(values.imageAssetId),doc,`${at}/values/imageAssetId`,'이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,`${at}/values/imageAssetId`,'UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
+        if(values.extensionRef&&!e.extension)ctx.report(doc,`${at}/values/extensionRef`,'UI_VARIANT_EXTENSION','기본 플러그인 연결이 필요합니다.');
+      }
       if((String(e.action).startsWith('gallery')||String(e.binding).startsWith('gallery-')||String(e.action).startsWith('recollection')||String(e.binding).startsWith('replay-'))&&!root.gallery)ctx.report(doc,ep,'UI_GALLERY_REQUIRED','도감 설정이 필요합니다.');
       if(e.entryId&&!objectItems((root.gallery as JsonObject|undefined)?.entries).some(x=>x.id===e.entryId))ctx.report(doc,ep+'/entryId','UI_GALLERY_ENTRY_REFERENCE','도감 항목이 없습니다.');
       if(e.action==='galleryFilter'&&!e.galleryFilter)ctx.report(doc,ep+'/galleryFilter','UI_GALLERY_FILTER_REQUIRED','도감 탭 또는 필터 값을 선택하세요.');

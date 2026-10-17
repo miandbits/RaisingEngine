@@ -6,6 +6,8 @@ import {spawnSync} from 'node:child_process';
 import {createSession,dispatchSession} from '../../dist/packages/runtime-service/index.js';
 import {resolveScreenElements} from '../../dist/packages/visual/components.js';
 import {resolveScreen} from '../../dist/packages/visual/routing.js';
+import {resolvePresentation,presentationActivity} from '../../dist/packages/visual/variants.js';
+import {nativeRequest} from '../../dist/packages/native-bridge/index.js';
 
 const bundle=process.env.RAISING_FREE_SCREEN_BUNDLE;
 test('Qt-authored blank canvas: schedule, relation, dialogue, both choices and mid-story/ending save restoration', {skip:!bundle,timeout:180000},async()=>{
@@ -55,7 +57,13 @@ test('Qt-authored blank canvas: schedule, relation, dialogue, both choices and m
     const run=spawnSync(resolve(bundle,'RaisingPlayer.exe'),['--bundle',bundle,'--seed','42','--save',save,'--automation',script,'--report',reportPath],{encoding:'utf8',timeout:60000,windowsHide:true});
     const report=JSON.parse(await readFile(reportPath,'utf8'));assert.equal(run.status,0,JSON.stringify(report.error??run.stderr));assert.equal(report.ok,true);
     const ui=id=>report.steps.find(s=>s.command.checkpoint===id).ui;
-    for(const [id,state] of Object.entries(expected)){assert.deepEqual(ui(id).state,state,id);assert.equal(ui(id).screenId,resolveScreen(design,state),'same freely authored canvas');}
+    for(const [id,state] of Object.entries(expected)){
+      assert.deepEqual(ui(id).state,state,id);assert.equal(ui(id).screenId,resolveScreen(design,state),'same freely authored canvas');
+      if(ui(id).screenId===screen)for(const element of elements.filter(e=>e.kind==='text'&&e.variants?.length)){
+        const projected=resolvePresentation(element,presentationActivity(state),condition=>nativeRequest({operation:'evaluate',content:c,state,condition}).value===true);
+        if(!projected.binding||projected.binding==='none')assert.equal(ui(id).texts[element.id],projected.text,`conditional text at ${id}`);
+      }
+    }
     const relation=elements.find(e=>e.binding==='data-value'&&e.dataBinding.kind==='relationship');
     assert.equal(ui('initial').texts[relation.id],`${flow.characterName} · 신뢰: 0`);
     assert.equal(ui('ending-restored').texts[relation.id],`${flow.characterName} · 신뢰: ${choice.delta}`);

@@ -18,7 +18,7 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
   const result:DataUiProjection={collections:{},conditions:{},availability:{}};
   const design=content.project.visual;if(!design)return result;
   const checkConditions=(element:Readonly<Element>)=>{
-    for(const condition of [element.visibleCondition,element.enabledCondition])if(condition){
+    for(const condition of [element.visibleCondition,element.enabledCondition,...(element.variants??[]).map(rule=>rule.when)])if(condition){
       const key=JSON.stringify(condition);if(Object.hasOwn(result.conditions,key))continue;
       const reply=request({operation:'evaluate',content,state,condition}) as Reply;
       result.conditions[key]=reply.ok&&reply.value===true;

@@ -4,6 +4,7 @@
 #include "localization.hpp"
 #include "layout.hpp"
 #include "extension-host.hpp"
+#include "presentation-variants.hpp"
 #include <algorithm>
 #include <map>
 #include <iomanip>
@@ -821,6 +822,9 @@ public:
       if(!has_widget){generated_screen=fallback_screen(raw_phase);screen=&generated_screen;render_elements=generated_screen.at("elements");}
     }
     if(!screen)throw std::runtime_error("표시할 화면이 없습니다: "+screen_id);
+    const auto activity=game.state.is_object()&&game.state.value("phase","")=="activity-result"?game.state.value("lastActivityResult",Json::object()).value("activityId",""):"";
+    auto apply_variant=[&](const Json& e){return raising_player::presentation_variant(e,activity,[&](const Json& c){return visual_condition(c);});};
+    for(auto& element:render_elements)element=apply_variant(element);
     const auto portrait_scene=display_scene();
     for(auto& element:render_elements)if(element.value("kind","")=="image") {
       const auto source=element.value("imageSource","asset");
@@ -869,7 +873,7 @@ public:
       out+="<div id=\"ui-modal-shade\" style=\"z-index:9000;position:absolute;left:0;top:0;width:100%;height:100%;background-color:#000000aa;pointer-events:auto;\"></div><div id=\"ui-modal\" style=\"z-index:9001;position:absolute;left:0;top:0;width:100%;height:100%;\">";
       auto modal_elements=expanded_collections(expanded_elements(visual,modal,width,height,phase()));
       const auto prefix=ui_modal+"__";
-      for(auto& e:modal_elements){e["id"]=prefix+e.at("id").get<std::string>();for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}
+      for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}
       for(const auto& e:modal_elements)if(!e.contains("_collectionParent")&&!e.contains("_scrollParent"))out+=render_node(e);out+="</div>";break;
     }
     out+="<div id=\"ui-tooltip\" style=\"display:none;position:absolute;pointer-events:none;width:280px;padding:10px;background-color:#202838;color:#ffffff;border-width:1px;border-color:#b9cde8;z-index:10000;\"></div>";

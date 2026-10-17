@@ -1,3 +1,4 @@
+import {usesPresentationVariants} from '../visual/variants.js';
 import { scheduleStep } from '../player-service/schedule.js';
 import { resolveUserValues } from '../core/user-fields.js';
 import { CoreFault } from '../core/util.js';
@@ -162,7 +163,7 @@ export class WebPlayerController implements PlayerBridge {
   }
   async save(version: Version): Promise<PlayerReply> {
     if (!this.session || !this.current(version)) return this.reply('저장할 현재 게임이 없습니다.');
-    const extensions=this.extensions?.save();
+    const extensions=this.extensions?.save(usesPresentationVariants(this.content.project.visual));
     const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{})}:undefined;
     const text = canonical({ saveVersion: '1.0.0', coreVersion: CORE_VERSION,
       contentFingerprint: this.content.contentFingerprint, origin:this.session.origin,commands:this.session.commands,state:this.session.state,...(presentation?{playerPresentation:presentation}:{}) });
@@ -200,7 +201,7 @@ export class WebPlayerController implements PlayerBridge {
         const error = this.settle([]);
         if (error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
       } catch (error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; throw error; }
-      this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions);
+      this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions, true);
       this.generation++; return this.reply(null, '저장한 게임을 불러왔습니다.');
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }
   }

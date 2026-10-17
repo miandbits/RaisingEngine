@@ -24,7 +24,7 @@ export async function validatePlugins(project: LoadedProject, documents: Project
   // Plugin-free projects never touch the store (and stay byte-identical in every output).
   if (!lockDoc && !extensions.length && !elements.length && !hasStrayExtension(visual)) return result;
   const report = (doc: ProjectDocument, pointer: string, code: string, message: string, ids: string[] = [], severity: 'error' | 'warning' = 'error') =>
-    result.diagnostics.push(diagnostic(doc, pointer, code, message, ids, severity));
+    result.diagnostics.push(diagnostic(doc, pointer.replace(/(\/variants\/\d+\/values)\/extension\/ref$/, '$1/extensionRef'), code, message, ids, severity));
   if (root) for (const [i, screen] of (isObject(visual) && Array.isArray(visual.screens) ? visual.screens : []).entries())
     for (const [j, element] of (isObject(screen) && Array.isArray(screen.elements) ? screen.elements : []).entries())
       if (isObject(element) && element.kind !== 'plugin' && element.extension !== undefined)

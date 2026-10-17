@@ -17,3 +17,10 @@ test('old renderers reject routing and typed data bindings inside reusable compo
     await assert.rejects(exportGame({content:c,projectRoot:samplePath,destination:resolve(root,mode),target:'windows',runtimes:{windows:runtime,web:runtime}}),/free-screens-v1/);
   }
 });
+
+test('old renderers reject conditional presentation even inside unused reusable parts',async t=>{
+  const root=await temporary(t),runtime=resolve(root,'runtime');await mkdir(runtime);await writeFile(resolve(runtime,'RaisingPlayer.exe'),'test placeholder');
+  await writeFile(resolve(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:['.wav'],visualFeatures:['components-v1','anchors-v1','monthly-schedule-v1','free-screens-v1']}));
+  const c=await content(p=>{const v=createVisual();v.components=[{id:'card',label:'card',width:500,height:48,elements:[{id:'caption',kind:'text',x:0,y:0,width:500,height:48,text:'default',variants:[{label:'special',when:{op:'always'},values:{text:'changed'}}]}]}];doc(p,'project').visual=v;});
+  await assert.rejects(exportGame({content:c,projectRoot:samplePath,destination:resolve(root,'output'),target:'windows',runtimes:{windows:runtime,web:runtime}}),/presentation-variants-v1/);
+});

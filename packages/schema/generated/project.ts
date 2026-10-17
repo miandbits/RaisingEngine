@@ -8220,6 +8220,10 @@ export type Element = {
         itemId: string;
         owner?: CharacterOwner;
       };
+  /**
+   * @maxItems 64
+   */
+  variants?: PresentationVariant[];
 };
 export type ComponentChild = {
   [k: string]: unknown;
@@ -13474,6 +13478,10 @@ export type ComponentChild = {
         itemId: string;
         owner?: CharacterOwner;
       };
+  /**
+   * @maxItems 64
+   */
+  variants?: PresentationVariant[];
 };
 export type Effects = (
   | {
@@ -15347,6 +15355,22 @@ export interface Screen {
    */
   elements: Element[];
   modal?: boolean;
+}
+export interface PresentationVariant {
+  label: string;
+  when: Condition;
+  /**
+   * @minItems 1
+   */
+  activityIds?: [string, ...string[]];
+  values: {
+    text?: string;
+    imageAssetId?: string;
+    color?: string;
+    fill?: string;
+    opacity?: number;
+    extensionRef?: string;
+  };
 }
 export interface StyleValues {
   fontSize?: number;

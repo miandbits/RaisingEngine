@@ -221,6 +221,7 @@ private:
   void addRelationshipDisplay();
   void editScreenRouting();
   void editDataBinding();
+  void editPresentationVariants();
   void editProjectSettings();
   void receivePlayer();
   bool mayDiscard();

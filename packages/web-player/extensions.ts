@@ -45,6 +45,8 @@ export class ExtensionHost {
   /** Saved states of plugins missing in this build survive load→save round trips. */
   preserved: Record<string, unknown> = {};
   pendingRestore: Record<string, unknown> | null = null;
+  private restoreAwaitingCommit = false;
+  private presentationManaged = false;
   observations = 0; clockMs = 0; lastObserve: unknown = null;
   /** `event` notifications of update replies (newest last) and the sounds they named: presentation only. */
   recentEvents: Record<string, unknown>[] = []; eventCount = 0; soundCount = 0; soundsDelivered = 0;
@@ -120,6 +122,9 @@ export class ExtensionHost {
   /** One presentation tick: flush released mounts, update once, frame every mounted instance. */
   tick(dtMs: number): void {
     if (!this.active) return;
+    // A load can change the controller of an existing element. Wait for React's
+    // mount effects before restoring, otherwise the old controller rejects it.
+    if (this.restoreAwaitingCommit) return;
     for (const mount of [...this.mounts.values()]) if (mount.released) { this.unmount(mount); this.mounts.delete(mount.instance); }
     if (this.pendingRestore) { const saved = this.pendingRestore; this.pendingRestore = null; this.restore(saved); }
     const dt = Math.min(10000, Math.max(0, dtMs)); this.clockMs += dt;
@@ -164,19 +169,23 @@ export class ExtensionHost {
   items(instance: string): readonly ExtensionItem[] { return this.mounts.get(instance)?.items ?? NO_ITEMS; }
   /** Re-initializes plugins (new game / load) and re-mounts what is currently on screen. */
   reset(): void {
-    this.preserved = {}; this.pendingRestore = null;
+    this.preserved = {}; this.pendingRestore = null; this.restoreAwaitingCommit = false;
     for (const plugin of this.plugins.values()) if (plugin.available) this.init(plugin);
     for (const mount of this.mounts.values()) { mount.mounted = false; mount.items = NO_ITEMS; mount.frame = 0; if (!mount.released) this.mountRequest(mount); }
   }
   /** playerPresentation.extensions value, or undefined when no extension is in use. */
-  save(): Record<string, unknown> | undefined {
+  save(exact = false): Record<string, unknown> | undefined {
     if (!this.active) return undefined;
     const out: Record<string, unknown> = structuredClone(this.preserved);
-    for (const plugin of this.plugins.values()) if (plugin.available) { const reply = this.call(plugin, { op: 'saveAll' }); if (reply.ok && reply.state !== undefined) out[plugin.id] = reply.state; }
+    for (const plugin of this.plugins.values()) if (plugin.available) { const reply = this.call(plugin, { op: 'saveAll', ...(exact ? { exact: true } : {}) }); if (reply.ok && reply.state !== undefined) out[plugin.id] = reply.state; }
     return Object.keys(out).length ? out : undefined;
   }
   /** Applied after the restored screen has mounted its instances (next tick). */
-  scheduleRestore(saved: Record<string, unknown> | undefined): void { this.pendingRestore = saved && typeof saved === 'object' ? saved : null; }
+  scheduleRestore(saved: Record<string, unknown> | undefined, waitForCommit = false): void {
+    this.pendingRestore = saved && typeof saved === 'object' ? saved : null;
+    this.restoreAwaitingCommit = !!this.pendingRestore && waitForCommit && this.presentationManaged;
+  }
+  commitPresentation(): void { this.presentationManaged = true; this.restoreAwaitingCommit = false; }
   restore(saved: Record<string, unknown>): void {
     for (const [id, state] of Object.entries(saved)) {
       const plugin = this.plugins.get(id);

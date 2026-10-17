@@ -36,7 +36,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> => value !==
 export function pluginElements(visual: unknown): PluginElementRef[] {
   if (!isRecord(visual) || !Array.isArray(visual.screens)) return [];
   return visual.screens.flatMap((screen, i) => isRecord(screen) && Array.isArray(screen.elements)
-    ? screen.elements.flatMap((element, j) => isRecord(element) && element.kind === 'plugin' ? [{ pointer: `/visual/screens/${i}/elements/${j}`, element: element as PluginElementRef['element'] }] : [])
+    ? screen.elements.flatMap((element, j) => {
+      if(!isRecord(element)||element.kind!=='plugin')return [];
+      const pointer=`/visual/screens/${i}/elements/${j}`;
+      const variants=(Array.isArray(element.variants)?element.variants:[]).flatMap((rule,k)=>
+        isRecord(rule)&&isRecord(rule.values)&&typeof rule.values.extensionRef==='string'&&isRecord(element.extension)
+          ?[{pointer:`${pointer}/variants/${k}/values`,element:{...element,extension:{...element.extension,ref:rule.values.extensionRef}} as PluginElementRef['element']}]:[]);
+      return [{pointer,element:element as PluginElementRef['element']},...variants];
+    })
     : []);
 }
 export const extensionPath = (plugin: string, type: string, id: string) => `plugins/${plugin}/${type}/${id}.json`;
