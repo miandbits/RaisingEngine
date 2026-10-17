@@ -54,6 +54,7 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
     result.collections[screen.id]=collections;result.availability[screen.id]=availability;
     for(const element of resolveScreenElements(design,screen.id)){
       const command=element.kind==='button'?widgetCommand(element,state):null;
+      if(element.kind==='button'&&element.action==='assignActivity'&&!command)availability[element.id]={enabled:false,reason:state?'캐릭터별 활동 배정을 사용할 수 없습니다.':'게임 시작 후 사용할 수 있습니다.'};
       if(command&&(element.uiContext||battleUiTypes.includes(command.type)))availability[element.id]=allowedCommand(command);
     }
     for(const source of screen.elements){
@@ -64,7 +65,9 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
       const width=design.components?.find(c=>c.id===element.componentId)?.width??element.width;
       for(const row of rows)for(const child of resolveCollectionRow(design,element,row,width)){
         checkConditions(child);
-        const command=child.kind==='button'?widgetCommand(child,state):null;if(!command)continue;
+        const command=child.kind==='button'?widgetCommand(child,state):null;
+        if(child.kind==='button'&&child.action==='assignActivity'&&!command)availability[child.id]={enabled:false,reason:state?'캐릭터별 활동 배정을 사용할 수 없습니다.':'게임 시작 후 사용할 수 있습니다.'};
+        if(!command)continue;
         availability[child.id]=allowedCommand(command);
       }
     }

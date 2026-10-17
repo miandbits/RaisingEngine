@@ -148,6 +148,7 @@ export class WebPlayerController implements PlayerBridge {
     let command: unknown;
     switch (action.type) {
       case 'confirmBattleAction': command=battleCommand; break;
+      case 'executeActorAction': case 'assignActivities':
       case 'navigate': case 'visit': case 'buy': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy': case 'interact': command = action; break;
       case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'startNodeBattle': case 'battleAction': command = action; break;
       case 'schedule': case 'commitPlan': command = { type: 'setSchedule', activityIds: action.activityIds }; break;

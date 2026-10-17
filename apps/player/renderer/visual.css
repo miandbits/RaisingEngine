@@ -72,3 +72,17 @@
 .visual-plugin-region > img { position:absolute; left:0; top:0; max-width:none; transform-origin:0 0; }
 .visual-plugin-placeholder { box-sizing:border-box; width:100%; height:100%; padding:8px; display:flex; flex-direction:column; align-items:center; gap:4px; border:2px dashed #b98f5e; background:rgba(70,52,62,.6); color:#fff0d0; font-size:18px; text-align:center; }
 .visual-plugin-placeholder small { font-size:14px; opacity:.85; }
+
+.roster-schedule { display: flex; flex-direction: column; gap: 6px; height: 100%; overflow: auto; }
+.roster-schedule-actors, .roster-schedule-actions { display: flex; gap: 12px; }
+.roster-schedule-actors label { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.roster-schedule select, .roster-schedule button { font: inherit; min-width: 0; }
+.roster-schedule select { width: 100%; }
+.roster-schedule-actions button { flex: 1; }
+
+.visual-actor-results { display: flex; gap: 20px; line-height: 1.2; }
+.visual-actor-results > div { flex: 1; min-width: 0; white-space: pre-wrap; }
+.roster-schedule { line-height: 1.2; gap: 4px; }
+.roster-schedule .roster-schedule-actors label { padding: 0; background: transparent; border-radius: 0; }
+.roster-schedule select { padding: 4px 8px; margin-top: 0; }
+.roster-schedule-actions button { padding: 4px 8px; line-height: 1.2; }

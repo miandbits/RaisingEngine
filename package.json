@@ -51,7 +51,7 @@
     "build:android": "node scripts/build-android.mjs",
     "test:mobile": "node --test tests/mobile/*.test.mjs",
     "build:addon": "node scripts/build-native-addon.mjs",
-    "test:journey:ui": "npm run build:studio && npm run build:web && npm run build:native-player && node --test --test-concurrency=1 tests/journey/electron.test.mjs tests/journey/polish-editor.test.mjs tests/journey/hud-editor.test.mjs tests/journey/hud-contracts.test.mjs tests/journey/scale-ui.test.mjs tests/journey/web.test.mjs tests/journey/native-ui.test.mjs tests/journey/visual-navigation.test.mjs",
+    "test:journey:ui": "npm run build:studio && npm run build:web && npm run build:native-player && node --test --test-concurrency=1 tests/journey/electron.test.mjs tests/journey/polish-editor.test.mjs tests/journey/hud-editor.test.mjs tests/journey/hud-contracts.test.mjs tests/journey/scale-ui.test.mjs tests/journey/web.test.mjs tests/journey/component-context-web.test.mjs tests/journey/native-ui.test.mjs tests/journey/visual-navigation.test.mjs",
     "test:native": "npm run build && npm run build:wasm && node --test --test-concurrency=1 tests/native/*.test.mjs",
     "test:native-player": "npm run build && npm run build:native-player && node --test --test-concurrency=1 tests/native-player/*.test.mjs tests/journey/native-ui.test.mjs tests/journey/native-dropdown.test.mjs",
     "build:plugin:cutout": "node plugins/cutout-animation/tools/build.mjs win wasm studio test && node plugins/cutout-animation/tools/package.mjs",

@@ -46,4 +46,4 @@ Qt 제작 시험은 `RAISING_QT_COMPONENT_CONTEXT=1`, `RAISING_QT_PROJECT`를 **
 
 ## 배포 범위
 
-Windows 네이티브 플레이어를 실제 검증한다. 새 기능은 런타임 기능표의 `component-context-v1`을 요구한다. 지원 표시가 없는 구형 Windows 및 웹 런타임에는 내보내기를 차단한다. TypeScript 표시/명령 경로는 구현했지만 웹 전체 통합 검증 및 기능표 승격은 별도 작업이다. 모바일·콘솔 검증을 의미하지 않는다.
+Windows 네이티브 플레이어와 Chrome의 C++ Wasm 웹 플레이어에서 같은 샘플을 실제 검증한다. 웹 런타임은 `component-context-v1`, `roster-activities-v1`, `character-scoped-rules-v1`을 지원한다. 지원 표시가 없는 구형 런타임에는 내보내기를 계속 차단한다. 웹 재현 방법과 저장 파일 교환 검사는 [웹 부품 연결 검증](web-component-context.md)을 참고한다. 이번 검증은 모바일·콘솔 또는 모든 브라우저의 검증을 의미하지 않는다.

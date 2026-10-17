@@ -12,10 +12,13 @@ import { logicalViewport, resolveScreenElements } from '../../../packages/visual
 import { resolveCollectionRow, type BoundElement } from '../../../packages/visual/data-ui.js';
 import type { DataUiProjection } from '../../../packages/visual/data-ui-projection.js';
 import {ScheduleWidget,useSchedulePlanner,type ScheduleActivity} from './ScheduleWidget.js';
+import {RosterSchedule} from './RosterSchedule.js';
 import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  characters?: readonly {id:string;name:string}[];
+  actorResults?: readonly {characterId:string;text:string}[];
   dataState?: import('../../../packages/core/model.js').RunState | null;
   userFields?:readonly {id:string;label:string;initial:string;minLength:number;maxLength:number}[];
   userValues?:Readonly<Record<string,string>>;
@@ -86,6 +89,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='group')style.pointerEvents='none';
       if(element.fontAssetId)style.fontFamily=`"engine-${element.fontAssetId}", sans-serif`;
       if(element.padding!==undefined)style.padding=element.padding;
+      else if(element.kind==='text'&&element.uiContext)style.padding=0;
       if(element.borderWidth!==undefined){style.borderWidth=element.borderWidth;style.borderStyle='solid';style.borderColor=element.borderColor??'#57806c';}
       Object.assign(style,{'--style-hover':element.hoverFill,'--style-pressed':element.pressedFill,'--style-disabled':element.disabledColor});
       const source=imageFor(element,context);
@@ -101,9 +105,13 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       }
       if(element.kind==='meter')body=<div className="visual-meter" style={{'--meter-track':element.fill??'transparent'} as React.CSSProperties}><span>{element.text??element.label??''}</span><progress aria-label={element.label??element.text??element.id} max={Math.max(1,element.maxValue??100)} value={Math.max(0,Math.min(element.value??0,element.maxValue??100))}/></div>;
       if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
-      if(element.kind==='schedule')body=<ScheduleWidget element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
+      if(element.kind==='schedule')body=context.dataState?.roster
+        ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)}/>
+        :<ScheduleWidget element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
       if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue">{context.story}</p>;
-      if(element.kind==='result')body=<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
+      if(element.kind==='result')body=context.actorResults?.length
+        ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
+        :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
       if(element.kind==='choices')body=<div className="visual-choices">{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true},{id:'preview-two',text:'조금 더 준비한다',enabled:true}]:context.choices).map(c=><button key={c.id} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{c.text}{!c.enabled&&<small>조건 미충족</small>}</button>)}</div>;
       if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||element.action==='advance'&&['choice','finished','title'].includes(context.phase)} onClick={()=>element.action&&onAction?.(element.action,element)}>{element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼'}</button>;
       if(element.kind==='collection'){
