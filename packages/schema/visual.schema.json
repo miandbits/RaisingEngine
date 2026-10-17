@@ -634,6 +634,52 @@
               }
             }
           }
+        },
+        "conditions": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "screenId",
+              "when"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "screenId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "when": {
+                "$ref": "common.schema.json#/$defs/condition"
+              },
+              "phases": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "title",
+                    "planning",
+                    "ready",
+                    "activity-result",
+                    "period-end",
+                    "dialogue",
+                    "choice",
+                    "finished",
+                    "expedition",
+                    "battle"
+                  ]
+                }
+              }
+            }
+          }
         }
       }
     }

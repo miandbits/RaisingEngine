@@ -6,6 +6,14 @@ import {content,doc,temporary,samplePath} from './helpers.mjs';
 import {createVisual} from '../../dist/packages/visual/model.js';
 import {exportGame} from '../../dist/packages/export-service/export.js';
 
+test('old renderers reject conditional routing on Windows and web',async t=>{
+  const root=await temporary(t),runtime=resolve(root,'runtime');await mkdir(runtime);
+  await writeFile(resolve(runtime,'RaisingPlayer.exe'),'test placeholder');await writeFile(resolve(runtime,'index.html'),'test placeholder');
+  await writeFile(resolve(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:['.wav'],visualFeatures:['free-screens-v1']}));
+  const c=await content(p=>{const v=createVisual();v.routing={defaultScreenId:'title',phases:[],conditions:[{label:'always',screenId:'schedule',when:{op:'always'}}]};doc(p,'project').visual=v;});
+  for(const target of ['windows','web'])await assert.rejects(exportGame({content:c,projectRoot:samplePath,destination:resolve(root,target),target,runtimes:{windows:runtime,web:runtime}}),/conditional-routing-v1/);
+});
+
 test('old renderers reject routing and typed data bindings inside reusable components',async t=>{
   const root=await temporary(t),runtime=resolve(root,'runtime');await mkdir(runtime);await writeFile(resolve(runtime,'RaisingPlayer.exe'),'test placeholder');
   await writeFile(resolve(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:['.wav'],visualFeatures:['components-v1','anchors-v1','monthly-schedule-v1']}));

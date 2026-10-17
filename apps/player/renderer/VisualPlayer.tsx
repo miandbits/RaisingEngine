@@ -82,7 +82,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   const portraitTransforms:NonNullable<VisualContext['portraitTransforms']>={};
   for(const p of scene?.portraits??[]) {const id=view.characters.find(c=>c.id===p.characterId)?.portraits[p.portraitId];if(id)portraits[p.position]=id;}
   for(const p of scene?.portraits??[])portraitTransforms[p.position]=p;
-  const screen:ScreenId=!s&&design.routing&&titleScreen?titleScreen:resolveScreen(design,s??null,node?.type);
+  const screen:ScreenId=!s&&design.routing&&titleScreen?titleScreen:resolveScreen(design,s??null,node?.type,view.dataUi?.conditions);
   const result=s?.lastActivityResult;
   const noNumericChanges=result&&!result.changes.some(c=>c.kind==='numeric'&&c.delta!==0);
 

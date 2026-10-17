@@ -177,6 +177,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
     const routing=visual.routing as JsonObject;
     const check=(value:unknown,path:string)=>{const screen=objectItems(visual.screens).find(s=>s.id===value);if(!screen||screen.modal)ctx.report(doc,path,'UI_ROUTE_REFERENCE','전환 대상 일반 화면이 없습니다.');};
     check(routing.defaultScreenId,'/visual/routing/defaultScreenId');
+    for(const [i,route] of objectItems(routing.conditions).entries())check(route.screenId,`/visual/routing/conditions/${i}/screenId`);
     const phases=new Set<unknown>();for(const [i,route] of objectItems(routing.phases).entries()){
       if(phases.has(route.phase))ctx.report(doc,`/visual/routing/phases/${i}/phase`,'UI_ROUTE_DUPLICATE','같은 진행 상태의 전환 규칙이 중복되었습니다.');
       phases.add(route.phase);check(route.screenId,`/visual/routing/phases/${i}/screenId`);

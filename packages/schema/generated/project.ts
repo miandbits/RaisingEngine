@@ -15316,6 +15316,697 @@ export interface VisualDesign {
             screenId: string;
           }
         ];
+    /**
+     * @maxItems 64
+     */
+    conditions?: {
+      label: string;
+      screenId: string;
+      when: Condition;
+      /**
+       * @minItems 1
+       * @maxItems 10
+       */
+      phases?:
+        | [
+            | "title"
+            | "planning"
+            | "ready"
+            | "activity-result"
+            | "period-end"
+            | "dialogue"
+            | "choice"
+            | "finished"
+            | "expedition"
+            | "battle"
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ]
+        | [
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            ),
+            (
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle"
+            )
+          ];
+    }[];
   };
 }
 export interface Scene {

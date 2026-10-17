@@ -14,6 +14,8 @@ test('Qt-authored blank canvas: schedule, relation, dialogue, both choices and m
   const packed=JSON.parse(await readFile(resolve(bundle,'game.json'),'utf8')),c=packed.content??packed;
   const flow=c.project.authoring.storyFlows[0],design=c.project.visual,screen=design.routing.defaultScreenId;
   const elements=resolveScreenElements(design,screen),button=(action,when)=>elements.find(e=>e.action===action&&(!when||e.visibleWhen===when)).id;
+  const routed=state=>{const active=state.activeNarrative;const type=active?(active.kind==='event'?c.events:c.endings).find(e=>e.id===active.id)?.nodes.find(n=>n.id===active.nodeId)?.type:undefined;
+    const conditions=Object.fromEntries((design.routing.conditions??[]).map(r=>[JSON.stringify(r.when),nativeRequest({operation:'evaluate',content:c,state,condition:r.when}).value===true]));return resolveScreen(design,state,type,conditions);};
   const root=await mkdtemp(resolve('.cache/free-screens/play-'));
   for(const choice of flow.choices){
     let session=createSession(c,42,{mode:'full'}).session;
@@ -58,7 +60,7 @@ test('Qt-authored blank canvas: schedule, relation, dialogue, both choices and m
     const report=JSON.parse(await readFile(reportPath,'utf8'));assert.equal(run.status,0,JSON.stringify(report.error??run.stderr));assert.equal(report.ok,true);
     const ui=id=>report.steps.find(s=>s.command.checkpoint===id).ui;
     for(const [id,state] of Object.entries(expected)){
-      assert.deepEqual(ui(id).state,state,id);assert.equal(ui(id).screenId,resolveScreen(design,state),'same freely authored canvas');
+      assert.deepEqual(ui(id).state,state,id);assert.equal(ui(id).screenId,routed(state),'authored screen routing at '+id);
       if(ui(id).screenId===screen)for(const element of elements.filter(e=>e.kind==='text'&&e.variants?.length)){
         const projected=resolvePresentation(element,presentationActivity(state),condition=>nativeRequest({operation:'evaluate',content:c,state,condition}).value===true);
         if(!projected.binding||projected.binding==='none')assert.equal(ui(id).texts[element.id],projected.text,`conditional text at ${id}`);
@@ -68,7 +70,7 @@ test('Qt-authored blank canvas: schedule, relation, dialogue, both choices and m
     assert.equal(ui('initial').texts[relation.id],`${flow.characterName} · 신뢰: 0`);
     assert.equal(ui('ending-restored').texts[relation.id],`${flow.characterName} · 신뢰: ${choice.delta}`);
     const fresh=resolve(root,choice.id+'-fresh.json'),freshReport=resolve(root,choice.id+'-fresh-report.json');await writeFile(fresh,JSON.stringify([{click:button('load')},{checkpoint:'fresh'}]));
-    const again=spawnSync(resolve(bundle,'RaisingPlayer.exe'),['--bundle',bundle,'--save',save,'--automation',fresh,'--report',freshReport],{encoding:'utf8',timeout:30000,windowsHide:true});assert.equal(again.status,0,again.stderr);const restored=JSON.parse(await readFile(freshReport,'utf8'));assert.deepEqual(restored.final.state,session.state);assert.equal(restored.final.screenId,screen);
+    const again=spawnSync(resolve(bundle,'RaisingPlayer.exe'),['--bundle',bundle,'--save',save,'--automation',fresh,'--report',freshReport],{encoding:'utf8',timeout:30000,windowsHide:true});assert.equal(again.status,0,again.stderr);const restored=JSON.parse(await readFile(freshReport,'utf8'));assert.deepEqual(restored.final.state,session.state);assert.equal(restored.final.screenId,routed(session.state));
   }
   await writeFile(resolve('.cache/free-screens/play-evidence.txt'),root);console.log(`Actual player evidence: ${root}`);
 });

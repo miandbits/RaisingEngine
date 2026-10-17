@@ -1,4 +1,6 @@
 #include "studio.hpp"
+#include "logic-editor.hpp"
+#include <memory>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -11,9 +13,10 @@ void StudioWindow::editScreenRouting() {
   const auto project=projectData(),visual=project.value("visual").toObject();
   const auto revision=view.value("revision"),root=view.value("root");
   if(visual.value("screens").toArray().isEmpty())return;
-  auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("screenRoutingDialog");dialog->setWindowTitle(tr("화면 전환 연결"));dialog->resize(560,530);
-  auto layout=new QVBoxLayout(dialog);auto help=new QLabel(tr("화면은 자유로운 캔버스입니다. 게임 상태별로 표시할 화면을 선택하세요.\n‘기본 화면’을 선택하면 일정·대화·관계를 같은 화면에 함께 배치할 수 있습니다.\n버튼의 ‘화면 이동’은 현재 상태에서 화면만 바꿉니다. 게임 상태가 바뀌면 이 규칙을 다시 적용합니다."));help->setWordWrap(true);layout->addWidget(help);
-  auto form=new QFormLayout;layout->addLayout(form);const auto routing=visual.value("routing").toObject();
+  auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("screenRoutingDialog");dialog->setWindowTitle(tr("화면 전환 연결"));dialog->resize(740,720);
+  auto layout=new QVBoxLayout(dialog);auto help=new QLabel(tr("화면 선택 우선순위: ① 명시적 이동 → ② 조건별 연결(위부터) → ③ 장소 → ④ 진행 단계 → ⑤ 기본 화면\n명시적 이동은 진행 단계 변경·장소 이동·대사 진행·선택 시 해제됩니다. 같은 단계의 상태 변경만으로는 해제되지 않습니다.\n모달은 현재 화면 위에 열리며 닫으면 기존 화면을 표시합니다. ‘화면 이동’은 뒤로 가기 이력을 만들지 않습니다."));help->setObjectName("routingPriority");help->setWordWrap(true);layout->addWidget(help);
+  auto tabs=new QTabWidget;tabs->setObjectName("routingTabs");layout->addWidget(tabs,1);auto basic=new QWidget;auto basicLayout=new QVBoxLayout(basic);tabs->addTab(basic,tr("기본·진행 단계"));
+  auto form=new QFormLayout;basicLayout->addLayout(form);const auto routing=visual.value("routing").toObject();
   auto defaultScreen=new QComboBox;defaultScreen->setObjectName("routingDefault");
   for(const auto& value:visual.value("screens").toArray()){const auto s=value.toObject();if(!s.value("modal").toBool())defaultScreen->addItem(s.value("label").toString(),s.value("id").toString());}
   auto current=routing.value("defaultScreenId").toString(screenId);defaultScreen->setCurrentIndex(qMax(0,defaultScreen->findData(current)));form->addRow(tr("기본 화면"),defaultScreen);
@@ -23,15 +26,20 @@ void StudioWindow::editScreenRouting() {
     for(const auto& r:routing.value("phases").toArray())if(r.toObject().value("phase")==phase.first)field->setCurrentIndex(qMax(0,field->findData(r.toObject().value("screenId").toString())));
     form->addRow(phase.second,field);fields.append(field);
   }
-  auto location=new QCheckBox(tr("일정 계획·준비 중에는 장소의 연결 화면을 우선 사용"));location->setObjectName("routingLocation");location->setChecked(routing.value("useLocationScreens").toBool());layout->addWidget(location);
+  auto location=new QCheckBox(tr("일정 계획·준비 중에는 장소의 연결 화면을 우선 사용"));location->setObjectName("routingLocation");location->setChecked(routing.value("useLocationScreens").toBool());basicLayout->addWidget(location);
+#include "routing-conditions.inc"
   auto error=new QLabel;error->setWordWrap(true);layout->addWidget(error);
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Ok)->setText(tr("전환 연결 적용"));layout->addWidget(buttons);
+  connect(debug,&QPushButton::clicked,dialog,[=]{dialog->setProperty("inspectAfterApply",true);buttons->button(QDialogButtonBox::Ok)->click();});
   connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
   connect(buttons,&QDialogButtonBox::accepted,dialog,[=,this]{
     if(busy()||view.value("revision")!=revision||view.value("root")!=root){error->setText(tr("프로젝트가 변경되었습니다. 다시 열어 주세요."));return;}
     if(defaultScreen->currentIndex()<0){error->setText(tr("일반 화면을 먼저 만드세요."));return;}
     QJsonArray routes;for(int i=0;i<phases.size();++i)if(!fields[i]->currentData().toString().isEmpty())routes.append(QJsonObject{{"phase",phases[i].first},{"screenId",fields[i]->currentData().toString()}});
-    auto updated=project,v=visual;v["routing"]=QJsonObject{{"defaultScreenId",defaultScreen->currentData().toString()},{"phases",routes},{"useLocationScreens",location->isChecked()}};updated["visual"]=v;replaceProject(updated);dialog->accept();
+    auto updated=project,v=visual;v["routing"]=QJsonObject{{"defaultScreenId",defaultScreen->currentData().toString()},{"phases",routes},{"useLocationScreens",location->isChecked()}};auto next=v.value("routing").toObject();if(!rules->isEmpty())next["conditions"]=*rules;v["routing"]=next;updated["visual"]=v;
+    const bool inspect=dialog->property("inspectAfterApply").toBool();
+    if(updated==project){dialog->accept();if(inspect)showRuleDebugger();return;}
+    request("edit",{{"edit",QJsonObject{{"type","replace"},{"file",projectFile},{"data",updated}}}},[this,guard=QPointer<QDialog>(dialog),inspect](QJsonObject reply){if(!guard)return;if(!reply.value("error").toString().isEmpty())return;guard->accept();if(inspect)showRuleDebugger();});
   });dialog->open();
 }
 

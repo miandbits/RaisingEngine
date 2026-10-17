@@ -1,3 +1,4 @@
+import { explainScreen } from '../visual/routing.js';
 import { randomUUID } from 'node:crypto';
 import { nativeRequest } from '../native-bridge/index.js';
 import type { ContentSnapshot, RunState } from '../core/model.js';
@@ -59,7 +60,17 @@ export class RuleDebugSession {
   private projection(): unknown {
     const reply = this.native({ operation: 'view', state: this.current });
     if (!reply.ok) throw new Error(reply.error?.message ?? '디버그 상태를 표시할 수 없습니다.');
-    const { ok: _ok, ...view } = reply; return view;
+    const { ok: _ok, ...view } = reply;
+    const design=this.content.project.visual;
+    if(design) {
+      const conditions:Record<string,boolean>={};
+      for(const rule of design.routing?.conditions??[]) {
+        const result=this.native({operation:'evaluate',state:this.current,condition:rule.when});
+        conditions[JSON.stringify(rule.when)]=result.ok&&result.value===true;
+      }
+      view.routing=explainScreen(design,this.current,view.narrative?.node?.type,conditions);
+    }
+    return view;
   }
   /** Import a player's replay-validated save, never an arbitrary state object. */
   async loadSave(text: string): Promise<Row> {

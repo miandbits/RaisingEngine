@@ -17,6 +17,10 @@ type Reply={ok:boolean;value?:unknown;error?:{message?:string}};
 export function projectDataUi(content:ContentSnapshot,state:RunState|null,gameplay:GameplayView|null,request:(input:unknown)=>unknown,extra:{systems?:SystemsView|null;battleSelection?:BattleSelection|null}={}):DataUiProjection {
   const result:DataUiProjection={collections:{},conditions:{},availability:{}};
   const design=content.project.visual;if(!design)return result;
+  for(const rule of design.routing?.conditions??[]) {
+    const reply=request({operation:'evaluate',content,state,condition:rule.when}) as Reply;
+    result.conditions[JSON.stringify(rule.when)]=reply.ok&&reply.value===true;
+  }
   const checkConditions=(element:Readonly<Element>)=>{
     for(const condition of [element.visibleCondition,element.enabledCondition,...(element.variants??[]).map(rule=>rule.when)])if(condition){
       const key=JSON.stringify(condition);if(Object.hasOwn(result.conditions,key))continue;

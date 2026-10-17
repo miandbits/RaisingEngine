@@ -802,6 +802,12 @@ public:
       if(routing.value("useLocationScreens",false)&&(raw_phase=="planning"||raw_phase=="ready")&&!game.state.is_null()&&game.state.contains("gameplay")) {
         const auto id=game.state.at("gameplay").value("screenId","");for(const auto& screen:visual.at("screens"))if(screen.at("id")==id)screen_id=id;
       }
+      // First matching authored rule wins over location/phase/default, below explicit navigation.
+      for(const auto& rule:routing.value("conditions",Json::array())) {
+        const auto phases=rule.value("phases",Json::array());
+        if(!phases.empty()&&std::find(phases.begin(),phases.end(),Json(key))==phases.end())continue;
+        if(visual_condition(rule.at("when"))){screen_id=rule.at("screenId").get<std::string>();break;}
+      }
       if(!game.state.is_null()&&game.state.contains("uiScreenId"))screen_id=game.state.at("uiScreenId").get<std::string>();
       else if(game.state.is_null()&&!title_screen.empty())screen_id=title_screen;
     }
