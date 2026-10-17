@@ -34,6 +34,7 @@ export function JourneyWidget({ element, gameplay, relationships, busy, editing,
   const affordable=(costs:readonly {attributeId:string;amount:number}[],q:number)=>{const totals=new Map<string,number>();for(const c of costs)totals.set(c.attributeId,(totals.get(c.attributeId)??0)+c.amount*q);return [...totals].every(([id,amount])=>{const stat=stats.find(s=>s.id===id);return !stat||stat.value-amount>=stat.min;});};
   const costs=(rows:readonly {attributeId:string;amount:number}[],q=1)=>rows.map(c=>`${stats.find(s=>s.id===c.attributeId)?.label??c.attributeId} ${c.amount*q}`).join(' · ')||'무료';
   const effects=(rows:FacilityView['effects'],q=1)=>rows.map(e=>{
+    if(e.op==='setState')return '상태 변경';
     if(e.op==='setFlag')return `${e.flagId} ${e.value?'켜짐':'꺼짐'}`;
     const target=e.target;
     const label=target.kind==='attribute'?stats.find(s=>s.id===target.attributeId)?.label??target.attributeId:target.kind==='inventory'?items?.find(i=>i.id===target.itemId)?.name??target.itemId:target.relationshipId;

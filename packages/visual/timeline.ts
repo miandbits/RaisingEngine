@@ -42,14 +42,17 @@ function targetLabel(content:ContentSnapshot,target:NumericTarget):string {
 }
 /** Aggregate committed changes only. This is never a simulation or a source of effects. */
 export function timelineChangesText(content:ContentSnapshot,changes:readonly Change[]):string {
-  const values=new Map<string,{label:string,delta?:number,flag?:boolean}>();
+  const values=new Map<string,{label:string,delta?:number,flag?:boolean,state?:string}>();
   for(const change of changes){
     if(change.kind==='numeric'){
       const target=change.target,key=target.kind==='attribute'?`a:${target.attributeId}`:target.kind==='inventory'?`i:${target.itemId}`:`r:${target.characterId}:${target.relationshipId}`;
       const prior=values.get(key);values.set(key,{label:targetLabel(content,target),delta:(prior?.delta??0)+change.delta});
+    }else if(change.kind==='state'){
+      const group=content.project.stateGroups?.find(g=>g.id===change.stateGroupId);
+      values.set(`s:${change.characterId??''}:${change.stateGroupId}`,{label:group?.name??change.stateGroupId,state:group?.values.find(v=>v.id===change.after)?.name??change.after});
     }else values.set(`f:${change.flagId}`,{label:content.flags.find(x=>x.id===change.flagId)?.label??change.flagId,flag:change.after});
   }
-  return [...values.values()].filter(x=>x.delta===undefined||x.delta!==0).map(x=>x.delta===undefined?`${x.label}: ${x.flag?'true':'false'}`:`${x.label} ${x.delta>=0?'+':''}${x.delta}`).join(', ');
+  return [...values.values()].filter(x=>x.delta===undefined||x.delta!==0).map(x=>x.delta===undefined?`${x.label}: ${x.state??(x.flag?'true':'false')}`:`${x.label} ${x.delta>=0?'+':''}${x.delta}`).join(', ');
 }
 
 /** Compile authored presentation against one already committed activity result. */

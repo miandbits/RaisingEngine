@@ -17,12 +17,13 @@ inline std::string timeline_changes_text(const Json& content,const Json& changes
   for(const auto& change:changes) {
     std::string key,label;Json value;
     if(change.value("kind","")=="numeric") {key=change.at("target").dump();label=timeline_target_label(content,change.at("target"));value={{"label",label},{"delta",change.at("delta")}};}
+    else if(change.value("kind","")=="state") {key="state:"+change.value("characterId","")+":"+change.value("stateGroupId","");label=change.value("stateGroupId","");std::string name=change.value("after","");for(const auto &g:content.at("project").value("stateGroups",Json::array()))if(g.at("id")==change.at("stateGroupId")){label=g.value("name",label);for(const auto &v:g.at("values"))if(v.at("id")==change.at("after"))name=v.value("name",name);}value={{"label",label},{"state",name}};}
     else {key="flag:"+change.value("flagId","");label=change.value("flagId","");for(const auto& flag:content.at("flags"))if(flag.at("id")==change.at("flagId"))label=flag.value("label",label);value={{"label",label},{"flag",change.at("after")}};}
     bool found=false;for(auto& pair:values)if(pair.first==key){if(value.contains("delta"))value["delta"]=pair.second.value("delta",0)+value.at("delta").get<int>();pair.second=value;found=true;break;}if(!found)values.emplace_back(key,value);
   }
   std::string result;for(const auto& pair:values){const auto& value=pair.second;std::string text;
     if(value.contains("delta")){const int delta=value.at("delta");if(!delta)continue;text=value.value("label","")+" "+(delta>=0?"+":"")+std::to_string(delta);}
-    else text=value.value("label","")+": "+(value.value("flag",false)?"true":"false");
+    else text=value.value("label","")+": "+(value.contains("state")?value.value("state",""):(value.value("flag",false)?"true":"false"));
     if(!result.empty())result+=", ";result+=text;
   }return result;
 }

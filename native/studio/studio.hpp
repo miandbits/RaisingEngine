@@ -222,6 +222,7 @@ private:
   void editScreenRouting();
   void editDataBinding();
   void editPresentationVariants();
+  void editCustomStates();
   void editProjectSettings();
   void receivePlayer();
   bool mayDiscard();

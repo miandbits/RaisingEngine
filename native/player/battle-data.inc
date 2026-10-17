@@ -26,6 +26,7 @@
       size_t index=0;for(const auto& change:last.value("rewardChanges",Json::array())) {
         ++index;std::string name,entryKind,text;int amount=0,lost=0;
         if(change.value("kind","")=="flag") {name=change.value("flagId","");for(const auto& flag:display_content.at("flags"))if(flag.at("id")==change.at("flagId"))name=flag.value("label",name);entryKind="flag";amount=change.value("after",false)?1:0;text=name+": "+(amount?"true":"false");}
+        else if(change.value("kind","")=="state"){name=change.value("stateGroupId","");entryKind="state";text=timeline_changes_text(display_content,Json::array({change}));}
         else {const auto target=change.at("target");amount=change.value("delta",0);const auto type=target.value("kind","");entryKind=type=="inventory"?"item":type;name=timeline_target_label(display_content,target);
           if(type=="inventory")for(auto it=discarded.begin();it!=discarded.end();++it)if(it->first==target.at("itemId")){lost=it->second;discarded.erase(it);break;}
           text=name+" "+(amount>=0?"+":"")+std::to_string(amount);if(lost)text+=" (버림 "+std::to_string(lost)+")";

@@ -1,3 +1,4 @@
+import { createCustomStates } from './custom-states.js';
 import { createProgression, guardProgression, startTimedAction, progressSession } from './progression.js';
 import { startCalendar } from './unified-time.js';
 import { resolveUserValues } from './user-fields.js';
@@ -82,6 +83,7 @@ export function createRun(content: ContentSnapshot, seed: number,
     if (content.project.systems) state.systems = createSystems();
     if (options.initialOverrides !== undefined) mergeOverrides(content, state, options.initialOverrides, '/initialOverrides');
     createRoster(content, state);
+    createCustomStates(content, state);
     createProgression(content, state);
     return { ok: true, state: freeze(state) };
   } catch (error) {

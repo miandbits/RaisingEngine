@@ -45,7 +45,8 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
       else {
         const costs=row.costs.map(c=>`${view.attributes.find(a=>a.id===c.attributeId)?.label??c.attributeId} ${c.amount*quantity}`).join(' · ')||'무료';
         const effects=row.effects.map(e=>{
-          if(e.op==='setFlag')return `${e.flagId} ${e.value?'켜짐':'꺼짐'}`;
+          if(e.op==='setState')return '상태 변경';
+    if(e.op==='setFlag')return `${e.flagId} ${e.value?'켜짐':'꺼짐'}`;
           const target=e.target;
           const label=target.kind==='attribute'?view.attributes.find(a=>a.id===target.attributeId)?.label??target.attributeId:target.kind==='inventory'?definition?.items.find(i=>i.id===target.itemId)?.name??target.itemId:target.relationshipId;
           return `${label} ${e.op==='set'?'= ':''}${e.value.op==='literal'?`${e.op==='add'&&e.value.value>=0?'+':''}${e.value.value*(e.op==='add'?quantity:1)}`:'현재 상태 기준 계산'}`;
@@ -60,7 +61,8 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
       else {
         const costs=row.costs.map(c=>`${view.attributes.find(a=>a.id===c.attributeId)?.label??c.attributeId} ${c.amount*quantity}`).join(' · ')||'무료';
         const effects=row.effects.map(e=>{
-          if(e.op==='setFlag')return `${e.flagId} ${e.value?'켜짐':'꺼짐'}`;
+          if(e.op==='setState')return '상태 변경';
+    if(e.op==='setFlag')return `${e.flagId} ${e.value?'켜짐':'꺼짐'}`;
           const target=e.target;
           const label=target.kind==='attribute'?view.attributes.find(a=>a.id===target.attributeId)?.label??target.attributeId:target.kind==='inventory'?definition?.items.find(i=>i.id===target.itemId)?.name??target.itemId:target.relationshipId;
           return `${label} ${e.op==='set'?'= ':''}${e.value.op==='literal'?`${e.op==='add'&&e.value.value>=0?'+':''}${e.value.value*(e.op==='add'?quantity:1)}`:'현재 상태 기준 계산'}`;

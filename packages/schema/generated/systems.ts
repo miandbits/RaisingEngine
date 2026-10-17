@@ -75,6 +75,12 @@ export type Effects = (
       flagId: string;
       value: boolean;
     }
+  | {
+      op: "setState";
+      stateGroupId: string;
+      stateValueId: string;
+      owner?: CharacterOwner;
+    }
 )[];
 export type Condition =
   | {
@@ -105,6 +111,12 @@ export type Condition =
   | {
       op: "eventCompleted";
       eventId: string;
+      owner?: CharacterOwner;
+    }
+  | {
+      op: "stateIs";
+      stateGroupId: string;
+      stateValueId: string;
       owner?: CharacterOwner;
     };
 

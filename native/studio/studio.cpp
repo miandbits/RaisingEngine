@@ -190,6 +190,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("공통 스타일 · 프로젝트 폰트…"),this,&StudioWindow::editDesignSystem)->setObjectName("editDesignSystem");
   designMenu->addAction(tr("폰트 파일 가져오기…"),this,&StudioWindow::importFont)->setObjectName("importFont");
   designMenu->addAction(tr("다국어 작업실…"),this,&StudioWindow::editLocalization)->setObjectName("editLocalization");
+  designMenu->addAction(tr("사용자 정의 상태…"),this,&StudioWindow::editCustomStates)->setObjectName("editCustomStates");
   designMenu->addAction(tr("새 게임 · 사용자 입력 필드…"),this,&StudioWindow::editUserFields)->setObjectName("editUserFields");
   designMenu->addAction(tr("텍스트 연결 일괄 적용…"),this,&StudioWindow::applyTextBindingBatch)->setObjectName("applyTextBindingBatch");
   designMenu->addAction(tr("재사용 UI 부품 작업실…"),this,&StudioWindow::editComponents)->setObjectName("editComponents");

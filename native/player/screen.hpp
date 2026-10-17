@@ -180,6 +180,7 @@ public:
       const auto op=effect.value("op","");
       // Flags control content flow; their internal IDs are not player-facing effects.
       if(op=="setFlag")continue;
+      if(op=="setState"){if(!out.empty())out+=" · ";std::string name=effect.value("stateGroupId",""),value=effect.value("stateValueId","");for(const auto &g:display_content.at("project").value("stateGroups",Json::array()))if(g.at("id")==effect.at("stateGroupId")){name=g.value("name",name);for(const auto &v:g.at("values"))if(v.at("id")==effect.at("stateValueId"))value=v.value("name",value);}out+=name+": "+value;continue;}
       if(!out.empty())out+=" · ";
       const auto target=effect.value("target",Json::object());out+=target_name(target);
       const auto value=effect.value("value",Json::object());

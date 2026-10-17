@@ -22,7 +22,7 @@ QJsonValue replaced(QJsonValue value,const QStringList &path,QJsonValue next,int
   if(value.isArray()){auto a=value.toArray();int i=path[depth].toInt();if(i>=0&&i<a.size())a[i]=replaced(a[i],path,next,depth+1);return a;}
   auto o=value.toObject();o[path[depth]]=replaced(o.value(path[depth]),path,next,depth+1);return o;
 }
-QString title(QString op){static const QMap<QString,QString> names{{"always","항상"},{"all","모두 충족 AND"},{"any","하나 이상 OR"},{"not","반전 NOT"},{"compare","수치 비교"},{"flag","플래그 확인"},{"eventCompleted","사건 완료"},{"literal","고정 숫자"},{"read","값 읽기"},{"time","시간 값"},{"add","더하기 / 증감"},{"subtract","빼기"},{"multiply","곱하기"},{"clamp","범위 제한"},{"set","값 지정"},{"setFlag","플래그 설정"},{"attribute","능력 · 자원"},{"relationship","관계"},{"inventory","소지품 수량"}};return names.value(op,op);}
+QString title(QString op){static const QMap<QString,QString> names{{"stateIs","상태 확인"},{"setState","상태 변경"},{"always","항상"},{"all","모두 충족 AND"},{"any","하나 이상 OR"},{"not","반전 NOT"},{"compare","수치 비교"},{"flag","플래그 확인"},{"eventCompleted","사건 완료"},{"literal","고정 숫자"},{"read","값 읽기"},{"time","시간 값"},{"add","더하기 / 증감"},{"subtract","빼기"},{"multiply","곱하기"},{"clamp","범위 제한"},{"set","값 지정"},{"setFlag","플래그 설정"},{"attribute","능력 · 자원"},{"relationship","관계"},{"inventory","소지품 수량"}};return names.value(op,op);}
 }
 
 QJsonValue logicValueAt(QJsonValue value,const QStringList &path){return at(value,path);}
@@ -47,12 +47,19 @@ QJsonArray LogicEditor::references(QString kind,QString character)const{
     if(kind=="flag"&&type=="flags")out=data.value("flags").toArray();
     if((kind=="character"&&type=="character")||(kind=="event"&&type=="event"))out.append(data);
     if(kind=="relationship"&&type=="character"&&data.value("id")==character)out=data.value("relationships").toArray();
+    if(kind=="stateGroup"&&type=="project")out=data.value("stateGroups").toArray();
+    if(kind=="stateValue"&&type=="project")for(const auto &g:data.value("stateGroups").toArray())if(g.toObject().value("id")==character)out=g.toObject().value("values").toArray();
     if(kind=="inventory"&&type=="project")out=data.value("gameplay").toObject().value("items").toArray();
   }return out;
 }
 QJsonObject LogicEditor::defaults(QString kind,QString op)const{
   auto first=[&](QString k,QString c=QString()){const auto values=references(k,c);return values.isEmpty()?QString():values.first().toObject().value("id").toString();};
   QJsonObject zero{{"op","literal"},{"value",0}},always{{"op","always"}},target{{"kind","attribute"},{"attributeId",first("attribute")}};
+  if(op=="stateIs"||op=="setState"){
+    const auto gs=references("stateGroup");const auto g=gs.isEmpty()?QJsonObject():gs.first().toObject();
+    QJsonObject rule{{"op",op},{"stateGroupId",g.value("id").toString()},{"stateValueId",g.value("initialValueId").toString()}};
+    if(g.value("scope")=="character")rule["owner"]=QJsonObject{{"kind","actor"}};return rule;
+  }
   if(kind=="target"){if(op=="inventory")return {{"kind",op},{"itemId",first(op)}};if(op=="relationship"){QString c;for(const auto &v:references("character")){const auto id=v.toObject().value("id").toString();if(!references(op,id).isEmpty()){c=id;break;}}return {{"kind",op},{"characterId",c},{"relationshipId",first(op,c)}};}return target;}
   if(kind=="condition"){
     if(op=="all"||op=="any")return {{"op",op},{"conditions",QJsonArray{always}}};
@@ -72,7 +79,7 @@ QJsonObject LogicEditor::defaults(QString kind,QString op)const{
 void LogicEditor::addTree(QTreeWidgetItem *parent,QString label,QJsonValue value,QString kind,QStringList path){
   auto item=parent?new QTreeWidgetItem(parent):new QTreeWidgetItem(tree);item->setData(0,Qt::UserRole,path);item->setData(0,Qt::UserRole+1,kind);
   const auto o=value.toObject();QString op=o.value(kind=="target"?"kind":"op").toString();item->setText(0,label+" · "+(value.isArray()?tr("목록 / 순서"):title(op)));
-  QString detail;for(const auto &key:{"attributeId","characterId","relationshipId","itemId","flagId","eventId","field"})if(o.contains(key))detail+=o.value(key).toString()+" ";if(o.value("value").isDouble())detail+=QString::number(o.value("value").toInt());item->setText(1,detail);
+  QString detail;for(const auto &key:{"attributeId","characterId","relationshipId","itemId","flagId","eventId","field","stateGroupId","stateValueId"})if(o.contains(key))detail+=o.value(key).toString()+" ";if(o.value("value").isDouble())detail+=QString::number(o.value("value").toInt());if(op=="stateIs"||op=="setState"){detail.clear();for(const auto &g:references("stateGroup"))if(g.toObject().value("id")==o.value("stateGroupId"))detail=g.toObject().value("name").toString();for(const auto &v:references("stateValue",o.value("stateGroupId").toString()))if(v.toObject().value("id")==o.value("stateValueId"))detail+=" · "+v.toObject().value("name").toString();}item->setText(1,detail);
   if(path==selectedPath)tree->setCurrentItem(item);
   auto child=[&](QString key,QString label,QString k){if(o.contains(key))addTree(item,label,o.value(key),k,path+QStringList{key});};
   if(value.isArray()){int i=0;for(auto v:value.toArray()){addTree(item,QString::number(i+1),v,kind=="effects"?"effect":"condition",path+QStringList{QString::number(i)});i++;}}
@@ -84,6 +91,8 @@ void LogicEditor::refresh(const QStringList &select){selectedPath=select;QSignal
 void LogicEditor::property(QString key,QJsonValue value){propertyAt(selectedPath,key,value);}
 void LogicEditor::propertyAt(const QStringList &path,QString key,QJsonValue value){
   auto o=node(path).toObject();o[key]=value;
+  if(key=="stateGroupId")for(const auto &v:references("stateGroup")){const auto g=v.toObject();if(g.value("id")==value){o["stateValueId"]=g.value("initialValueId");if(g.value("scope")=="character")o["owner"]=QJsonObject{{"kind","actor"}};else o.remove("owner");}}
+
   if(key=="characterId"&&o.value("kind")=="relationship"){
     const auto choices=references("relationship",value.toString());bool found=false;for(const auto &choice:choices)if(choice.toObject().value("id")==o.value("relationshipId"))found=true;
     if(!found)o["relationshipId"]=choices.isEmpty()?QString():choices.first().toObject().value("id").toString();
@@ -104,9 +113,13 @@ void LogicEditor::boolean(QString key,QString label){auto f=new QCheckBox;f->set
 void LogicEditor::editSelected(){
   for(auto child:properties->findChildren<QWidget*>())child->disconnect(this);while(form->rowCount())form->removeRow(0);auto item=tree->currentItem();if(!item)return;selectedPath=item->data(0,Qt::UserRole).toStringList();selectedKind=item->data(0,Qt::UserRole+1).toString();const auto o=node(selectedPath).toObject();const auto op=o.value(selectedKind=="target"?"kind":"op").toString();
   if(node(selectedPath).isArray()){form->addRow(new QLabel(tr("하위 항목을 추가하거나 순서를 바꿀 수 있습니다.")));return;}
-  QStringList ops=selectedKind=="condition"?QStringList{"always","all","any","not","compare","flag","eventCompleted"}:selectedKind=="effect"?QStringList{"add","set","setFlag"}:selectedKind=="target"?QStringList{"attribute","relationship","inventory"}:QStringList{"literal","read","time","add","subtract","multiply","clamp"};
+  QStringList ops=selectedKind=="condition"?QStringList{"always","all","any","not","compare","flag","eventCompleted","stateIs"}:selectedKind=="effect"?QStringList{"add","set","setFlag","setState"}:selectedKind=="target"?QStringList{"attribute","relationship","inventory"}:QStringList{"literal","read","time","add","subtract","multiply","clamp"};
   auto type=new QComboBox;type->setObjectName("logicType");for(auto value:ops)type->addItem(title(value),value);if(!ops.contains(op))type->addItem(tr("지원하지 않는 원본 · 유지"),op);type->setCurrentIndex(type->findData(op));form->addRow(tr("종류"),type);connect(type,qOverload<int>(&QComboBox::activated),this,[this,type]{changeType(type->currentData().toString());});
   if(selectedKind=="target"){ownerField();if(op=="attribute")reference("attributeId",tr("능력 / 자원"),"attribute");if(op=="inventory")reference("itemId",tr("소지품"),"inventory");if(op=="relationship"){reference("characterId",tr("관계 상대"),"character");reference("relationshipId",tr("관계"),"relationship",o.value("characterId").toString());}return;}
+  if(op=="stateIs"||op=="setState"){
+    reference("stateGroupId",tr("상태"),"stateGroup");reference("stateValueId",tr("값"),"stateValue",o.value("stateGroupId").toString());
+    for(const auto &g:references("stateGroup"))if(g.toObject().value("id")==o.value("stateGroupId")&&g.toObject().value("scope")=="character")ownerField();
+  }
   if(op=="literal")integer("value",tr("숫자"));if(op=="clamp"){integer("min",tr("최솟값"));integer("max",tr("최댓값"));}
   if(op=="time")field("field",tr("시간"),{"periodIndex","year","month","periodInMonth"},{tr("전체 일정 칸"),tr("연도"),tr("월"),tr("월 내 일정 칸")});
   if(op=="compare")field("comparator",tr("비교"),{"eq","ne","gt","gte","lt","lte"},{"=","≠",">","≥","<","≤"});
@@ -148,6 +161,11 @@ QString LogicEditor::validationError(QJsonValue value,QString kind,QString path,
   };
   const auto child=[&](QString field,QString childKind){return validationError(object.value(field),childKind,childPath(field),depth+1);};
   const auto integerField=[&](QString field){const auto number=object.value(field);const double n=number.toDouble();return number.isDouble()&&n>=std::numeric_limits<int>::min()&&n<=std::numeric_limits<int>::max()&&std::floor(n)==n?QString():childPath(field)+": "+tr("32비트 정수를 입력하세요.");};
+  if((kind=="condition"&&op=="stateIs")||(kind=="effect"&&op=="setState")){
+    const auto issue=ref("stateGroupId","stateGroup");if(!issue.isEmpty())return issue;
+    for(const auto &g:references("stateGroup"))if(g.toObject().value("id")==object.value("stateGroupId")&&((g.toObject().value("scope")=="character")!=object.contains("owner")))return fail(tr("공용/캐릭터별 대상 설정을 확인하세요."));
+    return ref("stateValueId","stateValue",object.value("stateGroupId").toString());
+  }
   if(kind=="target"){
     if(op=="attribute")return ref("attributeId","attribute");
     if(op=="inventory")return ref("itemId","inventory");

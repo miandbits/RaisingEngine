@@ -354,6 +354,29 @@
             "op",
             "eventId"
           ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "stateIs"
+            },
+            "stateGroupId": {
+              "$ref": "#/$defs/id"
+            },
+            "stateValueId": {
+              "$ref": "#/$defs/id"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
+            }
+          },
+          "required": [
+            "op",
+            "stateGroupId",
+            "stateValueId"
+          ]
         }
       ]
     },
@@ -400,6 +423,29 @@
             "op",
             "flagId",
             "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "setState"
+            },
+            "stateGroupId": {
+              "$ref": "#/$defs/id"
+            },
+            "stateValueId": {
+              "$ref": "#/$defs/id"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
+            }
+          },
+          "required": [
+            "op",
+            "stateGroupId",
+            "stateValueId"
           ]
         }
       ]
@@ -953,7 +999,10 @@
           "additionalProperties": false,
           "properties": {
             "type": {
-              "enum": ["returnFromExpedition", "startNodeBattle"]
+              "enum": [
+                "returnFromExpedition",
+                "startNodeBattle"
+              ]
             }
           },
           "required": [

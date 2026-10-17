@@ -119,7 +119,7 @@ function applyAction(content: ContentSnapshot, draft: RunData, action: DeepReado
   if (action.rejectNoEffect && !action.flow?.length) {
     const probe = structuredClone(draft);
     for (let i = 0; i < quantity; i++) applyEffects(content, probe, action.effects, `${path}/effects`, []);
-    requireCore(JSON.stringify([probe.attributes, probe.flags, probe.relationships, probe.gameplay?.inventory]) !== JSON.stringify([draft.attributes, draft.flags, draft.relationships, draft.gameplay?.inventory]), 'ACTION_NO_EFFECT', '현재 상태에서는 적용할 효과가 없습니다.', '/command/actionId');
+    requireCore(JSON.stringify([probe.attributes, probe.flags, probe.relationships, probe.gameplay?.inventory, probe.roster, probe.customStates]) !== JSON.stringify([draft.attributes, draft.flags, draft.relationships, draft.gameplay?.inventory, draft.roster, draft.customStates]), 'ACTION_NO_EFFECT', '현재 상태에서는 적용할 효과가 없습니다.', '/command/actionId');
   }
   for (const [i, cost] of action.costs.entries()) {
     const amount = int32(cost.amount * quantity, '/command/quantity'), definition = content.attributes.find(x => x.id === cost.attributeId)!;

@@ -84,6 +84,7 @@ J calendar(const J &c, const J &s) {
           {"periodInMonth", n % periods(c)}};
 }
 #include "character-state.inc"
+#include "custom-states.inc"
 struct Slot {
   const J *definition;
   int64_t value;
@@ -156,6 +157,7 @@ bool condition(const J &c, const J &s, const J &e, const std::string &p = "/cond
 bool conditionValue(const J &c, const J &s, const J &e, const std::string &p, int d) {
   need(d < 32, "CONDITION_DEPTH", "조건 중첩은 32단계를 넘을 수 없습니다.", p);
   const auto op = str(e, "op");
+  if (op == "stateIs") return customStateSlot(c,s,e,p).before == str(e,"stateValueId");
   if (op == "always")
     return true;
   if (op == "all" || op == "any") {
@@ -215,6 +217,16 @@ void effects(const J &c, J &s, const J &list, const std::string &src, J &changes
   size_t i = 0;
   for (auto &e : list) {
     auto p = src + "/" + std::to_string(i++);
+    if (e.at("op") == "setState") {
+      const auto x=customStateSlot(c,s,e,p);const auto id=str(e,"stateGroupId"),value=str(e,"stateValueId");
+      auto &values=x.owner.empty()?s["customStates"]["shared"]:s["customStates"]["characters"][x.owner];
+      values[id]=value;
+      J change={{"kind","state"},{"source",p},{"stateGroupId",id},{"before",x.before},{"after",value}};
+      if(!x.owner.empty())change["characterId"]=x.owner;
+      changes.push_back(change);
+      traceExecution({{"kind","effect"},{"path",p},{"status","applied"},{"before",x.before},{"after",value}});
+      continue;
+    }
     if (e.at("op") == "setFlag") {
       auto id = str(e, "flagId");
       need(s.at("flags").contains(id), "UNKNOWN_FLAG", "플래그가 없습니다.", p + "/flagId");
@@ -421,6 +433,7 @@ J create(const J &c, const J &seed, const J &options) {
     for(const auto &key:r["localAttributeIds"])s["attributes"][key.get<std::string>()]=s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()];
   }
   createCharacterState(c,s);
+  createCustomStates(c,s);
   if(c["project"].contains("progression"))s["progression"]={{"tick",0},{"actionPoints",c["project"]["progression"]["actionPoints"]["initial"]},{"handled",J::array()},{"pending",nullptr}};
   if(c["project"].value("progression",J::object()).value("model","")=="unified-v2"){
     const auto &cfg=c["project"]["progression"];auto &p=s["progression"];p["sessions"]=J::array();p["actors"]=J::object();

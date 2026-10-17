@@ -926,6 +926,40 @@
         },
         "uiScreenId": {
           "$ref": "#/$defs/id"
+        },
+        "customStates": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "shared": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "characters": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "propertyNames": {
+                  "$ref": "#/$defs/id"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            }
+          },
+          "required": [
+            "shared",
+            "characters"
+          ]
         }
       }
     },

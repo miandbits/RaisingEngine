@@ -57,7 +57,7 @@ void executeDefinedAction(const J &c, J &s, const J &action, int64_t quantity,
     for (int64_t i = 0; i < quantity; ++i)
       effects(c, probe, action["effects"], path + "/effects", probeChanges);
     need(probe["attributes"] != s["attributes"] || probe["flags"] != s["flags"] ||
-             probe["relationships"] != s["relationships"] || probe["gameplay"]["inventory"] != s["gameplay"]["inventory"],
+             probe["relationships"] != s["relationships"] || probe["gameplay"]["inventory"] != s["gameplay"]["inventory"] || probe.value("roster",J()) != s.value("roster",J()) || probe.value("customStates",J()) != s.value("customStates",J()),
          "ACTION_NO_EFFECT", "현재 상태에서는 적용할 효과가 없습니다.", "/command/actionId");
   }
   size_t costIndex = 0;

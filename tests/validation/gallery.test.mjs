@@ -7,8 +7,9 @@ import {validateProject} from '../../dist/packages/validation/index.js';
 test('gallery contract: legacy projects, stable IDs, missing targets and thumbnail types',async()=>{
   const loaded=await loadProject(resolve('examples/last-grandson-polished'));
   const doc=loaded.documents.find(d=>d.kind==='project');
-  // Strip the sample's optional authored controls to reconstruct a pre-gallery project.
-  doc.data.visual.screens=doc.data.visual.screens.filter(s=>s.id!==doc.data.gallery?.replayControlsScreenId);
+  // Isolate the data contract from the sample's optional gallery screens/components.
+  // Authored gallery UI is covered by its own tests and requires a gallery definition.
+  delete doc.data.visual;
   delete doc.data.gallery;
   assert.equal((await validateProject(loaded)).valid,true);
   const entry={id:'promise',kind:'event',sourceId:'exam-invitation',title:'Promise',category:'Events',hint:'Complete the story',thumbnailAssetId:'winter-courtyard'};

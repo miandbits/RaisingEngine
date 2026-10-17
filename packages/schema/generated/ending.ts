@@ -38,6 +38,12 @@ export type Condition =
       op: "eventCompleted";
       eventId: string;
       owner?: CharacterOwner;
+    }
+  | {
+      op: "stateIs";
+      stateGroupId: string;
+      stateValueId: string;
+      owner?: CharacterOwner;
     };
 export type NumericExpression =
   | {
@@ -113,6 +119,12 @@ export type Effects = (
       op: "setFlag";
       flagId: string;
       value: boolean;
+    }
+  | {
+      op: "setState";
+      stateGroupId: string;
+      stateValueId: string;
+      owner?: CharacterOwner;
     }
 )[];
 

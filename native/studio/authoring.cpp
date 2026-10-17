@@ -407,8 +407,8 @@ void StudioWindow::editContent() {
         const bool cost = key == "costs",
                    simple =
                        value.isEmpty() || cost ||
-                       (value["target"].toObject()["kind"] == "attribute" && !value["target"].toObject().contains("owner") &&
-                        value["value"].toObject()["op"] == "literal");
+                       (value.value("target").toObject().value("kind") == "attribute" && !value.value("target").toObject().contains("owner") &&
+                        value.value("value").toObject().value("op") == "literal");
         int row = effects->rowCount();
         effects->insertRow(row);
         auto original = new QTableWidgetItem;

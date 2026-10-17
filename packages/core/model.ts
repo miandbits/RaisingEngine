@@ -61,7 +61,8 @@ export interface NumericChange {
   clamped: false | 'min' | 'max';
 }
 export interface FlagChange { kind: 'flag'; source: string; flagId: string; before: boolean; after: boolean }
-export type Change = NumericChange | FlagChange;
+export interface StateChange { kind: 'state'; source: string; stateGroupId: string; characterId?: string; before: string; after: string }
+export type Change = NumericChange | FlagChange | StateChange;
 export interface ActivityResult {
   actorResults?: { characterId: string; result: ActivityResult }[];
   activityId: string; time: CalendarTime; changes: Change[];
@@ -69,6 +70,7 @@ export interface ActivityResult {
 }
 /** Internal transaction draft. Published states and restored sessions are deeply frozen. */
 export interface RunData extends Values {
+  customStates?: { shared: Record<string, string>; characters: Record<string, Record<string, string>> };
   /** Explicit view navigation, cleared when the simulation changes phase. */
   uiScreenId?: string;
   periodPreparation?: { changes: ActivityResult['changes'] };

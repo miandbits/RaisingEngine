@@ -2749,6 +2749,29 @@ export type ProjectDefinition = Header & {
       actionPointCost: number;
     }[];
   };
+  /**
+   * @maxItems 128
+   */
+  stateGroups?: {
+    id: string;
+    name: string;
+    scope: "shared" | "character";
+    initialValueId: string;
+    /**
+     * @minItems 1
+     * @maxItems 128
+     */
+    values: [
+      {
+        id: string;
+        name: string;
+      },
+      ...{
+        id: string;
+        name: string;
+      }[]
+    ];
+  }[];
 };
 export type Condition =
   | {
@@ -2779,6 +2802,12 @@ export type Condition =
   | {
       op: "eventCompleted";
       eventId: string;
+      owner?: CharacterOwner;
+    }
+  | {
+      op: "stateIs";
+      stateGroupId: string;
+      stateValueId: string;
       owner?: CharacterOwner;
     };
 export type NumericExpression =
@@ -13509,6 +13538,12 @@ export type Effects = (
       op: "setFlag";
       flagId: string;
       value: boolean;
+    }
+  | {
+      op: "setState";
+      stateGroupId: string;
+      stateValueId: string;
+      owner?: CharacterOwner;
     }
 )[];
 /**

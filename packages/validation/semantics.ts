@@ -1,3 +1,4 @@
+import { checkStateGroups, checkStateReference } from './custom-states.js';
 import { childPointer, isObject, type Diagnostic, type DocumentKind, type Json, type JsonObject, type ProjectDocument } from './model.js';
 import { SemanticContext, idOf, objectItems, type Entry, type Index } from './context.js';
 import { checkNarrative, checkScenarioChoice } from './narrative.js';
@@ -14,6 +15,7 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
   const ctx = new SemanticContext();
   const root = documents.find((doc) => doc.kind === 'project');
   const project = root?.data as JsonObject | undefined;
+  if (root && project) checkStateGroups(ctx, root, project);
   const topIndexes: Partial<Record<DocumentKind, Index>> = { character: ctx.characters, activity: ctx.activities, event: ctx.events, ending: ctx.endings, scenario: ctx.scenarios };
   for (const doc of documents) {
     const data = doc.data as JsonObject;
@@ -66,6 +68,7 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
     }
     if (!isObject(value)) return;
     checkOwner(ctx,project,doc,value,pointer);
+    checkStateReference(ctx,project,doc,value,pointer);
     if (value.kind === 'inventory' && typeof value.itemId === 'string') {
       const gameplay = project && isObject(project.gameplay) ? project.gameplay : {};
       if (!objectItems(gameplay.items).some(x => x.id === value.itemId)) ctx.report(doc, `${pointer}/itemId`, 'REFERENCE_MISSING', `물품 '${value.itemId}'를 찾을 수 없습니다.`, [value.itemId]);

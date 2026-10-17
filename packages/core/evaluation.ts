@@ -1,3 +1,4 @@
+import { customStateSlot } from './custom-states.js';
 import type { Condition, NumericExpression, Effects } from '../schema/generated/activity.js';
 import type { CalendarTime, ContentSnapshot, DeepReadonly, NumericTarget, RunState, RunData, Change } from './model.js';
 import { int32, requireCore } from './util.js';
@@ -49,6 +50,7 @@ export function evaluateCondition(content: ContentSnapshot, state: RunState, con
   requireCore(depth < 32, 'CONDITION_DEPTH', '조건 중첩은 32단계를 넘을 수 없습니다.', path);
   const evaluate = (c: DeepReadonly<Condition>, field: string) => evaluateCondition(content, state, c, `${path}/${field}`, depth + 1);
   switch (condition.op) {
+    case 'stateIs': return customStateSlot(content, state, condition.stateGroupId, condition.stateValueId, condition.owner, path).before === condition.stateValueId;
     case 'always': return true;
     case 'all': return condition.conditions.every((c, i) => evaluate(c, `conditions/${i}`));
     case 'any': return condition.conditions.some((c, i) => evaluate(c, `conditions/${i}`));
@@ -76,6 +78,12 @@ export function evaluateCondition(content: ContentSnapshot, state: RunState, con
 export function applyEffects(content: ContentSnapshot, draft: RunData, effects: DeepReadonly<Effects>, source: string, changes: Change[]): void {
   effects.forEach((effect, i) => {
     const path = `${source}/${i}`;
+    if (effect.op === 'setState') {
+      const slot = customStateSlot(content, draft, effect.stateGroupId, effect.stateValueId, effect.owner, path);
+      (slot.values as Record<string, string>)[effect.stateGroupId] = effect.stateValueId;
+      changes.push({ kind: 'state', source: path, stateGroupId: effect.stateGroupId, ...(slot.characterId ? { characterId: slot.characterId } : {}), before: slot.before, after: effect.stateValueId });
+      return;
+    }
     if (effect.op === 'setFlag') {
       requireCore(Object.hasOwn(draft.flags, effect.flagId), 'UNKNOWN_FLAG', '플래그가 없습니다.', `${path}/flagId`);
       changes.push({ kind: 'flag', source: path, flagId: effect.flagId, before: draft.flags[effect.flagId]!, after: effect.value });

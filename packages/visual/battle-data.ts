@@ -33,6 +33,7 @@ export function battleCollectionRows(kind:string,context:{content:ContentSnapsho
   for(const [i,change]of (systems.lastBattle.rewardChanges??[]).entries()){
    let name:string,kind:string,amount:number,lost=0,text:string;
    if(change.kind==='flag'){name=content.flags.find(x=>x.id===change.flagId)?.label??change.flagId;kind='flag';amount=change.after?1:0;text=`${name}: ${change.after?'true':'false'}`;}
+   else if(change.kind==='state'){const group=content.project.stateGroups?.find(g=>g.id===change.stateGroupId);name=group?.name??change.stateGroupId;kind='state';amount=0;text=`${name}: ${group?.values.find(v=>v.id===change.after)?.name??change.after}`;}
    else{const target=change.target;amount=change.delta;
     if(target.kind==='attribute'){kind='attribute';name=content.attributes.find(x=>x.id===target.attributeId)?.label??target.attributeId;}
     else if(target.kind==='inventory'){kind='item';name=content.project.gameplay?.items.find(x=>x.id===target.itemId)?.name??target.itemId;lost=discarded.get(target.itemId)??0;discarded.delete(target.itemId);}

@@ -1,7 +1,7 @@
 import type { DraftDocument } from '../studio-service/editor.js';
 import type { Diagnostic, Json } from '../validation/model.js';
 
-export const kindNames: Record<string, string> = { project: '프로젝트', attributes: '능력·자원', flags: '플래그', character: '인물', activity: '활동', event: '사건', ending: '엔딩', assets: '에셋', scenario: '시나리오', location:'장소', item:'아이템', shop:'상점', interaction:'교류·선물', screen:'게임 화면', extension:'플러그인 문서', pluginLock:'플러그인 잠금' };
+export const kindNames: Record<string, string> = { stateGroup: '사용자 상태', project: '프로젝트', attributes: '능력·자원', flags: '플래그', character: '인물', activity: '활동', event: '사건', ending: '엔딩', assets: '에셋', scenario: '시나리오', location:'장소', item:'아이템', shop:'상점', interaction:'교류·선물', screen:'게임 화면', extension:'플러그인 문서', pluginLock:'플러그인 잠금' };
 export const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
 export interface CatalogItem { key: string; file: string; pointer: string; kind: string; id: string; label: string; description: string; tags: string[]; from: number | null; through: number | null; priority: number | null; summary: string; issues: number; data: Json }
 export interface CatalogQuery { kind?: string; text?: string; tag?: string; person?: string; period?: number; issuesOnly?: boolean; sort?: 'label' | 'id' | 'period' | 'priority'; descending?: boolean }
@@ -15,6 +15,7 @@ export function buildCatalog(documents: DraftDocument[], diagnostics: Diagnostic
     const field = ['attributes', 'flags', 'assets'].includes(doc.kind) ? doc.kind : null;
     const entries: {data:Json;pointer:string;kind:string}[] = field && Array.isArray(root[field]) ? root[field].map((data: Json, i: number) => ({ data, pointer: `/${field}/${i}`,kind:doc.kind })) : [{ data: doc.data, pointer: '',kind:doc.kind }];
     if(doc.kind==='project'){
+      if(Array.isArray(root.stateGroups))root.stateGroups.forEach((data:Json,i:number)=>entries.push({data,pointer:`/stateGroups/${i}`,kind:'stateGroup'}));
       for(const [field,kind] of Object.entries({locations:'location',items:'item',shops:'shop',interactions:'interaction'}))if(Array.isArray(root.gameplay?.[field]))root.gameplay[field].forEach((data:Json,i:number)=>entries.push({data,pointer:`/gameplay/${field}/${i}`,kind}));
       if(Array.isArray(root.visual?.screens))root.visual.screens.forEach((data:Json,i:number)=>entries.push({data,pointer:`/visual/screens/${i}`,kind:'screen'}));
     }
@@ -52,16 +53,16 @@ function containsReference(value: unknown, id: string, keys: string[]): boolean 
 }
 export function buildRelations(items: CatalogItem[]): Relation[] {
   const lookup = new Map(items.map(i => [`${i.kind}:${i.id}`, i.key])); const result: Relation[] = [];
-  const targets: Record<string, string> = { attributeId: 'attributes', currencyAttributeId:'attributes', screenId:'screen', locationId:'location', startLocationId:'location', shopId:'shop', itemId:'item', interactionId:'interaction', flagId: 'flags', eventId: 'event', endingId: 'ending', characterId: 'character', speakerId: 'character', activityId: 'activity', backgroundAssetId: 'assets', imageAssetId: 'assets', musicAssetId: 'assets', soundAssetId: 'assets', assetId: 'assets' };
+  const targets: Record<string, string> = { stateGroupId: 'stateGroup', attributeId: 'attributes', currencyAttributeId:'attributes', screenId:'screen', locationId:'location', startLocationId:'location', shopId:'shop', itemId:'item', interactionId:'interaction', flagId: 'flags', eventId: 'event', endingId: 'ending', characterId: 'character', speakerId: 'character', activityId: 'activity', backgroundAssetId: 'assets', imageAssetId: 'assets', musicAssetId: 'assets', soundAssetId: 'assets', assetId: 'assets' };
   for (const item of items) {
     function visit(value: unknown, pointer: string, mode: Relation['kind'], context: string) {
       if (!value || typeof value !== 'object') return;
       const obj = object(value);
       // Conditions and expression inputs read values; only effect targets write them.
-      const isEffect = ['add', 'set', 'setFlag'].includes(obj.op) && ('target' in obj || 'flagId' in obj);
+      const isEffect = ['add', 'set', 'setFlag', 'setState'].includes(obj.op) && ('target' in obj || 'flagId' in obj || 'stateGroupId' in obj);
       for (const [key, child] of Object.entries(value)) {
         const at = `${pointer}/${esc(key)}`;
-        const nextMode = isEffect && (key === 'target' || key === 'flagId') ? 'writes' : ['requirements', 'condition', 'conditions', 'left', 'right', 'value'].includes(key) ? 'reads' : mode;
+        const nextMode = isEffect && (key === 'target' || key === 'flagId' || key === 'stateGroupId') ? 'writes' : ['requirements', 'condition', 'conditions', 'left', 'right', 'value'].includes(key) ? 'reads' : mode;
         const nextContext = ['all', 'any', 'not'].includes(obj.op) ? `${context}/${obj.op}` : context;
         const target = targets[key] && typeof child === 'string' ? lookup.get(`${targets[key]}:${child}`) : undefined;
         if (target) result.push({ from: item.key, to: target, kind: nextMode, file: item.file, pointer: at, context: nextContext });
