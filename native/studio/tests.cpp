@@ -33,6 +33,7 @@ private slots:
   void presentationVariantsAuthoring();
   void customStatesAuthoring();
   void conditionalRoutingAuthoring();
+  void integratedAuthoringRoundtrip();
   void projectManagerRoundtrip();
   void designerQuickRules();
   void designerSmallGameAuthoring();
@@ -994,4 +995,5 @@ QTEST_MAIN(StudioTests)
 #include "presentation-variants-test.inc"
 #include "custom-states-test.inc"
 #include "conditional-routing-test.inc"
+#include "integrated-authoring-test.inc"
 #include "tests.moc"
