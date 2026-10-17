@@ -1,0 +1,55 @@
+{
+  "entryNodeId": "line",
+  "formatVersion": "0.1.0",
+  "id": "story-2c70aa858c05-choice-1-next",
+  "label": "새벽의 약탕",
+  "nodes": [
+    {
+      "id": "line",
+      "next": "end",
+      "speakerId": "story-2c70aa858c05-person",
+      "text": "약속대로 왔어요. 이 약탕과 꾸준한 수련이면 끊어진 기맥도 다시 이어질 거예요. 오늘부터 공자님의 내일을 함께 지킬게요.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 70,
+  "requirements": {
+    "conditions": [
+      {
+        "eventId": "story-2c70aa858c05-meeting",
+        "op": "eventCompleted"
+      },
+      {
+        "equals": true,
+        "flagId": "story-2c70aa858c05-choice-1",
+        "op": "flag"
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "characterId": "story-2c70aa858c05-person",
+            "kind": "relationship",
+            "relationshipId": "story-2c70aa858c05-bond"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 10
+        }
+      }
+    ],
+    "op": "all"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 3,
+    "throughPeriod": 8
+  }
+}

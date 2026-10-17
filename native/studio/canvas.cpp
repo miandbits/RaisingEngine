@@ -1,6 +1,7 @@
 #include "canvas.hpp"
 #include "design.hpp"
 #include "components.hpp"
+#include "component-preview.hpp"
 #include <QGraphicsObject>
 #include <QDate>
 #include <QGraphicsSceneMouseEvent>
@@ -319,6 +320,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
                         .arg(project["startMonth"].toInt(1));
       else if (binding == "title")
         e["text"] = project["title"];
+      else if (binding == "context-name") e["text"] = contextNameForPreview(project,e);
       else if (binding == "calendar-year") e["text"] = QString::number(project["startYear"].toInt(1));
       else if (binding == "calendar-month") e["text"] = QString::number(project["startMonth"].toInt(1)) + QString::fromUtf8("월");
       else if (binding == "calendar-day") e["text"] = "1";

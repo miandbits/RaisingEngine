@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../packages/schema/character.schema.json",
+  "description": "연가의 병약하고 천대받는 막내 손자. 소설의 운명을 아는 빙의자로서 석 달 안에 기맥을 회복하려 한다.",
+  "formatVersion": "0.1.0",
+  "id": "apprentice",
+  "name": "연서진",
+  "portraits": {},
+  "relationships": []
+}

@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "component-context-editor.hpp"
+#include "component-preview.hpp"
 #include <QDoubleSpinBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -126,7 +127,7 @@ void StudioWindow::editComponents(){
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);auto place=buttons->addButton(tr("저장하고 현재 화면에 배치"),QDialogButtonBox::ActionRole);place->setObjectName("placeComponent");layout->addWidget(buttons);
   int current=-1,child=-1;bool fillingDialog=false;QString placed;
   auto commit=[&]{if(fillingDialog||current<0)return;auto c=components[current].toObject();c["label"]=name->text();if(list->item(current))list->item(current)->setText(name->text());c["width"]=width->value();c["height"]=height->value();auto elements=c["elements"].toArray();if(child>=0&&child<elements.size())elements[child]=form->value();c["elements"]=elements;components[current]=c;};
-  std::function<void(bool)> render=[&](bool fit){if(current<0)return;auto p=project;auto v=visual;auto c=components[current].toObject();v["width"]=c["width"];v["height"]=c["height"];p["visual"]=v;p["_defaultFontPath"]=engineRoot+"/dist/native-player-app/fonts/NotoSansKR.ttf";preview->setScreen(p,c,assets,child<0?QString():c["elements"].toArray()[child].toObject()["id"].toString(),fit);};
+  std::function<void(bool)> render=[&](bool fit){if(current<0)return;auto p=project;p["_previewContextNames"]=contextNamesForPreview(view);auto v=visual;auto c=components[current].toObject();v["width"]=c["width"];v["height"]=c["height"];p["visual"]=v;p["_defaultFontPath"]=engineRoot+"/dist/native-player-app/fonts/NotoSansKR.ttf";preview->setScreen(p,c,assets,child<0?QString():c["elements"].toArray()[child].toObject()["id"].toString(),fit);};
   auto loadChildren=[&]{fillingDialog=true;children->clear();if(current>=0){auto c=components[current].toObject();name->setText(c["label"].toString());width->setValue(c["width"].toInt());height->setValue(c["height"].toInt());for(auto e:c["elements"].toArray())children->addItem(e.toObject()["id"].toString()+" · "+e.toObject()["kind"].toString());}child=-1;form->load({});fillingDialog=false;render(true);};
   connect(contextButton,&QPushButton::clicked,&dialog,[&]{if(current<0||child<0)return;commit();const auto selected=current,index=child;auto c=components[current].toObject();auto es=c.value("elements").toArray();QJsonObject edited;if(!editComponentContext(&dialog,es[child].toObject(),view,edited))return;if(busy()||view.value("revision")!=openedRevision||view.value("root")!=openedRoot||selected!=current||index!=child){error->setText(tr("편집 대상이 변경되었습니다. 다시 열어 주세요."));return;}es[child]=edited;c["elements"]=es;components[current]=c;form->load(edited);render(false);});
   for(auto c:components)list->addItem(c.toObject()["label"].toString());

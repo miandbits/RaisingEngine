@@ -1,0 +1,28 @@
+{
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stamina",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 5
+      }
+    },
+    {
+      "flagId": "story-2c70aa858c05-activity-done",
+      "op": "setFlag",
+      "value": true
+    }
+  ],
+  "costs": [],
+  "description": "약초밭의 약속",
+  "formatVersion": "0.1.0",
+  "id": "story-2c70aa858c05-activity",
+  "label": "약초밭 산책",
+  "requirements": {
+    "op": "always"
+  }
+}

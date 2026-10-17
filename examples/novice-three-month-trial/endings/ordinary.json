@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "ordinary",
+  "label": "석 달 끝의 봄비",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": null,
+      "text": "석 달이 지나고 연가의 뜰에 봄비가 내렸다. 운명을 뒤집을 힘과 인연을 끝내 모으지 못한 연서진은 눈을 감았다. 그러나 마지막 날까지 스스로 고른 삶은 누구도 빼앗지 못했다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 0,
+  "requirements": {
+    "op": "always"
+  }
+}

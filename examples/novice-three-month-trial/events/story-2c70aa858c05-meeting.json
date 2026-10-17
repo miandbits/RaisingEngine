@@ -1,0 +1,117 @@
+{
+  "entryNodeId": "greeting",
+  "formatVersion": "0.1.0",
+  "id": "story-2c70aa858c05-meeting",
+  "label": "맥을 짚는 손",
+  "nodes": [
+    {
+      "id": "greeting",
+      "next": "question",
+      "speakerId": "story-2c70aa858c05-person",
+      "text": "공자님, 숨을 감추지 마세요. 석 달이라는 말이 끝을 뜻하지는 않아요. 제게 치료를 맡기시겠어요?",
+      "type": "dialogue"
+    },
+    {
+      "effects": [
+        {
+          "flagId": "story-2c70aa858c05-choice-1",
+          "op": "setFlag",
+          "value": true
+        },
+        {
+          "op": "add",
+          "target": {
+            "characterId": "story-2c70aa858c05-person",
+            "kind": "relationship",
+            "relationshipId": "story-2c70aa858c05-bond"
+          },
+          "value": {
+            "op": "literal",
+            "value": 20
+          }
+        }
+      ],
+      "id": "choice-1-effect",
+      "next": "choice-1-reply",
+      "type": "effect"
+    },
+    {
+      "id": "choice-1-reply",
+      "next": "end",
+      "speakerId": "story-2c70aa858c05-person",
+      "text": "함께 길을 찾아요. 다음에는 귀한 약초를 가져올게요.",
+      "type": "dialogue"
+    },
+    {
+      "effects": [
+        {
+          "flagId": "story-2c70aa858c05-c-cea92750",
+          "op": "setFlag",
+          "value": true
+        },
+        {
+          "op": "add",
+          "target": {
+            "characterId": "story-2c70aa858c05-person",
+            "kind": "relationship",
+            "relationshipId": "story-2c70aa858c05-bond"
+          },
+          "value": {
+            "op": "literal",
+            "value": -10
+          }
+        }
+      ],
+      "id": "c-cea92750-effect",
+      "next": "c-cea92750-reply",
+      "type": "effect"
+    },
+    {
+      "id": "c-cea92750-reply",
+      "next": "end",
+      "speakerId": "story-2c70aa858c05-person",
+      "text": "동정이 아니었어요. 그래도 마음이 바뀌면 찾아오세요.",
+      "type": "dialogue"
+    },
+    {
+      "choices": [
+        {
+          "effects": [],
+          "id": "choice-1",
+          "next": "choice-1-effect",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "당신을 믿고 치료를 맡긴다"
+        },
+        {
+          "effects": [],
+          "id": "c-cea92750",
+          "next": "c-cea92750-effect",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "동정은 필요 없다며 거절한다"
+        }
+      ],
+      "id": "question",
+      "prompt": "어떻게 답할까?",
+      "type": "choice"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 80,
+  "requirements": {
+    "equals": true,
+    "flagId": "story-2c70aa858c05-activity-done",
+    "op": "flag"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 8
+  }
+}

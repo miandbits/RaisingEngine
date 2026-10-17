@@ -23,6 +23,9 @@ inline QJsonObject anchoredElement(QJsonObject e, QSize reference, QSize actual)
 inline QRectF canvasClipRect(const QJsonObject& r){return {r.value("x").toDouble(),r.value("y").toDouble(),r.value("width").toDouble(),r.value("height").toDouble()};}
 inline QJsonObject canvasRectJson(const QRectF& r){return {{"x",r.x()},{"y",r.y()},{"width",qMax(0.,r.width())},{"height",qMax(0.,r.height())}};}
 inline void inheritCanvasElement(QJsonObject& child,const QJsonObject& parent) {
+  auto context=parent.value("uiContext").toObject();const auto own=child.value("uiContext").toObject();
+  for(auto it=own.begin();it!=own.end();++it)context[it.key()]=it.value();
+  if(!context.isEmpty())child["uiContext"]=context;
   child["hidden"]=child.value("hidden").toBool()||parent.value("hidden").toBool();
   child["locked"]=child.value("locked").toBool()||parent.value("locked").toBool();
   child["opacity"]=child.value("opacity").toDouble(1)*parent.value("opacity").toDouble(1);

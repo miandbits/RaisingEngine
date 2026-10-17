@@ -1,0 +1,57 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "entryNodeId": "intro",
+  "formatVersion": "0.1.0",
+  "id": "certified",
+  "label": "운명을 벤 새벽",
+  "nodes": [
+    {
+      "id": "intro",
+      "next": "end",
+      "speakerId": null,
+      "text": "석 달의 수련과 쉼, 소운의 손길이 끊어진 기맥을 이었다. 연서진은 죽음의 날 새벽에 검을 들었다. 이제 그의 내일은 소설 밖에 있다.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 80,
+  "requirements": {
+    "conditions": [
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "attributeId": "skill",
+            "kind": "attribute"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 30
+        }
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "characterId": "story-2c70aa858c05-person",
+            "kind": "relationship",
+            "relationshipId": "story-2c70aa858c05-bond"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 10
+        }
+      }
+    ],
+    "op": "all"
+  }
+}

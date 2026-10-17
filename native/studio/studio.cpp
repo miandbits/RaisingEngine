@@ -1,5 +1,6 @@
 #include "save-migration.hpp"
 #include "studio.hpp"
+#include "component-preview.hpp"
 #include "tabular-input.hpp"
 #include "table-logic.hpp"
 #include <QShortcut>
@@ -1226,6 +1227,7 @@ void StudioWindow::refresh(bool fit) {
   rebuildHierarchy();
   rebuildPluginUi();
   auto preview = project;
+  preview["_previewContextNames"]=contextNamesForPreview(view);
   QJsonObject previewPortraits, previewAttributes, previewRelationships;
   for (auto d : view["documents"].toArray()) {
     auto doc = d.toObject();

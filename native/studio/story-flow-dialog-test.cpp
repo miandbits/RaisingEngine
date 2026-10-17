@@ -17,6 +17,13 @@ int main(int argc,char **argv) {
   auto multiline=[&](const char *name,QString value){auto w=dialog.findChild<QPlainTextEdit*>(name);check(w!=nullptr,"multiline exists");w->setPlainText(value);};
   auto spin=[&](const char *name,int value){auto w=dialog.findChild<QSpinBox*>(name);check(w!=nullptr,"number exists");w->setValue(value);};
   auto choices=dialog.findChild<QListWidget*>("storyChoices");
+  check(choices->count()==2,"new story starts with two visible choices");
+  for(int i=0;i<2;++i)check(choices->item(i)->text().startsWith(QString::number(i+1)+". ")&&choices->item(i)->text().contains("미작성"),"empty choices have numbered placeholders");
+  dialog.findChild<QPushButton*>("storyChoiceAdd")->click();
+  check(choices->count()==3&&choices->item(2)->text().startsWith("3. "),"new choice has a visible numbered placeholder");
+  choices->setCurrentRow(1);
+  dialog.findChild<QPushButton*>("storyChoiceRemove")->click();
+  check(choices->count()==2&&choices->item(1)->text().startsWith("2. "),"removal renumbers remaining choices");
   line("storyName","마음의 약초");line("storyCharacterName","소하");line("storyActivityName","약초 손질");line("storyEncounterTitle","약초밭에서");multiline("storyEncounterText","같이 일할래?");
   line("storyChoiceText","함께 돕는다");multiline("storyChoiceReply","고마워");spin("storyChoiceDelta",3);
   dialog.findChild<QCheckBox*>("storyFollowupEnabled")->setChecked(true);line("storyFollowupTitle","약속의 답례");multiline("storyFollowupText","이건 네 몫이야");spin("storyFollowupMinimum",3);spin("storyFollowupFrom",2);
