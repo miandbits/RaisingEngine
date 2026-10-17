@@ -1,0 +1,31 @@
+{
+  "$schema": "../../packages/schema/flags.schema.json",
+  "flags": [
+    {
+      "id": "registered",
+      "initial": false,
+      "label": "시험 참가 신청"
+    },
+    {
+      "id": "certified",
+      "initial": false,
+      "label": "견습 과정 수료"
+    },
+    {
+      "id": "story-13c7259d50e6-activity-done",
+      "initial": false,
+      "label": "약초밭의 약속 · 활동 경험"
+    },
+    {
+      "id": "story-13c7259d50e6-choice-1",
+      "initial": false,
+      "label": "약초밭의 약속 · 돕는다"
+    },
+    {
+      "id": "story-13c7259d50e6-c-519b9463",
+      "initial": false,
+      "label": "약초밭의 약속 · 거절한다"
+    }
+  ],
+  "formatVersion": "0.1.0"
+}

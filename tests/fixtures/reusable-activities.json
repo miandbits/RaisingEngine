@@ -1,0 +1,23 @@
+{
+  "banquet": "activity-cf8366e6fadb",
+  "child": "element-1",
+  "component": "component-1",
+  "infiltration": "story-13c7259d50e6-activity",
+  "instances": [
+    "instance-1",
+    "instance-2"
+  ],
+  "meeting": "story-13c7259d50e6-meeting",
+  "root": "tests/fixtures/projects/reusable-activities",
+  "screen": "screen-1",
+  "screensBefore": [
+    "title",
+    "schedule",
+    "story",
+    "ending",
+    "screen-1",
+    "screen-1-copy-1",
+    "screen-1-copy-2"
+  ],
+  "training": "activity-a828fcdea455"
+}

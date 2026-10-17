@@ -11,8 +11,15 @@ void StudioWindow::editPresentationVariants() {
   if(busy()||currentElement().isEmpty())return;
   const auto original=currentElement();const auto revision=view.value("revision"),root=view.value("root");
   const auto selected=selection,screen=screenId;
+  editElementPresentationVariants(original,this,[=,this](QJsonArray rules,QString& error){
+    if(busy()||view.value("revision")!=revision||view.value("root")!=root||selection!=selected||screenId!=screen){error=tr("편집 대상이 변경되었습니다. 다시 열어 주세요.");return false;}
+    updateElement([=](QJsonObject& element){if(rules.isEmpty())element.remove("variants");else element["variants"]=rules;});return true;
+  });
+}
+
+void StudioWindow::editElementPresentationVariants(QJsonObject original,QWidget* parent,std::function<bool(QJsonArray,QString&)> apply) {
   auto rules=std::make_shared<QJsonArray>(original.value("variants").toArray());
-  auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("presentationVariantsDialog");
+  auto dialog=new QDialog(parent);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("presentationVariantsDialog");
   dialog->setWindowTitle(tr("조건별 표현"));dialog->resize(680,520);
   auto outer=new QVBoxLayout(dialog);auto help=new QLabel(tr("위에서부터 처음 조건이 맞는 표현을 사용합니다. 맞는 조건이 없으면 원래 모습으로 돌아갑니다.\n화면·위치·게임 데이터는 유지됩니다. 활동 지정은 ‘해당 활동의 결과 표시 중’에만 적용합니다.\n애니메이션은 같은 플러그인의 컨트롤러를 선택합니다. 세부 동작 규칙은 애니메이션 편집기에서 만드세요."));help->setWordWrap(true);outer->addWidget(help);
   auto list=new QListWidget;list->setObjectName("presentationVariantList");outer->addWidget(list);
@@ -23,8 +30,8 @@ void StudioWindow::editPresentationVariants() {
     auto layout=new QVBoxLayout(d);auto form=new QFormLayout;layout->addLayout(form);
     auto name=new QLineEdit(rule.value("label").toString());name->setObjectName("variantName");name->setMaxLength(100);form->addRow(tr("표현 이름"),name);
     auto activity=new QComboBox;activity->setObjectName("variantActivity");activity->addItem(tr("활동에 관계없이"),"");
-    for(const auto& doc:view.value("documents").toArray()){const auto obj=doc.toObject();if(obj.value("kind")=="activity"){const auto data=obj.value("data").toObject();activity->addItem(data.value("name").toString(),data.value("id").toString());}}
-    const auto ids=rule.value("activityIds").toArray();if(ids.size()==1)activity->setCurrentIndex(activity->findData(ids.first().toString()));
+    for(const auto& doc:view.value("documents").toArray()){const auto obj=doc.toObject();if(obj.value("kind")=="activity"){const auto data=obj.value("data").toObject();activity->addItem(data.value("label").toString(data.value("name").toString(data.value("id").toString())),data.value("id").toString());}}
+    const auto ids=rule.value("activityIds").toArray();if(ids.size()==1){const auto id=ids.first().toString();if(activity->findData(id)<0)activity->addItem(tr("누락된 활동 · ")+id,id);activity->setCurrentIndex(activity->findData(id));}
     // Multi-activity filters authored elsewhere are preserved until explicitly changed.
     if(ids.size()>1){activity->addItem(tr("기존 여러 활동 유지"),"__preserve");activity->setCurrentIndex(activity->count()-1);}form->addRow(tr("활동 결과"),activity);
     auto condition=std::make_shared<QJsonValue>(rule.value("when"));auto conditionButton=new QPushButton(tr("조건 편집…"));conditionButton->setObjectName("variantCondition");form->addRow(tr("추가 조건"),conditionButton);
@@ -58,6 +65,6 @@ void StudioWindow::editPresentationVariants() {
   auto row=new QHBoxLayout;outer->addLayout(row);
   for(const auto& pair:QList<QPair<QString,QString>>{{"Add",tr("추가")},{"Edit",tr("편집")},{"Remove",tr("삭제")},{"Up",tr("위로")},{"Down",tr("아래로")}}){auto button=new QPushButton(pair.second);button->setObjectName("variant"+pair.first);row->addWidget(button);connect(button,&QPushButton::clicked,dialog,[=]{const auto index=list->currentRow();if(pair.first=="Add"){if(rules->size()>=64)return;rules->append(QJsonObject{{"label",tr("새 표현")},{"when",QJsonObject{{"op","always"}}},{"values",QJsonObject{{"opacity",1}}}});refresh(rules->size()-1);edit(rules->size()-1,true);}else if(index>=0){if(pair.first=="Edit")edit(index,false);else if(pair.first=="Remove"){rules->removeAt(index);refresh(index);}else{const int target=index+(pair.first=="Up"?-1:1);if(target>=0&&target<rules->size()){const auto item=rules->at(index);rules->removeAt(index);rules->insert(target,item);refresh(target);}}}});}
   auto error=new QLabel;error->setWordWrap(true);outer->addWidget(error);auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Save)->setText(tr("표현 연결 적용"));outer->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
-  connect(buttons,&QDialogButtonBox::accepted,dialog,[=,this]{if(busy()||view.value("revision")!=revision||view.value("root")!=root||selection!=selected||screenId!=screen){error->setText(tr("편집 대상이 변경되었습니다. 다시 열어 주세요."));return;}updateElement([=](QJsonObject& element){if(rules->isEmpty())element.remove("variants");else element["variants"]=*rules;});dialog->accept();});
+  connect(buttons,&QDialogButtonBox::accepted,dialog,[=]{QString problem;if(!apply(*rules,problem)){error->setText(problem);return;}dialog->accept();});
   refresh(0);dialog->open();
 }

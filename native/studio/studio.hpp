@@ -222,6 +222,7 @@ private:
   void editScreenRouting();
   void editDataBinding();
   void editPresentationVariants();
+  void editElementPresentationVariants(QJsonObject original,QWidget* parent,std::function<bool(QJsonArray,QString&)> apply);
   void editCustomStates();
   void editProjectSettings();
   void receivePlayer();

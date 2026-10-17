@@ -1,0 +1,122 @@
+{
+  "entryNodeId": "greeting",
+  "formatVersion": "0.1.0",
+  "id": "story-13c7259d50e6-meeting",
+  "label": "잠입 중 만난 동료",
+  "nodes": [
+    {
+      "id": "greeting",
+      "next": "question",
+      "speakerId": "story-13c7259d50e6-person",
+      "text": "밀서를 찾았지만 경비가 다가온다. 함께 빠져나갈까?",
+      "type": "dialogue"
+    },
+    {
+      "effects": [
+        {
+          "flagId": "story-13c7259d50e6-choice-1",
+          "op": "setFlag",
+          "value": true
+        },
+        {
+          "op": "add",
+          "target": {
+            "characterId": "story-13c7259d50e6-person",
+            "kind": "relationship",
+            "relationshipId": "story-13c7259d50e6-bond"
+          },
+          "value": {
+            "op": "literal",
+            "value": 3
+          }
+        },
+        {
+          "op": "setState",
+          "stateGroupId": "state-bae9d4b375a54b61a1d9b86debbff969",
+          "stateValueId": "value-6450efb2f78843ebb97c5646df9e062e"
+        }
+      ],
+      "id": "choice-1-effect",
+      "next": "choice-1-reply",
+      "type": "effect"
+    },
+    {
+      "id": "choice-1-reply",
+      "next": "end",
+      "speakerId": "story-13c7259d50e6-person",
+      "text": "네가 등을 맡아줘서 무사히 나왔어. 연회에서 다시 만나자.",
+      "type": "dialogue"
+    },
+    {
+      "effects": [
+        {
+          "flagId": "story-13c7259d50e6-c-519b9463",
+          "op": "setFlag",
+          "value": true
+        },
+        {
+          "op": "add",
+          "target": {
+            "characterId": "story-13c7259d50e6-person",
+            "kind": "relationship",
+            "relationshipId": "story-13c7259d50e6-bond"
+          },
+          "value": {
+            "op": "literal",
+            "value": -1
+          }
+        }
+      ],
+      "id": "c-519b9463-effect",
+      "next": "c-519b9463-reply",
+      "type": "effect"
+    },
+    {
+      "id": "c-519b9463-reply",
+      "next": "end",
+      "speakerId": "story-13c7259d50e6-person",
+      "text": "알겠어. 오늘은 혼자 옮겨볼게. 조금 아쉽네.",
+      "type": "dialogue"
+    },
+    {
+      "choices": [
+        {
+          "effects": [],
+          "id": "choice-1",
+          "next": "choice-1-effect",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "동료와 함께 탈출한다"
+        },
+        {
+          "effects": [],
+          "id": "c-519b9463",
+          "next": "c-519b9463-effect",
+          "requirements": {
+            "op": "always"
+          },
+          "text": "혼자 빠져나온다"
+        }
+      ],
+      "id": "question",
+      "prompt": "동료와 함께할 것인가?",
+      "type": "choice"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 80,
+  "requirements": {
+    "equals": true,
+    "flagId": "story-13c7259d50e6-activity-done",
+    "op": "flag"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 5
+  }
+}

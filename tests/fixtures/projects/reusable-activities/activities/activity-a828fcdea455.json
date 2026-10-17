@@ -1,0 +1,30 @@
+{
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "skill",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "read",
+        "target": {
+          "attributeId": "skill",
+          "kind": "attribute"
+        }
+      }
+    }
+  ],
+  "costs": [
+    {
+      "amount": 1,
+      "attributeId": "money"
+    }
+  ],
+  "formatVersion": "0.1.0",
+  "id": "activity-a828fcdea455",
+  "label": "수련",
+  "requirements": {
+    "op": "always"
+  }
+}

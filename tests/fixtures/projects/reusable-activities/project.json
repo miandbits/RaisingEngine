@@ -1,0 +1,1405 @@
+{
+  "$schema": "../../packages/schema/project.schema.json",
+  "authoring": {
+    "storyFlows": [
+      {
+        "activityId": "story-13c7259d50e6-activity",
+        "activityLabel": "약초 손질",
+        "characterId": "story-13c7259d50e6-person",
+        "characterName": "소하",
+        "choices": [
+          {
+            "delta": 3,
+            "followupEnabled": true,
+            "followupFrom": 2,
+            "followupText": "지난번 약초를 옮겨줘서 고마워. 약속한 차를 준비했어. 함께 마시자.",
+            "followupTitle": "약속의 답례",
+            "id": "choice-1",
+            "label": "돕는다",
+            "minimumRelationship": 3,
+            "reply": "고마워. 네가 함께해 주니 마음이 놓여."
+          },
+          {
+            "delta": -1,
+            "followupEnabled": false,
+            "followupFrom": 2,
+            "followupText": "",
+            "followupTitle": "",
+            "id": "c-519b9463",
+            "label": "오늘은 거절한다",
+            "minimumRelationship": 0,
+            "reply": "알겠어. 오늘은 혼자 옮겨볼게. 조금 아쉽네."
+          }
+        ],
+        "cost": 0,
+        "costAttributeId": "",
+        "encounterText": "오늘 손질한 약초를 마을까지 옮겨야 해. 함께 도와줄래?",
+        "encounterTitle": "약초 손질 뒤의 부탁",
+        "fromPeriod": 1,
+        "gain": 0,
+        "gainAttributeId": "",
+        "id": "story-13c7259d50e6",
+        "name": "약초밭의 약속",
+        "newActivity": true,
+        "newCharacter": true,
+        "newRelationship": true,
+        "ownedDocuments": [
+          {
+            "digest": "26f49e6a3a2a10b346d3cbdcbb6cbe59f81604f299bf74dab51a9e90ae562348",
+            "file": "characters/story-13c7259d50e6-person.json"
+          },
+          {
+            "digest": "f08a540f30eaa8a4b0a7fc6aad6e17859e6c70c0c9e8eb27402ebb38c2e52357",
+            "file": "activities/story-13c7259d50e6-activity.json"
+          },
+          {
+            "digest": "857c039061dd16d4a291427a9eb348d6598fa66033de09a019574cd61dcb71d2",
+            "file": "events/story-13c7259d50e6-choice-1-next.json"
+          },
+          {
+            "digest": "d4de6e2cd754ca3648c956b227eeba659641410ed12ef05ac16cbb7273e768f1",
+            "file": "events/story-13c7259d50e6-meeting.json"
+          }
+        ],
+        "prompt": "어떻게 답할까?",
+        "relationshipId": "story-13c7259d50e6-bond",
+        "relationshipInitial": 0,
+        "relationshipLabel": "신뢰",
+        "scheduleLink": {},
+        "throughPeriod": 6
+      }
+    ]
+  },
+  "defaultEndingId": "ordinary",
+  "description": "한 기간은 상순·중순·하순 중 하나이며, 총 6기간을 진행하는 데이터 계약 샘플입니다.",
+  "durationMonths": 2,
+  "formatVersion": "0.1.0",
+  "gameId": "academy-demo",
+  "initialState": {
+    "attributes": {},
+    "flags": {
+      "story-13c7259d50e6-activity-done": false,
+      "story-13c7259d50e6-c-519b9463": false,
+      "story-13c7259d50e6-choice-1": false
+    },
+    "relationships": {}
+  },
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "roster": {
+    "localAttributeIds": [
+      "skill",
+      "stamina",
+      "stress"
+    ],
+    "members": [
+      {
+        "activityId": "activity-a828fcdea455",
+        "characterId": "apprentice",
+        "initialAttributes": {
+          "skill": 10,
+          "stamina": 60,
+          "stress": 0
+        }
+      },
+      {
+        "activityId": "activity-a828fcdea455",
+        "characterId": "trainee-2",
+        "initialAttributes": {
+          "skill": 40,
+          "stamina": 80,
+          "stress": 0
+        }
+      }
+    ]
+  },
+  "startMonth": 1,
+  "startYear": 1,
+  "stateGroups": [
+    {
+      "id": "state-bae9d4b375a54b61a1d9b86debbff969",
+      "initialValueId": "value-7b5c11e8018849e388ec4e5b0e1c6f2a",
+      "name": "행동 모드",
+      "scope": "shared",
+      "values": [
+        {
+          "id": "value-7b5c11e8018849e388ec4e5b0e1c6f2a",
+          "name": "평상시"
+        },
+        {
+          "id": "value-cc831f5b6ed34afd9398eea2c7311c64",
+          "name": "수련"
+        },
+        {
+          "id": "value-6450efb2f78843ebb97c5646df9e062e",
+          "name": "연회"
+        }
+      ]
+    }
+  ],
+  "title": "견습생의 두 달",
+  "visual": {
+    "components": [
+      {
+        "elements": [
+          {
+            "action": "save",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "save",
+            "kind": "button",
+            "radius": 8,
+            "text": "저장",
+            "width": 128,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "action": "load",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "load",
+            "kind": "button",
+            "radius": 8,
+            "text": "불러오기",
+            "width": 144,
+            "x": 144,
+            "y": 0
+          }
+        ],
+        "height": 48,
+        "id": "save-controls",
+        "label": "공용 저장·불러오기",
+        "width": 288
+      },
+      {
+        "elements": [
+          {
+            "fontSize": 24,
+            "height": 40,
+            "id": "element-1",
+            "kind": "text",
+            "label": "활동 안내",
+            "text": "함께 성장할 다음 활동을 선택하세요",
+            "variants": [
+              {
+                "activityIds": [
+                  "activity-a828fcdea455"
+                ],
+                "label": "수련 · 자신만의 내공을 쌓는다",
+                "values": {
+                  "opacity": 1,
+                  "text": "수련 · 자신만의 내공을 쌓는다"
+                },
+                "when": {
+                  "op": "always"
+                }
+              },
+              {
+                "activityIds": [
+                  "story-13c7259d50e6-activity"
+                ],
+                "label": "잠입 · 경비의 빈틈을 살핀다",
+                "values": {
+                  "opacity": 1,
+                  "text": "잠입 · 경비의 빈틈을 살핀다"
+                },
+                "when": {
+                  "op": "always"
+                }
+              },
+              {
+                "activityIds": [
+                  "activity-cf8366e6fadb"
+                ],
+                "label": "연회 · 지친 몸과 마음을 달랜다",
+                "values": {
+                  "opacity": 1,
+                  "text": "연회 · 지친 몸과 마음을 달랜다"
+                },
+                "when": {
+                  "op": "always"
+                }
+              }
+            ],
+            "width": 530,
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "height": 50,
+        "id": "component-1",
+        "label": "활동 안내 카드",
+        "width": 540
+      }
+    ],
+    "height": 720,
+    "routing": {
+      "defaultScreenId": "screen-1",
+      "phases": [],
+      "useLocationScreens": false
+    },
+    "screens": [
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 44,
+            "height": 100,
+            "id": "title",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 150
+          },
+          {
+            "binding": "description",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 210,
+            "id": "description",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 270
+          },
+          {
+            "action": "start",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "start",
+            "kind": "button",
+            "radius": 8,
+            "text": "이야기 시작",
+            "width": 300,
+            "x": 80,
+            "y": 570
+          },
+          {
+            "action": "load",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "load",
+            "kind": "button",
+            "radius": 8,
+            "text": "불러오기",
+            "width": 220,
+            "x": 420,
+            "y": 570
+          },
+          {
+            "action": "navigate",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-1",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "screenId": "screen-1",
+            "text": "플레이로 돌아가기",
+            "width": 200,
+            "x": 820,
+            "y": 620
+          },
+          {
+            "action": "save",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-2",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "저장",
+            "width": 200,
+            "x": 600,
+            "y": 620
+          }
+        ],
+        "id": "title",
+        "label": "타이틀"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 30,
+            "height": 64,
+            "id": "title",
+            "kind": "text",
+            "width": 780,
+            "x": 24,
+            "y": 24
+          },
+          {
+            "binding": "calendar",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 64,
+            "id": "calendar",
+            "kind": "text",
+            "width": 280,
+            "x": 24,
+            "y": 104
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 450,
+            "id": "stats",
+            "kind": "stats",
+            "width": 280,
+            "x": 24,
+            "y": 190
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 240,
+            "id": "schedule",
+            "kind": "schedule",
+            "visibleWhen": "planning",
+            "width": 910,
+            "x": 330,
+            "y": 120
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 220,
+            "id": "result",
+            "kind": "result",
+            "visibleWhen": "result",
+            "width": 910,
+            "x": 330,
+            "y": 380
+          },
+          {
+            "action": "advance",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "advance",
+            "kind": "button",
+            "radius": 8,
+            "text": "다음 진행",
+            "width": 350,
+            "x": 890,
+            "y": 640
+          },
+          {
+            "anchorY": "bottom",
+            "binding": "relationship-value",
+            "characterId": "story-13c7259d50e6-person",
+            "color": "#e9e3d5",
+            "fill": "#263d43",
+            "fontSize": 20,
+            "height": 44,
+            "id": "relationship-a88a45da-e78",
+            "kind": "text",
+            "label": "소하 · 신뢰",
+            "radius": 8,
+            "relationshipId": "story-13c7259d50e6-bond",
+            "valueFormat": "{label}: {value} (최근 {delta})",
+            "width": 820,
+            "x": 24,
+            "y": 630
+          }
+        ],
+        "id": "schedule",
+        "label": "일정·활동 결과"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "binding": "speaker",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 56,
+            "id": "speaker",
+            "kind": "text",
+            "width": 900,
+            "x": 64,
+            "y": 130
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 220,
+            "id": "dialogue",
+            "kind": "dialogue",
+            "width": 1152,
+            "x": 64,
+            "y": 210
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 140,
+            "id": "choices",
+            "kind": "choices",
+            "visibleWhen": "choice",
+            "width": 1152,
+            "x": 64,
+            "y": 450
+          },
+          {
+            "action": "advance",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "advance",
+            "kind": "button",
+            "radius": 8,
+            "text": "계속",
+            "width": 220,
+            "x": 1010,
+            "y": 640
+          },
+          {
+            "anchorY": "bottom",
+            "binding": "relationship-value",
+            "characterId": "story-13c7259d50e6-person",
+            "color": "#e9e3d5",
+            "fill": "#263d43",
+            "fontSize": 20,
+            "height": 44,
+            "id": "relationship-a88a45da-e78",
+            "kind": "text",
+            "label": "소하 · 신뢰",
+            "radius": 8,
+            "relationshipId": "story-13c7259d50e6-bond",
+            "valueFormat": "{label}: {value} (최근 {delta})",
+            "width": 820,
+            "x": 24,
+            "y": 630
+          }
+        ],
+        "id": "story",
+        "label": "대화·선택지"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 32,
+            "height": 80,
+            "id": "title",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 150
+          },
+          {
+            "binding": "ending",
+            "color": "#e9e3d5",
+            "fontSize": 40,
+            "height": 160,
+            "id": "ending",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 290
+          },
+          {
+            "action": "start",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "start",
+            "kind": "button",
+            "radius": 8,
+            "text": "다시 시작",
+            "width": 380,
+            "x": 450,
+            "y": 560
+          },
+          {
+            "anchorY": "bottom",
+            "binding": "relationship-value",
+            "characterId": "story-13c7259d50e6-person",
+            "color": "#e9e3d5",
+            "fill": "#263d43",
+            "fontSize": 20,
+            "height": 44,
+            "id": "relationship-a88a45da-e78",
+            "kind": "text",
+            "label": "소하 · 신뢰",
+            "radius": 8,
+            "relationshipId": "story-13c7259d50e6-bond",
+            "valueFormat": "{label}: {value} (최근 {delta})",
+            "width": 820,
+            "x": 24,
+            "y": 630
+          }
+        ],
+        "id": "ending",
+        "label": "엔딩"
+      },
+      {
+        "elements": [
+          {
+            "color": "#203a34",
+            "fill": "#fff6dfee",
+            "fontSize": 24,
+            "height": 720,
+            "id": "panel-1",
+            "kind": "panel",
+            "label": "panel",
+            "radius": 12,
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 50,
+            "id": "text-1",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "width": 700,
+            "x": 40,
+            "y": 24
+          },
+          {
+            "binding": "data-value",
+            "color": "#203a34",
+            "dataBinding": {
+              "characterId": "story-13c7259d50e6-person",
+              "kind": "relationship",
+              "relationshipId": "story-13c7259d50e6-bond"
+            },
+            "fontSize": 24,
+            "height": 45,
+            "id": "text-2",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "valueFormat": "{label}: {value}",
+            "width": 700,
+            "x": 40,
+            "y": 130
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 170,
+            "id": "schedule-1",
+            "kind": "schedule",
+            "label": "schedule",
+            "visibleWhen": "planning",
+            "width": 740,
+            "x": 40,
+            "y": 170
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 100,
+            "id": "result-1",
+            "kind": "result",
+            "label": "result",
+            "visibleWhen": "result",
+            "width": 740,
+            "x": 40,
+            "y": 350
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 120,
+            "id": "dialogue-1",
+            "kind": "dialogue",
+            "label": "dialogue",
+            "width": 740,
+            "x": 40,
+            "y": 470
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 300,
+            "id": "choices-1",
+            "kind": "choices",
+            "label": "choices",
+            "visibleWhen": "choice",
+            "width": 420,
+            "x": 820,
+            "y": 170
+          },
+          {
+            "action": "start",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-1",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "처음 시작",
+            "visibleWhen": "title",
+            "width": 200,
+            "x": 40,
+            "y": 620
+          },
+          {
+            "action": "start",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-2",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "새로 시작",
+            "visibleWhen": "finished",
+            "width": 200,
+            "x": 40,
+            "y": 620
+          },
+          {
+            "action": "advance",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-3",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "계속",
+            "width": 200,
+            "x": 1040,
+            "y": 620
+          },
+          {
+            "action": "save",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-4",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "저장",
+            "width": 200,
+            "x": 600,
+            "y": 620
+          },
+          {
+            "action": "load",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-5",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "불러오기",
+            "width": 200,
+            "x": 820,
+            "y": 620
+          },
+          {
+            "action": "navigate",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-6",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "screenId": "title",
+            "text": "다른 화면",
+            "width": 200,
+            "x": 820,
+            "y": 24
+          },
+          {
+            "binding": "ending",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 120,
+            "id": "text-3",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "visibleWhen": "finished",
+            "width": 740,
+            "x": 40,
+            "y": 470
+          },
+          {
+            "componentId": "component-1",
+            "height": 50,
+            "id": "instance-1",
+            "kind": "component",
+            "label": "활동 안내 카드",
+            "width": 540,
+            "x": 40,
+            "y": 75
+          },
+          {
+            "componentId": "component-1",
+            "height": 50,
+            "id": "instance-2",
+            "kind": "component",
+            "label": "활동 안내 카드",
+            "width": 540,
+            "x": 660,
+            "y": 75
+          }
+        ],
+        "id": "screen-1",
+        "label": "Free Canvas"
+      },
+      {
+        "elements": [
+          {
+            "color": "#203a34",
+            "fill": "#fff6dfee",
+            "fontSize": 24,
+            "height": 720,
+            "id": "panel-1",
+            "kind": "panel",
+            "label": "panel",
+            "radius": 12,
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 50,
+            "id": "text-1",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "width": 700,
+            "x": 40,
+            "y": 24
+          },
+          {
+            "binding": "data-value",
+            "color": "#203a34",
+            "dataBinding": {
+              "characterId": "story-13c7259d50e6-person",
+              "kind": "relationship",
+              "relationshipId": "story-13c7259d50e6-bond"
+            },
+            "fontSize": 24,
+            "height": 45,
+            "id": "text-2",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "valueFormat": "{label}: {value}",
+            "width": 700,
+            "x": 40,
+            "y": 100
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 170,
+            "id": "schedule-1",
+            "kind": "schedule",
+            "label": "schedule",
+            "visibleWhen": "planning",
+            "width": 740,
+            "x": 40,
+            "y": 170
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 100,
+            "id": "result-1",
+            "kind": "result",
+            "label": "result",
+            "visibleWhen": "result",
+            "width": 740,
+            "x": 40,
+            "y": 350
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 120,
+            "id": "dialogue-1",
+            "kind": "dialogue",
+            "label": "dialogue",
+            "width": 740,
+            "x": 40,
+            "y": 470
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 300,
+            "id": "choices-1",
+            "kind": "choices",
+            "label": "choices",
+            "visibleWhen": "choice",
+            "width": 420,
+            "x": 820,
+            "y": 170
+          },
+          {
+            "action": "start",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-1",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "처음 시작",
+            "visibleWhen": "title",
+            "width": 200,
+            "x": 40,
+            "y": 620
+          },
+          {
+            "action": "start",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-2",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "새로 시작",
+            "visibleWhen": "finished",
+            "width": 200,
+            "x": 40,
+            "y": 620
+          },
+          {
+            "action": "advance",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-3",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "계속",
+            "width": 200,
+            "x": 1040,
+            "y": 620
+          },
+          {
+            "action": "save",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-4",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "저장",
+            "width": 200,
+            "x": 600,
+            "y": 620
+          },
+          {
+            "action": "load",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-5",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "불러오기",
+            "width": 200,
+            "x": 820,
+            "y": 620
+          },
+          {
+            "action": "navigate",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-6",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "screenId": "title",
+            "text": "다른 화면",
+            "width": 200,
+            "x": 820,
+            "y": 24
+          },
+          {
+            "binding": "ending",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 120,
+            "id": "text-3",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "visibleWhen": "finished",
+            "width": 740,
+            "x": 40,
+            "y": 470
+          },
+          {
+            "binding": "none",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 50,
+            "id": "text-4",
+            "kind": "text",
+            "label": "text",
+            "text": "기본 표현",
+            "variants": [
+              {
+                "activityIds": [
+                  "rest"
+                ],
+                "label": "휴식 결과의 표현",
+                "values": {
+                  "opacity": 1,
+                  "text": "휴식 중 · 기운을 회복한다"
+                },
+                "when": {
+                  "op": "always"
+                }
+              }
+            ],
+            "width": 380,
+            "x": 400,
+            "y": 100
+          },
+          {
+            "binding": "none",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 50,
+            "id": "text-5",
+            "kind": "text",
+            "label": "text",
+            "text": "평상시 · 다음 행동을 고른다",
+            "variants": [
+              {
+                "label": "수련 · 기운을 가다듬는다",
+                "values": {
+                  "opacity": 1,
+                  "text": "수련 · 기운을 가다듬는다"
+                },
+                "when": {
+                  "op": "stateIs",
+                  "stateGroupId": "state-bae9d4b375a54b61a1d9b86debbff969",
+                  "stateValueId": "value-cc831f5b6ed34afd9398eea2c7311c64"
+                }
+              },
+              {
+                "label": "연회 · 인연을 쌓는다",
+                "values": {
+                  "opacity": 1,
+                  "text": "연회 · 인연을 쌓는다"
+                },
+                "when": {
+                  "op": "stateIs",
+                  "stateGroupId": "state-bae9d4b375a54b61a1d9b86debbff969",
+                  "stateValueId": "value-6450efb2f78843ebb97c5646df9e062e"
+                }
+              }
+            ],
+            "width": 500,
+            "x": 400,
+            "y": 155
+          }
+        ],
+        "id": "screen-1-copy-1",
+        "label": "수련 화면"
+      },
+      {
+        "elements": [
+          {
+            "color": "#203a34",
+            "fill": "#fff6dfee",
+            "fontSize": 24,
+            "height": 720,
+            "id": "panel-1",
+            "kind": "panel",
+            "label": "panel",
+            "radius": 12,
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 50,
+            "id": "text-1",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "width": 700,
+            "x": 40,
+            "y": 24
+          },
+          {
+            "binding": "data-value",
+            "color": "#203a34",
+            "dataBinding": {
+              "characterId": "story-13c7259d50e6-person",
+              "kind": "relationship",
+              "relationshipId": "story-13c7259d50e6-bond"
+            },
+            "fontSize": 24,
+            "height": 45,
+            "id": "text-2",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "valueFormat": "{label}: {value}",
+            "width": 700,
+            "x": 40,
+            "y": 100
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 170,
+            "id": "schedule-1",
+            "kind": "schedule",
+            "label": "schedule",
+            "visibleWhen": "planning",
+            "width": 740,
+            "x": 40,
+            "y": 170
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 100,
+            "id": "result-1",
+            "kind": "result",
+            "label": "result",
+            "visibleWhen": "result",
+            "width": 740,
+            "x": 40,
+            "y": 350
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 120,
+            "id": "dialogue-1",
+            "kind": "dialogue",
+            "label": "dialogue",
+            "width": 740,
+            "x": 40,
+            "y": 470
+          },
+          {
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 300,
+            "id": "choices-1",
+            "kind": "choices",
+            "label": "choices",
+            "visibleWhen": "choice",
+            "width": 420,
+            "x": 820,
+            "y": 170
+          },
+          {
+            "action": "start",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-1",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "처음 시작",
+            "visibleWhen": "title",
+            "width": 200,
+            "x": 40,
+            "y": 620
+          },
+          {
+            "action": "start",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-2",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "새로 시작",
+            "visibleWhen": "finished",
+            "width": 200,
+            "x": 40,
+            "y": 620
+          },
+          {
+            "action": "advance",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-3",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "계속",
+            "width": 200,
+            "x": 1040,
+            "y": 620
+          },
+          {
+            "action": "save",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-4",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "저장",
+            "width": 200,
+            "x": 600,
+            "y": 620
+          },
+          {
+            "action": "load",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-5",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "text": "불러오기",
+            "width": 200,
+            "x": 820,
+            "y": 620
+          },
+          {
+            "action": "navigate",
+            "color": "#ffffff",
+            "fill": "#355c4c",
+            "fontSize": 22,
+            "height": 56,
+            "id": "button-6",
+            "kind": "button",
+            "label": "새 버튼",
+            "radius": 10,
+            "screenId": "title",
+            "text": "다른 화면",
+            "width": 200,
+            "x": 820,
+            "y": 24
+          },
+          {
+            "binding": "ending",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 120,
+            "id": "text-3",
+            "kind": "text",
+            "label": "text",
+            "text": "새 텍스트",
+            "visibleWhen": "finished",
+            "width": 740,
+            "x": 40,
+            "y": 470
+          },
+          {
+            "binding": "none",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 50,
+            "id": "text-4",
+            "kind": "text",
+            "label": "text",
+            "text": "기본 표현",
+            "variants": [
+              {
+                "activityIds": [
+                  "rest"
+                ],
+                "label": "휴식 결과의 표현",
+                "values": {
+                  "opacity": 1,
+                  "text": "휴식 중 · 기운을 회복한다"
+                },
+                "when": {
+                  "op": "always"
+                }
+              }
+            ],
+            "width": 380,
+            "x": 400,
+            "y": 100
+          },
+          {
+            "binding": "none",
+            "color": "#203a34",
+            "fontSize": 24,
+            "height": 50,
+            "id": "text-5",
+            "kind": "text",
+            "label": "text",
+            "text": "평상시 · 다음 행동을 고른다",
+            "variants": [
+              {
+                "label": "수련 · 기운을 가다듬는다",
+                "values": {
+                  "opacity": 1,
+                  "text": "수련 · 기운을 가다듬는다"
+                },
+                "when": {
+                  "op": "stateIs",
+                  "stateGroupId": "state-bae9d4b375a54b61a1d9b86debbff969",
+                  "stateValueId": "value-cc831f5b6ed34afd9398eea2c7311c64"
+                }
+              },
+              {
+                "label": "연회 · 인연을 쌓는다",
+                "values": {
+                  "opacity": 1,
+                  "text": "연회 · 인연을 쌓는다"
+                },
+                "when": {
+                  "op": "stateIs",
+                  "stateGroupId": "state-bae9d4b375a54b61a1d9b86debbff969",
+                  "stateValueId": "value-6450efb2f78843ebb97c5646df9e062e"
+                }
+              }
+            ],
+            "width": 500,
+            "x": 400,
+            "y": 155
+          }
+        ],
+        "id": "screen-1-copy-2",
+        "label": "연회 화면"
+      }
+    ],
+    "width": 1280
+  }
+}
