@@ -1,6 +1,7 @@
 #pragma once
 #include <QDockWidget>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QProcess>
 #include <QTimer>
 #include <QComboBox>
@@ -22,6 +23,8 @@ public:
   QString reportPath() const {return reportFile;}
   QJsonObject result() const {return renderedUi;}
   void begin();
+  void setDocuments(QJsonArray value){documents=value;}
+  QJsonObject previewRequest() const {return requestedScenario;}
 signals:
   void snapshotRequested();
   void snapshotReady(bool ok);
@@ -34,6 +37,11 @@ private:
   QPushButton *render,*cancel,*pin;
   QLabel *status,*caption,*referenceCaption;
   QTreeWidget *nodes;
+  QTreeWidget *reasons;
+  QJsonArray documents;
+  QJsonObject scenario,requestedScenario;
+  void editScenario();
+  void showReasons(const QJsonObject& explanation);
   RenderImage *image,*reference;
   QJsonObject project,renderedUi;
   QString screen,root,reportFile,imageFile,renderedContext,requestContext;

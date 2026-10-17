@@ -890,7 +890,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   screenOnlyActions << inspectRender;
   connect(rendererPreview,&RendererPreviewDock::snapshotRequested,this,[this]{
     if(bridge.busy()){rendererPreview->fail(tr("현재 편집 처리가 끝난 뒤 다시 렌더링하세요."));return;}
-    request("preview",{},[this](QJsonObject reply){if(!reply["error"].toString().isEmpty()||!reply.contains("play")){rendererPreview->fail(reply["error"].toString(tr("미리보기를 준비할 수 없습니다.")));return;}rendererPreview->launch(reply["play"].toObject());});
+    request("preview",rendererPreview->previewRequest(),[this](QJsonObject reply){if(!reply["error"].toString().isEmpty()||!reply.contains("play")){rendererPreview->fail(reply["error"].toString(tr("미리보기를 준비할 수 없습니다.")));return;}rendererPreview->launch(reply["play"].toObject());});
   });
   connect(rendererPreview,&RendererPreviewDock::elementPicked,this,[this](QString id){
     for(auto e:currentScreen()["elements"].toArray()){auto element=e.toObject();const auto candidate=element["id"].toString();if(candidate==id||(element["kind"]=="component"&&id.startsWith(candidate+"__"))){selectElement(candidate);break;}}
@@ -1273,6 +1273,7 @@ void StudioWindow::refresh(bool fit) {
   }
   auto translatedPreview=localizedProject(preview,previewLocaleField->currentData().toString());auto translatedScreen=currentScreen();for(auto s:translatedPreview["visual"].toObject()["screens"].toArray())if(s.toObject()["id"]==screenId)translatedScreen=s.toObject();
   canvas->setScreen(translatedPreview, translatedScreen, assets, selection, fit);
+  rendererPreview->setDocuments(view["documents"].toArray());
   rendererPreview->setContext(project,screenId,selection,view["revision"].toInt(),view["root"].toString(),previewLocaleField->currentData().toString());
   canvas->setVisible(!screenId.isEmpty());
   emptyDocument->setVisible(screenId.isEmpty());
@@ -1324,6 +1325,7 @@ void StudioWindow::selectElement(const QString &id) {
   QTreeWidgetItemIterator it(hierarchy);while(*it){(*it)->setSelected((*it)->data(0,Qt::UserRole).toString()==id&&(*it)->data(0,Qt::UserRole+1).toString()==screenId);++it;}
   filling = false;
   updateInspector();
+  rendererPreview->setDocuments(view["documents"].toArray());
   rendererPreview->setContext(projectData(),screenId,selection,view["revision"].toInt(),view["root"].toString(),previewLocaleField->currentData().toString());
 }
 void StudioWindow::updateTargets(const QString &action, const QJsonObject &e) {

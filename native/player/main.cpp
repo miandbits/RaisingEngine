@@ -83,7 +83,7 @@ public:
   double extension_dt=0;
   uint64_t document_generation=0;
   bool syncing_user_inputs=false;
-  std::string preview_element,preview_state="normal";
+  std::string preview_element,preview_state="normal",preview_source="initial";
   bool preview() const {return !markup.preview_screen.empty();}
   int auto_revision=-1,auto_attempted=-1;
   double auto_elapsed=0;
@@ -151,9 +151,10 @@ public:
     if(!preview()||preview_element.empty())return;
     auto* element=document->GetElementById("node-"+preview_element);
     if(!element)element=document->GetElementById(preview_element);
-    if(!element)throw std::runtime_error("Preview element is missing or hidden: "+preview_element);
+    if(!element){if(preview_state=="normal")return;throw std::runtime_error("Preview element is missing or hidden: "+preview_element);}
     auto* target=element;
     if(element->GetTagName()!="button")for(const auto& entry:markup.render_elements)if(entry.value("id","")==preview_element&&entry.value("kind","")=="button"){if(auto* button=element->QuerySelector("button"))target=button;break;}
+
     if(preview_state!="normal"&&target->GetTagName()!="button")throw std::runtime_error("Preview state requires a button target: "+preview_element);
     target->SetPseudoClass("hover",preview_state=="hover"||preview_state=="pressed");
     target->SetPseudoClass("active",preview_state=="pressed");
@@ -583,7 +584,7 @@ public:
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
     return {{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
-      {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource","initial"},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
+      {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
       {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"musicCursor",audio.cursor()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
@@ -642,13 +643,14 @@ int main(int argc,char** argv) {
 #endif
   int max_frames=0;bool hidden=false,editor_events=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
-  fs::path preview_scene_file,recording_file;Json preview_scene=nullptr;
+  fs::path preview_scene_file,preview_inspection_file,recording_file;Json preview_scene=nullptr;
   try {
   for(int i=1;i<argc;i++) {
     const std::string arg=argv[i];
     if(arg=="--bundle"&&i+1<argc)bundle_root=fs::u8path(argv[++i]);
     else if(arg=="--locale"&&i+1<argc)requested_locale=argv[++i];
     else if(arg=="--preview-screen"&&i+1<argc)preview_screen=argv[++i];
+    else if(arg=="--preview-inspection"&&i+1<argc)preview_inspection_file=fs::u8path(argv[++i]);
     else if(arg=="--preview-scene"&&i+1<argc)preview_scene_file=fs::u8path(argv[++i]);
     else if(arg=="--preview-element"&&i+1<argc)preview_element=argv[++i];
     else if(arg=="--preview-state"&&i+1<argc)preview_state=argv[++i];
@@ -668,6 +670,7 @@ int main(int argc,char** argv) {
       if(preview_screen.empty())throw std::runtime_error("Preview scene requires --preview-screen");
       preview_scene=read_preview_scene(preview_scene_file,bundle.at("content"));
     }
+    if(!preview_inspection_file.empty()&&preview_screen.empty())throw std::runtime_error("Inspection requires --preview-screen");
     if(preview_state!="normal"&&preview_state!="hover"&&preview_state!="pressed"&&preview_state!="focus"&&preview_state!="disabled")throw std::runtime_error("Unknown preview state: "+preview_state);
     if(preview_screen.empty()&&(!preview_element.empty()||preview_state!="normal"))throw std::runtime_error("Preview styling requires --preview-screen");
     if(preview_state!="normal"&&preview_element.empty())throw std::runtime_error("Preview styling requires --preview-element");
@@ -705,6 +708,12 @@ int main(int argc,char** argv) {
       ExtensionElement::host=&app.extensions;
       app.game.seed=requested_seed;app.recording.file=recording_file;
       if(!preview_screen.empty()){app.markup.preview_screen=preview_screen;app.markup.preview_scene=preview_scene;app.preview_element=preview_element;app.preview_state=preview_state;if(preview_screen!="title"||!preview_scene.is_null())app.game.start();}
+      if(!preview_inspection_file.empty()){
+        const auto inspection=read_json(preview_inspection_file);
+        if(inspection.value("version",0)!=1||inspection.value("contentFingerprint",Json())!=app.game.content.at("contentFingerprint")||inspection.value("screenId","")!=preview_screen||!inspection.value("state",Json()).is_object()||!inspection.value("visual",Json()).is_object())throw std::runtime_error("Invalid authoring inspection snapshot");
+        app.game.gallery_recording=false;app.game.gallery_pending=Json::array();
+        app.game.state=inspection.at("state");app.game.content["project"]["visual"]=inspection.at("visual");app.game.refresh();app.preview_source="authoring";app.dirty=true;
+      }
       if(!requested_locale.empty()){app.markup.locale=requested_locale;app.dirty=true;}
       app.editor_events=editor_events;
 #ifdef SDL_PLATFORM_ANDROID

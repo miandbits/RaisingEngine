@@ -34,6 +34,7 @@ import { installPackage, listInstalled, pluginStorePath, compareVersions, callPr
 import { createRun } from '../../dist/packages/core/run.js';
 import { evaluateCondition } from '../../dist/packages/core/evaluation.js';
 import { resolveScreenElements } from '../../dist/packages/visual/components.js';
+import { authoringPreview } from './authoring-preview.mjs';
 
 const engineRoot = fileURLToPath(new URL('../..', import.meta.url));
 const LOCK_FILE = 'plugins/lock.json';
@@ -324,6 +325,7 @@ export class QtStudioService {
         const built = await this.editor.snapshot(revision);
         if (!built.ok) throw new Error('미리보기 스냅샷을 만들 수 없습니다.');
         const hasScene = Object.hasOwn(params, 'scene');
+        const inspection = params.authoringContext ? authoringPreview(built.snapshot, params.authoringContext) : null;
         if (hasScene) {
           // Shares the (lazy) source locations: the scene check's diagnostics keep exact lines.
           const candidate = detachProject(this.editor.loaded());
@@ -338,6 +340,8 @@ export class QtStudioService {
         }
         const requirePreview = async directory => {
           const capabilities = JSON.parse(await readFile(path.join(directory, 'capabilities.json'), 'utf8'));
+          if (inspection && !capabilities.visualFeatures?.includes('authoring-preview-v1'))
+            throw new Error('현재 플레이어는 제작 상태 미리보기(authoring-preview-v1)를 지원하지 않습니다. 플레이어를 다시 빌드하세요.');
           if (!Array.isArray(capabilities.visualFeatures) || !capabilities.visualFeatures.includes('renderer-preview-v1'))
             throw new Error('현재 플레이어는 렌더러 미리보기를 지원하지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
           if (hasScene && !capabilities.visualFeatures.includes('scene-preview-v1'))
@@ -358,10 +362,13 @@ export class QtStudioService {
         await this.editor.assertDiskUnchanged();
         this.editor.current(revision);
         const sceneFile = hasScene ? path.join(run, 'preview-scene.json') : null;
+        const inspectionFile = inspection ? path.join(run, 'inspection.json') : null;
+        if (inspectionFile) await writeFile(inspectionFile, JSON.stringify(inspection), 'utf8');
         if (sceneFile) await writeFile(sceneFile, JSON.stringify(params.scene, null, 2), 'utf8');
         extra = { play: { preview: true, executable: path.join(exported.directory, 'RaisingPlayer.exe'),
           directory: exported.directory, save: path.join(run, 'save.json'), report: path.join(run, 'report.json'),
-          revision, fingerprint: exported.contentFingerprint, ...(sceneFile ? { scene: sceneFile, previewSource: 'initial-state', gameplayValidated: false } : {}) } };
+          revision, fingerprint: exported.contentFingerprint, ...(sceneFile ? { scene: sceneFile, previewSource: 'initial-state', gameplayValidated: false } : {}),
+          ...(inspection ? {inspection:inspectionFile,screenId:inspection.screenId,explanation:inspection.explanation,previewSource:'authoring-state',gameplayValidated:false} : {}) } };
         break;
       }
       case 'play': {

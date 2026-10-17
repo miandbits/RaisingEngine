@@ -16,7 +16,7 @@ import {resolvePresentation,presentationActivity} from '../../dist/packages/visu
 import {nativeRequest} from '../../dist/packages/native-bridge/index.js';
 
 test('exported component cards: browser/native parity, actual buttons, downloads/uploads and ending', {timeout:120000},async t=>{
-  const info=JSON.parse(await readFile(new URL('../fixtures/component-context.json',import.meta.url),'utf8'));
+  const info=JSON.parse(await readFile(process.env.RAISING_COMPONENT_CONTEXT??new URL('../fixtures/component-context.json',import.meta.url),'utf8'));
   const built=await buildSnapshot(await loadProject(info.root));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const c=built.snapshot;
   await mkdir('.cache/web-component-context',{recursive:true});await mkdir('output/playwright',{recursive:true});
   const out=await mkdtemp(resolve('.cache/web-component-context/run-')),destination=resolve(out,'web');
@@ -47,7 +47,8 @@ test('exported component cards: browser/native parity, actual buttons, downloads
     else return;
   }throw Error('Unbounded settle');};
   const checkpoint=async label=>{
-    await page.waitForFunction(async rev=>(await window.player.view()).view.state?.stateRevision===rev,session.state.stateRevision);
+    // Observe the rendered completion signal; an async predicate can finish the wait before file.text()/load completes.
+    await page.waitForFunction(()=>document.querySelector('.visual-status')?.textContent?.includes('플레이 중'));
     const actual=await page.evaluate(async()=>(await window.player.view()).view);
     assert.equal(actual.runtimeBackend,'wasm');assert.deepEqual(actual.state,session.state,label);
     for(const card of cards){
@@ -102,7 +103,11 @@ test('exported component cards: browser/native parity, actual buttons, downloads
     }else throw Error(session.state.phase);
   }
   assert.equal(session.state.phase,'finished');assert.equal(session.state.endingId,'certified');assert.ok(acted&&choices>0);
-  const ending=structuredClone(session),endingFile=await download('ending');await click(button('start','finished'));await upload(endingFile,ending,'ending-restored');
+  const ending=structuredClone(session),endingFile=await download('ending');await click(button('start','finished'));
+  // Restart is asynchronous. Wait for the new run before checking a load against the old ending revision.
+  await page.waitForFunction(()=>document.querySelector('.visual-status')?.textContent?.includes('플레이 중'));
+  assert.equal((await page.evaluate(async()=>(await window.player.view()).view.state)).stateRevision,0);
+  await upload(endingFile,ending,'ending-restored');
   await page.reload();await page.locator('.visual-stage').waitFor();await upload(endingFile,ending,'reload-ending');assert.deepEqual(errors,[]);
   await writeFile(resolve('.cache/web-component-context/evidence.json'),JSON.stringify({out,destination,checkpoints:checkpoints.length,ending:session.state.endingId,errors},null,2));
   console.log(`Browser/native component context evidence: ${out}`);

@@ -36,6 +36,7 @@ private slots:
   void integratedAuthoringRoundtrip();
   void reusableActivitiesAuthoring();
   void componentContextAuthoring();
+  void authoringStatePreview();
   void projectManagerRoundtrip();
   void designerQuickRules();
   void designerSmallGameAuthoring();
@@ -1000,4 +1001,5 @@ QTEST_MAIN(StudioTests)
 #include "integrated-authoring-test.inc"
 #include "reusable-activities-test.inc"
 #include "component-context-test.inc"
+#include "authoring-preview-test.inc"
 #include "tests.moc"
