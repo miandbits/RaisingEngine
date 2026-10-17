@@ -29,6 +29,7 @@
 class StudioTests : public QObject {
   Q_OBJECT
 private slots:
+  void freeScreenAuthoring();
   void projectManagerRoundtrip();
   void designerQuickRules();
   void designerSmallGameAuthoring();
@@ -85,6 +86,9 @@ private slots:
   void expeditionAuthoringRoundtrip();
   void expeditionAuthoringGuards();
   void scriptAuthoringCreateConnectRoundTrip();
+  void narrativeMetadataAndReferenceRepair();
+  void relationshipFormsPreserveAndGuard();
+  void contentFormsEntryAndAtomicReferences();
   void scriptRoundsBuildAndPreserve();
   void scriptRoundsDialogAndTransaction();
   void scriptAuthoringPreservesAndRejectsBrokenLinks();
@@ -966,6 +970,7 @@ private slots:
 #include "timeline-stage-test.inc"
 #include "expedition-authoring-test.inc"
 #include "script-authoring-test.inc"
+#include "first-time-forms-test.inc"
 #include "script-portrait-transform-test.inc"
 #include "script-scene-preview-test.inc"
 #include "export-dialog-test.inc"
@@ -982,4 +987,5 @@ private slots:
 #include "save-migration-test.inc"
 #include "replay-ui-test.inc"
 QTEST_MAIN(StudioTests)
+#include "free-screens-test.inc"
 #include "tests.moc"

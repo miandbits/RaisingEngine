@@ -4,6 +4,10 @@
 #include <QGridLayout>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QFormLayout>
+#include <QCheckBox>
+#include <QPointer>
+#include <QUuid>
 
 void StudioWindow::showGettingStarted() {
   if (busy()) return;
@@ -15,8 +19,10 @@ void StudioWindow::showGettingStarted() {
   auto grid=new QGridLayout;layout->addLayout(grid);
   QString command;
   const QList<QStringList> steps{
+    {"storyFlowAction",tr("인물에서 후속 사건까지 한 번에"),tr("이름·대사·숫자로 활동과 만남, 선택의 관계 변화와 후속 사건을 연결합니다.")},
     {"settings",tr("1. 제목·기간·초깃값"),tr("이야기 소개, 달력, 주인공과 시작 자원을 설정합니다.")},
     {"initializeStarterScreens",tr("기본 플레이 화면 생성"),tr("화면 없는 프로젝트에 타이틀·일정·대화·엔딩과 공용 저장 부품을 추가합니다. 기존 화면은 덮어쓰지 않습니다.")},
+    {"addRelationshipDisplay",tr("관계 수치·변화 표시"),tr("인물과 관계를 골라 화면에 배치합니다. 위치·글꼴·표시 형식은 속성 창에서 바꿀 수 있습니다.")},
     {"attributes",tr("2. 능력·자원"),tr("내공·수명·학력처럼 게임에 필요한 수치를 이름과 범위로 정의합니다.")},
     {"character",tr("3. 인물"),tr("인물 이름과 표정, 관계를 설정합니다. 내부 ID는 연결을 위해 유지됩니다.")},
     {"activity",tr("4. 활동·비용·효과"),tr("활동의 비용과 증감을 편집합니다. 복잡한 조건은 수치 규칙 도구를 사용하세요.")},
@@ -39,6 +45,46 @@ void StudioWindow::showGettingStarted() {
     contentList->setFocus();return;
   }
   if(auto action=findChild<QAction*>(command))action->trigger();
+}
+
+void StudioWindow::addRelationshipDisplay() {
+  if(busy()||projectData().empty())return;
+  const auto project=projectData();const auto revision=view.value("revision"),root=view.value("root");
+  const auto visual=project.value("visual").toObject();
+  if(visual.value("screens").toArray().empty()){errorLabel->setText(tr("먼저 기본 플레이 화면이나 새 화면을 만드세요."));return;}
+  auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("relationshipDisplayDialog");dialog->setWindowTitle(tr("관계 표시 배치"));dialog->resize(580,300);
+  auto layout=new QVBoxLayout(dialog);auto form=new QFormLayout;layout->addLayout(form);
+  auto targets=new QComboBox;targets->setObjectName("relationshipDisplayTarget");
+  for(const auto &document:view.value("documents").toArray())if(document.toObject().value("kind")=="character"){
+    const auto character=document.toObject().value("data").toObject();
+    for(const auto &value:character.value("relationships").toArray()){
+      const auto relation=value.toObject();targets->addItem(character.value("name").toString()+" · "+relation.value("label").toString(),QVariantMap{{"characterId",character.value("id").toString()},{"relationshipId",relation.value("id").toString()}});
+    }
+  }
+  form->addRow(tr("표시할 관계"),targets);
+  auto screens=new QComboBox;screens->setObjectName("relationshipDisplayScreen");
+  screens->addItem(tr("기본 플레이 화면 모두 (일정·대화·엔딩)"),"@play");
+  for(const auto &value:visual.value("screens").toArray()){const auto s=value.toObject();screens->addItem(s.value("label").toString(),s.value("id").toString());}
+  form->addRow(tr("배치할 화면"),screens);
+  auto format=new QLineEdit("{label}: {value} (최근 {delta})");format->setObjectName("relationshipDisplayFormat");form->addRow(tr("표시 형식"),format);
+  auto help=new QLabel(tr("{label}은 인물·관계 이름, {value}는 현재 값, {delta}는 마지막으로 실제 변한 양입니다.\n일반 텍스트 요소로 추가합니다. 배치 후 캔버스와 속성 창에서 자유롭게 바꾸세요."));help->setWordWrap(true);layout->addWidget(help);
+  auto error=new QLabel;error->setWordWrap(true);layout->addWidget(error);
+  auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Ok)->setText(tr("배치"));buttons->button(QDialogButtonBox::Ok)->setEnabled(targets->count()>0);layout->addWidget(buttons);
+  if(!targets->count())error->setText(tr("표시할 관계가 없습니다. 인물 편집에서 관계를 먼저 추가하세요."));
+  connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+  connect(buttons,&QDialogButtonBox::accepted,dialog,[this,dialog,targets,screens,format,error,project,visual,revision,root]{
+    if(busy()||view.value("revision")!=revision||view.value("root")!=root){error->setText(tr("프로젝트가 변경되었습니다. 창을 다시 열어 주세요."));return;}
+    auto updated=project,v=visual;auto list=v.value("screens").toArray();const auto pair=targets->currentData().toMap();const auto destination=screens->currentData().toString();
+    const auto id="relationship-"+QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);QString first;int added=0;
+    for(int i=0;i<list.size();++i){auto s=list[i].toObject();const auto sid=s.value("id").toString();if(destination=="@play"?!QStringList{"schedule","story","ending"}.contains(sid):sid!=destination)continue;
+      auto elements=s.value("elements").toArray();int count=0;for(const auto &e:elements)if(e.toObject().value("binding")=="relationship-value")++count;
+      elements.append(QJsonObject{{"id",id},{"kind","text"},{"label",targets->currentText()},{"binding","relationship-value"},{"characterId",pair.value("characterId").toString()},{"relationshipId",pair.value("relationshipId").toString()},{"valueFormat",format->text()},{"x",24},{"y",qMax(0,v.value("height").toInt(720)-90-count*48)},{"width",qMax(120,qMin(820,v.value("width").toInt(1280)-48))},{"height",44},{"anchorY","bottom"},{"fontSize",20},{"color","#e9e3d5"},{"fill","#263d43"},{"radius",8}});
+      s["elements"]=elements;list[i]=s;if(first.isEmpty())first=sid;++added;
+    }
+    if(!added){error->setText(tr("기본 플레이 화면이 없습니다. 배치할 화면을 직접 선택하세요."));return;}
+    v["screens"]=list;updated["visual"]=v;openScreen(first);selection=id;replaceProject(updated);dialog->accept();
+  });
+  dialog->open();
 }
 
 void StudioWindow::initializeStarterScreens() {

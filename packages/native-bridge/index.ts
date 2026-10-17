@@ -9,6 +9,7 @@ import type { Command, ContentSnapshot, CreateResult, DeepReadonly, DispatchResu
 import type { createRun } from '../core/run.js';
 import { CoreFault, freeze } from '../core/util.js';
 import { resolveUserValues } from '../core/user-fields.js';
+import type { RelationshipChanges } from '../runtime-service/relationship-history.js';
 
 let pinnedExecutable:string|undefined;
 
@@ -145,8 +146,8 @@ export function nativeDispatchCommand(content: ContentSnapshot, state: RunState,
   // Rejected transactions preserve the caller's exact immutable state reference.
   return result.ok ? freeze(result) : freeze({...result,state});
 }
-export function nativeReplay(content:ContentSnapshot,origin:Parameters<typeof createRun>[2]&{seed:number},commands:DeepReadonly<Command[]>):CreateResult {
-  return freeze(nativeRequest({operation:'replay',content,origin,commands}) as CreateResult);
+export function nativeReplay(content:ContentSnapshot,origin:Parameters<typeof createRun>[2]&{seed:number},commands:DeepReadonly<Command[]>,includeRelationshipChanges=false):CreateResult & {relationshipChanges?:RelationshipChanges} {
+  return freeze(nativeRequest({operation:'replay',content,origin,commands,includeRelationshipChanges}) as CreateResult & {relationshipChanges?:RelationshipChanges});
 }
 /** One process for many serialized requests; avoids per-command process startup during analysis. */
 export class NativeSession {

@@ -6,6 +6,7 @@ import type { ContentSnapshot, RunState, Transition, Command } from '../core/mod
 import { CORE_VERSION } from '../core/model.js';
 import type { PlayerAction, PlayerBridge, PlayerReply, PlayerView, Version } from '../player-service/controller.js';
 import type { RunOrigin, RunSession } from '../runtime-service/session.js';
+import {trackRelationshipChanges, type RelationshipChanges} from '../runtime-service/relationship-history.js';
 import { parseTree, type ParseError, type Node } from 'jsonc-parser';
 import {localizeContent,localeId} from '../localization/catalog.js';
 import {projectDataUi} from '../visual/data-ui-projection.js';
@@ -17,7 +18,7 @@ export interface RuntimeRequest { request(input: unknown): unknown }
 export interface WebFiles { read(): Promise<string | null>; write(text: string): Promise<void> }
 export interface SaveValidator { (value: unknown): boolean; errors?: unknown }
 type Failure = { ok: false; error: { code: string; message: string; path?: string } };
-type StateReply = { ok: true; state: RunState; transition?: Transition } | Failure;
+type StateReply = { ok: true; state: RunState; transition?: Transition; relationshipChanges?: RelationshipChanges } | Failure;
 type Projection = { ok: true; time: PlayerView['time']; narrative: PlayerView['narrative']; gameplay: PlayerView['gameplay']; systems: PlayerView['systems'] } | Failure;
 const MAX_BYTES = 16 * 1024 * 1024;
 const MAX_COMMANDS = 100000;
@@ -72,7 +73,7 @@ export class WebPlayerController implements PlayerBridge {
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       ...(c.project.localization?{localization:c.project.localization,locale:this.locale}:{}),
       durationMonths: c.project.durationMonths, periodsPerMonth: c.project.periodsPerMonth, schedulePlayback: c.project.schedulePlayback ?? 'manual', attributes: c.attributes, characters: c.characters,
-      activities: c.activities, assets: c.assets, state, visual: c.project.visual ?? null,
+      activities: c.activities, assets: c.assets, state, relationshipChanges:this.session?.relationshipChanges, visual: c.project.visual ?? null,
       timeline: this.presentation.view(c,state),
       battleSelection:this.presentation.selectedBattle(c,state),
       dataUi: projectDataUi(c,state,projection.gameplay,input=>this.runtime.request(input), {systems:projection.systems,battleSelection:this.presentation.selectedBattle(c,state)}),
@@ -113,7 +114,8 @@ export class WebPlayerController implements PlayerBridge {
       command, expectedRevision: session.state.stateRevision }) as StateReply;
     if (!r.ok) { const error = `[${r.error.code}] ${r.error.message} (${r.error.path ?? '/'})`; observing?.observe(before, before, command, error); return error; }
     if (!r.transition) throw new Error('런타임 명령 응답에 전이가 없습니다.');
-    this.session = { origin: session.origin, commands: [...session.commands, r.transition.command], state: r.state };
+    this.session = { origin: session.origin, commands: [...session.commands, r.transition.command], state: r.state,
+      relationshipChanges:trackRelationshipChanges(session.relationshipChanges??{},session.state,r.state) };
     observing?.observe(before, { state: r.state, narrative: this.projection(r.state).narrative }, command, null);
     cues.push(...r.transition.soundCues); return null;
   }
@@ -146,7 +148,7 @@ export class WebPlayerController implements PlayerBridge {
     switch (action.type) {
       case 'confirmBattleAction': command=battleCommand; break;
       case 'navigate': case 'visit': case 'buy': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy': case 'interact': command = action; break;
-      case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction': command = action; break;
+      case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'startNodeBattle': case 'battleAction': command = action; break;
       case 'schedule': case 'commitPlan': command = { type: 'setSchedule', activityIds: action.activityIds }; break;
       case 'execute': command = { type: 'executeActivity' }; break;
       case 'choose': command = action; break;
@@ -163,7 +165,7 @@ export class WebPlayerController implements PlayerBridge {
     const extensions=this.extensions?.save();
     const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{})}:undefined;
     const text = canonical({ saveVersion: '1.0.0', coreVersion: CORE_VERSION,
-      contentFingerprint: this.content.contentFingerprint, ...this.session,...(presentation?{playerPresentation:presentation}:{}) });
+      contentFingerprint: this.content.contentFingerprint, origin:this.session.origin,commands:this.session.commands,state:this.session.state,...(presentation?{playerPresentation:presentation}:{}) });
     if (new TextEncoder().encode(text).length > MAX_BYTES) return this.reply('세이브는 16 MiB 이하여야 합니다.');
     try { await this.files.write(text); return this.reply(null, '게임을 저장했습니다.'); }
     catch (e) { return this.reply(String(e)); }
@@ -183,7 +185,7 @@ export class WebPlayerController implements PlayerBridge {
       if (saved.saveVersion !== '1.0.0' || saved.coreVersion !== CORE_VERSION) throw new Error('지원하지 않는 세이브 또는 코어 버전입니다.');
       if (saved.contentFingerprint !== this.content.contentFingerprint) throw new Error('다른 콘텐츠로 만든 세이브입니다.');
       if (saved.origin.mode !== 'full') throw new Error('활동 전용 세이브는 플레이어에서 열 수 없습니다.');
-      const replayed = this.runtime.request({ operation: 'replay', content: this.content, origin: saved.origin, commands: saved.commands }) as StateReply;
+      const replayed = this.runtime.request({ operation: 'replay', content: this.content, origin: saved.origin, commands: saved.commands, includeRelationshipChanges:true }) as StateReply;
       if (!replayed.ok) throw new Error(`${replayed.error.message} (${replayed.error.path ?? '/'})`);
       const state = replayed.state;
       if (canonical(state) !== canonical(saved.state)) throw new Error('저장 상태가 명령 기록의 재현 결과와 다릅니다.');
@@ -193,7 +195,7 @@ export class WebPlayerController implements PlayerBridge {
     const previousBattleSelection=structuredClone(this.presentation.battleSelection);
       const presentationError=this.presentation.restore(this.content,state,saved.playerPresentation);
       if(presentationError)throw new Error(presentationError);
-      this.session = { origin: structuredClone(saved.origin), commands: structuredClone(saved.commands) as Command[], state };
+      this.session = { origin: structuredClone(saved.origin), commands: structuredClone(saved.commands) as Command[], state, relationshipChanges:replayed.relationshipChanges??{} };
       try {
         const error = this.settle([]);
         if (error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }

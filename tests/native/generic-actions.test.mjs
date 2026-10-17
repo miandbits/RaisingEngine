@@ -49,6 +49,53 @@ function run(content) {
 }
 const select = (r, groupId, optionId, error) => r.command({ type: 'selectPolicy', groupId, optionId }, error);
 const next = r => { r.command({ type: 'acknowledgeResult' }); r.command({ type: 'resolvePeriodEnd' }); };
+test('repeatable interaction: defer, save, revisit and complete without duplicating completion history', async t => {
+  for (const repeatable of [false, true]) for (const mechanism of ['action', 'interaction']) {
+    const c = await setup(t);
+    c.project.initialState.attributes.skill = 0;
+    c.project.gameplay.items.find(item => item.id === 'flower').initialQuantity = 3;
+    c.project.gameplay.interactions[0].oncePerPeriod = false;
+    const visitCommand = mechanism === 'action'
+      ? { type: 'executeAction', actionId: 'bless', quantity: 1 }
+      : { type: 'interact', interactionId: 'gift-mentor' };
+    const event = c.events.find(e => e.id === 'gift-friendship');
+    event.repeatable = repeatable;
+    event.trigger = 'interaction';
+    event.requirements = { op: 'compare', left: { op: 'read', target: { kind: 'attribute', attributeId: 'skill' } }, comparator: 'lt', right: { op: 'literal', value: 2 } };
+    event.entryNodeId = 'ask';
+    event.nodes = [
+      { id: 'ask', type: 'choice', prompt: 'Prepare medicine?', choices: [
+        { id: 'defer', text: 'Later', requirements: { op: 'always' }, effects: [], next: 'end' },
+        { id: 'accept', text: 'Prepare', requirements: { op: 'always' }, effects: [effect('skill', 2)], next: 'end' },
+      ] },
+      { id: 'end', type: 'end' },
+    ];
+    const r = run(c);
+    r.command({ type: 'visit', locationId: 'city' });
+    if (mechanism === 'action') r.command({ type: 'visit', locationId: 'market' });
+    r.command(visitCommand);
+    r.command({ type: 'choose', choiceId: 'defer' });
+    r.command({ type: 'advanceNarrative' });
+    assert.equal(r.state.phase, 'planning');
+    assert.equal(r.state.completedEvents.filter(id => id === event.id).length, 1);
+    r.command(visitCommand);
+    assert.equal(r.state.phase, repeatable ? 'narrative' : 'planning');
+    const encoded = await encodeSave(c, { origin: r.origin, commands: r.commands, state: r.state });
+    assert.equal(encoded.ok, true, JSON.stringify(encoded));
+    const loaded = await decodeSave(c, encoded.text);
+    assert.equal(loaded.ok, true, JSON.stringify(loaded));
+    assert.deepEqual(loaded.session.state, r.state);
+    if (repeatable) {
+      r.command({ type: 'choose', choiceId: 'accept' });
+      r.command({ type: 'advanceNarrative' });
+      r.command(visitCommand);
+      assert.equal(r.state.phase, 'planning', 'completed treatment condition still gates repeat entry');
+      assert.equal(r.state.attributes.skill, 2);
+      assert.equal(r.state.completedEvents.filter(id => id === event.id).length, 1);
+    }
+    assert.deepEqual(nativeReplay(c, r.origin, r.commands), { ok: true, state: r.state });
+  }
+});
 test('generic native: independently selected meal, sleep and study share 24-hour budget, ordered triggers and persisted cursors', async t => {
   const c = await setup(t); c.events = []; const r = run(c);
   select(r, 'food', 'balanced'); select(r, 'sleeping', 'eight'); select(r, 'studying', 'normal');

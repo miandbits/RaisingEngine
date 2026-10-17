@@ -11,6 +11,8 @@ import {TimelineOverlay} from './TimelineOverlay.js';
 import {ExtensionPlaybackRate} from './ExtensionElement.js';
 import {resultPlaybackText} from '../../../packages/visual/timeline.js';
 
+import { resolveScreen } from '../../../packages/visual/routing.js';
+
 export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,sound,muted,preview,error,notice}: {
   view:PlayerView;design:ReadonlyDesign;busy:boolean;plan:string[];onPlan:(value:string[])=>void;
   act:(action:PlayerAction)=>void;newRun:(userValues?:Record<string,string>)=>void;save:()=>void;load:()=>void;sound:()=>void;muted:boolean;preview:boolean;error:string|null;notice:string|null;
@@ -71,21 +73,22 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
     act(command);
   };
   const confirm=()=>{const value=pendingRef.current;if(!value||busy)return;cancel();if(view.generation===value.generation&&view.state?.stateRevision===value.revision)act(value.command);};
+  const [titleScreen,setTitleScreen]=useState<string|null>(null);
   const s=view.state;const node=view.narrative?.node;
   const scene=s?.presentation??design.defaultScene;
   const portraits:Record<string,string>={};
   const portraitTransforms:NonNullable<VisualContext['portraitTransforms']>={};
   for(const p of scene?.portraits??[]) {const id=view.characters.find(c=>c.id===p.characterId)?.portraits[p.portraitId];if(id)portraits[p.position]=id;}
   for(const p of scene?.portraits??[])portraitTransforms[p.position]=p;
-  const screen:ScreenId=!s?'title':s.phase==='finished'?'ending':s.phase==='narrative'?'story':s.phase==='battle'?'battle':s.phase==='expedition'?'expedition':['planning','ready'].includes(s.phase)?s.gameplay?.screenId??'schedule':'schedule';
+  const screen:ScreenId=!s&&design.routing&&titleScreen?titleScreen:resolveScreen(design,s??null,node?.type);
   const result=s?.lastActivityResult;
   const noNumericChanges=result&&!result.changes.some(c=>c.kind==='numeric'&&c.delta!==0);
 
-  const needsSystemScreen = ['battle','expedition'].includes(screen) && !design.screens.some(candidate => candidate.id === screen && candidate.elements.some(element => (element.kind === screen||screen==='battle'&&(element.kind==='collection'&&element.source?.type==='battleActions'||element.kind==='button'&&['battleAction','selectBattleAction'].includes(element.action??''))) && isVisible(element, { phase: screen })));
+  const needsSystemScreen = !design.routing && ['battle','expedition'].includes(screen) && !design.screens.some(candidate => candidate.id === screen && candidate.elements.some(element => (element.kind === screen||screen==='battle'&&(element.kind==='collection'&&element.source?.type==='battleActions'||element.kind==='button'&&['battleAction','selectBattleAction'].includes(element.action??''))) && isVisible(element, { phase: screen })));
   const effectiveDesign = needsSystemScreen ? { ...design, screens: [...design.screens.filter(candidate => candidate.id !== screen), ...systemsScreens(design.width, design.height).filter(candidate => candidate.id === screen)] } : design;
   const attributeName=(id:string)=>view.attributes.find(a=>a.id===id)?.label??id;
   const itemName=(id:string)=>view.gameplayDefinition?.items.find(item=>item.id===id)?.name??id;
-  const context:VisualContext={activeDietId:s?.gameplay?.dietId??null,systems:view.systems,items:view.gameplayDefinition?.items??[],gameplay:view.gameplay,location:view.gameplay?.location.name??'',relationships:view.characters.flatMap(c=>c.relationships.map(r=>({id:`${c.id}-${r.id}`,characterId:c.id,relationshipId:r.id,name:c.name,label:r.label,value:s?.relationships[c.id]?.[r.id]??view.initialState.relationships?.[c.id]?.[r.id]??r.initial,min:r.min,max:r.max}))),title:view.title,description:view.description,calendar:view.time?`${view.time.year}년 ${view.time.month}월 · ${periodLabel(view.time.periodInMonth,view.periodsPerMonth??3)}`:'',ending:view.endingLabel??'',speaker:node?.type==='dialogue'&&node.speakerId?view.characters.find(c=>c.id===node.speakerId)?.name??'이야기':view.storyLabel??'이야기',story:node?.type==='dialogue'?node.text:node?.type==='choice'?node.prompt:'',phase:node?.type==='choice'?'choice':node?.type==='dialogue'?'dialogue':s?.phase??'title',background:s?s.presentation.backgroundAssetId:design.defaultScene?.backgroundAssetId??null,portraits,stats:view.attributes.map(a=>({...a,value:s?.attributes[a.id]??view.initialState.attributes?.[a.id]??a.initial})),activities:view.activities,plan,period:view.time?.periodInMonth??0,choices:view.narrative?.choices??[],result:result?`${view.activities.find(a=>a.id===result.activityId)?.label??''} 완료${result.success?` · ${result.success.passed?'성공':'실패'}`:''}\n`+result.changes.filter(c=>c.kind==='numeric'&&c.delta!==0).map(c=>c.kind==='numeric'?`${c.target.kind==='attribute'?attributeName(c.target.attributeId):c.target.kind==='inventory'?itemName(c.target.itemId):'관계'} ${c.delta>0?'+':''}${c.delta}`:'').join(' · '):''};
+  const context:VisualContext={dataState:s??null,activeDietId:s?.gameplay?.dietId??null,systems:view.systems,items:view.gameplayDefinition?.items??[],gameplay:view.gameplay,location:view.gameplay?.location.name??'',relationships:view.characters.flatMap(c=>c.relationships.map(r=>({id:`${c.id}-${r.id}`,characterId:c.id,relationshipId:r.id,name:c.name,label:r.label,delta:view.relationshipChanges?.[c.id]?.[r.id]??0,value:s?.relationships[c.id]?.[r.id]??view.initialState.relationships?.[c.id]?.[r.id]??r.initial,min:r.min,max:r.max}))),title:view.title,description:view.description,calendar:view.time?`${view.time.year}년 ${view.time.month}월 · ${periodLabel(view.time.periodInMonth,view.periodsPerMonth??3)}`:'',ending:view.endingLabel??'',speaker:node?.type==='dialogue'&&node.speakerId?view.characters.find(c=>c.id===node.speakerId)?.name??'이야기':view.storyLabel??'이야기',story:node?.type==='dialogue'?node.text:node?.type==='choice'?node.prompt:'',phase:node?.type==='choice'?'choice':node?.type==='dialogue'?'dialogue':s?.phase??'title',background:s?s.presentation.backgroundAssetId:design.defaultScene?.backgroundAssetId??null,portraits,stats:view.attributes.map(a=>({...a,value:s?.attributes[a.id]??view.initialState.attributes?.[a.id]??a.initial})),activities:view.activities,plan,period:view.time?.periodInMonth??0,choices:view.narrative?.choices??[],result:result?`${view.activities.find(a=>a.id===result.activityId)?.label??''} 완료${result.success?` · ${result.success.passed?'성공':'실패'}`:''}\n`+result.changes.filter(c=>c.kind==='numeric'&&c.delta!==0).map(c=>c.kind==='numeric'?`${c.target.kind==='attribute'?attributeName(c.target.attributeId):c.target.kind==='inventory'?itemName(c.target.itemId):'관계'} ${c.delta>0?'+':''}${c.delta}`:'').join(' · '):''};
   if(noNumericChanges)context.result+='능력 변화 없음';
   if(s?.phase==='ready'&&view.schedulePlayback==='continuous'&&design.resultPlayback&&!error)context.phase='auto-ready';
   if(view.timeline?.plan.resultPlayback)context.result=resultPlaybackText(view.timeline.plan,view.timeline.cursor)??context.result;
@@ -93,7 +96,9 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   if(view.time)context.calendarTime={year:view.time.year,month:view.time.month};
   context.planningKey=`${view.generation}:${Math.floor((s?.periodIndex??0)/(view.periodsPerMonth??3))}`;context.scheduleCommitted=!!s?.schedule;context.periodsPerMonth=view.periodsPerMonth??3;context.schedulePlayback=view.schedulePlayback??'manual';
   const action=(action:NonNullable<Element['action']>,element:Element)=>{
-    if(pendingRef.current)return;const command=widgetCommand(element);if(command){run(command);return;}
+    if(pendingRef.current)return;
+    if(action==='navigate'&&!s&&design.routing&&element.screenId){setTitleScreen(element.screenId);return;}
+    const command=widgetCommand(element);if(command){run(command);return;}
     if(action==='start'){if(!busy)newRun(view.userFields?.length?{...(s?.userValues??draft)}:undefined);}else if(action==='save')save();else if(action==='load')load();else if(action==='sound')sound();
     else if(action==='advance'&&s){if(['planning','ready'].includes(s.phase)){if(!s.schedule||plan.some((id,i)=>id!==s.schedule?.[i]))act({type:'schedule',activityIds:plan});else act({type:'execute'});}else act({type:'continue'});}
   };

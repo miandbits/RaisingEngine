@@ -10,6 +10,7 @@ import { freeze, object } from '../core/util.js';
 import { parseDocument } from '../project-service/json-document.js';
 import { canonicalJson } from '../project-service/snapshot.js';
 import type { RunSession, SessionResult } from './session.js';
+import { trackRelationshipChanges, type RelationshipChanges } from './relationship-history.js';
 import {PlayerPresentation,type PlayerPresentationEnvelope} from '../player-service/presentation.js';
 
 export const SAVE_VERSION = '1.0.0';
@@ -48,12 +49,15 @@ async function restore(content: ContentSnapshot, value: unknown): Promise<Loaded
   const saved = value as SaveEnvelope;
   if (saved.contentFingerprint !== content.contentFingerprint)
     return fail('CONTENT_MISMATCH', '세이브가 다른 콘텐츠로 만들어졌습니다.', '/contentFingerprint');
-  const created = runtimeBackend()==='native' ? nativeReplay(content,saved.origin,saved.commands) : createRun(content, saved.origin.seed, saved.origin);
+  const replayed = runtimeBackend()==='native' ? nativeReplay(content,saved.origin,saved.commands,true) : null;
+  const created = replayed ?? createRun(content, saved.origin.seed, saved.origin);
   if (!created.ok) return created;
   let state = created.state;
+  let relationshipChanges: RelationshipChanges = replayed?.relationshipChanges ?? {};
   for (const [i, command] of (runtimeBackend()==='native'?[]:saved.commands).entries()) {
     const result = dispatchCommand(content, state, command, state.stateRevision);
     if (!result.ok) return fail('SAVE_REPLAY', `명령 기록을 재현할 수 없습니다: ${result.error.code} — ${result.error.message}`, `/commands/${i}`);
+    relationshipChanges = trackRelationshipChanges(relationshipChanges, state, result.state);
     state = result.state;
   }
   if (canonicalJson(state) !== canonicalJson(saved.state))
@@ -65,7 +69,7 @@ async function restore(content: ContentSnapshot, value: unknown): Promise<Loaded
   if(extensionError)return fail('SAVE_PRESENTATION',extensionError,'/playerPresentation/extensions');
   const presentationError=new PlayerPresentation().restore(content,state,saved.playerPresentation?corePresentation:undefined);
   if(presentationError)return fail('SAVE_PRESENTATION',presentationError,'/playerPresentation');
-  return { ok: true, session: freeze({ origin: structuredClone(saved.origin), commands: structuredClone(saved.commands), state }),...(saved.playerPresentation?{playerPresentation:structuredClone(saved.playerPresentation)}:{}) };
+  return { ok: true, session: freeze({ origin: structuredClone(saved.origin), commands: structuredClone(saved.commands), state, relationshipChanges }),...(saved.playerPresentation?{playerPresentation:structuredClone(saved.playerPresentation)}:{}) };
 }
 
 function checkExtensions(extensions: unknown): string | null {
@@ -92,7 +96,7 @@ export async function decodeSave(content: ContentSnapshot, text: string): Promis
 }
 
 export async function encodeSave(content: ContentSnapshot, session: RunSession,playerPresentation?:PlayerPresentationEnvelope): Promise<{ ok: true; text: string } | Failure> {
-  const envelope: SaveEnvelope = { saveVersion: SAVE_VERSION, coreVersion: CORE_VERSION, contentFingerprint: content.contentFingerprint, ...session,...(playerPresentation?{playerPresentation}:{}) };
+  const envelope: SaveEnvelope = { saveVersion: SAVE_VERSION, coreVersion: CORE_VERSION, contentFingerprint: content.contentFingerprint, origin:session.origin, commands:session.commands, state:session.state,...(playerPresentation?{playerPresentation}:{}) };
   const text = canonicalJson(envelope);
   if (Buffer.byteLength(text, 'utf8') > MAX_SAVE_BYTES) return fail('SAVE_TOO_LARGE', '세이브는 16 MiB 이하여야 합니다.');
   const validated = await restore(content, envelope);

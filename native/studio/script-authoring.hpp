@@ -15,9 +15,17 @@ class ScriptAuthoringDialog final : public QDialog {
 public:
   ScriptAuthoringDialog(QJsonObject context,QJsonArray assets,QWidget *parent=nullptr,std::function<QString()> saveGuard={},std::function<void(QJsonObject,std::function<void(QJsonObject)>)> scenePreview={});
   QJsonArray edits() const;
+  void selectDocument(const QString &file);
 private:
   QJsonObject context;
   QJsonArray original,documents,assets;
+  QJsonArray externalOriginal, externalDocuments;
+  QWidget *metadata = nullptr;
+  QLabel *referenceSummary = nullptr;
+  QWidget *makeMetadata();
+  void refreshMetadata();
+  QStringList externalReferences(QString nodeId, QString choiceId = {}) const;
+  void renameExternalReferences(QString from, QString to, QString choiceFrom = {}, QString choiceTo = {});
   int documentIndex=-1,nodeIndex=-1;
   bool filling=false;
   std::function<QString()> saveGuard;

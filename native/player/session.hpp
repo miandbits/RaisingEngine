@@ -1,5 +1,6 @@
 #pragma once
 #include "raising/runtime.hpp"
+#include "raising/relationship-history.hpp"
 #include "json.hpp"
 #include <filesystem>
 #include <fstream>
@@ -53,6 +54,7 @@ public:
     }
   }
   Json content, state = nullptr, commands = Json::array(), projection;
+  Json relationship_changes = Json::object();
   std::string message;
   std::vector<std::string> sound_cues;
   Json timeline_plan=nullptr,timeline_cursor=nullptr;
@@ -68,6 +70,11 @@ public:
     if(!continuous()||state.is_null()||state.at("schedule").is_null())return "";
     const auto phase=state.value("phase","");
     if((phase=="ready"||phase=="planning")&&state.contains("progression")&&state["progression"].contains("sessions")&&!state["progression"]["pending"].is_null())return "advanceSession";
+    if(phase=="ready"&&state.value("activityIntermission",false)) {
+      const auto flow=content["project"].value("periodFlow",Json::object());
+      if(!flow.contains("intermission"))return "";
+      return state["flags"].value(flow["intermission"].value("completionFlagId",""),false)?"acknowledgeResult":"";
+    }
     if(phase=="ready")return "executeActivity";
     if(phase=="activity-result"&&(!timeline_active()||timeline_cursor.value("completed",false)))return "acknowledgeResult";
     return "";
@@ -119,6 +126,7 @@ public:
   void start(const Json& userValues=Json::object()) {
     gallery_capture.pending=nullptr;
     schedule_speed=1;
+    relationship_changes=Json::object();
     state = call({{"operation", "create"}, {"seed", seed}, {"options", {{"mode", "full"},{"userValues",userValues}}}}).at("state");
     commands = Json::array(); message.clear(); sound_cues.clear(); battle_selection=nullptr;refresh(); sync_timeline();
     origin = {{"seed",seed},{"mode","full"},{"initialOverrides",{{"attributes",Json::object()},{"flags",Json::object()},{"relationships",Json::object()}}}};
@@ -138,6 +146,7 @@ public:
     Json result;
     try {result = call({{"operation", "command"}, {"state", state}, {"command", command}, {"expectedRevision", state.at("stateRevision")}});}
     catch(const std::exception& error){if(observer)observer(before,before,command,error.what());throw;}
+    raising::track_relationship_changes(relationship_changes,state,result.at("state"));
     state = result.at("state"); commands.push_back(command);
     for(const auto& cue:result.at("transition").value("soundCues",Json::array()))sound_cues.push_back(cue.get<std::string>());
     refresh(); sync_timeline();sync_battle_selection();
@@ -197,8 +206,10 @@ public:
     Json replay = call({{"operation", "create"}, {"seed", savedOrigin.at("seed")},{"options", options}}).at("state");
     if (saved.at("coreVersion") != replay.at("coreVersion")) throw std::runtime_error("실행 규칙 버전이 다릅니다.");
     GalleryCapture restored_capture;
+    Json restored_changes=Json::object();
     for (const auto& command : saved.at("commands")) {
       const auto next=call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}}).at("state");
+      raising::track_relationship_changes(restored_changes,replay,next);
       if(content.at("project").contains("gallery")&&!replay.value("activeNarrative",Json()).is_null()){
         const auto narrative=call({{"operation","view"},{"state",replay}}).value("narrative",Json());
         restored_capture.observe(content,replay,next,command,narrative);
@@ -233,6 +244,7 @@ public:
       for(size_t i=0;i<capture.at("replayFrames").size();i++)restored_capture.pending["replayFrames"][i]["extensions"]=capture.at("replayFrames").at(i).value("extensions",Json());
     }
     gallery_capture=std::move(restored_capture);
+    relationship_changes=std::move(restored_changes);
     schedule_speed=restored_speed;state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
     collect_gallery_media();
     message = "저장한 지점에서 이어갑니다.";

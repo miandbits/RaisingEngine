@@ -101,10 +101,11 @@ void executeDefinedAction(const J &c, J &s, const J &action, int64_t quantity,
   }
   frame.pop();
   relationshipRules(c, s, s["relationships"], changes);
-  if (!scheduled && action.contains("eventId") && !eventCompleted(c,s,action["eventId"])) {
+  if (!scheduled && action.contains("eventId")) {
     auto event = find(c["events"], action["eventId"]);
     need(event, "UNKNOWN_NARRATIVE", "사건이 없습니다.", path + "/eventId");
-    if (s["periodIndex"] >= (*event)["window"]["fromPeriod"] &&
+    if ((event->value("repeatable", false) || !eventCompleted(c,s,(*event)["id"])) &&
+        s["periodIndex"] >= (*event)["window"]["fromPeriod"] &&
         s["periodIndex"] <= (*event)["window"]["throughPeriod"] &&
         condition(c, s, (*event)["requirements"], "/events/" + str(*event, "id") + "/requirements")) {
       auto phase = s["phase"], presentation = s["presentation"];

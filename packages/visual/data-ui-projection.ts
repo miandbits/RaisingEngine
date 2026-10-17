@@ -27,6 +27,7 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
   for(const component of design.components??[])for(const child of component.elements)checkConditions(child as Element);
   const cache=new Map<string,{enabled:boolean;reason:string}>();
   const allowedCommand=(command:NonNullable<ReturnType<typeof widgetCommand>>)=>{
+    if(command.type==='navigate'&&!state&&design.routing){const enabled=design.screens.some(s=>s.id===command.screenId&&!s.modal);return {enabled,reason:enabled?'':'이동할 화면을 찾을 수 없습니다.'};}
     const key=JSON.stringify(command);const previous=cache.get(key);if(previous)return previous;
     let allowed:{enabled:boolean;reason:string};
     if(battleUiTypes.includes(command.type)){

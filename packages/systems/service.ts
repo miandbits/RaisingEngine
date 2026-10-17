@@ -1,4 +1,5 @@
 import {startTactics,applyTactics} from './tactics.js';
+import { executeAction } from '../gameplay/rules.js';
 import type { ContentSnapshot, DeepReadonly, RunData, RunState, Change } from '../core/model.js';
 import { applyEffects, evaluateCondition } from '../core/evaluation.js';
 import { applyScene, enterNarrative } from '../core/narrative.js';
@@ -6,7 +7,7 @@ import { sampleBelow } from '../core/random.js';
 import { CoreFault, int32, requireCore } from '../core/util.js';
 import type { CombatStats, SystemsCommand, SystemsDefinition, SystemsState, SystemsView } from './model.js';
 
-export const systemsCommandTypes = ['tacticsUnequip','tacticsAction','tacticsFlee','tacticsEquip','acceptQuest', 'claimQuest', 'equip', 'unequip', 'moveExpedition', 'returnFromExpedition', 'battleAction'] as const;
+export const systemsCommandTypes = ['tacticsUnequip','tacticsAction','tacticsFlee','tacticsEquip','acceptQuest', 'claimQuest', 'equip', 'unequip', 'moveExpedition', 'returnFromExpedition', 'startNodeBattle', 'battleAction'] as const;
 export function createSystems(): SystemsState {
   return { equipment: { weapon: null, armor: null, accessory: null }, quests: {}, unlockedStages: [], pendingStageEvents: [], expedition: null, battle: null, lastBattle: null, lastExpedition: null };
 }
@@ -45,10 +46,15 @@ function enterNode(content: ContentSnapshot, draft: RunData, nodeId: string, sou
   const node = definition.nodes.find(n => n.id === nodeId)!;
   if(node.requirements)requireCore(evaluateCondition(content,draft,node.requirements), 'NODE_LOCKED','탐험 지점 진입 조건을 만족하지 않습니다.','/command/nodeId');
   trip.nodeId = node.id;
+  if (node.entryActionId && (node.repeatEntryAction || !trip.visitedNodes?.includes(node.id))) {
+    executeAction(content, draft, node.entryActionId, 1, [], true);
+    trip.visitedNodes ??= [];
+    if (!trip.visitedNodes.includes(node.id)) trip.visitedNodes.push(node.id);
+  }
   if (node.presentation) applyScene(draft, node.presentation, sounds);
   draft.phase = 'expedition';
   if(node.encounterId&&!trip.clearedNodes.includes(node.id)){startTactics(content,draft,node.encounterId);return;}
-  if (node.enemyId && !trip.clearedNodes.includes(node.id)) {
+  if (node.enemyId && !node.manualBattle && !trip.clearedNodes.includes(node.id) && (!node.battleRequirements || evaluateCondition(content, draft, node.battleRequirements))) {
     const enemy = content.project.systems!.enemies.find(e => e.id === node.enemyId)!;
     s.battle = { enemyId: enemy.id, enemyHp: enemy.maxHp, turn: 0,...(content.project.systems!.battleHistoryLimit?{log:[]}: {}) }; draft.phase = 'battle';
   }
@@ -60,6 +66,7 @@ export function startExpedition(content: ContentSnapshot, draft: RunData, expedi
   requireCore(expedition, 'UNKNOWN_EXPEDITION', '탐험을 찾을 수 없습니다.', '/activity/expeditionId');
   requireCore(draft.gameplay?.locationId === expedition.locationId, 'WRONG_LOCATION', '탐험 출발 장소로 이동해 주세요.', '/gameplay/locationId');
   requireCore(!s.expedition, 'EXPEDITION_ACTIVE', '이미 진행 중인 탐험이 있습니다.', '/systems/expedition');
+  if (expedition.entryActionId) executeAction(content, draft, expedition.entryActionId, 1, [], true);
   const stats = heroStats(content, draft);
   s.expedition = { expeditionId, nodeId: expedition.entryNodeId, clearedNodes: [], heroHp: stats.maxHp, stats, returnPresentation: structuredClone(draft.presentation) };
   s.battle = null; s.lastBattle = null; s.lastExpedition = null;
@@ -72,6 +79,16 @@ export function finishExpedition(draft: RunData, outcome: 'completed' | 'retreat
   s.expedition = null; s.battle = null; draft.phase = trip.returnPhase ?? 'activity-result';
 }
 export function applySystems(content: ContentSnapshot, draft: RunData, command: SystemsCommand, sounds: string[]): void {
+  const trip = draft.systems?.expedition;
+  applySystemsCommand(content, draft, command, sounds);
+  if (trip && !draft.systems?.expedition) {
+    const definition = content.project.systems!.expeditions.find(e => e.id === trip.expeditionId)!;
+    const outcome = draft.systems!.lastExpedition!.outcome;
+    const actionId = outcome === 'completed' ? definition.completionActionId : outcome === 'defeated' ? definition.defeatActionId : definition.retreatActionId;
+    if (actionId) executeAction(content, draft, actionId, 1, [], true);
+  }
+}
+function applySystemsCommand(content: ContentSnapshot, draft: RunData, command: SystemsCommand, sounds: string[]): void {
   const d = content.project.systems, s = draft.systems;
   requireCore(d && s && draft.gameplay && draft.mode === 'full', 'SYSTEMS_UNAVAILABLE', '확장 시스템이 있는 전체 실행 모드가 필요합니다.', '/project/systems');
   if(command.type==='tacticsUnequip'||command.type==='tacticsAction'||command.type==='tacticsFlee'||command.type==='tacticsEquip'){applyTactics(content,draft,command);return;}
@@ -106,11 +123,19 @@ export function applySystems(content: ContentSnapshot, draft: RunData, command: 
   requireCore(trip, 'NO_EXPEDITION', '진행 중인 탐험이 없습니다.', '/systems/expedition');
   const expedition = d.expeditions.find(e => e.id === trip.expeditionId)!;
   const node = expedition.nodes.find(n => n.id === trip.nodeId)!;
+  if (command.type === 'startNodeBattle') {
+    requireCore(draft.phase === 'expedition' && node.manualBattle && node.enemyId && !trip.clearedNodes.includes(node.id), 'NO_MANUAL_BATTLE', '이 지점에서 시작할 전투가 없습니다.', '/command/type');
+    requireCore(!node.battleRequirements || evaluateCondition(content, draft, node.battleRequirements), 'BATTLE_LOCKED', '전투 시작 조건을 만족하지 않습니다.', '/command/type');
+    const enemy = d.enemies.find(e => e.id === node.enemyId)!;
+    s.battle = { enemyId: enemy.id, enemyHp: enemy.maxHp, turn: 0, ...(d.battleHistoryLimit ? { log: [] } : {}) };
+    draft.phase = 'battle'; return;
+  }
   if (command.type === 'moveExpedition' || command.type === 'returnFromExpedition') {
     requireCore(draft.phase === 'expedition', 'WRONG_PHASE', '전투가 끝난 뒤 탐험 이동·귀환을 할 수 있습니다.', '/phase');
     if (command.type === 'returnFromExpedition') { finishExpedition(draft, node.exit ? 'completed' : 'retreated'); return; }
     requireCore(node.connections.includes(command.nodeId), 'NODE_DISCONNECTED', '현재 탐험 지점과 연결되지 않았습니다.', '/command/nodeId');
     requireCore(expedition.nodes.some(n => n.id === command.nodeId), 'UNKNOWN_NODE', '탐험 지점을 찾을 수 없습니다.', '/command/nodeId');
+    if (expedition.moveActionId) executeAction(content, draft, expedition.moveActionId, 1, [], true);
     enterNode(content, draft, command.nodeId, sounds); return;
   }
   requireCore(draft.phase === 'battle' && s.battle, 'WRONG_PHASE', '진행 중인 전투가 없습니다.', '/phase');
@@ -131,8 +156,10 @@ export function applySystems(content: ContentSnapshot, draft: RunData, command: 
     draft.gameplay.inventory[item.itemId]!--; trip.heroHp = Math.min(trip.stats.maxHp, int32(trip.heroHp + item.heal, '/systems/expedition/heroHp'));
     heroHeal=trip.heroHp-heroHpBefore;
   } else if (command.action === 'attack') {
-    const roll = sampleBelow(draft.rng, 3); draft.rng = roll.rng;
-    enemyDamage = Math.min(battle.enemyHp, Math.max(1, trip.stats.attack - enemy.defense + roll.value - 1));
+    const variance = enemy.damageVariance ?? 1;
+    let offset = 0;
+    if (variance) { const roll = sampleBelow(draft.rng, variance * 2 + 1); draft.rng = roll.rng; offset = roll.value - variance; }
+    enemyDamage = Math.min(battle.enemyHp, Math.max(1, trip.stats.attack - enemy.defense + offset));
     battle.enemyHp -= enemyDamage;
   }
   battle.turn = turn;
@@ -146,9 +173,12 @@ export function applySystems(content: ContentSnapshot, draft: RunData, command: 
     }
     record();result('victory', discarded,rewardChanges); s.battle = null; draft.phase = 'expedition'; return;
   }
-  const roll = sampleBelow(draft.rng, 3); draft.rng = roll.rng;
-  const damage = Math.max(1, enemy.attack - trip.stats.defense + roll.value - 1);
-  heroDamage = Math.min(trip.heroHp, command.action === 'guard' ? Math.ceil(damage / 2) : damage);
+  const variance = enemy.damageVariance ?? 1;
+  let offset = 0;
+  if (variance) { const roll = sampleBelow(draft.rng, variance * 2 + 1); draft.rng = roll.rng; offset = roll.value - variance; }
+  const power = enemy.attackPattern ? enemy.attackPattern[(turn - 1) % enemy.attackPattern.length]! : enemy.attack;
+  const damage = enemy.attackPattern && power === 0 ? 0 : Math.max(1, power - trip.stats.defense + offset);
+  heroDamage = Math.min(trip.heroHp, command.action === 'guard' ? (enemy.guardRoundDown ? Math.floor(damage / 2) : Math.ceil(damage / 2)) : damage);
   trip.heroHp -= heroDamage;
   record();
   if (trip.heroHp === 0) { result('defeat'); finishExpedition(draft, 'defeated'); }
@@ -195,7 +225,7 @@ export function getSystemsView(content: ContentSnapshot, state: RunState | null)
     }),
     consumables: d.consumables.map(i => ({ itemId: i.itemId, name: content.project.gameplay!.items.find(x => x.id === i.itemId)!.name, quantity: state.gameplay!.inventory[i.itemId] ?? 0, heal: i.heal, enabled: availability(content, state, { type: 'battleAction', action: 'useItem', itemId: i.itemId }).enabled })),
     battleActions:[...(['attack','guard','flee'] as const).map(action=>({id:action,name:{attack:'공격',guard:'방어',flee:'도주'}[action],battleAction:action,target:action==='attack'?'enemy' as const:action==='guard'?'self' as const:'none' as const,...availability(content,state,{type:'battleAction',action})})),...d.consumables.map(item=>({id:`use-item--${item.itemId}`,name:content.project.gameplay!.items.find(x=>x.id===item.itemId)!.name,battleAction:'useItem' as const,itemId:item.itemId,target:'self' as const,...availability(content,state,{type:'battleAction',action:'useItem',itemId:item.itemId})}))],
-    expedition: trip && expedition && node ? { expeditionId: trip.expeditionId, name: expedition.name, nodeId: node.id, nodeName: node.name, ...(node.description ? { nodeDescription: node.description } : {}), heroHp: trip.heroHp, stats: { ...trip.stats }, connections: node.connections.map(id => ({ id, name: expedition.nodes.find(n => n.id === id)!.name, enabled: state.phase === 'expedition' && (!expedition.nodes.find(n=>n.id===id)!.requirements || evaluateCondition(content,state,expedition.nodes.find(n=>n.id===id)!.requirements!)) })), canReturn: state.phase === 'expedition' } : null,
+    expedition: trip && expedition && node ? { expeditionId: trip.expeditionId, name: expedition.name, nodeId: node.id, nodeName: node.name, ...(node.description ? { nodeDescription: node.description } : {}), heroHp: trip.heroHp, stats: { ...trip.stats }, connections: node.connections.map(id => ({ id, name: expedition.nodes.find(n => n.id === id)!.name, enabled: state.phase === 'expedition' && (!expedition.nodes.find(n=>n.id===id)!.requirements || evaluateCondition(content,state,expedition.nodes.find(n=>n.id===id)!.requirements!)) })), canReturn: state.phase === 'expedition', ...(node.manualBattle && node.enemyId ? { manualBattle: { name: d.enemies.find(e=>e.id===node.enemyId)!.name, ...availability(content,state,{type:'startNodeBattle'}) } } : {}) } : null,
     battle: s.battle && trip && enemy ? { enemyId:s.battle.enemyId,enemyHp:s.battle.enemyHp,turn:s.battle.turn,...(s.battle.log?{log:s.battle.log.map(x=>({...x}))}:{}), enemyName: enemy.name, enemyMaxHp: enemy.maxHp, heroHp: trip.heroHp, heroMaxHp: trip.stats.maxHp } : null,
     stages: d.relationshipStages.map(x => ({ id: x.id, name: x.name, unlocked: s.unlockedStages.includes(x.id), characterId: x.characterId, relationshipId: x.relationshipId, threshold: x.threshold })),
     lastBattle: s.lastBattle ? structuredClone(s.lastBattle) as SystemsState['lastBattle'] : null,

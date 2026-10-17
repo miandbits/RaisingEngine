@@ -77,7 +77,13 @@
             }
           ]
         },
-        "scheduleSpeed": { "type": "integer", "enum": [1, 4] },
+        "scheduleSpeed": {
+          "type": "integer",
+          "enum": [
+            1,
+            4
+          ]
+        },
         "battleSelection": {
           "anyOf": [
             {
@@ -304,6 +310,24 @@
         },
         "stateRevision": {
           "$ref": "#/$defs/revision"
+        },
+        "periodPreparation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "changes"
+          ],
+          "properties": {
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "activityIntermission": {
+          "const": true
         },
         "periodIndex": {
           "type": "integer",
@@ -899,6 +923,9 @@
               }
             }
           }
+        },
+        "uiScreenId": {
+          "$ref": "#/$defs/id"
         }
       }
     },

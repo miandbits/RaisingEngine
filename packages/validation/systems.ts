@@ -40,10 +40,27 @@ export function checkSystems(ctx: SemanticContext, doc: ProjectDocument, data: J
   });
   objectItems(data.expeditions).forEach((e, i) => {
     const p = `/systems/expeditions/${i}`; refLocation(e.locationId as string, `${p}/locationId`);
+    const actions = new Map(objectItems(gameplay.actions).map(a => [a.id as string, a]));
+    const actionReference = (id: unknown, pointer: string, returning = false) => {
+      if (typeof id !== 'string') return;
+      const pending = [id], seen = new Set<string>();
+      while (pending.length) {
+        const current = pending.pop()!; if (seen.has(current)) continue; seen.add(current);
+        const action = actions.get(current);
+        if (!action) { ctx.report(doc, pointer, 'REFERENCE_MISSING', `탐험 행동 '${current}'를 찾을 수 없습니다.`, [current]); continue; }
+        if (action.eventId || action.expeditionId) ctx.report(doc, pointer, 'EXPEDITION_ACTION_CONTEXT', '탐험 내부 행동은 다른 사건·탐험을 시작할 수 없습니다. 조건·비용·효과 행동을 연결하세요.', [current]);
+        if (returning && objectItems(action.costs).length) ctx.report(doc, pointer, 'EXPEDITION_RETURN_COST', '귀환은 비용 부족으로 막히지 않도록 비용 없는 행동을 연결하세요.', [current]);
+        for (const step of objectItems(action.flow)) { pending.push(step.thenActionId as string); if (step.elseActionId) pending.push(step.elseActionId as string); }
+      }
+    };
+    for (const key of ['entryActionId', 'moveActionId', 'completionActionId', 'retreatActionId', 'defeatActionId']) actionReference(e[key], `${p}/${key}`, key.endsWith('ActionId') && !['entryActionId','moveActionId'].includes(key));
     const nodes: Index = new Map(); ctx.addArray(nodes, doc, `${p}/nodes`, e.nodes, '탐험 지점');
     ctx.resolve(nodes, e.entryNodeId as string, doc, `${p}/entryNodeId`, '시작 지점');
     objectItems(e.nodes).forEach((n, j) => {
+      actionReference(n.entryActionId, `${p}/nodes/${j}/entryActionId`);
+      (n.actionIds as string[] | undefined)?.forEach((id,k) => actionReference(id, `${p}/nodes/${j}/actionIds/${k}`));
       if (n.enemyId) ctx.resolve(indexes.enemies!, n.enemyId as string, doc, `${p}/nodes/${j}/enemyId`, '전투 적');
+      if (n.manualBattle && (!n.enemyId || n.encounterId)) ctx.report(doc, `${p}/nodes/${j}/manualBattle`, 'MANUAL_BATTLE_ENEMY', '선택 전투에는 단일 전투 적을 지정하세요. 부대 조우와 함께 사용할 수 없습니다.');
       (n.connections as string[]).forEach((id, k) => ctx.resolve(nodes, id, doc, `${p}/nodes/${j}/connections/${k}`, '연결 지점'));
     });
     const seen = new Set<string>(), pending = [e.entryNodeId as string];

@@ -56,7 +56,7 @@ void references(QJsonValue value, const QString &id, const QString &path,
     auto object = value.toObject();
     for (auto it = object.begin(); it != object.end(); ++it) {
       const auto next = path + "/" + it.key();
-      if (it.key() == "screenId" && it.value() == id)
+      if ((it.key() == "screenId" || it.key() == "defaultScreenId") && it.value() == id)
         found.append(next);
       else
         references(it.value(), id, next, found);
@@ -204,13 +204,14 @@ void StudioWindow::deleteScreen() {
   }
   if (removed.isEmpty())
     return;
-  if (QStringList{"title", "schedule", "story", "ending"}.contains(id)) {
+  if (!visual.contains("routing") && QStringList{"title", "schedule", "story", "ending"}.contains(id)) {
     QMessageBox::information(this, tr("필수 화면"),
                              tr("‘%1’은 현재 런타임의 필수 화면입니다. 삭제할 "
                                 "수 없지만 이름과 내용은 편집할 수 있습니다.")
                                  .arg(removed["label"].toString()));
     return;
   }
+  if(kept.isEmpty()){QMessageBox::information(this,tr("화면 필요"),tr("프로젝트에는 적어도 한 화면이 필요합니다."));return;}
   QStringList found;
   // Keep original indices in diagnostic paths. Self-links inside the removed
   // screen disappear with it and must not block deletion.

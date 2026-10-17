@@ -71,6 +71,8 @@ export function finishPeriod(content: ContentSnapshot, draft: RunData): void {
   }
   draft.activeNarrative = null;
   draft.lastActivityResult = null;
+  delete draft.periodPreparation;
+  delete draft.activityIntermission;
   if (draft.periodIndex === content.project.durationMonths * content.project.periodsPerMonth - 1) {
     if (draft.mode === 'activities-only') { draft.phase = 'finished'; return; }
     const candidates = content.endings.filter(ending => ending.id !== content.project.defaultEndingId
@@ -83,6 +85,16 @@ export function finishPeriod(content: ContentSnapshot, draft: RunData): void {
     draft.phase = draft.periodIndex % content.project.periodsPerMonth === 0 ? 'planning' : 'ready';
     if (draft.phase === 'planning') draft.schedule = null;
   }
+}
+
+function continuePeriodEvents(content: ContentSnapshot, draft: RunData): void {
+  if (content.project.periodFlow?.allPeriodEndEvents) {
+    draft.activeNarrative = null;
+    draft.phase = 'period-end';
+    const selected = inspectEvents(content, draft).find(decision => decision.reason === 'selected');
+    if (selected) { enterNarrative(content, draft, 'event', selected.eventId); return; }
+  }
+  finishPeriod(content, draft);
 }
 
 export function resolvePeriodEnd(content: ContentSnapshot, draft: RunData): EventDecision[] {
@@ -131,9 +143,9 @@ export function stepNarrative(content: ContentSnapshot, draft: RunData, choiceId
           if (cursor.returnPhase) {
             draft.activeNarrative = null; draft.phase = cursor.returnPhase;
             if (cursor.returnPresentation) draft.presentation = structuredClone(cursor.returnPresentation);
-            if (cursor.finishPeriod) finishPeriod(content, draft);
+            if (cursor.finishPeriod) continuePeriodEvents(content, draft);
           }
-          else finishPeriod(content, draft);
+          else continuePeriodEvents(content, draft);
         }
         else { draft.activeNarrative = null; draft.phase = 'finished'; }
         break;

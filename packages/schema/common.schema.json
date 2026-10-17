@@ -953,7 +953,7 @@
           "additionalProperties": false,
           "properties": {
             "type": {
-              "const": "returnFromExpedition"
+              "enum": ["returnFromExpedition", "startNodeBattle"]
             }
           },
           "required": [

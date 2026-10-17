@@ -69,6 +69,10 @@ export interface ActivityResult {
 }
 /** Internal transaction draft. Published states and restored sessions are deeply frozen. */
 export interface RunData extends Values {
+  /** Explicit view navigation, cleared when the simulation changes phase. */
+  uiScreenId?: string;
+  periodPreparation?: { changes: ActivityResult['changes'] };
+  activityIntermission?: boolean;
   progression?: import('./progression.js').ProgressionState;
   roster?: import('./roster.js').RosterState;
   userValues?: Record<string, string>;

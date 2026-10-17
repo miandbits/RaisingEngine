@@ -116,6 +116,16 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
       if (fallback.data.priority !== 0) ctx.report(fallback.doc, '/priority', 'DEFAULT_ENDING_PRIORITY', '기본 엔딩 우선순위는 0이어야 합니다.', [fallback.id]);
     }
     checkOverrides(project.initialState as JsonObject, root, '/initialState');
+    if (isObject(project.periodFlow)) {
+      if (project.roster || project.progression) ctx.report(root, '/periodFlow', 'PERIOD_FLOW_MODE', '기간 단계는 현재 단일 대상의 월 일정에서 사용할 수 있습니다.');
+      const between = project.periodFlow.intermission;
+      if (isObject(between)) {
+        ctx.resolve(ctx.flags, between.completionFlagId as string, root, '/periodFlow/intermission/completionFlagId', '완료 플래그');
+        const visual = isObject(project.visual) ? project.visual : {};
+        if (!objectItems(visual.screens).some(s => s.id === between.screenId)) ctx.report(root, '/periodFlow/intermission/screenId', 'REFERENCE_MISSING', '자유 행동 화면을 찾을 수 없습니다.');
+        if (!project.gameplay) ctx.report(root, '/periodFlow/intermission', 'GAMEPLAY_REQUIRED', '자유 행동에는 생활·화면 상태가 필요합니다.');
+      }
+    }
   }
   for (const doc of documents) {
     const data = doc.data as JsonObject;

@@ -20,6 +20,7 @@ export type SystemsCommand = TacticsCommand
   | { type: 'unequip'; slot: EquipmentSlot }
   | { type: 'moveExpedition'; nodeId: string }
   | { type: 'returnFromExpedition' }
+  | { type: 'startNodeBattle' }
   | { type: 'battleAction'; action: 'attack' | 'guard' | 'flee' }
   | { type: 'battleAction'; action: 'useItem'; itemId: string };
 export interface SystemsState {
@@ -28,7 +29,7 @@ export interface SystemsState {
   quests: Record<string, { status: 'accepted' | 'completed' | 'claimed'; progress: number }>;
   unlockedStages: string[];
   pendingStageEvents: string[];
-  expedition: null | { expeditionId: string; nodeId: string; clearedNodes: string[]; heroHp: number; stats: CombatStats; returnPresentation: PresentationState; returnPhase?: 'planning' | 'ready' };
+  expedition: null | { expeditionId: string; nodeId: string; clearedNodes: string[]; visitedNodes?: string[]; heroHp: number; stats: CombatStats; returnPresentation: PresentationState; returnPhase?: 'planning' | 'ready' };
   battle: null | { enemyId: string; enemyHp: number; turn: number; log?: BattleLogEntry[] };
   lastBattle: null | { enemyId: string; outcome: 'victory' | 'defeat' | 'fled'; turn: number; heroDamage: number; enemyDamage: number; discardedItems: { itemId: string; quantity: number }[]; log?: BattleLogEntry[]; rewardChanges?: Change[] };
   lastExpedition: null | { expeditionId: string; outcome: 'completed' | 'retreated' | 'defeated'; clearedNodes: string[] };
@@ -38,7 +39,7 @@ export interface SystemsView {
   equipment: { id: string; name: string; itemId: string; slot: EquipmentSlot; equipped: boolean; canUnequip: boolean; owned: number; enabled: boolean; reason: string | null }[];
   quests: { id: string; name: string; status: 'available' | 'locked' | 'accepted' | 'completed' | 'claimed'; progress: number; targetCount: number; canAccept: boolean; canClaim: boolean; reason: string | null }[];
   consumables: { itemId: string; name: string; quantity: number; heal: number; enabled: boolean }[];
-  expedition: null | { expeditionId: string; name: string; nodeId: string; nodeName: string; nodeDescription?: string; heroHp: number; stats: CombatStats; connections: { id: string; name: string; enabled: boolean }[]; canReturn: boolean };
+  expedition: null | { expeditionId: string; name: string; nodeId: string; nodeName: string; nodeDescription?: string; heroHp: number; stats: CombatStats; connections: { id: string; name: string; enabled: boolean }[]; canReturn: boolean; manualBattle?: { name: string; enabled: boolean; reason: string | null } };
   battle: null | { enemyId: string; enemyName: string; enemyHp: number; enemyMaxHp: number; turn: number; heroHp: number; heroMaxHp: number; log?: BattleLogEntry[] };
   battleActions: BattleActionView[];
   stages: { id: string; name: string; unlocked: boolean; characterId: string; relationshipId: string; threshold: number }[];

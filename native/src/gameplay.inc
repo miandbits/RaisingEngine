@@ -29,9 +29,21 @@ void applyDiet(const J &c, J &s, J &changes) {
   state["dietNextPeriod"] = number(s["periodIndex"]) + diet->value("intervalPeriods", 1);
 }
 void gameplay(const J &c, J &s, const J &cmd, J &sounds) {
+  if (str(cmd,"type")=="navigate" && c["project"].contains("visual") && c["project"]["visual"].contains("routing")) {
+    auto target=find(c["project"]["visual"]["screens"],cmd["screenId"]);
+    need(target && !target->value("modal",false),"UNKNOWN_SCREEN","이동할 일반 화면을 찾을 수 없습니다.","/command/screenId");
+    s["uiScreenId"]=cmd["screenId"];return;
+  }
   need(c["project"].contains("gameplay") && s.contains("gameplay"), "GAMEPLAY_UNAVAILABLE",
        "이 프로젝트에는 생활 규칙이 없습니다.", "/project/gameplay");
-  need(s["mode"] == "full" && (s["phase"] == "planning" || s["phase"] == "ready"), "WRONG_PHASE",
+  bool nodeAction = false;
+  if (s["phase"] == "expedition" && str(cmd,"type") == "executeAction" && s.contains("systems") && !s["systems"]["expedition"].is_null()) {
+    const auto &trip=s["systems"]["expedition"];
+    const auto definition=find(c["project"]["systems"]["expeditions"],trip["expeditionId"]);
+    const auto node=definition?find((*definition)["nodes"],trip["nodeId"]):nullptr;
+    nodeAction=node&&contains(node->value("actionIds",J::array()),cmd["actionId"]);
+  }
+  need(s["mode"] == "full" && (s["phase"] == "planning" || s["phase"] == "ready" || nodeAction), "WRONG_PHASE",
        "일정 편성 중에만 장소 이동과 생활 행동을 할 수 있습니다.", "/phase");
   auto &g = c["project"]["gameplay"];
   auto &state = s["gameplay"];
@@ -46,7 +58,7 @@ void gameplay(const J &c, J &s, const J &cmd, J &sounds) {
     auto action = find(actions, cmd["actionId"]);
     need(action, "UNKNOWN_ACTION", "행동을 찾을 수 없습니다.", "/command/actionId");
     J changes = J::array();
-    executeDefinedAction(c, s, *action, number(cmd["quantity"]), changes, false);
+    executeDefinedAction(c, s, *action, number(cmd["quantity"]), changes, nodeAction);
     return;
   }
   if (type == "setDiet") {
@@ -197,11 +209,11 @@ void gameplay(const J &c, J &s, const J &cmd, J &sounds) {
   J changes = J::array();
   effects(c, s, (*interaction)["effects"], path + "/effects", changes);
   state["interactionPeriods"][id] = s["periodIndex"];
-  if (interaction->contains("eventId") &&
-      !contains(s["completedEvents"], (*interaction)["eventId"])) {
+  if (interaction->contains("eventId")) {
     auto event = find(c["events"], (*interaction)["eventId"]);
     need(event, "UNKNOWN_NARRATIVE", "사건이 없습니다.", path + "/eventId");
-    if (s["periodIndex"] >= (*event)["window"]["fromPeriod"] &&
+    if ((event->value("repeatable", false) || !contains(s["completedEvents"], (*event)["id"])) &&
+        s["periodIndex"] >= (*event)["window"]["fromPeriod"] &&
         s["periodIndex"] <= (*event)["window"]["throughPeriod"] &&
         condition(c, s, (*event)["requirements"],
                   "/events/" + str(*event, "id") + "/requirements")) {

@@ -29,7 +29,7 @@
     },
     "screens": {
       "type": "array",
-      "minItems": 4,
+      "minItems": 1,
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/screen"
@@ -589,6 +589,53 @@
         "actors",
         "sequences"
       ]
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaultScreenId",
+        "phases"
+      ],
+      "properties": {
+        "defaultScreenId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "useLocationScreens": {
+          "type": "boolean"
+        },
+        "phases": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "phase",
+              "screenId"
+            ],
+            "properties": {
+              "phase": {
+                "enum": [
+                  "title",
+                  "planning",
+                  "ready",
+                  "activity-result",
+                  "period-end",
+                  "dialogue",
+                  "choice",
+                  "finished",
+                  "expedition",
+                  "battle"
+                ]
+              },
+              "screenId": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "required": [
@@ -722,7 +769,8 @@
             "replay-notice",
             "replay-title",
             "replay-mode",
-            "replay-speed"
+            "replay-speed",
+            "data-value"
           ]
         },
         "imageSource": {
@@ -916,7 +964,10 @@
             "result",
             "dialogue",
             "choice",
-            "finished"
+            "finished",
+            "title",
+            "battle",
+            "expedition"
           ]
         },
         "hidden": {
@@ -1675,6 +1726,9 @@
         "branchId": {
           "type": "string",
           "maxLength": 150
+        },
+        "dataBinding": {
+          "$ref": "common.schema.json#/$defs/numericTarget"
         }
       },
       "required": [
@@ -2564,7 +2618,8 @@
             "replay-notice",
             "replay-title",
             "replay-mode",
-            "replay-speed"
+            "replay-speed",
+            "data-value"
           ]
         },
         "imageSource": {
@@ -2754,7 +2809,10 @@
             "result",
             "dialogue",
             "choice",
-            "finished"
+            "finished",
+            "title",
+            "battle",
+            "expedition"
           ]
         },
         "hidden": {
@@ -3317,6 +3375,9 @@
         "branchId": {
           "type": "string",
           "maxLength": 150
+        },
+        "dataBinding": {
+          "$ref": "common.schema.json#/$defs/numericTarget"
         }
       },
       "required": [

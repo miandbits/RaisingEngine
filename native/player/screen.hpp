@@ -154,7 +154,14 @@ public:
         if(item.value("id","")==id)return item.value("name",id);
       return id;
     }
-    return target.value("relationshipId","");
+    const auto relationship_id=target.value("relationshipId",""),character_id=target.value("characterId","");
+    for(const auto& character:display_content.at("characters"))if(character.value("id","")==character_id) {
+      std::string label=relationship_id;
+      for(const auto& relationship:character.value("relationships",Json::array()))
+        if(relationship.value("id","")==relationship_id){label=relationship.value("label",relationship_id);break;}
+      return character.value("name",character_id)+" / "+label;
+    }
+    return relationship_id;
   }
 #include "battle-data.inc"
 #include "collection.hpp"
@@ -169,8 +176,10 @@ public:
   std::string effect_summary(const Json& row,int quantity=1) const {
     std::string out;
     for(const auto& effect:row.value("effects",Json::array())) {
-      if(!out.empty())out+=" · ";const auto op=effect.value("op","");
-      if(op=="setFlag"){out+=effect.value("flagId","")+" "+(effect.value("value",false)?"켜짐":"꺼짐");continue;}
+      const auto op=effect.value("op","");
+      // Flags control content flow; their internal IDs are not player-facing effects.
+      if(op=="setFlag")continue;
+      if(!out.empty())out+=" · ";
       const auto target=effect.value("target",Json::object());out+=target_name(target);
       const auto value=effect.value("value",Json::object());
       if(value.value("op","")=="literal"){const auto amount=value.value("value",0.0)*(op=="add"?quantity:1);out+=(op=="set"?" = ":amount>=0?" +":" ")+number(amount);}else out+=" (현재 상태 기준 계산)";
@@ -201,6 +210,7 @@ public:
   }
   std::string quantity_controls(const std::string& key,int maximum) {
     maximum=std::max(1,maximum);auto& quantity=quantities[key];quantity=std::clamp(quantity,1,maximum);
+    if(maximum==1)return "";
     const auto action=[&](int delta){return Json{{"type","quantity"},{"key",key},{"delta",delta},{"maximum",maximum}};};
     return "<div class=\"quantity-controls\">"+button("less-"+key,"−",action(-1),quantity>1)+"<span>수량 "+std::to_string(quantity)+"</span>"+button("more-"+key,"+",action(1),quantity<maximum)+"</div>";
   }
@@ -305,7 +315,9 @@ public:
     try { return game.call({{"operation","evaluate"},{"state",game.state},{"condition",condition}}).value("value",false); }
     catch(...) { return false; }
   }
+#include "data-binding.inc"
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
+    if(name=="data-value")return data_binding(element);
     const auto& project=display_content.at("project");
     if(name=="replay-position")return replay_controls?std::to_string(replay_cursor+1)+" / "+std::to_string(replay_count):"";
     if(name=="replay-notice")return replay_controls?replay_notice:"";
@@ -334,7 +346,7 @@ public:
       if(name=="calendar-weekday"){static const char* days[]={"일","월","화","수","목","금","토"};int y=year,m=month;if(m<3){m+=12;--y;}int d=(day+13*(m+1)/5+y+y/4-y/100+y/400+6)%7;return days[d]+std::string("요일");}
     }
     if(name=="attribute-value"||name=="relationship-value"||name=="item-count") {
-      int64_t value=0;std::string label;
+      int64_t value=0,delta=0;std::string label;
       const auto initial=project.value("initialState",Json::object());
       if(name=="attribute-value")for(const auto& attribute:display_content.at("attributes"))if(attribute.at("id")==element.value("attributeId",Json())) {
         const auto id=attribute.at("id").get<std::string>();label=attribute.value("label",id);
@@ -342,6 +354,7 @@ public:
       }
       if(name=="relationship-value")for(const auto& character:display_content.at("characters"))if(character.at("id")==element.value("characterId",Json()))for(const auto& relationship:character.at("relationships"))if(relationship.at("id")==element.value("relationshipId",Json())) {
         const auto cid=character.at("id").get<std::string>(),rid=relationship.at("id").get<std::string>();label=character.value("name",cid)+" · "+relationship.value("label",rid);
+        if(!game.state.is_null()&&!replay_controls)delta=game.relationship_changes.value(cid,Json::object()).value(rid,int64_t(0));
         value=game.state.is_null()?initial.value("relationships",Json::object()).value(cid,Json::object()).value(rid,relationship.value("initial",int64_t(0))):game.state.at("relationships").value(cid,Json::object()).value(rid,int64_t(0));
       }
       if(name=="item-count")for(const auto& item:project.value("gameplay",Json::object()).value("items",Json::array()))if(item.at("id")==element.value("itemId",Json())) {
@@ -349,7 +362,7 @@ public:
         value=game.state.is_null()?item.value("initialQuantity",int64_t(0)):game.state.value("gameplay",Json::object()).value("inventory",Json::object()).value(id,int64_t(0));
       }
       auto format=element.value("valueFormat","{value}");
-      for(const auto& [token,replacement]:std::vector<std::pair<std::string,std::string>>{{"{value}",std::to_string(value)},{"{label}",label}}) {
+      for(const auto& [token,replacement]:std::vector<std::pair<std::string,std::string>>{{"{value}",std::to_string(value)},{"{label}",label},{"{delta}",(delta>0?"+":"")+std::to_string(delta)}}) {
         size_t at=0;while((at=format.find(token,at))!=std::string::npos){format.replace(at,token.size(),replacement);at+=replacement.size();}
       }
       return format;
@@ -458,6 +471,8 @@ public:
         out+=button("move-expedition-"+node.value("id",""),node.value("name",""),command,enabled,reason);
       }
       out+=checked_button("return-expedition","탐험에서 돌아가기",{{"type","returnFromExpedition"}});
+      if(trip.contains("manualBattle")){const auto battle=trip.at("manualBattle");out+=button("start-node-battle",battle.value("name","")+"와 싸운다",{{"type","startNodeBattle"}},battle.value("enabled",false),battle.value("reason",Json()).is_string()?battle.at("reason").get<std::string>():"");}
+      for(const auto& definition:display_content.at("project").at("systems").at("expeditions"))if(definition.at("id")==trip.at("expeditionId"))for(const auto& node:definition.at("nodes"))if(node.at("id")==trip.at("nodeId")&&!node.value("actionIds",Json::array()).empty())out+=facility_body({{"kind","actions"},{"id","expedition-node"},{"actionIds",node.at("actionIds")}});
       out+=battle_result(view);
     }
     if(kind=="battle") {
@@ -642,10 +657,14 @@ public:
       if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){if(game.state.at("progression").contains("sessions")){enabled=game.available({{"type","advanceSession"}});label="다음 시점까지 진행";}else {enabled=false;label="행동 진행 중";}}
       if(type=="save")enabled=!game.state.is_null();
       if(type=="executeActorAction"||type=="navigate"||type=="visit"||type=="buy"||type=="sell"||type=="useService"||type=="setDiet"||type=="executeAction"||type=="selectPolicy"||type=="interact") {
-        enabled=raw_phase=="planning"||raw_phase=="ready";
+        enabled=raw_phase=="planning"||raw_phase=="ready"||(raw_phase=="expedition"&&type=="executeAction");
         // Preview against a serialized copy through the same C++ command contract.
         // This covers authored quantities and conditions without committing state.
         if(enabled)try {game.call({{"operation","command"},{"state",game.state},{"command",boundAction},{"expectedRevision",game.state.at("stateRevision")}});}catch(...){enabled=false;}
+      }
+      if(type=="navigate"&&display_content.at("project").at("visual").contains("routing")) {
+        enabled=false;for(const auto& s:display_content.at("project").at("visual").at("screens"))if(s.at("id")==boundAction.value("screenId",Json())&&!s.value("modal",false))enabled=true;
+        if(enabled&&!game.state.is_null())enabled=game.available(boundAction);
       }
       if(type=="equip"||type=="unequip"||type=="acceptQuest"||type=="claimQuest"||type=="moveExpedition"||type=="returnFromExpedition"||type=="battleAction")enabled=game.available(action);
       if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction")enabled=game.battle_ui_available(action);
@@ -764,6 +783,7 @@ public:
   }
 #include "gallery-screen.inc"
 #include "gallery-data.inc"
+  std::string title_screen;
   std::string document() {
     refreshDisplay();
     if(extensions&&!authored_gallery())extensions->begin_sync();
@@ -773,6 +793,16 @@ public:
     const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
     screen_id=raw_phase=="title"?"title":raw_phase=="finished"?"ending":raw_phase=="narrative"?"story":raw_phase=="battle"||raw_phase=="expedition"?raw_phase:
       (raw_phase=="planning"||raw_phase=="ready")&&game.state.contains("gameplay")?game.state.at("gameplay").value("screenId","schedule"):"schedule";
+    if(visual.contains("routing")) {
+      const auto& routing=visual.at("routing");screen_id=routing.at("defaultScreenId").get<std::string>();
+      const auto key=raw_phase=="narrative"?(phase()=="choice"?"choice":"dialogue"):raw_phase;
+      for(const auto& route:routing.at("phases"))if(route.at("phase")==key)screen_id=route.at("screenId").get<std::string>();
+      if(routing.value("useLocationScreens",false)&&(raw_phase=="planning"||raw_phase=="ready")&&!game.state.is_null()&&game.state.contains("gameplay")) {
+        const auto id=game.state.at("gameplay").value("screenId","");for(const auto& screen:visual.at("screens"))if(screen.at("id")==id)screen_id=id;
+      }
+      if(!game.state.is_null()&&game.state.contains("uiScreenId"))screen_id=game.state.at("uiScreenId").get<std::string>();
+      else if(game.state.is_null()&&!title_screen.empty())screen_id=title_screen;
+    }
     if(authored_gallery()){
       const auto config=display_content.at("project").at("gallery");
       screen_id=gallery_branch_view&&config.contains("branchScreenId")?config.at("branchScreenId").get<std::string>():!gallery_entry.empty()&&config.contains("detailScreenId")?config.at("detailScreenId").get<std::string>():config.at("screenId").get<std::string>();
@@ -781,7 +811,7 @@ public:
     const Json* screen=nullptr;for(const auto& s:visual.at("screens"))if(s.at("id")==screen_id)screen=&s;
     render_elements=screen?expanded_collections(expanded_elements(visual,*screen,width,height,phase())):Json::array();
     Json generated_screen;
-    if(!authored_gallery()&&preview_screen.empty()&&(raw_phase=="battle"||raw_phase=="expedition")) {
+    if(!visual.contains("routing")&&!authored_gallery()&&preview_screen.empty()&&(raw_phase=="battle"||raw_phase=="expedition")) {
       bool has_widget=false;for(const auto& element:render_elements)if(visible(element)&&element.value("opacity",1.0)>0) {
         const auto kind=element.value("kind","");
         if(kind==raw_phase)has_widget=true;
@@ -806,7 +836,7 @@ public:
     std::string out="<rml><head><title>"+escape(display_content.at("project").value("title","Raising Player"))+"</title><style>";
     out+="div{display:block;} .equipment p,.quests p,.expedition p,.battle p,.relationship-stages p,.battle-result p{display:block;margin-top:6px;margin-bottom:6px;} span,b{display:inline;} body{font-family:Noto Sans KR;font-size:20px;color:#203a34;background-color:#dce9df;width:"+std::to_string(width)+"px;height:"+std::to_string(height)+"px;margin:0;} .node{position:absolute;box-sizing:border-box;overflow:hidden;} .list{overflow:auto;padding:6px;} button{font-family:Noto Sans KR;display:block;box-sizing:border-box;width:100%;min-height:40px;padding:9px 14px;margin-bottom:8px;color:#f8fff5;background-color:#305b4c;border-width:1px;border-color:#57806c;border-radius:7px;cursor:pointer;tab-index:auto;} button:hover{background-color:#417661;} button:focus{border-width:3px;border-color:#eabb68;} button:disabled{opacity:0.45;cursor:unavailable;} .button>button{height:100%;margin:0;background-color:transparent;border-width:0;} .button>button:hover{background-color:rgba(255,255,255,31);} .button>button:focus{border-width:3px;border-color:#eabb68;} .stat{height:54px;padding:3px 8px;} .value{float:right;font-weight:bold;} .bar{height:5px;margin-top:5px;background-color:#d8e3d8;} .bar>div{height:5px;background-color:#608c69;} .row{padding:10px 6px;border-bottom-width:1px;border-bottom-color:#d0ddcd;} .row>b{float:right;} .heading{font-size:24px;font-weight:bold;padding:4px 0 10px;} .reason,.muted{font-size:15px;color:#738175;} .item-icon{display:inline-block;width:56px;height:56px;vertical-align:middle;margin-right:10px;} .offer{padding:8px 3px;} .offer button{margin-top:8px;} .node.schedule{overflow:visible;z-index:20;} .dropdown-marker{position:absolute;right:15px;top:48px;font-size:14px;pointer-events:none;} .schedule-row{position:relative;display:inline-block;vertical-align:top;box-sizing:border-box;padding:8px;} select{display:block;height:44px;margin-top:8px;padding:0;background-color:#f8fff6;border-width:1px;border-color:#789c81;tab-index:auto;} selectvalue{display:block;width:auto;margin-right:26px;height:28px;padding:8px;color:#203a34;white-space:nowrap;} selectarrow{display:block;width:26px;height:44px;padding-top:8px;text-align:center;background-color:#d4e4d3;} selectbox{display:block;max-height:320px;padding:4px;background-color:#f5fbf1;border-width:1px;border-color:#54775d;} option{box-sizing:border-box;height:40px;white-space:nowrap;padding:8px;background-color:#f5fbf1;} option:hover{background-color:#c9e0cb;} .status{position:absolute;bottom:6px;left:12px;right:12px;padding:4px 10px;background-color:rgba(10,35,25,217);color:white;font-size:16px;}</style></head><body>";
     std::string extra_css="p{display:block;} .result .heading,.result .row,.result p{display:block;width:100%;box-sizing:border-box;} .result p{margin-top:4px;margin-bottom:4px;} .calendar-cell{padding:0;min-height:0;margin:0;border-radius:0;border-width:1px;background-color:transparent;font-size:24px;text-align:left;color:#fff0d0;} .calendar-cell:hover{background-color:#6d383a;} .plan-prompt{padding:8px 4px;color:inherit;}";
-    extra_css+=".schedule button,.schedule select,.schedule selectbox,.schedule option{pointer-events:auto;}";
+    extra_css+=".schedule button,.schedule select,.schedule selectbox,.schedule option{pointer-events:auto;} selectbox,option,selectarrow{color:#203a34;}";
     if(visual.value("widgetTheme","default")=="ornate")extra_css+="body{color:#fff0d0;} .list{padding:0;} .list button{background-color:transparent;color:#fff0d0;border-width:0;border-radius:0;padding:4px 8px;margin-bottom:4px;text-align:left;min-height:30px;} .list button:hover{color:#ffe673;background-color:#733e42;} .list button:focus{border-color:#ffd979;border-width:1px;} .list .muted,.list .reason{color:#c8a999;} .list .heading{font-size:22px;} .list .row{border-bottom-width:0;padding:3px;} .list .offer{padding:2px;} .list .offer button{margin-top:2px;} .node.schedule{z-index:20;} .button>button{padding:0;min-height:0;text-align:center;} .status{background-color:#46262d;color:#ffdf9b;}";
     extra_css+=".plan-categories{position:absolute;right:0;top:210px;width:310px;padding:10px 4px;background-color:#46343e;border-width:2px;border-color:#e5c880;}.plan-options>button{display:inline-block;vertical-align:top;width:244px;height:78px;margin:0 16px 16px 0;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;white-space:normal;}.plan-icon{float:left;width:60px;height:60px;margin-right:6px;} .compact-stat{position:relative;height:32px;font-size:28px;line-height:32px;} .stat-name{display:inline-block;width:126px;background-color:#733c44;} .stat-number{display:inline-block;width:58px;text-align:right;} .stat-meter{position:absolute;left:184px;top:5px;height:22px;width:168px;border-width:1px;border-color:#ba8c84;background-color:#34151d;} .stat-meter>div{height:100%;background-color:#df5454;} .node.schedule .calendar-cell{border-width:1px;padding:0;margin:0;min-height:0;font-size:26px;background-color:transparent;}";
     extra_css+=".shop-card{display:inline-block;vertical-align:top;width:292px;height:112px;margin:0 12px 8px 0;}.shop-card>button{height:112px;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;line-height:26px;}.shop-card .item-icon{float:left;width:56px;height:56px;margin-right:8px;}.card-description{clear:both;font-size:21px;padding-top:4px;}.purchase-dialog{position:absolute;z-index:100;right:8px;top:430px;width:304px;padding:12px;background-color:#46343e;color:#fff0d0;border-width:2px;border-color:#e5c880;}";

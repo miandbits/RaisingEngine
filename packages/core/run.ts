@@ -14,6 +14,8 @@ import { applyPolicies, beginRuleCommand, emitRules, emitRelationshipRules, runB
 import { applySystems, createSystems, startExpedition, syncRelationshipStages } from '../systems/service.js';
 
 function checkContent(content: ContentSnapshot): void {
+  requireCore(!content.project.periodFlow || (!content.project.roster && !content.project.progression),
+    'PERIOD_FLOW_MODE', '기간 단계는 현재 단일 대상의 월 일정에서 사용할 수 있습니다.', '/project/periodFlow');
   requireCore(content.snapshotVersion === '1' && /^sha256:[0-9a-f]{64}$/.test(content.contentFingerprint),
     'INCOMPATIBLE_CONTENT', '지원하는 buildSnapshot 결과가 필요합니다.', '/content');
   requireCore(Number.isInteger(content.project.periodsPerMonth) && content.project.periodsPerMonth >= 1 && content.project.periodsPerMonth <= 12,
@@ -100,7 +102,7 @@ function parseCommand(input: unknown, periods: number): Command {
   } else if (input.type === 'battleAction') {
     requireCore(['attack', 'guard', 'flee', 'useItem'].includes(input.action as string) && Object.keys(input).length === (input.action === 'useItem' ? 3 : 2)
       && (input.action !== 'useItem' || typeof input.itemId === 'string' && input.itemId.length > 0), 'INVALID_COMMAND', '전투 행동과 물품 ID를 확인해 주세요.', '/command');
-  } else if (input.type === 'returnFromExpedition') {
+  } else if (input.type === 'returnFromExpedition' || input.type === 'startNodeBattle') {
     requireCore(Object.keys(input).length === 1, 'INVALID_COMMAND', '귀환 명령에 추가 필드를 사용할 수 없습니다.', '/command');
   } else if (input.type === 'assignActivities') {
     requireCore(Object.keys(input).length === 2 && object(input.assignments) && Object.values(input.assignments).every(id => typeof id === 'string'), 'INVALID_COMMAND', '대상별 활동 배정이 필요합니다.', '/command/assignments');
@@ -149,8 +151,11 @@ function executeActivity(content: ContentSnapshot, state: RunState, draft: RunDa
   const path = `/activities/${activityId}`;
   const result: ActivityResult = { activityId, time: calendarTime(content, state), changes: [], success: null };
   if (!individual) {
-    runBoundaryRules(content, draft, 'periodStart', result.changes);
-    applyPolicies(content, draft, result.changes, 'beforeActivity');
+    if (draft.periodPreparation) result.changes.push(...structuredClone(draft.periodPreparation.changes));
+    else {
+      runBoundaryRules(content, draft, 'periodStart', result.changes);
+      applyPolicies(content, draft, result.changes, 'beforeActivity');
+    }
     if (content.project.roster) {
       const batch = executeRoster(content, draft, executeActivity);
       batch.changes.unshift(...result.changes);
@@ -164,7 +169,7 @@ function executeActivity(content: ContentSnapshot, state: RunState, draft: RunDa
   const activityInput = structuredClone(draft);
   requireCore(evaluateCondition(content, activityInput, activity.requirements, `${path}/requirements`),
     'REQUIREMENTS_NOT_MET', `활동 조건을 만족하지 않습니다: ${activityId}`, `${path}/requirements`);
-  if (!individual) applyDiet(content, draft, result.changes);
+  if (!individual && !draft.periodPreparation) applyDiet(content, draft, result.changes);
   for (const [i, cost] of activity.costs.entries()) {
     const definition = content.attributes.find(a => a.id === cost.attributeId)!;
     requireCore(draft.attributes[cost.attributeId]! - cost.amount >= definition.min,
@@ -233,7 +238,7 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
         beginActorAction(content,draft,command.actorId,command.actionId);
         applyGameplay(content,draft,{type:'executeAction',actionId:command.actionId,quantity:command.quantity},soundCues);
         break;
-      case 'tacticsUnequip': case 'tacticsAction': case 'tacticsFlee': case 'tacticsEquip': case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction':
+      case 'tacticsUnequip': case 'tacticsAction': case 'tacticsFlee': case 'tacticsEquip': case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'startNodeBattle': case 'battleAction':
         applySystems(content, draft, command, soundCues); break;
       case 'navigate': case 'visit': case 'buy': case 'interact': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy':
         if(command.type==='executeAction' && startTimedAction(content,draft,command))break;
@@ -251,13 +256,23 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
         requireCore(state.phase === 'planning' || state.phase === 'ready', 'WRONG_PHASE', '일정 편집을 기다리는 상태가 아닙니다.', '/phase');
         command.activityIds.forEach((id, i) => {
           requireCore(content.activities.some(a => a.id === id), 'UNKNOWN_ACTIVITY', `알 수 없는 활동: ${id}`, `/command/activityIds/${i}`);
-          requireCore(i >= state.periodIndex % content.project.periodsPerMonth || state.schedule?.[i] === id, 'COMPLETED_SLOT', '완료한 일정은 변경할 수 없습니다.', `/command/activityIds/${i}`);
+          requireCore(i >= state.periodIndex % content.project.periodsPerMonth + (state.activityIntermission ? 1 : 0) || state.schedule?.[i] === id, 'COMPLETED_SLOT', '완료한 일정은 변경할 수 없습니다.', `/command/activityIds/${i}`);
         });
         draft.schedule = command.activityIds;
         draft.phase = 'ready';
         break;
       }
       case 'executeActivity': {
+        requireCore(!draft.activityIntermission, 'INTERMISSION_ACTIVE', '자유 행동을 마친 뒤 다음 일정으로 진행하세요.', '/activityIntermission');
+        if (content.project.periodFlow?.preparePolicies && !draft.periodPreparation) {
+          const changes: ActivityResult['changes'] = [];
+          requireCore(draft.phase === 'ready' && draft.schedule, 'WRONG_PHASE', '실행할 일정이 준비되지 않았습니다.', '/phase');
+          runBoundaryRules(content, draft, 'periodStart', changes);
+          applyPolicies(content, draft, changes, 'beforeActivity');
+          applyDiet(content, draft, changes);
+          draft.periodPreparation = { changes };
+          break;
+        }
         if(startCalendar(content,draft))break;
         activity = executeActivity(content, state, draft);
         const presentation = content.activities.find(a => a.id === activity!.activityId)!.presentation;
@@ -266,10 +281,24 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
         if (expeditionId) startExpedition(content, draft, expeditionId, soundCues);
         break;
       }
-      case 'acknowledgeResult':
-        requireCore(state.phase === 'activity-result', 'WRONG_PHASE', '확인할 활동 결과가 없습니다.', '/phase');
-        draft.phase = 'period-end';
+      case 'acknowledgeResult': {
+        const intermission = content.project.periodFlow?.intermission;
+        if (state.activityIntermission && state.phase === 'ready') {
+          requireCore(intermission && draft.flags[intermission.completionFlagId], 'INTERMISSION_PENDING', '아직 자유 행동을 마치지 않았습니다.', '/activityIntermission');
+          delete draft.activityIntermission;
+          draft.phase = 'period-end';
+        } else {
+          requireCore(state.phase === 'activity-result', 'WRONG_PHASE', '확인할 활동 결과가 없습니다.', '/phase');
+          if (intermission && state.mode === 'full') {
+            draft.activityIntermission = true;
+            draft.flags[intermission.completionFlagId] = false;
+            applyEffects(content, draft, intermission.entryEffects ?? [], '/project/periodFlow/intermission/entryEffects', []);
+            draft.gameplay!.screenId = intermission.screenId;
+            draft.phase = 'ready';
+          } else draft.phase = 'period-end';
+        }
         break;
+      }
       case 'completePeriodWithoutEvents':
         requireCore(state.phase === 'period-end' && state.mode === 'activities-only', 'WRONG_PHASE', '활동 전용 모드의 기간 종료 경계가 아닙니다.', '/phase');
         runBoundaryRules(content, draft, 'periodEnd');
@@ -285,6 +314,7 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     emitRelationshipRules(content, draft);
     if(draft.roster){delete draft.roster.actorId;delete draft.roster.activityActorId;}
     if (draft.roster) for (const id of content.project.roster!.localAttributeIds) draft.roster.attributes[content.project.protagonistId]![id] = draft.attributes[id]!;
+    if (draft.phase !== state.phase || command.type === 'visit' || command.type === 'choose' || command.type === 'advanceNarrative') delete draft.uiScreenId;
     draft.stateRevision++;
     return { ok: true, state: freeze(draft), transition: freeze({ command, fromRevision: state.stateRevision,
       toRevision: draft.stateRevision, fromPhase: state.phase, toPhase: draft.phase, time: calendarTime(content, draft), activity,

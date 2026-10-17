@@ -7,14 +7,16 @@
 #include <QVBoxLayout>
 
 namespace {
-const QStringList connectionKeys{"binding","attributeId","characterId","relationshipId","itemId","userFieldId","valueFormat"};
+const QStringList connectionKeys{"binding","dataBinding","attributeId","characterId","relationshipId","itemId","userFieldId","valueFormat"};
 const QMap<QString,QString> bindingLabels{
+  {"data-value",QString::fromUtf8("공용·개인 데이터")},
   {"none",QString::fromUtf8("직접 입력")},{"title",QString::fromUtf8("게임 제목")},{"description",QString::fromUtf8("게임 설명")},
   {"calendar",QString::fromUtf8("날짜")},{"calendar-year",QString::fromUtf8("연도")},{"calendar-month",QString::fromUtf8("월")},{"calendar-day",QString::fromUtf8("일")},{"calendar-weekday",QString::fromUtf8("요일")},
   {"schedule-prompt",QString::fromUtf8("일정 안내")},{"ending",QString::fromUtf8("엔딩")},{"speaker",QString::fromUtf8("대화 인물")},{"story",QString::fromUtf8("대사")},{"location",QString::fromUtf8("현재 장소")},
   {"attribute-value",QString::fromUtf8("능력·자원")},{"relationship-value",QString::fromUtf8("인물 관계")},{"item-count",QString::fromUtf8("물품 수량")},{"user-field",QString::fromUtf8("사용자 입력값")}
 };
 QStringList requiredBindingKeys(const QString &binding){
+  if(binding=="data-value")return {"dataBinding"};
   if(binding=="attribute-value")return {"attributeId"};
   if(binding=="relationship-value")return {"characterId","relationshipId"};
   if(binding=="item-count")return {"itemId"};
@@ -36,7 +38,7 @@ QJsonObject applyBinding(QJsonObject target,const QJsonObject &payload){
 }
 QString bindingSummary(const QJsonObject &element){
   const auto binding=element.value("binding").toString("none");QStringList parts{bindingLabels.value(binding,binding)};
-  for(const auto &key:requiredBindingKeys(binding))parts<<element.value(key).toString();
+  for(const auto &key:requiredBindingKeys(binding))parts<<(key=="dataBinding"?element.value(key).toObject().value("kind").toString():element.value(key).toString());
   if(!requiredBindingKeys(binding).isEmpty())parts<<QString::fromUtf8("형식: ")+element.value("valueFormat").toString("{value}");
   return parts.join(" · ");
 }
@@ -48,7 +50,7 @@ void StudioWindow::applyTextBindingBatch(){
   if(source.value("kind")!="text"){errorLabel->setText(tr("연결을 복사할 텍스트 요소를 먼저 선택하세요."));return;}
   const auto binding=source.value("binding").toString("none");
   if(!bindingLabels.contains(binding)){errorLabel->setText(tr("지원하지 않는 텍스트 연결입니다: ")+binding);return;}
-  for(const auto &key:requiredBindingKeys(binding))if(source.value(key).toString().isEmpty()){errorLabel->setText(tr("선택한 텍스트의 연결 대상을 먼저 지정하세요."));return;}
+  for(const auto &key:requiredBindingKeys(binding))if(key=="dataBinding"?source.value(key).toObject().isEmpty():source.value(key).toString().isEmpty()){errorLabel->setText(tr("선택한 텍스트의 연결 대상을 먼저 지정하세요."));return;}
   const auto original=projectData();const auto revision=view.value("revision"),root=view.value("root");
   const auto visual=original.value("visual").toObject();const auto screens=visual.value("screens").toArray();
   const auto sourceScreen=screenId,sourceId=source.value("id").toString();const auto payload=bindingPayload(source);

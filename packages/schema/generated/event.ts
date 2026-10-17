@@ -2,6 +2,8 @@
 
 export type EventDefinition = Header &
   Narrative & {
+    [k: string]: unknown;
+  } & {
     id: string;
     label: string;
     description?: string;
@@ -12,6 +14,10 @@ export type EventDefinition = Header &
     requirements: Condition;
     priority: number;
     trigger?: "period-end" | "interaction";
+    /**
+     * An interaction may enter this event again after completion while its requirements hold. Completion history remains unique.
+     */
+    repeatable?: boolean;
     scope?: "shared" | "actor";
   };
 export type Condition =

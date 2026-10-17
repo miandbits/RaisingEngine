@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/schemas/0.1.0/story-flow.schema.json",
+  "title": "Story flow authoring metadata",
+  "description": "Editor round-trip metadata. Execution uses ordinary character, activity and event documents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id","name","newCharacter","characterId","newRelationship","relationshipId","newActivity","activityId","encounterTitle","encounterText","prompt","fromPeriod","throughPeriod","choices","ownedDocuments"],
+  "properties": {
+    "id": {"type":"string","pattern":"^story-[a-z0-9-]{4,24}$"},
+    "name": {"type":"string","minLength":1},
+    "newCharacter": {"type":"boolean"},
+    "characterId": {"$ref":"common.schema.json#/$defs/id"},
+    "characterName": {"type":"string"},
+    "newRelationship": {"type":"boolean"},
+    "relationshipId": {"$ref":"common.schema.json#/$defs/id"},
+    "relationshipLabel": {"type":"string"},
+    "relationshipInitial": {"type":"integer","minimum":-100,"maximum":100},
+    "newActivity": {"type":"boolean"},
+    "activityId": {"$ref":"common.schema.json#/$defs/id"},
+    "activityLabel": {"type":"string"},
+    "costAttributeId": {"type":"string"},
+    "cost": {"type":"integer","minimum":0,"maximum":1000000},
+    "gainAttributeId": {"type":"string"},
+    "gain": {"type":"integer","minimum":-1000000,"maximum":1000000},
+    "scheduleLink": {"type":"object","additionalProperties":false,"properties":{"screenId":{"$ref":"common.schema.json#/$defs/id"},"elementId":{"$ref":"common.schema.json#/$defs/id"},"groupId":{"$ref":"common.schema.json#/$defs/id"}}},
+    "encounterTitle": {"type":"string","minLength":1},
+    "encounterText": {"type":"string","minLength":1},
+    "prompt": {"type":"string","minLength":1},
+    "fromPeriod": {"type":"integer","minimum":1},
+    "throughPeriod": {"type":"integer","minimum":1},
+    "choices": {"type":"array","minItems":2,"maxItems":8,"items":{
+      "type":"object","additionalProperties":false,"required":["id","label","reply","delta","followupEnabled"],
+      "properties":{
+        "id":{"type":"string","pattern":"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$","maxLength":22},
+        "label":{"type":"string","minLength":1},"reply":{"type":"string","minLength":1},
+        "delta":{"type":"integer","minimum":-1000000,"maximum":1000000},
+        "followupEnabled":{"type":"boolean"},"followupTitle":{"type":"string"},"followupText":{"type":"string"},
+        "minimumRelationship":{"type":"integer"},"followupFrom":{"type":"integer","minimum":1}
+      }
+    }},
+    "ownedDocuments": {"type":"array","items":{"type":"object","additionalProperties":false,"required":["file","digest"],"properties":{"file":{"type":"string"},"digest":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}}
+  }
+}

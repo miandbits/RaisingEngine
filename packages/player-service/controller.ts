@@ -15,6 +15,7 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  relationshipChanges?: RunSession['relationshipChanges'];
   userFields?: ContentSnapshot['project']['userFields'];
   userValues?: Readonly<Record<string, string>>;
   battleSelection?: BattleSelection|null;
@@ -84,7 +85,7 @@ export class PlayerController {
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       durationMonths: c.project.durationMonths, periodsPerMonth: c.project.periodsPerMonth, schedulePlayback: c.project.schedulePlayback ?? 'manual', attributes: c.attributes, characters: c.characters,
-      activities: c.activities, assets: c.assets, state,
+      activities: c.activities, assets: c.assets, state, relationshipChanges:this.session?.relationshipChanges,
       visual: c.project.visual ?? null,
       timeline: this.presentation.view(c,state),
       battleSelection:this.presentation.selectedBattle(c,state),
@@ -155,7 +156,7 @@ export class PlayerController {
     switch (a.type) {
       case 'confirmBattleAction': command=battleCommand; break;
       case 'navigate': case 'visit': case 'buy': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy': case 'interact': command = action; break;
-      case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'battleAction': command = action; break;
+      case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'startNodeBattle': case 'battleAction': command = action; break;
       case 'schedule': case 'commitPlan': command = { type: 'setSchedule', activityIds: a.activityIds }; break;
       case 'execute': command = { type: 'executeActivity' }; break;
       case 'choose': command = { type: 'choose', choiceId: a.choiceId }; break;

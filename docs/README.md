@@ -6,6 +6,9 @@ Start with the [root README](../README.md). Older documents retain the implement
 
 | Topic | Document |
 |---|---|
+| Seolmae six-month demo design | [Concept and first-month production specification](game-design/seolmae/README.md) |
+| First game without JSON | [Forms, stories, relationships and reference repair](first-game-without-json.md) |
+| First-time authoring improvements | [Changes and verification](first-time-authoring-forms.md) |
 | Current scope and phase history | [Universal raising engine plan](universal-raising-engine-plan.md) |
 | Project manager and public release plan | [Startup workflow and history boundary](project-manager-and-public-release.md) |
 | First-time designer usability pilot | [Last Grandson authoring trial](designer-usability-pilot.md) |

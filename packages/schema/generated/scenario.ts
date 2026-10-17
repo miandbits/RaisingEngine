@@ -113,7 +113,7 @@ export type ScenarioSpecification = Header & {
                 nodeId: string;
               }
             | {
-                type: "returnFromExpedition";
+                type: "returnFromExpedition" | "startNodeBattle";
               }
             | {
                 type: "battleAction";
@@ -300,7 +300,7 @@ export type ScenarioSpecification = Header & {
                 nodeId: string;
               }
             | {
-                type: "returnFromExpedition";
+                type: "returnFromExpedition" | "startNodeBattle";
               }
             | {
                 type: "battleAction";

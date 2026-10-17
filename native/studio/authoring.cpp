@@ -1,5 +1,8 @@
 #include "studio.hpp"
+#include "tabular-input.hpp"
 #include "logic-editor.hpp"
+#include "relationship-editor.hpp"
+#include <QSignalBlocker>
 #include "plugin-host.hpp"
 #include <QCheckBox>
 #include <QDialogButtonBox>
@@ -281,6 +284,7 @@ void StudioWindow::editContent() {
     }
   if (data.isEmpty())
     return;
+  if (kind == "event" || kind == "ending") { editScripts(); return; }
   if (kind == "pluginLock") { showPluginManager(); return; }
   if (kind == "extension") {
     const auto plugin = data["plugin"].toString();
@@ -382,6 +386,11 @@ void StudioWindow::editContent() {
     tabs->addTab(page, tr("표정 · 초상화"));
   }
   QMap<QString, QTableWidget *> effectTables;
+  RelationshipEditor *relationships = nullptr;
+  if (kind == "character") {
+    relationships = new RelationshipEditor(data, view);
+    tabs->addTab(relationships, tr("관계 · 신뢰 / 호감"));
+  }
   QMap<QString, std::function<void(QJsonArray)>> effectFillers;
   for (const auto &key : QStringList{"costs", "baseEffects"})
     if (data.contains(key)) {
@@ -498,8 +507,12 @@ void StudioWindow::editContent() {
       });
       return button;
     };
-    addLogic("requirements", tr("실행 조건 편집…"), "condition");
-    addLogic("baseEffects", tr("기본 효과 · 수식 편집…"), "effects");
+    auto conditionAction = addLogic("requirements", tr("실행 조건 편집…"), "condition");
+    auto effectsAction = addLogic("baseEffects", tr("능력·자원·관계 효과 편집…"), "effects");
+    auto conditionShortcut = new QPushButton(tr("실행 조건 편집…")); conditionShortcut->setObjectName("contentRequirementsQuick"); form->addRow(conditionShortcut);
+    connect(conditionShortcut, &QPushButton::clicked, conditionAction, &QPushButton::click);
+    auto effectShortcut = new QPushButton(tr("능력·자원·관계 효과 편집…")); effectShortcut->setObjectName("contentEffectsQuick"); form->addRow(effectShortcut);
+    connect(effectShortcut, &QPushButton::clicked, effectsAction, &QPushButton::click);
     successEnabled = new QCheckBox(tr("성공 / 실패 판정 사용"));
     successEnabled->setObjectName("contentSuccessEnabled");
     successEnabled->setChecked(data.contains("successCheck"));
@@ -617,10 +630,32 @@ void StudioWindow::editContent() {
       if (table->rowCount() <= 1) { error->setText(tr("능력 항목은 하나 이상 필요합니다.")); return; }
       table->removeRow(row); error->clear();
     });
+    auto pasteRows=new QPushButton(tr("표에서 여러 능력 입력…"));pasteRows->setObjectName("contentAttributePaste");box->addWidget(pasteRows);
+    connect(pasteRows,&QPushButton::clicked,&dialog,[&]{readTabularInput(&dialog,{tr("ID"),tr("이름"),tr("초기값"),tr("최소"),tr("최대"),tr("종류")},[&](const QList<QStringList>& values)->QString {
+      QSet<QString> ids;QList<QJsonObject> additions;
+      for(const auto &v:values){bool a=false,b=false,c=false;int initial=v[2].toInt(&a),minimum=v[3].toInt(&b),maximum=v[4].toInt(&c);QString kind=v[5];if(kind==tr("능력"))kind="stat";if(kind==tr("자원"))kind="resource";if(kind==tr("상태"))kind="condition";
+        if(v[0].size()>64||!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(v[0]).hasMatch()||ids.contains(v[0]))return tr("ID가 잘못되었거나 입력 안에서 중복됩니다: ")+v[0];
+        if(v[1].isEmpty()||!a||!b||!c||minimum>initial||initial>maximum||!QStringList{"stat","resource","condition"}.contains(kind))return tr("이름·정수 범위·종류를 확인하세요: ")+v[0];
+        ids.insert(v[0]);additions.append(QJsonObject{{"id",v[0]},{"label",v[1]},{"initial",initial},{"min",minimum},{"max",maximum},{"kind",kind}});
+      }
+      // Validate every row first: an invalid paste never partially edits the table.
+      for(const auto &v:additions){int existing=-1;for(int r=0;r<table->rowCount();++r)if(table->item(r,0)->text()==v.value("id").toString()){existing=r;break;}if(existing<0)appendAttribute(v,true);else{for(int col=1;col<5;++col)table->item(existing,col)->setText(col==1?v.value(keys[col]).toString():QString::number(v.value(keys[col]).toInt()));auto combo=qobject_cast<QComboBox*>(table->cellWidget(existing,5));combo->setCurrentIndex(combo->findData(v.value("kind").toString()));}}
+      return {};
+    });});
     tabs->addTab(page, tr("능력 · 초기값 / 범위"));
   }
   else
     table->hide();
+  QTableWidget *flagTable=nullptr;
+  if(kind=="flags") {
+    auto page=new QWidget;auto box=new QVBoxLayout(page);flagTable=new QTableWidget(0,3);flagTable->setObjectName("contentFlagTable");flagTable->setHorizontalHeaderLabels({tr("ID"),tr("이름"),tr("시작 값")});flagTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);box->addWidget(flagTable);
+    auto appendFlag=[flagTable](QJsonObject flag,bool fresh){int row=flagTable->rowCount();flagTable->insertRow(row);auto id=new QTableWidgetItem(flag.value("id").toString());id->setData(Qt::UserRole,flag);if(!fresh)id->setFlags(id->flags()&~Qt::ItemIsEditable);flagTable->setItem(row,0,id);flagTable->setItem(row,1,new QTableWidgetItem(flag.value("label").toString()));auto initial=new QTableWidgetItem;initial->setFlags(Qt::ItemIsEnabled|Qt::ItemIsUserCheckable);initial->setCheckState(flag.value("initial").toBool()?Qt::Checked:Qt::Unchecked);flagTable->setItem(row,2,initial);};
+    for(auto value:data.value("flags").toArray())appendFlag(value.toObject(),false);
+    auto add=new QPushButton(tr("＋ 플래그 추가"));add->setObjectName("contentFlagAdd");box->addWidget(add);connect(add,&QPushButton::clicked,&dialog,[=]{int n=1;QSet<QString> used;for(int row=0;row<flagTable->rowCount();++row)used.insert(flagTable->item(row,0)->text());while(used.contains(QString("flag-%1").arg(n)))++n;appendFlag(QJsonObject{{"id",QString("flag-%1").arg(n)},{"label",tr("새 플래그")},{"initial",false}},true);flagTable->setCurrentCell(flagTable->rowCount()-1,0);flagTable->editItem(flagTable->item(flagTable->currentRow(),0));});
+    auto paste=new QPushButton(tr("표에서 여러 플래그 입력…"));paste->setObjectName("contentFlagPaste");box->addWidget(paste);
+    connect(paste,&QPushButton::clicked,&dialog,[&,appendFlag,flagTable]{readTabularInput(&dialog,{tr("ID"),tr("이름"),tr("시작 값: 켜짐 / 꺼짐")},[&,appendFlag,flagTable](const QList<QStringList>& rows)->QString{QSet<QString> ids;QJsonArray values;for(const auto &row:rows){if(row[0].size()>64||!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(row[0]).hasMatch()||ids.contains(row[0])||row[1].isEmpty())return tr("ID 중복·형식 또는 이름을 확인하세요: ")+row[0];const auto initial=row[2].toLower();if(!QStringList{"true","false","0","1",tr("켜짐"),tr("꺼짐")}.contains(initial))return tr("시작 값은 켜짐 / 꺼짐입니다: ")+row[0];ids.insert(row[0]);values.append(QJsonObject{{"id",row[0]},{"label",row[1]},{"initial",initial=="true"||initial=="1"||initial==tr("켜짐")}});}for(auto value:values){auto flag=value.toObject();int found=-1;for(int row=0;row<flagTable->rowCount();++row)if(flagTable->item(row,0)->text()==flag.value("id").toString()){found=row;break;}if(found<0)appendFlag(flag,true);else{flagTable->item(found,1)->setText(flag.value("label").toString());flagTable->item(found,2)->setCheckState(flag.value("initial").toBool()?Qt::Checked:Qt::Unchecked);}}return {};});});
+    tabs->addTab(page,tr("플래그 · 시작 값"));
+  }
   auto nodes = data.value("nodes").toArray();
   auto dialogue = new QTableWidget(0, 2);
   dialogue->setObjectName("dialogueTable");
@@ -648,10 +683,17 @@ void StudioWindow::editContent() {
   auto json = new QPlainTextEdit;
   json->setObjectName("contentJson");
   json->setPlainText(QString::fromUtf8(QJsonDocument(data).toJson()));
-  int advanced = tabs->addTab(json, tr("고급 JSON · 조건 / 효과 / 분기"));
+  int advanced = tabs->addTab(json, tr("개발자용 JSON"));
+  json->setToolTip(tr("보기만 하면 폼으로 돌아갈 수 있습니다. JSON을 직접 수정하면 폼과의 덮어쓰기를 막기 위해 저장 또는 취소 전까지 폼이 잠깁니다."));
   layout->addWidget(error);
   auto collect = [&]() -> QJsonObject {
     auto result = data;
+    if(flagTable){QJsonArray flags;QSet<QString> ids;for(int row=0;row<flagTable->rowCount();++row){auto id=flagTable->item(row,0)->text().trimmed();auto label=flagTable->item(row,1)->text().trimmed();if(id.size()>64||!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(id).hasMatch()||ids.contains(id)||label.isEmpty()){error->setText(tr("플래그 %1행: 고유 ID와 이름을 확인하세요.").arg(row+1));return {};}ids.insert(id);auto flag=flagTable->item(row,0)->data(Qt::UserRole).toJsonObject();flag["id"]=id;flag["label"]=label;flag["initial"]=flagTable->item(row,2)->checkState()==Qt::Checked;flags.append(flag);}result["flags"]=flags;}
+    if (relationships) {
+      QString problem;
+      result["relationships"] = relationships->value(&problem);
+      if (!problem.isEmpty()) { error->setText(problem); return {}; }
+    }
     if(!isActivity&&data.contains("requirements"))result["requirements"]=narrativeRequirements;
     if(eventScope){if(eventScope->currentData()=="actor"){result["scope"]="actor";result["trigger"]="interaction";}else{if(data.contains("scope"))result["scope"]="shared";else result.remove("scope");result["trigger"]=eventTrigger->currentData().toString();}}
     if (portraits) {
@@ -776,8 +818,7 @@ void StudioWindow::editContent() {
     }
     return result;
   };
-  // Advanced mode is one-way for this dialog: avoids silently overwriting JSON
-  // edits with stale form values.
+  // Merely viewing JSON must not lock the forms. Only actual raw edits do.
   connect(tabs, &QTabWidget::currentChanged, &dialog, [&](int index) {
     if (index == advanced) {
       auto value = collect();
@@ -785,10 +826,15 @@ void StudioWindow::editContent() {
         tabs->setCurrentIndex(0);
         return;
       }
+      QSignalBlocker jsonSync(json);
       json->setPlainText(QString::fromUtf8(QJsonDocument(value).toJson()));
-      for (int i = 0; i < advanced; ++i)
-        tabs->setTabEnabled(i, false);
+
     }
+  });
+  connect(json, &QPlainTextEdit::textChanged, &dialog, [&] {
+    if (tabs->currentIndex() != advanced) return;
+    for (int i = 0; i < advanced; ++i) tabs->setTabEnabled(i, false);
+    error->setText(tr("JSON을 직접 수정 중입니다. 폼 덮어쓰기를 막기 위해 저장 또는 취소 전까지 폼이 잠깁니다."));
   });
   auto buttons =
       new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);

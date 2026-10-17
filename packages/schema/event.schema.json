@@ -9,6 +9,10 @@
     },
     {
       "$ref": "common.schema.json#/$defs/narrative"
+    },
+    {
+      "if": { "properties": { "repeatable": { "const": true } }, "required": ["repeatable"] },
+      "then": { "properties": { "trigger": { "const": "interaction" } }, "required": ["trigger"] }
     }
   ],
   "properties": {
@@ -52,6 +56,10 @@
         "period-end",
         "interaction"
       ]
+    },
+    "repeatable": {
+      "type": "boolean",
+      "description": "An interaction may enter this event again after completion while its requirements hold. Completion history remains unique."
     },
     "scope": {
       "enum": [

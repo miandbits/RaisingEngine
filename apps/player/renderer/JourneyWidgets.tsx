@@ -18,7 +18,7 @@ export interface GameWidgetsView {
   interactions: readonly ({ id: string; name: string; characterId?: string; itemId?: string } & Availability)[];
   inventory: readonly { id: string; name: string; quantity: number }[];
 }
-export interface RelationshipRow { id: string; characterId?: string; relationshipId?: string; name: string; label: string; value: number; min: number; max: number }
+export interface RelationshipRow { id: string; characterId?: string; relationshipId?: string; name: string; label: string; value: number; delta?: number; min: number; max: number }
 
 export function JourneyWidget({ element, gameplay, relationships, busy, editing, onCommand, items, assetUrl, stats=[], activeDietId }: {
   element: Element; gameplay?: GameWidgetsView | null | undefined; relationships?: readonly RelationshipRow[] | undefined;

@@ -6,6 +6,7 @@ import { resolveScreenElements } from '../visual/components.js';
 import type { ReadonlyDesign } from '../visual/model.js';
 import { checkUiComposition } from './ui-composition.js';
 import { checkDirection } from './direction.js';
+import { checkScreenBinding } from './screen-binding.js';
 import { checkTimelines } from './timeline.js';
 export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonObject):void {
   checkDirection(ctx,doc,visual);
@@ -28,6 +29,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      checkScreenBinding(ctx,doc,e,ep);
       if((String(e.action).startsWith('gallery')||String(e.binding).startsWith('gallery-')||String(e.action).startsWith('recollection')||String(e.binding).startsWith('replay-'))&&!root.gallery)ctx.report(doc,ep,'UI_GALLERY_REQUIRED','도감 설정이 필요합니다.');
       if(e.entryId&&!objectItems((root.gallery as JsonObject|undefined)?.entries).some(x=>x.id===e.entryId))ctx.report(doc,ep+'/entryId','UI_GALLERY_ENTRY_REFERENCE','도감 항목이 없습니다.');
       if(e.action==='galleryFilter'&&!e.galleryFilter)ctx.report(doc,ep+'/galleryFilter','UI_GALLERY_FILTER_REQUIRED','도감 탭 또는 필터 값을 선택하세요.');
@@ -47,6 +49,8 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if(['selectBattleAction','selectBattleTarget','confirmBattleAction','cancelBattleAction'].includes(String(e.action))&&!root.systems)ctx.report(doc,ep,'UI_SYSTEMS_REQUIRED','전투 행동에는 탐험·전투 시스템이 필요합니다.');
       if(['battleAction','selectBattleAction'].includes(String(e.action))&&e.battleAction==='useItem'&&!objectItems((root.systems as JsonObject|undefined)?.consumables).some(x=>x.itemId===e.itemId))ctx.report(doc,ep+'/itemId','UI_BATTLE_ITEM','전투 회복 아이템을 선택하세요.');
       if(e.kind==='button'&&!e.action)ctx.report(doc,ep+'/action','UI_ACTION_REQUIRED','버튼에는 행동 연결이 필요합니다.');
+      if(e.action==='navigate'&&objectItems(visual.screens).some(s=>s.id===e.screenId&&s.modal))ctx.report(doc,ep+'/screenId','UI_NAVIGATE_MODAL','모달 화면에는 모달 열기 행동을 사용하세요.');
+      if(e.action==='navigate'&&!visual.routing&&!root.gameplay)ctx.report(doc,ep+'/action','UI_ROUTING_REQUIRED','화면 전환 연결을 설정하면 생활 규칙 없이 어느 화면으로든 이동할 수 있습니다.');
       if(e.imageAssetId){const asset=ctx.resolve(ctx.assets,String(e.imageAssetId),doc,ep+'/imageAssetId','이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,ep+'/imageAssetId','UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
       if(e.styleId&&!styleIds.has(String(e.styleId)))ctx.report(doc,ep+'/styleId','UI_STYLE_REFERENCE','연결된 공통 스타일이 없습니다.');
       for(const [a,id] of ((e.attributeIds??[]) as string[]).entries())ctx.resolve(ctx.attributes,id,doc,`${ep}/attributeIds/${a}`,'능력·자원');
@@ -72,9 +76,12 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
         if(!character)ctx.report(doc,`${ep}/characterId`,'UI_BINDING_REFERENCE',`인물 '${e.characterId}'가 없습니다.`);
         else if(!objectItems(character.data.relationships).some(r=>r.id===e.relationshipId))ctx.report(doc,`${ep}/relationshipId`,'UI_BINDING_REFERENCE',`해당 인물에 관계 수치 '${e.relationshipId}'가 없습니다.`);
       }
-      if(typeof e.valueFormat==='string'&&/\{(?!value\}|label\})[^}]*\}/.test(e.valueFormat))ctx.report(doc,`${ep}/valueFormat`,'UI_BINDING_FORMAT','표시 형식에는 {value}, {label}만 사용할 수 있습니다.');
+      if(typeof e.valueFormat==='string'){
+        const invalid=e.binding==='relationship-value'?/\{(?!value\}|label\}|delta\})[^}]*\}/:/\{(?!value\}|label\})[^}]*\}/;
+        if(invalid.test(e.valueFormat))ctx.report(doc,`${ep}/valueFormat`,'UI_BINDING_FORMAT',e.binding==='relationship-value'?'관계 표시 형식에는 {value}, {label}, {delta}를 사용할 수 있습니다.':'표시 형식에는 {value}, {label}만 사용할 수 있습니다.');
+      }
       for(const [field,ids] of Object.entries(refs))if(e[field]!==undefined&&!ids.has(e[field]))ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REFERENCE',`연결 대상 '${e[field]}'가 없습니다. 화면 또는 육성 작업실에서 대상을 확인하세요.`);
-      if(!root.gameplay&&(['locations','shop','inventory','interactions','relationships','diets','services','sell'].includes(String(e.kind))||['navigate','visit','buy','interact','sell','setDiet','useService'].includes(String(e.action))))ctx.report(doc,ep,'UI_GAMEPLAY_REQUIRED','이 요소는 육성 작업실의 장소·행동 설정이 필요합니다.');
+      if(!root.gameplay&&(['locations','shop','inventory','interactions','diets','services','sell'].includes(String(e.kind))||['visit','buy','interact','sell','setDiet','useService'].includes(String(e.action))))ctx.report(doc,ep,'UI_GAMEPLAY_REQUIRED','이 요소는 육성 작업실의 장소·행동 설정이 필요합니다.');
       if(e.action==='buy'||e.action==='sell'){
         const shop=objectItems(gameplay.shops).find(x=>x.id===e.shopId);
         if(shop&&!objectItems(e.action==='sell'?shop.sellOffers:shop.offers).some(x=>x.itemId===e.itemId))ctx.report(doc,`${ep}/itemId`,'UI_SHOP_OFFER','선택한 상점의 거래 목록에 없는 아이템입니다.');
@@ -140,13 +147,32 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       }
     }
     try {elements.splice(0,elements.length,...resolveScreenElements(visual as unknown as ReadonlyDesign,id).map(x=>x as unknown as JsonObject));} catch {ctx.report(doc,p,"UI_EXPANSION_LIMIT","부품 순환·깊이 또는 펼친 요소 수 한도를 확인하세요.");continue;}
-    const active=elements.filter(e=>!e.hidden&&(e.opacity??1)!==0&&(e.visibleWhen??'always')==='always');
-    const has=(kind:string,action?:string)=>active.some(e=>e.kind===kind&&(!action||e.action===action));
-    if((id==='title'||id==='ending')&&!has('button','start'))ctx.report(doc,p,'UI_NAVIGATION','이 화면에는 항상 표시되는 새 게임 버튼이 필요합니다.');
-    const autoPlanButton=id==='schedule'&&root.schedulePlayback==='continuous'&&elements.some(e=>e.kind==='button'&&e.action==='advance'&&!e.hidden&&Number(e.opacity??1)>0&&e.visibleWhen==='planning');
-    if((id==='schedule'||id==='story')&&!has('button','advance')&&!autoPlanButton)ctx.report(doc,p,'UI_NAVIGATION','이 화면에는 진행 버튼이 필요합니다. 자동 일정은 계획 중 표시되는 버튼을 사용할 수 있습니다.');
-    if(id==='schedule'&&!elements.some(e=>e.kind==='schedule'&&!e.hidden&&Number(e.opacity??1)>0&&['always','planning'].includes((e.visibleWhen??'always') as string)))ctx.report(doc,p,'UI_NAVIGATION','일정 화면에는 일정을 선택할 요소가 필요합니다.');
-    if(id==='story')for(const kind of ['dialogue','choices'])if(!elements.some(e=>e.kind===kind&&!e.hidden&&Number(e.opacity??1)>0&&['always',kind==='choices'?'choice':'dialogue'].includes((e.visibleWhen??'always') as string)))ctx.report(doc,p,'UI_NAVIGATION',`대화 화면에는 ${kind==='choices'?'선택지':'대사'} 요소가 필요합니다.`);
+
   }
-  for(const id of ['title','schedule','story','ending'])if(!screens.has(id))ctx.report(doc,'/visual/screens','UI_SCREEN_MISSING',`필수 화면 '${id}'가 없습니다.`);
+  // Old projects retain their inferred routing contract until the designer opts
+  // into explicit routing. No role-specific widgets are mandatory in free mode.
+  if(!visual.routing){
+    for(const id of ['title','schedule','story','ending'])if(!screens.has(id))ctx.report(doc,'/visual/screens','UI_SCREEN_MISSING',`기존 자동 전환 화면 '${id}'가 없습니다. 화면 전환 연결을 설정하면 자유 화면을 사용할 수 있습니다.`);
+    for(const [i,screen] of objectItems(visual.screens).entries()){
+      const id=String(screen.id),p=`/visual/screens/${i}`;
+      let elements:JsonObject[];try{elements=resolveScreenElements(visual as unknown as ReadonlyDesign,id).map(e=>e as unknown as JsonObject);}catch{continue;}
+      const shown=elements.filter(e=>!e.hidden&&(e.opacity??1)!==0);
+      const has=(kind:string,action?:string)=>shown.some(e=>e.kind===kind&&(!action||e.action===action)&&(e.visibleWhen??'always')==='always');
+      if((id==='title'||id==='ending')&&!has('button','start'))ctx.report(doc,p,'UI_NAVIGATION','기존 자동 전환 화면에는 새 게임 버튼이 필요합니다. 자유 구성은 화면 전환 연결을 설정하세요.');
+      const auto=id==='schedule'&&root.schedulePlayback==='continuous'&&shown.some(e=>e.kind==='button'&&e.action==='advance'&&e.visibleWhen==='planning');
+      if((id==='schedule'||id==='story')&&!has('button','advance')&&!auto)ctx.report(doc,p,'UI_NAVIGATION','기존 자동 전환 화면에 진행 버튼이 없습니다.');
+      if(id==='schedule'&&!shown.some(e=>e.kind==='schedule'&&['always','planning'].includes(String(e.visibleWhen??'always'))))ctx.report(doc,p,'UI_NAVIGATION','기존 일정 화면에 일정 선택 요소가 없습니다.');
+      if(id==='story')for(const kind of ['dialogue','choices'])if(!shown.some(e=>e.kind===kind&&['always',kind==='choices'?'choice':'dialogue'].includes(String(e.visibleWhen??'always'))))ctx.report(doc,p,'UI_NAVIGATION',`기존 대화 화면에 ${kind==='choices'?'선택지':'대사'} 요소가 없습니다.`);
+    }
+  }
+  if(visual.routing){
+    const routing=visual.routing as JsonObject;
+    const check=(value:unknown,path:string)=>{const screen=objectItems(visual.screens).find(s=>s.id===value);if(!screen||screen.modal)ctx.report(doc,path,'UI_ROUTE_REFERENCE','전환 대상 일반 화면이 없습니다.');};
+    check(routing.defaultScreenId,'/visual/routing/defaultScreenId');
+    const phases=new Set<unknown>();for(const [i,route] of objectItems(routing.phases).entries()){
+      if(phases.has(route.phase))ctx.report(doc,`/visual/routing/phases/${i}/phase`,'UI_ROUTE_DUPLICATE','같은 진행 상태의 전환 규칙이 중복되었습니다.');
+      phases.add(route.phase);check(route.screenId,`/visual/routing/phases/${i}/screenId`);
+    }
+  }
+
 }

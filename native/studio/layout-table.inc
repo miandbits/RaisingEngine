@@ -1,0 +1,34 @@
+  designMenu->addAction(tr("화면 요소 표 입력…"),this,[this]{
+    if(bridge.busy()||projectData().isEmpty())return;
+    const auto root=view.value("root"),revision=view.value("revision");auto project=projectData();auto visual=project.value("visual").toObject();auto screens=visual.value("screens").toArray();
+    TableLogic::Context context(view.value("documents").toArray());
+    const QStringList kinds{"panel","text","image","stats","schedule","dialogue","choices","result","button","locations","shop","inventory","interactions","relationships","equipment","quests","expedition","battle","relationship-stages","diets","services","sell","actions","policies"};
+    const QMap<QString,QString> actions{{"start",""},{"advance",""},{"save",""},{"load",""},{"sound",""},{"navigate","screenId"},{"visit","locationId"},{"interact","interactionId"},{"executeAction","actionId"},{"returnFromExpedition",""},{"battleAction","battleAction"},{"galleryOpen",""}};
+    QSet<QString> screenIds;for(auto v:screens)screenIds.insert(v.toObject().value("id").toString());
+    auto known=[&](QString section,QString id){for(auto v:project.value("gameplay").toObject().value(section).toArray())if(v.toObject().value("id")==id)return true;return false;};
+    if(!readTabularInput(this,{tr("화면 ID|이름"),tr("요소 ID"),tr("종류"),tr("문구"),"X","Y",tr("너비"),tr("높이"),tr("배경색"),tr("글자색"),tr("글자 크기"),tr("연결 종류"),tr("연결 대상"),tr("표시 조건")},[&](const QList<QStringList>& rows)->QString{
+      auto next=screens;QSet<QString> seen;auto nextIds=screenIds;
+      for(const auto &r:rows){const auto id=r[0].section('|',0,0);if(!TableLogic::id(id))return tr("화면 ID 형식을 확인하세요: ")+id;nextIds.insert(id);}
+      for(const auto &r:rows){const auto sid=r[0].section('|',0,0),id=r[1],kind=r[2];if(!TableLogic::id(id)||seen.contains(sid+"/"+id)||!kinds.contains(kind))return tr("요소 ID 중복·종류를 확인하세요: ")+sid+"/"+id;seen.insert(sid+"/"+id);
+        int si=-1;for(int i=0;i<next.size();++i)if(next[i].toObject().value("id")==sid){si=i;break;}
+        QJsonObject screen=si<0?QJsonObject{{"id",sid},{"label",sid},{"elements",QJsonArray{}}}:next[si].toObject();if(r[0].contains('|')&&!r[0].section('|',1).isEmpty())screen["label"]=r[0].section('|',1);
+        auto elements=screen.value("elements").toArray();int ei=-1;for(int i=0;i<elements.size();++i)if(elements[i].toObject().value("id")==id){ei=i;break;}
+        QJsonObject e=ei<0?QJsonObject{{"id",id},{"kind",kind}}:elements[ei].toObject();if(e.value("kind")!=kind)return tr("기존 요소 종류를 바꿀 수 없습니다: ")+id;
+        const QStringList numbers{"x","y","width","height"};for(int n=0;n<4;++n){bool ok=false;double v=r[4+n].toDouble(&ok);if(!ok||!(v>=-8192&&v<=8192)||(n>=2&&v<=0))return tr("배치 수치를 확인하세요: ")+id;e[numbers[n]]=v;}
+        for(int n=8;n<10;++n){const auto key=n==8?"fill":"color";if(TableLogic::blank(r[n]))e.remove(key);else if(!QRegularExpression("^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$").match(r[n]).hasMatch())return tr("색상은 #RRGGBB 또는 #RRGGBBAA입니다: ")+id;else e[key]=r[n];}
+        bool ok=false;int font=r[10].toInt(&ok);if(!ok||font<8||font>160)return tr("글자 크기는 8~160입니다: ")+id;e["fontSize"]=font;e["label"]=TableLogic::blank(r[3])?id:r[3];if(kind=="text"||kind=="button")e["text"]=TableLogic::blank(r[3])?QString():r[3];
+        const auto link=r[11],target=r[12];
+        if(kind=="button") {if(!actions.contains(link))return tr("버튼 행동을 확인하세요: ")+id;for(auto key:actions.values())if(!key.isEmpty())e.remove(key);e["action"]=link;e["autoLabel"]=false;const auto key=actions[link];if(!key.isEmpty()){if(!TableLogic::id(target))return tr("행동 대상을 입력하세요: ")+id;if(link=="navigate"&&!nextIds.contains(target))return tr("이동 화면이 없습니다: ")+target;if(link=="executeAction"&&!known("actions",target))return tr("행동이 없습니다: ")+target;if(link=="visit"&&!known("locations",target))return tr("장소가 없습니다: ")+target;if(link=="interact"&&!known("interactions",target))return tr("상호작용이 없습니다: ")+target;if(link=="battleAction"&&!QStringList{"attack","guard","flee"}.contains(target))return tr("전투 행동은 attack/guard/flee입니다.");e[key]=target;}}
+        else if(kind=="image") {if(link!="asset"&&link!="background"&&link!="speaker-portrait")return tr("이미지 연결은 asset/background/speaker-portrait입니다.");e["imageSource"]=link;if(link=="asset"){bool found=false;for(auto a:assets)if(a.toObject().value("id")==target)found=true;if(!found)return tr("이미지를 먼저 가져오세요: ")+target;e["imageAssetId"]=target;}else e.remove("imageAssetId");e["fit"]="contain";}
+        else if(kind=="text") {const QStringList bindings{"none","title","description","calendar","ending","speaker","story","location","attribute-value","relationship-value","item-count"};const auto binding=TableLogic::blank(link)?"none":link;if(!bindings.contains(binding))return tr("텍스트 연결 종류를 확인하세요: ")+binding;e["binding"]=binding;for(auto k:{"attributeId","characterId","relationshipId","itemId"})e.remove(k);if(binding=="attribute-value"){if(!context.attributes.contains(target))return tr("능력치가 없습니다: ")+target;e["attributeId"]=target;}if(binding=="item-count"){if(!known("items",target))return tr("물품이 없습니다: ")+target;e["itemId"]=target;}if(binding=="relationship-value"){const auto parts=target.split('/');if(parts.size()!=2||!context.relations.contains(target))return tr("관계 대상은 인물 ID/관계 ID입니다: ")+target;e["characterId"]=parts[0];e["relationshipId"]=parts[1];}e["valueFormat"]=TableLogic::blank(r[3])?"{label} · {value}":r[3];}
+        else if(kind=="actions"||kind=="policies"||kind=="stats") {const auto key=kind=="actions"?"actionIds":kind=="policies"?"groupIds":"attributeIds";QJsonArray ids;if(!TableLogic::blank(target))for(auto part:target.split(';')){part=part.trimmed();if(kind=="stats"?!context.attributes.contains(part):!known(kind=="actions"?"actions":"policyGroups",part))return tr("목록 대상이 없습니다: ")+part;if(!ids.contains(part))ids.append(part);}if(ids.empty())e.remove(key);else e[key]=ids;}
+        else if(!TableLogic::blank(link)||!TableLogic::blank(target))return tr("이 요소는 연결 열을 -로 두세요: ")+id;
+        QString error;const auto condition=context.condition(r[13],error);if(!error.isEmpty())return id+": "+error;if(TableLogic::blank(r[13]))e.remove("visibleCondition");else e["visibleCondition"]=condition;
+        if(ei<0)elements.append(e);else elements[ei]=e;if(elements.size()>100)return tr("화면당 요소는 최대 100개입니다.");screen["elements"]=elements;if(si<0)next.append(screen);else next[si]=screen;
+      }
+      if(next.size()>100)return tr("화면은 최대 100개입니다.");screens=next;return {};
+    }))return;
+    if(root!=view.value("root")||revision!=view.value("revision")){errorLabel->setText(tr("프로젝트가 변경되었습니다. 다시 입력하세요."));return;}
+    visual["screens"]=screens;project["visual"]=visual;replaceProject(project);
+  })->setObjectName("layoutTable");
+

@@ -125,7 +125,7 @@ private:
   QComboBox *actionField, *targetField, *styleField;
   QComboBox *previewLocaleField;
   QComboBox *anchorXField, *anchorYField, *viewportModeField, *previewSizeField;
-  QComboBox *imageField, *bindingField, *attributeField, *visibilityField, *userFieldField;
+  QComboBox *imageField, *bindingField, *attributeField, *relationshipField, *visibilityField, *userFieldField;
   int builtinBindingCount=0;
   QLineEdit *valueFormatField;
   QListWidget *contentList;
@@ -216,7 +216,11 @@ private:
   void chooseProject(bool create);
   void newProjectWizard();
   void showGettingStarted();
+  void editStoryFlow();
   void initializeStarterScreens();
+  void addRelationshipDisplay();
+  void editScreenRouting();
+  void editDataBinding();
   void editProjectSettings();
   void receivePlayer();
   bool mayDiscard();

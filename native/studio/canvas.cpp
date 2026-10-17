@@ -328,12 +328,26 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
         e["text"] = project["description"];
       else if (binding == "location")
         e["text"] = screen["label"];
+      else if(binding=="data-value") {
+        const auto target=e.value("dataBinding").toObject();const auto kind=target.value("kind").toString();QJsonObject field;
+        if(kind=="attribute")field=project.value("_previewAttributes").toObject().value(target.value("attributeId").toString()).toObject();
+        if(kind=="relationship")field=project.value("_previewRelationships").toObject().value(target.value("characterId").toString()).toObject().value(target.value("relationshipId").toString()).toObject();
+        if(kind=="inventory")for(const auto& row:project.value("gameplay").toObject().value("items").toArray()){const auto item=row.toObject();if(item.value("id")==target.value("itemId"))field=QJsonObject{{"initial",item.value("initialQuantity").toInt()},{"label",item.value("name")}};}
+        if(target.contains("owner"))for(const auto& row:project.value("roster").toObject().value("members").toArray()){const auto member=row.toObject();if(member.value("characterId")!=target.value("owner").toObject().value("characterId"))continue;
+          if(kind=="attribute")field["initial"]=member.value("initialAttributes").toObject().value(target.value("attributeId").toString()).toInt(field.value("initial").toInt());
+          if(kind=="inventory")field["initial"]=member.value("initialInventory").toObject().value(target.value("itemId").toString()).toInt();
+          if(kind=="relationship")field["initial"]=member.value("initialRelationships").toObject().value(target.value("characterId").toString()).toObject().value(target.value("relationshipId").toString()).toInt(field.value("initial").toInt());
+        }
+        e["text"]=e.value("valueFormat").toString("{label}: {value}").replace("{label}",field.value("label").toString()).replace("{value}",field.isEmpty()?QString::fromUtf8("—"):QString::number(field.value("initial").toDouble()));
+      }
       else if (binding == "attribute-value" ||
                binding == "relationship-value" || binding == "item-count") {
         QString value = e["valueFormat"].toString("{label}: {value}");
         auto attribute = project["_previewAttributes"]
                              .toObject()[e["attributeId"].toString()]
                              .toObject();
+        if(binding=="relationship-value")attribute=project.value("_previewRelationships").toObject().value(e.value("characterId").toString()).toObject().value(e.value("relationshipId").toString()).toObject();
+        value.replace("{delta}","0");
         value.replace("{value}",
                       attribute.isEmpty()
                           ? QString::fromUtf8("…")

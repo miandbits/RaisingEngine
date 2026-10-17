@@ -42,6 +42,12 @@ J systemsReward(const J &c, J &s, const J &value, const std::string &source, boo
 }
 void finishExpedition(J&,const std::string&);
 #include "tactics.inc"
+void expeditionAction(const J &c, J &s, const J &definition, const std::string &key) {
+  if(!definition.contains(key))return;
+  const auto actions=c["project"]["gameplay"].value("actions",J::array());const auto action=find(actions,definition[key]);
+  need(action,"UNKNOWN_ACTION","행동을 찾을 수 없습니다.","/command/actionId");
+  J changes=J::array();executeDefinedAction(c,s,*action,1,changes,true);
+}
 void enterExpeditionNode(const J &c, J &s, const J &nodeId, J &sounds) {
   auto &sys = s["systems"], &trip = sys["expedition"];
   const auto &d = c["project"]["systems"];
@@ -49,10 +55,15 @@ void enterExpeditionNode(const J &c, J &s, const J &nodeId, J &sounds) {
   auto node = find((*definition)["nodes"], nodeId);
   if(node->contains("requirements"))need(condition(c,s,(*node)["requirements"]),"NODE_LOCKED","탐험 지점 진입 조건을 만족하지 않습니다.","/command/nodeId");
   trip["nodeId"] = (*node)["id"];
+  if(node->contains("entryActionId")&&(node->value("repeatEntryAction",false)||!contains(trip.value("visitedNodes",J::array()),(*node)["id"]))) {
+    expeditionAction(c,s,*node,"entryActionId");
+    if(!trip.contains("visitedNodes"))trip["visitedNodes"]=J::array();
+    if(!contains(trip["visitedNodes"],(*node)["id"]))trip["visitedNodes"].push_back((*node)["id"]);
+  }
   if (node->contains("presentation")) scene(s, (*node)["presentation"], sounds);
   s["phase"] = "expedition";
   if(node->contains("encounterId")&&!contains(trip["clearedNodes"],(*node)["id"])){startTactics(c,s,str(*node,"encounterId"));return;}
-  if (node->contains("enemyId") && !contains(trip["clearedNodes"], (*node)["id"])) {
+  if (node->contains("enemyId") && !node->value("manualBattle",false) && !contains(trip["clearedNodes"], (*node)["id"]) && (!node->contains("battleRequirements") || condition(c,s,(*node)["battleRequirements"]))) {
     auto enemy = find(d["enemies"], (*node)["enemyId"]);
     sys["battle"] = {{"enemyId", (*enemy)["id"]}, {"enemyHp", (*enemy)["maxHp"]}, {"turn", 0}};
     if(d.contains("battleHistoryLimit"))sys["battle"]["log"]=J::array();
@@ -66,6 +77,7 @@ void startExpedition(const J &c, J &s, const J &id, J &sounds) {
   need(expedition, "UNKNOWN_EXPEDITION", "탐험을 찾을 수 없습니다.", "/activity/expeditionId");
   need(s.contains("gameplay") && s["gameplay"]["locationId"] == (*expedition)["locationId"], "WRONG_LOCATION", "탐험 출발 장소로 이동해 주세요.", "/gameplay/locationId");
   need(sys["expedition"].is_null(), "EXPEDITION_ACTIVE", "이미 진행 중인 탐험이 있습니다.", "/systems/expedition");
+  expeditionAction(c,s,*expedition,"entryActionId");
   auto stats = heroStats(c, s);
   sys["expedition"] = {{"expeditionId", id}, {"nodeId", (*expedition)["entryNodeId"]}, {"clearedNodes", J::array()}, {"heroHp", stats["maxHp"]}, {"stats", stats}, {"returnPresentation", s["presentation"]}};
   sys["battle"] = nullptr; sys["lastBattle"] = nullptr; sys["lastExpedition"] = nullptr;
@@ -76,7 +88,7 @@ void finishExpedition(J &s, const std::string &outcome) {
   sys["lastExpedition"] = {{"expeditionId", trip["expeditionId"]}, {"outcome", outcome}, {"clearedNodes", trip["clearedNodes"]}};
   s["presentation"] = trip["returnPresentation"]; sys["expedition"] = nullptr; sys["battle"] = nullptr; s["phase"] = trip.value("returnPhase", "activity-result");
 }
-void systems(const J &c, J &s, const J &cmd, J &sounds) {
+void systemsCommand(const J &c, J &s, const J &cmd, J &sounds) {
   need(c["project"].contains("systems") && s.contains("systems") && s.contains("gameplay") && s["mode"] == "full", "SYSTEMS_UNAVAILABLE", "확장 시스템이 있는 전체 실행 모드가 필요합니다.", "/project/systems");
   const auto &d = c["project"]["systems"]; auto &sys = s["systems"]; auto type = str(cmd, "type");
   if(type=="tacticsUnequip"||type=="tacticsAction"||type=="tacticsFlee"||type=="tacticsEquip"){tacticsCommand(c,s,cmd);return;}
@@ -107,11 +119,21 @@ void systems(const J &c, J &s, const J &cmd, J &sounds) {
   }
   need(!sys["expedition"].is_null(), "NO_EXPEDITION", "진행 중인 탐험이 없습니다.", "/systems/expedition");
   auto &trip = sys["expedition"]; auto expedition = find(d["expeditions"], trip["expeditionId"]); auto node = find((*expedition)["nodes"], trip["nodeId"]);
+  if (type == "startNodeBattle") {
+    need(s["phase"]=="expedition" && node->value("manualBattle",false) && node->contains("enemyId") && !contains(trip["clearedNodes"],(*node)["id"]),"NO_MANUAL_BATTLE","이 지점에서 시작할 전투가 없습니다.","/command/type");
+    need(!node->contains("battleRequirements") || condition(c,s,(*node)["battleRequirements"]),"BATTLE_LOCKED","전투 시작 조건을 만족하지 않습니다.","/command/type");
+    const auto enemy=find(d["enemies"],(*node)["enemyId"]);
+    sys["battle"]={{"enemyId",(*enemy)["id"]},{"enemyHp",(*enemy)["maxHp"]},{"turn",0}};
+    if(d.contains("battleHistoryLimit"))sys["battle"]["log"]=J::array();
+    s["phase"]="battle";return;
+  }
   if (type == "moveExpedition" || type == "returnFromExpedition") {
     need(s["phase"] == "expedition", "WRONG_PHASE", "전투가 끝난 뒤 탐험 이동·귀환을 할 수 있습니다.", "/phase");
     if (type == "returnFromExpedition") { finishExpedition(s, node->value("exit", false) ? "completed" : "retreated"); return; }
     need(contains((*node)["connections"], cmd["nodeId"]), "NODE_DISCONNECTED", "현재 탐험 지점과 연결되지 않았습니다.", "/command/nodeId");
-    need(find((*expedition)["nodes"], cmd["nodeId"]), "UNKNOWN_NODE", "탐험 지점을 찾을 수 없습니다.", "/command/nodeId"); enterExpeditionNode(c, s, cmd["nodeId"], sounds); return;
+    need(find((*expedition)["nodes"], cmd["nodeId"]), "UNKNOWN_NODE", "탐험 지점을 찾을 수 없습니다.", "/command/nodeId");
+    expeditionAction(c,s,*expedition,"moveActionId");
+    enterExpeditionNode(c, s, cmd["nodeId"], sounds); return;
   }
   need(s["phase"] == "battle" && !sys["battle"].is_null(), "WRONG_PHASE", "진행 중인 전투가 없습니다.", "/phase");
   auto &battle = sys["battle"]; auto enemy = find(d["enemies"], battle["enemyId"]); auto id = str(*enemy, "id"), action = str(cmd, "action");
@@ -129,8 +151,9 @@ void systems(const J &c, J &s, const J &cmd, J &sounds) {
     trip["heroHp"] = std::min(number(trip["stats"]["maxHp"]), i32(number(trip["heroHp"]) + number((*item)["heal"]), "/systems/expedition/heroHp"));
     heroHeal=number(trip["heroHp"])-number(heroHpBefore);
   } else if (action == "attack") {
-    auto roll = sample(s["rng"], 3);
-    enemyDamage = std::min(number(battle["enemyHp"]), std::max<int64_t>(1, number(trip["stats"]["attack"]) - number((*enemy)["defense"]) + int64_t(roll) - 1)); battle["enemyHp"] = number(battle["enemyHp"]) - enemyDamage;
+    const int variance=enemy->value("damageVariance",1);
+    const int64_t offset=variance?int64_t(sample(s["rng"],variance*2+1))-variance:0;
+    enemyDamage = std::min(number(battle["enemyHp"]), std::max<int64_t>(1, number(trip["stats"]["attack"]) - number((*enemy)["defense"]) + offset)); battle["enemyHp"] = number(battle["enemyHp"]) - enemyDamage;
   }
   battle["turn"] = turn;
   if (number(battle["enemyHp"]) == 0) {
@@ -141,10 +164,22 @@ void systems(const J &c, J &s, const J &cmd, J &sounds) {
     } }
     record();result("victory", discarded,rewardChanges); sys["battle"] = nullptr; s["phase"] = "expedition"; return;
   }
-  auto roll = sample(s["rng"], 3); auto damage = std::max<int64_t>(1, number((*enemy)["attack"]) - number(trip["stats"]["defense"]) + int64_t(roll) - 1);
-  heroDamage = std::min(number(trip["heroHp"]), action == "guard" ? (damage + 1) / 2 : damage); trip["heroHp"] = number(trip["heroHp"]) - heroDamage;
+  const int variance=enemy->value("damageVariance",1);
+  const int64_t offset=variance?int64_t(sample(s["rng"],variance*2+1))-variance:0;
+  const auto power=enemy->contains("attackPattern")?number((*enemy)["attackPattern"][(turn-1)%(*enemy)["attackPattern"].size()]):number((*enemy)["attack"]);
+  const auto damage=enemy->contains("attackPattern")&&power==0?int64_t(0):std::max<int64_t>(1,power-number(trip["stats"]["defense"])+offset);
+  heroDamage = std::min(number(trip["heroHp"]), action == "guard" ? (damage + (enemy->value("guardRoundDown",false)?0:1)) / 2 : damage); trip["heroHp"] = number(trip["heroHp"]) - heroDamage;
   record();
   if (number(trip["heroHp"]) == 0) { result("defeat"); finishExpedition(s, "defeated"); }
+}
+void systems(const J &c, J &s, const J &cmd, J &sounds) {
+  const auto trip=s.contains("systems")?s["systems"]["expedition"]:J();
+  systemsCommand(c,s,cmd,sounds);
+  if(!trip.is_null()&&s["systems"]["expedition"].is_null()) {
+    const auto definition=find(c["project"]["systems"]["expeditions"],trip["expeditionId"]);
+    const auto outcome=str(s["systems"]["lastExpedition"],"outcome");
+    expeditionAction(c,s,*definition,outcome=="completed"?"completionActionId":outcome=="defeated"?"defeatActionId":"retreatActionId");
+  }
 }
 void syncRelationshipStages(const J &c, J &s, bool finishingPeriod) {
   if (!c["project"].contains("systems") || !s.contains("systems") || s["mode"] != "full") return;

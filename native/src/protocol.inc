@@ -89,10 +89,13 @@ std::string process(const std::string &text) {
       need(commands.is_array() && commands.size() <= 100000, "COMMAND_LIMIT",
            "명령 기록은 100000개를 넘을 수 없습니다.", "/commands");
       J state = create(c, origin.at("seed"), origin).at("state");
+      J relationshipChanges = J::object();
       size_t index = 0;
       for (const auto &cmd : commands) {
         try {
-          state = command(c, state, cmd, state.at("stateRevision")).at("state");
+          auto next = command(c, state, cmd, state.at("stateRevision")).at("state");
+          if(request.value("includeRelationshipChanges",false))track_relationship_changes(relationshipChanges, state, next);
+          state = std::move(next);
         } catch (const Fault &e) {
           return J({{"ok", false},
                     {"error",
@@ -103,7 +106,9 @@ std::string process(const std::string &text) {
         }
         ++index;
       }
-      return J({{"ok", true}, {"state", state}}).dump();
+      J reply={{"ok", true}, {"state", state}};
+      if(request.value("includeRelationshipChanges",false))reply["relationshipChanges"]=relationshipChanges;
+      return reply.dump();
     }
     if (op == "evaluate") {
       const auto &c = requestContent(request);

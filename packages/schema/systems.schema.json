@@ -142,6 +142,9 @@
             "minimum": 0,
             "maximum": 1000000
           },
+          "attackPattern": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "type": "integer", "minimum": 0, "maximum": 1000000 } },
+          "damageVariance": { "type": "integer", "minimum": 0, "maximum": 100, "default": 1 },
+          "guardRoundDown": { "type": "boolean", "default": false },
           "defense": {
             "type": "integer",
             "minimum": 0,
@@ -244,6 +247,8 @@
                 "enemyId": {
                   "$ref": "common.schema.json#/$defs/id"
                 },
+                "manualBattle": { "type": "boolean", "default": false },
+                "battleRequirements": { "$ref": "common.schema.json#/$defs/condition" },
                 "exit": {
                   "type": "boolean"
                 },
@@ -255,6 +260,21 @@
                 },
                 "requirements": {
                   "$ref": "common.schema.json#/$defs/condition"
+                },
+                "entryActionId": {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                "repeatEntryAction": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "actionIds": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/id"
+                  }
                 }
               },
               "required": [
@@ -264,6 +284,21 @@
               ]
             },
             "minItems": 1
+          },
+          "entryActionId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "moveActionId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "completionActionId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "retreatActionId": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "defeatActionId": {
+            "$ref": "common.schema.json#/$defs/id"
           }
         },
         "required": [

@@ -146,6 +146,13 @@ export interface SystemsDefinition {
     description?: string;
     maxHp: number;
     attack: number;
+    /**
+     * @minItems 1
+     * @maxItems 64
+     */
+    attackPattern?: [number, ...number[]];
+    damageVariance?: number;
+    guardRoundDown?: boolean;
     defense: number;
     rewards: {
       /**
@@ -181,10 +188,18 @@ export interface SystemsDefinition {
          */
         connections: string[];
         enemyId?: string;
+        manualBattle?: boolean;
+        battleRequirements?: Condition;
         exit?: boolean;
         presentation?: Scene;
         encounterId?: string;
         requirements?: Condition;
+        entryActionId?: string;
+        repeatEntryAction?: boolean;
+        /**
+         * @maxItems 100
+         */
+        actionIds?: string[];
       },
       ...{
         id: string;
@@ -195,12 +210,25 @@ export interface SystemsDefinition {
          */
         connections: string[];
         enemyId?: string;
+        manualBattle?: boolean;
+        battleRequirements?: Condition;
         exit?: boolean;
         presentation?: Scene;
         encounterId?: string;
         requirements?: Condition;
+        entryActionId?: string;
+        repeatEntryAction?: boolean;
+        /**
+         * @maxItems 100
+         */
+        actionIds?: string[];
       }[]
     ];
+    entryActionId?: string;
+    moveActionId?: string;
+    completionActionId?: string;
+    retreatActionId?: string;
+    defeatActionId?: string;
   }[];
   /**
    * @maxItems 1000

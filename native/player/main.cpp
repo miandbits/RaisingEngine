@@ -372,6 +372,10 @@ public:
         dirty=true;return;
       }
       if(type=="selectRow"){const auto key=action.value("selectionKey","");if(key.empty()||!action.contains("_selectionSource"))throw std::runtime_error("선택 목록 연결이 없습니다.");markup.ui_selections[key]={{"source",action.at("_selectionSource")},{"rowId",action.at("_rowId")}};if(markup.selected_values(key).is_null())throw std::runtime_error("선택할 수 없는 행입니다.");if(action.contains("screenId"))markup.ui_modal=action.at("screenId");dirty=true;return;}
+      if(type=="navigate" && game.state.is_null() && game.content.at("project").at("visual").contains("routing")) {
+        bool found=false;for(const auto& s:game.content.at("project").at("visual").at("screens"))if(s.at("id")==action.at("screenId")&&!s.value("modal",false))found=true;
+        if(!found)throw std::runtime_error("이동할 화면을 찾을 수 없습니다.");markup.title_screen=action.at("screenId");dirty=true;return;
+      }
       if(type=="openModal"){markup.ui_modal=action.at("screenId");dirty=true;return;}
       if(type=="closeModal"){markup.ui_modal.clear();dirty=true;return;}
       if(type=="playSequence"){if(game.state.is_null())throw std::runtime_error("게임 시작 후 연출을 재생하세요.");game.direction_cursor=direction_start(direction_config(game.content),action.at("sequenceId"));dirty=true;return;}
@@ -432,6 +436,7 @@ public:
         if(game.state.is_null())throw std::runtime_error("새 게임을 시작해 주세요.");
         const auto phase=game.state.value("phase","");
         if(phase=="planning"||phase=="ready") {
+          if(game.state.value("activityIntermission",false)){game.send({{"type","acknowledgeResult"}});game.settle();dirty=true;return;}
           if(game.state.contains("progression")&&game.state.at("progression").contains("sessions")&&!game.state.at("progression").at("pending").is_null()){game.send({{"type","advanceSession"}});game.settle();dirty=true;return;}
           if(game.content.at("project").contains("roster")) {
             if(phase=="planning")game.send({{"type","assignActivities"},{"assignments",markup.roster_draft}});

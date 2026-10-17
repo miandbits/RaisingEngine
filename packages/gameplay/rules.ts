@@ -104,9 +104,9 @@ export function executeAction(content: ContentSnapshot, draft: RunData, actionId
     if (action.rejectNoEffect && action.flow?.length) requireCore(changes.slice(changeStart).some(x => !x.source.includes('/costs/') && x.before !== x.after), 'ACTION_NO_EFFECT', '현재 상태에서는 적용할 효과가 없습니다.', '/command/actionId');
   } finally { ctx.stack.pop(); }
   emitRelationshipRules(content, draft, changes);
-  if (action.eventId && !eventCompleted(content,draft,action.eventId)) {
+  if (action.eventId) {
     const event = content.events.find(x => x.id === action.eventId)!;
-    if (draft.periodIndex >= event.window.fromPeriod && draft.periodIndex <= event.window.throughPeriod && evaluateCondition(content, draft, event.requirements, `/events/${event.id}/requirements`)) {
+    if ((event.repeatable || !eventCompleted(content,draft,event.id)) && draft.periodIndex >= event.window.fromPeriod && draft.periodIndex <= event.window.throughPeriod && evaluateCondition(content, draft, event.requirements, `/events/${event.id}/requirements`)) {
       const returnPhase = draft.phase, returnPresentation = structuredClone(draft.presentation);
       enterNarrative(content, draft, 'event', event.id);
       draft.activeNarrative!.returnPhase = returnPhase as 'planning' | 'ready'; draft.activeNarrative!.returnPresentation = returnPresentation;

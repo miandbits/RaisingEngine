@@ -1,6 +1,12 @@
 /* Generated from JSON Schema. Do not edit; run npm run build. */
 
 export type ProjectDefinition = Header & {
+  authoring?: {
+    /**
+     * @maxItems 128
+     */
+    storyFlows?: StoryFlowAuthoringMetadata[];
+  };
   gallery?: CrossRunNarrativeGallery;
   gameId: string;
   title: string;
@@ -49,6 +55,21 @@ export type ProjectDefinition = Header & {
    * @maxItems 32
    */
   userFields?: UserFieldDefinition[];
+  /**
+   * 기간 준비 정산과 활동 뒤 자유 행동. 생략하면 기존 원자적 일정 실행을 유지합니다.
+   */
+  periodFlow?: {
+    preparePolicies?: boolean;
+    /**
+     * 기간 종료 사건이 끝날 때 현재 조건을 다시 확인하여 다음 사건을 실행합니다. 기간 종료 규칙은 재적용하지 않습니다.
+     */
+    allPeriodEndEvents?: boolean;
+    intermission?: {
+      screenId: string;
+      completionFlagId: string;
+      entryEffects?: Effects;
+    };
+  };
   /**
    * 월 일정 실행 방식. continuous는 결과 연출 후 다음 일정으로 이어지며 대화·선택·전투에서는 입력을 기다립니다.
    */
@@ -2913,7 +2934,8 @@ export type Element = {
     | "replay-notice"
     | "replay-title"
     | "replay-mode"
-    | "replay-speed";
+    | "replay-speed"
+    | "data-value";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -3800,7 +3822,8 @@ export type Element = {
   slot?: "weapon" | "armor" | "accessory";
   battleAction?: "attack" | "guard" | "useItem" | "flee";
   quantity?: number;
-  visibleWhen?: "always" | "planning" | "result" | "dialogue" | "choice" | "finished";
+  visibleWhen?:
+    "always" | "planning" | "result" | "dialogue" | "choice" | "finished" | "title" | "battle" | "expedition";
   hidden?: boolean;
   locked?: boolean;
   fill?: string;
@@ -8180,6 +8203,23 @@ export type Element = {
   entryId?: string;
   galleryFilter?: string;
   branchId?: string;
+  dataBinding?:
+    | {
+        kind: "attribute";
+        attributeId: string;
+        owner?: CharacterOwner;
+      }
+    | {
+        kind: "relationship";
+        characterId: string;
+        relationshipId: string;
+        owner?: CharacterOwner;
+      }
+    | {
+        kind: "inventory";
+        itemId: string;
+        owner?: CharacterOwner;
+      };
 };
 export type ComponentChild = {
   [k: string]: unknown;
@@ -8218,7 +8258,8 @@ export type ComponentChild = {
     | "replay-notice"
     | "replay-title"
     | "replay-mode"
-    | "replay-speed";
+    | "replay-speed"
+    | "data-value";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -9101,7 +9142,8 @@ export type ComponentChild = {
   slot?: "weapon" | "armor" | "accessory";
   battleAction?: "attack" | "guard" | "useItem" | "flee";
   quantity?: number;
-  visibleWhen?: "always" | "planning" | "result" | "dialogue" | "choice" | "finished";
+  visibleWhen?:
+    "always" | "planning" | "result" | "dialogue" | "choice" | "finished" | "title" | "battle" | "expedition";
   hidden?: boolean;
   locked?: boolean;
   fill?: string;
@@ -13415,6 +13457,23 @@ export type ComponentChild = {
   entryId?: string;
   galleryFilter?: string;
   branchId?: string;
+  dataBinding?:
+    | {
+        kind: "attribute";
+        attributeId: string;
+        owner?: CharacterOwner;
+      }
+    | {
+        kind: "relationship";
+        characterId: string;
+        relationshipId: string;
+        owner?: CharacterOwner;
+      }
+    | {
+        kind: "inventory";
+        itemId: string;
+        owner?: CharacterOwner;
+      };
 };
 export type Effects = (
   | {
@@ -13496,6 +13555,445 @@ export interface Header {
    */
   tags?: string[];
 }
+/**
+ * Editor round-trip metadata. Execution uses ordinary character, activity and event documents.
+ */
+export interface StoryFlowAuthoringMetadata {
+  id: string;
+  name: string;
+  newCharacter: boolean;
+  characterId: string;
+  characterName?: string;
+  newRelationship: boolean;
+  relationshipId: string;
+  relationshipLabel?: string;
+  relationshipInitial?: number;
+  newActivity: boolean;
+  activityId: string;
+  activityLabel?: string;
+  costAttributeId?: string;
+  cost?: number;
+  gainAttributeId?: string;
+  gain?: number;
+  scheduleLink?: {
+    screenId?: string;
+    elementId?: string;
+    groupId?: string;
+  };
+  encounterTitle: string;
+  encounterText: string;
+  prompt: string;
+  fromPeriod: number;
+  throughPeriod: number;
+  /**
+   * @minItems 2
+   * @maxItems 8
+   */
+  choices:
+    | [
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        }
+      ]
+    | [
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        }
+      ]
+    | [
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        }
+      ]
+    | [
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        }
+      ]
+    | [
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        }
+      ]
+    | [
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        }
+      ]
+    | [
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        },
+        {
+          id: string;
+          label: string;
+          reply: string;
+          delta: number;
+          followupEnabled: boolean;
+          followupTitle?: string;
+          followupText?: string;
+          minimumRelationship?: number;
+          followupFrom?: number;
+        }
+      ];
+  ownedDocuments: {
+    file: string;
+    digest: string;
+  }[];
+}
 export interface CrossRunNarrativeGallery {
   title: string;
   /**
@@ -13538,10 +14036,10 @@ export interface VisualDesign {
   height: number;
   defaultScene?: Scene;
   /**
-   * @minItems 4
+   * @minItems 1
    * @maxItems 100
    */
-  screens: [Screen, Screen, Screen, Screen, ...Screen[]];
+  screens: [Screen, ...Screen[]];
   defaultStyle?: StyleValues;
   /**
    * @maxItems 256
@@ -13977,6 +14475,805 @@ export interface VisualDesign {
       }[]
     ];
   };
+  routing?: {
+    defaultScreenId: string;
+    useLocationScreens?: boolean;
+    /**
+     * @maxItems 10
+     */
+    phases:
+      | []
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ]
+      | [
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          },
+          {
+            phase:
+              | "title"
+              | "planning"
+              | "ready"
+              | "activity-result"
+              | "period-end"
+              | "dialogue"
+              | "choice"
+              | "finished"
+              | "expedition"
+              | "battle";
+            screenId: string;
+          }
+        ];
+  };
 }
 export interface Scene {
   backgroundAssetId?: string | null;
@@ -14382,6 +15679,13 @@ export interface SystemsDefinition {
     description?: string;
     maxHp: number;
     attack: number;
+    /**
+     * @minItems 1
+     * @maxItems 64
+     */
+    attackPattern?: [number, ...number[]];
+    damageVariance?: number;
+    guardRoundDown?: boolean;
     defense: number;
     rewards: {
       /**
@@ -14417,10 +15721,18 @@ export interface SystemsDefinition {
          */
         connections: string[];
         enemyId?: string;
+        manualBattle?: boolean;
+        battleRequirements?: Condition;
         exit?: boolean;
         presentation?: Scene;
         encounterId?: string;
         requirements?: Condition;
+        entryActionId?: string;
+        repeatEntryAction?: boolean;
+        /**
+         * @maxItems 100
+         */
+        actionIds?: string[];
       },
       ...{
         id: string;
@@ -14431,12 +15743,25 @@ export interface SystemsDefinition {
          */
         connections: string[];
         enemyId?: string;
+        manualBattle?: boolean;
+        battleRequirements?: Condition;
         exit?: boolean;
         presentation?: Scene;
         encounterId?: string;
         requirements?: Condition;
+        entryActionId?: string;
+        repeatEntryAction?: boolean;
+        /**
+         * @maxItems 100
+         */
+        actionIds?: string[];
       }[]
     ];
+    entryActionId?: string;
+    moveActionId?: string;
+    completionActionId?: string;
+    retreatActionId?: string;
+    defeatActionId?: string;
   }[];
   /**
    * @maxItems 1000

@@ -1,5 +1,6 @@
 #include "raising/runtime.hpp"
 #include "json.hpp"
+#include "raising/relationship-history.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -65,6 +66,7 @@ void checkContent(const J &c) {
                         [](char v) { return (v >= '0' && v <= '9') || (v >= 'a' && v <= 'f'); });
   }
   need(valid, "INCOMPATIBLE_CONTENT", "지원하는 buildSnapshot 결과가 필요합니다.", "/content");
+  need(!c["project"].contains("periodFlow") || (!c["project"].contains("roster")&&!c["project"].contains("progression")),"PERIOD_FLOW_MODE","기간 단계는 현재 단일 대상의 월 일정에서 사용할 수 있습니다.","/project/periodFlow");
 }
 int periods(const J &c) {
   const auto value=c.at("project").value("periodsPerMonth",J(3));
@@ -489,6 +491,8 @@ void finish(const J &c, J &s) {
   }
   s["activeNarrative"] = nullptr;
   s["lastActivityResult"] = nullptr;
+  s.erase("periodPreparation");
+  s.erase("activityIntermission");
   if (number(s["periodIndex"]) == number(c["project"]["durationMonths"]) * periods(c) - 1) {
     if (s["mode"] == "activities-only") {
       s["phase"] = "finished";
@@ -535,6 +539,19 @@ J inspect(const J &c, const J &s) {
   }
   return out;
 }
+void continuePeriodEvents(const J &c, J &s) {
+  if (c["project"].value("periodFlow", J::object()).value("allPeriodEndEvents", false)) {
+    s["activeNarrative"] = nullptr;
+    s["phase"] = "period-end";
+    for (const auto &decision : inspect(c, s)) {
+      if (decision["reason"] == "selected") {
+        enter(c, s, "event", decision["eventId"]);
+        return;
+      }
+    }
+  }
+  finish(c, s);
+}
 J step(const J &c, J &s, const J &choice, J &sounds) {
   need(s["mode"] == "full", "WRONG_PHASE", "전체 게임 모드가 필요합니다.", "/mode");
   auto n = currentNode(c, s);
@@ -577,9 +594,9 @@ J step(const J &c, J &s, const J &choice, J &sounds) {
           s["phase"] = cursor["returnPhase"];
           if (cursor.contains("returnPresentation"))
             s["presentation"] = cursor["returnPresentation"];
-          if (cursor.value("finishPeriod", false)) finish(c, s);
+          if (cursor.value("finishPeriod", false)) continuePeriodEvents(c, s);
         } else
-          finish(c, s);
+          continuePeriodEvents(c, s);
       } else {
         s["activeNarrative"] = nullptr;
         s["phase"] = "finished";
@@ -605,7 +622,8 @@ J execute(const J &c, const J &before, J &s, bool individual = false) {
   auto p = "/activities/" + id.get<std::string>();
   J dietChanges = J::array();
   if(!individual) {
-    boundaryRules(c,s,dietChanges,true);applyPolicies(c,s,dietChanges,"beforeActivity");
+    if(s.contains("periodPreparation")) dietChanges=s["periodPreparation"]["changes"];
+    else {boundaryRules(c,s,dietChanges,true);applyPolicies(c,s,dietChanges,"beforeActivity");}
     if(c["project"].contains("roster")) {
       J result=executeRoster(c,s);
       result["changes"].insert(result["changes"].begin(),dietChanges.begin(),dietChanges.end());
@@ -618,7 +636,7 @@ J execute(const J &c, const J &before, J &s, bool individual = false) {
   const J activityInput = s;
   need(condition(c, activityInput, (*a)["requirements"], p + "/requirements"), "REQUIREMENTS_NOT_MET",
        "활동 조건을 만족하지 않습니다: " + id.get<std::string>(), p + "/requirements");
-  if(!individual) applyDiet(c, s, dietChanges);
+  if(!individual && !s.contains("periodPreparation")) applyDiet(c, s, dietChanges);
   size_t i = 0;
   for (auto &cost : (*a)["costs"]) {
     auto def = find(c["attributes"], cost["attributeId"]);
@@ -685,7 +703,7 @@ void parseCommand(const J &cmd, int count) {
   } else if (type == "battleAction") {
     auto action = cmd.value("action", J(nullptr));
     need((action == "attack" || action == "guard" || action == "flee" || action == "useItem") && cmd.size() == (action == "useItem" ? 3 : 2) && (action != "useItem" || (cmd.contains("itemId") && cmd["itemId"].is_string() && !cmd["itemId"].get<std::string>().empty())), "INVALID_COMMAND", "전투 행동과 물품 ID를 확인해 주세요.", "/command");
-  } else if (type == "returnFromExpedition") {
+  } else if (type == "returnFromExpedition" || type == "startNodeBattle") {
     need(cmd.size() == 1, "INVALID_COMMAND", "귀환 명령에 추가 필드를 사용할 수 없습니다.", "/command");
   } else if (type == "navigate" || type == "visit" || type == "interact") {
     std::string field = type == "navigate" ? "screenId"
@@ -772,7 +790,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
     if(progressSession(c,s,cmd,sounds)){const auto before=s;activity=execute(c,before,s);auto a=find(c["activities"],activity["activityId"]);if(a->contains("presentation"))scene(s,(*a)["presentation"],sounds);}
   }
   else if((type=="executeAction"||type=="executeActorAction")&&startTimedAction(c,s,cmd)){}
-  else if (type == "tacticsUnequip" || type == "tacticsAction" || type == "tacticsFlee" || type == "tacticsEquip" || type == "acceptQuest" || type == "claimQuest" || type == "equip" || type == "unequip" || type == "moveExpedition" || type == "returnFromExpedition" || type == "battleAction")
+  else if (type == "tacticsUnequip" || type == "tacticsAction" || type == "tacticsFlee" || type == "tacticsEquip" || type == "acceptQuest" || type == "claimQuest" || type == "equip" || type == "unequip" || type == "moveExpedition" || type == "returnFromExpedition" || type == "startNodeBattle" || type == "battleAction")
     systems(c, s, cmd, sounds);
   else if (type == "navigate" || type == "visit" || type == "buy" || type == "sell" ||
            type == "useService" || type == "setDiet" || type == "interact" ||
@@ -799,7 +817,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
       auto p = "/command/activityIds/" + std::to_string(i);
       need(find(c["activities"], id), "UNKNOWN_ACTIVITY",
            "알 수 없는 활동: " + id.get<std::string>(), p);
-      need(i >= size_t(number(old["periodIndex"]) % periods(c)) ||
+      need(i >= size_t(number(old["periodIndex"]) % periods(c)+(old.value("activityIntermission",false)?1:0)) ||
                (old["schedule"].is_array() && i < old["schedule"].size() &&
                 old["schedule"].at(i) == id),
            "COMPLETED_SLOT", "완료한 일정은 변경할 수 없습니다.", p);
@@ -808,6 +826,12 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
     s["schedule"] = cmd["activityIds"];
     s["phase"] = "ready";
   } else if (type == "executeActivity") {
+    need(!s.value("activityIntermission",false),"INTERMISSION_ACTIVE","자유 행동을 마친 뒤 다음 일정으로 진행하세요.","/activityIntermission");
+    if(c["project"].value("periodFlow",J::object()).value("preparePolicies",false) && !s.contains("periodPreparation")) {
+      need(s["phase"]=="ready" && !s["schedule"].is_null(),"WRONG_PHASE","실행할 일정이 준비되지 않았습니다.","/phase");
+      J changes=J::array();boundaryRules(c,s,changes,true);applyPolicies(c,s,changes,"beforeActivity");applyDiet(c,s,changes);
+      s["periodPreparation"]={{"changes",changes}};
+    } else {
     if(!startTimedCalendar(c,s)){
     activity = execute(c, old, s);
     auto a = find(c["activities"], activity["activityId"]);
@@ -815,10 +839,21 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
       scene(s, (*a)["presentation"], sounds);
     if (a->contains("expeditionId")) startExpedition(c, s, (*a)["expeditionId"], sounds);
     }
+    }
   } else if (type == "acknowledgeResult") {
-    need(old["phase"] == "activity-result", "WRONG_PHASE", "확인할 활동 결과가 없습니다.",
-         "/phase");
-    s["phase"] = "period-end";
+    const auto flow=c["project"].value("periodFlow",J::object());
+    if(old.value("activityIntermission",false)&&old["phase"]=="ready") {
+      need(flow.contains("intermission") && s["flags"].value(str(flow["intermission"],"completionFlagId"),false),"INTERMISSION_PENDING","아직 자유 행동을 마치지 않았습니다.","/activityIntermission");
+      s.erase("activityIntermission");s["phase"]="period-end";
+    } else {
+      need(old["phase"]=="activity-result","WRONG_PHASE","확인할 활동 결과가 없습니다.","/phase");
+      if(flow.contains("intermission")&&old["mode"]=="full") {
+        const auto &between=flow["intermission"];s["activityIntermission"]=true;
+        s["flags"][str(between,"completionFlagId")]=false;J changes=J::array();
+        effects(c,s,between.value("entryEffects",J::array()),"/project/periodFlow/intermission/entryEffects",changes);
+        s["gameplay"]["screenId"]=between["screenId"];s["phase"]="ready";
+      } else s["phase"]="period-end";
+    }
   } else if (type == "completePeriodWithoutEvents") {
     need(old["phase"] == "period-end" && old["mode"] == "activities-only", "WRONG_PHASE",
          "활동 전용 모드의 기간 종료 경계가 아닙니다.", "/phase");
@@ -849,6 +884,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
   relationshipRules(c, s, old["relationships"], ruleChanges);
   if(s.contains("roster")){s["roster"].erase("actorId");s["roster"].erase("activityActorId");}
   if(s.contains("roster"))for(const auto &key:c["project"]["roster"]["localAttributeIds"])s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()]=s["attributes"][key.get<std::string>()];
+  if(s["phase"]!=old["phase"] || type=="visit" || type=="choose" || type=="advanceNarrative")s.erase("uiScreenId");
   s["stateRevision"] = number(s["stateRevision"]) + 1;
   J transition = {{"command", cmd},
                   {"fromRevision", old["stateRevision"]},

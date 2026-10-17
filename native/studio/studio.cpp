@@ -1,5 +1,8 @@
 #include "save-migration.hpp"
 #include "studio.hpp"
+#include "tabular-input.hpp"
+#include "table-logic.hpp"
+#include <QShortcut>
 #include "project-manager.hpp"
 #include "hierarchy-tree.hpp"
 #include "hierarchy-lock.hpp"
@@ -151,6 +154,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto duplicateSelection=edit->addAction(tr("선택 요소 복제"),QKeySequence(Qt::CTRL|Qt::Key_D),this,&StudioWindow::duplicateElement);
   duplicateSelection->setObjectName("duplicateElementAction");duplicateSelection->setToolTip(tr("선택 요소와 그룹의 자식을 복제합니다. Ctrl+D"));duplicateSelection->setEnabled(false);
   auto screensMenu = menuBar()->addMenu(tr("화면"));
+  auto routingAction=screensMenu->addAction(tr("화면 전환 연결…"),this,&StudioWindow::editScreenRouting);
+  routingAction->setObjectName("screenRouting");
   screensMenu->addAction(tr("화면 설정…"),this,&StudioWindow::editScreenSettings)->setObjectName("screenSettings");
   newScreenAction = screensMenu->addAction(tr("＋ 새 화면…"), this,
                                            [this] { createScreen(); });
@@ -203,9 +208,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   toolbar->setObjectName("mainToolbar");
   toolbar->setMovable(false);
   toolbar->setIconSize({18, 18});
+  toolbar->addAction(tr("이야기 제작"),this,&StudioWindow::editStoryFlow)->setObjectName("storyFlowAction");
+  toolbar->addAction(tr("관계 표시"),this,&StudioWindow::addRelationshipDisplay)->setObjectName("relationshipDisplayAction");
   previewLocaleField=new QComboBox;previewLocaleField->setObjectName("previewLocale");previewLocaleField->setToolTip(tr("캔버스와 다음 실행의 언어"));screenOnlyActions << toolbar->addWidget(previewLocaleField);
   connect(previewLocaleField,qOverload<int>(&QComboBox::activated),this,[this]{refresh();});
   toolbar->addAction(newScreenAction);
+  toolbar->addAction(routingAction);
   addAction = toolbar->addAction(tr("＋ 버튼"), this, &StudioWindow::addButton);
   addAction->setObjectName("addButton");
   screenOnlyActions << addAction;
@@ -476,6 +484,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   appearance->addRow(tr("문자 색"), colorField);
   appearance->addRow(tr("글자 크기"), fontField);
   auto dataForm = group(tr("이미지 · 데이터 연결"));
+  auto dataBindingButton=new QPushButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
   imageField = new QComboBox;
   imageField->setObjectName("imageAsset");
   bindingField = new QComboBox;
@@ -501,16 +510,22 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   bindingField->addItem(tr("회상 저장 알림"),"replay-notice");
   bindingField->addItem(tr("회상 제목"),"replay-title");
   bindingField->addItem(tr("회상 자동 재생 상태"),"replay-mode");bindingField->addItem(tr("회상 배속"),"replay-speed");
+  bindingField->addItem(tr("인물 관계"),"relationship-value");
+  bindingField->addItem(tr("공용·개인 데이터 (찾기로 연결)"),"data-value");
   builtinBindingCount=bindingField->count();
   userFieldField=new QComboBox;userFieldField->setObjectName("bindingUserField");
   attributeField = new QComboBox;
   attributeField->setObjectName("bindingAttribute");
+  relationshipField=new QComboBox;relationshipField->setObjectName("bindingRelationship");
   valueFormatField = new QLineEdit;
   valueFormatField->setObjectName("valueFormat");
   visibilityField = new QComboBox;
   visibilityField->setObjectName("visibilityPhase");
   for (const auto &p :
        QList<QPair<QString, QString>>{{"always", tr("항상")},
+                                      {"title", tr("시작 전")},
+                                      {"battle", tr("전투 중")},
+                                      {"expedition", tr("탐험 중")},
                                       {"planning", tr("일정 계획")},
                                       {"result", tr("활동 결과")},
                                       {"dialogue", tr("대화")},
@@ -521,10 +536,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   dataForm->addRow(tr("문자 내용"), bindingField);
   dataForm->addRow(tr("사용자 입력 필드"), userFieldField);
   dataForm->addRow(tr("능력·자원"), attributeField);
+  dataForm->addRow(tr("인물 · 관계"), relationshipField);
   dataForm->addRow(tr("표시 형식"), valueFormatField);
   dataForm->addRow(tr("표시 시점"), visibilityField);
   auto bindingHint = new QLabel(
-      tr("표시 형식: {label} · {value}\n에셋 더블클릭으로 이미지 배치"));
+      tr("표시 형식: {label} · {value}\n관계의 {delta}: 최근 변화량 (+3 / -1 / 0)\n에셋 더블클릭으로 이미지 배치"));
   bindingHint->setWordWrap(true);
   dataForm->addRow(bindingHint);
   auto batchBinding=new QPushButton(tr("다른 화면에 이 텍스트 연결 적용…"));batchBinding->setObjectName("textBindingBatch");dataForm->addRow(batchBinding);connect(batchBinding,&QPushButton::clicked,this,&StudioWindow::applyTextBindingBatch);
@@ -550,11 +566,19 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     if (filling)
       return;
     const auto binding = bindingField->currentData().toString();
+    if(binding=="data-value"){editDataBinding();return;}
     const auto attribute = attributeField->currentData().toString();
     const auto userField = userFieldField->currentData().toString();
+    const auto relationship = relationshipField->currentData().toMap();
+    if(binding=="relationship-value"&&relationship.isEmpty()){errorLabel->setText(tr("먼저 인물에 관계를 추가하세요."));updateInspector();return;}
     if(binding=="user-field"&&userField.isEmpty()){errorLabel->setText(tr("디자인 > 새 게임 · 사용자 입력 필드에서 필드를 먼저 만드세요."));updateInspector();return;}
-    updateElement([binding, attribute, userField](QJsonObject &e) {
+    updateElement([binding, attribute, userField, relationship](QJsonObject &e) {
       e["binding"] = binding;
+      e.remove("dataBinding");
+      if(binding=="relationship-value"){
+        e["characterId"]=relationship.value("characterId").toString();e["relationshipId"]=relationship.value("relationshipId").toString();
+        e["valueFormat"]="{label}: {value} (최근 {delta})";
+      }else{e.remove("characterId");e.remove("relationshipId");}
       if(binding=="user-field"){e["userFieldId"]=userField;e["valueFormat"]="{value}";}else e.remove("userFieldId");
       if (binding == "attribute-value") {
         e["attributeId"] = attribute;
@@ -575,6 +599,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       updateElement([this](QJsonObject &e) {
         e["valueFormat"] = valueFormatField->text();
       });
+  });
+  connect(relationshipField,qOverload<int>(&QComboBox::activated),this,[this]{
+    if(filling||relationshipField->currentData().toMap().isEmpty())return;
+    const auto pair=relationshipField->currentData().toMap();
+    updateElement([pair](QJsonObject &e){e["characterId"]=pair.value("characterId").toString();e["relationshipId"]=pair.value("relationshipId").toString();});
   });
   connect(visibilityField, qOverload<int>(&QComboBox::activated), this, [this] {
     if (!filling)
@@ -761,7 +790,19 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   contentLayout->addWidget(contentSearch);
   contentList = new QListWidget;
   contentList->setObjectName("contentList");
+  contentList->setToolTip(tr("항목을 선택하고 편집 버튼 또는 Enter를 누르세요. 더블클릭도 가능합니다."));
+  auto editSelectedContent = new QPushButton(tr("선택한 콘텐츠 편집…"));
+  editSelectedContent->setObjectName("contentEdit");
+  editSelectedContent->setEnabled(false);
+  contentLayout->addWidget(editSelectedContent);
+  connect(editSelectedContent, &QPushButton::clicked, this, &StudioWindow::editContent);
+  connect(contentList, &QListWidget::currentItemChanged, this, [editSelectedContent](QListWidgetItem *item) { editSelectedContent->setEnabled(item != nullptr); });
   contentLayout->addWidget(contentList);
+  for (auto key : {Qt::Key_Return, Qt::Key_Enter}) {
+    auto shortcut = new QShortcut(QKeySequence(key), contentList);
+    shortcut->setContext(Qt::WidgetShortcut);
+    connect(shortcut, &QShortcut::activated, this, &StudioWindow::editContent);
+  }
   bottom->addTab(contentPanel, tr("콘텐츠"));
   connect(contentList, &QListWidget::itemDoubleClicked, this,
           [this] { editContent(); });
@@ -773,9 +814,15 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
             }
           });
   auto contentMenu = menuBar()->addMenu(tr("콘텐츠"));
+  contentMenu->addAction(tr("이야기 제작 · 인물 → 활동 → 만남…"),this,&StudioWindow::editStoryFlow)->setObjectName("storyFlowMenuAction");
+#include "content-table.inc"
+#include "narrative-table.inc"
+#include "gameplay-table.inc"
+#include "layout-table.inc"
   contentMenu->addAction(tr("처음 만드는 게임 · 제작 순서…"),this,&StudioWindow::showGettingStarted)->setObjectName("showGettingStarted");
   contentMenu->addAction(tr("기본 플레이 화면 생성…"),this,&StudioWindow::initializeStarterScreens)->setObjectName("initializeStarterScreens");
-  contentMenu->addAction(tr("콘텐츠 일괄 정리…"),this,&StudioWindow::organizeContent)->setObjectName("organizeContent");
+  contentMenu->addAction(tr("관계 표시 배치…"),this,&StudioWindow::addRelationshipDisplay)->setObjectName("addRelationshipDisplay");
+  contentMenu->addAction(tr("콘텐츠 검색 · 사용처 / 삭제…"),this,&StudioWindow::organizeContent)->setObjectName("organizeContent");
   contentMenu->addAction(tr("숙련 단계 활동 만들기…"), this, &StudioWindow::createProgressionActivity)->setObjectName("progressionAuthoringAction");
   for (const auto &p :
        QList<QPair<QString, QString>>{{"activity", tr("새 활동")},
@@ -891,7 +938,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
           &StudioWindow::deleteElement);
   connect(canvas, &ScreenCanvas::duplicateSelected, this,
           &StudioWindow::duplicateElement);
-  connect(projectList, &QListWidget::itemDoubleClicked, this,
+  connect(projectList, &QListWidget::itemActivated, this,
           [this](QListWidgetItem *item) {
             openScreen(item->data(Qt::UserRole).toString());
           });
@@ -1177,10 +1224,17 @@ void StudioWindow::refresh(bool fit) {
   rebuildHierarchy();
   rebuildPluginUi();
   auto preview = project;
-  QJsonObject previewPortraits, previewAttributes;
+  QJsonObject previewPortraits, previewAttributes, previewRelationships;
   for (auto d : view["documents"].toArray()) {
     auto doc = d.toObject();
     auto data = doc["data"].toObject();
+    if(doc["kind"]=="character")for(const auto &value:data.value("relationships").toArray()){
+      auto relation=value.toObject();const auto cid=data.value("id").toString(),rid=relation.value("id").toString();
+      relation["label"]=data.value("name").toString()+" · "+relation.value("label").toString();
+      const auto initial=project.value("initialState").toObject().value("relationships").toObject().value(cid).toObject();
+      if(initial.contains(rid))relation["initial"]=initial.value(rid);
+      auto entries=previewRelationships.value(cid).toObject();entries[rid]=relation;previewRelationships[cid]=entries;
+    }
     if (doc["kind"] == "attributes")
       for (auto a : data["attributes"].toArray())
         previewAttributes[a.toObject()["id"].toString()] = a;
@@ -1202,6 +1256,7 @@ void StudioWindow::refresh(bool fit) {
     for(auto it=values.begin();it!=values.end();++it){auto a=previewAttributes[it.key()].toObject();a["initial"]=it.value();previewAttributes[it.key()]=a;}
   } else if(!conditionPreview.isEmpty())conditionPreview={};
   preview["_previewAttributes"] = previewAttributes;
+  preview["_previewRelationships"] = previewRelationships;
   preview["_defaultFontPath"] = engineRoot+"/dist/native-player-app/fonts/NotoSansKR.ttf";
   const auto aspect=previewSizeField->currentData().toDouble();const auto visual=project["visual"].toObject();
   if(aspect>0&&visual["viewportMode"]=="responsive") {
@@ -1450,6 +1505,19 @@ void StudioWindow::updateInspector() {
   userFieldField->setCurrentIndex(qMax(0,userFieldField->findData(fieldId)));
   userFieldField->setEnabled(e["kind"]=="input"||(e["kind"]=="text"&&binding=="user-field"));
   attributeField->clear();
+  relationshipField->clear();
+  for(const auto &document:view["documents"].toArray())if(document.toObject().value("kind")=="character"){
+    const auto character=document.toObject().value("data").toObject();
+    for(const auto &value:character.value("relationships").toArray()){
+      const auto relation=value.toObject();
+      relationshipField->addItem(character.value("name").toString()+" · "+relation.value("label").toString(),QVariantMap{{"characterId",character.value("id").toString()},{"relationshipId",relation.value("id").toString()}});
+    }
+  }
+  const QVariantMap pair{{"characterId",e.value("characterId").toString()},{"relationshipId",e.value("relationshipId").toString()}};
+  int relationshipIndex=relationshipField->findData(pair);
+  if(binding=="relationship-value"&&relationshipIndex<0){relationshipField->addItem(tr("연결 대상 없음 · 다시 선택하세요"),pair);relationshipIndex=relationshipField->count()-1;}
+  relationshipField->setCurrentIndex(relationshipIndex<0?0:relationshipIndex);
+  relationshipField->setEnabled(e["kind"]=="text"&&binding=="relationship-value");
   for (auto d : view["documents"].toArray())
     if (d.toObject()["kind"] == "attributes")
       for (auto v : d.toObject()["data"].toObject()["attributes"].toArray()) {

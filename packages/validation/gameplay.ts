@@ -14,7 +14,7 @@ export function checkGameplay(ctx: SemanticContext, doc: ProjectDocument, gamepl
   objectItems(gameplay.locations).forEach((location, i) => {
     const at = `${p}/locations/${i}`;
     (location.connections as string[]).forEach((id, j) => ctx.resolve(locations, id, doc, `${at}/connections/${j}`, '연결 장소'));
-    if (location.screenId && (!screens.includes(location.screenId) || ['title', 'story', 'ending'].includes(location.screenId as string)))
+    if (location.screenId && (!screens.includes(location.screenId) || !(isObject(visual)&&visual.routing) && ['title', 'story', 'ending'].includes(location.screenId as string)))
       ctx.report(doc, `${at}/screenId`, 'SCREEN_REFERENCE', '장소 화면은 정의된 일반 화면이어야 합니다. 시작·대본·엔딩 화면은 사용할 수 없습니다.', [location.screenId as string]);
   });
   objectItems(gameplay.items).forEach((item, i) => {

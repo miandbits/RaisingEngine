@@ -15,12 +15,21 @@ export function createGameplay(definition: DeepReadonly<GameplayDefinition>): Ga
 
 /** Runs only on the core transaction draft. Any fault discards the complete draft. */
 export function applyGameplay(content: ContentSnapshot, draft: RunData, command: GameplayCommand, soundCues: string[]): void {
+  if (command.type === 'navigate' && content.project.visual?.routing) {
+    requireCore(content.project.visual.screens.some(s => s.id === command.screenId && !s.modal), 'UNKNOWN_SCREEN', '이동할 일반 화면을 찾을 수 없습니다.', '/command/screenId');
+    draft.uiScreenId = command.screenId;
+    return;
+  }
   const definition = content.project.gameplay, state = draft.gameplay;
   requireCore(definition && state, 'GAMEPLAY_UNAVAILABLE', '이 프로젝트에는 생활 규칙이 없습니다.', '/project/gameplay');
-  requireCore(draft.mode === 'full' && (draft.phase === 'planning' || draft.phase === 'ready'),
+  const trip = draft.systems?.expedition;
+  const nodeAction = draft.phase === 'expedition' && command.type === 'executeAction' && !!trip &&
+    !!content.project.systems?.expeditions.find(e => e.id === trip.expeditionId)?.nodes.find(n => n.id === trip.nodeId)?.actionIds?.includes(command.actionId);
+  requireCore(draft.mode === 'full' && (draft.phase === 'planning' || draft.phase === 'ready' || nodeAction),
     'WRONG_PHASE', '일정 편성 중에만 장소 이동과 생활 행동을 할 수 있습니다.', '/phase');
   const p = '/project/gameplay';
-  if (command.type === 'executeAction') { executeAction(content, draft, command.actionId, command.quantity, []); return; }
+  if (command.type === 'executeAction') { executeAction(content, draft, command.actionId, command.quantity, [], nodeAction); return; }
+  requireCore(draft.phase === 'planning' || draft.phase === 'ready', 'WRONG_PHASE', '일정 편성 중에만 생활 메뉴를 사용할 수 있습니다.', '/phase');
   if (command.type === 'selectPolicy') { selectPolicy(content, draft, command.groupId, command.optionId); return; }
   if (command.type === 'setDiet') {
     requireCore((state.dietId ?? null) !== command.dietId, 'DIET_UNCHANGED', '이미 선택한 식단입니다.', '/command/dietId');
@@ -122,9 +131,9 @@ export function applyGameplay(content: ContentSnapshot, draft: RunData, command:
   if (interaction.itemId) state.inventory[interaction.itemId]! -= interaction.quantity ?? 1;
   applyEffects(content, draft, interaction.effects, `${path}/effects`, []);
   state.interactionPeriods[interaction.id] = draft.periodIndex;
-  if (interaction.eventId && !draft.completedEvents.includes(interaction.eventId)) {
+  if (interaction.eventId) {
     const event = content.events.find(x => x.id === interaction.eventId)!;
-    if (draft.periodIndex >= event.window.fromPeriod && draft.periodIndex <= event.window.throughPeriod
+    if ((event.repeatable || !draft.completedEvents.includes(event.id)) && draft.periodIndex >= event.window.fromPeriod && draft.periodIndex <= event.window.throughPeriod
       && evaluateCondition(content, draft, event.requirements, `/events/${event.id}/requirements`)) {
       const returnPhase = draft.phase;
       const returnPresentation = structuredClone(draft.presentation);
