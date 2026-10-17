@@ -35,6 +35,7 @@ private slots:
   void conditionalRoutingAuthoring();
   void integratedAuthoringRoundtrip();
   void reusableActivitiesAuthoring();
+  void componentContextAuthoring();
   void projectManagerRoundtrip();
   void designerQuickRules();
   void designerSmallGameAuthoring();
@@ -998,4 +999,5 @@ QTEST_MAIN(StudioTests)
 #include "conditional-routing-test.inc"
 #include "integrated-authoring-test.inc"
 #include "reusable-activities-test.inc"
+#include "component-context-test.inc"
 #include "tests.moc"

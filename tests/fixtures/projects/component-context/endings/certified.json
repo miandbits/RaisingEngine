@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../packages/schema/ending.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "certified",
+  "label": "정식 견습 기사",
+  "requirements": {
+    "op": "flag",
+    "flagId": "certified",
+    "equals": true
+  },
+  "priority": 80,
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "두 달의 훈련을 마치고 정식 견습 기사로 인정받았습니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

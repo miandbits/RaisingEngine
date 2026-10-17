@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "study",
+  "label": "검술 수업",
+  "description": "소지금 5와 체력 10을 사용해 검술 10, 스트레스 5를 얻습니다.",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "money",
+      "amount": 5
+    },
+    {
+      "attributeId": "stamina",
+      "amount": 10
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "skill"
+      },
+      "value": {
+        "op": "literal",
+        "value": 10
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 5
+      }
+    }
+  ]
+}

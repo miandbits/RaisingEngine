@@ -1,0 +1,13 @@
+{
+  "actions": [
+    "action-1",
+    "action-2"
+  ],
+  "actors": [
+    "apprentice",
+    "trainee-2"
+  ],
+  "root": "tests/fixtures/projects/component-context",
+  "screen": "screen-1",
+  "training": "activity-a828fcdea455"
+}

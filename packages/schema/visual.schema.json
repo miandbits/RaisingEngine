@@ -816,7 +816,8 @@
             "replay-title",
             "replay-mode",
             "replay-speed",
-            "data-value"
+            "data-value",
+            "context-name"
           ]
         },
         "imageSource": {
@@ -956,7 +957,8 @@
             "recollectionSpeed",
             "recollectionSkip",
             "galleryBranches",
-            "galleryBranch"
+            "galleryBranch",
+            "assignActivity"
           ]
         },
         "screenId": {
@@ -1782,6 +1784,41 @@
           "items": {
             "$ref": "#/$defs/presentationVariant"
           }
+        },
+        "uiContext": {
+          "$ref": "#/$defs/uiContext"
+        },
+        "contextBindings": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 8,
+          "items": {
+            "enum": [
+              "actorId",
+              "activityId",
+              "characterId",
+              "itemId",
+              "actionId",
+              "locationId",
+              "shopId",
+              "attributeId"
+            ]
+          }
+        },
+        "contextField": {
+          "enum": [
+            "actorId",
+            "activityId",
+            "characterId",
+            "itemId",
+            "actionId",
+            "locationId",
+            "shopId",
+            "attributeId"
+          ]
+        },
+        "activityId": {
+          "$ref": "common.schema.json#/$defs/id"
         }
       },
       "required": [
@@ -1858,37 +1895,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "visit"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "locationId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "visit"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "locationId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "locationId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -1944,37 +2000,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "buy"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "shopId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "buy"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "shopId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "shopId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -1987,13 +2062,32 @@
         },
         {
           "if": {
-            "properties": {
-              "binding": {
-                "const": "attribute-value"
+            "allOf": [
+              {
+                "properties": {
+                  "binding": {
+                    "const": "attribute-value"
+                  }
+                },
+                "required": [
+                  "binding"
+                ]
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "attributeId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            },
-            "required": [
-              "binding"
             ]
           },
           "then": {
@@ -2029,13 +2123,32 @@
         },
         {
           "if": {
-            "properties": {
-              "binding": {
-                "const": "item-count"
+            "allOf": [
+              {
+                "properties": {
+                  "binding": {
+                    "const": "item-count"
+                  }
+                },
+                "required": [
+                  "binding"
+                ]
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "itemId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            },
-            "required": [
-              "binding"
             ]
           },
           "then": {
@@ -2069,37 +2182,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "sell"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "shopId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "sell"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "shopId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "shopId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -2155,37 +2287,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "executeAction"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "actionId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "executeAction"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "actionId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "actionId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -2349,50 +2500,69 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "enum": [
-                  "battleAction",
-                  "selectBattleAction",
-                  "playSequence"
-                ]
-              },
-              "battleAction": {
-                "const": "useItem"
-              },
-              "sequenceId": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9-]*$",
-                "maxLength": 64
-              }
-            },
-            "required": [
-              "action",
-              "battleAction"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "itemId"
-                      }
-                    },
-                    "required": [
-                      "property"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "battleAction",
+                      "selectBattleAction",
+                      "playSequence"
                     ]
                   },
-                  "type": "array"
+                  "battleAction": {
+                    "const": "useItem"
+                  },
+                  "sequenceId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "maxLength": 64
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action",
+                  "battleAction"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "itemId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "itemId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -2672,7 +2842,8 @@
             "replay-title",
             "replay-mode",
             "replay-speed",
-            "data-value"
+            "data-value",
+            "context-name"
           ]
         },
         "imageSource": {
@@ -2808,7 +2979,8 @@
             "recollectionSpeed",
             "recollectionSkip",
             "galleryBranches",
-            "galleryBranch"
+            "galleryBranch",
+            "assignActivity"
           ]
         },
         "screenId": {
@@ -3438,6 +3610,41 @@
           "items": {
             "$ref": "#/$defs/presentationVariant"
           }
+        },
+        "uiContext": {
+          "$ref": "#/$defs/uiContext"
+        },
+        "contextBindings": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 8,
+          "items": {
+            "enum": [
+              "actorId",
+              "activityId",
+              "characterId",
+              "itemId",
+              "actionId",
+              "locationId",
+              "shopId",
+              "attributeId"
+            ]
+          }
+        },
+        "contextField": {
+          "enum": [
+            "actorId",
+            "activityId",
+            "characterId",
+            "itemId",
+            "actionId",
+            "locationId",
+            "shopId",
+            "attributeId"
+          ]
+        },
+        "activityId": {
+          "$ref": "common.schema.json#/$defs/id"
         }
       },
       "required": [
@@ -3514,37 +3721,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "visit"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "locationId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "visit"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "locationId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "locationId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -3600,37 +3826,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "buy"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "shopId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "buy"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "shopId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "shopId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -3643,13 +3888,32 @@
         },
         {
           "if": {
-            "properties": {
-              "binding": {
-                "const": "attribute-value"
+            "allOf": [
+              {
+                "properties": {
+                  "binding": {
+                    "const": "attribute-value"
+                  }
+                },
+                "required": [
+                  "binding"
+                ]
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "attributeId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            },
-            "required": [
-              "binding"
             ]
           },
           "then": {
@@ -3685,13 +3949,32 @@
         },
         {
           "if": {
-            "properties": {
-              "binding": {
-                "const": "item-count"
+            "allOf": [
+              {
+                "properties": {
+                  "binding": {
+                    "const": "item-count"
+                  }
+                },
+                "required": [
+                  "binding"
+                ]
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "itemId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            },
-            "required": [
-              "binding"
             ]
           },
           "then": {
@@ -3705,37 +3988,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "sell"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "shopId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "sell"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "shopId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "shopId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -3791,37 +4093,56 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "const": "executeAction"
-              }
-            },
-            "required": [
-              "action"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "actionId"
-                      }
-                    },
-                    "required": [
-                      "property"
-                    ]
-                  },
-                  "type": "array"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "const": "executeAction"
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "actionId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "actionId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -3963,50 +4284,69 @@
         },
         {
           "if": {
-            "properties": {
-              "action": {
-                "enum": [
-                  "battleAction",
-                  "selectBattleAction",
-                  "playSequence"
-                ]
-              },
-              "battleAction": {
-                "const": "useItem"
-              },
-              "sequenceId": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9-]*$",
-                "maxLength": 64
-              }
-            },
-            "required": [
-              "action",
-              "battleAction"
-            ],
-            "not": {
-              "required": [
-                "selectionBindings",
-                "selectionKey"
-              ],
-              "properties": {
-                "selectionBindings": {
-                  "contains": {
-                    "type": "object",
-                    "properties": {
-                      "property": {
-                        "const": "itemId"
-                      }
-                    },
-                    "required": [
-                      "property"
+            "allOf": [
+              {
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "battleAction",
+                      "selectBattleAction",
+                      "playSequence"
                     ]
                   },
-                  "type": "array"
+                  "battleAction": {
+                    "const": "useItem"
+                  },
+                  "sequenceId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "maxLength": 64
+                  }
                 },
-                "selectionKey": {}
+                "required": [
+                  "action",
+                  "battleAction"
+                ],
+                "not": {
+                  "required": [
+                    "selectionBindings",
+                    "selectionKey"
+                  ],
+                  "properties": {
+                    "selectionBindings": {
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "property": {
+                            "const": "itemId"
+                          }
+                        },
+                        "required": [
+                          "property"
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "selectionKey": {}
+                  }
+                }
+              },
+              {
+                "not": {
+                  "required": [
+                    "contextBindings"
+                  ],
+                  "properties": {
+                    "contextBindings": {
+                      "contains": {
+                        "const": "itemId"
+                      },
+                      "type": "array"
+                    }
+                  }
+                }
               }
-            }
+            ]
           },
           "then": {
             "properties": {
@@ -4151,6 +4491,36 @@
               "$ref": "common.schema.json#/$defs/id"
             }
           }
+        }
+      }
+    },
+    "uiContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "activityId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "characterId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "itemId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "actionId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "locationId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "shopId": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "attributeId": {
+          "$ref": "common.schema.json#/$defs/id"
         }
       }
     }

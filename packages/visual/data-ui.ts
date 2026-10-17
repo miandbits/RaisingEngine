@@ -46,7 +46,7 @@ export function collectionRows(design:ReadonlyDesign,element:DeepReadonly<Elemen
 /** Returns card-local primitives. Container clipping/scrolling remains the renderer's job. */
 export function resolveCollectionRow(design:ReadonlyDesign,collection:DeepReadonly<Element>,row:DataRow,cardWidth:number):BoundElement[]{
   const component=design.components?.find(x=>x.id===collection.componentId);if(!component)return [];
-  const children=expandComponents(design,resolveElementHierarchy(component.elements as readonly Element[],component,{width:Math.max(16,cardWidth),height:collection.rowHeight??component.height})).map(child=>{
+  const children=expandComponents(design,resolveElementHierarchy(component.elements as readonly Element[],component,{width:Math.max(16,cardWidth),height:collection.rowHeight??component.height},{inherited:collection as Element})).map(child=>{
     const element=structuredClone(child) as BoundElement;let enabled=row.enabled;
     for(const binding of collection.bindings??[]){if(binding.elementId!==child.id)continue;const value=row.values[binding.field];if(value===undefined)continue;
       if(binding.property==='visible'){if(value===false)element.hidden=true;continue;}

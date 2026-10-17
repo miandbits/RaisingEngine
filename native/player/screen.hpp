@@ -321,6 +321,16 @@ public:
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
     if(name=="data-value")return data_binding(element);
     const auto& project=display_content.at("project");
+    if(name=="context-name") {
+      const auto field=element.value("contextField","actorId"),id=element.value("uiContext",Json::object()).value(field,"");
+      Json rows=Json::array();
+      if(field=="actorId"||field=="characterId")rows=display_content.value("characters",Json::array());
+      else if(field=="activityId")rows=display_content.value("activities",Json::array());
+      else if(field=="attributeId")rows=display_content.value("attributes",Json::array());
+      else {const std::map<std::string,std::string> keys={{"itemId","items"},{"actionId","actions"},{"locationId","locations"},{"shopId","shops"}};if(keys.count(field))rows=project.value("gameplay",Json::object()).value(keys.at(field),Json::array());}
+      for(const auto& row:rows)if(row.value("id","")==id)return row.value("name",row.value("label",id));
+      return "—";
+    }
     if(name=="replay-position")return replay_controls?std::to_string(replay_cursor+1)+" / "+std::to_string(replay_count):"";
     if(name=="replay-notice")return replay_controls?replay_notice:"";
     if(name=="replay-mode")return replay_controls?(replay_autoplay?"자동 재생 중":"자동 재생 멈춤"):"";
@@ -638,6 +648,10 @@ public:
       };
       const auto selected=parameters.find(action.value("type",""));
       if(selected!=parameters.end())for(const auto& key:selected->second)if(e.contains(key))action[key]=e[key];
+      if(action.at("type")=="assignActivity"){
+        auto assignments=game.state.is_object()?game.state.value("roster",Json::object()).value("assignments",Json::object()):Json::object();
+        assignments[e.value("actorId","")]=e.value("activityId","");action={{"type","assignActivities"},{"assignments",assignments}};
+      }
       if(action.at("type")=="battleAction"){action["action"]=e.value("battleAction","attack");if(action["action"]=="useItem"&&e.contains("itemId"))action["itemId"]=e["itemId"];}
       if(action.at("type")=="selectBattleAction"&&action.value("itemId","").empty())action.erase("itemId");
       if((action.at("type")=="buy"||action.at("type")=="sell"||action.at("type")=="useService"||action.at("type")=="executeAction"||action.at("type")=="executeActorAction")&&!action.contains("quantity"))action["quantity"]=1;
@@ -658,7 +672,7 @@ public:
       }
       if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){if(game.state.at("progression").contains("sessions")){enabled=game.available({{"type","advanceSession"}});label="다음 시점까지 진행";}else {enabled=false;label="행동 진행 중";}}
       if(type=="save")enabled=!game.state.is_null();
-      if(type=="executeActorAction"||type=="navigate"||type=="visit"||type=="buy"||type=="sell"||type=="useService"||type=="setDiet"||type=="executeAction"||type=="selectPolicy"||type=="interact") {
+      if(type=="assignActivities"||type=="executeActorAction"||type=="navigate"||type=="visit"||type=="buy"||type=="sell"||type=="useService"||type=="setDiet"||type=="executeAction"||type=="selectPolicy"||type=="interact") {
         enabled=raw_phase=="planning"||raw_phase=="ready"||(raw_phase=="expedition"&&type=="executeAction");
         // Preview against a serialized copy through the same C++ command contract.
         // This covers authored quantities and conditions without committing state.
@@ -830,7 +844,7 @@ public:
     }
     if(!screen)throw std::runtime_error("표시할 화면이 없습니다: "+screen_id);
     const auto activity=game.state.is_object()&&game.state.value("phase","")=="activity-result"?game.state.value("lastActivityResult",Json::object()).value("activityId",""):"";
-    auto apply_variant=[&](const Json& e){return raising_player::presentation_variant(e,activity,[&](const Json& c){return visual_condition(c);});};
+    auto apply_variant=[&](const Json& e){return raising_player::presentation_variant(e,context_activity(game.state,e),[&](const Json& c){return visual_condition(c);});};
     for(auto& element:render_elements)element=apply_variant(element);
     const auto portrait_scene=display_scene();
     for(auto& element:render_elements)if(element.value("kind","")=="image") {

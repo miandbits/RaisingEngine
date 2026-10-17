@@ -1,4 +1,5 @@
 import type { Element, ReadonlyDesign, ScreenId } from './model.js';
+import { applyElementContext } from './context.js';
 
 export interface ViewportSize {width:number;height:number}
 
@@ -43,7 +44,7 @@ export function resolveElementHierarchy(sources:readonly Readonly<Element>[],ref
   const visiting=new Set<string>();
   const visit=(source:Readonly<Element>,parent:ResolvedElement|undefined,parentReference:ViewportSize,parentActual:ViewportSize,offset:{x:number;y:number},depth:number)=>{
     if(visiting.has(source.id)||depth>32)return;visiting.add(source.id);
-    const element=anchoredElement(source,parentReference,parentActual) as ResolvedElement;
+    const element=applyElementContext(anchoredElement(source,parentReference,parentActual),parent?.uiContext) as ResolvedElement;
     element.id=(options.idPrefix??'')+source.id;element.x+=offset.x;element.y+=offset.y;delete element.parentId;
     if(parent){
       element._groupIds=[...(parent._groupIds??[]),...(parent.kind==='group'?[parent.id]:[])];

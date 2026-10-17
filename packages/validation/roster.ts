@@ -56,7 +56,8 @@ export function checkOwner(ctx:SemanticContext,project:JsonObject|undefined,doc:
   if(roster?.stateModel!=='character-v1'){ctx.report(doc,pointer+'/owner','CHARACTER_STATE_REQUIRED','캐릭터 소유 대상에는 character-v1 설정이 필요합니다.');return;}
   const owner=value.owner;
   if(owner.kind==='character'&&!(roster.members as JsonObject[]).some(m=>m.characterId===owner.characterId))ctx.report(doc,pointer+'/owner/characterId','ACTOR_REQUIRED','육성 대상으로 등록된 캐릭터를 지정하세요.');
-  if(owner.kind==='actor'&&!(doc.kind==='activity'||doc.kind==='event'&&isObject(doc.data)&&doc.data.scope==='actor'||doc.kind==='project'&&pointer.startsWith('/gameplay/actions/')))ctx.report(doc,pointer+'/owner','ACTOR_CONTEXT','실행자 대상은 활동·대상별 사건·행동 문맥에서 사용하세요.');
+  const uiElement=doc.kind==='project'&&/^\/visual\/(components|screens)\/\d+\/elements\/\d+\//.test(pointer);
+  if(owner.kind==='actor'&&!(uiElement||doc.kind==='activity'||doc.kind==='event'&&isObject(doc.data)&&doc.data.scope==='actor'||doc.kind==='project'&&pointer.startsWith('/gameplay/actions/')))ctx.report(doc,pointer+'/owner','ACTOR_CONTEXT','실행자 대상은 활동·대상별 사건·행동 또는 대상이 연결된 화면 요소에서 사용하세요.');
   if(value.kind==='attribute'&&!(roster.localAttributeIds as string[]).includes(value.attributeId as string))ctx.report(doc,pointer+'/attributeId','SHARED_ATTRIBUTE','공용 능력은 캐릭터 소유 대상으로 지정할 수 없습니다.');
   if(value.op==='eventCompleted'){
     const event=ctx.resolve(ctx.events,value.eventId as string,doc,pointer+'/eventId','사건');

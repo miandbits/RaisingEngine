@@ -8,6 +8,7 @@ import type {SystemsView} from '../systems/model.js';
 import {battleUiTypes,selectBattle,type BattleSelection,type BattleUiAction} from '../player-service/battle.js';
 
 export interface DataUiProjection {
+  contextNames?: Record<string,string>;
   collections: Record<string,Record<string,DataRow[]>>;
   conditions: Record<string,boolean>;
   availability: Record<string,Record<string,{enabled:boolean;reason:string}>>;
@@ -17,6 +18,10 @@ type Reply={ok:boolean;value?:unknown;error?:{message?:string}};
 export function projectDataUi(content:ContentSnapshot,state:RunState|null,gameplay:GameplayView|null,request:(input:unknown)=>unknown,extra:{systems?:SystemsView|null;battleSelection?:BattleSelection|null}={}):DataUiProjection {
   const result:DataUiProjection={collections:{},conditions:{},availability:{}};
   const design=content.project.visual;if(!design)return result;
+  result.contextNames={};
+  const names=(key:string,rows:readonly {id:string;name?:string;label?:string}[])=>{for(const row of rows)result.contextNames![key+':'+row.id]=row.name??row.label??row.id;};
+  names('actorId',content.characters);names('characterId',content.characters);names('activityId',content.activities);names('attributeId',content.attributes);
+  for(const [key,rows] of Object.entries({itemId:content.project.gameplay?.items,actionId:content.project.gameplay?.actions,locationId:content.project.gameplay?.locations,shopId:content.project.gameplay?.shops}))names(key,rows??[]);
   for(const rule of design.routing?.conditions??[]) {
     const reply=request({operation:'evaluate',content,state,condition:rule.when}) as Reply;
     result.conditions[JSON.stringify(rule.when)]=reply.ok&&reply.value===true;
@@ -48,8 +53,8 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
     const collections:Record<string,DataRow[]>={},availability:Record<string,{enabled:boolean;reason:string}>={};
     result.collections[screen.id]=collections;result.availability[screen.id]=availability;
     for(const element of resolveScreenElements(design,screen.id)){
-      const command=element.kind==='button'?widgetCommand(element):null;
-      if(command&&battleUiTypes.includes(command.type))availability[element.id]=allowedCommand(command);
+      const command=element.kind==='button'?widgetCommand(element,state):null;
+      if(command&&(element.uiContext||battleUiTypes.includes(command.type)))availability[element.id]=allowedCommand(command);
     }
     for(const source of screen.elements){
       const element=source as Element;
@@ -59,7 +64,7 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
       const width=design.components?.find(c=>c.id===element.componentId)?.width??element.width;
       for(const row of rows)for(const child of resolveCollectionRow(design,element,row,width)){
         checkConditions(child);
-        const command=child.kind==='button'?widgetCommand(child):null;if(!command)continue;
+        const command=child.kind==='button'?widgetCommand(child,state):null;if(!command)continue;
         availability[child.id]=allowedCommand(command);
       }
     }

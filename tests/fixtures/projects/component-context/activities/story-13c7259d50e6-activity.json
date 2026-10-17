@@ -1,0 +1,33 @@
+{
+  "baseEffects": [
+    {
+      "flagId": "story-13c7259d50e6-activity-done",
+      "op": "setFlag",
+      "value": true
+    },
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "skill",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 2
+      }
+    }
+  ],
+  "costs": [
+    {
+      "amount": 3,
+      "attributeId": "stamina"
+    }
+  ],
+  "description": "약초밭의 약속",
+  "formatVersion": "0.1.0",
+  "id": "story-13c7259d50e6-activity",
+  "label": "잠입",
+  "requirements": {
+    "op": "always"
+  }
+}

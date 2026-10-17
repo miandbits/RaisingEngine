@@ -65,7 +65,7 @@
       element["_collectionExtent"]=rows.empty()?0:std::ceil(double(rows.size())/columns)*(rowHeight+gap)-gap;
       element["_collectionCount"]=rows.size();result.push_back(element);
       size_t index=0;for(const auto& row:rows) {
-        auto children=expand_ui_components(visual,hierarchy_elements(definition.at("elements"),definition.value("width",cardWidth),definition.value("height",rowHeight),cardWidth,rowHeight,phase()),phase());for(auto& child:children) {
+        auto children=expand_ui_components(visual,hierarchy_elements(definition.at("elements"),definition.value("width",cardWidth),definition.value("height",rowHeight),cardWidth,rowHeight,phase(),element.value("uiContext",Json::object())),phase());for(auto& child:children) {
           const auto childId=child.value("id","");
           for(const auto& binding:element.value("bindings",Json::array()))if(binding.at("elementId")==childId) {
             const auto property=binding.value("property","");if(!row.at("values").contains(binding.value("field","")))continue;auto value=row.at("values").at(binding.value("field",""));

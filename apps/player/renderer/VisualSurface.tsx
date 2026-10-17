@@ -74,7 +74,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const fontCss=fontIds.map(id=>`@font-face{font-family:"engine-${id}";src:url(${JSON.stringify(assetUrl(id))});font-display:block;}`).join('\n');
   const conditionPasses=(condition:Element['visibleCondition'])=>!condition||context.dataUi?.conditions[JSON.stringify(condition)]===true;
   const renderElement=(raw:BoundElement):React.ReactNode=>{
-      let element=resolveElementStyle(design,editing?raw:resolvePresentation(raw,presentationActivity(context.dataState),conditionPasses));
+      let element=resolveElementStyle(design,editing?raw:resolvePresentation(raw,presentationActivity(context.dataState,raw),conditionPasses));
       const portrait=element.kind==='image'&&element.imageSource?.startsWith('portrait-')?context.portraitTransforms?.[element.imageSource.slice(9)]:undefined;
       if(portrait){const scale=portrait.scale??1,w=element.width,h=element.height;element={...element,x:element.x+(w-w*scale)/2+w*(portrait.offsetX??0),y:element.y+h-h*scale+h*(portrait.offsetY??0),width:w*scale,height:h*scale};}
       if(!editing&&(!isVisible(element,context)||!conditionPasses(element.visibleCondition)))return null;
@@ -89,7 +89,8 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.borderWidth!==undefined){style.borderWidth=element.borderWidth;style.borderStyle='solid';style.borderColor=element.borderColor??'#57806c';}
       Object.assign(style,{'--style-hover':element.hoverFill,'--style-pressed':element.pressedFill,'--style-disabled':element.disabledColor});
       const source=imageFor(element,context);
-      const text=userFieldBinding(element,context.userValues)??dataBindingText(element,context)??numericBinding(element,context)??calendarBinding(element.binding)??(element.binding==='schedule-prompt'?schedulePrompt:null)??(element.binding&&element.binding!=='none'&&element.binding in context?String(context[element.binding as keyof VisualContext]??''):element.text??'텍스트');
+      const contextText=element.binding==='context-name'?(context.dataUi?.contextNames?.[`${element.contextField}:${element.uiContext?.[element.contextField??'actorId']}`]??'—'):null;
+      const text=contextText??userFieldBinding(element,context.userValues)??dataBindingText(element,context)??numericBinding(element,context)??calendarBinding(element.binding)??(element.binding==='schedule-prompt'?schedulePrompt:null)??(element.binding&&element.binding!=='none'&&element.binding in context?String(context[element.binding as keyof VisualContext]??''):element.text??'텍스트');
       let body:React.ReactNode=null;
       if(element.kind==='image')body=source?<TransitionImage src={assetUrl(source)} element={element}/>:editing?<div className="visual-placeholder">{element.imageSource??'이미지'} · 에셋 선택</div>:null;
       if(element.kind==='text')body=<span>{text}</span>;

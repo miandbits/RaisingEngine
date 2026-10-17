@@ -4,6 +4,7 @@
 #include <cmath>
 #include <functional>
 #include <set>
+#include "component-context.hpp"
 
 // Presentation layout never changes the authored document or simulation state.
 inline Json anchored_element(Json element,double delta_width,double delta_height) {
@@ -44,7 +45,7 @@ inline void inherit_ui_element(Json& child,const Json& parent,const std::string&
   if(parent.value("overflow","")=="scroll")child["_scrollParent"]=parent.at("id");else if(parent.contains("_scrollParent")&&!child.contains("_scrollParent"))child["_scrollParent"]=parent.at("_scrollParent");
   clip=intersect_ui_clip(child.value("_clipRect",Json()),clip);if(!clip.is_null())child["_clipRect"]=clip;
 }
-inline Json hierarchy_elements(const Json& elements,double reference_width,double reference_height,double actual_width,double actual_height,const std::string& phase) {
+inline Json hierarchy_elements(const Json& elements,double reference_width,double reference_height,double actual_width,double actual_height,const std::string& phase,const Json& context=Json::object()) {
   Json result=Json::array();std::set<std::string> visited;
   std::function<void(const std::string&,const Json&,double,double,double,double,int)> walk;
   walk=[&](const std::string& parent_id,const Json& parent,double rw,double rh,double aw,double ah,int depth){
@@ -52,7 +53,7 @@ inline Json hierarchy_elements(const Json& elements,double reference_width,doubl
     double cursor=0,row_y=0,row_h=0;int index=0;const auto flow=parent.is_null()?Json::object():parent.value("flowLayout",Json::object());const double pad=flow.value("padding",0.0),gap=flow.value("gap",8.0);cursor=row_y=pad;
     for(const auto& raw:elements)if(raw.value("parentId","")==parent_id) {
       const auto id=raw.value("id","");if(!visited.insert(id).second)continue;
-      auto e=anchored_element(raw,aw-rw,ah-rh);e.erase("parentId");
+      auto e=apply_ui_context(anchored_element(raw,aw-rw,ah-rh),parent.is_null()?context:parent.value("uiContext",context));e.erase("parentId");
       if(!flow.empty()){const auto direction=flow.value("direction","column");if(direction=="row"){e["x"]=cursor;e["y"]=pad;cursor+=e.value("width",16.0)+gap;}else if(direction=="column"){e["x"]=pad;e["y"]=cursor;e["width"]=std::max(16.0,aw-2*pad);cursor+=e.value("height",16.0)+gap;}else{const int cols=flow.value("columns",2);if(index&&index%cols==0){row_y+=row_h+gap;row_h=0;}const double w=std::max(16.0,(aw-pad*2-gap*(cols-1))/cols);e["x"]=pad+(index%cols)*(w+gap);e["y"]=row_y;e["width"]=w;row_h=std::max(row_h,e.value("height",16.0));}++index;}
       if(!parent.is_null()){e["x"]=e.value("x",0.0)+parent.value("x",0.0);e["y"]=e.value("y",0.0)+parent.value("y",0.0);inherit_ui_element(e,parent,phase);}
       result.push_back(e);
@@ -69,7 +70,7 @@ inline Json expand_ui_components(const Json& visual,const Json& elements,const s
     Json definition;for(const auto& c:visual.value("components",Json::array()))if(c.value("id","")==id)definition=c;
     if(definition.is_null())throw std::runtime_error("Unknown UI component: "+id);
     auto children=definition.at("elements");for(auto& child:children)for(const auto& o:instance.value("overrides",Json::array()))if(o.at("elementId")==child.at("id"))for(const auto& [key,v]:o.at("values").items())child[key]=v;
-    auto flat=hierarchy_elements(children,definition.value("width",16.0),definition.value("height",16.0),instance.value("width",16.0),instance.value("height",16.0),phase);
+    auto flat=hierarchy_elements(children,definition.value("width",16.0),definition.value("height",16.0),instance.value("width",16.0),instance.value("height",16.0),phase,instance.value("uiContext",Json::object()));
     const auto prefix=instance.value("id","")+"__";
     for(auto& child:flat){child["id"]=prefix+child.value("id","");if(child.contains("_groupIds"))for(auto& id:child["_groupIds"])id=prefix+id.get<std::string>();if(child.contains("_scrollParent"))child["_scrollParent"]=prefix+child.at("_scrollParent").get<std::string>();
       child["x"]=child.value("x",0.0)+instance.value("x",0.0);child["y"]=child.value("y",0.0)+instance.value("y",0.0);

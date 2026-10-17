@@ -7,8 +7,11 @@ export function usesPresentationVariants(value: unknown): boolean {
 }
 
 /** Activity filters describe the displayed result, never the next queued activity. */
-export function presentationActivity(state: RunState | null | undefined): string | undefined {
-  return state?.phase === 'activity-result' ? state.lastActivityResult?.activityId : undefined;
+export function presentationActivity(state: RunState | null | undefined, element?:Element): string | undefined {
+  if(element?.uiContext?.activityId)return element.uiContext.activityId;
+  if(state?.phase!=='activity-result')return undefined;
+  const actor=element?.uiContext?.actorId;
+  return actor ? state.lastActivityResult?.actorResults?.find(row=>row.characterId===actor)?.result.activityId : state.lastActivityResult?.activityId;
 }
 
 /** First matching rule wins. Always derive from the authored base; never mutate it. */

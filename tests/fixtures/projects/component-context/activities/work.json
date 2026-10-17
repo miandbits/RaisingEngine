@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "work",
+  "label": "도서관 아르바이트",
+  "description": "체력 10을 사용해 소지금 12, 스트레스 8을 얻습니다.",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "stamina",
+      "amount": 10
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "money"
+      },
+      "value": {
+        "op": "literal",
+        "value": 12
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 8
+      }
+    }
+  ]
+}

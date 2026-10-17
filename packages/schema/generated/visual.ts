@@ -106,7 +106,8 @@ export type Element = {
     | "replay-title"
     | "replay-mode"
     | "replay-speed"
-    | "data-value";
+    | "data-value"
+    | "context-name";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -981,7 +982,8 @@ export type Element = {
     | "recollectionSpeed"
     | "recollectionSkip"
     | "galleryBranches"
-    | "galleryBranch";
+    | "galleryBranch"
+    | "assignActivity";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -5395,6 +5397,65 @@ export type Element = {
    * @maxItems 64
    */
   variants?: PresentationVariant[];
+  uiContext?: UiContext;
+  /**
+   * @maxItems 8
+   */
+  contextBindings?:
+    | []
+    | ["actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ];
+  contextField?:
+    "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
+  activityId?: string;
 };
 export type Condition =
   | {
@@ -5519,7 +5580,8 @@ export type ComponentChild = {
     | "replay-title"
     | "replay-mode"
     | "replay-speed"
-    | "data-value";
+    | "data-value"
+    | "context-name";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -6390,7 +6452,8 @@ export type ComponentChild = {
     | "recollectionSpeed"
     | "recollectionSkip"
     | "galleryBranches"
-    | "galleryBranch";
+    | "galleryBranch"
+    | "assignActivity";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -10738,6 +10801,65 @@ export type ComponentChild = {
    * @maxItems 64
    */
   variants?: PresentationVariant[];
+  uiContext?: UiContext;
+  /**
+   * @maxItems 8
+   */
+  contextBindings?:
+    | []
+    | ["actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ]
+    | [
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId",
+        "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId"
+      ];
+  contextField?:
+    "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
+  activityId?: string;
 };
 
 export interface VisualDesign {
@@ -12765,6 +12887,16 @@ export interface PresentationVariant {
     opacity?: number;
     extensionRef?: string;
   };
+}
+export interface UiContext {
+  actorId?: string;
+  activityId?: string;
+  characterId?: string;
+  itemId?: string;
+  actionId?: string;
+  locationId?: string;
+  shopId?: string;
+  attributeId?: string;
 }
 export interface StyleValues {
   fontSize?: number;

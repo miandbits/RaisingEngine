@@ -1,0 +1,55 @@
+{
+  "entryNodeId": "line",
+  "formatVersion": "0.1.0",
+  "id": "story-13c7259d50e6-choice-1-next",
+  "label": "약속의 답례",
+  "nodes": [
+    {
+      "id": "line",
+      "next": "end",
+      "speakerId": "story-13c7259d50e6-person",
+      "text": "지난번 약초를 옮겨줘서 고마워. 약속한 차를 준비했어. 함께 마시자.",
+      "type": "dialogue"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ],
+  "priority": 70,
+  "requirements": {
+    "conditions": [
+      {
+        "eventId": "story-13c7259d50e6-meeting",
+        "op": "eventCompleted"
+      },
+      {
+        "equals": true,
+        "flagId": "story-13c7259d50e6-choice-1",
+        "op": "flag"
+      },
+      {
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "characterId": "story-13c7259d50e6-person",
+            "kind": "relationship",
+            "relationshipId": "story-13c7259d50e6-bond"
+          }
+        },
+        "op": "compare",
+        "right": {
+          "op": "literal",
+          "value": 3
+        }
+      }
+    ],
+    "op": "all"
+  },
+  "trigger": "period-end",
+  "window": {
+    "fromPeriod": 1,
+    "throughPeriod": 5
+  }
+}

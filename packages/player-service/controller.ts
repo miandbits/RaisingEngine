@@ -53,6 +53,8 @@ export interface PlayerReply {
 }
 export interface Version { generation: number; revision: number }
 export type PlayerAction = GameplayCommand | SystemsCommand | TimelineAction | BattleUiAction | { type: 'schedule'; activityIds: string[] }
+  | {type:'executeActorAction';actorId:string;actionId:string;quantity:number}
+  | {type:'assignActivities';assignments:Record<string,string>}
   | { type: 'commitPlan'; activityIds: string[] }
   | { type: 'scheduleStep' } | { type: 'execute' } | { type: 'continue' } | { type: 'choose'; choiceId: string };
 export interface PlayerBridge {
@@ -154,6 +156,7 @@ export class PlayerController {
     }
     let command: unknown;
     switch (a.type) {
+      case 'executeActorAction': case 'assignActivities': command=action; break;
       case 'confirmBattleAction': command=battleCommand; break;
       case 'navigate': case 'visit': case 'buy': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy': case 'interact': command = action; break;
       case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'startNodeBattle': case 'battleAction': command = action; break;

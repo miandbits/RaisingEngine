@@ -8,6 +8,10 @@ import { checkUiComposition } from './ui-composition.js';
 import { checkDirection } from './direction.js';
 import { checkScreenBinding } from './screen-binding.js';
 import { checkTimelines } from './timeline.js';
+import { checkUiContext } from './ui-context.js';
+import { applyElementContext } from '../visual/context.js';
+import type { Element } from '../visual/model.js';
+import {resolveCollectionRow} from '../visual/data-ui.js';
 export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonObject):void {
   checkDirection(ctx,doc,visual);
   checkUiComposition(ctx,doc,visual);
@@ -24,12 +28,19 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   const refs:Record<string,Set<unknown>>={dietId:new Set(objectItems(gameplay.diets).map(x=>x.id)),serviceId:new Set(objectItems(gameplay.services).map(x=>x.id)),screenId:allScreens,locationId:new Set(objectItems(gameplay.locations).map(x=>x.id)),shopId:new Set(objectItems(gameplay.shops).map(x=>x.id)),itemId:new Set(objectItems(gameplay.items).map(x=>x.id)),interactionId:new Set(objectItems(gameplay.interactions).map(x=>x.id))};
   refs.questId=new Set(objectItems(systems.quests).map(x=>x.id));
   refs.actionId=new Set(objectItems(gameplay.actions).map(x=>x.id));
+  refs.activityId=new Set(ctx.activities.keys());
+  refs.actorId=new Set(objectItems((root.roster as JsonObject|undefined)?.members).map(x=>x.characterId));
   refs.groupId=new Set(objectItems(gameplay.policyGroups).map(x=>x.id));
   refs.equipmentId=new Set(objectItems(systems.equipment).map(x=>x.id));
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
-      checkScreenBinding(ctx,doc,e,ep);
+      checkUiContext(ctx,doc,e,ep);
+      const contextFields=(e.contextBindings??[]) as string[];
+      boundFields=new Set([...boundFields,...contextFields]);
+      const allowContext=ep.includes('/components/')||ep.includes('/component/')||!!(e.uiContext as JsonObject|undefined)?.actorId;
+      if(allowContext&&['executeActorAction','assignActivity'].includes(String(e.action)))boundFields.add('actorId');
+      checkScreenBinding(ctx,doc,e,ep,allowContext);
       for(const [i,rule] of objectItems(e.variants).entries()) {
         const at=`${ep}/variants/${i}`,values=rule.values as JsonObject;
         for(const [j,id] of ((rule.activityIds??[]) as string[]).entries())ctx.resolve(ctx.activities,id,doc,`${at}/activityIds/${j}`,'활동');
@@ -75,7 +86,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       const systemActions=['acceptQuest','claimQuest','equip','unequip','moveExpedition','returnFromExpedition','battleAction'];
       if(!root.systems&&(['equipment','quests','expedition','battle','relationship-stages'].includes(String(e.kind))||systemActions.includes(String(e.action))))ctx.report(doc,ep,'UI_SYSTEMS_REQUIRED','탐험·성장 작업실에서 시스템을 설정하세요.');
       const required:Record<string,string[]>={executeActorAction:['actionId','actorId'],openModal:['screenId'],navigate:['screenId'],visit:['locationId'],buy:['shopId','itemId'],sell:['shopId','itemId'],useService:['serviceId'],interact:['interactionId'],acceptQuest:['questId'],claimQuest:['questId'],equip:['equipmentId'],unequip:['slot'],moveExpedition:['nodeId'],battleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleAction:e.battleAction==='useItem'?['battleAction','itemId']:['battleAction'],selectBattleTarget:['battleTarget']};
-      for(const field of required[String(e.action)]??[])if(!e[field]&&!boundFields.has(field)&&!objectItems(e.selectionBindings).some(b=>b.property===field))ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REQUIRED',`이 행동에는 ${field} 연결이 필요합니다.`);
+      for(const field of (e.action==='assignActivity'?['actorId','activityId']:required[String(e.action)])??[])if(!e[field]&&!boundFields.has(field)&&!objectItems(e.selectionBindings).some(b=>b.property===field))ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REQUIRED',`이 행동에는 ${field} 연결이 필요합니다.`);
       if(!e.parentId&&((e.x as number)<0||(e.y as number)<0||(e.x as number)+(e.width as number)>width||(e.y as number)+(e.height as number)>height))ctx.report(doc,ep,'UI_BOUNDS','요소가 기준 화면 영역을 벗어났습니다.');
       if(e.kind==='image'&&(e.imageSource??'asset')==='asset'&&!e.imageAssetId&&!boundFields.has('imageAssetId'))ctx.report(doc,`${ep}/imageAssetId`,'UI_IMAGE_REQUIRED','고정 이미지는 이미지 에셋을 선택해야 합니다.');
       if(e.binding==='attribute-value'&&!ctx.attributes.has(String(e.attributeId)))ctx.report(doc,`${ep}/attributeId`,'UI_BINDING_REFERENCE',`능력·자원 '${e.attributeId}'가 없습니다.`);
@@ -143,7 +154,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       }
       for(const [k,child] of children.entries()) {
         const override=overrides.get(String(child.id)),merged={...child,...override?.values};
-        checkElement(merged,override?.path??`${ep}/component/${child.id}`,Number(component.data.width),Number(component.data.height));
+        checkElement(applyElementContext(merged as unknown as Element,e.uiContext as Element['uiContext']) as unknown as JsonObject,override?.path??`${ep}/component/${child.id}`,Number(component.data.width),Number(component.data.height));
         const [x,width]=axis(Number(child.x),Number(child.width),Number(e.width)-Number(component.data.width),child.anchorX);
         const [y,height]=axis(Number(child.y),Number(child.height),Number(e.height)-Number(component.data.height),child.anchorY);
         const expanded={...merged,id:`${e.id}__${child.id}`,x:Number(e.x)+x,y:Number(e.y)+y,width,height,
@@ -155,6 +166,18 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       }
     }
     try {elements.splice(0,elements.length,...resolveScreenElements(visual as unknown as ReadonlyDesign,id).map(x=>x as unknown as JsonObject));} catch {ctx.report(doc,p,"UI_EXPANSION_LIMIT","부품 순환·깊이 또는 펼친 요소 수 한도를 확인하세요.");continue;}
+    for(const element of elements){
+      const sourceIndex=objectItems(screen.elements).findIndex(e=>element.id===e.id||String(element.id).startsWith(String(e.id)+'__'));
+      const at=`${p}/elements/${Math.max(0,sourceIndex)}`;
+      checkUiContext(ctx,doc,element,at,true);
+      if(element.uiContext)checkScreenBinding(ctx,doc,element,at);
+      if(element.kind==='collection')try {
+        for(const child of resolveCollectionRow(visual as unknown as ReadonlyDesign,element as unknown as Element,{id:'validation',values:{},enabled:true,reason:''},Number(element.width))){
+          checkUiContext(ctx,doc,child as unknown as JsonObject,at,true);
+          if(child.uiContext)checkScreenBinding(ctx,doc,child as unknown as JsonObject,at);
+        }
+      }catch {ctx.report(doc,at,'UI_EXPANSION_LIMIT','목록 부품의 순환·깊이 한도를 확인하세요.');}
+    }
 
   }
   // Old projects retain their inferred routing contract until the designer opts

@@ -21,7 +21,7 @@ void StudioWindow::editElementPresentationVariants(QJsonObject original,QWidget*
   auto rules=std::make_shared<QJsonArray>(original.value("variants").toArray());
   auto dialog=new QDialog(parent);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("presentationVariantsDialog");
   dialog->setWindowTitle(tr("조건별 표현"));dialog->resize(680,520);
-  auto outer=new QVBoxLayout(dialog);auto help=new QLabel(tr("위에서부터 처음 조건이 맞는 표현을 사용합니다. 맞는 조건이 없으면 원래 모습으로 돌아갑니다.\n화면·위치·게임 데이터는 유지됩니다. 활동 지정은 ‘해당 활동의 결과 표시 중’에만 적용합니다.\n애니메이션은 같은 플러그인의 컨트롤러를 선택합니다. 세부 동작 규칙은 애니메이션 편집기에서 만드세요."));help->setWordWrap(true);outer->addWidget(help);
+  auto outer=new QVBoxLayout(dialog);auto help=new QLabel(tr("위에서부터 처음 조건이 맞는 표현을 사용합니다. 맞는 조건이 없으면 원래 모습으로 돌아갑니다.\n화면·위치·게임 데이터는 유지됩니다. 활동 필터는 기본적으로 결과 표시 중에 적용합니다. 부품에 활동을 연결하면 그 활동을 기준으로 합니다.\n애니메이션은 같은 플러그인의 컨트롤러를 선택합니다. 세부 동작 규칙은 애니메이션 편집기에서 만드세요."));help->setWordWrap(true);outer->addWidget(help);
   auto list=new QListWidget;list->setObjectName("presentationVariantList");outer->addWidget(list);
   auto refresh=[=](int row){list->clear();for(const auto& v:*rules){const auto r=v.toObject();QStringList properties;const auto values=r.value("values").toObject();for(auto it=values.begin();it!=values.end();++it)properties.append(it.key());list->addItem(r.value("label").toString()+" · "+properties.join(", "));}if(!rules->isEmpty())list->setCurrentRow(qBound(0,row,int(rules->size())-1));};
   auto edit=[=,this](int row,bool added){

@@ -100,7 +100,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   const action=(action:NonNullable<Element['action']>,element:Element)=>{
     if(pendingRef.current)return;
     if(action==='navigate'&&!s&&design.routing&&element.screenId){setTitleScreen(element.screenId);return;}
-    const command=widgetCommand(element);if(command){run(command);return;}
+    const command=widgetCommand(element,s);if(command){run(command);return;}
     if(action==='start'){if(!busy)newRun(view.userFields?.length?{...(s?.userValues??draft)}:undefined);}else if(action==='save')save();else if(action==='load')load();else if(action==='sound')sound();
     else if(action==='advance'&&s){if(['planning','ready'].includes(s.phase)){if(!s.schedule||plan.some((id,i)=>id!==s.schedule?.[i]))act({type:'schedule',activityIds:plan});else act({type:'execute'});}else act({type:'continue'});}
   };

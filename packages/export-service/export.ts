@@ -1,4 +1,5 @@
 import {usesPresentationVariants} from '../visual/variants.js';
+import {usesUiContext} from '../visual/context.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -48,6 +49,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  if(usesUiContext(visual))requiredFeatures.push('component-context-v1');
   if(visual?.routing?.conditions?.length)requiredFeatures.push('conditional-routing-v1');
   if(content.project.stateGroups?.length)requiredFeatures.push('custom-states-v1');
   if(usesPresentationVariants(visual))requiredFeatures.push('presentation-variants-v1');

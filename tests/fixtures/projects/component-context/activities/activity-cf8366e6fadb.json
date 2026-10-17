@@ -1,0 +1,27 @@
+{
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stamina",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 5
+      }
+    }
+  ],
+  "costs": [
+    {
+      "amount": 2,
+      "attributeId": "money"
+    }
+  ],
+  "formatVersion": "0.1.0",
+  "id": "activity-cf8366e6fadb",
+  "label": "연회",
+  "requirements": {
+    "op": "always"
+  }
+}

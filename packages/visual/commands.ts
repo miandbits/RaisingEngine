@@ -1,6 +1,7 @@
 import type { Element } from './model.js';
 import type { SystemsCommand } from '../systems/model.js';
 import type {BattleUiAction} from '../player-service/battle.js';
+import type {RunState} from '../core/model.js';
 
 export type WidgetCommand = SystemsCommand | BattleUiAction
   | { type: 'navigate'; screenId: string }
@@ -10,9 +11,13 @@ export type WidgetCommand = SystemsCommand | BattleUiAction
   | { type: 'useService'; serviceId: string; quantity: number }
   | { type: 'setDiet'; dietId: string | null }
   | { type: 'executeAction'; actionId: string; quantity: number }
+  | { type: 'executeActorAction'; actorId: string; actionId: string; quantity: number }
+  | { type: 'assignActivities'; assignments: Record<string,string> }
   | { type: 'selectPolicy'; groupId: string; optionId: string | null }
   | { type: 'interact'; interactionId: string };
-export function widgetCommand(element: Element): WidgetCommand | null {
+export function widgetCommand(element: Element, state?:RunState|null): WidgetCommand | null {
+  if(element.action==='assignActivity'&&element.actorId&&element.activityId&&state?.roster)return {type:'assignActivities',assignments:{...state.roster.assignments,[element.actorId]:element.activityId}};
+  if(element.action==='executeActorAction'&&element.actorId&&element.actionId)return {type:'executeActorAction',actorId:element.actorId,actionId:element.actionId,quantity:element.quantity??1};
   if(element.action==='selectBattleAction'&&element.battleAction)return {type:'selectBattleAction',battleAction:element.battleAction,...(element.itemId?{itemId:element.itemId}:{})};
   if(element.action==='selectBattleTarget'&&element.battleTarget)return {type:'selectBattleTarget',battleTarget:element.battleTarget};
   if(element.action==='confirmBattleAction'||element.action==='cancelBattleAction')return {type:element.action};

@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../packages/schema/activity.schema.json",
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stamina",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": 25
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "attributeId": "stress",
+        "kind": "attribute"
+      },
+      "value": {
+        "op": "literal",
+        "value": -15
+      }
+    },
+    {
+      "op": "setState",
+      "stateGroupId": "state-bae9d4b375a54b61a1d9b86debbff969",
+      "stateValueId": "value-cc831f5b6ed34afd9398eea2c7311c64"
+    }
+  ],
+  "costs": [],
+  "description": "체력 25를 회복하고 스트레스를 15 줄입니다.",
+  "formatVersion": "0.1.0",
+  "id": "rest",
+  "label": "휴식",
+  "requirements": {
+    "op": "always"
+  }
+}
