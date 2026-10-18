@@ -25,7 +25,7 @@ The integration test uses real Qt widgets without displaying a window, then the 
 save service, hidden Windows player and headless Web/Wasm player. The basic scene and
 action scaffold is test data; this is not an independent human authoring trial.
 See [the contract and verification](../../docs/rule-extensions.md).
-# 시각적 작성 예제 추가
+## 시각적 작성 예제 추가
 
 `visual-authoring.raiserules`는 빈 패키지부터 실제 Qt 제작실 위젯으로 만든 뒤 파일 대화상자로 내보낸 규칙이다. 조건·효과·입력 기본값과 범위·준비/수련/돌파 진행·비용을 포함한다. 자동 생성된 식별자를 직접 입력할 필요는 없다.
 

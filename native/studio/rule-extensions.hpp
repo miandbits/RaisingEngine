@@ -7,6 +7,7 @@
 
 QJsonObject ruleProject(const QJsonObject &context);
 QJsonArray ruleDefinitions(const QJsonObject &project, const QString &kind);
+QJsonArray ruleSelectableActions(const QJsonObject &project, const QJsonArray &referenced = {});
 QJsonArray ruleProgressionGroups(const QJsonObject &project);
 QJsonObject defaultRuleCall(const QJsonObject &definition, const QString &op);
 QWidget *ruleCallForm(QJsonObject call, QString kind, QJsonObject context, std::function<void(QJsonObject)> changed, QWidget *parent);

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Element } from '../../../packages/visual/model.js';
 import { widgetCommand, type WidgetCommand } from '../../../packages/visual/commands.js';
 export { widgetCommand, type WidgetCommand } from '../../../packages/visual/commands.js';
+import type {ActorActionGroup} from '../../../packages/visual/data-ui-projection.js';
 import type { Confirmation, FacilityView } from '../../../packages/gameplay/model.js';
 
 type Availability = { enabled: boolean; reason?: string | null };
@@ -20,10 +21,11 @@ export interface GameWidgetsView {
 }
 export interface RelationshipRow { id: string; characterId?: string; relationshipId?: string; name: string; label: string; value: number; delta?: number; min: number; max: number }
 
-export function JourneyWidget({ element, gameplay, relationships, busy, editing, onCommand, items, assetUrl, stats=[], activeDietId }: {
+export function JourneyWidget({ element, gameplay, relationships, busy, editing, onCommand, items, assetUrl, stats=[], activeDietId, actorActions }: {
   element: Element; gameplay?: GameWidgetsView | null | undefined; relationships?: readonly RelationshipRow[] | undefined;
   busy: boolean; editing: boolean; onCommand?: ((command: WidgetCommand) => void) | undefined;
   items?: readonly { id: string; name?: string; imageAssetId?: string; description?: string; maxStack?: number }[] | undefined;
+  actorActions?: readonly ActorActionGroup[] | undefined;
   activeDietId?: string | null | undefined;
   stats?: readonly { id: string; label: string; value: number; min: number; max: number }[];
   assetUrl?: ((id: string) => string) | undefined;
@@ -49,6 +51,14 @@ export function JourneyWidget({ element, gameplay, relationships, busy, editing,
     </div>) : <p className="journey-empty">등록된 관계가 없습니다.</p>}
   </div>;
   if (!gameplay) return <div className="journey-widget"><p className="journey-empty">육성 작업실에서 장소와 행동을 설정하세요.</p></div>;
+  if(element.kind==='actions'&&actorActions)return <div className="journey-widget" data-testid="actions-widget">{actorActions.map(actor=>{
+    const rows=actor.actions.filter(row=>!element.actionIds?.length||element.actionIds.includes(row.id));
+    if(!rows.length)return null;
+    return <section key={actor.actorId} data-actor-id={actor.actorId}><h3>{actor.name}</h3>{rows.map(row=>{
+      const key=`actor-action__${element.id}__${actor.actorId}__${row.id}`,q=quantity(key,row.maxQuantity),can=row.enabled&&affordable(row.costs,q);
+      return <div className="journey-card" key={row.id}><strong>{row.name}</strong><small>비용 {costs(row.costs,q)}</small><small>{effects(row.effects,q)}</small>{stepper(key,row.maxQuantity)}<button data-testid={key} disabled={busy||!can} onClick={()=>run({type:'executeActorAction',actorId:actor.actorId,actionId:row.id,quantity:q})}>{row.name}</button>{!can&&<small>{row.reason??'선택 수량의 비용이 부족합니다.'}</small>}</div>;
+    })}</section>;
+  })}</div>;
   if(element.kind==='actions')return <div className="journey-widget" data-testid="actions-widget">{gameplay.actions?.filter(row=>!element.actionIds?.length||element.actionIds.includes(row.id)).map(row=>{const key=`action__${element.id}__${row.id}`,q=quantity(key,row.maxQuantity),can=row.enabled&&affordable(row.costs,q);return <div className="journey-card" key={row.id}><strong>{row.name}</strong><small>비용 {costs(row.costs,q)}</small><small>{effects(row.effects,q)}</small>{stepper(key,row.maxQuantity)}<button data-testid={key} disabled={busy||!can} onClick={()=>run({type:'executeAction',actionId:row.id,quantity:q})}>{row.name}</button>{!can&&<small>{row.reason??'선택 수량의 비용이 부족합니다.'}</small>}</div>;})}</div>;
   if(element.kind==='policies')return <div className="journey-widget" data-testid="policies-widget">{gameplay.policyBudgets?.map(b=><small key={b.id}>{b.name}: {b.used} / {b.capacity} {b.unit??''}</small>)}{gameplay.policyGroups?.filter(group=>!element.groupIds?.length||element.groupIds.includes(group.id)).map(group=><section key={group.id}><h3>{group.name}</h3><small>{group.trigger.type==='afterActivity'?'활동 종료 후':'활동 시작 전'} · {group.trigger.intervalPeriods??1}기간마다</small>{group.options.map(option=><div className="journey-card" key={option.id}><strong>{option.name}{option.selected?' · 선택 중':''}</strong><small>{costs(option.costs)} · {effects(option.effects)}</small>{!!option.budgetUses?.length&&<small>{option.budgetUses.map(use=>{const b=gameplay.policyBudgets?.find(b=>b.id===use.budgetId);return `${b?.name??use.budgetId} ${use.amount} ${b?.unit??''}`;}).join(' · ')}</small>}<button data-testid={`policy__${element.id}__${group.id}__${option.id}`} disabled={busy||!option.enabled||option.selected} onClick={()=>run({type:'selectPolicy',groupId:group.id,optionId:option.id})}>{option.name}</button>{!option.enabled&&!option.selected&&<small>{option.reason}</small>}</div>)}<button data-testid={`policy_clear__${element.id}__${group.id}`} disabled={busy||!group.enabled} onClick={()=>run({type:'selectPolicy',groupId:group.id,optionId:null})}>{group.name} 해제</button><small>선택 시 비용 없이, 설정한 시점에 비용과 효과가 적용됩니다.</small></section>)}</div>;
   if(element.kind==='diets')return <div className="journey-widget" data-testid="diets-widget"><h3>식단</h3>{gameplay.diets?.map(row=><div className="journey-card" key={row.id}><strong>{row.name}{row.selected?' · 선택 중':''}</strong><small>{costs(row.costs)} · {row.intervalPeriods}기간마다</small><small>{effects(row.effects)}</small><button disabled={busy||!row.enabled||row.selected} onClick={()=>run({type:'setDiet',dietId:row.id})}>식단 선택</button>{!row.enabled&&<small>{row.reason}</small>}</div>)}<button disabled={busy||!activeDietId} onClick={()=>run({type:'setDiet',dietId:null})}>식단 해제</button><small>선택 시 비용 없이, 활동 시작 시 주기에 따라 비용과 효과가 적용됩니다.</small></div>;

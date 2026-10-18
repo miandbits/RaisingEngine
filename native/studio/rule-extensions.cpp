@@ -29,6 +29,28 @@ QJsonArray ruleDefinitions(const QJsonObject &project,const QString &kind) {
   }
   return result;
 }
+// Reference catalog only. Compiled actions remain owned by the shared compiler.
+QJsonArray ruleSelectableActions(const QJsonObject &project, const QJsonArray &referenced) {
+  auto result=project.value("gameplay").toObject().value("actions").toArray();
+  const auto definitions=ruleDefinitions(project,"progressions");
+  for(const auto &value:project.value("ruleExtensions").toObject().value("progressions").toArray()) {
+    const auto instance=value.toObject();
+    for(const auto &entry:definitions) {
+      const auto definition=entry.toObject();
+      if(definition.value("packageId")!=instance.value("packageId")||definition.value("id")!=instance.value("ruleId")||definition.value("version")!=instance.value("version"))continue;
+      for(const auto &value:definition.value("transitions").toArray()) {
+        const auto transition=value.toObject();
+        result.append(QJsonObject{{"id","rx-"+instance.value("id").toString()+"-"+transition.value("id").toString()},
+          {"name",instance.value("name").toString()+" · "+transition.value("name").toString()}});
+      }
+    }
+  }
+  for(const auto &id:referenced) {
+    bool present=false;for(const auto &entry:result)if(entry.toObject().value("id")==id)present=true;
+    if(!present)result.append(QJsonObject{{"id",id},{"name",QObject::tr("누락된 행동 — 연결을 확인하세요")}});
+  }
+  return result;
+}
 QJsonObject defaultRuleCall(const QJsonObject &d,const QString &op) {
   QJsonObject args;const auto parameters=d.value("parameters").toObject();
   for(auto it=parameters.begin();it!=parameters.end();++it)if(it.value().toObject().contains("default"))args[it.key()]=it.value().toObject().value("default");
@@ -124,11 +146,43 @@ RuleExtensionDialog::RuleExtensionDialog(QJsonObject original,QJsonObject contex
   connect(instances,&QListWidget::currentRowChanged,this,[=](int index){while(form->rowCount())form->removeRow(0);const auto list=library().value("progressions").toArray();if(index<0||index>=list.size())return;const auto item=list[index].toObject();auto update=[=](QString key,QJsonValue value){auto lib=library();auto rows=lib.value("progressions").toArray();auto entry=rows[index].toObject();entry[key]=value;rows[index]=entry;lib["progressions"]=rows;project["ruleExtensions"]=lib;};
     auto name=new QLineEdit(item.value("name").toString());name->setObjectName("ruleProgressionName");form->addRow(tr("이름"),name);connect(name,&QLineEdit::textChanged,this,[=](const QString &text){update("name",text);instances->item(index)->setText(text);});
     auto scope=new QComboBox;scope->setObjectName("ruleProgressionScope");scope->addItem(tr("게임 전체 공유"),"shared");scope->addItem(tr("캐릭터마다 독립 진행"),"character");scope->setCurrentIndex(scope->findData(item.value("scope").toString()));form->addRow(tr("범위"),scope);connect(scope,qOverload<int>(&QComboBox::currentIndexChanged),this,[=]{update("scope",scope->currentData().toString());});
+    auto scopeHelp=new QLabel(tr("범위는 진행 상태의 소유자를 정합니다. 캐릭터별 능력·소지품·관계는 규칙 본문의 대상을 ‘행동 실행자’로 연결하세요. 전이 비용 양식은 공유 자원입니다."));scopeHelp->setWordWrap(true);form->addRow(scopeHelp);
     QJsonObject definition;for(const auto &d:ruleDefinitions(project,"progressions"))if(d.toObject().value("packageId")==item.value("packageId")&&d.toObject().value("id")==item.value("ruleId")&&d.toObject().value("version")==item.value("version"))definition=d.toObject();
     argumentsForm(form,definition,item.value("args").toObject(),context,[=](QString key,QJsonValue value){const auto rows=library().value("progressions").toArray();auto args=rows[index].toObject().value("args").toObject();args[key]=value;update("args",args);});
     auto stateName=[&](QString id){for(const auto &s:definition.value("states").toArray())if(s.toObject().value("id")==id)return s.toObject().value("name").toString(id);return id;};QStringList transitions;for(const auto &t:definition.value("transitions").toArray()){const auto v=t.toObject();QStringList from;for(const auto &s:v.value("from").toArray())from<<stateName(s.toString());transitions<<v.value("name").toString()+": "+from.join(", ")+" → "+stateName(v.value("to").toString());}auto preview=new QLabel(transitions.join('\n'));preview->setWordWrap(true);form->addRow(tr("상태 전이"),preview);
   });
-  connect(place,&QPushButton::clicked,this,[=]{const auto list=library().value("progressions").toArray();const int index=instances->currentRow();if(index<0||index>=list.size())return;const auto instance=list[index].toObject();QJsonArray ids;for(const auto &v:ruleDefinitions(project,"progressions")){const auto d=v.toObject();if(d.value("packageId")!=instance.value("packageId")||d.value("id")!=instance.value("ruleId")||d.value("version")!=instance.value("version"))continue;for(const auto &t:d.value("transitions").toArray())ids.append("rx-"+instance.value("id").toString()+"-"+t.toObject().value("id").toString());}auto visual=project.value("visual").toObject();auto screens=visual.value("screens").toArray();for(int i=0;i<screens.size();i++){auto screen=screens[i].toObject();if(screen.value("id")!=screenId)continue;auto elements=screen.value("elements").toArray();const auto id="rule-actions-"+instance.value("id").toString();for(const auto &e:elements)if(e.toObject().value("id")==id){error->setText(tr("이 진행의 목록은 이미 배치되어 있습니다."));return;}elements.append(QJsonObject{{"id",id},{"kind","actions"},{"x",40},{"y",150},{"width",700},{"height",340},{"color","#ffffff"},{"fill","#192333ee"},{"actionIds",ids}});screen["elements"]=elements;screens[i]=screen;}visual["screens"]=screens;project["visual"]=visual;error->setText(tr("목록을 배치했습니다. 저장 후 캔버스에서 위치·크기·캐릭터 대상을 설정하세요."));});
+  connect(place,&QPushButton::clicked,this,[=]{
+    const auto list=library().value("progressions").toArray();const int index=instances->currentRow();
+    if(index<0||index>=list.size())return;
+    const auto instance=list[index].toObject();QJsonArray ids;
+    for(const auto &v:ruleDefinitions(project,"progressions")) {
+      const auto d=v.toObject();
+      if(d.value("packageId")!=instance.value("packageId")||d.value("id")!=instance.value("ruleId")||d.value("version")!=instance.value("version"))continue;
+      for(const auto &t:d.value("transitions").toArray())ids.append("rx-"+instance.value("id").toString()+"-"+t.toObject().value("id").toString());
+    }
+    if(ids.isEmpty()){error->setText(tr("연결된 버전의 전이가 없습니다. 먼저 진행 정의를 다시 연결하세요."));return;}
+    auto visual=project.value("visual").toObject();auto screens=visual.value("screens").toArray();
+    for(int i=0;i<screens.size();i++) {
+      auto screen=screens[i].toObject();if(screen.value("id")!=screenId)continue;
+      auto elements=screen.value("elements").toArray();const auto id="rule-actions-"+instance.value("id").toString();
+      for(const auto &e:elements)if(e.toObject().value("id")==id){error->setText(tr("이 진행의 목록은 이미 배치되어 있습니다."));return;}
+      const int canvasWidth=visual.value("width").toInt(1280),canvasHeight=visual.value("height").toInt(720);
+      const int width=qMin(700,qMax(160,(canvasWidth-120)/2)),height=qMin(340,canvasHeight-190);
+      QRect slot;bool found=false;
+      for(int y=150;y+height<=canvasHeight-20&&!found;y+=height+20)for(int x=40;x+width<=canvasWidth-20;x+=width+40) {
+        const QRect candidate(x,y,width,height);bool overlap=false;
+        for(const auto &v:elements){const auto e=v.toObject();if(e.value("id").toString().startsWith("rule-actions-")&&candidate.intersects(QRect(e.value("x").toInt(),e.value("y").toInt(),e.value("width").toInt(),e.value("height").toInt())))overlap=true;}
+        if(!overlap){slot=candidate;found=true;break;}
+      }
+      if(!found||height<16){error->setText(tr("추가 목록을 배치할 공간이 없습니다. 기존 목록의 크기·위치를 조정하거나 다른 화면을 선택하세요."));return;}
+      elements.append(QJsonObject{{"id",id},{"kind","actions"},{"x",slot.x()},{"y",slot.y()},{"width",slot.width()},{"height",slot.height()},{"color","#ffffff"},{"fill","#192333ee"},{"actionIds",ids}});
+      screen["elements"]=elements;screens[i]=screen;visual["screens"]=screens;project["visual"]=visual;
+      error->setText(project.value("roster").toObject().value("stateModel")=="character-v1"
+        ?tr("목록을 배치했습니다. 저장 후 디자인 → 캐릭터 소유 상태 · 관계 · 행동 연결에서 실행할 인물에게 행동을 연결하세요. 이 목록은 연결된 인물의 행동만 표시합니다.")
+        :tr("목록을 배치했습니다. 저장 후 캔버스에서 위치·크기를 조정하세요."));return;
+    }
+    error->setText(tr("현재 화면을 찾을 수 없습니다."));
+  });
   connect(buttons,&QDialogButtonBox::accepted,this,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,this,&QDialog::reject);refill();refillInstances(0);
 }
 

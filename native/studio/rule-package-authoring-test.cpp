@@ -26,7 +26,7 @@ void selectPath(QWidget *owner,const char *id,QStringList path){auto tree=widget
 void save(QDialog *dialog){widget<QDialogButtonBox>(dialog,"")->button(QDialogButtonBox::Save)->click();check(dialog->result()==QDialog::Accepted,"dialog accepts");}
 void number(QWidget *owner,int amount){auto spin=widget<QSpinBox>(owner,"logic-value");spin->setValue(amount);QMetaObject::invokeMethod(spin,"editingFinished");QApplication::processEvents();}
 void body(RulePackageEditor &editor,const char *button,const std::function<void(LogicEditor*)> &edit){QTimer::singleShot(0,[edit]{auto dialog=dynamic_cast<LogicEditor*>(QApplication::activeModalWidget());check(dialog!=nullptr,"logic modal");edit(dialog);save(dialog);});click(&editor,button);}
-void bind(RulePackageEditor &editor,QStringList path,QString name){QTimer::singleShot(0,[path,name]{auto dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());check(dialog&&dialog->objectName()=="ruleBindings","binding modal");selectPath(dialog,"bindingValues",path);widget<QLineEdit>(dialog,"bindingName")->setText(name);click(dialog,"bindingCreate");save(dialog);});click(&editor,"package-bindings");}
+void bind(RulePackageEditor &editor,QStringList path,QString name){QTimer::singleShot(0,[path,name]{auto dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());check(dialog&&dialog->objectName()=="ruleBindings","binding modal");selectPath(dialog,"bindingValues",path);widget<QLineEdit>(dialog,"bindingName")->setText(name);click(dialog,"bindingCreate");check(widget<QTreeWidget>(dialog,"bindingValues")->currentItem()!=nullptr,"new input keeps tree selection");check(widget<QComboBox>(dialog,"bindingParameter")->currentText()==name,"new input selected by name");QTimer::singleShot(0,[]{auto settings=qobject_cast<QDialog*>(QApplication::activeModalWidget());check(settings&&settings->objectName()=="ruleParameterSettings","new input settings open immediately");save(settings);});click(dialog,"bindingSettings");save(dialog);});click(&editor,"package-bindings");}
 void setName(QWidget &editor,QString text){widget<QLineEdit>(&editor,"package-item-name")->setText(text);}
 }
 
@@ -58,6 +58,12 @@ QJsonObject authorRulePackage(const QJsonObject &context,const QString &output) 
   RulePackageEditor reordered(editor.value(),context);selectPath(&reordered,"packageTree",{"effects","0"});
   body(reordered,"package-body",[](LogicEditor *dialog){selectPath(dialog,"logicTree",{"0"});click(dialog,"logicDown");});
   check(reordered.value().value("effects").toArray()[0].toObject().value("body").toArray()[1]==prior.toArray()[0].toObject().value("body").toArray()[0],"moving effect retains its bindings");
+  RulePackageEditor cleanup(editor.value(),context);selectPath(&cleanup,"packageTree",{"effects","0"});
+  QTimer::singleShot(0,[]{auto dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());selectPath(dialog,"bindingValues",{"body","0","target","attributeId"});click(dialog,"bindingRemove");save(dialog);});click(&cleanup,"package-bindings");
+  check(cleanup.value().value("effects")==prior,"used parameter deletion blocked");
+  QTimer::singleShot(0,[]{auto dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());selectPath(dialog,"bindingValues",{"body","0","target","attributeId"});click(dialog,"bindingDetach");select(widget<QComboBox>(dialog,"bindingParameter"),"param-1");click(dialog,"bindingRemove");save(dialog);});click(&cleanup,"package-bindings");
+  const auto cleaned=cleanup.value().value("effects").toArray()[0].toObject();check(!cleaned.value("parameters").toObject().contains("param-1")&&cleaned.value("parameters").toObject().contains("param-2"),"unused parameter removed without deleting other parameters");
+  check(cleaned.value("body").toArray()[0].toObject().value("target").toObject().value("attributeId")=="skill","detaching restores concrete default");
   click(&editor,"add-package-progressions");setName(editor,QStringLiteral("준비 → 수련 → 돌파"));
   click(&editor,"package-add-states");setName(editor,QStringLiteral("수련"));selectPath(&editor,"packageTree",{"progressions","0"});click(&editor,"package-add-states");setName(editor,QStringLiteral("돌파"));
   const QStringList labels{QStringLiteral("수련 준비"),QStringLiteral("호흡 수련"),QStringLiteral("경지 돌파"),QStringLiteral("다음 수련 준비")};

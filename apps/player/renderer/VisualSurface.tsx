@@ -126,7 +126,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
           {!rows.length&&<div className="visual-collection-empty">표시할 데이터가 없습니다.</div>}
         </div>;
       }
-      if(['locations','shop','inventory','interactions','relationships','diets','services','sell','policies','actions'].includes(element.kind))body=<JourneyWidget element={element} gameplay={context.gameplay} relationships={context.relationships} items={context.items} stats={context.stats} activeDietId={context.activeDietId} assetUrl={assetUrl} busy={busy||!enabled} editing={editing} onCommand={onCommand}/>;
+      if(['locations','shop','inventory','interactions','relationships','diets','services','sell','policies','actions'].includes(element.kind))body=<JourneyWidget element={element} gameplay={context.gameplay} actorActions={context.dataUi?.actorActions} relationships={context.relationships} items={context.items} stats={context.stats} activeDietId={context.activeDietId} assetUrl={assetUrl} busy={busy||!enabled} editing={editing} onCommand={onCommand}/>;
       if(['equipment','quests','expedition','battle','relationship-stages'].includes(element.kind))body=<SystemsWidget kind={element.kind} systems={context.systems} busy={busy||!enabled} editing={editing} onCommand={onCommand}/>;
       return <div className={`visual-element visual-${element.kind} ${raw.styleId||design.defaultStyle?'visual-styled':''}`} style={style} key={element.id} data-element-id={element.id}>{body}</div>;
   };

@@ -1,3 +1,4 @@
+#include "rule-extensions.hpp"
 #include "studio.hpp"
 #include "tabular-input.hpp"
 #include "logic-editor.hpp"
@@ -70,7 +71,7 @@ void StudioWindow::editWidgetSettings() {
     if(kind=="stats"&&doc["kind"]=="attributes")entries=data["attributes"].toArray();
   }
   const auto selectionField=kind=="actions"?QString("actionIds"):QString("attributeIds");
-  if(kind=="actions")entries=projectData().value("gameplay").toObject().value("actions").toArray();
+  if(kind=="actions")entries=ruleSelectableActions(projectData(),value.value("actionIds").toArray());
   for(auto v:entries){auto a=v.toObject();auto item=new QListWidgetItem(a.value("label").toString(a.value("name").toString())+" · "+a["id"].toString(),list);item->setData(Qt::UserRole,a["id"].toString());item->setCheckState(value.value(selectionField).toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);}
   int selected=-1;
   auto storeGroup=[&]{if(selected<0||selected>=groups.size())return;QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());auto g=groups[selected].toObject();g["activityIds"]=ids;groups[selected]=g;};

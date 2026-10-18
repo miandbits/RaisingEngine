@@ -8,6 +8,8 @@ import {validateProject} from '../../dist/packages/validation/index.js';
 import {compileRules} from '../../dist/packages/rule-extensions/compiler.js';
 import {createSession,dispatchSession} from '../../dist/packages/runtime-service/index.js';
 import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
+import {projectDataUi} from '../../dist/packages/visual/data-ui-projection.js';
+import {nativeRequest} from '../../dist/packages/native-bridge/index.js';
 import {StudioEditor} from '../../dist/packages/studio-service/editor.js';
 
 const action=actionId=>({type:'executeAction',actionId,quantity:1});
@@ -76,11 +78,16 @@ test('two characters keep independent progression and save/replay state',async()
   const root=await baseProject();const p=await addRules(root);p.ruleExtensions.progressions[0].scope='character';
   const actionIds=['prepare','practice','complete','restart'].map(id=>'rx-flow-1-'+id);
   p.roster={stateModel:'character-v1',localAttributeIds:['skill','stamina','stress'],members:['apprentice','mentor'].map(characterId=>({characterId,activityId:'rest',initialAttributes:{skill:0,stamina:50,stress:0},actionIds}))};
+  p.visual.screens.find(s=>s.id==='schedule').elements.push({id:'actor-rules',kind:'actions',x:40,y:120,width:800,height:320});
   await writeFile(root+'/project.json',JSON.stringify(p,null,2));const built=await buildSnapshot(await loadProject(root));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const content=built.snapshot;
   let session=createSession(content,18,{mode:'full'}).session;
   const send=(actorId,id)=>{const r=dispatchSession(content,session,{type:'executeActorAction',actorId,actionId:'rx-flow-1-'+id,quantity:1},session.state.stateRevision);assert.equal(r.ok,true,JSON.stringify(r.error));session=r.session;};
   send('apprentice','prepare');send('apprentice','practice');send('apprentice','complete');
   assert.equal(session.state.customStates.characters.apprentice['rx-flow-1'],'mastered');assert.equal(session.state.customStates.characters.mentor['rx-flow-1'],'ready');
+  const beforeProjection=structuredClone(session.state),ui=projectDataUi(content,session.state,null,nativeRequest);
+  assert.deepEqual(session.state,beforeProjection,'actor availability projection never mutates state');
+  assert.equal(ui.actorActions[0].actions.find(a=>a.id==='rx-flow-1-prepare').enabled,false);
+  assert.equal(ui.actorActions[1].actions.find(a=>a.id==='rx-flow-1-prepare').enabled,true,'each actor receives independent canonical availability');
   const saved=await encodeSave(content,session);assert.equal(saved.ok,true);const restored=await decodeSave(content,saved.text);assert.equal(restored.ok,true);assert.deepEqual(restored.session,session);
   session=restored.session;send('mentor','prepare');assert.equal(session.state.customStates.characters.apprentice['rx-flow-1'],'mastered');assert.equal(session.state.customStates.characters.mentor['rx-flow-1'],'training');
 });

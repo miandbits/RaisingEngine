@@ -1,3 +1,4 @@
+#include "rule-extensions.hpp"
 #include "studio.hpp"
 #include <QCheckBox>
 #include <QComboBox>
@@ -56,7 +57,7 @@ void StudioWindow::editCharacterState(){
     });definition.exec();
   });
   auto actions=new QTableWidget(members.size(),2);actions->setObjectName("characterActions");actions->setHorizontalHeaderLabels({tr("실행자"),tr("연결할 공통 행동")});actions->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-  for(int i=0;i<members.size();i++){const auto member=members[i].toObject();auto name=new QTableWidgetItem(characterName(member.value("characterId").toString()));name->setFlags(name->flags()&~Qt::ItemIsEditable);actions->setItem(i,0,name);auto list=new QListWidget;list->setObjectName("characterActions-"+member.value("characterId").toString());for(const auto &v:gameplay.value("actions").toArray()){auto action=v.toObject();if(action.contains("expeditionId"))continue;auto item=new QListWidgetItem(action.value("name").toString()+" · "+action.value("id").toString(),list);item->setData(Qt::UserRole,action.value("id").toString());item->setCheckState(member.value("actionIds").toArray().contains(action.value("id"))?Qt::Checked:Qt::Unchecked);}actions->setCellWidget(i,1,list);actions->setRowHeight(i,170);}
+  for(int i=0;i<members.size();i++){const auto member=members[i].toObject();auto name=new QTableWidgetItem(characterName(member.value("characterId").toString()));name->setFlags(name->flags()&~Qt::ItemIsEditable);actions->setItem(i,0,name);auto list=new QListWidget;list->setObjectName("characterActions-"+member.value("characterId").toString());for(const auto &v:ruleSelectableActions(project,member.value("actionIds").toArray())){auto action=v.toObject();if(action.contains("expeditionId"))continue;auto item=new QListWidgetItem(action.value("name").toString()+" · "+action.value("id").toString(),list);item->setData(Qt::UserRole,action.value("id").toString());item->setCheckState(member.value("actionIds").toArray().contains(action.value("id"))?Qt::Checked:Qt::Unchecked);}actions->setCellWidget(i,1,list);actions->setRowHeight(i,170);}
   tabs->addTab(actions,tr("대상별 행동 연결"));
   auto error=new QLabel;error->setObjectName("characterStateError");error->setWordWrap(true);box->addWidget(error);auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->setObjectName("characterStateButtons");box->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
   connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{

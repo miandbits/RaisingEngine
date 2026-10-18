@@ -1,10 +1,12 @@
 #pragma once
 #include "logic-editor.hpp"
+#include "rule-extensions.hpp"
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -22,7 +24,7 @@ inline bool editComponentContext(QWidget* parent,QJsonObject original,const QJso
       if(kind=="attributes"&&pair.first=="attributeId")for(auto a:data.value("attributes").toArray())add(a.toObject());
     }
     const QMap<QString,QString> keys={{"itemId","items"},{"actionId","actions"},{"locationId","locations"},{"shopId","shops"}};
-    if(keys.contains(pair.first))for(auto v:project.value("gameplay").toObject().value(keys[pair.first]).toArray())add(v.toObject());
+    if(keys.contains(pair.first))for(auto v:pair.first=="actionId"?ruleSelectableActions(project):project.value("gameplay").toObject().value(keys[pair.first]).toArray())add(v.toObject());
     const auto id=original.value("uiContext").toObject().value(pair.first).toString();if(c->findData(id)<0)c->addItem(QObject::tr("누락된 대상 · ")+id,id);c->setCurrentIndex(c->findData(id));
     if(original.value("kind")!="component"){auto use=new QCheckBox(QObject::tr("대상 사용"));use->setObjectName("contextUse-"+pair.first);use->setChecked(original.value("contextBindings").toArray().contains(pair.first));uses[pair.first]=use;row->addWidget(use);}form->addRow(pair.second,line);
   }

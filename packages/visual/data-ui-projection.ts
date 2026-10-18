@@ -1,5 +1,5 @@
 import type {ContentSnapshot, RunState} from '../core/model.js';
-import type {GameplayView} from '../gameplay/model.js';
+import type {FacilityView,GameplayView} from '../gameplay/model.js';
 import type {Element} from './model.js';
 import {collectionRows,resolveCollectionRow,type DataRow} from './data-ui.js';
 import {widgetCommand} from './commands.js';
@@ -7,7 +7,11 @@ import {resolveScreenElements} from './components.js';
 import type {SystemsView} from '../systems/model.js';
 import {battleUiTypes,selectBattle,type BattleSelection,type BattleUiAction} from '../player-service/battle.js';
 
+export interface ActorActionGroup {
+  actorId:string; name:string; actions:readonly (FacilityView & {maxQuantity:number})[];
+}
 export interface DataUiProjection {
+  actorActions?: ActorActionGroup[];
   contextNames?: Record<string,string>;
   collections: Record<string,Record<string,DataRow[]>>;
   conditions: Record<string,boolean>;
@@ -48,6 +52,17 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
     }
     cache.set(key,allowed);return allowed;
   };
+  // The common actions view has no actor. Ask the runtime with each explicitly
+  // assigned actor; never reuse shared availability for character-owned rules.
+  const roster=content.project.roster;
+  if(roster?.stateModel==='character-v1'&&design.screens.some(screen=>screen.elements.some(e=>e.kind==='actions'))){
+    result.actorActions=roster.members.map(member=>({actorId:member.characterId,
+      name:content.characters.find(c=>c.id===member.characterId)?.name??member.characterId,
+      actions:(content.project.gameplay?.actions??[]).filter(action=>member.actionIds?.includes(action.id)).map(action=>({
+        id:action.id,name:action.name,costs:action.costs,effects:action.effects,maxQuantity:action.maxQuantity??1,
+        ...allowedCommand({type:'executeActorAction',actorId:member.characterId,actionId:action.id,quantity:1})
+      }))}));
+  }
   for(const screen of design.screens){
     for(const element of resolveScreenElements(design,screen.id))checkConditions(element);
     const collections:Record<string,DataRow[]>={},availability:Record<string,{enabled:boolean;reason:string}>={};

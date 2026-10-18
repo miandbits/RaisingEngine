@@ -17,6 +17,7 @@
 #include <QSplitter>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <QTreeWidgetItemIterator>
 #include <limits>
 
 namespace {
@@ -82,6 +83,11 @@ void dependencies(QJsonValue value,QSet<QString> &result,QString own) {
   const auto o=value.toObject();
   if((o.value("op")=="ruleCondition"||o.value("op")=="ruleEffect")&&o.value("packageId").toString()!=own)result.insert(o.value("packageId").toString()+" @ "+o.value("version").toString());
   for(auto it=o.begin();it!=o.end();++it)dependencies(it.value(),result,own);
+}
+bool usesParameter(QJsonValue value,const QString &key) {
+  if(value.isArray()){for(const auto &v:value.toArray())if(usesParameter(v,key))return true;}
+  if(value.isObject()){const auto o=value.toObject();if(o.value("$param")==key)return true;for(auto it=o.begin();it!=o.end();++it)if(it.key()!="parameters"&&usesParameter(it.value(),key))return true;}
+  return false;
 }
 void leaves(QTreeWidgetItem *parent,QJsonValue value,QStringList path,const QJsonObject &params,const QJsonObject &catalog,QJsonObject types={}) {
   if(value.isArray()) {int n=0;for(const auto &v:value.toArray()){auto item=new QTreeWidgetItem(parent,{QString::number(n+1)});leaves(item,v,path+QStringList{QString::number(n++)},params,catalog);}return;}
@@ -184,7 +190,7 @@ void RulePackageEditor::details() {
     for(const auto &key:QStringList{"requirements","effects"}){auto edit=button(form,key=="requirements"?tr("실행 조건 편집…"):tr("효과 편집…"),"transition-"+key);connect(edit,&QPushButton::clicked,this,[this,path,key,defPath]{editBody(path+QStringList{key},key=="requirements"?"condition":"effects",defPath);});}
     auto costs=button(form,tr("비용 편집…"),"transition-costs");connect(costs,&QPushButton::clicked,this,[this,path,defPath]{
       const auto params=logicValueAt(package,defPath+QStringList{"parameters"}).toObject();const auto original=logicValueAt(package,path+QStringList{"costs"});const auto concrete=materialize(original,params).toArray();
-      QDialog dialog(this);dialog.setObjectName("ruleCosts");dialog.setWindowTitle(tr("전이 비용"));auto layout=new QVBoxLayout(&dialog);auto rows=new QFormLayout;layout->addLayout(rows);QList<QPair<QComboBox*,QSpinBox*>> inputs;
+      QDialog dialog(this);dialog.setObjectName("ruleCosts");dialog.setWindowTitle(tr("전이의 공유 비용"));auto layout=new QVBoxLayout(&dialog);auto note=new QLabel(tr("이 비용은 게임 전체의 공유 능력·자원에서 차감합니다. 캐릭터별 진행을 선택해도 비용의 대상은 바뀌지 않습니다. 개인 능력의 차감은 실행자 대상 조건과 효과로 설정하세요. 0은 비용 없음입니다."));note->setWordWrap(true);layout->addWidget(note);auto rows=new QFormLayout;layout->addLayout(rows);QList<QPair<QComboBox*,QSpinBox*>> inputs;
       QJsonArray attrs;for(const auto &v:context.value("documents").toArray())if(v.toObject().value("kind")=="attributes")attrs=v.toObject().value("data").toObject().value("attributes").toArray();
       QSet<QString> available,seen;for(const auto &v:attrs)available.insert(v.toObject().value("id").toString());
       for(const auto &v:concrete){const auto cost=v.toObject();const auto id=cost.value("attributeId").toString();const auto amount=cost.value("amount");if(!available.contains(id)||seen.contains(id)||!amount.isDouble()||amount.toDouble()<0||amount.toDouble()>std::numeric_limits<int>::max()||amount.toDouble()!=amount.toInt()||cost.size()!=2){status->setText(tr("기존 비용에 없는 대상·중복·확장 형식이 있습니다. 값을 보존했습니다. 공통 검증에서 참조를 먼저 수정하세요."));return;}seen.insert(id);}
@@ -211,12 +217,14 @@ void RulePackageEditor::editParameters(QStringList defPath) {
   auto bind=new QPushButton(tr("선택한 입력에 연결"));bind->setObjectName("bindingConnect");box->addWidget(bind);
   auto detach=new QPushButton(tr("연결 해제 · 기본값 사용"));detach->setObjectName("bindingDetach");box->addWidget(detach);
   auto settings=new QPushButton(tr("선택 입력의 이름 · 기본값 편집…"));settings->setObjectName("bindingSettings");box->addWidget(settings);
+  auto removeParameter=new QPushButton(tr("선택 입력 삭제 (사용 중이면 유지)"));removeParameter->setObjectName("bindingRemove");box->addWidget(removeParameter);
   auto message=new QLabel;message->setWordWrap(true);box->addWidget(message);
-  auto fill=[&]{values->clear();auto root=new QTreeWidgetItem(values,{draft.value("name").toString()});leaves(root,draft,{},draft.value("parameters").toObject(),editorContext());values->expandAll();values->resizeColumnToContents(0);choices->clear();};
-  connect(values,&QTreeWidget::currentItemChanged,&dialog,[&]{choices->clear();const auto item=values->currentItem();if(!item)return;const auto type=item->data(0,Qt::UserRole+1).toString();const auto params=draft.value("parameters").toObject();for(auto it=params.begin();it!=params.end();++it)if(it.value().toObject().value("type")==type)choices->addItem(it.value().toObject().value("name").toString(),it.key());});
-  connect(add,&QPushButton::clicked,&dialog,[&]{const auto item=values->currentItem();if(!item||item->data(0,Qt::UserRole+1).toString().isEmpty())return;if(name->text().trimmed().isEmpty()){message->setText(tr("입력 이름을 정하세요."));return;}auto params=draft.value("parameters").toObject();if(params.size()>=32){message->setText(tr("한 규칙의 입력은 32개 이하여야 합니다."));return;}const auto path=item->data(0,Qt::UserRole).toStringList();QString key;for(int n=1;;++n){key="param-"+QString::number(n);if(!params.contains(key))break;}const auto concrete=materialize(logicValueAt(draft,path),params);params[key]=QJsonObject{{"name",name->text().trimmed()},{"type",item->data(0,Qt::UserRole+1).toString()},{"default",concrete}};draft=logicReplaceAt(draft,path,QJsonObject{{"$param",key}}).toObject();draft["parameters"]=params;fill();});
-  connect(bind,&QPushButton::clicked,&dialog,[&]{const auto item=values->currentItem();if(!item||choices->currentIndex()<0||item->data(0,Qt::UserRole+1).toString().isEmpty())return;draft=logicReplaceAt(draft,item->data(0,Qt::UserRole).toStringList(),QJsonObject{{"$param",choices->currentData().toString()}}).toObject();fill();});
-  connect(detach,&QPushButton::clicked,&dialog,[&]{const auto item=values->currentItem();if(!item||item->data(0,Qt::UserRole+1).toString().isEmpty())return;const auto path=item->data(0,Qt::UserRole).toStringList();draft=logicReplaceAt(draft,path,materialize(logicValueAt(draft,path),draft.value("parameters").toObject())).toObject();fill();});
+  auto fill=[&](QStringList restore=QStringList{}){values->clear();auto root=new QTreeWidgetItem(values,{draft.value("name").toString()});const auto params=draft.value("parameters").toObject();leaves(root,draft,{},params,editorContext());values->expandAll();values->resizeColumnToContents(0);choices->clear();for(auto it=params.begin();it!=params.end();++it)choices->addItem(it.value().toObject().value("name").toString(),it.key());if(!restore.isEmpty())for(QTreeWidgetItemIterator it(values);*it;++it)if((*it)->data(0,Qt::UserRole).toStringList()==restore){values->setCurrentItem(*it);break;}};
+  connect(values,&QTreeWidget::currentItemChanged,&dialog,[&]{choices->clear();const auto item=values->currentItem();if(!item)return;const auto type=item->data(0,Qt::UserRole+1).toString();const auto params=draft.value("parameters").toObject();for(auto it=params.begin();it!=params.end();++it)if(it.value().toObject().value("type")==type)choices->addItem(it.value().toObject().value("name").toString(),it.key());const auto key=logicValueAt(draft,item->data(0,Qt::UserRole).toStringList()).toObject().value("$param").toString();if(!key.isEmpty())choices->setCurrentIndex(choices->findData(key));});
+  connect(add,&QPushButton::clicked,&dialog,[&]{const auto item=values->currentItem();if(!item||item->data(0,Qt::UserRole+1).toString().isEmpty())return;if(name->text().trimmed().isEmpty()){message->setText(tr("입력 이름을 정하세요."));return;}auto params=draft.value("parameters").toObject();if(params.size()>=32){message->setText(tr("한 규칙의 입력은 32개 이하여야 합니다."));return;}const auto path=item->data(0,Qt::UserRole).toStringList();QString key;for(int n=1;;++n){key="param-"+QString::number(n);if(!params.contains(key))break;}const auto concrete=materialize(logicValueAt(draft,path),params);params[key]=QJsonObject{{"name",name->text().trimmed()},{"type",item->data(0,Qt::UserRole+1).toString()},{"default",concrete}};draft=logicReplaceAt(draft,path,QJsonObject{{"$param",key}}).toObject();draft["parameters"]=params;fill(path);});
+  connect(bind,&QPushButton::clicked,&dialog,[&]{const auto item=values->currentItem();if(!item||choices->currentIndex()<0||item->data(0,Qt::UserRole+1).toString().isEmpty())return;const auto path=item->data(0,Qt::UserRole).toStringList();draft=logicReplaceAt(draft,path,QJsonObject{{"$param",choices->currentData().toString()}}).toObject();fill(path);});
+  connect(detach,&QPushButton::clicked,&dialog,[&]{const auto item=values->currentItem();if(!item||item->data(0,Qt::UserRole+1).toString().isEmpty())return;const auto path=item->data(0,Qt::UserRole).toStringList();draft=logicReplaceAt(draft,path,materialize(logicValueAt(draft,path),draft.value("parameters").toObject())).toObject();fill(path);});
+  connect(removeParameter,&QPushButton::clicked,&dialog,[&]{const auto key=choices->currentData().toString();auto params=draft.value("parameters").toObject();if(!params.contains(key))return;if(usesParameter(draft,key)){message->setText(tr("사용 중인 입력입니다. 모든 연결을 해제한 후 삭제하세요."));return;}params.remove(key);draft["parameters"]=params;fill();});
   connect(settings,&QPushButton::clicked,&dialog,[&]{
     const auto item=values->currentItem();QString key=choices->currentData().toString();
     if(item){const auto bound=logicValueAt(draft,item->data(0,Qt::UserRole).toStringList()).toObject().value("$param").toString();if(!bound.isEmpty())key=bound;}
@@ -236,7 +244,7 @@ void RulePackageEditor::editParameters(QStringList defPath) {
       edit.accept();
     });
     connect(buttons,&QDialogButtonBox::rejected,&edit,&QDialog::reject);
-    if(edit.exec()==QDialog::Accepted){parameter["name"]=caption->text().trimmed();parameter["default"]=defaultValue;if(minimum){parameter["min"]=minimum->value();parameter["max"]=maximum->value();}params[key]=parameter;draft["parameters"]=params;fill();}
+    if(edit.exec()==QDialog::Accepted){parameter["name"]=caption->text().trimmed();parameter["default"]=defaultValue;if(minimum){parameter["min"]=minimum->value();parameter["max"]=maximum->value();}params[key]=parameter;draft["parameters"]=params;fill(item?item->data(0,Qt::UserRole).toStringList():QStringList{});}
   });
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);box->addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);fill();if(dialog.exec()==QDialog::Accepted)put(defPath,draft);
 }

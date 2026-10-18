@@ -2,6 +2,8 @@
 #include "rule-package-authoring-test.hpp"
 #include "rule-package-editor.hpp"
 #include "logic-editor.hpp"
+#include "component-context-editor.hpp"
+#include <QTimer>
 #include <QApplication>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -41,14 +43,36 @@ int main(int argc,char **argv) {
   auto lib=dialog.value().value("ruleExtensions").toObject();require(lib.value("progressions").toArray()[0].toObject().value("args").toObject().value(workshop?"param-2":"gain")==12,"edited args persist");
   QDir().mkpath(QString::fromLocal8Bit(argv[3]));require(dialog.grab().save(QString::fromLocal8Bit(argv[3])+"/editor.png"),"editor screenshot");
   dialog.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();require(dialog.result()==QDialog::Accepted,"editor accepts draft");project=dialog.value();
+  // References include generated actions without materializing them into authored gameplay.
+  const auto authoredActions=project.value("gameplay").toObject().value("actions").toArray();
+  require(ruleSelectableActions(project).size()>authoredActions.size(),"generated actions available to reference pickers");
+  RuleExtensionDialog secondPlacement(project,context,"schedule");
+  secondPlacement.findChild<QPushButton*>("addRuleProgression")->click();
+  secondPlacement.findChild<QPushButton*>("placeRuleActions")->click();
+  QRect firstRect,secondRect;
+  for(const auto &v:secondPlacement.value().value("visual").toObject().value("screens").toArray())if(v.toObject().value("id")=="schedule")for(const auto &e:v.toObject().value("elements").toArray()) {
+    const auto element=e.toObject();const QRect rect(element.value("x").toInt(),element.value("y").toInt(),element.value("width").toInt(),element.value("height").toInt());
+    if(element.value("id")=="rule-actions-flow-1")firstRect=rect;
+    if(element.value("id")=="rule-actions-flow-2")secondRect=rect;
+  }
+  require(!firstRect.isEmpty()&&!secondRect.isEmpty()&&!firstRect.intersects(secondRect),"new progression lists do not cover each other");
+  require(secondPlacement.value().value("gameplay").toObject().value("actions").toArray()==authoredActions,"reference catalog never persists compiled actions");
   auto upgradedProject=project;auto upgradedLib=upgradedProject.value("ruleExtensions").toObject();auto upgradedPackages=upgradedLib.value("packages").toArray();
   RulePackageEditor upgradeEditor(upgradedPackages[0].toObject(),context);upgradeEditor.findChild<QLineEdit*>("package-version")->setText("1.1.0");upgradedPackages[0]=upgradeEditor.value();upgradedLib["packages"]=upgradedPackages;upgradedProject["ruleExtensions"]=upgradedLib;
+  require(ruleSelectableActions(upgradedProject)==authoredActions,"reference catalog rejects mismatched pinned versions");
+  const auto oldReference=ruleSelectableActions(project).last().toObject().value("id");
+  require(ruleSelectableActions(upgradedProject,QJsonArray{oldReference}).last().toObject().value("id")==oldReference,"missing checked references remain visible for repair instead of being lost");
   RuleExtensionDialog upgradeDialog(upgradedProject,context,"schedule");
   require(upgradeDialog.findChild<QSpinBox*>(workshop?"ruleArg-param-2":"ruleArg-gain")==nullptr,"old pinned progression never uses new definition silently");
   upgradeDialog.findChild<QPushButton*>("reconnectRuleProgression")->click();
   require(upgradeDialog.value().value("ruleExtensions").toObject().value("progressions").toArray()[0].toObject().value("version")=="1.1.0","explicit progression reconnect updates version");
   require(project.value("ruleExtensions").toObject().value("progressions").toArray()[0].toObject().value("version")=="1.0.0","reconnect is a detached draft");
   documents=context.value("documents").toArray();documents[0]=QJsonObject{{"kind","project"},{"data",project}};context["documents"]=documents;
+  const auto generatedAction=ruleSelectableActions(project).last().toObject().value("id").toString();
+  QTimer::singleShot(0,[&]{auto modal=QApplication::activeModalWidget();require(modal!=nullptr,"component context dialog open");auto choices=modal->findChild<QComboBox*>("context-actionId");require(choices&&choices->findData(generatedAction)>=0,"component target selector includes generated actions");choices->setCurrentIndex(choices->findData(generatedAction));modal->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();});
+  QJsonObject connectedComponent;
+  require(editComponentContext(nullptr,QJsonObject{{"kind","component"}},context,connectedComponent),"component context accepts generated reference");
+  require(connectedComponent.value("uiContext").toObject().value("actionId")==generatedAction,"generated action target retained");
   LogicEditor condition(QJsonObject{{"op","always"}},"condition",context);condition.show();app.processEvents();
   auto type=condition.findChild<QComboBox*>("logicType");int index=type->findData("ruleCondition");require(index>=0,"extension condition exposed");type->setCurrentIndex(index);QMetaObject::invokeMethod(type,"activated",Q_ARG(int,index));app.processEvents();
   require(condition.findChild<QSpinBox*>(workshop?"ruleArg-param-2":"ruleArg-minimum")!=nullptr,"condition parameter form");condition.findChild<QSpinBox*>(workshop?"ruleArg-param-2":"ruleArg-minimum")->setValue(12);
