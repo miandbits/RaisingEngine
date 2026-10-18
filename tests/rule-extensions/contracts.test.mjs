@@ -90,6 +90,23 @@ test('public package JSON Schema accepts the developer sample and rejects unknow
   const validate=new Ajv({strict:false,allErrors:true}).compile(await json('packages/rule-extensions/package.schema.json'));const pack=await json('examples/rule-extension-lab/dojo.raiserules');assert.equal(validate(pack),true,JSON.stringify(validate.errors));pack.runScript='unsafe';assert.equal(validate(pack),false);
 });
 
+test('GUI-exported public package compiles and restores an independently instantiated progression',async()=>{
+  const {json}=await import('./helpers.mjs');const {default:Ajv}=await import('ajv/dist/2020.js');
+  const pack=await json('examples/rule-extension-lab/visual-authoring.raiserules');
+  const schema=new Ajv({strict:false,allErrors:true}).compile(await json('packages/rule-extensions/package.schema.json'));
+  assert.equal(schema(pack),true,JSON.stringify(schema.errors));
+  const root=await baseProject();const p=await json(root+'/project.json');
+  p.ruleExtensions={apiVersion:1,packages:[pack],progressions:[{id:'visual-test',name:'시각적 수련',packageId:pack.id,version:pack.version,ruleId:pack.progressions[0].id,scope:'shared',args:{}}]};
+  await writeFile(root+'/project.json',JSON.stringify(p));const built=await buildSnapshot(await loadProject(root));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
+  const content=built.snapshot;let session=createSession(content,42,{mode:'full'}).session;
+  for(const transition of pack.progressions[0].transitions.slice(0,3)) {
+    const result=dispatchSession(content,session,action('rx-visual-test-'+transition.id),session.state.stateRevision);assert.equal(result.ok,true,JSON.stringify(result.error));session=result.session;
+    const saved=await encodeSave(content,session);assert.equal(saved.ok,true);const loaded=await decodeSave(content,saved.text);assert.equal(loaded.ok,true);assert.deepEqual(loaded.session,session);session=loaded.session;
+  }
+  assert.equal(session.state.attributes.skill,12);assert.equal(session.state.attributes.money,25);assert.equal(session.state.attributes.stress,2);
+  assert.equal(session.state.customStates.shared['rx-visual-test'],pack.progressions[0].states[2].id);
+});
+
 test('committed portable sample reaches its recorded ending with automatic save checkpoints',async()=>{
   const {json}=await import('./helpers.mjs');const {runGoalRoute}=await import('../../dist/packages/analysis-service/goal-routes.js');
   const built=await buildSnapshot(await loadProject('examples/rule-extension-lab/game'));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));

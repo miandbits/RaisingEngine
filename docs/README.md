@@ -16,6 +16,8 @@ Start with the [root README](../README.md). Older documents retain the implement
 | Shared data contracts | [Data format](data-format/contract.md), [interfaces](interfaces.md) |
 | General rules and visual logic | [Rules](generic-rules.md), [logic/debugging](visual-logic-and-debugging.md) |
 | Portable condition/effect/progression extensions | [Rule API 1, editor workflow and verification](rule-extensions.md) |
+| Visual rule-package authoring | [Package workshop](rule-package-workshop.md), [verification](rule-package-workshop-verification.json) |
+| Engine completion sequence | [Ordered implementation and evidence gates](engine-completion-sequence.md) |
 | Integrated authoring and references | [Authoring workspace](authoring-workspace.md) |
 | Characters and time | [Character-scoped rules](character-scoped-rules.md), [time sessions](time-progression-sessions.md), [unified calendar and parallel sessions](unified-time.md) |
 | Reusable UI and data binding | [UI composition](ui-composition.md), [data binding](data-ui-binding.md) |

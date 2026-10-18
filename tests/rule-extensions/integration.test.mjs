@@ -14,13 +14,16 @@ import {createSession,dispatchSession} from '../../dist/packages/runtime-service
 import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
 import {runGoalRoute} from '../../dist/packages/analysis-service/goal-routes.js';
 
-test('offscreen Qt authoring → shared save → hidden Windows and headless Wasm → regression',{timeout:240000},async t=>{
+for(const workshop of [false,true]) test(`${workshop?'visual package workshop':'imported package'} → shared save → hidden Windows and headless Wasm → regression`,{timeout:240000},async t=>{
   const root=await baseProject();await mkdir('.cache/rule-extension-verification',{recursive:true});const out=await mkdtemp(resolve('.cache/rule-extension-verification/run-'));
   const qt=resolve(process.env.RULE_QT_OUT??'dist/qt-studio-rule-extensions');
-  const env={...process.env,QT_QPA_PLATFORM:'offscreen',QT_QPA_PLATFORM_PLUGIN_PATH:'C:/Qt/6.10.1/mingw_64/plugins/platforms',PATH:`C:/Qt/6.10.1/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;${process.env.PATH}`};
+  const env={...process.env,RULE_WORKSHOP:workshop?'1':'0',QT_QPA_PLATFORM:'offscreen',QT_QPA_PLATFORM_PLUGIN_PATH:'C:/Qt/6.10.1/mingw_64/plugins/platforms',PATH:`C:/Qt/6.10.1/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;${process.env.PATH}`};
   const author=spawnSync(resolve(qt,'qt-rule-extensions-dialog-test.exe'),[root,resolve('examples/rule-extension-lab/dojo.raiserules'),out],{env,windowsHide:true,encoding:'utf8',timeout:60000});
   assert.equal(author.status,0,author.stdout+'\n'+author.stderr);
   const authored=await json(resolve(out,'authored-project.json'));
+  const transitions=authored.ruleExtensions.packages[0].progressions[0].transitions;
+  const ids=Object.fromEntries(['prepare','practice','complete','restart'].map((name,i)=>[name,`rx-flow-1-${transitions[i].id}`]));
+  const actionId=name=>ids[name];
   const editor=new StudioEditor();await editor.open(root);editor.edit({type:'replace',file:'project.json',data:authored},editor.revision);
   const validation=await editor.validate(editor.revision);assert.equal(validation.view.diagnostics.filter(d=>d.severity==='error').length,0,JSON.stringify(validation.view.diagnostics));
   await editor.save(editor.revision);await editor.open(root);
@@ -39,9 +42,9 @@ test('offscreen Qt authoring → shared save → hidden Windows and headless Was
   const send=c=>{const r=dispatchSession(content,session,c,session.state.stateRevision);assert.equal(r.ok,true,JSON.stringify(r.error));session=r.session;commands.push(c);};
   const check=id=>{expected[id]=structuredClone(session.state);steps.push({checkpoint:id});};
   check('start');
-  steps.push({click:'action__rule-actions-flow-1__rx-flow-1-prepare'},{click:'cancel-purchase'});check('cancelled');
-  const act=name=>{send({type:'executeAction',actionId:'rx-flow-1-'+name,quantity:1});steps.push({click:'action__rule-actions-flow-1__rx-flow-1-'+name},{click:'confirm-purchase'});check(name);};
-  const unavailable=dispatchSession(content,session,{type:'executeAction',actionId:'rx-flow-1-complete',quantity:1},session.state.stateRevision);assert.equal(unavailable.ok,false);
+  steps.push({click:'action__rule-actions-flow-1__'+actionId('prepare')},{click:'cancel-purchase'});check('cancelled');
+  const act=name=>{send({type:'executeAction',actionId:actionId(name),quantity:1});steps.push({click:'action__rule-actions-flow-1__'+actionId(name)},{click:'confirm-purchase'});check(name);};
+  const unavailable=dispatchSession(content,session,{type:'executeAction',actionId:actionId('complete'),quantity:1},session.state.stateRevision);assert.equal(unavailable.ok,false);
   act('prepare');act('practice');
   steps.push({key:'F5'});const saved=structuredClone(session);check('saved');act('complete');
   steps.push({key:'F9'});session=saved;check('restored');act('complete');
@@ -61,12 +64,12 @@ test('offscreen Qt authoring → shared save → hidden Windows and headless Was
   }
   check('ending');steps.push({key:'F5'},{screenshot:resolve(out,'windows.png')});
   // Save/load restored the earlier branch: discard its abandoned complete command.
-  const routeCommands=commands.filter((c,i)=>!(i===3&&c.actionId==='rx-flow-1-complete'));
+  const routeCommands=commands.filter((c,i)=>!(i===3&&c.actionId===actionId('complete')));
   const route={version:1,id:'dojo-breakthrough',name:'수련 돌파와 엔딩',gameId:content.project.gameId,recordedFingerprint:content.contentFingerprint,origin:created.session.origin,commands:routeCommands,endingId:session.state.endingId,checkpoints:[2,3],checkpointEvery:3};
   const regression=await runGoalRoute(content,route);assert.equal(regression.ok,true,JSON.stringify(regression));
-  const changed=await loadProject(root);changed.documents.find(d=>d.kind==='project').data.ruleExtensions.progressions[0].args.gain=1;
+  const changed=await loadProject(root);changed.documents.find(d=>d.kind==='project').data.ruleExtensions.progressions[0].args[workshop?'param-2':'gain']=1;
   const changedSnapshot=await buildSnapshot(changed);assert.equal(changedSnapshot.ok,true,JSON.stringify(changedSnapshot.diagnostics));
-  const caught=await runGoalRoute(changedSnapshot.snapshot,route);assert.equal(caught.ok,false);assert.equal(caught.failure.command.actionId,'rx-flow-1-complete','content change blocks the recorded breakthrough');
+  const caught=await runGoalRoute(changedSnapshot.snapshot,route);assert.equal(caught.ok,false);assert.equal(caught.failure.command.actionId,actionId('complete'),'content change blocks the recorded breakthrough');
   const save=await encodeSave(content,session);assert.equal(save.ok,true);const load=await decodeSave(content,save.text);assert.equal(load.ok,true);assert.deepEqual(load.session,session);
   const script=resolve(out,'steps.json'),report=resolve(out,'native.json'),nativeSave=resolve(out,'native-save.json');await writeFile(script,JSON.stringify(steps));
   const native=spawnSync(resolve(windows,'RaisingPlayer.exe'),['--bundle',windows,'--seed','42','--save',nativeSave,'--automation',script,'--report',report,'--hidden'],{windowsHide:true,encoding:'utf8',timeout:90000});
@@ -82,12 +85,12 @@ test('offscreen Qt authoring → shared save → hidden Windows and headless Was
   const webCheck=async state=>{await page.waitForFunction(()=>document.querySelector('.visual-status')?.textContent?.includes('플레이 중'));const view=(await page.evaluate(()=>window.player.view())).view;assert.equal(view.runtimeBackend,'wasm');assert.deepEqual(view.state,state);};
   for(const step of steps) {
     if(step.select)await page.locator('[data-element-id="schedule"] select').nth(Number(step.select.slice(5))).selectOption(step.value);
-    if(step.click){if(step.click.startsWith('action__'))await page.getByRole('button',{name:labels[step.click.split('-').at(-1)],exact:true}).click();else if(step.click==='confirm-purchase')await page.getByRole('button',{name:'확인',exact:true}).click();else if(step.click==='cancel-purchase')await page.getByRole('button',{name:'취소',exact:true}).click();else if(step.click.startsWith('choose-'))await page.getByRole('button',{name:choiceLabels[step.click.slice(7)],exact:true}).click();else await page.locator(`[data-element-id="${step.click}"]`).getByRole('button').click();}
+    if(step.click){if(step.click.startsWith('action__'))await page.getByRole('button',{name:labels[Object.keys(ids).find(key=>step.click.endsWith(ids[key]))],exact:true}).click();else if(step.click==='confirm-purchase')await page.getByRole('button',{name:'확인',exact:true}).click();else if(step.click==='cancel-purchase')await page.getByRole('button',{name:'취소',exact:true}).click();else if(step.click.startsWith('choose-'))await page.getByRole('button',{name:choiceLabels[step.click.slice(7)],exact:true}).click();else await page.locator(`[data-element-id="${step.click}"]`).getByRole('button').click();}
     if(step.key==='F5'){const download=page.waitForEvent('download');await page.getByRole('button',{name:'저장',exact:true}).click();webSave=resolve(out,'web-save-'+Date.now()+'.json');await(await download).saveAs(webSave);}
     if(step.key==='F9'){const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'불러오기',exact:true}).click();await(await chooser).setFiles(webSave);}
     if(step.checkpoint)await webCheck(expected[step.checkpoint]);
   }
   await page.screenshot({path:resolve(out,'web.png')});await page.reload();await page.locator('.visual-stage').waitFor();const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'불러오기',exact:true}).click();await(await chooser).setFiles(webSave);await webCheck(expected.ending);assert.deepEqual(errors,[]);
   await writeFile(resolve(out,'goal-route.json'),JSON.stringify(route,null,2));
-  const evidence={ok:true,root,out,qt:author.stdout.trim(),windows,web,nativeCheckpoints:result.steps.filter(s=>s.command.checkpoint).length,regression,changedContentRegression:caught,webErrors:errors,backgroundOnly:true};await writeFile(resolve(out,'verification.json'),JSON.stringify(evidence,null,2));await writeFile('.cache/rule-extension-verification/latest.json',JSON.stringify(evidence,null,2));
+  const evidence={ok:true,workshop,root,out,qt:author.stdout.trim(),windows,web,nativeCheckpoints:result.steps.filter(s=>s.command.checkpoint).length,regression,changedContentRegression:caught,webErrors:errors,backgroundOnly:true};await writeFile(resolve(out,'verification.json'),JSON.stringify(evidence,null,2));await writeFile('.cache/rule-extension-verification/latest.json',JSON.stringify(evidence,null,2));
 });

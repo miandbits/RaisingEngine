@@ -19,6 +19,7 @@
     "test:qt-studio": "node scripts/test-qt-studio.mjs",
     "test:novice-game": "node --test tests/journey/novice-complete-game.test.mjs",
     "test:rule-extensions": "node --test --test-concurrency=1 tests/rule-extensions/contracts.test.mjs tests/rule-extensions/integration.test.mjs",
+    "test:rule-workshop": "node --test --test-name-pattern=workshop tests/rule-extensions/integration.test.mjs",
     "test:rule-contracts": "node --test tests/rule-extensions/contracts.test.mjs",
     "test:qt-service": "node --test tests/qt-studio/service.test.mjs tests/qt-studio/renderer-preview.test.mjs tests/qt-studio/authoring-preview.test.mjs",
     "build": "node scripts/generate-types.mjs && tsc -p tsconfig.json && node scripts/copy-schemas.mjs && node scripts/build-native.mjs && node scripts/build-native-addon.mjs",

@@ -1,0 +1,215 @@
+{
+    "apiVersion": 1,
+    "conditions": [
+        {
+            "body": {
+                "comparator": "gte",
+                "left": {
+                    "op": "read",
+                    "target": {
+                        "attributeId": {
+                            "$param": "param-1"
+                        },
+                        "kind": "attribute"
+                    }
+                },
+                "op": "compare",
+                "right": {
+                    "op": "literal",
+                    "value": {
+                        "$param": "param-2"
+                    }
+                }
+            },
+            "id": "condition-1",
+            "name": "능력이 기준 이상",
+            "parameters": {
+                "param-1": {
+                    "default": "skill",
+                    "name": "검사할 능력",
+                    "type": "attribute"
+                },
+                "param-2": {
+                    "default": 10,
+                    "name": "필요 수치",
+                    "type": "integer"
+                }
+            }
+        }
+    ],
+    "effects": [
+        {
+            "body": [
+                {
+                    "op": "add",
+                    "target": {
+                        "attributeId": {
+                            "$param": "param-1"
+                        },
+                        "kind": "attribute"
+                    },
+                    "value": {
+                        "op": "literal",
+                        "value": {
+                            "$param": "param-2"
+                        }
+                    }
+                },
+                {
+                    "op": "add",
+                    "target": {
+                        "attributeId": "stress",
+                        "kind": "attribute"
+                    },
+                    "value": {
+                        "op": "literal",
+                        "value": 2
+                    }
+                }
+            ],
+            "id": "effect-1",
+            "name": "수련과 피로",
+            "parameters": {
+                "param-1": {
+                    "default": "skill",
+                    "name": "성장 능력",
+                    "type": "attribute"
+                },
+                "param-2": {
+                    "default": 12,
+                    "max": 50,
+                    "min": 1,
+                    "name": "성장량",
+                    "type": "integer"
+                }
+            }
+        }
+    ],
+    "id": "pack-d578ae3c0dbe44178af9a6fa348b8196",
+    "name": "직접 만든 무공 규칙",
+    "progressions": [
+        {
+            "id": "progression-1",
+            "initial": "state-1",
+            "name": "준비 → 수련 → 돌파",
+            "parameters": {
+                "param-1": {
+                    "default": "skill",
+                    "name": "돌파할 능력",
+                    "type": "attribute"
+                },
+                "param-2": {
+                    "default": 12,
+                    "name": "수련 성장량",
+                    "type": "integer"
+                }
+            },
+            "states": [
+                {
+                    "id": "state-1",
+                    "name": "시작"
+                },
+                {
+                    "id": "state-2",
+                    "name": "수련"
+                },
+                {
+                    "id": "state-3",
+                    "name": "돌파"
+                }
+            ],
+            "transitions": [
+                {
+                    "costs": [
+                        {
+                            "amount": 2,
+                            "attributeId": "money"
+                        }
+                    ],
+                    "effects": [
+                    ],
+                    "from": [
+                        "state-1"
+                    ],
+                    "id": "transition-1",
+                    "name": "수련 준비",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "to": "state-2"
+                },
+                {
+                    "costs": [
+                        {
+                            "amount": 3,
+                            "attributeId": "money"
+                        }
+                    ],
+                    "effects": [
+                        {
+                            "args": {
+                                "param-1": {
+                                    "$param": "param-1"
+                                },
+                                "param-2": {
+                                    "$param": "param-2"
+                                }
+                            },
+                            "op": "ruleEffect",
+                            "packageId": "pack-d578ae3c0dbe44178af9a6fa348b8196",
+                            "ruleId": "effect-1",
+                            "version": "1.0.0"
+                        }
+                    ],
+                    "from": [
+                        "state-2"
+                    ],
+                    "id": "transition-2",
+                    "name": "호흡 수련",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "to": "state-2"
+                },
+                {
+                    "costs": [
+                    ],
+                    "effects": [
+                    ],
+                    "from": [
+                        "state-2"
+                    ],
+                    "id": "transition-3",
+                    "name": "경지 돌파",
+                    "requirements": {
+                        "args": {
+                            "param-1": "skill",
+                            "param-2": 10
+                        },
+                        "op": "ruleCondition",
+                        "packageId": "pack-d578ae3c0dbe44178af9a6fa348b8196",
+                        "ruleId": "condition-1",
+                        "version": "1.0.0"
+                    },
+                    "to": "state-3"
+                },
+                {
+                    "costs": [
+                    ],
+                    "effects": [
+                    ],
+                    "from": [
+                        "state-3"
+                    ],
+                    "id": "transition-4",
+                    "name": "다음 수련 준비",
+                    "requirements": {
+                        "op": "always"
+                    },
+                    "to": "state-1"
+                }
+            ]
+        }
+    ],
+    "version": "1.0.0"
+}
