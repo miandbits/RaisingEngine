@@ -26,6 +26,8 @@ jobs:
         run: npm run build:headless
       - name: Test approval and failure semantics
         run: npm run test:regression
+      - name: Test portable rule extensions and committed progression route
+        run: npm run test:rule-contracts
       - name: Check public samples and asset-free regression fixtures
         run: npm run check:public-content && npm run test:public-content
       - name: Check committed pilot routes and approved expectations

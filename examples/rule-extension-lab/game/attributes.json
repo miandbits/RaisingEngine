@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../packages/schema/attributes.schema.json",
+  "formatVersion": "0.1.0",
+  "attributes": [
+    {
+      "id": "skill",
+      "label": "검술",
+      "kind": "stat",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    },
+    {
+      "id": "money",
+      "label": "소지금",
+      "kind": "resource",
+      "min": 0,
+      "max": 999,
+      "initial": 30
+    },
+    {
+      "id": "stamina",
+      "label": "체력",
+      "kind": "condition",
+      "min": 0,
+      "max": 100,
+      "initial": 50
+    },
+    {
+      "id": "stress",
+      "label": "스트레스",
+      "kind": "condition",
+      "min": 0,
+      "max": 100,
+      "initial": 0
+    }
+  ]
+}

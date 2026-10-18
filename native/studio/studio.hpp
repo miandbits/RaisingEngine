@@ -175,6 +175,7 @@ private:
   QCheckBox *clipChildrenField;
   void editFacilities();
   void editRules();
+  void editRuleExtensions();
   void editRoster();
   void editCharacterState();
   void editTimeSessions();

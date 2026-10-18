@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raising-engine.example/rule-api/1/package.schema.json",
+  "title": "RaisingEngine portable rule package API 1",
+  "description": "The compiler also checks references, recursion, substituted ASTs and generated state/action contracts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "id", "version", "name"],
+  "properties": {
+    "apiVersion": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "name": {"$ref": "#/$defs/name"},
+    "conditions": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/condition"}},
+    "effects": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/effect"}},
+    "progressions": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/progression"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "maxLength": 48, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+    "parameters": {
+      "type": "object", "maxProperties": 32,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["name", "type"],
+        "properties": {
+          "name": {"$ref": "#/$defs/name"},
+          "type": {"enum": ["integer", "boolean", "text", "attribute", "character", "item", "event", "flag", "stateGroup", "stateValue"]},
+          "default": {"type": ["string", "integer", "boolean"]},
+          "min": {"type": "integer"}, "max": {"type": "integer"}
+        }
+      }
+    },
+    "base": {
+      "type": "object", "required": ["id", "name"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "name": {"$ref": "#/$defs/name"}, "parameters": {"$ref": "#/$defs/parameters"}}
+    },
+    "condition": {
+      "allOf": [{"$ref": "#/$defs/base"}], "unevaluatedProperties": false,
+      "required": ["body"], "properties": {"body": {"type": "object"}}
+    },
+    "effect": {
+      "allOf": [{"$ref": "#/$defs/base"}], "unevaluatedProperties": false,
+      "required": ["body"], "properties": {"body": {"type": "array", "maxItems": 100, "items": {"type": "object"}}}
+    },
+    "progression": {
+      "allOf": [{"$ref": "#/$defs/base"}], "unevaluatedProperties": false,
+      "required": ["initial", "states", "transitions"],
+      "properties": {
+        "initial": {"$ref": "#/$defs/id"},
+        "states": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"type": "object", "additionalProperties": false, "required": ["id", "name"], "properties": {"id": {"$ref": "#/$defs/id"}, "name": {"$ref": "#/$defs/name"}}}},
+        "transitions": {"type": "array", "maxItems": 128, "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "name", "from", "to"],
+          "properties": {
+            "id": {"$ref": "#/$defs/id"}, "name": {"$ref": "#/$defs/name"},
+            "from": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/id"}},
+            "to": {"$ref": "#/$defs/id"}, "requirements": {"type": "object"},
+            "costs": {"type": "array", "maxItems": 100, "items": {"type": "object"}},
+            "effects": {"type": "array", "maxItems": 100, "items": {"type": "object"}},
+            "eventId": {"type": ["string", "object"]}
+          }
+        }}
+      }
+    }
+  }
+}

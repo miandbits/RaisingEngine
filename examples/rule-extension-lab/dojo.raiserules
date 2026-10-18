@@ -1,0 +1,49 @@
+{
+  "apiVersion": 1,
+  "id": "dojo",
+  "version": "1.0.0",
+  "name": "무공 수련 규칙",
+  "conditions": [
+    {
+      "id": "threshold",
+      "name": "능력이 기준 이상",
+      "parameters": {
+        "stat": {"type": "attribute", "name": "검사할 능력", "default": "skill"},
+        "minimum": {"type": "integer", "name": "필요 수치", "min": 0, "max": 100, "default": 10}
+      },
+      "body": {"op": "compare", "comparator": "gte", "left": {"op": "read", "target": {"kind": "attribute", "attributeId": {"$param": "stat"}}}, "right": {"op": "literal", "value": {"$param": "minimum"}}}
+    }
+  ],
+  "effects": [
+    {
+      "id": "practice",
+      "name": "수련과 피로",
+      "parameters": {
+        "stat": {"type": "attribute", "name": "성장 능력", "default": "skill"},
+        "gain": {"type": "integer", "name": "성장량", "min": 1, "max": 50, "default": 10}
+      },
+      "body": [
+        {"op": "add", "target": {"kind": "attribute", "attributeId": {"$param": "stat"}}, "value": {"op": "literal", "value": {"$param": "gain"}}},
+        {"op": "add", "target": {"kind": "attribute", "attributeId": "stress"}, "value": {"op": "literal", "value": 2}}
+      ]
+    }
+  ],
+  "progressions": [
+    {
+      "id": "training-cycle",
+      "name": "준비 → 수련 → 돌파",
+      "parameters": {
+        "stat": {"type": "attribute", "name": "돌파할 능력", "default": "skill"},
+        "gain": {"type": "integer", "name": "수련 성장량", "min": 1, "max": 50, "default": 10}
+      },
+      "initial": "ready",
+      "states": [{"id": "ready", "name": "준비"}, {"id": "training", "name": "수련"}, {"id": "mastered", "name": "돌파"}],
+      "transitions": [
+        {"id": "prepare", "name": "수련 준비", "from": ["ready"], "to": "training", "costs": [{"attributeId": "money", "amount": 2}]},
+        {"id": "practice", "name": "호흡 수련", "from": ["training"], "to": "training", "costs": [{"attributeId": "money", "amount": 3}], "effects": [{"op": "ruleEffect", "packageId": "dojo", "version": "1.0.0", "ruleId": "practice", "args": {"stat": {"$param": "stat"}, "gain": {"$param": "gain"}}}]},
+        {"id": "complete", "name": "경지 돌파", "from": ["training"], "to": "mastered", "requirements": {"op": "ruleCondition", "packageId": "dojo", "version": "1.0.0", "ruleId": "threshold", "args": {"stat": {"$param": "stat"}, "minimum": 10}}, "effects": []},
+        {"id": "restart", "name": "다음 수련 준비", "from": ["mastered"], "to": "ready"}
+      ]
+    }
+  ]
+}

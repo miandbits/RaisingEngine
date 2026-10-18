@@ -4,6 +4,10 @@ Status: v1, first-party trusted local modules. This is not a public marketplace 
 does not run user scripts inside game rules. Plugins add document types, authoring
 panels and presentation runtimes. Game rules, costs and RNG stay in the C++ core.
 
+Portable conditions/effects/progressions use the separate [rule extension API 1](../../docs/rule-extensions.md)
+(`.raiserules`). They compile to deterministic core rules and do not execute through
+the presentation plugin ABI.
+
 ## 1. Package (`*.raiseplugin`)
 
 A ZIP archive (stored or deflated entries, no absolute paths, no `..`, no symlinks,

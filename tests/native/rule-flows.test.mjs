@@ -96,6 +96,10 @@ test('native inspect: reports actual operands, effects, branch and errors withou
   r.send(command); assert.deepEqual(inspected.state, r.state);
   const stale = nativeRequest({ operation: 'inspect', content: c, state: r.state, command, expectedRevision: 0 });
   assert.equal(stale.ok, false); assert.deepEqual(stale.state, r.state); assert.equal(stale.trace.at(-1).code, 'REVISION_CONFLICT');
+  const afterGift = structuredClone(r.state);
   const event = nativeRequest({ operation: 'inspect', content: c, state: r.state, subject: { kind: 'event', id: 'gift-friendship' } });
-  assert.equal(event.ok, true); assert.equal(event.reason, 'wrong-phase'); assert.deepEqual(event.state, r.state);
+  // Interaction events are inspected during planning/ready; unlike period-end
+  // events they need an explicit invocation and can fail their own requirements.
+  assert.equal(event.ok, true); assert.equal(event.reason, 'requirements-not-met');
+  assert.equal(event.eligible, false); assert.deepEqual(r.state, afterGift);
 });

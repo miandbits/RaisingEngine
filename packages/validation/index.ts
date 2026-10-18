@@ -3,13 +3,15 @@ import { sortDiagnostics, type LoadedProject, type ProjectDocument, type Validat
 import { validateStructure } from './structure.js';
 import { validateSemantics } from './semantics.js';
 import { validatePlugins } from './plugins.js';
+import { compileRules } from '../rule-extensions/compiler.js';
 
 export type ValidatedDocument = { [K in keyof ContentByKind]: Omit<ProjectDocument, 'kind' | 'data'> & { kind: K; data: ContentByKind[K] } }[keyof ContentByKind];
 
-export async function validateProject(project: LoadedProject): Promise<ValidationResult & { structuredDocuments: ValidatedDocument[] }> {
-  const diagnostics = [...project.diagnostics];
+export async function validateProject(project: LoadedProject): Promise<ValidationResult & { structuredDocuments: ValidatedDocument[]; ruleLock?: import('./model.js').JsonObject }> {
+  const compiled = compileRules(project);
+  const diagnostics = [...project.diagnostics, ...compiled.diagnostics];
   const documents: ProjectDocument[] = [];
-  for (const doc of project.documents) {
+  for (const doc of compiled.documents) {
     const issues = await validateStructure(doc);
     diagnostics.push(...issues);
     if (!issues.length) documents.push(doc);
@@ -20,10 +22,12 @@ export async function validateProject(project: LoadedProject): Promise<Validatio
   const plugins = await validatePlugins(project, documents);
   diagnostics.push(...plugins.diagnostics);
   const structured = plugins.rejected.size ? documents.filter((d) => !plugins.rejected.has(d)) : documents;
-  sortDiagnostics(diagnostics);
+  const mappedDiagnostics = diagnostics.map(compiled.remap);
+  sortDiagnostics(mappedDiagnostics);
   return {
-    valid: !diagnostics.some((d) => d.severity === 'error'), diagnostics, documents: structured,
+    valid: !mappedDiagnostics.some((d) => d.severity === 'error'), diagnostics: mappedDiagnostics, documents: structured,
     // Runtime JSON Schema validation above is the boundary for generated types.
     structuredDocuments: structured as unknown as ValidatedDocument[],
+    ...(compiled.lock ? { ruleLock: compiled.lock } : {}),
   };
 }

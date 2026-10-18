@@ -202,6 +202,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("탐험 · 조우 작성실…"),this,&StudioWindow::editExpeditions)->setObjectName("editExpeditions");
   designMenu->addAction(tr("대본 · 선택지 작업실…"),this,&StudioWindow::editScripts)->setObjectName("scriptAuthoringAction");
   designMenu->addAction(tr("정책 · 행동 · 공유 한도 작업실…"),this,&StudioWindow::editRules)->setObjectName("editRules");
+  designMenu->addAction(tr("규칙 확장 패키지 · 진행 방식…"),this,&StudioWindow::editRuleExtensions)->setObjectName("editRuleExtensions");
   designMenu->addAction(tr("콘텐츠 조건 · 효과 · 수식…"),this,&StudioWindow::editLogicDocument)->setObjectName("editLogicDocument");
   designMenu->addAction(tr("실행 시점 · 행동 흐름…"),this,&StudioWindow::editWorkflows)->setObjectName("editWorkflows");
   designMenu->addAction(tr("규칙 디버거 · 영향 분석"),this,&StudioWindow::showRuleDebugger)->setObjectName("showRuleDebugger");

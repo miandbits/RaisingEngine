@@ -8,6 +8,7 @@
     "examples/academy-adventure",
     "examples/starlight-three-months",
     "examples/last-grandson",
+    "examples/rule-extension-lab/game",
     "examples/genre-suite"
   ],
   "testFixtureRoot": "tests/fixtures/projects",

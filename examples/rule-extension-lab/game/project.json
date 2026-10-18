@@ -1,0 +1,656 @@
+{
+  "$schema": "../../../packages/schema/project.schema.json",
+  "defaultEndingId": "ordinary",
+  "description": "한 기간은 상순·중순·하순 중 하나이며, 총 6기간을 진행하는 데이터 계약 샘플입니다.",
+  "durationMonths": 2,
+  "formatVersion": "0.1.0",
+  "gameId": "rule-extension-lab",
+  "gameplay": {
+    "actions": [
+      {
+        "costs": [],
+        "effects": [
+          {
+            "args": {
+              "gain": 4,
+              "stat": "skill"
+            },
+            "op": "ruleEffect",
+            "packageId": "dojo",
+            "ruleId": "practice",
+            "version": "1.0.0"
+          }
+        ],
+        "id": "celebrate",
+        "name": "돌파의 깨달음",
+        "requirements": {
+          "args": {
+            "minimum": 12,
+            "stat": "skill"
+          },
+          "op": "ruleCondition",
+          "packageId": "dojo",
+          "ruleId": "threshold",
+          "version": "1.0.0"
+        }
+      }
+    ],
+    "interactions": [],
+    "items": [],
+    "locations": [
+      {
+        "connections": [],
+        "id": "home",
+        "name": "수련장"
+      }
+    ],
+    "shops": [],
+    "startLocationId": "home"
+  },
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "ruleExtensions": {
+    "apiVersion": 1,
+    "packages": [
+      {
+        "apiVersion": 1,
+        "conditions": [
+          {
+            "body": {
+              "comparator": "gte",
+              "left": {
+                "op": "read",
+                "target": {
+                  "attributeId": {
+                    "$param": "stat"
+                  },
+                  "kind": "attribute"
+                }
+              },
+              "op": "compare",
+              "right": {
+                "op": "literal",
+                "value": {
+                  "$param": "minimum"
+                }
+              }
+            },
+            "id": "threshold",
+            "name": "능력이 기준 이상",
+            "parameters": {
+              "minimum": {
+                "default": 10,
+                "max": 100,
+                "min": 0,
+                "name": "필요 수치",
+                "type": "integer"
+              },
+              "stat": {
+                "default": "skill",
+                "name": "검사할 능력",
+                "type": "attribute"
+              }
+            }
+          }
+        ],
+        "effects": [
+          {
+            "body": [
+              {
+                "op": "add",
+                "target": {
+                  "attributeId": {
+                    "$param": "stat"
+                  },
+                  "kind": "attribute"
+                },
+                "value": {
+                  "op": "literal",
+                  "value": {
+                    "$param": "gain"
+                  }
+                }
+              },
+              {
+                "op": "add",
+                "target": {
+                  "attributeId": "stress",
+                  "kind": "attribute"
+                },
+                "value": {
+                  "op": "literal",
+                  "value": 2
+                }
+              }
+            ],
+            "id": "practice",
+            "name": "수련과 피로",
+            "parameters": {
+              "gain": {
+                "default": 10,
+                "max": 50,
+                "min": 1,
+                "name": "성장량",
+                "type": "integer"
+              },
+              "stat": {
+                "default": "skill",
+                "name": "성장 능력",
+                "type": "attribute"
+              }
+            }
+          }
+        ],
+        "id": "dojo",
+        "name": "무공 수련 규칙",
+        "progressions": [
+          {
+            "id": "training-cycle",
+            "initial": "ready",
+            "name": "준비 → 수련 → 돌파",
+            "parameters": {
+              "gain": {
+                "default": 10,
+                "max": 50,
+                "min": 1,
+                "name": "수련 성장량",
+                "type": "integer"
+              },
+              "stat": {
+                "default": "skill",
+                "name": "돌파할 능력",
+                "type": "attribute"
+              }
+            },
+            "states": [
+              {
+                "id": "ready",
+                "name": "준비"
+              },
+              {
+                "id": "training",
+                "name": "수련"
+              },
+              {
+                "id": "mastered",
+                "name": "돌파"
+              }
+            ],
+            "transitions": [
+              {
+                "costs": [
+                  {
+                    "amount": 2,
+                    "attributeId": "money"
+                  }
+                ],
+                "from": [
+                  "ready"
+                ],
+                "id": "prepare",
+                "name": "수련 준비",
+                "to": "training"
+              },
+              {
+                "costs": [
+                  {
+                    "amount": 3,
+                    "attributeId": "money"
+                  }
+                ],
+                "effects": [
+                  {
+                    "args": {
+                      "gain": {
+                        "$param": "gain"
+                      },
+                      "stat": {
+                        "$param": "stat"
+                      }
+                    },
+                    "op": "ruleEffect",
+                    "packageId": "dojo",
+                    "ruleId": "practice",
+                    "version": "1.0.0"
+                  }
+                ],
+                "from": [
+                  "training"
+                ],
+                "id": "practice",
+                "name": "호흡 수련",
+                "to": "training"
+              },
+              {
+                "effects": [],
+                "from": [
+                  "training"
+                ],
+                "id": "complete",
+                "name": "경지 돌파",
+                "requirements": {
+                  "args": {
+                    "minimum": 10,
+                    "stat": {
+                      "$param": "stat"
+                    }
+                  },
+                  "op": "ruleCondition",
+                  "packageId": "dojo",
+                  "ruleId": "threshold",
+                  "version": "1.0.0"
+                },
+                "to": "mastered"
+              },
+              {
+                "from": [
+                  "mastered"
+                ],
+                "id": "restart",
+                "name": "다음 수련 준비",
+                "to": "ready"
+              }
+            ]
+          }
+        ],
+        "version": "1.0.0"
+      }
+    ],
+    "progressions": [
+      {
+        "args": {
+          "gain": 12,
+          "stat": "skill"
+        },
+        "id": "flow-1",
+        "name": "막내의 돌파 수련",
+        "packageId": "dojo",
+        "ruleId": "training-cycle",
+        "scope": "shared",
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "startMonth": 1,
+  "startYear": 1,
+  "title": "무공 규칙 확장 실습",
+  "visual": {
+    "components": [
+      {
+        "elements": [
+          {
+            "action": "save",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "save",
+            "kind": "button",
+            "radius": 8,
+            "text": "저장",
+            "width": 128,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "action": "load",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "load",
+            "kind": "button",
+            "radius": 8,
+            "text": "불러오기",
+            "width": 144,
+            "x": 144,
+            "y": 0
+          }
+        ],
+        "height": 48,
+        "id": "save-controls",
+        "label": "공용 저장·불러오기",
+        "width": 288
+      }
+    ],
+    "height": 720,
+    "screens": [
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 44,
+            "height": 100,
+            "id": "title",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 150
+          },
+          {
+            "binding": "description",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 210,
+            "id": "description",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 270
+          },
+          {
+            "action": "start",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "start",
+            "kind": "button",
+            "radius": 8,
+            "text": "이야기 시작",
+            "width": 300,
+            "x": 80,
+            "y": 570
+          },
+          {
+            "action": "load",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "load",
+            "kind": "button",
+            "radius": 8,
+            "text": "불러오기",
+            "width": 220,
+            "x": 420,
+            "y": 570
+          }
+        ],
+        "id": "title",
+        "label": "타이틀"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 30,
+            "height": 64,
+            "id": "title",
+            "kind": "text",
+            "width": 780,
+            "x": 24,
+            "y": 24
+          },
+          {
+            "binding": "calendar",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 64,
+            "id": "calendar",
+            "kind": "text",
+            "width": 280,
+            "x": 24,
+            "y": 104
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 450,
+            "id": "stats",
+            "kind": "stats",
+            "width": 280,
+            "x": 960,
+            "y": 120
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 100,
+            "id": "schedule",
+            "kind": "schedule",
+            "visibleWhen": "planning",
+            "width": 760,
+            "x": 40,
+            "y": 520
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 220,
+            "id": "result",
+            "kind": "result",
+            "visibleWhen": "result",
+            "width": 910,
+            "x": 330,
+            "y": 380
+          },
+          {
+            "action": "advance",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "advance",
+            "kind": "button",
+            "radius": 8,
+            "text": "다음 진행",
+            "width": 350,
+            "x": 890,
+            "y": 640
+          },
+          {
+            "actionIds": [
+              "rx-flow-1-prepare",
+              "rx-flow-1-practice",
+              "rx-flow-1-complete",
+              "rx-flow-1-restart"
+            ],
+            "color": "#ffffff",
+            "fill": "#192333ee",
+            "height": 340,
+            "id": "rule-actions-flow-1",
+            "kind": "actions",
+            "width": 700,
+            "x": 40,
+            "y": 150
+          },
+          {
+            "action": "executeAction",
+            "actionId": "celebrate",
+            "color": "#ffffff",
+            "fill": "#375a63",
+            "height": 50,
+            "id": "celebrate",
+            "kind": "button",
+            "text": "돌파의 깨달음",
+            "width": 240,
+            "x": 780,
+            "y": 550
+          }
+        ],
+        "id": "schedule",
+        "label": "일정·활동 결과"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "binding": "speaker",
+            "color": "#e9e3d5",
+            "fontSize": 24,
+            "height": 56,
+            "id": "speaker",
+            "kind": "text",
+            "width": 900,
+            "x": 64,
+            "y": 130
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 220,
+            "id": "dialogue",
+            "kind": "dialogue",
+            "width": 1152,
+            "x": 64,
+            "y": 210
+          },
+          {
+            "color": "#e9e3d5",
+            "fontSize": 22,
+            "height": 140,
+            "id": "choices",
+            "kind": "choices",
+            "visibleWhen": "choice",
+            "width": 1152,
+            "x": 64,
+            "y": 450
+          },
+          {
+            "action": "advance",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "advance",
+            "kind": "button",
+            "radius": 8,
+            "text": "계속",
+            "width": 220,
+            "x": 1010,
+            "y": 640
+          }
+        ],
+        "id": "story",
+        "label": "대화·선택지"
+      },
+      {
+        "elements": [
+          {
+            "color": "#e9e3d5",
+            "fill": "#18252b",
+            "fontSize": 22,
+            "height": 720,
+            "id": "background",
+            "kind": "panel",
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "color": "#e9e3d5",
+            "componentId": "save-controls",
+            "fontSize": 22,
+            "height": 48,
+            "id": "toolbar",
+            "kind": "component",
+            "width": 288,
+            "x": 960,
+            "y": 24
+          },
+          {
+            "binding": "title",
+            "color": "#e9e3d5",
+            "fontSize": 32,
+            "height": 80,
+            "id": "title",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 150
+          },
+          {
+            "binding": "ending",
+            "color": "#e9e3d5",
+            "fontSize": 40,
+            "height": 160,
+            "id": "ending",
+            "kind": "text",
+            "width": 1120,
+            "x": 80,
+            "y": 290
+          },
+          {
+            "action": "start",
+            "color": "#e9e3d5",
+            "fill": "#375a63",
+            "fontSize": 22,
+            "height": 48,
+            "id": "start",
+            "kind": "button",
+            "radius": 8,
+            "text": "다시 시작",
+            "width": 380,
+            "x": 450,
+            "y": 560
+          }
+        ],
+        "id": "ending",
+        "label": "엔딩"
+      }
+    ],
+    "width": 1280
+  }
+}

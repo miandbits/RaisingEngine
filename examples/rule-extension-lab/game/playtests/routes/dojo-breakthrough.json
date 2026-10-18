@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "id": "dojo-breakthrough",
+  "name": "수련 돌파와 엔딩",
+  "gameId": "rule-extension-lab",
+  "recordedFingerprint": "sha256:592d83d7f8156f0885ef213966bfa08a31d677cc7ec1ef80a37e342065c615af",
+  "origin": {
+    "seed": 42,
+    "mode": "full",
+    "initialOverrides": {
+      "attributes": {},
+      "flags": {},
+      "relationships": {}
+    }
+  },
+  "commands": [
+    {
+      "type": "executeAction",
+      "actionId": "rx-flow-1-prepare",
+      "quantity": 1
+    },
+    {
+      "type": "executeAction",
+      "actionId": "rx-flow-1-practice",
+      "quantity": 1
+    },
+    {
+      "type": "executeAction",
+      "actionId": "rx-flow-1-complete",
+      "quantity": 1
+    },
+    {
+      "type": "executeAction",
+      "actionId": "celebrate",
+      "quantity": 1
+    },
+    {
+      "type": "setSchedule",
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ]
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "choose",
+      "choiceId": "register"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "setSchedule",
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ]
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "executeActivity"
+    },
+    {
+      "type": "acknowledgeResult"
+    },
+    {
+      "type": "resolvePeriodEnd"
+    },
+    {
+      "type": "advanceNarrative"
+    },
+    {
+      "type": "advanceNarrative"
+    }
+  ],
+  "endingId": "ordinary",
+  "checkpoints": [
+    2,
+    3
+  ],
+  "checkpointEvery": 3
+}

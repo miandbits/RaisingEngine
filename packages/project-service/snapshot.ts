@@ -71,7 +71,7 @@ export async function buildSnapshot(loaded: LoadedProject): Promise<SnapshotResu
   }
   sortDiagnostics(validation.diagnostics);
   if (validation.diagnostics.some(d => d.severity === 'error')) return { ok: false, diagnostics: validation.diagnostics };
-  const payload = { snapshotVersion: '1' as const, ...content, assetHashes };
+  const payload = { snapshotVersion: '1' as const, ...content, assetHashes, ...(validation.ruleLock ? { ruleExtensionLock: validation.ruleLock } : {}) };
   const canonical = canonicalJson(payload);
   // Normalize the returned objects too, so equivalent source key order cannot leak into replay logs.
   const normalized = JSON.parse(canonical) as typeof payload;

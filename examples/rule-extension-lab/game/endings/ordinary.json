@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../../packages/schema/ending.schema.json",
+  "formatVersion": "0.1.0",
+  "id": "ordinary",
+  "label": "새로운 출발",
+  "requirements": {
+    "op": "always"
+  },
+  "priority": 0,
+  "entryNodeId": "intro",
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "두 달 동안 자신의 속도로 생활했습니다. 다음 도전은 이제 시작입니다.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}
