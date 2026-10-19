@@ -36,7 +36,10 @@ function differences(before: unknown, after: unknown) {
 export async function previewSaveMigration(source: ContentSnapshot, target: ContentSnapshot, text: string,
   options: { resetPresentation?: boolean; cancelled?: () => boolean } = {}) {
   if (source.project.gameId !== target.project.gameId) return fail('MIGRATION_GAME', '서로 다른 게임으로 저장을 이전할 수 없습니다.');
+  // A cancelled request must not start an expensive historical replay.
+  if (options.cancelled?.()) return fail('MIGRATION_CANCELLED', '저장 이전을 취소했습니다.');
   const original = await decodeSave(source, text);
+  if (options.cancelled?.()) return fail('MIGRATION_CANCELLED', '저장 이전을 취소했습니다.');
   if (!original.ok) return original;
   if (original.playerPresentation && !options.resetPresentation && source.contentFingerprint !== target.contentFingerprint)
     return fail('MIGRATION_PRESENTATION', '연출·플러그인 상태는 자동 이전하지 않습니다. 연출 초기화를 명시적으로 선택하세요.', '/playerPresentation');

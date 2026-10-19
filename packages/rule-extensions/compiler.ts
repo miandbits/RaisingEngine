@@ -28,7 +28,7 @@ export function compileRules(project: LoadedProject): RuleCompilation {
     let pointer = item.pointer;
     while (true) {
       const origin = origins.get(`${item.file}:${pointer}`);
-      if (origin) return { ...diagnostic(origin.doc, origin.pointer, item.code, item.message, item.relatedIds, item.severity),
+      if (origin) return { ...diagnostic(origin.doc, origin.pointer+(origin.pinned?'':item.pointer.slice(pointer.length)), item.code, item.message, item.relatedIds, item.severity),
         relatedLocations: [{ file: item.file, pointer: item.pointer, line: item.line, column: item.column }] };
       if (!pointer) return item;
       pointer = pointer.slice(0, pointer.lastIndexOf('/'));
@@ -98,7 +98,7 @@ export function compileRules(project: LoadedProject): RuleCompilation {
       for(const [i,v] of value.entries()) {
         const input=at(origin,i), position=childPointer(outputPath,output.length);
         // Preserve the author location even when an earlier effect expands into several.
-        const author=sourceOrigin(input);
+        const author=isObject(v)&&(v.op==='ruleEffect'||v.op==='ruleCondition')?{...sourceOrigin(input),pinned:true}:sourceOrigin(input);
         const expanded=expand(v,input,stack,depth+1,position);
         const values=isObject(v)&&v.op==='ruleEffect'&&Array.isArray(expanded)?expanded:[expanded];
         for(const item of values){origins.set(`${origin.doc.file}:${childPointer(outputPath,output.length)}`,author);output.push(item);}
@@ -111,7 +111,7 @@ export function compileRules(project: LoadedProject): RuleCompilation {
       const kind = value.op === 'ruleCondition' ? 'conditions' : 'effects';
       const d = resolve(value,kind,origin), key = `${d.pack.id}/${kind}/${d.value.id}`;
       if (stack.includes(key)) fail(origin,'RULE_CYCLE',`재귀 규칙 호출: ${[...stack,key].join(' → ')}`);
-      origins.set(`${origin.doc.file}:${outputPath}`,sourceOrigin(origin));
+      origins.set(`${origin.doc.file}:${outputPath}`,{...sourceOrigin(origin),pinned:true});
       const body = substitute(d.value.body!,parameters(d,value.args,origin),origin);
       return expand(body,{...sourceOrigin(origin),pinned:true},[...stack,key],depth+1,outputPath);
     }
@@ -189,8 +189,8 @@ export function compileRules(project: LoadedProject): RuleCompilation {
         if(!ids.has(String(definition.initial)))fail(origin,'RULE_STATE','초기 상태가 없습니다.');
         const group=`rx-${id}`;
         if(stateGroups.some(s=>isObject(s)&&s.id===group))fail(origin,'RULE_COLLISION',`상태 ID 충돌: ${group}`);
-        origins.set(`${source.file}:/stateGroups/${stateGroups.length}`,origin);
-        generatedOrigins.set(`${source.file}:/stateGroups/${stateGroups.length}`,origin);
+        origins.set(`${source.file}:/stateGroups/${stateGroups.length}`,{...origin,pinned:true});
+        generatedOrigins.set(`${source.file}:/stateGroups/${stateGroups.length}`,{...origin,pinned:true});
         stateGroups.push({id:group,name:instance.name!,scope:instance.scope!,initialValueId:definition.initial!,values:states});
         const transitionIds=new Set<string>();
         for(const value of array(definition.transitions,origin)) {
@@ -202,8 +202,8 @@ export function compileRules(project: LoadedProject): RuleCompilation {
           const owner=instance.scope==='character'?{owner:{kind:'actor'}}:{};
           const conditions:Json[]=[{op:'any',conditions:from.map(state=>({op:'stateIs',stateGroupId:group,stateValueId:state,...owner}))}];
           if(t.requirements)conditions.push(t.requirements);
-          origins.set(`${source.file}:/gameplay/actions/${actions.length}`,origin);
-          generatedOrigins.set(`${source.file}:/gameplay/actions/${actions.length}`,origin);
+          origins.set(`${source.file}:/gameplay/actions/${actions.length}`,{...origin,pinned:true});
+          generatedOrigins.set(`${source.file}:/gameplay/actions/${actions.length}`,{...origin,pinned:true});
           actions.push({id:actionId,name:t.name!,costs:t.costs??[],maxQuantity:1,requirements:{op:'all',conditions},effects:[...(array(t.effects??[],origin,100)),{op:'setState',stateGroupId:group,stateValueId:t.to!,...owner}],...(t.eventId?{eventId:t.eventId}:{})});
         }
       }

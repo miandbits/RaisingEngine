@@ -6,16 +6,19 @@ import { StudioEditor } from '../dist/packages/studio-service/editor.js';
 import { buildCatalog, searchCatalog, buildRelations } from '../dist/packages/analysis-service/catalog.js';
 import { loadProject, buildSnapshot } from '../dist/packages/project-service/index.js';
 import { searchGoalRoute } from '../dist/packages/analysis-service/goal-search.js';
+import { durabilityRules, connectDurabilityEvent } from './lib/durability-rules.mjs';
 
 const count = Number(process.env.DURABILITY_COUNT || 10000);
-assert.ok(Number.isInteger(count) && count >= 100 && count <= 50000);
+assert.ok(Number.isInteger(count) && count >= 100 && count <= 19000,
+  'This fixture supports 100–19000 entities within the existing 10000-document and 10000-item limits.');
 const output = resolve('.cache/durability'); await mkdir(output,{recursive:true});
 const root = await mkdtemp(join(output,'project-'));
 await cp(resolve('examples/academy-journey'),root,{recursive:true});
 const editor = new StudioEditor(); await editor.open(root);
 const docs=editor.view().documents, project=structuredClone(docs.find(d=>d.kind==='project').data);
-const group=Math.floor(count/10), pad=i=>String(i).padStart(5,'0');
+const group=Math.max(Math.floor(count/10),Math.ceil((count+project.gameplay.items.length-10000)/3)), pad=i=>String(i).padStart(5,'0');
 project.gameplay.items=Array.from({length:count-3*group},(_,i)=>({id:`durable-item-${pad(i)}`,name:`내구성 상품 ${pad(i)}`,maxStack:99})).concat(project.gameplay.items);
+const rules=process.env.DURABILITY_RULES==='1'||process.argv.includes('--rules')?await durabilityRules(project):undefined;
 await writeFile(join(root,'project.json'),JSON.stringify(project));
 // Synthetic load fixture, never represented as GUI-authored content.
 for(const [kind,folder] of [['event','events'],['ending','endings'],['character','characters']]){
@@ -24,10 +27,13 @@ for(const [kind,folder] of [['event','events'],['ending','endings'],['character'
     const data=structuredClone(base);data.id=`durable-${kind}-${pad(i)}`;
     if(kind==='character')data.name=`내구성 인물 ${pad(i)}`;
     else {data.label=`내구성 ${kind} ${pad(i)}`;data.requirements={op:'compare',comparator:'gte',left:{op:'read',target:{kind:'attribute',attributeId:'skill'}},right:{op:'literal',value:9999}};if(kind==='ending')data.priority=i%100;}
+    if(rules&&kind==='event')connectDurabilityEvent(data,i,rules);
     await writeFile(join(root,folder,`${data.id}.json`),JSON.stringify(data));
   }
 }
 const report={version:1,at:new Date().toISOString(),node:process.version,platform:process.platform,cpu:os.cpus()[0]?.model,syntheticEntities:count,root,measurements:{},checks:{}};
+report.distribution={events:group,endings:group,characters:group,items:count-3*group};
+if(rules)report.rules=rules;
 const measure=async(name,runs,fn)=>{
   const times=[];let result;
   for(let i=0;i<runs;i++){const start=performance.now();result=await fn(i);times.push(performance.now()-start);}
@@ -42,6 +48,20 @@ await measure('search',30,()=>{const rows=searchCatalog(catalog,{text:`내구성
 await measure('sort',10,()=>searchCatalog(catalog,{sort:'label'}));
 await measure('references',5,()=>buildRelations(catalog));
 await measure('editUndo',5,i=>{const data=structuredClone(project);data.gameplay.items[0].name=`수정 ${i}`;const reply=editor.edit({type:'replace',file:'project.json',data},editor.view().revision);assert.equal(reply.error,null);assert.equal(editor.edit({type:'undo'},editor.view().revision).error,null);});
+if(rules){
+  await measure('ruleEditUndo',10,i=>{
+    const data=structuredClone(project);data.ruleExtensions.progressions[0].args.gain=2+i;
+    assert.equal(editor.edit({type:'replace',file:'project.json',data},editor.revision).error,null);
+    assert.equal(editor.edit({type:'undo'},editor.revision).error,null);
+  });
+  const bad=structuredClone(project);bad.ruleExtensions.progressions[0].version='9.0.0';
+  assert.equal(editor.edit({type:'replace',file:'project.json',data:bad},editor.revision).error,null);
+  await editor.validate(editor.revision);
+  const error=editor.view().diagnostics.find(d=>d.code==='RULE_VERSION');
+  assert.ok(error&&error.pointer.startsWith('/ruleExtensions/progressions/0'),JSON.stringify(editor.view().diagnostics.slice(0,3)));
+  report.checks.ruleErrorLocation=error.pointer;
+  assert.equal(editor.edit({type:'undo'},editor.revision).error,null);
+}
 const broken=structuredClone(project);broken.gameplay.interactions[0].itemId='missing-durability-item';const invalid=editor.edit({type:'replace',file:'project.json',data:broken},editor.view().revision);assert.equal(invalid.error,null);
 await editor.validate(editor.view().revision);
 assert.ok(editor.view().diagnostics.some(d=>d.severity==='error'&&d.pointer==='/gameplay/interactions/0/itemId'));report.checks.invalidReference=true;
@@ -60,8 +80,11 @@ const search=await measure('goalSearch',1,()=>searchGoalRoute(built.snapshot,{ta
 report.checks.goalSearch={status:search.status,exploredStates:search.exploredStates,message:search.message??null};
 const cancelled=await measure('cancelSearch',1,()=>searchGoalRoute(built.snapshot,{target,timeoutMs:2000},{cancelled:()=>true}));assert.equal(cancelled.status,'cancelled');
 report.memory=process.memoryUsage();
+// A retained-heap trend, not a claim that process RSS is a peak or proof of no leak.
+if(global.gc){report.retainedHeap=[];for(let i=0;i<6;i++){await editor.open(root);await editor.validate(editor.revision);global.gc();report.retainedHeap.push(process.memoryUsage().heapUsed);}}
 report.budgets={searchP95Ms:100,sortP95Ms:250,editUndoP95Ms:1500,validateP95Ms:10000,cancelSearchMs:250};
+if(rules)report.budgets.ruleEditUndoP95Ms=1500;
 report.violations=Object.entries(report.budgets).filter(([name,max])=>report.measurements[name.replace(/P95Ms$|Ms$/,'')].p95Ms>max).map(([name,max])=>({name,max}));
-const file=resolve(process.env.DURABILITY_REPORT||join(output,`report-${count}.json`));await writeFile(file,JSON.stringify(report,null,2));
+const file=resolve(process.env.DURABILITY_REPORT||join(output,`report-${rules?'rules-':''}${count}.json`));await writeFile(file,JSON.stringify(report,null,2));
 console.log(JSON.stringify({report:file,entities:report.catalogEntries,measurements:report.measurements,violations:report.violations}));
 if(report.violations.length)process.exitCode=1;

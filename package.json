@@ -61,9 +61,10 @@
     "build:plugin:cutout": "node plugins/cutout-animation/tools/build.mjs win wasm studio test && node plugins/cutout-animation/tools/package.mjs",
     "test:plugins": "node --test --test-concurrency=1 tests/plugins/*.test.mjs",
     "benchmark:durability": "node scripts/benchmark-durability.mjs",
+    "benchmark:rule-durability": "node --expose-gc scripts/benchmark-durability.mjs --rules",
     "save:migrate": "node scripts/migrate-save.mjs",
     "report:platforms": "node scripts/report-platform-support.mjs",
-    "test:durability": "node --test --test-concurrency=1 tests/runtime/migration.test.mjs tests/runtime/migration-cli.test.mjs tests/runtime/long-campaign.test.mjs tests/runtime/save.test.mjs tests/journey/legacy-save.test.mjs tests/journey/mcp-conflict.test.mjs"
+    "test:durability": "node --test --test-concurrency=1 tests/runtime/migration.test.mjs tests/runtime/migration-cli.test.mjs tests/runtime/rule-durability.test.mjs tests/runtime/long-campaign.test.mjs tests/runtime/save.test.mjs tests/journey/legacy-save.test.mjs tests/journey/mcp-conflict.test.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

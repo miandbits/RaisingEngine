@@ -18,7 +18,7 @@ test('content migration validates old save, reports changed state, reloads new s
   assert.ok(preview.report.changes.some(c => c.path === '/attributes/money' && c.after - c.before === 10));
   const root = await temporary(t), old = join(root,'old.json'), next = join(root,'new.json');
   await writeFile(old, encoded.text);
-  const published = await publishMigratedSave(next, source, target, encoded.text, preview.report.approval); assert.ok(published.ok);
+  const published = await publishMigratedSave(next, source, target, encoded.text, preview.report.approval); assert.ok(published.ok,JSON.stringify(published));
   const loaded = await loadRun(next,target); assert.ok(loaded.ok);
   assert.deepEqual(loaded.session.state.rng, session.state.rng);
   const continued = send(target, loaded.session, {type:'acknowledgeResult'});
@@ -43,6 +43,7 @@ test('migration fails closed for tampering, deleted activity, different game, ca
   const other=await content(p=>{doc(p,'project').gameId='different-game';});
   assert.equal((await previewSaveMigration(source,other,encoded.text)).error.code,'MIGRATION_GAME');
   assert.equal((await previewSaveMigration(source,source,encoded.text,{cancelled:()=>true})).error.code,'MIGRATION_CANCELLED');
+  assert.equal((await previewSaveMigration(source,source,'not even parsed',{cancelled:()=>true})).error.code,'MIGRATION_CANCELLED','cancel before parsing or replaying a long journal');
 });
 
 test('presentation reset is explicit and reported, legacy saves without presentation still work', async () => {

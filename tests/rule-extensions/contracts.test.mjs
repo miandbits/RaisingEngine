@@ -71,7 +71,7 @@ for(const [label,edit,code] of [
 test('expanded effect source map preserves the following authored effect index',async()=>{
   const root=await baseProject();const p=await addRules(root);p.gameplay.actions=[{id:'mapped',name:'mapped',costs:[],effects:[{op:'ruleEffect',packageId:'dojo',version:'1.0.0',ruleId:'practice',args:{}},{op:'add',target:{kind:'attribute',attributeId:'missing'},value:{op:'literal',value:1}}]}];
   await writeFile(root+'/project.json',JSON.stringify(p,null,2));const result=await validateProject(await loadProject(root));
-  assert.equal(result.valid,false);assert.ok(result.diagnostics.some(d=>d.code==='REFERENCE_MISSING'&&d.pointer==='/gameplay/actions/0/effects/1'),JSON.stringify(result.diagnostics));
+  assert.equal(result.valid,false);assert.ok(result.diagnostics.some(d=>d.code==='REFERENCE_MISSING'&&d.pointer==='/gameplay/actions/0/effects/1/target/attributeId'),JSON.stringify(result.diagnostics));
 });
 
 test('two characters keep independent progression and save/replay state',async()=>{
@@ -123,4 +123,21 @@ test('committed portable sample reaches its recorded ending with automatic save 
 test('compiled references receive normal semantic validation mapped to author source',async()=>{
   const root=await baseProject();const p=await addRules(root);p.ruleExtensions.progressions[0].args.stat='missing';await writeFile(root+'/project.json',JSON.stringify(p,null,2));
   const result=await validateProject(await loadProject(root));assert.equal(result.valid,false);assert.ok(result.diagnostics.some(d=>d.pointer.startsWith('/ruleExtensions/progressions/0')&&d.relatedLocations?.length),JSON.stringify(result.diagnostics));
+});
+
+test('rule source maps preserve exact ordinary fields and shifted effect locations',async()=>{
+  const root=await baseProject();const p=await addRules(root);
+  p.gameplay.actions=[{id:'broken',name:'참조 오류',costs:[{attributeId:'absent',amount:1}],effects:[
+    {op:'ruleEffect',packageId:'dojo',version:'1.0.0',ruleId:'practice',args:{}},
+    {op:'add',target:{kind:'attribute',attributeId:'missing'},value:{op:'literal',value:1}}
+  ]}];
+  await writeFile(root+'/project.json',JSON.stringify(p,null,2));
+  const loaded=await loadProject(root),compiled=compileRules(loaded);assert.equal(compiled.diagnostics.length,0);
+  const diagnostic=pointer=>({code:'REFERENCE_MISSING',severity:'error',file:'project.json',pointer,line:1,column:1,message:'missing'});
+  assert.equal(compiled.remap(diagnostic('/gameplay/actions/0/costs/0/attributeId')).pointer,'/gameplay/actions/0/costs/0/attributeId');
+  assert.equal(compiled.remap(diagnostic('/gameplay/actions/0/effects/2/target/attributeId')).pointer,'/gameplay/actions/0/effects/1/target/attributeId');
+  assert.equal(compiled.remap(diagnostic('/gameplay/actions/0/effects/0/target/attributeId')).pointer,'/gameplay/actions/0/effects/0');
+  assert.equal(compiled.remap(diagnostic('/gameplay/actions/1/costs/0/attributeId')).pointer,'/ruleExtensions/progressions/0');
+  const checked=await validateProject(loaded);
+  assert.ok(checked.diagnostics.some(d=>d.pointer==='/gameplay/actions/0/effects/1/target/attributeId'),JSON.stringify(checked.diagnostics));
 });

@@ -28,6 +28,8 @@ jobs:
         run: npm run test:regression
       - name: Test portable rule extensions and committed progression route
         run: npm run test:rule-contracts
+      - name: Test save migration, recovery and long campaigns
+        run: npm run test:durability
       - name: Check public samples and asset-free regression fixtures
         run: npm run check:public-content && npm run test:public-content
       - name: Check committed pilot routes and approved expectations
@@ -51,6 +53,9 @@ jobs:
             .cache/ci-goal-regression/
             .cache/goal-regression-cli-*/reports/
             .cache/goal-ci-*/reports/
+            .cache/durability/long-campaign.json
+            .cache/durability/stage4-rule-campaign.json
+            .cache/durability/rule-migration-*/report.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
