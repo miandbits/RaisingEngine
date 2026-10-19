@@ -10,10 +10,15 @@ permissions:
   contents: read
 jobs:
   install:
+    # Owner-approved temporary permission for this manual draft-validation run.
+    permissions:
+      contents: write
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Download and verify draft release assets
         shell: pwsh
         env:
