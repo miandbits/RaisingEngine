@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "testedSourceCommit": "2c40efbe2eaaec65aa657d02c1b07c1b1ba55246",
+  "baselineCommit": "17fdfd3ad72546678ca78b51dbe899e0b0321df8",
+  "reviewDirectory": "../RaisingStudio-public-review-20261018",
+  "cleanClone": {
+    "independentGitObjects": true,
+    "copiedBuildCaches": false,
+    "installedSdkPrerequisites": [
+      "Node 22.14.0",
+      "Qt 6.10.1 / MinGW 13.1",
+      "CMake / MinGW",
+      "Emscripten SDK"
+    ],
+    "checks": {
+      "npmCiAnd111FixtureMedia": true,
+      "headlessBuild": true,
+      "qtBuild": true,
+      "nativePlayerBuild": true,
+      "webBuild": true,
+      "publicAndServiceTests": {
+        "passed": 7,
+        "failed": 0
+      },
+      "portableQtWidgetCreationEditExport": true,
+      "windowsExactSaveRestore": true,
+      "exportedChromiumPlay": {
+        "passed": true,
+        "checks": [
+          "purchase",
+          "equip",
+          "unequip",
+          "quest",
+          "expedition",
+          "combat",
+          "loot",
+          "download-upload-save",
+          "exact-replay",
+          "relationship-event"
+        ]
+      },
+      "currentDocumentationRelativeLinks": {
+        "documents": 87,
+        "broken": 0
+      }
+    },
+    "environmentRetries": [
+      "Emscripten sandbox TEMP cleanup denied: used an isolated workspace TEMP directory.",
+      "Chromium localhost access denied in sandbox: reran the same test outside that restriction."
+    ],
+    "package": {
+      "files": 1499,
+      "bytes": 237487267,
+      "unsigned": true,
+      "publicReleaseReady": false
+    }
+  },
+  "preservation": {
+    "persistentFileCount": 13723,
+    "changedFiles": [],
+    "worktrees": {
+      "RaisingEngine-anim": {
+        "unchanged": true,
+        "head": "d4483804c722caea9ef66028ad4a1aaf3fc97400",
+        "status": ""
+      },
+      "RaisingEngine-int": {
+        "unchanged": true,
+        "head": "a2f9e5870e36a33ee865516a02991ac06fd0b7a7",
+        "status": "?? integration/\n"
+      }
+    }
+  },
+  "footprint": {
+    "trackedBytesBefore": 333572319,
+    "trackedBytesAfterCodeCleanup": 124152363,
+    "deduplicatedMediaFiles": 111,
+    "deduplicatedMediaBytes": 208984711
+  },
+  "historyExperiment": {
+    "mirror": "history-review.git",
+    "testedOriginalCommit": "6cf007b",
+    "currentTreeUnchanged": true,
+    "tree": "2aa1a1aeaf192ede7b6ae139ae9c4a4157154f2b",
+    "forbiddenPathsBefore": 3731,
+    "forbiddenPathsAfter": 0,
+    "excludedAssetBlobsBefore": 142,
+    "excludedAssetBlobsAfter": 0,
+    "credentialSignatureSuspectsAfter": 0,
+    "gitFsckPassed": true,
+    "originalHistoryRewritten": false,
+    "remoteHistoryRewritten": false,
+    "limitation": "Known paths/hashes and selected credential signatures only; not a complete provenance or secret clearance."
+  },
+  "artifacts": [
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/preflight.txt",
+      "sha256": "ada8a48ed6ef7515438af389fd1ee2c2cdffa92a309a526c53b04189c71fbfac"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/npm-ci.log",
+      "sha256": "27d61569c4d8a4d4e3df83ef5af9a5420d60d2bbc589a489a464b70c77cede29"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/layout.log",
+      "sha256": "820fc3945aafec43ea559b4b278c390e014650674f1f128dfceb4cf082bce682"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/headless.log",
+      "sha256": "1f271c8e37b218abc8acc95547e004bd9711510973077f1c61c6b544082844de"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/native-player.log",
+      "sha256": "a5844d67012e00bd9d707629f1cb13a6fc5c0ab28b6be4745c592022a7d94931"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/qt-studio.log",
+      "sha256": "edb90ec0394f93b2ea15276aed58b7a2a1f2e57e86c2ef6030fb8e4a378311ee"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/web-retry.log",
+      "sha256": "9a648267b40bc06485afdbd877ed7611d9647fa25cedce93c649f1e444672591"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/public-services.log",
+      "sha256": "dde6a6998342e943a08b4b3e4f93f9cff91e42e02fb0516efdd3f0675868fb2c"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/package.log",
+      "sha256": "f60a5d987ca44c8d1d59bc1c424326bc5f26f920cf1d9e623188a86b5c82faeb"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/qt-preview.log",
+      "sha256": "861005156c20e3071e7b56b7fa7a941819b0c1412cd315f89b9b659526a40c52"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/exported-web-play-retry.log",
+      "sha256": "4e279aaad193fea7ec81a78b8c0a0bcdbd66ce76bfee13ac40690a510c329946"
+    },
+    {
+      "path": "clean-checkout/.cache/qt-release/run-mijBmc/evidence/qt-workflow.json",
+      "sha256": "ff464df1c069dbe896256eeedb527d562e8f4457b7bcb5d9b9cdb5f56d1af869"
+    },
+    {
+      "path": "clean-checkout/.cache/qt-release/run-mijBmc/evidence/native-report.json",
+      "sha256": "6faf26f33dabb14c65e514494db25036df9b348d2b607fe1284519e0ff64bb26"
+    },
+    {
+      "path": "clean-checkout/.cache/qt-release/run-mijBmc/evidence/installed-editor.png",
+      "sha256": "27c88a987064f096e455544919800e4a77cb2d41c3ceb03771ef53d24f959713"
+    },
+    {
+      "path": "clean-checkout/.cache/qt-release/run-mijBmc/evidence/restored.png",
+      "sha256": "e93be443f65dd82a206a21fe90efa973f37e66b4caa82e712966a59e28f8f4b8"
+    },
+    {
+      "path": "clean-checkout/.cache/qt-release/run-mijBmc/evidence/export-web.png",
+      "sha256": "4e057ab6ac7227b2660d95377f878c82323aba0fa5461f07f8c7cda4c7bff948"
+    },
+    {
+      "path": "clean-checkout/.cache/qt-release/run-mijBmc/evidence/export-windows.png",
+      "sha256": "e45690434892c972237e30f306ef5e29e097052b8d97ef3e8cb686ac9139362f"
+    },
+    {
+      "path": "clean-checkout/.cache/journey-adventure-web/evidence.json",
+      "sha256": "3da5b9c0baed07b122264c622089b4e03ac24397eab7e98bd36f91740a902dcb"
+    },
+    {
+      "path": "clean-checkout/.cache/journey-adventure-web/victory.png",
+      "sha256": "783a61fcccaabcd6a038ba8dc01a24c678aa9d436ead4d67652f316ae70052af"
+    }
+  ],
+  "notEstablished": [
+    "Clean Windows VM installation and uninstall were not rerun by the portable test.",
+    "Full media rights review and comprehensive secret clearance.",
+    "Signed public release, mobile or console certification."
+  ]
+}
