@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-const roots={windows:process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-gallery-branches',web:process.env.WEB_OUT||'dist/web-durability'};
+const roots={windows:process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-authoring-preview',web:process.env.WEB_OUT||'dist/web'};
 const report={version:1,generatedAt:new Date().toISOString(),meaning:'Declared capabilities are export gates, not hardware certification. This command reads manifests only; documented test evidence is in release-durability.md.',runtimes:{},platforms:{
   windows:{stage:'capabilities-present',verification:'native integration tests and Qt authoring tests; see release-durability.md'},
   web:{stage:'capabilities-present',verification:'Chromium Wasm play, download/upload, touch emulation; other browsers unverified'},
@@ -19,5 +19,5 @@ for(const [target,root] of Object.entries(roots)){
 }
 const features=[...new Set(Object.values(report.runtimes).flatMap(r=>r.declaredFeatures??[]))].sort();
 report.featureMatrix=features.map(feature=>({feature,...Object.fromEntries(Object.entries(report.runtimes).map(([target,r])=>[target,r.declaredFeatures?r.declaredFeatures.includes(feature):null]))}));
-await mkdir('.cache/durability',{recursive:true});const output=resolve('.cache/durability/platform-support.json');await writeFile(output,JSON.stringify(report,null,2));
+const output=resolve(process.env.PLATFORM_REPORT||'.cache/durability/platform-support.json');await mkdir(resolve(output,'..'),{recursive:true});await writeFile(output,JSON.stringify(report,null,2));
 console.log(JSON.stringify({output,features:features.length,platforms:report.platforms}));

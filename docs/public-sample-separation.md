@@ -43,7 +43,7 @@ This change removes reference assets from the **new tracked tree and new source 
 
 A future public release must either use a reviewed, fresh-history source snapshot or perform a separately coordinated history cleanup. No history rewrite, force push, repository visibility change or deletion of original assets is performed here.
 
-Known-hash checking cannot prove that every unknown asset is redistributable. Engine license selection, generated-asset decisions, font/dependency notices and a full secret/history review remain on the [release checklist](open-source-readiness.md).
+Known-hash checking cannot prove that every unknown asset is redistributable. The owner selected MIT for original engine/editor code on 2026-10-18. Generated-asset decisions, font/dependency redistribution review and a full secret/history review remain on the [release checklist](open-source-readiness.md).
 
 ## Verification (2026-10-15)
 

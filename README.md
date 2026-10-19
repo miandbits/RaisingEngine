@@ -2,7 +2,7 @@
 
 A 2D raising-simulation toolkit with a Qt editor, a deterministic C++ runtime, and shared data and validation services for human designers and LLM tools.
 
-**Status: authoring alpha, preparing for an open-source release.** Small complete games and a three-month production pilot have been verified. This is not yet a broadly validated commercial engine. The engine license and redistribution review of reference-game assets are pending; see [release preparation](docs/open-source-readiness.md).
+**Status: authoring alpha, preparing for an open-source release.** Original engine/editor code is MIT licensed. Small complete games and a three-month production pilot have been verified. This is not yet a broadly validated commercial engine. Binary dependency/source obligations, public media and history review remain release gates; see [release preparation](docs/open-source-readiness.md).
 
 ## What works today
 
@@ -18,7 +18,7 @@ See the [documentation map](docs/README.md) and [current scope](docs/universal-r
 
 ## Supported development path
 
-The current editor and latest player features are verified on **Windows**. Headless regression CI runs on Linux. Earlier web and Android results cover a subset of features; they do not establish support for all newer UI, combat and direction systems. iOS and console release support is not verified.
+The Qt editor is verified on **Windows**. Windows and Chromium/WebAssembly players share the C++ rules; see the [feature support matrix](docs/platform-support.md) for tested features, limitations and evidence dates. Headless regression CI runs on Linux. Android source preparation does not establish device support. iOS and console release support is not verified.
 
 Prerequisites for the Windows path:
 
@@ -27,7 +27,7 @@ Prerequisites for the Windows path:
 - Qt 6 desktop development kit, its compatible compiler and Ninja for the editor. The tested kit is Qt 6.10.1 / MinGW 13.1.
 - Optional GitHub CLI (`gh auth login`) for browsing Actions reports in the editor.
 
-The Qt preview still uses the repository's Node service and dependencies. It is not a self-contained public installer. Some native dependencies are downloaded during their first build.
+The development build uses the repository's Node service. The [Qt preview packaging path](docs/qt-preview-release.md) bundles Node, shared services, Qt, public templates and both export runtimes; no separately installed Node or Qt SDK is needed to use that preview. It is unsigned and not a certified public release. Some native dependencies are downloaded during the first development build.
 
 ## Build and run
 

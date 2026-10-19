@@ -1,6 +1,7 @@
 #include "studio.hpp"
 #include "project-manager.hpp"
 #include "theme.hpp"
+#include "runtime-paths.hpp"
 #include "renderer-preview.hpp"
 #include "script-authoring.hpp"
 #include <QDialogButtonBox>
@@ -29,6 +30,7 @@
 class StudioTests : public QObject {
   Q_OBJECT
 private slots:
+  void releasePackageWorkflow();
   void freeScreenAuthoring();
   void presentationVariantsAuthoring();
   void customStatesAuthoring();
@@ -981,6 +983,7 @@ private slots:
 #include "script-portrait-transform-test.inc"
 #include "script-scene-preview-test.inc"
 #include "export-dialog-test.inc"
+#include "release-package-test.inc"
 #include "script-rounds-test.inc"
 #include "plugin-test.inc"
 #include "cutout-e2e-test.inc"

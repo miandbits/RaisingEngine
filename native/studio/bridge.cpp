@@ -1,5 +1,6 @@
 #include "bridge.hpp"
 #include <QDir>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QTimer>
 
@@ -34,7 +35,8 @@ StudioBridge::StudioBridge(const QString &engineRoot, QObject *parent)
                  QString::fromUtf8(process.readAllStandardError()));
           });
   process.setWorkingDirectory(engineRoot);
-  process.start(qEnvironmentVariable("RAISING_NODE", "node"),
+  const auto bundledNode=QDir(engineRoot).filePath("node.exe");
+  process.start(qEnvironmentVariable("RAISING_NODE", QFileInfo::exists(bundledNode)?bundledNode:"node"),
                 {QDir(engineRoot).filePath("apps/qt-studio/service.mjs")});
 }
 StudioBridge::~StudioBridge() {

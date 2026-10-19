@@ -2,6 +2,7 @@
   "name": "raising-engine",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Schedule-based raising simulation engine — validated data and deterministic headless core",
   "engines": {
@@ -15,6 +16,9 @@
     "check:regression": "node scripts/check-goal-regression.mjs",
     "test:regression": "node --test --test-concurrency=1 tests/analysis/goal-regression-cli.test.mjs tests/analysis/goal-ci.test.mjs tests/analysis/goal-github.test.mjs",
     "build:qt-studio": "node scripts/build-qt-studio.mjs",
+    "package:qt-studio": "node scripts/package-qt-studio.mjs",
+    "installer:qt-studio": "node scripts/build-qt-installer.mjs",
+    "test:qt-package": "node scripts/test-qt-package.mjs",
     "studio:qt": "node scripts/start-qt-studio.mjs",
     "test:qt-studio": "node scripts/test-qt-studio.mjs",
     "test:novice-game": "node --test tests/journey/novice-complete-game.test.mjs",

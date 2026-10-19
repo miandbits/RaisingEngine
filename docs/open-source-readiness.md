@@ -4,7 +4,7 @@ Initial audit: 2026-10-15, based on the tracked working tree after `161b1fc`.
 
 ## Current status
 
-This is a development repository being prepared for release, not a reviewed public source distribution. No engine LICENSE file is present. Existing third-party license files apply to their corresponding dependencies, not to the whole engine.
+This is a development repository being prepared for release, not a reviewed public source distribution. On 2026-10-18 the owner approved MIT for original engine/editor code; see the root LICENSE. Third-party software and media retain their own terms. See [Qt preview release](qt-preview-release.md) and [asset boundary](public-assets.md) for the current package and remaining public-release gates. The figures below describe the historical initial audit.
 
 The initial tracked tree contains 4,748 files and approximately 530 MiB. `projects/` accounts for 3,673 files / 451.5 MiB, `examples/` 38.9 MiB and `assets/` 15.1 MiB. Several project copies contain the same large fonts or assets. Size reduction must preserve playable samples and regression coverage.
 
@@ -16,7 +16,7 @@ PM2 project provenance identifies extracted source sprites, and Magical Princess
 
 | Priority | Work | Completion evidence |
 |---|---|---|
-| P0 | Select engine license; review dependency notices and asset provenance | Owner-approved license, dependency notice inventory, asset-by-asset distribution decisions |
+| P0 | MIT selected by owner; complete dependency and asset review | Root LICENSE is MIT. Dependency source/notice inventory and asset-by-asset distribution decisions remain |
 | P0 | Separate reference-game projects and replace copied assets in public fixtures | Curated public sample set with verified provenance; no dependency on local game installations |
 | P0 | Review secrets, personal paths and Git history | Dedicated secret scan covering history and working tree; documented handling of findings; no publication based solely on this inventory |
 | P1 | Reproducible contributor setup | Fresh checkout on another Windows environment builds editor/player and runs a small documented smoke suite without private fixtures or local-only toolchain paths |

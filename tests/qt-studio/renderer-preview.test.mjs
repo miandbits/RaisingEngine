@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cp, mkdir, mkdtemp, readFile, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { QtStudioService } from '../../apps/qt-studio/service.mjs';
 
 async function fixture(features = ['renderer-preview-v1']) {
@@ -42,7 +43,7 @@ test('renderer preview exports the unsaved draft without touching disk, revision
   assert.deepEqual(after.documents, before.documents);
   for (const [file, bytes] of originalFiles) assert.deepEqual(await readFile(path.join(root, file)), bytes, file);
   assert.equal(result.play.preview, true); assert.equal(result.play.revision, before.revision);
-  assert.ok(result.play.directory.includes(path.join('.cache', 'qt-render-preview', 'run-')));
+  assert.ok(result.play.directory.startsWith(path.join(process.env.RAISING_STUDIO_CACHE||path.join(os.tmpdir(),'RaisingStudio'),'qt-render-preview')+path.sep));
   assert.equal(path.dirname(result.play.save), path.dirname(result.play.directory));
   assert.notEqual(path.dirname(result.play.save), root);
   await assert.rejects(access(result.play.save), { code: 'ENOENT' });

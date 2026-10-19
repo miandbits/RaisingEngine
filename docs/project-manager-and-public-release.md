@@ -21,12 +21,12 @@ Run `npm run studio:qt` without `--project` to open the manager. `QT_STUDIO_OUT`
 
 ## What this does not yet establish
 
-The startup workflow is implemented; this is still an authoring alpha. A self-contained distributable must bundle the Node service/dependencies, public templates, runtime/player, fonts and required notices so it needs neither this repository nor a separately installed Node toolchain. Release installers, upgrades, crash recovery, clean-machine checks and a supported-version policy remain separate release work.
+The startup workflow is implemented; this is still an authoring alpha. The [Qt preview package](qt-preview-release.md) now bundles Node, service dependencies, five public templates, Windows/Web players, fonts and notices. Installation and creation/export are exercised without developer-tool paths on the development PC. This does not replace clean-machine testing. Upgrades, code signing, complete dependency/source redistribution review and a supported-version policy remain release work.
 
 Godot-like product maturity is the direction, not a completed acceptance criterion. Priorities after the launcher:
 
-1. Owner-approved engine license, dependency and public-asset provenance notices; history/secret review.
-2. Reproducible standalone Windows package and installer tested on a clean machine, with engine upgrades independent of user projects.
+1. Engine code is MIT by owner approval. Complete dependency and public-asset provenance review and history/secret review before publishing binaries or cleaned history.
+2. Test the standalone Windows preview on a clean machine and verify signed upgrades independently of user projects.
 3. Template/version migration coverage, recovery from interrupted saves and missing dependencies, actionable import errors.
 4. A short first-game guide and stable editor workflows verified by designers without developer help.
 5. Performance and usability trials on large commercial-scale content, followed by platform-specific certification work. Console support is unverified.

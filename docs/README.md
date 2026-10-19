@@ -37,6 +37,11 @@ Start with the [root README](../README.md). Older documents retain the implement
 
 ## Development and release
 
+- [First game in the standalone Qt preview](first-game.md)
+- [Qt packaging and installation verification](qt-preview-release.md)
+- [Windows / Web support matrix](platform-support.md)
+- [Public asset boundary](public-assets.md) and [third-party notices](../THIRD_PARTY_NOTICES.md)
+
 - [Contributing](../CONTRIBUTING.md).
 - [Open-source preparation and cleanup order](open-source-readiness.md).
 - [Public samples and local experiment separation](public-sample-separation.md).

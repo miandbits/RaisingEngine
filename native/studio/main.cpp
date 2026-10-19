@@ -1,6 +1,7 @@
 #include "studio.hpp"
 #include "project-manager.hpp"
 #include "theme.hpp"
+#include "runtime-paths.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
@@ -16,12 +17,7 @@ int main(int argc, char **argv) {
   if(qEnvironmentVariableIsEmpty("RAISING_NATIVE_PLAYER_RUNTIME")&&QFileInfo::exists(bundledPlayer+"/build.json"))
     qputenv("RAISING_NATIVE_PLAYER_RUNTIME",bundledPlayer.toUtf8());
   applyStudioTheme(app);
-  const QString bundledRoot =
-      QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../..");
-  const QString defaultRoot =
-      QFileInfo::exists(bundledRoot + "/apps/qt-studio/service.mjs")
-          ? bundledRoot
-          : QDir::currentPath();
+  const QString defaultRoot = studioEngineRoot();
   QCommandLineParser parser;
   parser.addHelpOption();
   parser.addOption(

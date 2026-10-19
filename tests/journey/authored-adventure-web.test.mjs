@@ -23,11 +23,11 @@ async function winBattle(page) {
 
 test('GUI-authored adventure plays complete route in exported C++ Wasm browser with unequip and downloaded save replay', { timeout: 120000 }, async t => {
   const output = resolve('.cache/journey-adventure-web'); await mkdir(output, { recursive: true });
-  const root = await mkdtemp(`${output}/run-`), projectRoot = resolve(root, 'project'), destination = resolve(root, 'web');
-  await cp(resolve('examples/academy-adventure'), projectRoot, { recursive: true });
-  const built = await buildSnapshot(await loadProject(projectRoot));
+  const root = await mkdtemp(`${output}/run-`), projectRoot = resolve(root, 'project'), destination = resolve(process.env.RAISING_TEST_WEB_EXPORT||resolve(root, 'web'));
+  if(!process.env.RAISING_TEST_WEB_EXPORT)await cp(resolve('examples/academy-adventure'), projectRoot, { recursive: true });
+  const built = process.env.RAISING_TEST_WEB_EXPORT?{ok:true,snapshot:JSON.parse(await readFile(resolve(destination,'game.json'),'utf8')).content}:await buildSnapshot(await loadProject(projectRoot));
   assert.equal(built.ok, true, JSON.stringify(built.diagnostics));
-  await exportGame({ content: built.snapshot, projectRoot, destination, target: 'web', runtimes: { web: resolve('dist/web'), windows: resolve('dist/native-player-mobile-check-app') } });
+  if(!process.env.RAISING_TEST_WEB_EXPORT)await exportGame({ content: built.snapshot, projectRoot, destination, target: 'web', runtimes: { web: resolve('dist/web'), windows: resolve('dist/native-player-mobile-check-app') } });
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png' };
   const server = createServer(async (req, res) => {
     try {

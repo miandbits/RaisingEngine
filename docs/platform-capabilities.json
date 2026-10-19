@@ -1,0 +1,352 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-19T03:45:21.666Z",
+  "meaning": "Declared capabilities are export gates, not hardware certification. This command reads manifests only; documented test evidence is in release-durability.md.",
+  "runtimes": {
+    "windows": {
+      "root": "D:\\Projects\\TheSword\\RaisingEngine\\dist\\native-player-authoring-preview",
+      "sha256": "5ca09e47b5a2db4d102300c83a748a6e10dfb452508636efe8f79a08ded79b10",
+      "runtime": "cpp-sdl-rmlui",
+      "declaredFeatures": [
+        "authoring-preview-v1",
+        "gallery-branches-v1",
+        "recollection-playback-v1",
+        "authored-recollection-v1",
+        "authored-gallery-v1",
+        "media-gallery-v2",
+        "narrative-gallery-v1",
+        "unified-time-v2",
+        "party-tactics-v1",
+        "expedition-conditions-v1",
+        "direction-sequences-v1",
+        "ui-composition-v1",
+        "progression-sessions-v1",
+        "character-scoped-rules-v1",
+        "roster-activities-v1",
+        "components-v1",
+        "anchors-v1",
+        "responsive-v1",
+        "renderer-preview-v1",
+        "scene-preview-v1",
+        "facilities-v1",
+        "generic-rules-v1",
+        "action-flows-v1",
+        "data-ui-v1",
+        "activity-timeline-v1",
+        "battle-hud-v1",
+        "ui-hierarchy-v1",
+        "user-fields-v1",
+        "activity-summary-v1",
+        "scene-portrait-transform-v1",
+        "relationship-change-v1",
+        "free-screens-v1",
+        "presentation-variants-v1",
+        "custom-states-v1",
+        "conditional-routing-v1",
+        "component-context-v1",
+        "monthly-schedule-v1",
+        "inline-result-playback-v1",
+        "probabilistic-actions-v1",
+        "optional-confirmation-v1",
+        "plugin-elements-v1",
+        "plugin-mesh-v1",
+        "plugin-atlas-v1"
+      ],
+      "toolFeatures": [
+        "goal-route-recording-v1"
+      ]
+    },
+    "web": {
+      "root": "D:\\Projects\\TheSword\\RaisingEngine\\dist\\web",
+      "sha256": "6d63da8d9c650df02de0e444455d0c081c55f6c6f077d2232d836c4a71a4137a",
+      "runtime": "cpp-wasm-react",
+      "declaredFeatures": [
+        "expedition-conditions-v1",
+        "components-v1",
+        "anchors-v1",
+        "responsive-v1",
+        "facilities-v1",
+        "generic-rules-v1",
+        "action-flows-v1",
+        "data-ui-v1",
+        "activity-timeline-v1",
+        "battle-hud-v1",
+        "ui-hierarchy-v1",
+        "user-fields-v1",
+        "activity-summary-v1",
+        "scene-portrait-transform-v1",
+        "relationship-change-v1",
+        "free-screens-v1",
+        "presentation-variants-v1",
+        "custom-states-v1",
+        "conditional-routing-v1",
+        "component-context-v1",
+        "roster-activities-v1",
+        "character-scoped-rules-v1",
+        "monthly-schedule-v1",
+        "inline-result-playback-v1",
+        "probabilistic-actions-v1",
+        "optional-confirmation-v1",
+        "plugin-elements-v1",
+        "plugin-mesh-v1",
+        "plugin-atlas-v1"
+      ],
+      "toolFeatures": []
+    }
+  },
+  "platforms": {
+    "windows": {
+      "stage": "capabilities-present",
+      "verification": "native integration tests and Qt authoring tests; see release-durability.md"
+    },
+    "web": {
+      "stage": "capabilities-present",
+      "verification": "Chromium Wasm play, download/upload, touch emulation; other browsers unverified"
+    },
+    "android": {
+      "stage": "source-preparation-tested",
+      "verification": "Packaging tests use a fake SDK; no APK/device claim"
+    },
+    "ios": {
+      "stage": "unverified",
+      "verification": "Requires macOS/Xcode and device build"
+    },
+    "macos": {
+      "stage": "unverified",
+      "verification": "Standalone native distribution not tested in this session"
+    },
+    "linux": {
+      "stage": "unverified",
+      "verification": "Standalone native distribution not tested in this session"
+    },
+    "switch": {
+      "stage": "blocked-sdk",
+      "verification": "No approved SDK or development hardware"
+    },
+    "playstation": {
+      "stage": "blocked-sdk",
+      "verification": "No approved SDK or development hardware"
+    },
+    "xbox": {
+      "stage": "blocked-sdk",
+      "verification": "No approved SDK or development hardware"
+    }
+  },
+  "featureMatrix": [
+    {
+      "feature": "action-flows-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "activity-summary-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "activity-timeline-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "anchors-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "authored-gallery-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "authored-recollection-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "authoring-preview-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "battle-hud-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "character-scoped-rules-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "component-context-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "components-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "conditional-routing-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "custom-states-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "data-ui-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "direction-sequences-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "expedition-conditions-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "facilities-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "free-screens-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "gallery-branches-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "generic-rules-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "inline-result-playback-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "media-gallery-v2",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "monthly-schedule-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "narrative-gallery-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "optional-confirmation-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "party-tactics-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "plugin-atlas-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "plugin-elements-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "plugin-mesh-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "presentation-variants-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "probabilistic-actions-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "progression-sessions-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "recollection-playback-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "relationship-change-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "renderer-preview-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "responsive-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "roster-activities-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "scene-portrait-transform-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "scene-preview-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "ui-composition-v1",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "ui-hierarchy-v1",
+      "windows": true,
+      "web": true
+    },
+    {
+      "feature": "unified-time-v2",
+      "windows": true,
+      "web": false
+    },
+    {
+      "feature": "user-fields-v1",
+      "windows": true,
+      "web": true
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+import {cp,mkdir,readFile,writeFile,readdir,lstat,access} from 'node:fs/promises';
+import {resolve,join,dirname,relative,basename} from 'node:path';
+import {createHash} from 'node:crypto';
+import {createRequire} from 'node:module';
+import {execFileSync} from 'node:child_process';
+
+const root=resolve('.'),out=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
+const qt=resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio-release-preview');
+const windows=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-authoring-preview');
+const web=resolve(process.env.RAISING_WEB_PLAYER_RUNTIME||'dist/web');
+try{await access(out);throw Error('Choose a new QT_PACKAGE_OUT; existing packages are never overwritten.');}catch(e){if(e.code!=='ENOENT')throw e;}
+const policy=JSON.parse(await readFile('config/repository-content.json','utf8'));
+const templates=['academy-demo','academy-year','academy-visual','academy-journey','academy-adventure'];
+for(const id of templates)if(!policy.publicSamples.includes('examples/'+id))throw Error('Template is not approved: '+id);
+const copy=async(from,to)=>{await mkdir(dirname(join(out,to)),{recursive:true});await cp(from,join(out,to),{recursive:true,errorOnExist:true,force:false,filter:s=>!relative(from,s).split(/[\\/]/).some(p=>['.studio','.git','node_modules','.cache'].includes(p))});};
+await access(`licenses/node/LICENSE-${process.version}.txt`);
+await mkdir(dirname(out),{recursive:true});await mkdir(out,{recursive:false});
+// Copy only deployable Qt files, never CMake objects, test executables or build caches.
+for(const entry of await readdir(qt,{withFileTypes:true})){
+ if(entry.name==='RaisingStudioQt.exe'||entry.name==='qt.conf'||entry.name.endsWith('.dll')||['platforms','styles','imageformats','iconengines','networkinformation','tls','translations'].includes(entry.name))await copy(join(qt,entry.name),entry.name);
+}
+await writeFile(join(out,'qt.conf'),'[Paths]\nPlugins=.\n');
+await copy('apps/qt-studio','engine/apps/qt-studio');
+await copy('dist/packages','engine/dist/packages');
+await copy('packages/schema','engine/packages/schema');
+await copy('packages/plugin-host','engine/packages/plugin-host');
+await copy(process.execPath,'engine/node.exe');
+await writeFile(join(out,'engine/package.json'),JSON.stringify({name:'raising-studio-service',version:'0.1.0',type:'module',private:true,license:'MIT'}));
+const runtime=JSON.parse(await readFile('dist/native/runtime.json','utf8'));
+await copy('dist/native/runtime.json','engine/dist/native/runtime.json');
+await copy(join('dist/native',runtime.executable),'engine/dist/native/'+runtime.executable);
+const addon=JSON.parse(await readFile('dist/native/addon.json','utf8').catch(()=>'{}'));
+if(addon.executable===runtime.executable){await copy('dist/native/addon.json','engine/dist/native/addon.json');await copy(join('dist/native',addon.filename),'engine/dist/native/'+addon.filename);}
+await copy(windows,'engine/dist/native-player-app');await copy(web,'engine/dist/web');
+for(const id of templates)await copy('examples/'+id,'engine/examples/'+id);
+await copy('examples/rule-extension-lab','engine/examples/rule-extension-lab');
+await copy('LICENSE','LICENSE');await copy('licenses','licenses');await copy('THIRD_PARTY_NOTICES.md','THIRD_PARTY_NOTICES.md');
+await copy('docs/first-game.md','FIRST-GAME.md');
+for(const doc of ['first-game.md','platform-support.md','platform-capabilities.json','public-assets.md','qt-preview-release.md'])await copy('docs/'+doc,'engine/docs/'+doc);
+await copy('LICENSE','engine/LICENSE');await copy('THIRD_PARTY_NOTICES.md','engine/THIRD_PARTY_NOTICES.md');
+await copy(join(windows,'licenses'),'licenses/player');await copy(join(windows,'fonts/OFL.txt'),'licenses/NotoSansKR-OFL.txt');
+await copy('native/vendor/LICENSE.MIT','licenses/nlohmann-json.txt');
+await copy('native/player/assets/OFL.txt','engine/dist/web/licenses/NotoSansKR-OFL.txt');
+await copy('native/vendor/LICENSE.MIT','engine/dist/web/licenses/nlohmann-json.txt');
+const qtDocs=resolve(process.env.QT_DOCS||'C:/Qt/Docs/Qt-6.10.1');
+await copy(resolve(process.env.QT_COMPILER||'C:/Qt/Tools/mingw1310_64/bin','../licenses'),'licenses/mingw');
+for(const module of ['qtcore','qtgui','qtwidgets','qtsvg','qtimageformats','qtnetwork','qtdoc']){
+ for(const file of await readdir(join(qtDocs,module)).catch(()=>[]))if(/attribution|licenses-used|lgpl\.html|gpl\.html/.test(file))await copy(join(qtDocs,module,file),'licenses/qt/notices/'+module+'/'+file);
+}
+const dependencies=new Map();
+async function dependency(name,from=join(root,'package.json')){
+ const require=createRequire(from);let file;
+ try{file=require.resolve(name+'/package.json');}catch{let dir=dirname(require.resolve(name));while(true){const candidate=join(dir,'package.json');try{if(JSON.parse(await readFile(candidate,'utf8')).name===name){file=candidate;break;}}catch{}const parent=dirname(dir);if(parent===dir)throw Error('Missing dependency manifest: '+name);dir=parent;}}
+ const p=JSON.parse(await readFile(file,'utf8'));
+ if(dependencies.has(name)){if(dependencies.get(name).version!==p.version)throw Error('Conflicting packaged versions: '+name);return;}
+ dependencies.set(name,{name,version:p.version,license:p.license});
+ await copy(dirname(file),'engine/node_modules/'+name);
+ for(const child of Object.keys(p.dependencies||{}))await dependency(child,file);
+}
+for(const name of ['ajv','jsonc-parser','yauzl'])await dependency(name);
+// Retain licenses for JS code embedded in the Web runtime as well as Node services.
+for(const name of ['react','react-dom','scheduler']){
+ const p=join(root,'node_modules',name);await copy(join(p,'LICENSE'),'engine/dist/web/licenses/'+name+'.txt');
+}
+const blocked=new Set(policy.excludedAssetSha256),files=[];
+async function inventory(dir){for(const e of await readdir(dir,{withFileTypes:true})){
+ const file=join(dir,e.name);if((await lstat(file)).isSymbolicLink())throw Error('Symlink in package: '+file);
+ if(e.isDirectory())await inventory(file);else{const bytes=await readFile(file),sha256=createHash('sha256').update(bytes).digest('hex');if(blocked.has(sha256))throw Error('Private reference asset in package: '+file);files.push({path:relative(out,file).replaceAll('\\','/'),bytes:bytes.length,sha256});}
+}}
+await inventory(out);files.sort((a,b)=>a.path.localeCompare(b.path));
+const manifest={version:1,product:'Raising Studio Qt',channel:'unsigned-local-preview',publicReleaseReady:false,sourceCommit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),sourceTreeDirty:!!execFileSync('git',['status','--porcelain'],{encoding:'utf8'}).trim(),node:process.version,qt:'6.10.1',templates,dependencies:[...dependencies.values()],files};
+await writeFile(join(out,'package-manifest.json'),JSON.stringify(manifest,null,2));
+console.log(JSON.stringify({out,files:files.length,bytes:files.reduce((n,f)=>n+f.bytes,0),publicReleaseReady:false}));
