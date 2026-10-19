@@ -4,6 +4,21 @@ A 2D raising-simulation engine with a **Qt editor**, a deterministic **C++ runti
 
 **Authoring alpha.** Original code is MIT licensed. See the [support matrix](docs/development/platform-support.md) for verified features and platform limitations.
 
+## Install on Windows
+
+**[0.1.0-preview.3 — unsigned preview](https://github.com/miandbits/RaisingEngine/releases/tag/v0.1.0-preview.3)** · Windows x64 · 한국어 / English / 日本語
+
+| Download | Start using the editor |
+|---|---|
+| **[Windows installer (.exe)](https://github.com/miandbits/RaisingEngine/releases/download/v0.1.0-preview.3/RaisingEngine-0.1.0-preview.3-windows-x64.exe)** | Run the installer, then open Raising Studio from the Start menu. |
+| **[Portable ZIP](https://github.com/miandbits/RaisingEngine/releases/download/v0.1.0-preview.3/RaisingEngine-0.1.0-preview.3-windows-x64-portable.zip)** | Extract the entire ZIP, then run `RaisingStudio/RaisingStudioQt.exe`. |
+
+No separate Node.js, Qt SDK or compiler is needed to use these packages. Open the editor, choose **New project**, select a template, and save your game outside the installation folder.
+
+This preview is **unsigned**: Windows may display an unknown-publisher warning or block execution under device policy. Verify downloads against [SHA-256 checksums](https://github.com/miandbits/RaisingEngine/releases/download/v0.1.0-preview.3/SHA256SUMS.txt). Keep project/save backups when upgrading; this is not a stable release.
+
+Installation, first-game and export guides: **[한국어](docs/getting-started/preview/ko.md)** · **[English](docs/getting-started/preview/en.md)** · **[日本語](docs/getting-started/preview/ja.md)**.
+
 ## Make a game
 
 Open `RaisingStudioQt.exe` to create or open a project. Keep user projects outside the engine checkout.

@@ -1,6 +1,6 @@
 # Trusted Windows code signing
 
-Current owner decision, 2026-10-19: ship the initial preview unsigned and defer trusted code signing. Azure onboarding and paid signing setup are paused. The existing validated binaries remain unsigned; publication is still a separate action. This document preserves the future signing implementation reference, not an active onboarding request.
+Current owner decision, 2026-10-19: ship the initial preview unsigned and defer trusted code signing. Azure onboarding and paid signing setup are paused. The validated unsigned binaries were published as `v0.1.0-preview.3` after the owner's explicit publication request. This document preserves the future signing implementation reference, not an active onboarding request.
 
 ## Current state
 

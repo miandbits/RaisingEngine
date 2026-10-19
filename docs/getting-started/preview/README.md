@@ -2,6 +2,8 @@
 
 Windows x64 preview. The Qt editor is named **Raising Studio**; exported Windows games use **RaisingPlayer.exe**.
 
+**[Windows installer](https://github.com/miandbits/RaisingEngine/releases/download/v0.1.0-preview.3/RaisingEngine-0.1.0-preview.3-windows-x64.exe)** · **[Portable ZIP](https://github.com/miandbits/RaisingEngine/releases/download/v0.1.0-preview.3/RaisingEngine-0.1.0-preview.3-windows-x64-portable.zip)** · [Release notes and checksums](https://github.com/miandbits/RaisingEngine/releases/tag/v0.1.0-preview.3)
+
 - [한국어: 설치 → 첫 게임 → 내보내기](ko.md)
 - [English: install → first game → export](en.md)
 - [日本語：インストール → 初めてのゲーム → 書き出し](ja.md)
