@@ -1,3 +1,4 @@
+#include <QObject>
 #include "renderer-preview.hpp"
 #include <QCheckBox>
 #include <QDialog>
@@ -32,7 +33,7 @@ public:
     return QRectF(imageRect().topLeft()+(offset+QPointF(node["x"].toDouble(),node["y"].toDouble())*fit)*display,QSizeF(node["width"].toDouble(),node["height"].toDouble())*fit*display);
   }
   void paintEvent(QPaintEvent*) override {
-    QPainter p(this);p.fillRect(rect(),QColor("#171d24"));if(pixels.isNull()){p.setPen(QColor("#a9b8c8"));p.drawText(rect(),Qt::AlignCenter,QString::fromUtf8("실제 렌더링 결과가 여기에 표시됩니다"));return;}
+    QPainter p(this);p.fillRect(rect(),QColor("#171d24"));if(pixels.isNull()){p.setPen(QColor("#a9b8c8"));p.drawText(rect(),Qt::AlignCenter,QObject::tr("실제 렌더링 결과가 여기에 표시됩니다"));return;}
     p.drawImage(imageRect(),pixels);
     for(auto n:ui["nodes"].toArray()){auto node=n.toObject();const auto id=node["id"].toString();const bool chosen=id==selected;if(!chosen&&(!boxes||!node.contains("buttonId")))continue;
       if(!node["rendered"].toBool(true)||!node["visible"].toBool(true))continue;
@@ -49,7 +50,7 @@ RendererPreviewDock::RendererPreviewDock(QWidget* parent):QDockWidget(tr("실제
   resolution->addItem(tr("설계 크기"),QSize());resolution->addItem("1280 × 720",QSize(1280,720));resolution->addItem("1600 × 900",QSize(1600,900));resolution->addItem("720 × 1280",QSize(720,1280));controls->addWidget(resolution);
   width=new QSpinBox;height=new QSpinBox;width->setObjectName("rendererWidth");height->setObjectName("rendererHeight");width->setRange(320,3840);height->setRange(240,2160);width->setValue(1280);height->setValue(720);controls->addWidget(width);controls->addWidget(new QLabel("×"));controls->addWidget(height);
   locale=new QComboBox;locale->setObjectName("rendererLocale");controls->addWidget(locale);
-  interaction=new QComboBox;interaction->setObjectName("rendererInteraction");for(auto p:QList<QPair<QString,QString>>{{"기본 상태","normal"},{"마우스 올림","hover"},{"누르는 중","pressed"},{"키보드 초점","focus"},{"비활성 모양","disabled"}})interaction->addItem(p.first,p.second);controls->addWidget(interaction);
+  interaction=new QComboBox;interaction->setObjectName("rendererInteraction");for(auto p:QList<QPair<QString,QString>>{{QObject::tr("기본 상태"),"normal"},{QObject::tr("마우스 올림"),"hover"},{QObject::tr("누르는 중"),"pressed"},{QObject::tr("키보드 초점"),"focus"},{QObject::tr("비활성 모양"),"disabled"}})interaction->addItem(p.first,p.second);controls->addWidget(interaction);
   render=new QPushButton(tr("현재 화면 렌더링"));render->setObjectName("renderPreview");controls->addWidget(render);cancel=new QPushButton(tr("취소"));cancel->setEnabled(false);controls->addWidget(cancel);layout->addLayout(controls);
   auto detail=new QHBoxLayout;element=new QComboBox;element->setObjectName("rendererElement");detail->addWidget(new QLabel(tr("검사 대상")));detail->addWidget(element,1);auto boxes=new QCheckBox(tr("버튼 영역 표시"));boxes->setChecked(true);detail->addWidget(boxes);pin=new QPushButton(tr("비교 기준으로 보관"));pin->setObjectName("pinRendererPreview");pin->setEnabled(false);detail->addWidget(pin);layout->addLayout(detail);
   auto configure=new QPushButton(tr("제작 상태 설정"));configure->setObjectName("configureAuthoringPreview");detail->addWidget(configure);connect(configure,&QPushButton::clicked,this,&RendererPreviewDock::editScenario);

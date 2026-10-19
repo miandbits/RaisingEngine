@@ -5,6 +5,10 @@ import {createHash} from 'node:crypto';
 const bundle=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
 const output=resolve(process.env.QT_INSTALLER_OUT||'release/qt-preview/RaisingStudio-Qt-Preview-0.1.0-x64.exe');
 const manifest=JSON.parse(await readFile(join(bundle,'package-manifest.json'),'utf8'));
+const version=JSON.parse(await readFile('config/preview-release.json','utf8')).version;
+if(!/^[0-9A-Za-z.-]+$/.test(version))throw Error('Unsafe release version');
+const product=`RaisingEngine ${version}`;
+const uninstallKey=`Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\RaisingEngine-${version}`;
 // Hash-pinned payload; never package files added after the reviewed manifest.
 for(const f of manifest.files){const hash=createHash('sha256').update(await readFile(join(bundle,f.path))).digest('hex');if(hash!==f.sha256)throw Error('Package changed: '+f.path);}
 let nsis=process.env.NSIS_COMPILER;
@@ -14,7 +18,7 @@ const files=[...manifest.files.map(f=>f.path),'package-manifest.json'];
 const dirs=new Set();for(const f of files){let d=dirname(f).replaceAll('\\','/');while(d!=='.'){dirs.add(d);d=dirname(d).replaceAll('\\','/');}}
 const lines=[
  'Unicode true','RequestExecutionLevel user','SetCompressor /SOLID lzma','Name "Raising Studio Qt Preview"',
- `OutFile "${escape(output)}"`,'InstallDir "$LOCALAPPDATA\\Programs\\RaisingStudio-Qt-Preview"',
+ `OutFile "${escape(output)}"`,`InstallDir "$LOCALAPPDATA\\Programs\\RaisingEngine-${version}"`,
  '!include "MUI2.nsh"',`!insertmacro MUI_PAGE_LICENSE "${escape(join(bundle,'LICENSE'))}"`,
  '!define MUI_DIRECTORYPAGE_TEXT_TOP "$(FreshDirectoryHint)"','!insertmacro MUI_PAGE_DIRECTORY','!insertmacro MUI_PAGE_INSTFILES','!insertmacro MUI_UNPAGE_CONFIRM','!insertmacro MUI_UNPAGE_INSTFILES','!insertmacro MUI_LANGUAGE "English"','!insertmacro MUI_LANGUAGE "Korean"','!insertmacro MUI_LANGUAGE "Japanese"',
  'LangString FreshDirectoryHint ${LANG_ENGLISH} "Choose a new installation folder. Keep game projects outside the installation. Existing folders are preserved."',
@@ -24,7 +28,24 @@ const lines=[
  'Function .onVerifyInstDir','IfFileExists "$INSTDIR\\." 0 valid','Abort','valid:','FunctionEnd',
  'Section',
  ...files.flatMap(f=>[`SetOutPath "$INSTDIR\\${escape(dirname(f).replaceAll('/','\\'))}"`,`File "${escape(join(bundle,f))}"`]),
- 'SetOutPath "$INSTDIR"','WriteUninstaller "$INSTDIR\\Uninstall.exe"','SectionEnd','Section "Uninstall"',
+ 'SetOutPath "$INSTDIR"','WriteUninstaller "$INSTDIR\\Uninstall.exe"',
+ `CreateDirectory "$SMPROGRAMS\\${product}"`,
+ `CreateShortCut "$SMPROGRAMS\\${product}\\Raising Studio.lnk" "$INSTDIR\\RaisingStudioQt.exe"`,
+ `CreateShortCut "$SMPROGRAMS\\${product}\\Uninstall.lnk" "$INSTDIR\\Uninstall.exe"`,
+ `WriteRegStr HKCU "${uninstallKey}" "DisplayName" "${product}"`,
+ `WriteRegStr HKCU "${uninstallKey}" "DisplayVersion" "${version}"`,
+ `WriteRegStr HKCU "${uninstallKey}" "Publisher" "RaisingEngine contributors"`,
+ `WriteRegStr HKCU "${uninstallKey}" "InstallLocation" "$INSTDIR"`,
+ `WriteRegStr HKCU "${uninstallKey}" "UninstallString" '$\\"$INSTDIR\\Uninstall.exe$\\"'`,
+ `WriteRegDWORD HKCU "${uninstallKey}" "NoModify" 1`,
+ `WriteRegDWORD HKCU "${uninstallKey}" "NoRepair" 1`,
+ 'SectionEnd','Section "Uninstall"',
+ `ReadRegStr $0 HKCU "${uninstallKey}" "InstallLocation"`,
+ 'StrCmp $0 $INSTDIR 0 keepRegistration',
+ `DeleteRegKey HKCU "${uninstallKey}"`,
+ `Delete "$SMPROGRAMS\\${product}\\Raising Studio.lnk"`,
+ `Delete "$SMPROGRAMS\\${product}\\Uninstall.lnk"`,
+ `RMDir "$SMPROGRAMS\\${product}"`,'keepRegistration:',
  ...files.map(f=>`Delete "$INSTDIR\\${escape(f.replaceAll('/','\\'))}"`),
  'Delete "$INSTDIR\\Uninstall.exe"',...[...dirs].sort((a,b)=>b.length-a.length).map(d=>`RMDir "$INSTDIR\\${escape(d.replaceAll('/','\\'))}"`),'RMDir "$INSTDIR"','SectionEnd'
  ];

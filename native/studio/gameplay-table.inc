@@ -20,7 +20,7 @@
         if(section=="locations")for(const auto &r:rows)knownLocations.insert(r[0]);
         if(section!="locations"&&knownLocations.isEmpty())return tr("먼저 장소 표에서 첫 장소를 만드세요.");
         QMap<QString,QJsonObject> changed;
-        for(const auto &r:rows){const auto id=r[0];const auto unique=section=="policyGroups"?id+"/"+r[2]:id;
+        for(auto r:rows){if(section=="actions")r[7]=TableLogic::keyword(r[7]);if(section=="policyGroups")r[5]=TableLogic::keyword(r[5]);if(section=="rules"){r[2]=TableLogic::keyword(r[2]);if(r[2]=="주말")r[2]="주 종료";}const auto id=r[0];const auto unique=section=="policyGroups"?id+"/"+r[2]:id;
           if(!TableLogic::id(id)||r[1].isEmpty()||seen.contains(unique))return tr("ID 중복·형식 또는 이름을 확인하세요: ")+id;seen.insert(unique);QJsonObject data;
           for(const auto &v:entries)if(v.toObject().value("id")==id)data=v.toObject();if(changed.contains(id))data=changed[id];data["id"]=id;data["name"]=r[1];QString error;
           if(section=="locations") {

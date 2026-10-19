@@ -15,7 +15,7 @@ Scope: the Windows x64 Qt Widgets preview, bundled Node service, SDL Windows pla
 | libwebp 1.6.0 | BSD notice and patent grant retained. |
 | miniaudio 0.11.23 | MIT/public-domain alternatives in the supplied license; use the MIT option. |
 | nlohmann/json | MIT notice included in Windows and Web exports. |
-| NotoSansKR | SIL OFL 1.1. Font file and original notice retained; no Windows system fonts are redistributed. |
+| NotoSansKR and Noto Sans JP | SIL OFL 1.1. Font files and original notices retained; no Windows system fonts are redistributed. |
 | Public sample images and audio | Separate provenance review. Engine MIT does not certify ownership of generated media or grant third-party game rights. See `public-assets.md`. |
 
 Qt Widgets uses raster painting. Optional `D3Dcompiler_47.dll`, `dxcompiler.dll` and `dxil.dll` are excluded from this preview. QtTest and the offscreen plugin are temporary test tools, not installer payloads. Optional animation plugins and proprietary Spine runtimes are not bundled.
@@ -32,4 +32,4 @@ Primary references: [Qt LGPL obligations](https://www.qt.io/development/open-sou
 
 ## Remaining publication checks
 
-The prepared installer is unsigned. A fresh Windows VM, a signing decision, sample media permissions and a complete language review remain release checks. Preparing a tested installer does not claim platform certification or a complete legal clearance. Do not remove these gates merely because the package builds. Preserve source archives and notices with any binary redistribution.
+The prepared installer is unsigned. A fresh Windows VM, a signing decision, sample media permissions and native-speaker editorial review remain release checks. Catalog coverage and automated Qt glyph/layout checks do not replace that review. Preparing a tested installer does not claim platform certification or a complete legal clearance. Do not remove these gates merely because the package builds. Preserve source archives and notices with any binary redistribution.

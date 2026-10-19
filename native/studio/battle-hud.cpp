@@ -1,3 +1,4 @@
+#include <QObject>
 #include "studio.hpp"
 #include "battle-hud.hpp"
 #include <QDialog>
@@ -51,7 +52,7 @@ void StudioWindow::editBattleHud(){
   QDialog dialog(this);dialog.setObjectName("battleHudDialog");dialog.setWindowTitle(tr("전투 HUD 제작 · 데이터와 화면 연결"));dialog.resize(1150,760);auto outer=new QVBoxLayout(&dialog);
   auto help=new QLabel(tr("현재 화면에 전투 데이터를 표시하는 재사용 부품을 배치합니다. 기본 배치 후 캔버스에서 이동·크기·앵커를 수정하고, ‘데이터 · 반복 UI 연결’에서 필터와 각 속성을 바꿀 수 있습니다. 실제 전투 단계에는 ID가 battle인 화면이 사용됩니다. 현재 전투 규칙은 아군 1명 / 적 1명입니다."));help->setWordWrap(true);outer->addWidget(help);
   auto bar=new QHBoxLayout;outer->addLayout(bar);auto preset=new QPushButton(tr("기본 전투 HUD 배치"));preset->setObjectName("battleHudPreset");bar->addWidget(preset);auto source=new QComboBox;source->setObjectName("battleHudSource");
-  for(auto p:QList<QPair<QString,QString>>{{"아군·적 상태","battleActors"},{"행동 선택","battleActions"},{"대상 선택","battleTargets"},{"전투 로그","battleLog"},{"실제 지급 보상","battleRewards"}})source->addItem(p.first,p.second);bar->addWidget(source);
+  for(auto p:QList<QPair<QString,QString>>{{QObject::tr("아군·적 상태"),"battleActors"},{QObject::tr("행동 선택"),"battleActions"},{QObject::tr("대상 선택"),"battleTargets"},{QObject::tr("전투 로그"),"battleLog"},{QObject::tr("실제 지급 보상"),"battleRewards"}})source->addItem(p.first,p.second);bar->addWidget(source);
   auto add=new QPushButton(tr("목록 추가"));add->setObjectName("battleHudAdd");bar->addWidget(add);auto remove=new QPushButton(tr("선택 목록 삭제"));remove->setObjectName("battleHudRemove");bar->addWidget(remove);
   auto table=new QTableWidget(0,8);table->setObjectName("battleHudLayout");table->setHorizontalHeaderLabels({tr("ID"),tr("이름"),tr("연결된 데이터"),"X","Y",tr("너비"),tr("높이"),tr("행 높이")});table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);table->horizontalHeader()->setSectionResizeMode(1,QHeaderView::Stretch);table->setSelectionBehavior(QAbstractItemView::SelectRows);outer->addWidget(table,1);
   auto detail=new QLabel;detail->setObjectName("battleHudDetail");detail->setWordWrap(true);outer->addWidget(detail);

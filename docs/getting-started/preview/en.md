@@ -11,7 +11,7 @@
 
 1. In **New project**, select **Exploration and combat**. Enter an empty folder outside the installation, such as `Documents/Raising Studio Projects/first-game`, and click **Create project**. This copies the sample; the original is preserved.
 2. Open **File → Project settings…** and change the game title. Keep the initial calendar and stat ranges for this first test. Apply and save.
-3. In the content search, find the activity `휴식` (rest). Select **Edit selected content…**, change its name and one numeric effect, then apply. IDs are stable connections: keep them unchanged for this first edit. Advanced fields may still be shown in Korean in this preview.
+3. In the content search, find the activity `휴식` (rest). Select **Edit selected content…**, change its name and one numeric effect, then apply. IDs are stable connections: keep them unchanged for this first edit. Advanced tools and catalogued editor errors are translated. Sample names and story text remain designer content.
 4. Press **Save project**, then **Validate**. Double-click an error to visit its source. Validation checks data and references; it does not prove every ending is reachable.
 5. Select a screen and add a text or button element. Use **Inspector** to set its text, position and size. For a button, choose an action under **Action · On click** and a valid destination. Save and validate again.
 6. Click **▶ Play from start**. Start the sample, choose activities, visit town and a shop, and follow dialogue. Save partway through using the game's save button or **F5** in the Windows player. Make another move, then load using the load button or **F9** and check the restored state. Saving the project and saving a play session are separate operations.
@@ -28,3 +28,7 @@ Open **Design → Localization workspace…**, add `en` and `ja`, and enter tran
 4. If export fails, read the error, correct the content and retry. Reopen the export dialog after changing the project. Existing output directories remain protected.
 
 Keep an older project copy before content updates. Use **File → Content updates · Migrate / recover saves…** to inspect migration rather than assuming old saves remain compatible. Uninstall with `Uninstall.exe`; user projects outside the installation remain untouched. Mobile and console distribution are not validated by this Windows preview.
+
+## Download and update
+
+Use the versioned assets on [GitHub Releases](https://github.com/miandbits/RaisingEngine/releases): the Windows x64 `.exe` for installation, or `-portable.zip` to extract and run without installation. Both contain the runtime and third-party notices. Compare `SHA256SUMS.txt`. The installer adds a versioned Start menu shortcut and an entry in Windows Installed apps. Updates install alongside older previews; keep projects outside both folders. ZIP users run `RaisingStudioQt.exe` after extracting the entire archive. GitHub Packages is not needed to install this desktop application. Draft release assets are for maintainer review until publication checks pass.

@@ -1,3 +1,4 @@
+#include <QObject>
 #include "studio.hpp"
 #include <QCheckBox>
 #include <QComboBox>
@@ -20,7 +21,7 @@ void StudioWindow::editUiComposition(){
   auto toolbar=new QHBoxLayout;layout->addLayout(toolbar);auto owner=new QComboBox;owner->setObjectName("uiOwner");toolbar->addWidget(owner,1);
   auto addScreen=new QPushButton(tr("＋ 모달 화면")),addComponent=new QPushButton(tr("＋ 빈 부품")),duplicate=new QPushButton(tr("현재 부품 복제"));toolbar->addWidget(addScreen);toolbar->addWidget(addComponent);toolbar->addWidget(duplicate);addScreen->setObjectName("uiAddModal");addComponent->setObjectName("uiAddComponent");duplicate->setObjectName("uiDuplicateComponent");
   auto modal=new QCheckBox(tr("모달 화면"));modal->setObjectName("uiModal");toolbar->addWidget(modal);auto responsive=new QCheckBox(tr("반응형 캔버스"));responsive->setObjectName("uiResponsive");responsive->setChecked(visual.value("viewportMode")=="responsive");toolbar->addWidget(responsive);
-  auto split=new QSplitter;layout->addWidget(split,1);auto left=new QWidget;auto leftBox=new QVBoxLayout(left);auto entries=new QListWidget;entries->setObjectName("uiElements");leftBox->addWidget(entries,1);auto kind=new QComboBox;kind->setObjectName("uiAddKind");for(auto pair:QList<QPair<QString,QString>>{{"그룹","group"},{"부품 인스턴스","component"},{"문구","text"},{"버튼","button"},{"패널","panel"}})kind->addItem(pair.first,pair.second);leftBox->addWidget(kind);auto add=new QPushButton(tr("요소 추가"));add->setObjectName("uiAddElement");leftBox->addWidget(add);auto remove=new QPushButton(tr("선택 요소 삭제"));remove->setObjectName("uiRemoveElement");leftBox->addWidget(remove);split->addWidget(left);
+  auto split=new QSplitter;layout->addWidget(split,1);auto left=new QWidget;auto leftBox=new QVBoxLayout(left);auto entries=new QListWidget;entries->setObjectName("uiElements");leftBox->addWidget(entries,1);auto kind=new QComboBox;kind->setObjectName("uiAddKind");for(auto pair:QList<QPair<QString,QString>>{{QObject::tr("그룹"),"group"},{QObject::tr("부품 인스턴스"),"component"},{QObject::tr("문구"),"text"},{QObject::tr("버튼"),"button"},{QObject::tr("패널"),"panel"}})kind->addItem(pair.first,pair.second);leftBox->addWidget(kind);auto add=new QPushButton(tr("요소 추가"));add->setObjectName("uiAddElement");leftBox->addWidget(add);auto remove=new QPushButton(tr("선택 요소 삭제"));remove->setObjectName("uiRemoveElement");leftBox->addWidget(remove);split->addWidget(left);
   auto scroll=new QScrollArea;scroll->setWidgetResizable(true);auto properties=new QWidget;auto form=new QFormLayout(properties);scroll->setWidget(properties);split->addWidget(scroll);split->setSizes({260,1000});
   QMap<QString,QWidget*> fields;
   auto line=[&](QString key,QString label){auto w=new QLineEdit;w->setObjectName("ui-"+key);fields[key]=w;form->addRow(label,w);return w;};

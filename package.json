@@ -81,7 +81,8 @@
     "package:windows": "npm run package:qt-studio && npm run installer:qt-studio",
     "test:installed": "npm run test:qt-package",
     "test:qt-preview": "node scripts/test-qt-package.mjs --portable",
-    "check:repository": "node scripts/check-repository.mjs"
+    "check:repository": "node scripts/check-repository.mjs",
+    "package:preview-artifacts": "node scripts/package-preview-artifacts.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

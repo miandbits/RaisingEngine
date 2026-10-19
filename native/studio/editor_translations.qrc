@@ -1,1 +1,1 @@
-<RCC><qresource prefix="/editor"><file alias="translations.json">translations/editor.json</file></qresource></RCC>
+<RCC><qresource prefix="/editor"><file alias="translations.json">translations/editor.json</file><file alias="diagnostics.json">translations/diagnostics.json</file></qresource></RCC>

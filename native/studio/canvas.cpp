@@ -1,3 +1,4 @@
+#include <QObject>
 #include "canvas.hpp"
 #include "design.hpp"
 #include "components.hpp"
@@ -77,7 +78,7 @@ public:
       p->fillRect(box, QColor("#080706")); p->setPen(QColor("#cba99d"));
       QFont font(data["_fontFamily"].toString("Noto Sans KR"));font.setPixelSize(data["fontSize"].toInt(24));p->setFont(font);
       QDate date(data["_year"].toInt(1209), data["_month"].toInt(4), 1);
-      p->drawText(QRectF(0,0,box.width(),36),Qt::AlignCenter,QString::fromUtf8("%1년 %2월").arg(date.year()).arg(date.month()));
+      p->drawText(QRectF(0,0,box.width(),36),Qt::AlignCenter,QObject::tr("%1년 %2월").arg(date.year()).arg(date.month()));
       const QStringList days={"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
       const qreal cw=box.width()/7,ch=(box.height()-80)/6;
       for(int i=0;i<7;i++)p->drawText(QRectF(i*cw,40,cw,32),Qt::AlignCenter,days[i]);
@@ -105,18 +106,18 @@ public:
           text = data["binding"].toString();
         if (text.isEmpty() && !data.contains("text")) {
           static const QMap<QString, QString> labels = {
-              {"locations", "이동할 장소"},
-              {"shop", "상품 목록 · 실제 내용은 플레이에서 확인"},
-              {"sell", "판매 목록 · 수량 / 확인창"},
-              {"services", "병원 · 비용 / 치료 효과"},
-              {"actions", "공통 행동 · 조건 / 비용 / 효과"},
-              {"policies", "정책 그룹 · 독립 선택 / 실행 주기"},
-              {"diets", "지속 식단 · 일정별 비용 / 효과"},
-              {"inventory", "소지품"},
-              {"stats", "능력 · 자원"},
-              {"image", "이미지 없음"},
-              {"schedule", "일정 선택"},
-              {"dialogue", "대사"}};
+              {"locations", QObject::tr("이동할 장소")},
+              {"shop", QObject::tr("상품 목록 · 실제 내용은 플레이에서 확인")},
+              {"sell", QObject::tr("판매 목록 · 수량 / 확인창")},
+              {"services", QObject::tr("병원 · 비용 / 치료 효과")},
+              {"actions", QObject::tr("공통 행동 · 조건 / 비용 / 효과")},
+              {"policies", QObject::tr("정책 그룹 · 독립 선택 / 실행 주기")},
+              {"diets", QObject::tr("지속 식단 · 일정별 비용 / 효과")},
+              {"inventory", QObject::tr("소지품")},
+              {"stats", QObject::tr("능력 · 자원")},
+              {"image", QObject::tr("이미지 없음")},
+              {"schedule", QObject::tr("일정 선택")},
+              {"dialogue", QObject::tr("대사")}};
           text = labels.value(kind, kind);
         }
         QFont font(data["_fontFamily"].toString("Noto Sans KR"));
@@ -150,7 +151,7 @@ public:
     }
   }
   void paintPlugin(QPainter *p) {
-    QString caption = canvas->pluginPlaceholder ? canvas->pluginPlaceholder(data) : QString::fromUtf8("플러그인 필요");
+    QString caption = canvas->pluginPlaceholder ? canvas->pluginPlaceholder(data) : QObject::tr("플러그인 필요");
     if (caption.isEmpty()) {
       p->save();
       p->setClipRect(box, Qt::IntersectClip);
@@ -158,7 +159,7 @@ public:
       p->restore();
       if (painted) return;
       const auto ext = data.value("extension").toObject();
-      caption = ext.value("type").toString() + " · " + (ext.value("ref").toString().isEmpty() ? QString::fromUtf8("연결 문서 없음") : ext.value("ref").toString());
+      caption = ext.value("type").toString() + " · " + (ext.value("ref").toString().isEmpty() ? QObject::tr("연결 문서 없음") : ext.value("ref").toString());
     }
     // Host-level fallback: `extension.props.posterAssetId` names a project image shown
     // as a still preview while the plugin's authoring module is unavailable. Other props
@@ -315,17 +316,17 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     if (e["kind"] == "text") {
       const auto binding = e["binding"].toString();
       if (binding == "calendar")
-        e["text"] = QString::fromUtf8("%1년 %2월 · 1번째 일정")
+        e["text"] = QObject::tr("%1년 %2월 · 1번째 일정")
                         .arg(project["startYear"].toInt(1))
                         .arg(project["startMonth"].toInt(1));
       else if (binding == "title")
         e["text"] = project["title"];
       else if (binding == "context-name") e["text"] = contextNameForPreview(project,e);
       else if (binding == "calendar-year") e["text"] = QString::number(project["startYear"].toInt(1));
-      else if (binding == "calendar-month") e["text"] = QString::number(project["startMonth"].toInt(1)) + QString::fromUtf8("월");
+      else if (binding == "calendar-month") e["text"] = QString::number(project["startMonth"].toInt(1)) + QObject::tr("월");
       else if (binding == "calendar-day") e["text"] = "1";
-      else if (binding == "calendar-weekday") e["text"] = QString::fromUtf8("요일");
-      else if (binding == "schedule-prompt") e["text"] = QString::fromUtf8("첫 번째 일정을 결정해 주세요.");
+      else if (binding == "calendar-weekday") e["text"] = QObject::tr("요일");
+      else if (binding == "schedule-prompt") e["text"] = QObject::tr("첫 번째 일정을 결정해 주세요.");
       else if (binding == "description")
         e["text"] = project["description"];
       else if (binding == "location")

@@ -1,3 +1,4 @@
+#include <QObject>
 #include "studio.hpp"
 #include "logic-editor.hpp"
 #include <QCheckBox>
@@ -24,7 +25,7 @@
 
 namespace {
 QStringList workspacePath(QString path){QStringList out;for(const auto &part:path.split('/',Qt::SkipEmptyParts))out<<QString(part).replace("~1","/").replace("~0","~");return out;}
-QString workspaceKind(QString kind){static const QMap<QString,QString> names{{"stateGroup","사용자 정의 상태"},{"stateValue","상태 값"},{"screenElement","화면 요소"},{"screenRoute","조건별 화면 연결"},{"screenRouting","기본 화면 연결"},{"presentation","조건별 표현"},{"attribute","능력·자원"},{"flag","플래그"},{"item","물품"},{"character","인물"},{"relationship","관계 정의"},{"actor","육성 대상"},{"action","공통 행동"},{"activity","일정 활동"},{"event","사건"},{"ending","엔딩"},{"clock","게임 시계"},{"timing","행동 소요 시간"},{"appointment","예약 사건"},{"rule","자동 규칙"},{"policy","정책"},{"budget","예산"},{"location","장소"},{"shop","상점"},{"screen","화면"}};return names.value(kind,kind);}
+QString workspaceKind(QString kind){static const QMap<QString,QString> names{{"stateGroup",QObject::tr("사용자 정의 상태")},{"stateValue",QObject::tr("상태 값")},{"screenElement",QObject::tr("화면 요소")},{"screenRoute",QObject::tr("조건별 화면 연결")},{"screenRouting",QObject::tr("기본 화면 연결")},{"presentation",QObject::tr("조건별 표현")},{"attribute",QObject::tr("능력·자원")},{"flag",QObject::tr("플래그")},{"item",QObject::tr("물품")},{"character",QObject::tr("인물")},{"relationship",QObject::tr("관계 정의")},{"actor",QObject::tr("육성 대상")},{"action",QObject::tr("공통 행동")},{"activity",QObject::tr("일정 활동")},{"event",QObject::tr("사건")},{"ending",QObject::tr("엔딩")},{"clock",QObject::tr("게임 시계")},{"timing",QObject::tr("행동 소요 시간")},{"appointment",QObject::tr("예약 사건")},{"rule",QObject::tr("자동 규칙")},{"policy",QObject::tr("정책")},{"budget",QObject::tr("예산")},{"location",QObject::tr("장소")},{"shop",QObject::tr("상점")},{"screen",QObject::tr("화면")}};return names.value(kind,kind);}
 struct WorkspaceState{QJsonArray nodes,edges;QJsonObject selected,draft;QString root;int revision=-1,requested=-1;bool dirty=false,filling=false;QMap<QString,std::function<QJsonValue()>> fields;QPointer<QComboBox> buttonMode,buttonTarget;};
 }
 void StudioWindow::showAuthoringWorkspace(){

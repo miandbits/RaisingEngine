@@ -1,3 +1,4 @@
+#include <QObject>
 #include "logic-editor.hpp"
 #include <QComboBox>
 #include <QGroupBox>
@@ -46,7 +47,7 @@ QWidget *LogicEditor::quickEditor() {
   auto operation = new QComboBox; operation->setObjectName("quickOperation"); row->addWidget(operation);
   const bool effects = rootKind == "effects";
   if (effects) { operation->addItem(tr("증감"),"add"); operation->addItem(tr("값 지정"),"set"); }
-  else { for (const auto &pair : QList<QPair<QString,QString>>{{"gte","이상 ≥"},{"lte","이하 ≤"},{"eq","같음 ="},{"gt","초과 >"},{"lt","미만 <"},{"ne","다름 ≠"}}) operation->addItem(pair.second,pair.first); }
+  else { for (const auto &pair : QList<QPair<QString,QString>>{{"gte",QObject::tr("이상 ≥")},{"lte",QObject::tr("이하 ≤")},{"eq",QObject::tr("같음 =")},{"gt",QObject::tr("초과 >")},{"lt",QObject::tr("미만 <")},{"ne",QObject::tr("다름 ≠")}}) operation->addItem(pair.second,pair.first); }
   auto amount = new QSpinBox; amount->setObjectName("quickAmount"); amount->setRange(std::numeric_limits<int>::min(),std::numeric_limits<int>::max()); row->addWidget(amount);
   layout->addLayout(row);
   auto help = new QLabel(effects ? tr("음수는 감소입니다. 추가를 눌러야 반영되며, 기존 효과는 그대로 보존합니다.") : tr("선택 조건만 교체하거나 기존 전체 조건에 AND로 추가합니다. 아래 트리에서 결과를 확인한 후 저장하세요.")); help->setWordWrap(true); layout->addWidget(help);

@@ -1,3 +1,4 @@
+#include <QObject>
 #pragma once
 #include "logic-editor.hpp"
 #include "rule-extensions.hpp"
@@ -14,7 +15,7 @@ inline bool editComponentContext(QWidget* parent,QJsonObject original,const QJso
   QDialog dialog(parent);dialog.setObjectName("componentContextDialog");dialog.setWindowTitle(QObject::tr("부품 대상 · 표시와 조건 연결"));dialog.resize(640,760);
   auto layout=new QVBoxLayout(&dialog);auto help=new QLabel(QObject::tr("부모 대상을 이어받되, 자식에서 직접 지정한 값이 우선합니다. 배치마다 다르게 쓰려면 부품 내부는 ‘부모 대상 사용 / 지정 없음’으로 두세요.\n이름 표시는 선택한 대상을 사용합니다. ‘대상 사용’은 데이터·조건·행동의 연결을 바꾸며, 특정 인물로 고정한 데이터 소유자는 유지합니다."));help->setWordWrap(true);layout->addWidget(help);
   QJsonObject project;for(auto v:view.value("documents").toArray())if(v.toObject().value("kind")=="project")project=v.toObject().value("data").toObject();
-  const QList<QPair<QString,QString>> fields={{"actorId","실행 인물"},{"activityId","활동"},{"characterId","관계 대상 인물"},{"itemId","물품"},{"actionId","공통 행동"},{"locationId","장소"},{"shopId","상점"},{"attributeId","능력·자원"}};
+  const QList<QPair<QString,QString>> fields={{"actorId",QObject::tr("실행 인물")},{"activityId",QObject::tr("활동")},{"characterId",QObject::tr("관계 대상 인물")},{"itemId",QObject::tr("물품")},{"actionId",QObject::tr("공통 행동")},{"locationId",QObject::tr("장소")},{"shopId",QObject::tr("상점")},{"attributeId",QObject::tr("능력·자원")}};
   QMap<QString,QComboBox*> choices;QMap<QString,QCheckBox*> uses;auto form=new QFormLayout;layout->addLayout(form);
   for(const auto& pair:fields){auto line=new QWidget;auto row=new QHBoxLayout(line);row->setContentsMargins(0,0,0,0);auto c=new QComboBox;c->setObjectName("context-"+pair.first);c->addItem(QObject::tr("부모 대상 사용 / 지정 없음"),"");choices[pair.first]=c;row->addWidget(c,1);
     auto add=[&](QJsonObject value){c->addItem(value.value("name").toString(value.value("label").toString(value.value("id").toString())),value.value("id").toString());};

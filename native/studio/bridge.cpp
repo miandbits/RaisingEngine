@@ -1,4 +1,5 @@
 #include "bridge.hpp"
+#include "editor-language.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -17,7 +18,7 @@ StudioBridge::StudioBridge(const QString &engineRoot, QObject *parent)
         fail(tr("프로젝트 서비스 응답을 읽을 수 없습니다."));
         continue;
       }
-      auto reply = doc.object();
+      auto reply = localizeEditorReply(doc.object());
       if (reply.value("id").toInt() != serial)
         continue;
       auto done = std::move(callback);

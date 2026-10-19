@@ -17,6 +17,7 @@
 #include <QTranslator>
 #include <QVBoxLayout>
 #include <memory>
+#include "editor-diagnostics.inc"
 
 namespace {
 QString currentLanguage = "ko";

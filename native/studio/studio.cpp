@@ -1,3 +1,4 @@
+#include <QObject>
 #include "save-migration.hpp"
 #include "studio.hpp"
 #include "component-preview.hpp"
@@ -387,7 +388,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     f->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     f->setContentsMargins(4, 3, 4, 6);
     f->setSpacing(7);
-    bool expanded = name != QString::fromUtf8("외형");
+    bool expanded = name != QObject::tr("외형");
     header->setChecked(expanded);
     header->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
     body->setVisible(expanded);
@@ -436,8 +437,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   pairRow(tr("크기 W / H"), widthField, heightField);
   anchorXField=new QComboBox;anchorXField->setObjectName("anchorX");
   anchorYField=new QComboBox;anchorYField->setObjectName("anchorY");
-  for(auto p:QList<QPair<QString,QString>>{{"왼쪽","left"},{"가운데","center"},{"오른쪽","right"},{"좌우 늘이기","stretch"}})anchorXField->addItem(p.first,p.second);
-  for(auto p:QList<QPair<QString,QString>>{{"위","top"},{"가운데","center"},{"아래","bottom"},{"상하 늘이기","stretch"}})anchorYField->addItem(p.first,p.second);
+  for(auto p:QList<QPair<QString,QString>>{{QObject::tr("왼쪽"),"left"},{QObject::tr("가운데"),"center"},{QObject::tr("오른쪽"),"right"},{QObject::tr("좌우 늘이기"),"stretch"}})anchorXField->addItem(p.first,p.second);
+  for(auto p:QList<QPair<QString,QString>>{{QObject::tr("위"),"top"},{QObject::tr("가운데"),"center"},{QObject::tr("아래"),"bottom"},{QObject::tr("상하 늘이기"),"stretch"}})anchorYField->addItem(p.first,p.second);
   pairRow(tr("앵커 가로 / 세로"),anchorXField,anchorYField);
   for(auto p:{qMakePair(anchorXField,QString("anchorX")),qMakePair(anchorYField,QString("anchorY"))})connect(p.first,qOverload<int>(&QComboBox::activated),this,[this,p]{if(!filling)updateElement([p](QJsonObject&e){e[p.second]=p.first->currentData().toString();});});
   auto instanceSettings=new QPushButton(tr("부품 문구·행동 덮어쓰기…"));instanceSettings->setObjectName("componentOverrides");
@@ -1752,9 +1753,9 @@ void StudioWindow::receivePlayer() {
     const auto type = command["type"].toString();
     if (!type.isEmpty()) {
       static const QMap<QString, QString> names = {
-          {"start", "새 게임 시작"}, {"visit", "장소 이동"},
-          {"navigate", "화면 이동"}, {"buy", "상품 구매"},
-          {"save", "게임 저장"},     {"load", "게임 불러오기"}};
+          {"start", QObject::tr("새 게임 시작")}, {"visit", QObject::tr("장소 이동")},
+          {"navigate", QObject::tr("화면 이동")}, {"buy", QObject::tr("상품 구매")},
+          {"save", QObject::tr("게임 저장")},     {"load", QObject::tr("게임 불러오기")}};
       QString target = command["locationId"].toString(
           command["screenId"].toString(command["itemId"].toString()));
       if (type == "navigate")

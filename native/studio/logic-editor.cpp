@@ -1,3 +1,4 @@
+#include <QObject>
 #include "logic-editor.hpp"
 #include "rule-extensions.hpp"
 #include <QComboBox>
@@ -23,7 +24,7 @@ QJsonValue replaced(QJsonValue value,const QStringList &path,QJsonValue next,int
   if(value.isArray()){auto a=value.toArray();int i=path[depth].toInt();if(i>=0&&i<a.size())a[i]=replaced(a[i],path,next,depth+1);return a;}
   auto o=value.toObject();o[path[depth]]=replaced(o.value(path[depth]),path,next,depth+1);return o;
 }
-QString title(QString op){if(op=="ruleCondition")return QStringLiteral("확장 조건");if(op=="ruleEffect")return QStringLiteral("확장 효과");static const QMap<QString,QString> names{{"stateIs","상태 확인"},{"setState","상태 변경"},{"always","항상"},{"all","모두 충족 AND"},{"any","하나 이상 OR"},{"not","반전 NOT"},{"compare","수치 비교"},{"flag","플래그 확인"},{"eventCompleted","사건 완료"},{"literal","고정 숫자"},{"read","값 읽기"},{"time","시간 값"},{"add","더하기 / 증감"},{"subtract","빼기"},{"multiply","곱하기"},{"clamp","범위 제한"},{"set","값 지정"},{"setFlag","플래그 설정"},{"attribute","능력 · 자원"},{"relationship","관계"},{"inventory","소지품 수량"}};return names.value(op,op);}
+QString title(QString op){if(op=="ruleCondition")return QObject::tr("확장 조건");if(op=="ruleEffect")return QObject::tr("확장 효과");static const QMap<QString,QString> names{{"stateIs",QObject::tr("상태 확인")},{"setState",QObject::tr("상태 변경")},{"always",QObject::tr("항상")},{"all",QObject::tr("모두 충족 AND")},{"any",QObject::tr("하나 이상 OR")},{"not",QObject::tr("반전 NOT")},{"compare",QObject::tr("수치 비교")},{"flag",QObject::tr("플래그 확인")},{"eventCompleted",QObject::tr("사건 완료")},{"literal",QObject::tr("고정 숫자")},{"read",QObject::tr("값 읽기")},{"time",QObject::tr("시간 값")},{"add",QObject::tr("더하기 / 증감")},{"subtract",QObject::tr("빼기")},{"multiply",QObject::tr("곱하기")},{"clamp",QObject::tr("범위 제한")},{"set",QObject::tr("값 지정")},{"setFlag",QObject::tr("플래그 설정")},{"attribute",QObject::tr("능력 · 자원")},{"relationship",QObject::tr("관계")},{"inventory",QObject::tr("소지품 수량")}};return names.value(op,op);}
 }
 
 QJsonValue logicValueAt(QJsonValue value,const QStringList &path){return at(value,path);}

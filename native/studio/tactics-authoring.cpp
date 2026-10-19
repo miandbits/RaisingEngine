@@ -1,3 +1,4 @@
+#include <QObject>
 #include "studio.hpp"
 #include "logic-editor.hpp"
 #include <QDialogButtonBox>
@@ -19,7 +20,7 @@ void StudioWindow::editTactics(){
  auto skills=table("partySkills",tr("스킬"),{"id","name","target (enemy/frontEnemy/ally/self/allEnemies/allAllies)","kind (damage/heal/status)","power","accuracy %","castTurns","cooldown","statusId"});
  auto statuses=table("partyStatuses",tr("상태 효과"),{"id","name","turns","damage/turn","heal/turn","attack +/-","defense +/-","stun (true/false)"});
  auto encounters=table("partyEncounters",tr("전투·웨이브"),{"id","name","party IDs","waves (a,b;c,d)","experience","reward items (id:quantity)"});
- auto links=table("partyLinks",tr("탐험 분기 연결"),{"expeditionId","nodeId","encounterId","attribute >= (선택)","value","connections","exit (true/false)","name"});
+ auto links=table("partyLinks",tr("탐험 분기 연결"),{"expeditionId","nodeId","encounterId",QObject::tr("attribute >= (선택)"),"value","connections","exit (true/false)","name"});
  auto quests=table("partyQuests",tr("의뢰 연결"),{"questId","encounterId"});
  auto append=[](QTableWidget* t,QStringList values){int r=t->rowCount();t->insertRow(r);for(int c=0;c<values.size();c++)t->setItem(r,c,new QTableWidgetItem(values[c]));};
  auto csv=[](QJsonArray values){QStringList out;for(auto v:values)out<<v.toString();return out.join(',');};

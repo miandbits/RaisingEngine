@@ -1,3 +1,4 @@
+#include <QObject>
 #include "studio.hpp"
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -9,11 +10,11 @@
 namespace {
 const QStringList connectionKeys{"binding","dataBinding","attributeId","characterId","relationshipId","itemId","userFieldId","valueFormat"};
 const QMap<QString,QString> bindingLabels{
-  {"data-value",QString::fromUtf8("공용·개인 데이터")},
-  {"none",QString::fromUtf8("직접 입력")},{"title",QString::fromUtf8("게임 제목")},{"description",QString::fromUtf8("게임 설명")},
-  {"calendar",QString::fromUtf8("날짜")},{"calendar-year",QString::fromUtf8("연도")},{"calendar-month",QString::fromUtf8("월")},{"calendar-day",QString::fromUtf8("일")},{"calendar-weekday",QString::fromUtf8("요일")},
-  {"schedule-prompt",QString::fromUtf8("일정 안내")},{"ending",QString::fromUtf8("엔딩")},{"speaker",QString::fromUtf8("대화 인물")},{"story",QString::fromUtf8("대사")},{"location",QString::fromUtf8("현재 장소")},
-  {"attribute-value",QString::fromUtf8("능력·자원")},{"relationship-value",QString::fromUtf8("인물 관계")},{"item-count",QString::fromUtf8("물품 수량")},{"user-field",QString::fromUtf8("사용자 입력값")}
+  {"data-value",QObject::tr("공용·개인 데이터")},
+  {"none",QObject::tr("직접 입력")},{"title",QObject::tr("게임 제목")},{"description",QObject::tr("게임 설명")},
+  {"calendar",QObject::tr("날짜")},{"calendar-year",QObject::tr("연도")},{"calendar-month",QObject::tr("월")},{"calendar-day",QObject::tr("일")},{"calendar-weekday",QObject::tr("요일")},
+  {"schedule-prompt",QObject::tr("일정 안내")},{"ending",QObject::tr("엔딩")},{"speaker",QObject::tr("대화 인물")},{"story",QObject::tr("대사")},{"location",QObject::tr("현재 장소")},
+  {"attribute-value",QObject::tr("능력·자원")},{"relationship-value",QObject::tr("인물 관계")},{"item-count",QObject::tr("물품 수량")},{"user-field",QObject::tr("사용자 입력값")}
 };
 QStringList requiredBindingKeys(const QString &binding){
   if(binding=="data-value")return {"dataBinding"};
@@ -39,7 +40,7 @@ QJsonObject applyBinding(QJsonObject target,const QJsonObject &payload){
 QString bindingSummary(const QJsonObject &element){
   const auto binding=element.value("binding").toString("none");QStringList parts{bindingLabels.value(binding,binding)};
   for(const auto &key:requiredBindingKeys(binding))parts<<(key=="dataBinding"?element.value(key).toObject().value("kind").toString():element.value(key).toString());
-  if(!requiredBindingKeys(binding).isEmpty())parts<<QString::fromUtf8("형식: ")+element.value("valueFormat").toString("{value}");
+  if(!requiredBindingKeys(binding).isEmpty())parts<<QObject::tr("형식: ")+element.value("valueFormat").toString("{value}");
   return parts.join(" · ");
 }
 }

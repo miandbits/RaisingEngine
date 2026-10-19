@@ -14,6 +14,9 @@ if(!portable){
 const retry=spawnSync(installer,['/S',`/D=${installed}`],{windowsHide:true,windowsVerbatimArguments:true,encoding:'utf8',timeout:30000});assert.equal(retry.status,2,'existing install directory must not be overwritten');
 }
 const manifest=JSON.parse(await readFile(join(installed,'package-manifest.json'),'utf8'));
+const shortcut=join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs',`RaisingEngine ${manifest.releaseVersion}`,'Raising Studio.lnk');
+const registryKey=`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\RaisingEngine-${manifest.releaseVersion}`;
+if(!portable){await access(shortcut);const registration=run('reg.exe',['query',registryKey,'/v','InstallLocation']);assert.ok(registration.stdout.includes(installed),'Installed apps entry points to installed folder');}
 for(const f of manifest.files)assert.equal(createHash('sha256').update(await readFile(join(installed,f.path))).digest('hex'),f.sha256,f.path);
 const env={...process.env,PATH:process.env.SystemRoot+'\\System32',QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_RELEASE_EVIDENCE:evidence,RAISING_TEST_UI_LANGUAGE:process.env.RAISING_TEST_UI_LANGUAGE||'ko',RAISING_EDITOR_SETTINGS:join(evidence,'editor-settings.ini')};
 for(const name of Object.keys(env))if((name.startsWith('RAISING_')&&!['RAISING_QT_TEST','RAISING_RELEASE_EVIDENCE','RAISING_TEST_UI_LANGUAGE','RAISING_EDITOR_SETTINGS'].includes(name))||['QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','NODE_PATH','NODE_OPTIONS'].includes(name))delete env[name];
@@ -37,6 +40,8 @@ await writeFile(join(installed,'user-keep.txt'),'User-created file survives unin
 run(join(installed,'Uninstall.exe'),['/S',`_?=${installed}`],env);
 for(let i=0;i<50;i++){try{await access(join(installed,'RaisingStudioQt.exe'));await new Promise(r=>setTimeout(r,100));}catch{break;}}
 await assert.rejects(access(join(installed,'RaisingStudioQt.exe')));
+await assert.rejects(access(shortcut));
+assert.notEqual(spawnSync('reg.exe',['query',registryKey],{windowsHide:true}).status,0,'Uninstall removes its registration');
 assert.equal(await readFile(join(installed,'user-keep.txt'),'utf8'),'User-created file survives uninstall');await access(join(workflow.project,'project.json'));await access(save);
 }
 const result={ok:true,portable,root,evidence,project:workflow.project,web:join(evidence,'web'),windows:game,installedManifestFiles:manifest.files.length,systemNodeAndQtPathsRemoved:true,createdEditedExportedInQt:true,windowsSaveExact:true,overwriteRejected:portable?'not-tested':true,uninstallPreservedUnknownFiles:portable?'not-tested':true};

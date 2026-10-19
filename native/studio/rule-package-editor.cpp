@@ -1,3 +1,4 @@
+#include <QObject>
 #include "rule-package-editor.hpp"
 #include "rule-extensions.hpp"
 #include "logic-editor.hpp"
@@ -29,10 +30,10 @@ QString fresh(const QJsonArray &rows,const QString &prefix) {
   }
 }
 QString label(const QString &key) {
-  static const QMap<QString,QString> names{{"body","본문"},{"requirements","실행 조건"},{"effects","효과"},{"costs","비용"},
-    {"left","왼쪽"},{"right","오른쪽"},{"target","대상"},{"value","값"},{"amount","수량"},{"attributeId","능력·자원"},
-    {"characterId","인물"},{"itemId","아이템"},{"eventId","사건"},{"flagId","플래그"},{"stateGroupId","상태"},{"stateValueId","상태 값"},
-    {"transitions","전이"},{"args","입력 값"},{"conditions","조건"},{"condition","조건"},{"min","최솟값"},{"max","최댓값"}};
+  static const QMap<QString,QString> names{{"body",QObject::tr("본문")},{"requirements",QObject::tr("실행 조건")},{"effects",QObject::tr("효과")},{"costs",QObject::tr("비용")},
+    {"left",QObject::tr("왼쪽")},{"right",QObject::tr("오른쪽")},{"target",QObject::tr("대상")},{"value",QObject::tr("값")},{"amount",QObject::tr("수량")},{"attributeId",QObject::tr("능력·자원")},
+    {"characterId",QObject::tr("인물")},{"itemId",QObject::tr("아이템")},{"eventId",QObject::tr("사건")},{"flagId",QObject::tr("플래그")},{"stateGroupId",QObject::tr("상태")},{"stateValueId",QObject::tr("상태 값")},
+    {"transitions",QObject::tr("전이")},{"args",QObject::tr("입력 값")},{"conditions",QObject::tr("조건")},{"condition",QObject::tr("조건")},{"min",QObject::tr("최솟값")},{"max",QObject::tr("최댓값")}};
   return names.value(key,key);
 }
 QJsonValue materialize(QJsonValue value,const QJsonObject &params) {

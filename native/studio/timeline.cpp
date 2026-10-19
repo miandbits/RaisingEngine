@@ -1,3 +1,4 @@
+#include <QObject>
 #include "studio.hpp"
 #include "timeline-stage.hpp"
 #include <QDialog>
@@ -40,9 +41,9 @@ public:
     auto image=images.value(clip.value("imageAssetId").toString());
     if(clip.contains("stage"))drawTimelineStage(p,scene,clip.value("stage").toObject(),images,qMax(0,position-start));
     else if(!image.isNull()){QSizeF size=image.size();size.scale(scene.size(),Qt::KeepAspectRatio);QRectF target(scene.center()-QPointF(size.width()/2,size.height()/2),size);p.drawPixmap(target,image,QRectF(image.rect()));}
-    auto text=clip.value("text").toString();text.replace("{activity}",QString::fromUtf8("활동 미리보기")).replace("{outcome}",QString::fromUtf8("성공")).replace("{day}",QString::fromUtf8("1일")).replace("{changes}",QString::fromUtf8("수치 변화는 실제 활동 결과에서 표시됩니다"));
+    auto text=clip.value("text").toString();text.replace("{activity}",QObject::tr("활동 미리보기")).replace("{outcome}",QObject::tr("성공")).replace("{day}",QObject::tr("1일")).replace("{changes}",QObject::tr("수치 변화는 실제 활동 결과에서 표시됩니다"));
     QFont font=p.font();font.setPixelSize(21);p.setFont(font);p.setPen(Qt::white);
-    if(selected<0)text=QString::fromUtf8("클립을 추가하고 이미지와 문구를 연결하세요");
+    if(selected<0)text=QObject::tr("클립을 추가하고 이미지와 문구를 연결하세요");
     if(!text.isEmpty()){QRectF caption(16,scene.height()-90,width()-32,80);p.fillRect(caption,QColor(15,24,29,210));p.drawText(caption.adjusted(12,4,-12,-4),Qt::AlignCenter|Qt::TextWordWrap,text);}
     p.restore();int elapsed=0;
     for(int i=0;i<clips.size();++i){int duration=clips[i].toObject().value("durationMs").toInt(1000);double x=double(elapsed)*width()/qMax(1,total),w=double(duration)*width()/qMax(1,total);QRectF bar(x,height()-36,w-2,32);p.fillRect(bar,QColor(i==selected?"#c39750":"#365e52"));p.setPen(Qt::white);p.drawText(bar,Qt::AlignCenter,QString::number(i+1));elapsed+=duration;}
