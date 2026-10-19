@@ -24,11 +24,13 @@ GitHub documents that standard hosted runner jobs receive a [new VM](https://doc
 
 ## Owner decision: signing
 
-No signing key, certificate, publisher identity or paid service is configured. The owner must choose either an explicitly **unsigned limited preview**, or a signed distribution using a trusted code-signing service/certificate. Do not self-sign and describe it as a trusted publisher signature. Signing changes hashes, so signing must precede final checksum generation and artifact verification. Timestamp the trusted signature and sign both application executables and installer as appropriate.
+**Update 2026-10-19:** the owner selected trusted code signing. Selection is complete; provider onboarding, identity validation, actual signing and verification of the signed artifacts remain. See [signing setup and implementation sequence](windows-code-signing.md). The existing binaries and the receipt below still describe the unsigned candidate.
+
+No signing key, certificate, publisher identity or paid service is configured yet. The owner selected a signed distribution using a trusted code-signing service/certificate. Do not self-sign and describe it as a trusted publisher signature. Signing changes hashes, so signing must precede final checksum generation and artifact verification. Timestamp the trusted signature and sign both application executables and installer as appropriate.
 
 Microsoft documents that [SmartScreen reputation is separate from signing](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation), and [Smart App Control may block unsigned apps](https://support.microsoft.com/en-us/windows/security/smart-app-control-frequently-asked-questions). A signed first release is not guaranteed to avoid all reputation prompts. Never instruct users to disable security protections to satisfy the release checks.
 
-The draft is not published automatically. Final release readiness remains false until the signing choice and technical evidence are recorded; an independent native-speaker review and consumer Windows manual acceptance remain disclosed quality limitations rather than fabricated passes.
+The draft is not published automatically. Final release readiness remains false until real trusted signatures and the signed-artifact evidence are recorded; an independent native-speaker review and consumer Windows manual acceptance remain disclosed quality limitations rather than fabricated passes.
 
 ## Current evidence and remaining decision
 
@@ -42,7 +44,7 @@ The draft is not published automatically. Final release readiness remains false 
 
 [Windows VM run 39322082737](https://github.com/miandbits/RaisingEngine/actions/runs/39322082737) passed on Windows Server 2022 Datacenter, build 20348. The English installed editor and Japanese/Korean portable editor each created, edited and exported a project through actual Qt widgets, then restored native saves exactly. System Node/Qt paths were removed. Installer overwrite refusal and uninstall preservation passed. All three advanced-language suites passed; each measured nine dialogs with no clipped labels at the tested sizes. These are offscreen automated widget checks, not consumer Windows 11/manual/native-speaker certification.
 
-The VM gate is closed. Only the owner's signing choice remains a release gate. The reviewed installer and portable archive have not been rebuilt or changed after validation. `publication-validation.json` accompanies the draft as the post-build validation receipt; `release-artifacts.json` retains its original build-time gate snapshot. The temporary kit is preserved in the run's evidence artifact (30-day retention) and the local evidence backup, then removed from the release download list. To repeat this test later, re-upload the matching kit and refresh its asset ID; any temporary write access requires a new owner approval.
+The VM gate for the existing unsigned candidate is closed. The owner has since selected trusted signing, so real signing and verification of the resulting artifacts remain release gates. The reviewed installer and portable archive have not been rebuilt or changed after validation. `publication-validation.json` accompanies the draft as the post-build validation receipt; `release-artifacts.json` retains its original build-time gate snapshot. The temporary kit is preserved in the run's evidence artifact (30-day retention) and the local evidence backup, then removed from the release download list. To repeat this test later, re-upload the matching kit and refresh its asset ID; any temporary write access requires a new owner approval.
 
 ## Final candidate receipt
 
