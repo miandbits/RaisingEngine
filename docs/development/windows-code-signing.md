@@ -1,15 +1,15 @@
 # Trusted Windows code signing
 
-Owner decision, 2026-10-19: use trusted code signing for public Windows distribution. The current preview remains an unsigned draft. This decision is not a certificate, a completed signature, a purchase authorization, or permission to publish.
+Current owner decision, 2026-10-19: ship the initial preview unsigned and defer trusted code signing. Azure onboarding and paid signing setup are paused. The existing validated binaries remain unsigned; publication is still a separate action. This document preserves the future signing implementation reference, not an active onboarding request.
 
 ## Current state
 
 - The Windows VM verified the existing unsigned installer and portable archive (run `39322082737`). Those bytes and their evidence are preserved.
 - No code-signing certificate was found in the current-user or local-machine personal certificate stores. Azure CLI, AzureSignTool and SignTool were not on PATH during this inspection. This does not establish whether an external cloud account or hardware token exists.
 - The current build scripts explicitly record `signed: false`. A signed release must integrate real signing and verification; changing a metadata boolean is insufficient.
-- `config/preview-release.json` records trusted signing as required and keeps publication disabled. The original `preview-publication-validation.json` remains a historical receipt for the unsigned candidate.
+- `config/preview-release.json` records the unsigned-preview decision. `preview-publication-validation.json` records successful validation and the owner's final unsigned-preview choice. Readiness does not publish the draft automatically.
 
-## Required owner information
+## Information needed if signing is resumed
 
 Confirm individual versus legal business identity, residence/registration country, and whether an Azure account/subscription already exists. Do not send private keys, certificate passwords, government ID or billing data in chat. Complete identity checks in the provider's official portal. Confirm a concrete plan and cost before creating billable resources.
 

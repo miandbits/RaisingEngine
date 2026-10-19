@@ -4,8 +4,8 @@
   "editorLanguages": ["ko", "en", "ja"],
   "editorTranslationStatus": "all Korean tr() editor messages and catalogued service diagnostics translated; user content and unknown external errors preserved",
   "sourceRepository": "https://github.com/miandbits/RaisingEngine",
-  "publicReleaseReady": false,
-  "remainingReleaseChecks": ["verified signing identity and provider setup", "trusted signatures and timestamps", "signed artifact packaging and installation verification"],
-  "signingPolicy": {"requiredForPublication": true, "ownerDecision": "trusted-code-signing", "provider": null, "status": "awaiting-identity-and-provider"},
+  "publicReleaseReady": true,
+  "remainingReleaseChecks": [],
+  "signingPolicy": {"requiredForPublication": false, "ownerDecision": "unsigned-preview", "provider": null, "status": "deferred"},
   "reviewNotes": ["Original artwork preserved outside the repository; current source and binary templates use MIT geometric replacements", "Language catalogs and actual Qt widgets reviewed; independent native-speaker review not performed", "Windows Server VM checks do not certify consumer Windows SmartScreen or Smart App Control behavior"]
 }

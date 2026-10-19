@@ -13,10 +13,10 @@
       "sha256": "a2e52293cdd1f1b96986b09ca430ee837e97e27aea58cb6041f8db5568ad7756"
     }
   ],
-  "publicReleaseReady": false,
-  "remainingReleaseChecks": [
-    "code signing decision"
-  ],
+  "publicReleaseReady": true,
+  "remainingReleaseChecks": [],
+  "ownerDecision": "unsigned-preview",
+  "decisionDate": "2026-10-19",
   "signed": false,
   "vm": {
     "run": "https://github.com/miandbits/RaisingEngine/actions/runs/39322082737",
