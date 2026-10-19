@@ -10,6 +10,21 @@ $before = winget settings export | ConvertFrom-Json
 $localWasEnabled = $before.adminSettings.LocalManifestFiles
 $app = $null
 $success = $false
+Add-Type @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public static class WinGetWindows {
+  public delegate bool Callback(IntPtr h, IntPtr p);
+  [DllImport("user32.dll")] static extern bool EnumWindows(Callback callback, IntPtr p);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint process);
+  public static IntPtr[] Handles(uint process) {
+    var handles = new List<IntPtr>();
+    EnumWindows((h,p) => { uint id; GetWindowThreadProcessId(h,out id); if(id==process)handles.Add(h); return true; },IntPtr.Zero);
+    return handles.ToArray();
+  }
+}
+'@
 function Invoke-WinGetStep([string]$Name, [string[]]$Arguments) {
   Write-Host "Starting WinGet $Name (180 second limit)"
   $start = [Diagnostics.ProcessStartInfo]::new((Get-Command winget).Source)
@@ -29,10 +44,12 @@ function Invoke-WinGetStep([string]$Name, [string[]]$Arguments) {
       Select-Object Id,ProcessName,MainWindowTitle,Responding | ConvertTo-Json | Set-Content "$evidence/$Name-windows.json"
     Add-Type -AssemblyName UIAutomationClient
     Add-Type -AssemblyName UIAutomationTypes
-    $dialogDetails = foreach ($windowProcess in (Get-Process | Where-Object { $_.ProcessName -match 'winget|RaisingEngine|Uninstall|smartscreen' -and $_.MainWindowHandle -ne 0 })) {
-      $root = [System.Windows.Automation.AutomationElement]::FromHandle($windowProcess.MainWindowHandle)
-      $elements = $root.FindAll([System.Windows.Automation.TreeScope]::Subtree, [System.Windows.Automation.Condition]::TrueCondition)
-      foreach ($element in $elements) { @{process=$windowProcess.ProcessName;name=$element.Current.Name;type=$element.Current.ControlType.ProgrammaticName;id=$element.Current.AutomationId} }
+    $dialogDetails = foreach ($windowProcess in (Get-Process | Where-Object { $_.ProcessName -match 'winget|RaisingEngine|Uninstall|smartscreen' })) {
+      foreach ($handle in [WinGetWindows]::Handles($windowProcess.Id)) {
+        $root = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+        $elements = $root.FindAll([System.Windows.Automation.TreeScope]::Subtree, [System.Windows.Automation.Condition]::TrueCondition)
+        foreach ($element in $elements) { @{process=$windowProcess.ProcessName;name=$element.Current.Name;type=$element.Current.ControlType.ProgrammaticName;id=$element.Current.AutomationId} }
+      }
     }
     $dialogDetails | ConvertTo-Json | Set-Content "$evidence/$Name-dialogs.json"
     if (Test-Path -LiteralPath $registry) { Get-ItemProperty -LiteralPath $registry | ConvertTo-Json | Set-Content "$evidence/$Name-registry.json" }
