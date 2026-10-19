@@ -1,0 +1,94 @@
+{
+  "version": "0.1.0-preview.3",
+  "sourceCommit": "f34070de17cd8bb1859b57518da9b19e5c71896b",
+  "files": [
+    {
+      "file": "RaisingEngine-0.1.0-preview.3-windows-x64.exe",
+      "bytes": 106644136,
+      "sha256": "f730a51586d5c10754d13a8e13123775f821c4c916f7ebf44dafc0a62c7ce90f"
+    },
+    {
+      "file": "RaisingEngine-0.1.0-preview.3-windows-x64-portable.zip",
+      "bytes": 127278198,
+      "sha256": "a2e52293cdd1f1b96986b09ca430ee837e97e27aea58cb6041f8db5568ad7756"
+    }
+  ],
+  "publicReleaseReady": false,
+  "remainingReleaseChecks": [
+    "code signing decision"
+  ],
+  "signed": false,
+  "vm": {
+    "run": "https://github.com/miandbits/RaisingEngine/actions/runs/39322082737",
+    "workflowCommit": "530ad95b5684ee90a34d0e1ee41a8482d96d3c95",
+    "conclusion": "success",
+    "environment": {
+      "WindowsProductName": "Windows Server 2022 Datacenter",
+      "WindowsVersion": "2009",
+      "OsBuildNumber": "20348"
+    },
+    "authoring": [
+      {
+        "name": "installed-en",
+        "portable": false,
+        "files": 1520,
+        "systemRuntimePathsRemoved": true,
+        "qtAuthoringAndExport": true,
+        "nativeSaveExact": true,
+        "overwriteRejected": true,
+        "uninstallPreservedUnknownFiles": true
+      },
+      {
+        "name": "portable-ja",
+        "portable": true,
+        "files": 1520,
+        "systemRuntimePathsRemoved": true,
+        "qtAuthoringAndExport": true,
+        "nativeSaveExact": true,
+        "overwriteRejected": "not-tested",
+        "uninstallPreservedUnknownFiles": "not-tested"
+      },
+      {
+        "name": "portable-ko",
+        "portable": true,
+        "files": 1520,
+        "systemRuntimePathsRemoved": true,
+        "qtAuthoringAndExport": true,
+        "nativeSaveExact": true,
+        "overwriteRejected": "not-tested",
+        "uninstallPreservedUnknownFiles": "not-tested"
+      }
+    ],
+    "languages": [
+      {
+        "locale": "ko",
+        "dialogs": 9,
+        "clippedLabels": 0,
+        "automatedOffscreen": true
+      },
+      {
+        "locale": "en",
+        "dialogs": 9,
+        "clippedLabels": 0,
+        "automatedOffscreen": true
+      },
+      {
+        "locale": "ja",
+        "dialogs": 9,
+        "clippedLabels": 0,
+        "automatedOffscreen": true
+      }
+    ]
+  },
+  "permissionRestoration": {
+    "commit": "350a5d0",
+    "contents": "read",
+    "checkoutPersistsCredentials": false
+  },
+  "limitations": [
+    "Automated Qt widget checks, not manual desktop acceptance",
+    "Windows Server 2022 runner, not consumer Windows 11 security acceptance",
+    "Independent native-speaker review not performed"
+  ],
+  "buildMetadataNote": "Original release-artifacts.json remains an immutable build-time snapshot; this receipt records post-build verification."
+}

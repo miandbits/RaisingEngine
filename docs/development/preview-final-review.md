@@ -30,17 +30,19 @@ Microsoft documents that [SmartScreen reputation is separate from signing](https
 
 The draft is not published automatically. Final release readiness remains false until the signing choice and technical evidence are recorded; an independent native-speaker review and consumer Windows manual acceptance remain disclosed quality limitations rather than fabricated passes.
 
-## Current evidence and blocker
+## Current evidence and remaining decision
 
 - Catalog/glyph/layout/backend-error tests passed for `ko`, `en`, `ja` (nine advanced dialogs each; zero measured clipped labels at tested sizes).
 - Package audit passed: 1,520 files, 27 required notices, four Qt corresponding source archives, 18 regenerated MIT sample images. All five project-manager templates load without validation errors.
 - Current source audit passed for all 47 geometric image replacements and 60 tracked raster files; the other 13 images are the optional animation plugin's original procedural demo. Public regression tests: 14 passed. Source-only audio was checked: the winter motif reproduces byte-for-byte from its generator; four tone formats were regenerated from an original sine signal, and actual native music/effect playback passed.
-- Local Windows installer/portable authoring, native save restoration and exported browser play passed. These are local tests, not a fresh remote VM pass.
+- Local Windows installer/portable authoring, native save restoration and exported browser play passed. The isolated VM result is recorded separately below.
 - [Final source regression CI](https://github.com/miandbits/RaisingEngine/actions/runs/39321231456) passed on the curated source commit `f34070de17cd8bb1859b57518da9b19e5c71896b`.
 - Windows VM attempts [39318905715](https://github.com/miandbits/RaisingEngine/actions/runs/39318905715) and [39319227794](https://github.com/miandbits/RaisingEngine/actions/runs/39319227794) stopped at draft download authorization. The read-only asset API returned HTTP 403. **No application installation or play test ran in those VMs.**
-- Automatic approval review rejected expanding the workflow to `contents: write` without explicit owner consent because that permission can modify repository contents/releases. The workflow remains read-only. A question requesting permission for this manual verification only, followed by restoration to read-only, is pending. No long-lived user token has been copied into Actions secrets.
+- The owner explicitly approved temporary `contents: write` for this manual VM verification. It was restricted to the installation job, and checkout credentials were not persisted. The run succeeded; commit `350a5d0` restored read-only permissions. No long-lived user token was copied into Actions secrets.
 
-To resume after explicit approval: temporarily authorize only the trusted manual installation workflow, verify the pinned candidate asset hashes, run `preview-install.yml` for `v0.1.0-preview.3`, inspect every application-test result, then restore read-only permission and remove the temporary validation-kit release asset. Until then, keep the candidate draft and the isolated-VM release gate open.
+[Windows VM run 39322082737](https://github.com/miandbits/RaisingEngine/actions/runs/39322082737) passed on Windows Server 2022 Datacenter, build 20348. The English installed editor and Japanese/Korean portable editor each created, edited and exported a project through actual Qt widgets, then restored native saves exactly. System Node/Qt paths were removed. Installer overwrite refusal and uninstall preservation passed. All three advanced-language suites passed; each measured nine dialogs with no clipped labels at the tested sizes. These are offscreen automated widget checks, not consumer Windows 11/manual/native-speaker certification.
+
+The VM gate is closed. Only the owner's signing choice remains a release gate. The reviewed installer and portable archive have not been rebuilt or changed after validation. `publication-validation.json` accompanies the draft as the post-build validation receipt; `release-artifacts.json` retains its original build-time gate snapshot. The temporary kit is preserved in the run's evidence artifact (30-day retention) and the local evidence backup, then removed from the release download list. To repeat this test later, re-upload the matching kit and refresh its asset ID; any temporary write access requires a new owner approval.
 
 ## Final candidate receipt
 
