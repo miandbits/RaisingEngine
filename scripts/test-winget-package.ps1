@@ -27,6 +27,14 @@ function Invoke-WinGetStep([string]$Name, [string[]]$Arguments) {
       Select-Object Name,ProcessId,ParentProcessId,CommandLine | ConvertTo-Json | Set-Content "$evidence/$Name-processes.json"
     Get-Process | Where-Object { $_.ProcessName -match 'winget|RaisingEngine|Uninstall' } |
       Select-Object Id,ProcessName,MainWindowTitle,Responding | ConvertTo-Json | Set-Content "$evidence/$Name-windows.json"
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+    $dialogDetails = foreach ($windowProcess in (Get-Process | Where-Object { $_.ProcessName -match 'winget|RaisingEngine|Uninstall|smartscreen' -and $_.MainWindowHandle -ne 0 })) {
+      $root = [System.Windows.Automation.AutomationElement]::FromHandle($windowProcess.MainWindowHandle)
+      $elements = $root.FindAll([System.Windows.Automation.TreeScope]::Subtree, [System.Windows.Automation.Condition]::TrueCondition)
+      foreach ($element in $elements) { @{process=$windowProcess.ProcessName;name=$element.Current.Name;type=$element.Current.ControlType.ProgrammaticName;id=$element.Current.AutomationId} }
+    }
+    $dialogDetails | ConvertTo-Json | Set-Content "$evidence/$Name-dialogs.json"
     if (Test-Path -LiteralPath $registry) { Get-ItemProperty -LiteralPath $registry | ConvertTo-Json | Set-Content "$evidence/$Name-registry.json" }
     if (Test-Path -LiteralPath $install) { Get-ChildItem -LiteralPath $install | Select-Object Name,Length | ConvertTo-Json | Set-Content "$evidence/$Name-files.json" }
     & taskkill /PID $process.Id /T /F | Out-Null
