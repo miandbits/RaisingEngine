@@ -29,7 +29,8 @@ const lines=[
  'Delete "$INSTDIR\\Uninstall.exe"',...[...dirs].sort((a,b)=>b.length-a.length).map(d=>`RMDir "$INSTDIR\\${escape(d.replaceAll('/','\\'))}"`),'RMDir "$INSTDIR"','SectionEnd'
  ];
 await mkdir('.cache/qt-installer',{recursive:true});await mkdir(dirname(output),{recursive:true});
-const script=resolve('.cache/qt-installer/preview.nsi');await writeFile(script,lines.join('\n'));
+// NSIS 3.0 detects UTF-8 reliably with a BOM, including on Korean Windows.
+const script=resolve('.cache/qt-installer/preview.nsi');await writeFile(script,'\uFEFF'+lines.join('\n'));
 execFileSync(nsis,['/V2',script],{stdio:'inherit',windowsHide:true});
 const bytes=await readFile(output),result={file:output,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),signed:false,publicReleaseReady:false};
 await writeFile(output+'.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
