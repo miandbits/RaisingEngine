@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
 
 PackageIdentifier: miandbits.RaisingEngine.Preview
 PackageVersion: 0.1.0-preview.3
@@ -25,4 +25,4 @@ Documentations:
 - DocumentLabel: Installation and first game
   DocumentUrl: https://github.com/miandbits/RaisingEngine/blob/main/docs/getting-started/preview/en.md
 ManifestType: defaultLocale
-ManifestVersion: 1.12.0
+ManifestVersion: 1.10.0

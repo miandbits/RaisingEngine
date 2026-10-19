@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.12.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.10.0.schema.json
 
 PackageIdentifier: miandbits.RaisingEngine.Preview
 PackageVersion: 0.1.0-preview.3
@@ -14,4 +14,4 @@ Documentations:
 - DocumentLabel: 설치와 첫 게임 제작
   DocumentUrl: https://github.com/miandbits/RaisingEngine/blob/main/docs/getting-started/preview/ko.md
 ManifestType: locale
-ManifestVersion: 1.12.0
+ManifestVersion: 1.10.0
