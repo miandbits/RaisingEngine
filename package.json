@@ -9,6 +9,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "check:editor-i18n": "node scripts/check-editor-translations.mjs",
+    "prepare:qt-source": "node scripts/prepare-qt-source.mjs",
     "audit:repository": "node scripts/repository-audit.mjs",
     "check:public-content": "node scripts/check-public-content.mjs",
     "test:public-content": "node --test --test-concurrency=1 tests/release/public-content.test.mjs tests/runtime/action-capabilities.test.mjs tests/runtime/condition-preview.test.mjs tests/native/free-expedition.test.mjs tests/native/magical-academy.test.mjs tests/release/fixture-media.test.mjs",

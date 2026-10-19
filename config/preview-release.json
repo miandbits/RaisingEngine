@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0-preview.1",
+  "channel": "unsigned-preview",
+  "editorLanguages": ["ko", "en", "ja"],
+  "editorTranslationStatus": "preview-workflows; advanced-tool fallback to Korean",
+  "sourceRepository": "https://github.com/miandbits/RaisingEngine",
+  "publicReleaseReady": false,
+  "remainingReleaseChecks": ["clean Windows VM installation", "code signing decision", "sample media permission review", "full editor translation review"]
+}

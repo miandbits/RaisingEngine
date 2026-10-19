@@ -1,0 +1,9 @@
+# Editor and game languages
+
+These are independent settings. The editor supports `ko`, `en`, `ja` through a built-in exact-message catalog. Choose a language in the project manager or **View → 언어 / Language / 言語…**, then restart. The pending preference never closes windows, loses unsaved edits, changes project JSON or rewrites a save. `--ui-language ko|en|ja` provides a session override without changing the saved preference. Unsupported explicit language codes exit with code 2.
+
+The first preview translates the project manager, menu/inspector, core content editor, first-game helper, export dialog and game-localization workspace. Advanced tools, backend diagnostics and user-authored content can remain Korean. This is not a claim that the entire editor is translated. `npm run check:editor-i18n` reports translated literal messages, missing messages by source file, duplicate entries and placeholder mismatches. Its coverage does not include arbitrary runtime/service text. Contributors edit `native/studio/translations/editor.json` as `[Korean source, English, Japanese]` rows, preserving placeholders and markup. Restart to load a rebuilt catalog.
+
+Game languages are configured in **Design → Localization workspace**. Designers can add language codes beyond the three editor languages, choose fallback/default languages, supply translations and import fonts. Existing content without localization keeps its original text. The canvas locale applies to game preview and the next play session, independently of the editor setting. Incomplete or stale translations have explicit review/fallback behavior; IDs and numeric game state do not become translated strings.
+
+The editor uses bundled OFL Noto Sans JP for Japanese and the existing NotoSansKR fallback. Operating-system fonts are not redistributed. Test actual layout, fallback glyphs and multiline text; passing a catalog placeholder check does not prove that a label fits.

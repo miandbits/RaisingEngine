@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "editor-language.hpp"
 #include "project-manager.hpp"
 #include "theme.hpp"
 #include "runtime-paths.hpp"
@@ -152,6 +153,8 @@ private slots:
   void initTestCase() {
     applyStudioTheme(
         *qobject_cast<QApplication *>(QCoreApplication::instance()));
+    if (!qEnvironmentVariableIsEmpty("RAISING_TEST_UI_LANGUAGE"))
+      QVERIFY(installEditorLanguage(*qobject_cast<QApplication *>(QCoreApplication::instance()), qEnvironmentVariable("RAISING_TEST_UI_LANGUAGE")));
   }
   void dockingLayout() {
     StudioWindow w(

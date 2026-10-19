@@ -48,17 +48,19 @@ void ProjectManager::remember(const QString &path) {
   history()->setValue("recentProjects", entries);
 }
 
+#include "editor-language.hpp"
 ProjectManager::ProjectManager(const QString &engineRoot, QWidget *parent)
     : QDialog(parent), bridge(engineRoot, this) {
   setObjectName("projectManager");
   setWindowTitle(tr("Raising Studio — 프로젝트"));
-  resize(1000, 640);
-  setMinimumSize(780, 500);
+  resize(1100, 760);
+  setMinimumSize(900, 700);
   auto layout = new QVBoxLayout(this);
   layout->setContentsMargins(28, 24, 28, 24);
   auto title = new QLabel(tr("Raising Studio"));
   title->setStyleSheet("font-size:28px;font-weight:700;");
   layout->addWidget(title);
+  layout->addWidget(editorLanguagePicker(this));
   layout->addWidget(new QLabel(tr("육성 시뮬레이션 제작 도구  ·  프로젝트를 선택해 작업을 시작하세요.")));
   controls = new QWidget;
   auto columns = new QHBoxLayout(controls);
@@ -78,7 +80,7 @@ ProjectManager::ProjectManager(const QString &engineRoot, QWidget *parent)
   removeButton = new QPushButton(tr("목록에서 제거")); removeButton->setObjectName("removeRecentProject");
   removeButton->setToolTip(tr("최근 목록에서만 제거합니다. 프로젝트 파일은 보존합니다."));
   actions->addWidget(openButton); actions->addWidget(removeButton); left->addLayout(actions);
-  columns->addLayout(left, 3);
+  columns->addLayout(left, 2);
   auto right = new QVBoxLayout;
   auto existing = new QGroupBox(tr("기존 프로젝트 열기"));
   auto importLayout = new QVBoxLayout(existing);
@@ -113,7 +115,7 @@ ProjectManager::ProjectManager(const QString &engineRoot, QWidget *parent)
   right->addWidget(createGroup); right->addStretch();
   auto boundary = new QLabel(tr("프로젝트와 저장 게임은 엔진과 별도 폴더에 보관됩니다.\n최근 목록은 이 컴퓨터에만 저장됩니다."));
   boundary->setWordWrap(true); right->addWidget(boundary);
-  columns->addLayout(right, 2); layout->addWidget(controls, 1);
+  columns->addLayout(right, 3); layout->addWidget(controls, 1);
   message = new QLabel; message->setObjectName("launcherMessage"); message->setWordWrap(true); layout->addWidget(message);
   auto close = new QPushButton(tr("닫기")); close->setAutoDefault(false);
   layout->addWidget(close, 0, Qt::AlignRight);

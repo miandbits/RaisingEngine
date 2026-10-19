@@ -9,6 +9,7 @@
 #include <QFont>
 #include <QTimer>
 
+#include "editor-language.hpp"
 int main(int argc, char **argv) {
   QApplication app(argc, argv);
   app.setOrganizationName("RaisingEngine");
@@ -23,9 +24,11 @@ int main(int argc, char **argv) {
   parser.addOption(
       {"engine-root", "Engine repository directory", "directory", defaultRoot});
   parser.addOption({"project", "Project directory", "directory"});
+  parser.addOption({"ui-language", "Editor language: ko, en, ja (does not change game language)", "language"});
   parser.addOption({"analysis", "Open archived automatic play results"});
   parser.addOption({"workspace", "Open integrated authoring workspace"});
   parser.process(app);
+  if (!installEditorLanguage(app, parser.value("ui-language"))) return 2;
   QString project = parser.value("project");
   if (project.isEmpty()) {
     ProjectManager manager(parser.value("engine-root"));

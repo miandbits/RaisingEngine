@@ -9,6 +9,8 @@ A 2D raising-simulation engine with a **Qt editor**, a deterministic **C++ runti
 Open `RaisingStudioQt.exe` to create or open a project. Keep user projects outside the engine checkout.
 
 - [First game](docs/getting-started/first-game.md)
+- [Preview install and first-game guides — 한국어 / English / 日本語](docs/getting-started/preview/README.md)
+- [Editor and game languages](docs/manual/editor-languages.md)
 - [Authoring manual](docs/manual/README.md)
 - [Public examples](examples/README.md)
 - [Windows / Web export](docs/manual/qt-game-export.md)

@@ -26,6 +26,11 @@ for (const [source, destination] of [
   ['SDL/LICENSE.txt','SDL.txt'], ['SDL_image/LICENSE.txt','SDL_image.txt'], ['RmlUi/LICENSE.txt','RmlUi.txt'], ['freetype/docs/FTL.TXT','Freetype.txt'], ['miniaudio/LICENSE','miniaudio.txt'], ['SDL_image/external/libwebp/COPYING','libwebp.txt'], ['SDL_image/external/libwebp/PATENTS','libwebp-PATENTS.txt'],
 ]) await copyFile(path.join(root, 'native/player/vendor', source), path.join(artifact, 'licenses', destination));
 await copyFile(path.join(root, 'native/vendor/LICENSE.MIT'), path.join(artifact, 'licenses/nlohmann-json.txt'));
+await copyFile(path.join(root,'native/player/vendor/RmlUi/Include/RmlUi/Core/Containers/LICENSE.txt'),path.join(artifact,'licenses/RmlUi-containers.txt'));
+const stbSource=await readFile(path.join(root,'native/player/vendor/SDL_image/src/stb_image.h'),'utf8');
+const stbLicense=stbSource.slice(stbSource.lastIndexOf('This software is available under 2 licenses'));
+if(!stbLicense.includes('Copyright (c) 2017 Sean Barrett'))throw Error('SDL_image stb notice not found');
+await writeFile(path.join(artifact,'licenses/stb_image.txt'),stbLicense);
 await writeFile(path.join(artifact, 'build.json'), JSON.stringify({ runtime: 'cpp-sdl3-rmlui', executable: filename,
   sha256: createHash('sha256').update(await readFile(path.join(artifact, filename))).digest('hex'),
   dependencies: { SDL:'3.2.24', SDL_image:'3.2.4', RmlUi:'6.1', FreeType:'2.13.3', miniaudio:'0.11.23', libwebp:'1.6.0' } }, null, 2));

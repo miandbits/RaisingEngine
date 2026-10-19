@@ -1,0 +1,11 @@
+{
+  "qtVersion": "6.10.1",
+  "modifications": "No local modifications to Qt; official MinGW 13.1 desktop kit.",
+  "archives": [
+    {"file":"qtbase-everywhere-src-6.10.1.tar.xz","sha256":"5a6226f7e23db51fdc3223121eba53f3f5447cf0cc4d6cb82a3a2df7a65d265d"},
+    {"file":"qtsvg-everywhere-src-6.10.1.tar.xz","sha256":"c02f355a58f3bbcf404a628bf488b6aeb2d84a94c269afdb86f6e529343ab01f"},
+    {"file":"qtimageformats-everywhere-src-6.10.1.tar.xz","sha256":"498eabdf2381db96f808942b3e3c765f6360fe6c0e9961f0a45ff7a4c68d7a72"},
+    {"file":"qttranslations-everywhere-src-6.10.1.tar.xz","sha256":"8e49a2df88a12c376a479ae7bd272a91cf57ebb4e7c0cf7341b3565df99d2314"}
+  ],
+  "downloadBase": "https://download.qt.io/archive/qt/6.10/6.10.1/submodules/"
+}

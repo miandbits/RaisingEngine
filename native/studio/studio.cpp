@@ -117,6 +117,7 @@ private:
 static QString label(const QJsonObject &e) {
   return e["label"].toString(e["text"].toString(e["id"].toString()));
 }
+#include "editor-language.hpp"
 StudioWindow::StudioWindow(QString root, QWidget *parent)
     : QMainWindow(parent), engineRoot(root), bridge(root, this) {
   setObjectName("raisingStudio");
@@ -175,6 +176,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       tr("현재 탭 닫기"), this,
       [this] { closeScreen(documents->currentIndex()); }, QKeySequence::Close);
   viewMenu = menuBar()->addMenu(tr("보기"));
+  viewMenu->addAction("언어 / Language / 言語…", this, [this] { showEditorLanguageSettings(this); })->setObjectName("editorLanguageSettings");
   auto designMenu = menuBar()->addMenu(tr("디자인"));
   designMenu->addAction(tr("완결 샘플 제작…"),this,&StudioWindow::createBenchmark)->setObjectName("createBenchmark");
   designMenu->addAction(tr("제작 시험 검증…"),this,&StudioWindow::runAssuranceDialog)->setObjectName("runAssurance");

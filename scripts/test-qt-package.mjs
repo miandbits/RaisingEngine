@@ -15,8 +15,8 @@ const retry=spawnSync(installer,['/S',`/D=${installed}`],{windowsHide:true,windo
 }
 const manifest=JSON.parse(await readFile(join(installed,'package-manifest.json'),'utf8'));
 for(const f of manifest.files)assert.equal(createHash('sha256').update(await readFile(join(installed,f.path))).digest('hex'),f.sha256,f.path);
-const env={...process.env,PATH:process.env.SystemRoot+'\\System32',QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_RELEASE_EVIDENCE:evidence};
-for(const name of Object.keys(env))if((name.startsWith('RAISING_')&&!['RAISING_QT_TEST','RAISING_RELEASE_EVIDENCE'].includes(name))||['QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','NODE_PATH','NODE_OPTIONS'].includes(name))delete env[name];
+const env={...process.env,PATH:process.env.SystemRoot+'\\System32',QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_RELEASE_EVIDENCE:evidence,RAISING_TEST_UI_LANGUAGE:process.env.RAISING_TEST_UI_LANGUAGE||'ko',RAISING_EDITOR_SETTINGS:join(evidence,'editor-settings.ini')};
+for(const name of Object.keys(env))if((name.startsWith('RAISING_')&&!['RAISING_QT_TEST','RAISING_RELEASE_EVIDENCE','RAISING_TEST_UI_LANGUAGE','RAISING_EDITOR_SETTINGS'].includes(name))||['QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','NODE_PATH','NODE_OPTIONS'].includes(name))delete env[name];
 // Only the test driver and QtTest DLL are temporary; the editor/service/player use installed files.
 const driver=join(installed,'release-workflow-test.exe'),testDll=join(installed,'Qt6Test.dll'),offscreen=join(installed,'platforms/qoffscreen.dll');
 await cp(resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio','qt-studio-test.exe'),driver);

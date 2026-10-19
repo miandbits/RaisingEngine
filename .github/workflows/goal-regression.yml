@@ -22,6 +22,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Check editor translation catalog and preview workflow coverage
+        run: npm run check:editor-i18n
       - name: Build headless services and C++ runtime
         run: npm run build:headless
       - name: Test approval and failure semantics
