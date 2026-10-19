@@ -5,7 +5,8 @@ $evidence = Join-Path $env:GITHUB_WORKSPACE '.cache/winget-validation'
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 $install = Join-Path $env:RUNNER_TEMP 'RaisingEngine Winget Preview'
 $registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\miandbits.RaisingEngine.Preview'
-$alias = Join-Path $env:LOCALAPPDATA 'Microsoft/WinGet/Links/raisingstudio-preview.exe'
+$commandFolder = Join-Path $install 'RaisingStudio'
+$alias = Join-Path $commandFolder 'RaisingStudioQt.exe'
 if ((Test-Path -LiteralPath $install) -or (Test-Path -LiteralPath $alias)) { throw 'Refusing to replace an existing installation.' }
 $before = winget settings export | ConvertFrom-Json
 $localWasEnabled = $before.adminSettings.LocalManifestFiles
@@ -75,11 +76,12 @@ try {
   $registry = $entries[0].PSPath
   $exe = Join-Path $install 'RaisingStudio/RaisingStudioQt.exe'
   if (!(Test-Path -LiteralPath $exe)) { throw 'Editor executable missing' }
-  if (!(Test-Path -LiteralPath $alias)) { throw 'WinGet command alias missing' }
+  if (!([Environment]::GetEnvironmentVariable('Path','User').Split(';') -contains $commandFolder)) { throw 'WinGet command PATH entry missing' }
   $oldPath = $env:PATH
   try {
-    $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-    $app = Start-Process -FilePath $alias -WorkingDirectory $env:RUNNER_TEMP -ArgumentList '--ui-language','en' -WindowStyle Hidden -PassThru -RedirectStandardError "$evidence/editor-stderr.log"
+    $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$commandFolder"
+    if ((Get-Command RaisingStudioQt).Source -ne $exe) { throw 'WinGet command resolves to another executable' }
+    $app = Start-Process -FilePath 'RaisingStudioQt.exe' -WorkingDirectory $env:RUNNER_TEMP -ArgumentList '--ui-language','en' -WindowStyle Hidden -PassThru -RedirectStandardError "$evidence/editor-stderr.log"
     if (!$app.WaitForInputIdle(15000)) { throw 'Editor did not initialize its message loop' }
     if ($app.WaitForExit(3000)) { throw "Editor exited at startup: $($app.ExitCode)" }
     Add-Type @'
@@ -112,6 +114,7 @@ public static class EditorWindows {
   Set-Content -LiteralPath (Join-Path $external 'save.json') -Value '{"sentinel":"preserve"}'
   Invoke-WinGetStep 'uninstall' @('uninstall','--manifest',$Manifest,'--silent','--accept-source-agreements','--disable-interactivity','--verbose-logs')
   if ((Test-Path -LiteralPath $exe) -or (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $alias)) { throw 'Installed app remains after uninstall' }
+  if ([Environment]::GetEnvironmentVariable('Path','User').Split(';') -contains $commandFolder) { throw 'WinGet command PATH remains after uninstall' }
   if ((Get-Content -LiteralPath (Join-Path $external 'save.json') -Raw).Trim() -ne '{"sentinel":"preserve"}') { throw 'Uninstall changed external save' }
   $success = $true
   @{ok=$true;package='miandbits.RaisingEngine.Preview';version='0.1.0-preview.3';winget=(winget --version);installerType='zip/portable';installedViaWinget=$true;customLocation=$install;registryMatched=$true;commandAliasPresent=$true;editorLaunchedViaAlias=$true;editorWindowTitles=$titles;editorNormalExit=$true;systemRuntimePathsRemoved=$true;uninstalledViaWinget=$true;appRegistryAliasRemoved=$true;externalUserFilesPreserved=$true;environment=(Get-ComputerInfo | Select-Object WindowsProductName,OsBuildNumber)} | ConvertTo-Json -Depth 5 | Set-Content "$evidence/result.json"
