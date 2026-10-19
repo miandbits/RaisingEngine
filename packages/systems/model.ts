@@ -39,7 +39,7 @@ export interface SystemsView {
   equipment: { id: string; name: string; itemId: string; slot: EquipmentSlot; equipped: boolean; canUnequip: boolean; owned: number; enabled: boolean; reason: string | null }[];
   quests: { id: string; name: string; status: 'available' | 'locked' | 'accepted' | 'completed' | 'claimed'; progress: number; targetCount: number; canAccept: boolean; canClaim: boolean; reason: string | null }[];
   consumables: { itemId: string; name: string; quantity: number; heal: number; enabled: boolean }[];
-  expedition: null | { expeditionId: string; name: string; nodeId: string; nodeName: string; nodeDescription?: string; heroHp: number; stats: CombatStats; connections: { id: string; name: string; enabled: boolean }[]; canReturn: boolean; manualBattle?: { name: string; enabled: boolean; reason: string | null } };
+  expedition: null | { expeditionId: string; name: string; nodeId: string; nodeName: string; nodeDescription?: string; actionIds?: string[]; heroHp: number; stats: CombatStats; connections: { id: string; name: string; enabled: boolean }[]; canReturn: boolean; manualBattle?: { name: string; enabled: boolean; reason: string | null } };
   battle: null | { enemyId: string; enemyName: string; enemyHp: number; enemyMaxHp: number; turn: number; heroHp: number; heroMaxHp: number; log?: BattleLogEntry[] };
   battleActions: BattleActionView[];
   stages: { id: string; name: string; unlocked: boolean; characterId: string; relationshipId: string; threshold: number }[];

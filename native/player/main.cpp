@@ -172,8 +172,14 @@ public:
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
     markup.extensions=&extensions;
-    game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){extensions.observe(before,after,command,error);};
-    game.extension_state=[this]{return extensions.save(raising_player::uses_presentation_variants(game.content.at("project").value("visual",Json::object())));};
+    game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){
+      // Conditions/routing may reveal a plugin only as a result of this command.
+      // Synchronize logical mounts before its single observation, without displaying a window.
+      const Json observed_command=command; // document() rebuilds the action lookup that may own this value.
+      if(extensions.active())markup.document();
+      extensions.observe(before,after,observed_command,error);
+    };
+    game.extension_state=[this]{return extensions.save(true);};
     game.content=bundle.at("content"); game.refresh();
     game.gallery_content=[this]{return localized_content(game.content,markup.locale);};
     if(game.content.at("project").contains("gallery"))game.gallery.open(this->save_file.parent_path()/("collection-"+game.content.at("project").value("gameId","game")+".json"),game.content.at("project").value("gameId","game"));

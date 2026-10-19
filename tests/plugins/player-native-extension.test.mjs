@@ -144,3 +144,31 @@ test('native player draws weighted mesh items bent by their bones (plugin-mesh-v
   assert.ok(!close(at(270,200),BLUE)&&!close(at(270,200),RED),`no straight forearm: ${at(270,200)}`);
   await mkdir(resolve(EVIDENCE,'v2'),{recursive:true});await copyFile(shot,resolve(EVIDENCE,'v2','windows-mesh-bent.png'));
 });
+
+
+test('conditional native extensions observe their revealing command once and restore loop clocks exactly',{timeout:180000},async t=>{
+  const f=await makeGame({target:'windows',name:'conditional-mount'});t.diagnostic(`fixture: ${f.root}`);
+  const file=resolve(f.game,'game.json'),bundle=JSON.parse(await readFile(file,'utf8'));
+  const money=bundle.content.attributes.find(a=>a.id==='money').initial;
+  const hero=bundle.content.project.visual.screens.find(s=>s.id==='home').elements.find(e=>e.id==='hero-anim');
+  hero.visibleCondition={op:'compare',comparator:'gt',left:{op:'read',target:{kind:'attribute',attributeId:'money'}},right:{op:'literal',value:money}};
+  await writeFile(file,JSON.stringify(bundle));
+  const r=await run(f,'conditional',[{click:'start'},{checkpoint:'hidden'},...cheer,
+    {extensionAdvanceMs:350},{checkpoint:'saved-pose'},{key:'F5'},
+    {extensionAdvanceMs:400},{key:'F9'},{checkpoint:'restored'},
+    {extensionAdvanceMs:100},{checkpoint:'continued'}]);
+  assert.equal(r.instance('hidden'),undefined);
+  assert.equal(track(r.instance('joy'),0).clip,'joy','newly revealed instance receives the revealing action');
+  assert.equal(r.ui('joy').extensions.observations,1,'rendering never replays the observation');
+  assert.deepEqual(r.ui('joy').extensions.lastObserve.plugins['cutout-animation'].matched,[`${INSTANCE}:cheer-joy`]);
+  const saved=JSON.parse(await readFile(r.save,'utf8')).playerPresentation.extensions['cutout-animation'];
+  assert.equal(saved.instances[INSTANCE].state.tracks.find(x=>x.track===1).current.timeMs,350,'loop clock is saved even without presentation variants');
+  for(const n of [0,1])assert.equal(track(r.instance('restored'),n).timeMs,track(r.instance('saved-pose'),n).timeMs);
+  assert.deepEqual(r.ui('restored').state,r.ui('saved-pose').state);
+  near(r.instance('restored').items[0].matrix,r.instance('saved-pose').items[0].matrix,'saved pose resumes exactly');
+  assert.equal(track(r.instance('continued'),0).timeMs,450);
+  await copyFile(r.save,resolve(f.root,'fresh-save.json'));
+  const fresh=await run(f,'fresh',[{key:'F9'},{checkpoint:'restored'}]);
+  assert.deepEqual(fresh.ui('restored').state,r.ui('saved-pose').state);
+  for(const n of [0,1])assert.equal(track(fresh.instance('restored'),n).timeMs,track(r.instance('saved-pose'),n).timeMs);
+});

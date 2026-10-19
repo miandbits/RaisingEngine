@@ -47,6 +47,9 @@ export class ExtensionHost {
   pendingRestore: Record<string, unknown> | null = null;
   private restoreAwaitingCommit = false;
   private presentationManaged = false;
+  private pendingObservations: { before: unknown; after: unknown; command: unknown; error: string | null }[] = [];
+  private pendingState: unknown = undefined;
+  private restoreState: unknown = undefined;
   observations = 0; clockMs = 0; lastObserve: unknown = null;
   /** `event` notifications of update replies (newest last) and the sounds they named: presentation only. */
   recentEvents: Record<string, unknown>[] = []; eventCount = 0; soundCount = 0; soundsDelivered = 0;
@@ -119,12 +122,28 @@ export class ExtensionHost {
     }
     this.lastObserve = { command, error, plugins };
   }
+  /** A controller transaction includes its automatic narrative settling commands.
+   * Deliver them once after final mounts commit, never replay them on later navigation.
+   * The controller rejects another external action until this transaction commits.
+   */
+  observePresentation(before: unknown, after: unknown, command: unknown, state: unknown, error: string | null = null): void {
+    if (!this.presentationManaged || (error && !this.presentationPending)) { this.observe(before, after, command, error); return; }
+    // At most two initial commands plus the controller's 10,000-step settle limit.
+    if (this.pendingObservations.length >= 10002) throw new Error('확장 화면 관찰 한도를 초과했습니다.');
+    this.pendingObservations.push({ before, after, command, error }); this.pendingState = state;
+  }
+  private flushObservation(): void {
+    const pending = this.pendingObservations; this.pendingObservations = []; this.pendingState = undefined;
+    for (const entry of pending) this.observe(entry.before, entry.after, entry.command, entry.error);
+  }
+  get presentationPending(): boolean { return this.pendingObservations.length > 0; }
+  get restorationPending(): boolean { return this.restoreAwaitingCommit; }
   /** One presentation tick: flush released mounts, update once, frame every mounted instance. */
   tick(dtMs: number): void {
     if (!this.active) return;
     // A load can change the controller of an existing element. Wait for React's
     // mount effects before restoring, otherwise the old controller rejects it.
-    if (this.restoreAwaitingCommit) return;
+    if (this.restoreAwaitingCommit || this.presentationPending) return;
     for (const mount of [...this.mounts.values()]) if (mount.released) { this.unmount(mount); this.mounts.delete(mount.instance); }
     if (this.pendingRestore) { const saved = this.pendingRestore; this.pendingRestore = null; this.restore(saved); }
     const dt = Math.min(10000, Math.max(0, dtMs)); this.clockMs += dt;
@@ -169,23 +188,34 @@ export class ExtensionHost {
   items(instance: string): readonly ExtensionItem[] { return this.mounts.get(instance)?.items ?? NO_ITEMS; }
   /** Re-initializes plugins (new game / load) and re-mounts what is currently on screen. */
   reset(): void {
-    this.preserved = {}; this.pendingRestore = null; this.restoreAwaitingCommit = false;
+    this.preserved = {}; this.pendingRestore = null; this.restoreAwaitingCommit = false; this.restoreState = undefined; this.pendingObservations = []; this.pendingState = undefined;
     for (const plugin of this.plugins.values()) if (plugin.available) this.init(plugin);
     for (const mount of this.mounts.values()) { mount.mounted = false; mount.items = NO_ITEMS; mount.frame = 0; if (!mount.released) this.mountRequest(mount); }
   }
   /** playerPresentation.extensions value, or undefined when no extension is in use. */
   save(exact = false): Record<string, unknown> | undefined {
     if (!this.active) return undefined;
+    if (this.presentationPending) throw new Error('화면 갱신 후 다시 저장해 주세요.');
+    if (this.pendingRestore) return structuredClone(this.pendingRestore);
     const out: Record<string, unknown> = structuredClone(this.preserved);
     for (const plugin of this.plugins.values()) if (plugin.available) { const reply = this.call(plugin, { op: 'saveAll', ...(exact ? { exact: true } : {}) }); if (reply.ok && reply.state !== undefined) out[plugin.id] = reply.state; }
     return Object.keys(out).length ? out : undefined;
   }
-  /** Applied after the restored screen has mounted its instances (next tick). */
-  scheduleRestore(saved: Record<string, unknown> | undefined, waitForCommit = false): void {
+  /** Applied after restored mounts commit, or on the next tick for non-React hosts. */
+  scheduleRestore(saved: Record<string, unknown> | undefined, waitForCommit = false, state: unknown = undefined): void {
     this.pendingRestore = saved && typeof saved === 'object' ? saved : null;
     this.restoreAwaitingCommit = !!this.pendingRestore && waitForCommit && this.presentationManaged;
+    this.restoreState = state;
   }
-  commitPresentation(): void { this.presentationManaged = true; this.restoreAwaitingCommit = false; }
+  commitPresentation(state: unknown = undefined): void {
+    this.presentationManaged = true;
+    if (this.presentationPending && this.pendingState !== state) return;
+    if (this.restoreAwaitingCommit && this.restoreState !== undefined && this.restoreState !== state) return;
+    for (const mount of [...this.mounts.values()]) if (mount.released) { this.unmount(mount); this.mounts.delete(mount.instance); }
+    this.restoreAwaitingCommit = false; this.restoreState = undefined;
+    if (this.pendingRestore) { const saved = this.pendingRestore; this.pendingRestore = null; this.restore(saved); }
+    this.flushObservation();
+  }
   restore(saved: Record<string, unknown>): void {
     for (const [id, state] of Object.entries(saved)) {
       const plugin = this.plugins.get(id);

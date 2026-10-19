@@ -1,4 +1,3 @@
-import {usesPresentationVariants} from '../visual/variants.js';
 import { scheduleStep } from '../player-service/schedule.js';
 import { resolveUserValues } from '../core/user-fields.js';
 import { CoreFault } from '../core/util.js';
@@ -113,11 +112,11 @@ export class WebPlayerController implements PlayerBridge {
     const before = observing ? { state: session.state, narrative: this.projection(session.state).narrative } : null;
     const r = this.runtime.request({ operation: 'command', content: this.content, state: session.state,
       command, expectedRevision: session.state.stateRevision }) as StateReply;
-    if (!r.ok) { const error = `[${r.error.code}] ${r.error.message} (${r.error.path ?? '/'})`; observing?.observe(before, before, command, error); return error; }
+    if (!r.ok) { const error = `[${r.error.code}] ${r.error.message} (${r.error.path ?? '/'})`; observing?.observePresentation(before, before, command, session.state, error); return error; }
     if (!r.transition) throw new Error('런타임 명령 응답에 전이가 없습니다.');
     this.session = { origin: session.origin, commands: [...session.commands, r.transition.command], state: r.state,
       relationshipChanges:trackRelationshipChanges(session.relationshipChanges??{},session.state,r.state) };
-    observing?.observe(before, { state: r.state, narrative: this.projection(r.state).narrative }, command, null);
+    observing?.observePresentation(before, { state: r.state, narrative: this.projection(r.state).narrative }, command, r.state);
     cues.push(...r.transition.soundCues); return null;
   }
   private settle(cues: string[]): string | null {
@@ -133,7 +132,13 @@ export class WebPlayerController implements PlayerBridge {
   async act(action: PlayerAction, version: Version): Promise<PlayerReply> {
     if (!this.current(version)) return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
     if (!this.session) return this.reply('새 게임을 시작해 주세요.');
-    if(action.type==='scheduleStep'){const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state)); if(!next)return this.reply(); action={type:next};}
+    if (this.extensions?.restorationPending) return this.reply('화면 복원 후 다시 선택해 주세요.');
+    if (this.extensions?.presentationPending) return this.reply('화면 갱신 후 다시 선택해 주세요.');
+    if(action.type==='scheduleStep'){
+      const completionFlag=this.content.project.periodFlow?.intermission?.completionFlagId;
+      if(this.session.state.activityIntermission&&completionFlag&&!this.session.state.flags[completionFlag])return this.reply();
+      const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state)); if(!next)return this.reply(); action={type:next};
+    }
     if(['timelineTick','timelinePause','timelineSpeed','timelineSkip'].includes(action.type))return this.reply(this.presentation.act(this.content,this.session.state,action as TimelineAction));
     const timeline=this.presentation.view(this.content,this.session.state);
     if(timeline&&(action.type!=='continue'||!timeline.cursor.completed))return this.reply('활동 연출을 마치거나 건너뛴 뒤 다음으로 진행해 주세요.');
@@ -152,9 +157,9 @@ export class WebPlayerController implements PlayerBridge {
       case 'navigate': case 'visit': case 'buy': case 'sell': case 'useService': case 'setDiet': case 'executeAction': case 'selectPolicy': case 'interact': command = action; break;
       case 'acceptQuest': case 'claimQuest': case 'equip': case 'unequip': case 'moveExpedition': case 'returnFromExpedition': case 'startNodeBattle': case 'battleAction': command = action; break;
       case 'schedule': case 'commitPlan': command = { type: 'setSchedule', activityIds: action.activityIds }; break;
-      case 'execute': command = { type: 'executeActivity' }; break;
+      case 'execute': command = { type: this.session.state.phase === 'ready' && this.session.state.activityIntermission ? 'acknowledgeResult' : 'executeActivity' }; break;
       case 'choose': command = action; break;
-      case 'continue': command = { type: this.session.state.phase === 'activity-result' ? 'acknowledgeResult'
+      case 'continue': command = { type: (this.session.state.phase === 'ready' && this.session.state.activityIntermission) || this.session.state.phase === 'activity-result' ? 'acknowledgeResult'
         : this.session.state.phase === 'period-end' ? 'resolvePeriodEnd' : 'advanceNarrative' }; break;
       default: return this.reply('알 수 없는 동작입니다.');
     }
@@ -164,7 +169,8 @@ export class WebPlayerController implements PlayerBridge {
   }
   async save(version: Version): Promise<PlayerReply> {
     if (!this.session || !this.current(version)) return this.reply('저장할 현재 게임이 없습니다.');
-    const extensions=this.extensions?.save(usesPresentationVariants(this.content.project.visual));
+    if (this.extensions?.presentationPending) return this.reply('화면 갱신 후 다시 저장해 주세요.');
+    const extensions=this.extensions?.save(true);
     const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{})}:undefined;
     const text = canonical({ saveVersion: '1.0.0', coreVersion: CORE_VERSION,
       contentFingerprint: this.content.contentFingerprint, origin:this.session.origin,commands:this.session.commands,state:this.session.state,...(presentation?{playerPresentation:presentation}:{}) });
@@ -202,7 +208,7 @@ export class WebPlayerController implements PlayerBridge {
         const error = this.settle([]);
         if (error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
       } catch (error) { this.session = previous; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; throw error; }
-      this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions, true);
+      this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions, true, this.session.state);
       this.generation++; return this.reply(null, '저장한 게임을 불러왔습니다.');
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }
   }

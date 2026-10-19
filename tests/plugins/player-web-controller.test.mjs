@@ -12,6 +12,40 @@ const INSTANCE='home/hero-anim';
 const version=c=>({generation:c.generation,revision:c.session.state.stateRevision});
 const track=(host,n)=>host.describe().instances.find(i=>i.instance===INSTANCE).state.tracks.find(t=>t.track===n);
 
+test('managed presentation consumes each pending observation once and saves authoritative restored state',{timeout:60000},async t=>{
+  const f=await makeGame({target:'web',name:'controller-commit'});
+  const host=await ExtensionHost.load(f.extensions,pathToFileURL(`${f.game}/`).href);
+  host.acquire(INSTANCE,pluginElement.extension,pluginElement.width,pluginElement.height);
+  let saved=null;
+  const web=new WebPlayerController(f.content,new WasmRuntime(await createModule()),{read:async()=>saved,write:async text=>{saved=text;}},validateSave,host);
+  await web.newRun(null);const initial=web.session.state;host.commitPresentation(initial);
+  assert.equal((await web.act({type:'executeAction',actionId:'cheer',quantity:1},version(web))).error,null);
+  const first=web.session.state;assert.equal(host.observations,0);assert.equal(host.presentationPending,true);
+  host.commitPresentation(initial);host.tick(100);assert.equal(host.observations,0,'stale commit cannot consume a newer command');
+  assert.match((await web.save(version(web))).error,/화면 갱신/);assert.equal(saved,null,'never write stale extension state');
+  // An unrelated external action cannot carry this transaction into a later screen.
+  assert.match((await web.act({type:'executeAction',actionId:'cheer',quantity:1},version(web))).error,/화면 갱신/);
+  assert.equal(host.observations,0);assert.equal(web.session.state,first);
+  host.acquire('home/new',pluginElement.extension,pluginElement.width,pluginElement.height);
+  host.commitPresentation(web.session.state);assert.equal(host.observations,1);host.commitPresentation(web.session.state);assert.equal(host.observations,1);
+  await web.act({type:'executeAction',actionId:'cheer',quantity:1},version(web));host.commitPresentation(web.session.state);assert.equal(host.observations,2);
+  host.tick(250);assert.equal(track(host,0).timeMs,250);assert.equal((await web.save(version(web))).error,null);
+  const snapshot=JSON.parse(saved).playerPresentation.extensions;
+  host.tick(1000);assert.equal((await web.load(version(web))).error,null);
+  const restoredState=structuredClone(web.session.state);
+  assert.match((await web.act({type:'executeAction',actionId:'cheer',quantity:1},version(web))).error,/화면 복원/);
+  assert.deepEqual(web.session.state,restoredState,'a command cannot race the restored mount set');
+  assert.equal((await web.save(version(web))).error,null,'load then save before commit preserves the authoritative saved snapshot');
+  assert.deepEqual(JSON.parse(saved).playerPresentation.extensions,snapshot);
+  host.commitPresentation(web.session.state);assert.equal(track(host,0).timeMs,250);assert.equal(host.observations,2);
+  host.release('home/new');host.commitPresentation(web.session.state);host.acquire('later/new',pluginElement.extension,pluginElement.width,pluginElement.height);host.tick(0);
+  assert.equal(host.describe().instances.find(i=>i.instance==='later/new').state.tracks[0].clip,'idle');
+  assert.equal(host.observations,2,'mounting a later screen never replays the command');
+  await web.act({type:'executeAction',actionId:'cheer',quantity:1},version(web));assert.equal(host.presentationPending,true);
+  await web.newRun(version(web));host.commitPresentation(web.session.state);host.tick(0);
+  assert.equal(host.observations,2,'new run discards pending history');assert.equal(track(host,0).clip,'idle');
+});
+
 test('web controller observes every submitted command once and round-trips extension state through the strict save schema',{timeout:60000},async t=>{
   const f=await makeGame({target:'web',name:'controller'});t.diagnostic(`fixture: ${f.root}`);
   const host=await ExtensionHost.load(f.extensions,pathToFileURL(`${f.game}/`).href);

@@ -214,7 +214,7 @@ void StudioWindow::moveLayer(int delta) {
         const int next = j + delta;
         if (next < 0 || next >= elements.size())
           return;
-        auto e = elements[j];
+        const QJsonValue e = elements[j];
         elements[j] = elements[next];
         elements[next] = e;
         break;

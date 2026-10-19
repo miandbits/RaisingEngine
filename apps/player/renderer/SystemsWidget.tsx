@@ -1,9 +1,10 @@
 import React from 'react';
 import type { SystemsCommand, SystemsView } from '../../../packages/systems/model.js';
 
-export function SystemsWidget({ kind, systems, busy, editing, onCommand }: {
+export function SystemsWidget({ kind, systems, busy, editing, onCommand, children }: {
   kind: string; systems?: SystemsView | null | undefined; busy: boolean; editing: boolean;
   onCommand?: ((command: SystemsCommand) => void) | undefined;
+  children?: React.ReactNode;
 }) {
   const run = (command: SystemsCommand) => { if (!busy && !editing) onCommand?.(command); };
   const labels: Record<string, string> = { equipment: '장비', quests: '퀘스트', expedition: '탐험', battle: '전투', 'relationship-stages': '관계 단계' };
@@ -16,7 +17,7 @@ export function SystemsWidget({ kind, systems, busy, editing, onCommand }: {
     {['accepted', 'completed'].includes(row.status) && <button disabled={busy || !row.canClaim} onClick={() => run({ type: 'claimQuest', questId: row.id })}>보상 받기 · {row.name}</button>}{row.reason && <small>{row.reason}</small>}</div>)}{!systems.quests.length && <p>등록된 퀘스트가 없습니다.</p>}</div>;
   if (kind === 'expedition') {
     const trip = systems.expedition;
-    return <div className="journey-widget" data-testid="expedition-widget"><h3>{trip?.name ?? '탐험'}</h3>{trip ? <><p>{trip.nodeName} · 체력 {trip.heroHp}/{trip.stats.maxHp}</p>{trip.nodeDescription && <p className="expedition-description" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{trip.nodeDescription}</p>}{trip.connections.map(node => <button key={node.id} disabled={busy || !node.enabled} onClick={() => run({ type: 'moveExpedition', nodeId: node.id })}>이동 · {node.name}</button>)}{trip.manualBattle && <button disabled={busy || !trip.manualBattle.enabled} title={trip.manualBattle.reason ?? undefined} onClick={() => run({ type: 'startNodeBattle' })}>{trip.manualBattle.name}와 싸운다</button>}<button disabled={busy || !trip.canReturn} onClick={() => run({ type: 'returnFromExpedition' })}>탐험에서 귀환</button></> : <p>일정에 탐험 활동을 배치해 출발하세요.</p>}</div>;
+    return <div className="journey-widget" data-testid="expedition-widget"><h3>{trip?.name ?? '탐험'}</h3>{trip ? <><p>{trip.nodeName} · 체력 {trip.heroHp}/{trip.stats.maxHp}</p>{trip.nodeDescription && <p className="expedition-description" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{trip.nodeDescription}</p>}{trip.connections.map(node => <button key={node.id} disabled={busy || !node.enabled} onClick={() => run({ type: 'moveExpedition', nodeId: node.id })}>이동 · {node.name}</button>)}{children}{trip.manualBattle && <button disabled={busy || !trip.manualBattle.enabled} title={trip.manualBattle.reason ?? undefined} onClick={() => run({ type: 'startNodeBattle' })}>{trip.manualBattle.name}와 싸운다</button>}<button disabled={busy || !trip.canReturn} onClick={() => run({ type: 'returnFromExpedition' })}>탐험에서 귀환</button></> : <p>일정에 탐험 활동을 배치해 출발하세요.</p>}</div>;
   }
   if (kind === 'battle') {
     const battle = systems.battle;

@@ -102,6 +102,8 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   if(s?.phase==='ready'&&view.schedulePlayback==='continuous'&&design.resultPlayback&&!error)context.phase='auto-ready';
   if(view.timeline?.plan.resultPlayback)context.result=resultPlaybackText(view.timeline.plan,view.timeline.cursor)??context.result;
   context.portraitTransforms=portraitTransforms;
+  context.speakerPortrait=node?.type==='dialogue'&&node.speakerId
+    ?view.characters.find(character=>character.id===node.speakerId)?.portraits.face??null:null;
   if(view.time)context.calendarTime={year:view.time.year,month:view.time.month};
   context.planningKey=`${view.generation}:${Math.floor((s?.periodIndex??0)/(view.periodsPerMonth??3))}`;context.scheduleCommitted=!!s?.schedule;context.periodsPerMonth=view.periodsPerMonth??3;context.schedulePlayback=view.schedulePlayback??'manual';
   const action=(action:NonNullable<Element['action']>,element:Element)=>{

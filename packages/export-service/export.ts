@@ -79,7 +79,8 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if(visual?.resultPlayback)requiredFeatures.push('inline-result-playback-v1');
   if(content.project.roster)requiredFeatures.push('roster-activities-v1');
   if((content.project.visual as any)?.direction)requiredFeatures.push('direction-sequences-v1');
-  if(content.project.systems?.tactics||content.project.systems?.expeditions.some(e=>e.nodes.some(n=>n.requirements||n.encounterId))||content.project.systems?.quests.some(q=>q.encounterId))requiredFeatures.push('party-tactics-v1');
+  if(content.project.systems?.expeditions.some(e=>e.nodes.some(n=>n.requirements)))requiredFeatures.push('expedition-conditions-v1');
+  if(content.project.systems?.tactics||content.project.systems?.expeditions.some(e=>e.nodes.some(n=>n.encounterId))||content.project.systems?.quests.some(q=>q.encounterId))requiredFeatures.push('party-tactics-v1');
   if(content.project.progression)requiredFeatures.push('progression-sessions-v1');
   if(content.project.progression?.model==='unified-v2')requiredFeatures.push('unified-time-v2');
   const ui=content.project.visual;
@@ -114,7 +115,10 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   // Plugin documents may need more of the player (plugin-mesh-v1 for cutout meshes): reported by the plugin's service at prepare time.
   for(const feature of options.extensions?.features??[])if(!requiredFeatures.includes(feature))requiredFeatures.push(feature);
   const supportedFeatures=Array.isArray(capabilities.visualFeatures)?capabilities.visualFeatures:[];
-  const missingFeatures=requiredFeatures.filter(feature=>!supportedFeatures.includes(feature));
+  // Older party-capable players already implement conditional expedition exits.
+  // The narrower feature must never imply support for party battles or encounters.
+  const missingFeatures=requiredFeatures.filter(feature=>!supportedFeatures.includes(feature)&&
+    !(feature==='expedition-conditions-v1'&&supportedFeatures.includes('party-tactics-v1')));
   if(missingFeatures.length)throw new Error(`${target} 플레이어가 지원하지 않는 UI 기능입니다: ${missingFeatures.join(', ')}. 내보내기용 플레이어를 다시 빌드해 주세요.`);
   // Every plugin used on a screen must ship its runtime; never export a game that silently drops it.
   const extensions = options.extensions ?? null;

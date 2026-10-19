@@ -29,6 +29,7 @@ export interface VisualContext {
   activeDietId?:string|null; location?:string; gameplay?:GameWidgetsView|null; relationships?:readonly RelationshipRow[];
   items?:readonly {id:string;name?:string;initialQuantity?:number;imageAssetId?:string;description?:string;maxStack?:number}[];
   phase:string; background:string|null; portraits:Record<string,string>;
+  speakerPortrait?:string|null;
   portraitTransforms?:Record<string,{scale?:number;offsetX?:number;offsetY?:number}>;
   stats:{id:string;label:string;value:number;min:number;max:number}[];
   activities:readonly ScheduleActivity[]; plan:readonly string[]; period:number;
@@ -43,6 +44,7 @@ export function isVisible(element:Pick<Element,'hidden'|'visibleWhen'>, context:
 }
 export function imageFor(element:Element,context:VisualContext):string|undefined {
   const source=element.imageSource??'asset';
+  if(source==='speaker-portrait')return context.speakerPortrait??undefined;
   return source==='background'?context.background??undefined:source.startsWith('portrait-')?context.portraits[source.slice(9)]:element.imageAssetId;
 }
 function TransitionImage({src,element}:{src:string;element:Element}) {
@@ -60,7 +62,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const scale=fitViewport?Math.min(viewport.width/size.width,viewport.height/size.height):viewport.width/design.width;
   const offset=fitViewport?{x:(viewport.width-size.width*scale)/2,y:(viewport.height-size.height*scale)/2}:{x:0,y:0};
   const elements=resolveScreenElements(design,screenId,size);
-  useEffect(()=>{window.raisingExtensions?.commitPresentation();},[context.dataState,screenId]);
+  useEffect(()=>{window.raisingExtensions?.commitPresentation(context.dataState);},[context.dataState,screenId]);
   const planning=useSchedulePlanner(context);
   const calendarBinding=(binding:Element['binding']):string|null=>{
     if(!binding?.startsWith('calendar-'))return null;
@@ -127,7 +129,15 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
         </div>;
       }
       if(['locations','shop','inventory','interactions','relationships','diets','services','sell','policies','actions'].includes(element.kind))body=<JourneyWidget element={element} gameplay={context.gameplay} actorActions={context.dataUi?.actorActions} relationships={context.relationships} items={context.items} stats={context.stats} activeDietId={context.activeDietId} assetUrl={assetUrl} busy={busy||!enabled} editing={editing} onCommand={onCommand}/>;
-      if(['equipment','quests','expedition','battle','relationship-stages'].includes(element.kind))body=<SystemsWidget kind={element.kind} systems={context.systems} busy={busy||!enabled} editing={editing} onCommand={onCommand}/>;
+      if(['equipment','quests','expedition','battle','relationship-stages'].includes(element.kind)){
+        const trip=context.systems?.expedition;
+        // Reuse the authored action widget and the normal command/confirmation path.
+        // An empty node list must not fall through to showing every global action.
+        const nodeActions=element.kind==='expedition'&&trip?.actionIds?.length
+          ?<JourneyWidget key={trip.nodeId} element={{...element,id:`${element.id}__node-${trip.nodeId}`,kind:'actions',actionIds:trip.actionIds}} gameplay={context.gameplay} items={context.items} stats={context.stats} assetUrl={assetUrl} busy={busy||!enabled} editing={editing} onCommand={onCommand}/>
+          :null;
+        body=<SystemsWidget kind={element.kind} systems={context.systems} busy={busy||!enabled} editing={editing} onCommand={onCommand}>{nodeActions}</SystemsWidget>;
+      }
       return <div className={`visual-element visual-${element.kind} ${raw.styleId||design.defaultStyle?'visual-styled':''}`} style={style} key={element.id} data-element-id={element.id}>{body}</div>;
   };
   return <div className={`visual-viewport ${fitViewport?'visual-fit':''}`} ref={host} style={fitViewport?{}:{aspectRatio:`${design.width}/${design.height}`}}><div className="visual-stage" data-screen={screenId} style={{width:size.width,height:size.height,left:offset.x,top:offset.y,transform:`scale(${scale})`}}>

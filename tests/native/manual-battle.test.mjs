@@ -4,7 +4,8 @@ import path from 'node:path';
 import {loadProject} from '../../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 import {createRun,dispatchCommand} from '../../dist/packages/core/run.js';
-import {nativeCreateRun,nativeDispatchCommand,nativeReplay} from '../../dist/packages/native-bridge/index.js';
+import {nativeCreateRun,nativeDispatchCommand,nativeReplay,nativeRequest} from '../../dist/packages/native-bridge/index.js';
+import {getSystemsView} from '../../dist/packages/systems/service.js';
 import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
 import {fixture} from '../systems/fixture.mjs';
 
@@ -29,6 +30,15 @@ test('optional battle, deterministic telegraph pattern, guard rounding, victory 
  r.send({type:'battleAction',action:'attack'});r.send({type:'battleAction',action:'attack'});assert.equal(r.state.phase,'expedition');assert.equal(r.state.systems.lastBattle.outcome,'victory');assert.equal(r.state.systems.expedition.heroHp,26,'killing blow has no reply');assert.deepEqual(r.state.rng,rng);await r.save();
  r.send({type:'startNodeBattle'},'NO_MANUAL_BATTLE');
  r.send({type:'moveExpedition',nodeId:'exit'});r.send({type:'returnFromExpedition'});await r.save();
+});
+
+test('expedition projection keeps only the current node action IDs and agrees in native and TypeScript',()=>{
+ const r=setup();const trip=r.c.project.systems.expeditions.find(e=>e.nodes.some(n=>n.id==='rock'));
+ trip.nodes[0].actionIds=['depart-forest'];trip.nodes[1].actionIds=[];
+ r.send({type:'executeAction',actionId:'depart-forest',quantity:1});
+ const view=()=>{const native=nativeRequest({operation:'view',content:r.c,state:r.state});assert.equal(native.ok,true);assert.deepEqual(native.systems,getSystemsView(r.c,r.state));return native.systems.expedition;};
+ assert.deepEqual(view().actionIds,['depart-forest']);
+ r.send({type:'moveExpedition',nodeId:'exit'});assert.deepEqual(view().actionIds,[]);
 });
 test('battle condition prevents starting but permits leaving; manual node needs a single enemy',async()=>{
  const r=setup(true);r.send({type:'executeAction',actionId:'depart-forest',quantity:1});r.send({type:'startNodeBattle'},'BATTLE_LOCKED');r.send({type:'moveExpedition',nodeId:'exit'});r.send({type:'returnFromExpedition'});await r.save();
