@@ -13,11 +13,17 @@ jobs:
           persist-credentials: false
       - name: Prepare official WinGet client
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Install-Module -Name Microsoft.WinGet.Client -Scope CurrentUser -Force -Repository PSGallery
-          Import-Module Microsoft.WinGet.Client
-          Repair-WinGetPackageManager -Force -Latest
+          $client = Join-Path $env:RUNNER_TEMP 'official-winget-client'
+          gh release download v1.29.380 --repo microsoft/winget-cli --pattern Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle --pattern DesktopAppInstaller_Dependencies.zip --dir $client
+          if ($LASTEXITCODE -ne 0) { throw 'Official WinGet download failed' }
+          Expand-Archive -LiteralPath "$client/DesktopAppInstaller_Dependencies.zip" -DestinationPath "$client/dependencies"
+          $dependencies = @(Get-ChildItem "$client/dependencies" -Recurse -File | Where-Object { $_.FullName -match '[\\/]x64[\\/]' -and $_.Extension -in '.appx','.msix' } | ForEach-Object FullName)
+          if (!$dependencies.Count) { throw 'Official x64 WinGet dependencies missing' }
+          Add-AppxPackage -Path "$client/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle" -DependencyPath $dependencies
           winget --version
           if ($LASTEXITCODE -ne 0) { throw 'WinGet unavailable' }
       - name: Validate, install, launch and uninstall
