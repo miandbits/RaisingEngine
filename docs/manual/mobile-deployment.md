@@ -1,6 +1,6 @@
 # 모바일 배포 현황과 재현 방법
 
-현재 확인된 산출물은 **Android API 35 에뮬레이터에서 실행한 x86_64 디버그 APK**다. Windows와 같은 C++ 시뮬레이션 코어 및 SDL3/RmlUi 플레이어를 사용한다. arm64 실기기, 스토어 배포, iOS, 콘솔 실행을 완료한 상태는 아니다. 확인 당시 APK 해시·콘텐츠 지문·경로는 [검증 기록](../evidence/android-journey-preview.json)에 보존되어 있다.
+현재 확인된 산출물은 **Android API 35 에뮬레이터에서 실행한 x86_64 디버그 APK**다. Windows와 같은 C++ 시뮬레이션 코어 및 SDL3/RmlUi 플레이어를 사용한다. arm64 실기기, 스토어 배포, iOS, 콘솔 실행을 완료한 상태는 아니다. 확인 당시 APK 해시·콘텐츠 지문·경로는 검증 기록 (historical internal evidence; not distributed)에 보존되어 있다.
 
 ## Android 빌드
 
@@ -51,7 +51,7 @@ Java Activity는 앱 내부 저장소에 콘텐츠 해시별 `game-<buildId>` �
 
 ## 실제 확인한 범위
 
-[검증 기록](../evidence/android-journey-preview.json)의 `dist/android-preview-01/RaisingPlayer-debug.apk`에서 한글과 실제 이미지, 새 게임 → 도시 → 상점 → 꽃 구매 → 수동 저장 → 선물 → 관계 사건을 에뮬레이터 터치로 확인했다. 백그라운드 → 강제 종료 → 재시작 후 저장 JSON이 정확히 일치했다. 방향 보정 후 가로 화면 스크린샷도 기록했다. 이 기록은 이후 추가된 탐험·전투 콘텐츠의 Android 검증을 대신하지 않는다.
+검증 기록 (historical internal evidence; not distributed)의 `dist/android-preview-01/RaisingPlayer-debug.apk`에서 한글과 실제 이미지, 새 게임 → 도시 → 상점 → 꽃 구매 → 수동 저장 → 선물 → 관계 사건을 에뮬레이터 터치로 확인했다. 백그라운드 → 강제 종료 → 재시작 후 저장 JSON이 정확히 일치했다. 방향 보정 후 가로 화면 스크린샷도 기록했다. 이 기록은 이후 추가된 탐험·전투 콘텐츠의 Android 검증을 대신하지 않는다.
 
 별도 Windows 플레이어에서는 동일 터치 좌표 처리와 lifecycle 함수의 자동 검증, 자동 저장 백업 복구/거절, 기존 키보드·이미지·오디오 검증 총 10개가 통과했다. 이는 실제 Android 운영체제의 모든 중단 상황을 검증했다는 뜻은 아니다.
 

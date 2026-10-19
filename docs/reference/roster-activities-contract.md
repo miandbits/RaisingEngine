@@ -1,6 +1,6 @@
 # 다인 육성 첫 계약 — roster-activities-v1
 
-2026-10-14. 범용화 1단계의 수용 흐름. 전체 계획: [universal-raising-engine-plan.md](../archive/universal-raising-engine-plan.md).
+2026-10-14. 범용화 1단계의 수용 흐름. 전체 계획: universal-raising-engine-plan.md (historical internal evidence; not distributed).
 
 ## 기존 가정과 변경 범위
 

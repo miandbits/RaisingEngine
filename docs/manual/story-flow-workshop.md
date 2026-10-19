@@ -40,7 +40,7 @@
 
 현재 자동 검사 결과: 위 생성·실행 통합 검사 5개 통과. 독립 재시험에서 발견한 접근성 선택 회귀를 추가해 Qt 위젯 검사 28개도 통과했다. 위젯 검사는 선택지 전환 때 문구/관계/후속 대사가 유지되는지, 연결 트리의 분기, 버전 충돌 시 적용 차단과 오류 표시, 선택만 변경하는 접근성 동작에서 편집 폼·제작 단계가 함께 바뀌는지 확인한다. 화면 없는 검사에는 `QT_QPA_PLATFORM=offscreen`, `QT_QPA_PLATFORM_PLUGIN_PATH=C:/Qt/6.10.1/mingw_64/plugins/platforms`를 지정한다.
 
-첫 사용성 시험은 Windows Computer Use 실행·상태 조회가 반환되지 않아 제품 GUI에 진입하지 못했다. 당시 미검증 기록은 [첫 시도 보고서](unbriefed-story-creator-test.md)에 보존했다.
+첫 사용성 시험은 Windows Computer Use 실행·상태 조회가 반환되지 않아 제품 GUI에 진입하지 못했다. 당시 미검증 기록은 첫 시도 보고서 (historical internal evidence; not distributed)에 보존했다.
 
 이후 정상 동작하는 공식 데스크톱 도구 연결을 확인하고, 이전 대화를 전달하지 않은 새 에이전트에게 제작 목표만 주어 재시험했다. 에이전트는 편집기에서 새 프로젝트, 소하·신뢰 관계, 약초 손질 활동, 만남·두 선택·후속 사건을 만들었다. JSON이나 소스 편집 없이 저장·재열기·문구 수정·기본 플레이 화면 생성까지 수행했다.
 
@@ -53,7 +53,7 @@
 
 현재 시험 빌드: `dist/qt-studio-creator-retest/RaisingStudioQt.exe`.
 시험 프로젝트: `.cache/blind-story-retest/game`.
-결과와 남은 불편: [독립 재시험 보고서](../archive/blind-story-retest.md).
-도구 복구 및 결함 재현/수정: [복구 기록](../archive/creator-tool-recovery.md).
+결과와 남은 불편: 독립 재시험 보고서 (historical internal evidence; not distributed).
+도구 복구 및 결함 재현/수정: 복구 기록 (historical internal evidence; not distributed).
 
 최종 프로젝트 정적 검사: 문서 19개, 오류 0·경고 0 (`.cache/creator-retest-project-validation.json`). 실제 저장 사본 네 개의 읽기 전용 감사 결과는 `.cache/blind-story-retest/save-audit.json`이다. 기본 생성 플레이 화면의 관계 수치 표시와 엔딩 이후 추가 저장의 실제 조작은 이번 시험에서 완결하지 않았다. 엔딩 화면에는 저장/불러오기 버튼이 있으며, 중간 저장·복원은 위와 같이 검증했다. 엔딩 이후에는 도구의 창 초점 제한으로 추가 저장·정상 종료 기록을 확보하지 못했다.

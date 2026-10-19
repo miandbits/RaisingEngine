@@ -40,7 +40,7 @@
 
 회차 필터는 엔딩·결과·능력치를 변경하면 자동 적용된다. 숫자 입력은 200ms 뒤 적용하며 **회차 필터 적용**으로 즉시 조회할 수도 있다. 목록 위 **적용 필터 (모두 충족)**에 경로와 종료 조건의 교집합을 표시한다. **경로 필터 해제**는 경로만 해제하고, **전체 필터 해제**는 엔딩·결과·능력치까지 초기화한다. 능력치 제한이 없으면 숫자 입력은 비활성화된다. 조회 중에는 이전 결과와 페이지 버튼을 비워 오래된 회차를 선택하지 않게 한다. 조회 실패, 잘못된 수치 범위, 0개 결과를 목록 상태에 표시한다.
 
-필터 해제 후 같은 가지를 클릭해도 전체 회차에 머물던 오류를 Qt에서 재현하고 수정했다. 트리·그래프 전환 때 선택 표시도 초기화하며, 추가 갈래를 불러올 때 현재 경로 선택을 유지한다. `qt-studio-tree-filter` 빌드의 회귀 검사는 기존 5,000회 원본 경로에서 회차 번호를 직접 계산해 첫 페이지·다음 페이지와 대조한다. 경로 재선택, 보기 전환, 빠른 연속 선택, 엔딩·능력치 교집합, 결과 조건 유지, 잘못된 범위, 빈 결과, 전체 초기화와 재생도 확인한다. 새 시뮬레이션은 실행하지 않는다. [필터 검증 결과](../evidence/route-tree/filter-regression.json)와 [실제 필터 화면](../evidence/route-tree/branch-filter-verified.png)을 보존한다.
+필터 해제 후 같은 가지를 클릭해도 전체 회차에 머물던 오류를 Qt에서 재현하고 수정했다. 트리·그래프 전환 때 선택 표시도 초기화하며, 추가 갈래를 불러올 때 현재 경로 선택을 유지한다. `qt-studio-tree-filter` 빌드의 회귀 검사는 기존 5,000회 원본 경로에서 회차 번호를 직접 계산해 첫 페이지·다음 페이지와 대조한다. 경로 재선택, 보기 전환, 빠른 연속 선택, 엔딩·능력치 교집합, 결과 조건 유지, 잘못된 범위, 빈 결과, 전체 초기화와 재생도 확인한다. 새 시뮬레이션은 실행하지 않는다. 필터 검증 결과 (historical internal evidence; not distributed)와 실제 필터 화면 (historical internal evidence; not distributed)을 보존한다.
 
 ## 회차 재생
 
@@ -77,6 +77,6 @@
 
 분기 트리 추가 검증: 같은 5,000회 원본에서 8개 분기의 전체 경로 일치 여부와 회차 수를 별도로 재계산했고 모두 일치했다. Qt에서 기본 트리 표시, 가지 펼침·접기, 정확한 경로 회차 필터, 원본 회차 재생, 기존 그래프 전환을 검사했다. 증거는 `.cache/qt-tree-evidence`에 있으며 새 5,000회 실행은 하지 않았다.
 
-트리 빌드는 `Edit-Branch-Tree-Lab.cmd` 또는 갱신된 `Edit-Editor-Workbench-Lab.cmd`로 실행한다. [기본 트리 화면](../evidence/route-tree/branch-tree.png), [가지를 펼친 화면](../evidence/route-tree/branch-expanded.png), [원본 대조 결과](../evidence/route-tree/archive-audit.json)를 보존했다.
+트리 빌드는 `Edit-Branch-Tree-Lab.cmd` 또는 갱신된 `Edit-Editor-Workbench-Lab.cmd`로 실행한다. 기본 트리 화면 (historical internal evidence; not distributed), 가지를 펼친 화면 (historical internal evidence; not distributed), 원본 대조 결과 (historical internal evidence; not distributed)를 보존했다.
 
-배포 전 인수 증거를 `docs/evidence/editor-workbench`에도 보존했다: [5,000회 지도](../evidence/editor-workbench/analysis-5000-map.png), [회차 재생](../evidence/editor-workbench/analysis-replay.png), [명령 한도 회차](../evidence/editor-workbench/analysis-limit-replay.png), [독립 감사 JSON](../evidence/editor-workbench/analysis-audit.json).
+배포 전 인수 증거를 `docs/evidence/editor-workbench`에도 보존했다: 5,000회 지도 (historical internal evidence; not distributed), 회차 재생 (historical internal evidence; not distributed), 명령 한도 회차 (historical internal evidence; not distributed), 독립 감사 JSON (historical internal evidence; not distributed).

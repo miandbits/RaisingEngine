@@ -147,5 +147,5 @@ npm run test:rule-extensions
 
 Build: `dist/qt-studio-rule-extensions/RaisingStudioQt.exe`.
 Sample: `examples/rule-extension-lab/game`.
-Portable result: [verification record](../archive/rule-extensions-verification.json).
+Portable result: verification record (historical internal evidence; not distributed).
 Local screenshots and full reports: `.cache/rule-extension-verification/latest.json`.

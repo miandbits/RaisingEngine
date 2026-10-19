@@ -19,4 +19,4 @@ node --test tests/journey/novice-complete-game.test.mjs
 
 필요 런타임: `dist/native-player-authoring-preview`, `dist/web`. Windows 경로는 `RAISING_NOVICE_RUNTIME`, 별도 프로젝트는 `RAISING_NOVICE_PROJECT` 환경 변수로 지정할 수 있다. 브라우저는 기본 headless이고 Windows 플레이어는 항상 `--hidden`이다. 테스트는 게임 명령을 UI 컨트롤로 실행하며, 상태 조회는 결과 비교에만 사용한다.
 
-자세한 관찰·수정·제한: [제작 시험 기록](../../../../docs/archive/novice-complete-game-trial.md).
+자세한 관찰·수정·제한: 제작 시험 기록 (historical internal evidence; not distributed).

@@ -50,7 +50,6 @@ npm run build:web
 | `examples` | Self-contained templates and representative samples |
 | `tests/fixtures` | Regression projects and media manifest |
 | `legacy` | Archived Electron applications; explicit `legacy:*` commands |
-| `tools/experiments` | Historical developer launchers |
 | `docs` | Manual, reference, development and historical archive |
 
 `projects/`, `internal/`, builds, caches and recordings are local-only. Shared React presentation remains production Web code. Repository cleanup does not change game/save formats or plugin contracts.

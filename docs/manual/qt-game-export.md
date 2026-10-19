@@ -37,4 +37,4 @@ completed destination. Existing destinations are preserved. Packaging failures
 also clean up staging, allowing retry with the same output path.
 
 Follow-up regression and actual editor evidence:
-[Claude fixes verification](../evidence/claude-fixes-2026-10-13/README.md).
+Claude fixes verification (historical internal evidence; not distributed).

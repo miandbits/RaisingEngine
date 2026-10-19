@@ -41,4 +41,4 @@ gameplay. Final launcher `Start-PM2-Editor.cmd` connects
 production project without changing it.
 
 Follow-up regression and actual editor evidence:
-[Claude fixes verification](../evidence/claude-fixes-2026-10-13/README.md).
+Claude fixes verification (historical internal evidence; not distributed).
