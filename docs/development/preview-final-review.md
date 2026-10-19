@@ -36,8 +36,19 @@ The draft is not published automatically. Final release readiness remains false 
 - Package audit passed: 1,520 files, 27 required notices, four Qt corresponding source archives, 18 regenerated MIT sample images. All five project-manager templates load without validation errors.
 - Current source audit passed for all 47 geometric image replacements and 60 tracked raster files; the other 13 images are the optional animation plugin's original procedural demo. Public regression tests: 14 passed. Source-only audio was checked: the winter motif reproduces byte-for-byte from its generator; four tone formats were regenerated from an original sine signal, and actual native music/effect playback passed.
 - Local Windows installer/portable authoring, native save restoration and exported browser play passed. These are local tests, not a fresh remote VM pass.
-- [Source regression CI](https://github.com/miandbits/RaisingEngine/actions/runs/39318607528) passed on the implementation commit `e72b4ce`.
+- [Final source regression CI](https://github.com/miandbits/RaisingEngine/actions/runs/39321231456) passed on the curated source commit `f34070de17cd8bb1859b57518da9b19e5c71896b`.
 - Windows VM attempts [39318905715](https://github.com/miandbits/RaisingEngine/actions/runs/39318905715) and [39319227794](https://github.com/miandbits/RaisingEngine/actions/runs/39319227794) stopped at draft download authorization. The read-only asset API returned HTTP 403. **No application installation or play test ran in those VMs.**
 - Automatic approval review rejected expanding the workflow to `contents: write` without explicit owner consent because that permission can modify repository contents/releases. The workflow remains read-only. A question requesting permission for this manual verification only, followed by restoration to read-only, is pending. No long-lived user token has been copied into Actions secrets.
 
 To resume after explicit approval: temporarily authorize only the trusted manual installation workflow, verify the pinned candidate asset hashes, run `preview-install.yml` for `v0.1.0-preview.3`, inspect every application-test result, then restore read-only permission and remove the temporary validation-kit release asset. Until then, keep the candidate draft and the isolated-VM release gate open.
+
+## Final candidate receipt
+
+The local `release/0.1.0-preview.3-r3` artifacts were built from the clean `f34070d` commit. The draft targets that exact revision, ensuring its automatic source archives use the reviewed current-source media. Installer and ZIP were tested again after this rebuild: English installed editor and Japanese extracted-portable editor both created/edited/exported a project and restored the native save exactly with system Node/Qt paths removed. The installed-editor web export passed actual browser play. Installer overwrite refusal, registry/shortcut registration and uninstall preservation passed. Five remote asset digests match local files (including the temporary kit and metadata). The installer remains `NotSigned`; the release remains draft.
+
+| Artifact | SHA-256 |
+|---|---|
+| Windows x64 installer | `f730a51586d5c10754d13a8e13123775f821c4c916f7ebf44dafc0a62c7ce90f` |
+| Windows x64 portable ZIP | `a2e52293cdd1f1b96986b09ca430ee837e97e27aea58cb6041f8db5568ad7756` |
+
+Local detailed receipts are under `.cache/release-final/`: `local-install-r3.json`, `portable-r3.json`, `web-r3.log`, `audit-r3.json`, `remote-verification.json` and the three-language evidence directory. They are not shipped as game content. The original-media backup is the sibling owner folder `RaisingEngine-preserved-art-2026-10-19`, with a SHA-256 inventory of 156 preserved files. This was not a history rewrite.

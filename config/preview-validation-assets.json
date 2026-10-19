@@ -1,1 +1,30 @@
-{"files":[{"id":657360130,"name":"RaisingEngine-0.1.0-preview.3-windows-x64-portable.zip","sha256":"51806abba68b5f3ce04fb8a64ac911d94aecc9dc12a1671582e1515137773831"},{"id":657360134,"name":"RaisingEngine-0.1.0-preview.3-windows-x64.exe","sha256":"e9770022e5f57d47b8b51d63dcac941ec023ac9a6c7c2906fdb23f7c55f2c1c9"},{"id":657360132,"name":"release-artifacts.json","sha256":"edf131b4bf640a6074628643415e59c18a2231bc5250550d186afcdda3d0f3ae"},{"id":657360131,"name":"SHA256SUMS.txt","sha256":"4285aeaf454b097932169500f0f24932fb34d77cb3fc501159512d2c0fd2f623"},{"id":657345033,"name":"validation-kit-windows-x64.zip","sha256":"cde4d02977fbb768ff9d9794389449a42ea6d8a76c806918d8204e47310888a5"}],"tag":"v0.1.0-preview.3"}
+{
+  "files": [
+    {
+      "id": 657387370,
+      "name": "RaisingEngine-0.1.0-preview.3-windows-x64-portable.zip",
+      "sha256": "a2e52293cdd1f1b96986b09ca430ee837e97e27aea58cb6041f8db5568ad7756"
+    },
+    {
+      "id": 657387371,
+      "name": "RaisingEngine-0.1.0-preview.3-windows-x64.exe",
+      "sha256": "f730a51586d5c10754d13a8e13123775f821c4c916f7ebf44dafc0a62c7ce90f"
+    },
+    {
+      "id": 657387367,
+      "name": "release-artifacts.json",
+      "sha256": "c519da3db8e447731a1458a18691777801dec71645080219c84451f702a2645c"
+    },
+    {
+      "id": 657387434,
+      "name": "SHA256SUMS.txt",
+      "sha256": "0204fa13192b4a70d4657edc0eb158ee7072b3c059220d27083bebbc667ff5b7"
+    },
+    {
+      "id": 657345033,
+      "name": "validation-kit-windows-x64.zip",
+      "sha256": "cde4d02977fbb768ff9d9794389449a42ea6d8a76c806918d8204e47310888a5"
+    }
+  ],
+  "tag": "v0.1.0-preview.3"
+}
