@@ -31,7 +31,7 @@ jobs:
       - name: Test save migration, recovery and long campaigns
         run: npm run test:durability
       - name: Check public samples and asset-free regression fixtures
-        run: npm run check:public-content && npm run test:public-content
+        run: npm run check:repository && npm run check:public-content && npm run test:public-content
       - name: Check committed pilot routes and approved expectations
         if: ${{ !cancelled() && success() }}
         run: npm run check:regression -- examples/starlight-three-months --runtime-policy verify-replay --timeout-ms 300000 --report-dir .cache/ci-goal-regression

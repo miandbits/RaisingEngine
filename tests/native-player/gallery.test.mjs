@@ -35,7 +35,7 @@ function route(content,ending){
 
 test('gallery: actual UI, both endings, immutable recollection, old saves, restart and corrupt profile', {timeout:240000}, async()=>{
   const runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
-  const project=resolve(process.env.RAISING_GALLERY_PROJECT??'examples/last-grandson-polished');
+  const project=resolve(process.env.RAISING_GALLERY_PROJECT??'tests/fixtures/projects/last-grandson-polished');
   const loaded=await loadProject(project);
   // Retain the original narrative-only contract as a compatibility fixture even
   // when the public sample grows CG/music definitions.

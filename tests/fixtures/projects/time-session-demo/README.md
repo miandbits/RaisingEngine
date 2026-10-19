@@ -14,4 +14,4 @@
 
 시간은 기존 월 일정과 독립적입니다. 아래 활동 배정은 이전 단계의 월 일정 기능입니다. 기본 12개월 콘텐츠는 남아 있지만 `scenarios/`의 기존 단일 대상 고정 시나리오는 이 시간/다인 샘플로 변환하지 않았습니다.
 
-검증 결과와 데이터 계약: `docs/time-progression-sessions.md`.
+검증 결과와 데이터 계약: `docs/manual/time-progression-sessions.md`.

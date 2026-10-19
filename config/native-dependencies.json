@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "dependencies": [
+    {"path":"SDL","url":"https://github.com/libsdl-org/SDL.git","ref":"release-3.2.24","commit":"a8589a84226a6202831a3d49ff4edda4acab9acd"},
+    {"path":"SDL_image","url":"https://github.com/libsdl-org/SDL_image.git","ref":"release-3.2.4","commit":"11154afb7855293159588b245b446a4ef09e574f"},
+    {"path":"RmlUi","url":"https://github.com/mikke89/RmlUi.git","ref":"6.1","commit":"58c751531f4c1a1eb2dc56f409b8e8a323a0c9ad"},
+    {"path":"freetype","url":"https://github.com/freetype/freetype.git","ref":"VER-2-13-3","commit":"42608f77f20749dd6ddc9e0536788eaad70ea4b5"},
+    {"path":"SDL_image/external/libwebp","url":"https://chromium.googlesource.com/webm/libwebp","ref":"v1.6.0","commit":"4fa21912338357f89e4fd51cf2368325b59e9bd9"}
+  ]
+}

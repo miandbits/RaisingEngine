@@ -68,7 +68,7 @@ function scenario(content,accept) {
 }
 
 test('novice GUI game: both endings, Windows/web controls, middle and fresh ending restoration',{timeout:240000},async t=>{
-  const project=resolve(process.env.RAISING_NOVICE_PROJECT??'examples/novice-three-month-trial');
+  const project=resolve(process.env.RAISING_NOVICE_PROJECT??'tests/fixtures/projects/novice-three-month-trial');
   const built=await buildSnapshot(await loadProject(project));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot;assert.equal(content.project.durationMonths,3);assert.equal(content.project.periodsPerMonth,3);
   const named=Object.fromEntries(content.project.visual.screens.map(screen=>[screen.id,resolveScreenElements(content.project.visual,screen.id).filter(e=>e.kind==='text'&&e.binding==='context-name').map(e=>{

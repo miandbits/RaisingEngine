@@ -1,6 +1,6 @@
 # Contributing to Raising Engine
 
-This repository is being prepared for an open-source release. The engine's license has not been selected yet. Do not assume that the repository, reference-game assets, fonts, or dependencies share one license. See [release preparation](docs/open-source-readiness.md) before redistributing a snapshot or accepting external contributions.
+This repository is being prepared for an open-source release. The engine's license has not been selected yet. Do not assume that the repository, reference-game assets, fonts, or dependencies share one license. See [release preparation](docs/development/open-source-readiness.md) before redistributing a snapshot or accepting external contributions.
 
 ## Development entry points
 
@@ -27,7 +27,7 @@ Use a separate `QT_STUDIO_OUT`, `NATIVE_PLAYER_BUILD` and `NATIVE_PLAYER_OUT` wh
 ## Repository hygiene
 
 - Do not commit credentials, local `.env` files, signing keys, build output, recordings or `.studio` working data.
-- Do not add extracted commercial game assets to public samples or tests. Existing reference projects are preserved in the ignored local workspace; see [sample separation](docs/public-sample-separation.md).
+- Do not add extracted commercial game assets to public samples or tests. Existing reference projects are preserved in the ignored local workspace; see [sample separation](docs/development/public-sample-separation.md).
 - For proposed public assets, record source, author, version/hash, license, redistribution terms and required notices. Generated assets also need provenance and a deliberate distribution decision.
 - Prefer small fixtures with synthetic data. Do not duplicate a full project to test one rule. Existing large fixtures will be migrated incrementally with regression coverage.
 - Run `npm run audit:repository` to inspect tracked-file footprint and known review categories. This inventory does not scan Git history, prove asset rights or replace a secret scanner.

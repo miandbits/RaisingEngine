@@ -9,7 +9,7 @@ import {scheduleStep} from '../../dist/packages/player-service/schedule.js';
 import {encodeSave,decodeSave} from '../../dist/packages/runtime-service/save.js';
 
 async function setup(){
-  const built=await buildSnapshot(await loadProject('examples/last-grandson-polished'));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
+  const built=await buildSnapshot(await loadProject('tests/fixtures/projects/last-grandson-polished'));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot;let session=createSession(content,42,{mode:'activities-only'}).session;
   for(const command of [{type:'setSchedule',activityIds:['study','rest','work']},{type:'executeActivity'}]){const reply=dispatchSession(content,session,command,session.state.stateRevision);assert.equal(reply.ok,true);session=reply.session;}
   return {content,state:session.state,session};
@@ -44,7 +44,7 @@ test('legacy projects stay manual; authored activity timelines retain priority; 
 });
 
 test('auto-only navigation allowance does not weaken manual navigation validation',async()=>{
-  const loaded=await loadProject('examples/last-grandson-polished'),project=loaded.documents.find(d=>d.kind==='project');project.data.schedulePlayback='manual';
+  const loaded=await loadProject('tests/fixtures/projects/last-grandson-polished'),project=loaded.documents.find(d=>d.kind==='project');project.data.schedulePlayback='manual';
   const result=await buildSnapshot(loaded);assert.equal(result.ok,false);assert.ok(result.diagnostics.some(d=>d.code==='UI_NAVIGATION'));
 });
 

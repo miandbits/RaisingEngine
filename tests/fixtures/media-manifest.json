@@ -1,0 +1,560 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/authoring-workspace/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/authoring-workspace/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/authoring-workspace/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/authoring-workspace/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/battle-hud-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/battle-hud-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/battle-hud-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/character-state-demo/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/character-state-demo/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/character-state-demo/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/character-state-demo/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/eyes-half.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-00991b971d618ad5ba70f440.png",
+      "sha256": "00991b971d618ad5ba70f4403b3dddb99f834ad2c69e77ce2ea6aaaeb61d61fd"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/eyes-closed.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-27d7af73a9a95f2dc2e55b45.png",
+      "sha256": "27d7af73a9a95f2dc2e55b4589e149c4d65dcd2f056c710add758410f6b9f4a6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/head.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-40adb20cea8abde77aafc23d.png",
+      "sha256": "40adb20cea8abde77aafc23d2e660d46bbeae3e3c5157767fb29dec260851d34"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/hair-back.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-4fd76aab843b58aa593ec6b2.png",
+      "sha256": "4fd76aab843b58aa593ec6b2c001aba9006c98b372addb794b78c158bc95c4f3"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/mouth-smile.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-6192de808cf2e68159357055.png",
+      "sha256": "6192de808cf2e68159357055ea7f688f5253bb7642d283b0ae3b5dcc52b5c691"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/eyes-open.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-6b030d06ac565588559e998b.png",
+      "sha256": "6b030d06ac565588559e998bf3237ef9361bb4f5042049f2ed713fc6c4870908"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/mouth-open.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-7fb8be9853e2b05fdc041d34.png",
+      "sha256": "7fb8be9853e2b05fdc041d34f73100f53685da4fc4d1c5c9aca7709ec5cd5399"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/body.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-86180d35caad57674395da81.png",
+      "sha256": "86180d35caad57674395da816d4ed5b0b6c060210abbff06b0c234f23e8aec34"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/arm-left.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-a40c1ec251cbc39a644988dd.png",
+      "sha256": "a40c1ec251cbc39a644988dd523af9642be0aafc9900066359a09543ccaffb7d"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/mouth-neutral.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-b934ab91b8f16e8c358635e9.png",
+      "sha256": "b934ab91b8f16e8c358635e98c667e991389ee22fe483115a826c2e5c09a6a14"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/hair-front.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-db42b4a90e488a3bc3dad8ed.png",
+      "sha256": "db42b4a90e488a3bc3dad8ed1e29712e296176c5a9be864f2ea5b30798bf94da"
+    },
+    {
+      "source": "plugins/cutout-animation/demo/parts/blush.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-fa77dbe07f079eb9a1a7bbc0.png",
+      "sha256": "fa77dbe07f079eb9a1a7bbc06edf2ecb8d28a53e9c9f8b1f717b4a9e81b24de7"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/data-ui-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/data-ui-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/data-ui-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/data-ui-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/data-ui-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/data-ui-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/data-ui-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "examples/starlight-three-months/assets/image-604196819963c10da5d7183a.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-604196819963c10da5d7183a.png",
+      "sha256": "604196819963c10da5d7183ab52946e6d6b3a01870e589e85fd4816e0a413562"
+    },
+    {
+      "source": "examples/starlight-three-months/assets/image-6fae8d96e2ff5b6e7c119626.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-6fae8d96e2ff5b6e7c119626.png",
+      "sha256": "6fae8d96e2ff5b6e7c11962696076df65fe938bdf2078f8d14048214a1224eb1"
+    },
+    {
+      "source": "examples/starlight-three-months/assets/image-8605cbc5e9880a2f7dac1b0c.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-8605cbc5e9880a2f7dac1b0c.png",
+      "sha256": "8605cbc5e9880a2f7dac1b0cf68171e9fad51b09671d3d34cbfb09729b0d561d"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "examples/starlight-three-months/assets/image-87efbcd08f5b19090dbae334.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-87efbcd08f5b19090dbae334.png",
+      "sha256": "87efbcd08f5b19090dbae3344ce1cc4929c3158153358e9d9a71372d1986972e"
+    },
+    {
+      "source": "examples/starlight-three-months/assets/image-8b96cea886876912ac42d335.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-8b96cea886876912ac42d335.png",
+      "sha256": "8b96cea886876912ac42d3350b2bcad9176ad0619ec3e616edc7673e898a4124"
+    },
+    {
+      "source": "examples/starlight-three-months/assets/image-a4b1131d94929a84e152d1ab.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/image-a4b1131d94929a84e152d1ab.png",
+      "sha256": "a4b1131d94929a84e152d1ab77fd7bc6f157832d77eb95b37e1a747b273d6bba"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/direction-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/editor-workbench-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/editor-workbench-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/editor-workbench-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/logic-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/logic-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/logic-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/logic-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/logic-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/logic-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/logic-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/party-tactics-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/party-tactics-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/party-tactics-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/rules-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/rules-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/rules-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/rules-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/rules-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/rules-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/rules-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/time-session-demo/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/time-session-demo/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/time-session-demo/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/time-session-demo/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/timeline-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/timeline-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/timeline-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/timeline-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/timeline-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/timeline-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/timeline-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/two-trainees/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/two-trainees/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/two-trainees/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/two-trainees/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "source": "assets/journey/apprentice-home.png",
+      "target": "tests/fixtures/projects/ui-composition-lab/assets/image-3df09117b32e2f79.png",
+      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "source": "assets/journey/town-florist.png",
+      "target": "tests/fixtures/projects/ui-composition-lab/assets/image-4988e195be1f84bf.png",
+      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "source": "assets/journey/thank-you-flowers.png",
+      "target": "tests/fixtures/projects/ui-composition-lab/assets/image-87d44308813dc6b7.png",
+      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "source": "assets/visual-sample/courtyard.png",
+      "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/courtyard.png",
+      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "source": "assets/visual-sample/haru.png",
+      "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/haru.png",
+      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "source": "assets/visual-sample/library.png",
+      "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/library.png",
+      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "source": "assets/visual-sample/yuna.png",
+      "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/yuna.png",
+      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    }
+  ]
+}

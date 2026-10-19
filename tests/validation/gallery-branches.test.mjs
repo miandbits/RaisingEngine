@@ -30,12 +30,12 @@ test('branch projection hides unvisited text, scopes identity, handles merged/ne
 });
 
 test('public project remains valid with optional branch UI contracts',async()=>{
-  const result=await buildSnapshot(await loadProject('examples/last-grandson-polished'));
+  const result=await buildSnapshot(await loadProject('tests/fixtures/projects/last-grandson-polished'));
   assert.equal(result.ok,true,JSON.stringify(result.diagnostics));
 });
 
 test('older renderers reject branch lists and component override actions before export',async()=>{
-  const projectRoot=resolve('examples/last-grandson-polished');
+  const projectRoot=resolve('tests/fixtures/projects/last-grandson-polished');
   const built=await buildSnapshot(await loadProject(projectRoot));assert.equal(built.ok,true);
   const runtime=await mkdtemp(resolve('.cache/gallery-branches-old-runtime-'));
   await writeFile(resolve(runtime,'RaisingPlayer.exe'),'fixture, never executed');

@@ -10,6 +10,6 @@ Windows player: SDL 3.2.24 / SDL_image 3.2.4 (zlib), RmlUi 6.1 (MIT), FreeType 2
 
 NotoSansKR font: SIL Open Font License 1.1, preserved under `fonts/OFL.txt` in the Windows runtime and `licenses/NotoSansKR-OFL.txt` in the Web runtime. Qt/OS fallback fonts are not copied from Windows. React, React DOM and Scheduler license texts accompany the Web runtime.
 
-Public sample provenance and permission review are tracked separately in `docs/public-assets.md`. The public sample allowlist and excluded reference hashes are in `config/repository-content.json`. PM2/Magical Princess reference experiments and user projects are not included. Passing the hash check is not a universal copyright clearance or a history/secret audit.
+Public sample provenance and permission review are tracked separately in `docs/development/public-assets.md`. The public sample allowlist and excluded reference hashes are in `config/repository-content.json`. PM2/Magical Princess reference experiments and user projects are not included. Passing the hash check is not a universal copyright clearance or a history/secret audit.
 
 Optional animation extensions retain their own manifests and licenses and must be installed separately. This preview does not bundle proprietary Spine runtimes or claim their license.

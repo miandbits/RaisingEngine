@@ -7,7 +7,6 @@
     "examples/academy-journey",
     "examples/academy-adventure",
     "examples/starlight-three-months",
-    "examples/last-grandson",
     "examples/rule-extension-lab/game",
     "examples/genre-suite"
   ],
@@ -45,7 +44,18 @@
     "scripts/verify-pm2-schedule-web.mjs",
     "scripts/verify-pm2-ui.mjs",
     "scripts/verify-pm2.mjs",
-    "tests/pm2-expeditions.mjs"
+    "tests/pm2-expeditions.mjs",
+    "docs/claude-review-2026-10-13.md",
+    "docs/magical-reference-progress.md",
+    "docs/pm2-content-audit-2026-10-13.md",
+    "docs/pm2-daughter-visual-audit-2026-10-13.md",
+    "docs/pm2-morning-report-2026-10-13.md",
+    "docs/pm2-overnight-handoff.md",
+    "docs/pm2-primary-evidence-2026-10-13.md",
+    "docs/pm2-production-coverage.md",
+    "docs/pm2-ui-parity.md",
+    "scripts/prepare-pm2-assets.py",
+    "scripts/prepare-pm2-ui-assets.py"
   ],
   "excludedAssetSha256": [
     "00a00fdcc13a84e88a11482f58a8310ca519e809d321d859ffeb7383f92ced72",
@@ -208,7 +218,10 @@
     "projects/time-session-demo": "tests/fixtures/projects/time-session-demo",
     "projects/timeline-lab": "tests/fixtures/projects/timeline-lab",
     "projects/two-trainees": "tests/fixtures/projects/two-trainees",
-    "projects/ui-composition-lab": "tests/fixtures/projects/ui-composition-lab"
+    "projects/ui-composition-lab": "tests/fixtures/projects/ui-composition-lab",
+    "examples/last-grandson": "tests/fixtures/projects/last-grandson",
+    "examples/last-grandson-polished": "tests/fixtures/projects/last-grandson-polished",
+    "examples/novice-three-month-trial": "tests/fixtures/projects/novice-three-month-trial"
   },
   "sharedDependencyAssets": [
     {

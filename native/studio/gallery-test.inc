@@ -3,7 +3,7 @@ void StudioTests::galleryAuthoring(){
   const auto root=engine+"/.cache/gallery-editor-"+QString::number(QDateTime::currentMSecsSinceEpoch());
   const auto evidence=engine+"/.cache/gallery";QDir().mkpath(evidence);
   StudioWindow w(engine);w.resize(1500,960);w.show();
-  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto mode=d->findChild<QComboBox*>("newProjectTemplate");mode->setCurrentIndex(mode->findData("existing"));d->findChild<QLineEdit*>("newProjectSource")->setText(engine+"/examples/last-grandson-polished");d->findChild<QLineEdit*>("newProjectDestination")->setText(root);d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto mode=d->findChild<QComboBox*>("newProjectTemplate");mode->setCurrentIndex(mode->findData("existing"));d->findChild<QLineEdit*>("newProjectSource")->setText(engine+"/tests/fixtures/projects/last-grandson-polished");d->findChild<QLineEdit*>("newProjectDestination")->setText(root);d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
   w.findChild<QAction*>("newProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),30000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
   const auto original=w.projectData();
   QTimer::singleShot(50,&w,[&]{
@@ -40,7 +40,7 @@ void StudioTests::galleryMediaAuthoring(){
   const auto root=engine+"/.cache/gallery-media-editor-"+QString::number(QDateTime::currentMSecsSinceEpoch());
   const auto evidence=engine+"/.cache/gallery-media";QDir().mkpath(evidence);
   StudioWindow w(engine);w.resize(1500,960);w.show();
-  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto mode=d->findChild<QComboBox*>("newProjectTemplate");mode->setCurrentIndex(mode->findData("existing"));d->findChild<QLineEdit*>("newProjectSource")->setText(engine+"/examples/last-grandson-polished");d->findChild<QLineEdit*>("newProjectDestination")->setText(root);d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto mode=d->findChild<QComboBox*>("newProjectTemplate");mode->setCurrentIndex(mode->findData("existing"));d->findChild<QLineEdit*>("newProjectSource")->setText(engine+"/tests/fixtures/projects/last-grandson-polished");d->findChild<QLineEdit*>("newProjectDestination")->setText(root);d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
   w.findChild<QAction*>("newProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),30000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
   const auto original=w.projectData();
   QTimer::singleShot(50,&w,[&]{

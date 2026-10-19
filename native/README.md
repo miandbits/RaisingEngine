@@ -4,8 +4,8 @@ The scheduling, numeric expressions, conditions, transactional effects, PCG32 RN
 events, narrative, endings, travel, shopping, gifts and read-only gameplay projection
 are implemented in C++17. The executable does not invoke Node or TypeScript.
 
-The Electron editor remains TypeScript/React. Its production session, analysis and
-save replay services select this native core by default. `RAISING_RUNTIME=typescript`
+The current editor uses Qt with shared Node services. Its production session, analysis and
+save replay services select this native core by default. The older Electron editor is archived under `legacy/`. `RAISING_RUNTIME=typescript`
 explicitly selects the frozen-compatible reference implementation for differential
 tests. Neither native transport falls back to TypeScript rules.
 

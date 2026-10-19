@@ -11,9 +11,9 @@ test('system controls fall back, equipped items can be removed, and expedition l
     import React from 'react';
     import {createRoot} from 'react-dom/client';
     import {VisualPlayer} from '/apps/player/renderer/VisualPlayer.tsx';
-    import {SystemsEditor} from '/apps/studio/renderer/SystemsEditor.tsx';
+    import {SystemsEditor} from '/legacy/studio/renderer/SystemsEditor.tsx';
     import {SystemsWidget} from '/apps/player/renderer/SystemsWidget.tsx';
-    import {SchemaSection} from '/apps/studio/renderer/SchemaForm.tsx';
+    import {SchemaSection} from '/legacy/studio/renderer/SchemaForm.tsx';
     const root=createRoot(document.getElementById('root'));
     const noop=()=>{};
     window.commands=[];window.changes=[];

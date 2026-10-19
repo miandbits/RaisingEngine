@@ -12,7 +12,7 @@ import {route} from './recollection-fixture.mjs';
 
 test('recollection autoplay, speed, skip and saved timers preserve both recorded choices and the live game', {timeout:240000}, async()=>{
   const runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
-  const project=resolve(process.env.RAISING_REPLAY_AUTO_PROJECT??'examples/last-grandson-polished');
+  const project=resolve(process.env.RAISING_REPLAY_AUTO_PROJECT??'tests/fixtures/projects/last-grandson-polished');
   const loaded=await loadProject(project),built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const content=built.snapshot;
   const controlScreen=content.project.visual.screens.find(s=>s.id===content.project.gallery.replayControlsScreenId);
   for(const action of ['recollectionAuto','recollectionSpeed','recollectionSkip'])assert.ok(controlScreen.elements.some(e=>e.action===action));

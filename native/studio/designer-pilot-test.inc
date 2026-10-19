@@ -77,7 +77,7 @@ void StudioTests::designerSmallGameAuthoring() {
 void StudioTests::designerSmallGamePlay() {
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
   QFile proof(engine+"/.cache/designer-project.txt");
-  const auto root=proof.open(QIODevice::ReadOnly)?QString::fromUtf8(proof.readAll()).trimmed():engine+"/examples/last-grandson";
+  const auto root=proof.open(QIODevice::ReadOnly)?QString::fromUtf8(proof.readAll()).trimmed():engine+"/tests/fixtures/projects/last-grandson";
   // Generate fresh inputs and verify native checkpoints; never depend on a previous test run's cache.
   QProcess prepare;auto environment=QProcessEnvironment::systemEnvironment();environment.insert("RAISING_DESIGNER_PROJECT",root);prepare.setProcessEnvironment(environment);prepare.setWorkingDirectory(engine);
   prepare.start("node",{"--test","tests/native-player/designer-pilot.test.mjs"});QVERIFY(prepare.waitForStarted());QVERIFY(prepare.waitForFinished(180000));

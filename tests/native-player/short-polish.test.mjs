@@ -41,7 +41,7 @@ function route(content,kind,evidence){
 }
 
 test('polished short: real animation plugin, both endings and save/resume', {timeout:180000},async()=>{
-  const project=resolve(process.env.RAISING_SHORT_PROJECT??'examples/last-grandson-polished');
+  const project=resolve(process.env.RAISING_SHORT_PROJECT??'tests/fixtures/projects/last-grandson-polished');
   const loaded=await loadProject(project);const built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot;assert.equal(content.project.gameId,'last-grandson');assert.equal(content.project.visual.screens.length,4);
   const root=await mkdtemp(resolve('.cache/short-native-')),game=resolve(root,'game'),evidence=resolve('.cache/short-polish');await mkdir(evidence,{recursive:true});

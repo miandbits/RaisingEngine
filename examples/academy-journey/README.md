@@ -4,9 +4,9 @@
 
 Qt 프로젝트 선택기에서 이 템플릿을 선택해 설치 폴더 밖의 새 프로젝트로 복사하세요. 원본 예제를 직접 수정할 필요가 없습니다.
 
-- [첫 게임 제작 안내](../../docs/first-game.md)
-- [Windows·Web 지원표](../../docs/platform-support.md)
-- [샘플·에셋 배포 경계](../../docs/public-assets.md)
+- [첫 게임 제작 안내](../../docs/getting-started/first-game.md)
+- [Windows·Web 지원표](../../docs/development/platform-support.md)
+- [샘플·에셋 배포 경계](../../docs/development/public-assets.md)
 
 개발 환경에서 데이터 검증:
 

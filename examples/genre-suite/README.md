@@ -9,4 +9,4 @@ Qt의 **디자인 → 완결 샘플 제작…**으로 생성한 일반 프로젝
 - `roster`: 두 인물에게 훈련과 휴식을 따로 배정.
 - `pet`: 먹이 주기와 훈련.
 
-한 달 두 기간 뒤 목표 또는 대체 엔딩으로 끝납니다. 사용법과 검증 증거: `docs/genre-authoring-assurance.md`.
+한 달 두 기간 뒤 목표 또는 대체 엔딩으로 끝납니다. 사용법과 검증 증거: `docs/manual/genre-authoring-assurance.md`.

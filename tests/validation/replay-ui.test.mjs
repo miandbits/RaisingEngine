@@ -9,7 +9,7 @@ import {exportGame} from '../../dist/packages/export-service/export.js';
 
 const actions=['recollectionPrev','recollectionNext','recollectionClose','recollectionSave','recollectionLoad'];
 test('replay UI validates dedicated controls, screen references and reusable component overrides',async()=>{
-  const loaded=await loadProject(resolve('examples/last-grandson-polished')),p=loaded.documents.find(d=>d.kind==='project').data;
+  const loaded=await loadProject(resolve('tests/fixtures/projects/last-grandson-polished')),p=loaded.documents.find(d=>d.kind==='project').data;
   const screen={id:'replay-test',label:'Replay test',elements:actions.map((action,i)=>({id:'button-'+i,kind:'button',x:10+i*150,y:10,width:140,height:44,text:action,action}))};
   p.visual.screens.push(screen);p.gallery.replayControlsScreenId=screen.id;
   let r=await validateProject(loaded);assert.equal(r.valid,true,JSON.stringify(r.diagnostics));
@@ -28,7 +28,7 @@ test('replay UI validates dedicated controls, screen references and reusable com
 });
 
 test('old runtime refuses replay controls, even in component overrides',async()=>{
-  const projectRoot=resolve('examples/last-grandson-polished'),loaded=await loadProject(projectRoot),built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
+  const projectRoot=resolve('tests/fixtures/projects/last-grandson-polished'),loaded=await loadProject(projectRoot),built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const runtime=await mkdtemp(resolve('.cache/replay-old-runtime-'));await writeFile(resolve(runtime,'RaisingPlayer.exe'),'fixture, never executed');await writeFile(resolve(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:[],audioExtensions:[],visualFeatures:[]}));
   const content=structuredClone(built.snapshot),v=content.project.visual,c=v.components[0];
   delete content.project.gallery.replayControlsScreenId;

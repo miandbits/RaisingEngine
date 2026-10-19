@@ -33,7 +33,7 @@ function route(content,kind,evidence){
 }
 
 test('designer-authored wuxia game: both endings and real player save/resume', {timeout:180000},async()=>{
-  const project=resolve(process.env.RAISING_DESIGNER_PROJECT??'examples/last-grandson');
+  const project=resolve(process.env.RAISING_DESIGNER_PROJECT??'tests/fixtures/projects/last-grandson');
   const built=await buildSnapshot(await loadProject(project));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot;assert.equal(content.project.gameId,'last-grandson');assert.equal(content.project.visual.screens.length,4);
   const root=await mkdtemp(resolve('.cache/designer-native-')),game=resolve(root,'game'),evidence=resolve('.cache/designer-pilot');await mkdir(evidence,{recursive:true});

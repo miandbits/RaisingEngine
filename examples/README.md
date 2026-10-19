@@ -1,6 +1,6 @@
-# Public sample candidates
+# Public templates and samples
 
-These projects are independent of locally installed reference games. No extracted PM2 or Magical Princess media is required. Engine-wide license selection and generated-asset/dependency notice review are still pending; this directory classification is not a license grant.
+These projects are independent of locally installed reference games. Engine code is MIT licensed; media provenance and dependency redistribution review remain separate. See [asset boundaries](../docs/development/public-assets.md).
 
 | Project | Purpose |
 |---|---|
@@ -11,8 +11,8 @@ These projects are independent of locally installed reference games. No extracte
 | `academy-adventure` | Exploration and gameplay systems |
 | `genre-suite` | Six short genre templates |
 | `starlight-three-months` | Three-month integrated pilot with recorded ending routes |
-| `last-grandson` | GUI-authored two-month wuxia story; two endings and save/resume verification |
+| `rule-extension-lab` | Portable designer-authored rule package and sample game |
 
 Copy a sample into a new `projects/<your-game>` folder through the editor before modifying it. `projects/` is ignored and belongs to the user. The old local copies remain in place; opening this directory does not migrate or overwrite their saves or editor state.
 
-Focused regression projects live under `tests/fixtures/projects/`. The source manifest and known excluded-asset hashes are in `config/repository-content.json`.
+Focused experiments, including the wuxia creator trials, live under `tests/fixtures/projects/`. Their original local copies remain preserved. The source manifest and known excluded-asset hashes are in `config/repository-content.json`.

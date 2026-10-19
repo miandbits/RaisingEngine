@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "../apps/player/renderer/**/*.ts",
+    "../apps/player/renderer/**/*.tsx",
+    "./player/**/*.ts",
+    "./electron.vite.config.ts"
+  ]
+}

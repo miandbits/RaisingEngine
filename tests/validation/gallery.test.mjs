@@ -5,7 +5,7 @@ import {loadProject} from '../../dist/packages/project-service/loader.js';
 import {validateProject} from '../../dist/packages/validation/index.js';
 
 test('gallery contract: legacy projects, stable IDs, missing targets and thumbnail types',async()=>{
-  const loaded=await loadProject(resolve('examples/last-grandson-polished'));
+  const loaded=await loadProject(resolve('tests/fixtures/projects/last-grandson-polished'));
   const doc=loaded.documents.find(d=>d.kind==='project');
   // Isolate the data contract from the sample's optional gallery screens/components.
   // Authored gallery UI is covered by its own tests and requires a gallery definition.

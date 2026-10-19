@@ -16,6 +16,8 @@ Default saves are under SDL's per-user `RaisingEngine/<gameId>` preferences dire
 
 Source checkouts are in `native/player/vendor`, using these upstream versions:
 
+`npm run prepare:native` downloads and verifies the exact revisions from `config/native-dependencies.json`; `build:native-player` runs this automatically. Existing modified or mismatched directories are preserved and rejected, never reset. These ignored dependency directories are not part of a clean Git checkout.
+
 - [SDL](https://github.com/libsdl-org/SDL): release-3.2.24, `a8589a84226a6202831a3d49ff4edda4acab9acd`
 - [SDL_image](https://github.com/libsdl-org/SDL_image): release-3.2.4, `11154afb7855293159588b245b446a4ef09e574f`
 - [RmlUi](https://github.com/mikke89/RmlUi): 6.1, `58c751531f4c1a1eb2dc56f409b8e8a323a0c9ad`

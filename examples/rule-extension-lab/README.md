@@ -24,11 +24,11 @@ in another project; this game's pinned copy lives in `project.json`.
 The integration test uses real Qt widgets without displaying a window, then the shared
 save service, hidden Windows player and headless Web/Wasm player. The basic scene and
 action scaffold is test data; this is not an independent human authoring trial.
-See [the contract and verification](../../docs/rule-extensions.md).
+See [the contract and verification](../../docs/manual/rule-extensions.md).
 ## 시각적 작성 예제 추가
 
 `visual-authoring.raiserules`는 빈 패키지부터 실제 Qt 제작실 위젯으로 만든 뒤 파일 대화상자로 내보낸 규칙이다. 조건·효과·입력 기본값과 범위·준비/수련/돌파 진행·비용을 포함한다. 자동 생성된 식별자를 직접 입력할 필요는 없다.
 
 디자인 → 규칙 확장 패키지 · 진행 방식에서 파일을 가져오고 진행 인스턴스를 추가한 뒤 행동 목록을 화면에 배치한다. 예제의 능력 참조는 이 프로젝트의 검술·소지금·스트레스를 사용한다.
 
-자세한 제작·버전 갱신 절차와 시험 한계는 [제작실 문서](../../docs/rule-package-workshop.md)에 있다.
+자세한 제작·버전 갱신 절차와 시험 한계는 [제작실 문서](../../docs/manual/rule-package-workshop.md)에 있다.

@@ -29,7 +29,7 @@ test('gallery projections enforce privacy, record identity, filters and selectio
 });
 
 test('authored gallery schema validates screens, sources, entry references and filter actions',async()=>{
-  const loaded=await loadProject(resolve('examples/last-grandson-polished'));const project=loaded.documents.find(d=>d.kind==='project').data;
+  const loaded=await loadProject(resolve('tests/fixtures/projects/last-grandson-polished'));const project=loaded.documents.find(d=>d.kind==='project').data;
   project.gallery.screenId='missing';let r=await validateProject(loaded);assert.ok(r.diagnostics.some(d=>d.pointer==='/gallery/screenId'));
   project.gallery.screenId='title';project.gallery.detailScreenId='title';r=await validateProject(loaded);assert.equal(r.valid,false);
   delete project.gallery.screenId;project.gallery.detailScreenId='title';r=await validateProject(loaded);assert.equal(r.valid,false);
@@ -43,7 +43,7 @@ test('authored gallery schema validates screens, sources, entry references and f
 });
 
 test('data-bound card images are valid, but unbound collections and standalone instances still need an image',async()=>{
-  const loaded=await loadProject(resolve('examples/last-grandson-polished'));const project=loaded.documents.find(d=>d.kind==='project').data;
+  const loaded=await loadProject(resolve('tests/fixtures/projects/last-grandson-polished'));const project=loaded.documents.find(d=>d.kind==='project').data;
   const component={id:'gallery-image-test',label:'Gallery image',width:160,height:100,elements:[{id:'art',kind:'image',x:0,y:0,width:160,height:100,imageSource:'asset'}]};
   project.visual.components.push(component);
   const collection={id:'gallery-data-test',kind:'collection',x:0,y:0,width:320,height:200,componentId:component.id,source:{type:'galleryEntries'},bindings:[{elementId:'art',property:'imageAssetId',field:'imageAssetId'}]};
@@ -56,7 +56,7 @@ test('data-bound card images are valid, but unbound collections and standalone i
 });
 
 test('old runtimes reject authored gallery actions including component overrides',async()=>{
-  const projectRoot=resolve('examples/last-grandson-polished');const loaded=await loadProject(projectRoot);const built=await buildSnapshot(loaded);assert.equal(built.ok,true);
+  const projectRoot=resolve('tests/fixtures/projects/last-grandson-polished');const loaded=await loadProject(projectRoot);const built=await buildSnapshot(loaded);assert.equal(built.ok,true);
   const runtime=await mkdtemp(resolve('.cache/gallery-ui-old-runtime-'));await writeFile(resolve(runtime,'RaisingPlayer.exe'),'fixture, never executed');
   await writeFile(resolve(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:[],audioExtensions:[],visualFeatures:[]}));
   const content=structuredClone(built.snapshot),visual=content.project.visual,component=visual.components[0];

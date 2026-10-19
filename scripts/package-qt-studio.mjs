@@ -5,8 +5,8 @@ import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
 
 const root=resolve('.'),out=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
-const qt=resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio-release-preview');
-const windows=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-authoring-preview');
+const qt=resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio');
+const windows=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-app');
 const web=resolve(process.env.RAISING_WEB_PLAYER_RUNTIME||'dist/web');
 try{await access(out);throw Error('Choose a new QT_PACKAGE_OUT; existing packages are never overwritten.');}catch(e){if(e.code!=='ENOENT')throw e;}
 const policy=JSON.parse(await readFile('config/repository-content.json','utf8'));
@@ -35,8 +35,8 @@ await copy(windows,'engine/dist/native-player-app');await copy(web,'engine/dist/
 for(const id of templates)await copy('examples/'+id,'engine/examples/'+id);
 await copy('examples/rule-extension-lab','engine/examples/rule-extension-lab');
 await copy('LICENSE','LICENSE');await copy('licenses','licenses');await copy('THIRD_PARTY_NOTICES.md','THIRD_PARTY_NOTICES.md');
-await copy('docs/first-game.md','FIRST-GAME.md');
-for(const doc of ['first-game.md','platform-support.md','platform-capabilities.json','public-assets.md','qt-preview-release.md'])await copy('docs/'+doc,'engine/docs/'+doc);
+await copy('docs/getting-started/first-game.md','FIRST-GAME.md');
+for(const doc of ['getting-started/first-game.md','development/platform-support.md','development/platform-capabilities.json','development/public-assets.md','development/qt-preview-release.md'])await copy('docs/'+doc,'engine/docs/'+doc);
 await copy('LICENSE','engine/LICENSE');await copy('THIRD_PARTY_NOTICES.md','engine/THIRD_PARTY_NOTICES.md');
 await copy(join(windows,'licenses'),'licenses/player');await copy(join(windows,'fonts/OFL.txt'),'licenses/NotoSansKR-OFL.txt');
 await copy('native/vendor/LICENSE.MIT','licenses/nlohmann-json.txt');

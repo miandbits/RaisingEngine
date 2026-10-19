@@ -34,7 +34,7 @@ function route(content,ending){
 
 test('authored recollection controls preserve live state, saves, recorded choices and current styling', {timeout:240000}, async()=>{
   const runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
-  const project=resolve(process.env.RAISING_REPLAY_UI_PROJECT??'examples/last-grandson-polished');
+  const project=resolve(process.env.RAISING_REPLAY_UI_PROJECT??'tests/fixtures/projects/last-grandson-polished');
   const loaded=await loadProject(project),built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));const content=built.snapshot;
   assert.ok(content.project.gallery.replayControlsScreenId,'Use the Qt-authored sample');
   const root=await mkdtemp(resolve('.cache/replay-ui-native-')),game=resolve(root,'game'),evidence=resolve('.cache/replay-ui');await mkdir(evidence,{recursive:true});
