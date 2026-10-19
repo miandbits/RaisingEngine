@@ -53,6 +53,15 @@
       "bytes": 237487267,
       "unsigned": true,
       "publicReleaseReady": false
+    },
+    "lineEndingFollowup": {
+      "commit": "6d15226409e587305da33999379a65700effd44a",
+      "generatedSchemaAttributes": "text eol=lf",
+      "regenerationPassed": true,
+      "workingTreeCleanAfterRegeneration": true,
+      "packageSourceTreeDirty": false,
+      "preFixCloneIndexRenormalized": true,
+      "runtimeSourcesUnchangedSincePlayTests": true
     }
   },
   "preservation": {
@@ -168,6 +177,14 @@
     {
       "path": "clean-checkout/.cache/journey-adventure-web/victory.png",
       "sha256": "783a61fcccaabcd6a038ba8dc01a24c678aa9d436ead4d67652f316ae70052af"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/regenerate-types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "clean-checkout/.cache/clean-acceptance/package-final.log",
+      "sha256": "c1e5be8784f045013f72785a1ee777d249398beadaec3e5347e5d76431f4fedd"
     }
   ],
   "notEstablished": [
