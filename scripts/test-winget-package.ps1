@@ -4,8 +4,9 @@ if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Run this lifecycle test in its disp
 $evidence = Join-Path $env:GITHUB_WORKSPACE '.cache/winget-validation'
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 $install = Join-Path $env:RUNNER_TEMP 'RaisingEngine Winget Preview'
-$registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RaisingEngine-0.1.0-preview.3'
-if ((Test-Path -LiteralPath $install) -or (Test-Path -LiteralPath $registry)) { throw 'Refusing to replace an existing installation.' }
+$registry = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\miandbits.RaisingEngine.Preview'
+$alias = Join-Path $env:LOCALAPPDATA 'Microsoft/WinGet/Links/raisingstudio-preview.exe'
+if ((Test-Path -LiteralPath $install) -or (Test-Path -LiteralPath $alias)) { throw 'Refusing to replace an existing installation.' }
 $before = winget settings export | ConvertFrom-Json
 $localWasEnabled = $before.adminSettings.LocalManifestFiles
 $app = $null
@@ -69,16 +70,16 @@ try {
   winget validate --manifest $Manifest --disable-interactivity 2>&1 | Tee-Object "$evidence/validate.log"
   if ($LASTEXITCODE -ne 0) { throw 'Manifest validation failed' }
   Invoke-WinGetStep 'install' @('install','--manifest',$Manifest,'--silent','--scope','user','--location',$install,'--accept-package-agreements','--accept-source-agreements','--disable-interactivity','--verbose-logs')
-  $entry = Get-ItemProperty -LiteralPath $registry
-  if ($entry.InstallLocation -ne $install -or $entry.DisplayVersion -ne '0.1.0-preview.3') { throw 'Installed app registration mismatch' }
-  $exe = Join-Path $install 'RaisingStudioQt.exe'
+  $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'RaisingEngine Preview' })
+  if ($entries.Count -ne 1 -or $entries[0].DisplayVersion -ne '0.1.0-preview.3') { throw 'Installed app registration mismatch' }
+  $registry = $entries[0].PSPath
+  $exe = Join-Path $install 'RaisingStudio/RaisingStudioQt.exe'
   if (!(Test-Path -LiteralPath $exe)) { throw 'Editor executable missing' }
-  $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'RaisingEngine 0.1.0-preview.3\Raising Studio.lnk'
-  if (!(Test-Path -LiteralPath $shortcut)) { throw 'Start menu shortcut missing' }
+  if (!(Test-Path -LiteralPath $alias)) { throw 'WinGet command alias missing' }
   $oldPath = $env:PATH
   try {
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-    $app = Start-Process -FilePath $exe -WorkingDirectory $install -ArgumentList '--ui-language','en' -WindowStyle Hidden -PassThru -RedirectStandardError "$evidence/editor-stderr.log"
+    $app = Start-Process -FilePath $alias -WorkingDirectory $env:RUNNER_TEMP -ArgumentList '--ui-language','en' -WindowStyle Hidden -PassThru -RedirectStandardError "$evidence/editor-stderr.log"
     if (!$app.WaitForInputIdle(15000)) { throw 'Editor did not initialize its message loop' }
     if ($app.WaitForExit(3000)) { throw "Editor exited at startup: $($app.ExitCode)" }
     Add-Type @'
@@ -105,18 +106,15 @@ public static class EditorWindows {
     if (!$app.WaitForExit(10000)) { throw 'Editor did not close normally' }
     if ($app.ExitCode -ne 0) { throw "Editor close exit code: $($app.ExitCode)" }
   } finally { $env:PATH = $oldPath }
-  # Prove uninstall keeps both unknown in-folder files and external project/save data.
-  $sentinel = Join-Path $install 'user-preservation-check.txt'
-  Set-Content -LiteralPath $sentinel -Value 'preserve this user file'
+  # Portable installations are owned by WinGet. User projects must live outside them.
   $external = Join-Path $env:RUNNER_TEMP 'RaisingEngine user data'
   New-Item -ItemType Directory -Path $external | Out-Null
   Set-Content -LiteralPath (Join-Path $external 'save.json') -Value '{"sentinel":"preserve"}'
   Invoke-WinGetStep 'uninstall' @('uninstall','--manifest',$Manifest,'--silent','--accept-source-agreements','--disable-interactivity','--verbose-logs')
-  if ((Test-Path -LiteralPath $exe) -or (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $shortcut)) { throw 'Installed app remains after uninstall' }
-  if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'preserve this user file') { throw 'Uninstall changed user file' }
+  if ((Test-Path -LiteralPath $exe) -or (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $alias)) { throw 'Installed app remains after uninstall' }
   if ((Get-Content -LiteralPath (Join-Path $external 'save.json') -Raw).Trim() -ne '{"sentinel":"preserve"}') { throw 'Uninstall changed external save' }
   $success = $true
-  @{ok=$true;package='miandbits.RaisingEngine.Preview';version='0.1.0-preview.3';winget=(winget --version);installedViaWinget=$true;customLocation=$install;registryMatched=$true;startMenuPresent=$true;editorWindowTitles=$titles;editorNormalExit=$true;systemRuntimePathsRemoved=$true;uninstalledViaWinget=$true;appRegistryShortcutRemoved=$true;userFilesPreserved=$true;environment=(Get-ComputerInfo | Select-Object WindowsProductName,OsBuildNumber)} | ConvertTo-Json -Depth 5 | Set-Content "$evidence/result.json"
+  @{ok=$true;package='miandbits.RaisingEngine.Preview';version='0.1.0-preview.3';winget=(winget --version);installerType='zip/portable';installedViaWinget=$true;customLocation=$install;registryMatched=$true;commandAliasPresent=$true;editorLaunchedViaAlias=$true;editorWindowTitles=$titles;editorNormalExit=$true;systemRuntimePathsRemoved=$true;uninstalledViaWinget=$true;appRegistryAliasRemoved=$true;externalUserFilesPreserved=$true;environment=(Get-ComputerInfo | Select-Object WindowsProductName,OsBuildNumber)} | ConvertTo-Json -Depth 5 | Set-Content "$evidence/result.json"
 } finally {
   $diagnostics = Join-Path $env:LOCALAPPDATA 'Packages/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe/LocalState/DiagOutputDir'
   if (Test-Path -LiteralPath $diagnostics) { Copy-Item -Path "$diagnostics/WinGet-*.log" -Destination $evidence -ErrorAction Continue }
