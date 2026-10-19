@@ -24,8 +24,15 @@ jobs:
           $release = Get-Content config/preview-release.json | ConvertFrom-Json
           if ($env:RELEASE_TAG -ne "v$($release.version)") { throw 'Release/config mismatch' }
           New-Item -ItemType Directory .cache/vm-download,.cache/vm-validation | Out-Null
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir .cache/vm-download
-          if ($LASTEXITCODE -ne 0) { throw 'Download failed' }
+          # Read-only asset endpoint avoids the draft-list endpoint's push-access requirement.
+          $assets = Get-Content config/preview-validation-assets.json | ConvertFrom-Json
+          if ($assets.tag -ne $env:RELEASE_TAG) { throw 'Asset pin/release mismatch' }
+          foreach ($asset in $assets.files) {
+            if ($asset.name -notmatch '^[a-zA-Z0-9._-]+$' -or $asset.id -le 0) { throw 'Invalid asset pin' }
+            curl.exe --fail --silent --show-error --location -H "Authorization: Bearer $env:GH_TOKEN" -H 'Accept: application/octet-stream' -o ".cache/vm-download/$($asset.name)" "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/assets/$($asset.id)"
+            if ($LASTEXITCODE -ne 0) { throw 'Asset download failed' }
+            if ((Get-FileHash ".cache/vm-download/$($asset.name)" -Algorithm SHA256).Hash.ToLower() -ne $asset.sha256) { throw 'Pinned asset hash mismatch' }
+          }
           foreach ($line in Get-Content .cache/vm-download/SHA256SUMS.txt) {
             if ($line -notmatch '^([a-f0-9]{64})  ([a-zA-Z0-9._-]+)$') { throw 'Invalid checksum entry' }
             if ((Get-FileHash ".cache/vm-download/$($Matches[2])" -Algorithm SHA256).Hash.ToLower() -ne $Matches[1]) { throw 'Artifact hash mismatch' }

@@ -4,7 +4,7 @@
 
 1. Use the Windows x64 installer from the reviewed preview distribution. Compare its SHA-256 with the accompanying `.exe.json` or `SHA256SUMS.txt` before running it. Do not use an installer from an unknown mirror.
 2. Select English, Korean or Japanese in the installer. Choose a **new** installation folder. This preview refuses to overwrite an existing folder; install upgrades side by side.
-3. Run `RaisingStudioQt.exe` from that folder. Node.js and Qt SDKs are bundled; you do not need development tools. Windows may warn that this preview is unsigned. This preview has not been certified on a clean Windows VM.
+3. Run `RaisingStudioQt.exe` from that folder. The Node.js runtime and Qt libraries are bundled; you do not need development tools. Windows may warn that this preview is unsigned. Automated Windows Server VM checks do not certify consumer Windows 11 security-policy behavior.
 4. In the project manager, choose **Editor language → English**. Close and reopen the editor to apply it. Inside the editor the same setting is at **View → 언어 / Language / 言語…**. This never changes a project's text or saved games.
 
 ## Make and play a small game
