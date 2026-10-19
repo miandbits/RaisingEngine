@@ -1,0 +1,289 @@
+{
+  "version": 1,
+  "license": "MIT",
+  "generator": "scripts/release-sample-media.mjs",
+  "files": [
+    {
+      "path": "assets/journey/apprentice-home.png",
+      "kind": "home",
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d",
+      "excludedOriginalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "path": "assets/journey/thank-you-flowers.png",
+      "kind": "flowers",
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c",
+      "excludedOriginalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "path": "assets/journey/town-florist.png",
+      "kind": "florist",
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812",
+      "excludedOriginalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "path": "assets/visual-sample/courtyard.png",
+      "kind": "courtyard",
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be",
+      "excludedOriginalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "path": "assets/visual-sample/haru.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "path": "assets/visual-sample/library.png",
+      "kind": "library",
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139",
+      "excludedOriginalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "path": "assets/visual-sample/yuna.png",
+      "kind": "yuna",
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1",
+      "excludedOriginalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "path": "examples/academy-adventure/assets/image-3df09117b32e2f79.png",
+      "kind": "home",
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d",
+      "excludedOriginalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "path": "examples/academy-adventure/assets/image-4988e195be1f84bf.png",
+      "kind": "florist",
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812",
+      "excludedOriginalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "path": "examples/academy-adventure/assets/image-87d44308813dc6b7.png",
+      "kind": "flowers",
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c",
+      "excludedOriginalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "path": "examples/academy-adventure/assets/visual/courtyard.png",
+      "kind": "courtyard",
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be",
+      "excludedOriginalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "path": "examples/academy-adventure/assets/visual/haru.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "path": "examples/academy-adventure/assets/visual/library.png",
+      "kind": "library",
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139",
+      "excludedOriginalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "path": "examples/academy-adventure/assets/visual/yuna.png",
+      "kind": "yuna",
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1",
+      "excludedOriginalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "path": "examples/academy-journey/assets/image-3df09117b32e2f79.png",
+      "kind": "home",
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d",
+      "excludedOriginalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "path": "examples/academy-journey/assets/image-4988e195be1f84bf.png",
+      "kind": "florist",
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812",
+      "excludedOriginalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "path": "examples/academy-journey/assets/image-87d44308813dc6b7.png",
+      "kind": "flowers",
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c",
+      "excludedOriginalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "path": "examples/academy-journey/assets/visual/courtyard.png",
+      "kind": "courtyard",
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be",
+      "excludedOriginalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "path": "examples/academy-journey/assets/visual/haru.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "path": "examples/academy-journey/assets/visual/library.png",
+      "kind": "library",
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139",
+      "excludedOriginalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "path": "examples/academy-journey/assets/visual/yuna.png",
+      "kind": "yuna",
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1",
+      "excludedOriginalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "path": "examples/academy-visual/assets/visual/courtyard.png",
+      "kind": "courtyard",
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be",
+      "excludedOriginalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "path": "examples/academy-visual/assets/visual/haru.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "path": "examples/academy-visual/assets/visual/library.png",
+      "kind": "library",
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139",
+      "excludedOriginalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "path": "examples/academy-visual/assets/visual/yuna.png",
+      "kind": "yuna",
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1",
+      "excludedOriginalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-3df09117b32e2f79.png",
+      "kind": "home",
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d",
+      "excludedOriginalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-4988e195be1f84bf.png",
+      "kind": "florist",
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812",
+      "excludedOriginalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-87d44308813dc6b7.png",
+      "kind": "flowers",
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c",
+      "excludedOriginalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/visual/courtyard.png",
+      "kind": "courtyard",
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be",
+      "excludedOriginalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/visual/haru.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/visual/library.png",
+      "kind": "library",
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139",
+      "excludedOriginalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/visual/yuna.png",
+      "kind": "yuna",
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1",
+      "excludedOriginalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-604196819963c10da5d7183a.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "604196819963c10da5d7183ab52946e6d6b3a01870e589e85fd4816e0a413562"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-6fae8d96e2ff5b6e7c119626.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "6fae8d96e2ff5b6e7c11962696076df65fe938bdf2078f8d14048214a1224eb1"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-8605cbc5e9880a2f7dac1b0c.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "8605cbc5e9880a2f7dac1b0cf68171e9fad51b09671d3d34cbfb09729b0d561d"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-87efbcd08f5b19090dbae334.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "87efbcd08f5b19090dbae3344ce1cc4929c3158153358e9d9a71372d1986972e"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-8b96cea886876912ac42d335.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "8b96cea886876912ac42d3350b2bcad9176ad0619ec3e616edc7673e898a4124"
+    },
+    {
+      "path": "examples/starlight-three-months/assets/image-a4b1131d94929a84e152d1ab.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "a4b1131d94929a84e152d1ab77fd7bc6f157832d77eb95b37e1a747b273d6bba"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/apothecary.png",
+      "kind": "florist",
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812",
+      "excludedOriginalSha256": "8bf9fb7bf78c849611a902d513989d25536a19ac33a5c161d8d62e7b646d65b8"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/sd-rest.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "34d994aa6d6b345e3221ebc6aaaf53e2cff5622212c952516d513abae8492674"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/sd-study-a.png",
+      "kind": "yuna",
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1",
+      "excludedOriginalSha256": "80bf2bf8ba8c7d79fbf5a6b6e75fb762db1827bd9c9fcccfab5be3ac8e1b34f8"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/sd-study-b.png",
+      "kind": "yuna",
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1",
+      "excludedOriginalSha256": "d72562046e2ccec76eb50b62dceb2a8612673b42373e106ec9cb104c54aac325"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/sd-work-a.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "eefe96c5e8b829715c97f2d725eac7a5e36a0f8134f9194a32386d4440077aa6"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/sd-work-b.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "f3c0343eae47a3e22cfeb8295009d3d0f6e1c82cb8e95cb121c6c2edfe4cf8ab"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/seol-neutral.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "399f4f01bdf3d9127b83776efeb988d3ea097138c717d40a2ec7328f05552751"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/seol-rest.png",
+      "kind": "haru",
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2",
+      "excludedOriginalSha256": "7ed081b2925228866e1f9c90be9f4572bebc240dda4660847942524b3555f47b"
+    },
+    {
+      "path": "tests/fixtures/projects/last-grandson-polished/assets/art/winter-courtyard.png",
+      "kind": "courtyard",
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be",
+      "excludedOriginalSha256": "42afd70a391bb428e846404f83f0c544fad5f31fd892295777034e133c01bf61"
+    }
+  ]
+}

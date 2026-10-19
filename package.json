@@ -12,7 +12,7 @@
     "check:editor-i18n": "node scripts/check-editor-translations.mjs",
     "prepare:qt-source": "node scripts/prepare-qt-source.mjs",
     "audit:repository": "node scripts/repository-audit.mjs",
-    "check:public-content": "node scripts/check-public-content.mjs",
+    "check:public-content": "node scripts/check-public-content.mjs && node scripts/check-source-sample-media.mjs",
     "test:public-content": "node --test --test-concurrency=1 tests/release/public-content.test.mjs tests/runtime/action-capabilities.test.mjs tests/runtime/condition-preview.test.mjs tests/native/free-expedition.test.mjs tests/native/magical-academy.test.mjs tests/release/fixture-media.test.mjs tests/release/sample-media.test.mjs",
     "build:headless": "node scripts/generate-types.mjs && tsc -p tsconfig.json && node scripts/copy-schemas.mjs && node scripts/build-native.mjs",
     "check:regression": "node scripts/check-goal-regression.mjs",

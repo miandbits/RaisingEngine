@@ -24,7 +24,8 @@ jobs:
           $release = Get-Content config/preview-release.json | ConvertFrom-Json
           if ($env:RELEASE_TAG -ne "v$($release.version)") { throw 'Release/config mismatch' }
           New-Item -ItemType Directory .cache/vm-download,.cache/vm-validation | Out-Null
-          # Read-only asset endpoint avoids the draft-list endpoint's push-access requirement.
+          Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber | ConvertTo-Json > .cache/vm-validation/environment.json
+          # Pin identity and bytes; the server must separately authorize draft access.
           $assets = Get-Content config/preview-validation-assets.json | ConvertFrom-Json
           if ($assets.tag -ne $env:RELEASE_TAG) { throw 'Asset pin/release mismatch' }
           foreach ($asset in $assets.files) {
@@ -45,7 +46,6 @@ jobs:
           "QT_INSTALLER_OUT=$env:GITHUB_WORKSPACE/.cache/vm-download/RaisingEngine-$($release.version)-windows-x64.exe" >> $env:GITHUB_ENV
           "QT_STUDIO_OUT=$env:RUNNER_TEMP/preview-kit" >> $env:GITHUB_ENV
           "QT_VALIDATION_KIT=$env:RUNNER_TEMP/preview-kit" >> $env:GITHUB_ENV
-          Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber | ConvertTo-Json > .cache/vm-validation/environment.json
       - name: Install, author, export, restore saves and uninstall
         shell: pwsh
         run: |

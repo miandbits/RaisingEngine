@@ -4,77 +4,77 @@
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/authoring-workspace/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/authoring-workspace/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/authoring-workspace/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/authoring-workspace/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/battle-hud-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/battle-hud-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/battle-hud-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/battle-hud-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/character-state-demo/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/character-state-demo/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/character-state-demo/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/character-state-demo/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "plugins/cutout-animation/demo/parts/eyes-half.png",
@@ -89,7 +89,7 @@
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "plugins/cutout-animation/demo/parts/head.png",
@@ -99,7 +99,7 @@
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "plugins/cutout-animation/demo/parts/hair-back.png",
@@ -129,7 +129,7 @@
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/cutout-animation-demo/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "plugins/cutout-animation/demo/parts/arm-left.png",
@@ -154,407 +154,407 @@
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/cutout-animation-demo/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/data-ui-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/data-ui-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/data-ui-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/data-ui-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/data-ui-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/data-ui-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/data-ui-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "examples/starlight-three-months/assets/image-604196819963c10da5d7183a.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-604196819963c10da5d7183a.png",
-      "sha256": "604196819963c10da5d7183ab52946e6d6b3a01870e589e85fd4816e0a413562"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "examples/starlight-three-months/assets/image-6fae8d96e2ff5b6e7c119626.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-6fae8d96e2ff5b6e7c119626.png",
-      "sha256": "6fae8d96e2ff5b6e7c11962696076df65fe938bdf2078f8d14048214a1224eb1"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "examples/starlight-three-months/assets/image-8605cbc5e9880a2f7dac1b0c.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-8605cbc5e9880a2f7dac1b0c.png",
-      "sha256": "8605cbc5e9880a2f7dac1b0cf68171e9fad51b09671d3d34cbfb09729b0d561d"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "examples/starlight-three-months/assets/image-87efbcd08f5b19090dbae334.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-87efbcd08f5b19090dbae334.png",
-      "sha256": "87efbcd08f5b19090dbae3344ce1cc4929c3158153358e9d9a71372d1986972e"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "examples/starlight-three-months/assets/image-8b96cea886876912ac42d335.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-8b96cea886876912ac42d335.png",
-      "sha256": "8b96cea886876912ac42d3350b2bcad9176ad0619ec3e616edc7673e898a4124"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "examples/starlight-three-months/assets/image-a4b1131d94929a84e152d1ab.png",
       "target": "tests/fixtures/projects/direction-lab/assets/image-a4b1131d94929a84e152d1ab.png",
-      "sha256": "a4b1131d94929a84e152d1ab77fd7bc6f157832d77eb95b37e1a747b273d6bba"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/direction-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/direction-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/direction-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/direction-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/editor-workbench-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/editor-workbench-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/editor-workbench-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/editor-workbench-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/journey-playtest-2026-10-11/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/logic-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/logic-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/logic-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/logic-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/logic-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/logic-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/logic-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/party-tactics-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/party-tactics-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/party-tactics-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/party-tactics-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/rules-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/rules-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/rules-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/rules-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/rules-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/rules-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/rules-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/time-session-demo/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/time-session-demo/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/time-session-demo/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/time-session-demo/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/timeline-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/timeline-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/timeline-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/timeline-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/timeline-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/timeline-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/timeline-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/two-trainees/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/two-trainees/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/two-trainees/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/two-trainees/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "source": "assets/journey/apprentice-home.png",
       "target": "tests/fixtures/projects/ui-composition-lab/assets/image-3df09117b32e2f79.png",
-      "sha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742"
+      "sha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "source": "assets/journey/town-florist.png",
       "target": "tests/fixtures/projects/ui-composition-lab/assets/image-4988e195be1f84bf.png",
-      "sha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773"
+      "sha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "source": "assets/journey/thank-you-flowers.png",
       "target": "tests/fixtures/projects/ui-composition-lab/assets/image-87d44308813dc6b7.png",
-      "sha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603"
+      "sha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "source": "assets/visual-sample/courtyard.png",
       "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/courtyard.png",
-      "sha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993"
+      "sha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "source": "assets/visual-sample/haru.png",
       "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/haru.png",
-      "sha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860"
+      "sha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "source": "assets/visual-sample/library.png",
       "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/library.png",
-      "sha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f"
+      "sha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "source": "assets/visual-sample/yuna.png",
       "target": "tests/fixtures/projects/ui-composition-lab/assets/visual/yuna.png",
-      "sha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6"
+      "sha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     }
   ]
 }

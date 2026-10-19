@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 import {samplePng,replaceReleaseMedia,auditReleaseMedia} from '../../scripts/release-sample-media.mjs';
 test('release media is deterministic and fails closed on unknown or modified media',async()=>{
   await mkdir('.cache',{recursive:true});const root=await mkdtemp('.cache/release-media-');
@@ -16,3 +17,11 @@ test('release media is deterministic and fails closed on unknown or modified med
   await assert.rejects(auditReleaseMedia(root,policy),/Unapproved/);
 });
 test('generator rejects undeclared artwork types',()=>assert.throws(()=>samplePng('unknown'),/Unknown/));
+test('portable packaging rejects files added after manifest review',async()=>{
+  await mkdir('.cache',{recursive:true});const root=await mkdtemp('.cache/unreviewed-payload-');
+  const release=JSON.parse(await readFile('config/preview-release.json','utf8'));
+  await writeFile(join(root,'package-manifest.json'),JSON.stringify({releaseVersion:release.version,files:[]}));
+  await writeFile(join(root,'private-history.txt'),'Must not be distributed');
+  const result=spawnSync(process.execPath,['scripts/package-preview-artifacts.mjs'],{env:{...process.env,QT_PACKAGE_OUT:root},encoding:'utf8',windowsHide:true});
+  assert.notEqual(result.status,0);assert.match(result.stderr,/Unreviewed extra payload/);
+});

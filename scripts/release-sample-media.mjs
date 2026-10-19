@@ -52,7 +52,7 @@ export async function replaceReleaseMedia(root,policy){
   for(const item of policy.replacements){
     if(!/^engine\/examples\/[a-z0-9-]+\/assets\/[a-zA-Z0-9/_.-]+\.png$/.test(item.path)||item.path.includes('..'))throw Error('Unsafe release media path');
     const target=join(root,item.path),original=await readFile(target);
-    if(sha(original)!==item.originalSha256)throw Error('Unreviewed sample media: '+item.path);
+    if(sha(original)!==item.originalSha256&&sha(original)!==item.sourceSha256)throw Error('Unreviewed sample media: '+item.path);
     const bytes=samplePng(item.kind);await writeFile(target,bytes);
     ledger.push({path:item.path,sha256:sha(bytes),bytes:bytes.length,kind:item.kind,license:'MIT',generator:'scripts/release-sample-media.mjs'});
   }

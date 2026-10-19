@@ -1,15 +1,6 @@
 {
-  "generator": "built-in image_gen",
-  "assets": [
-    {
-      "file": "apprentice-home.png",
-      "transparent_background": false,
-      "prompt": "Create a production-ready 2D game background for a cozy medieval fantasy raising / life simulation. Widescreen 16:9 landscape composition, no characters, no text, no user interface. A modest but lovingly kept apprentice's home: warm oak floorboards, small study desk with closed books and a quill near a sunlit arched window, a simple bed with cream quilt on the left, a potted plant and pale coral flowers, shelves with everyday objects, a small travel bag. Fresh spring morning light, a glimpse of green hills and a distant stone academy through the window. Painterly storybook anime game background, elegant fine outlines, soft watercolor gouache texture, muted sage green and warm cream palette, inviting lived-in atmosphere. Medium wide interior view, uncluttered central area and restrained detail across lower half for overlaid game interface. No modern items. No logos. Detailed and polished commercial 2D game asset, not a screenshot."
-    },
-    {
-      "file": "town-florist.png",
-      "transparent_background": false,
-      "prompt": "Create a production-ready 2D game background for a cozy medieval fantasy raising / life simulation. Widescreen 16:9 landscape composition, no characters, no text, no user interface. A small welcoming flower shop beside a town square, seen from inside: pale oak counter along the right, terracotta pots of ivory daisies and pale coral garden roses, bundles of green foliage, sage-green painted shelves and a cream linen wrapping station with teal ribbons. Open arched doorway reveals sunlit cobblestones and timber-and-stone town buildings. Soft spring daylight, warm inviting atmosphere. Painterly storybook anime game background with elegant fine outlines, watercolor gouache texture, muted sage green / warm cream / pale coral palette. Medium wide eye-level view, uncluttered central space and restrained lower-half detail for overlaid shop panels. No price tags, no letters, no signage, no logos, no modern cash register. Detailed polished commercial 2D game asset, not a screenshot."
-    }
-  ]
+  "generator": "scripts/release-sample-media.mjs",
+  "license": "MIT",
+  "policy": "Original geometric designs; no source illustration pixels used",
+  "manifest": "../../config/source-sample-media.json"
 }

@@ -1,0 +1,22 @@
+{
+  "license": "MIT",
+  "generator": "tests/native-player/fixtures/generate-tone.mjs",
+  "files": [
+    {
+      "path": "tone.wav",
+      "sha256": "3b1e9549e06a360a10146061b980a01f9c6132cd70d9d728ffef0bea5de2de03"
+    },
+    {
+      "path": "tone.mp3",
+      "sha256": "642db4249b111e180fda7865e68a39692a000af6edf03be777f873690e8674d7"
+    },
+    {
+      "path": "tone.ogg",
+      "sha256": "71b35426434d9002e95ff31163444bec615f270b4ce2a818fa3435a181d2c3a5"
+    },
+    {
+      "path": "tone.flac",
+      "sha256": "3ca2651401e0257ae48053e8381f5d5c685ad40c75ea5daeaf5875ddea007b0a"
+    }
+  ]
+}

@@ -4,92 +4,110 @@
     {
       "path": "engine/examples/academy-adventure/assets/image-3df09117b32e2f79.png",
       "originalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742",
-      "kind": "home"
+      "kind": "home",
+      "sourceSha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "path": "engine/examples/academy-adventure/assets/image-4988e195be1f84bf.png",
       "originalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773",
-      "kind": "florist"
+      "kind": "florist",
+      "sourceSha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "path": "engine/examples/academy-adventure/assets/image-87d44308813dc6b7.png",
       "originalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603",
-      "kind": "flowers"
+      "kind": "flowers",
+      "sourceSha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "path": "engine/examples/academy-adventure/assets/visual/courtyard.png",
       "originalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993",
-      "kind": "courtyard"
+      "kind": "courtyard",
+      "sourceSha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "path": "engine/examples/academy-adventure/assets/visual/haru.png",
       "originalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860",
-      "kind": "haru"
+      "kind": "haru",
+      "sourceSha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "path": "engine/examples/academy-adventure/assets/visual/library.png",
       "originalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f",
-      "kind": "library"
+      "kind": "library",
+      "sourceSha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "path": "engine/examples/academy-adventure/assets/visual/yuna.png",
       "originalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6",
-      "kind": "yuna"
+      "kind": "yuna",
+      "sourceSha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "path": "engine/examples/academy-journey/assets/image-3df09117b32e2f79.png",
       "originalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742",
-      "kind": "home"
+      "kind": "home",
+      "sourceSha256": "5403e04c993b909c22fa46f85955dcbd2d3fd2b7bb5fdcaff470d8a4d494581d"
     },
     {
       "path": "engine/examples/academy-journey/assets/image-4988e195be1f84bf.png",
       "originalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773",
-      "kind": "florist"
+      "kind": "florist",
+      "sourceSha256": "6d39e4b19f0f5bc36977bfde29bca533dbae7636b09fdb37b5802cefff314812"
     },
     {
       "path": "engine/examples/academy-journey/assets/image-87d44308813dc6b7.png",
       "originalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603",
-      "kind": "flowers"
+      "kind": "flowers",
+      "sourceSha256": "e6adc9f3162c8a20d69dcac287576d96878b3b1d625bf20ab2c407212962d40c"
     },
     {
       "path": "engine/examples/academy-journey/assets/visual/courtyard.png",
       "originalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993",
-      "kind": "courtyard"
+      "kind": "courtyard",
+      "sourceSha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "path": "engine/examples/academy-journey/assets/visual/haru.png",
       "originalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860",
-      "kind": "haru"
+      "kind": "haru",
+      "sourceSha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "path": "engine/examples/academy-journey/assets/visual/library.png",
       "originalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f",
-      "kind": "library"
+      "kind": "library",
+      "sourceSha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "path": "engine/examples/academy-journey/assets/visual/yuna.png",
       "originalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6",
-      "kind": "yuna"
+      "kind": "yuna",
+      "sourceSha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     },
     {
       "path": "engine/examples/academy-visual/assets/visual/courtyard.png",
       "originalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993",
-      "kind": "courtyard"
+      "kind": "courtyard",
+      "sourceSha256": "7c97c2b45fd54af0d0d3bb50ab53e36cf6e76bc0ef25a6f5457faa81a88d10be"
     },
     {
       "path": "engine/examples/academy-visual/assets/visual/haru.png",
       "originalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860",
-      "kind": "haru"
+      "kind": "haru",
+      "sourceSha256": "4536003652f57f0231eea87f52331fa072160acd40126a47f3d89cc6efb319d2"
     },
     {
       "path": "engine/examples/academy-visual/assets/visual/library.png",
       "originalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f",
-      "kind": "library"
+      "kind": "library",
+      "sourceSha256": "7847d0ece5ae57a5a37b0303d6d337226b4385596647f75b8a9a360d2da50139"
     },
     {
       "path": "engine/examples/academy-visual/assets/visual/yuna.png",
       "originalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6",
-      "kind": "yuna"
+      "kind": "yuna",
+      "sourceSha256": "35202a67adaf24589faddcc091496dbe4e16247cefe8581b2506433660711dc1"
     }
   ]
 }

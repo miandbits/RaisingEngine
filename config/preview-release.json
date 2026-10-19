@@ -6,5 +6,5 @@
   "sourceRepository": "https://github.com/miandbits/RaisingEngine",
   "publicReleaseReady": false,
   "remainingReleaseChecks": ["isolated Windows VM validation", "code signing decision"],
-  "reviewNotes": ["Source artwork preserved; binary templates use MIT geometric replacements", "Language catalogs and actual Qt widgets reviewed; independent native-speaker review not performed", "Windows Server VM checks do not certify consumer Windows SmartScreen or Smart App Control behavior"]
+  "reviewNotes": ["Original artwork preserved outside the repository; current source and binary templates use MIT geometric replacements", "Language catalogs and actual Qt widgets reviewed; independent native-speaker review not performed", "Windows Server VM checks do not certify consumer Windows SmartScreen or Smart App Control behavior"]
 }

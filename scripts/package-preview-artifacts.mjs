@@ -1,5 +1,5 @@
-import {readFile,writeFile,mkdir,access} from 'node:fs/promises';
-import {resolve,dirname,basename,join} from 'node:path';
+import {readFile,writeFile,mkdir,access,readdir} from 'node:fs/promises';
+import {resolve,dirname,basename,join,relative} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 
@@ -13,6 +13,15 @@ for(const file of manifest.files){
   const hash=createHash('sha256').update(await readFile(join(bundle,file.path))).digest('hex');
   if(hash!==file.sha256)throw Error('Modified bundle file: '+file.path);
 }
+// ZIP must not accidentally include editor history or files added after the audit.
+const expected=new Set([...manifest.files.map(f=>f.path),'package-manifest.json']);
+async function verifyInventory(dir){for(const entry of await readdir(dir,{withFileTypes:true})){
+  const file=join(dir,entry.name),name=relative(bundle,file).replaceAll('\\','/');
+  if(entry.isSymbolicLink())throw Error('Symlink in bundle: '+name);
+  if(entry.isDirectory())await verifyInventory(file);
+  else if(!expected.has(name))throw Error('Unreviewed extra payload: '+name);
+}}
+await verifyInventory(bundle);
 await access(installer);
 const out=dirname(installer),zip=join(out,`RaisingEngine-${release.version}-windows-x64-portable.zip`);
 try{await access(zip);throw Error('Portable archive already exists: '+zip);}catch(error){if(error.code!=='ENOENT')throw error;}
