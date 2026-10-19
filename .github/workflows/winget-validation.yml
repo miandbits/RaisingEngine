@@ -15,11 +15,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
-            Install-Module -Name Microsoft.WinGet.Client -Scope CurrentUser -Force -Repository PSGallery
-            Import-Module Microsoft.WinGet.Client
-            Repair-WinGetPackageManager -Force -Latest
-          }
+          Install-Module -Name Microsoft.WinGet.Client -Scope CurrentUser -Force -Repository PSGallery
+          Import-Module Microsoft.WinGet.Client
+          Repair-WinGetPackageManager -Force -Latest
           winget --version
           if ($LASTEXITCODE -ne 0) { throw 'WinGet unavailable' }
       - name: Validate, install, launch and uninstall
