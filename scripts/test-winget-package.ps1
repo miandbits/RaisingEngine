@@ -10,13 +10,40 @@ $before = winget settings export | ConvertFrom-Json
 $localWasEnabled = $before.adminSettings.LocalManifestFiles
 $app = $null
 $success = $false
+function Invoke-WinGetStep([string]$Name, [string[]]$Arguments) {
+  Write-Host "Starting WinGet $Name (180 second limit)"
+  $start = [Diagnostics.ProcessStartInfo]::new((Get-Command winget).Source)
+  $start.UseShellExecute = $false
+  $start.CreateNoWindow = $true
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
+  foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+  $process = [Diagnostics.Process]::Start($start)
+  $stdout = $process.StandardOutput.ReadToEndAsync()
+  $stderr = $process.StandardError.ReadToEndAsync()
+  $finished = $process.WaitForExit(180000)
+  if (!$finished) {
+    Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(winget|RaisingEngine.*|Uninstall)\.exe$' } |
+      Select-Object Name,ProcessId,ParentProcessId,CommandLine | ConvertTo-Json | Set-Content "$evidence/$Name-processes.json"
+    Get-Process | Where-Object { $_.ProcessName -match 'winget|RaisingEngine|Uninstall' } |
+      Select-Object Id,ProcessName,MainWindowTitle,Responding | ConvertTo-Json | Set-Content "$evidence/$Name-windows.json"
+    if (Test-Path -LiteralPath $registry) { Get-ItemProperty -LiteralPath $registry | ConvertTo-Json | Set-Content "$evidence/$Name-registry.json" }
+    if (Test-Path -LiteralPath $install) { Get-ChildItem -LiteralPath $install | Select-Object Name,Length | ConvertTo-Json | Set-Content "$evidence/$Name-files.json" }
+    & taskkill /PID $process.Id /T /F | Out-Null
+    $process.WaitForExit(10000) | Out-Null
+  }
+  $stdout.GetAwaiter().GetResult() | Set-Content "$evidence/$Name.log"
+  $stderr.GetAwaiter().GetResult() | Set-Content "$evidence/$Name-stderr.log"
+  if (!$finished) { throw "WinGet $Name timed out; process and diagnostic logs retained" }
+  if ($process.ExitCode -ne 0) { throw "WinGet $Name failed: $($process.ExitCode); see $Name.log" }
+  Write-Host "WinGet $Name passed"
+}
 try {
   winget settings --enable LocalManifestFiles
   if ($LASTEXITCODE -ne 0) { throw 'Cannot enable local manifest testing in VM' }
   winget validate --manifest $Manifest --disable-interactivity 2>&1 | Tee-Object "$evidence/validate.log"
   if ($LASTEXITCODE -ne 0) { throw 'Manifest validation failed' }
-  winget install --manifest $Manifest --silent --scope user --location $install --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Tee-Object "$evidence/install.log"
-  if ($LASTEXITCODE -ne 0) { throw 'WinGet installation failed' }
+  Invoke-WinGetStep 'install' @('install','--manifest',$Manifest,'--silent','--scope','user','--location',$install,'--accept-package-agreements','--accept-source-agreements','--disable-interactivity','--verbose-logs')
   $entry = Get-ItemProperty -LiteralPath $registry
   if ($entry.InstallLocation -ne $install -or $entry.DisplayVersion -ne '0.1.0-preview.3') { throw 'Installed app registration mismatch' }
   $exe = Join-Path $install 'RaisingStudioQt.exe'
@@ -59,14 +86,15 @@ public static class EditorWindows {
   $external = Join-Path $env:RUNNER_TEMP 'RaisingEngine user data'
   New-Item -ItemType Directory -Path $external | Out-Null
   Set-Content -LiteralPath (Join-Path $external 'save.json') -Value '{"sentinel":"preserve"}'
-  winget uninstall --manifest $Manifest --silent --accept-source-agreements --disable-interactivity 2>&1 | Tee-Object "$evidence/uninstall.log"
-  if ($LASTEXITCODE -ne 0) { throw 'WinGet uninstall failed' }
+  Invoke-WinGetStep 'uninstall' @('uninstall','--manifest',$Manifest,'--silent','--accept-source-agreements','--disable-interactivity','--verbose-logs')
   if ((Test-Path -LiteralPath $exe) -or (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $shortcut)) { throw 'Installed app remains after uninstall' }
   if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'preserve this user file') { throw 'Uninstall changed user file' }
   if ((Get-Content -LiteralPath (Join-Path $external 'save.json') -Raw).Trim() -ne '{"sentinel":"preserve"}') { throw 'Uninstall changed external save' }
   $success = $true
   @{ok=$true;package='miandbits.RaisingEngine.Preview';version='0.1.0-preview.3';winget=(winget --version);installedViaWinget=$true;customLocation=$install;registryMatched=$true;startMenuPresent=$true;editorWindowTitles=$titles;editorNormalExit=$true;systemRuntimePathsRemoved=$true;uninstalledViaWinget=$true;appRegistryShortcutRemoved=$true;userFilesPreserved=$true;environment=(Get-ComputerInfo | Select-Object WindowsProductName,OsBuildNumber)} | ConvertTo-Json -Depth 5 | Set-Content "$evidence/result.json"
 } finally {
+  $diagnostics = Join-Path $env:LOCALAPPDATA 'Packages/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe/LocalState/DiagOutputDir'
+  if (Test-Path -LiteralPath $diagnostics) { Copy-Item -Path "$diagnostics/WinGet-*.log" -Destination $evidence -ErrorAction Continue }
   if ($app -and !$app.HasExited) { Stop-Process -Id $app.Id -ErrorAction SilentlyContinue }
   if (!$localWasEnabled) {
     winget settings --disable LocalManifestFiles
