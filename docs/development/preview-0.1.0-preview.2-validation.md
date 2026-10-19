@@ -16,4 +16,16 @@ This update completes the built-in advanced editor message catalogs and prepares
 
 Installer and portable ZIP are generated from an explicit manifest with pinned source archives and SHA-256 payload hashes. The per-user installer registers versioned Start menu shortcuts and a Windows Installed apps entry. It still rejects existing target folders and preserves unknown files on uninstall. Publication gates remain in `config/preview-release.json`.
 
+The package was built from clean commit `fd7e595606158e68256b51a602e3765fd7e1261c`. Audit: 1,517 payload files, 27 required notices, four pinned corresponding Qt source archives; no legal-clearance claim.
+
+- English installer workflow passes with system Node/Qt paths removed: install registration and shortcut, create/edit/save/reopen in Qt, Windows/Web export, exact native save restoration, existing-folder rejection and uninstall preserving unknown files, project and save.
+- Japanese portable workflow passes from the **extracted ZIP**, including manifest hashes, Qt creation/edit/export and exact native save restoration.
+- `tests/journey/authored-adventure-web.test.mjs` passes against the installed editor's actual web export: 1 test, 0 failures.
+- [GitHub Actions run 39307396608](https://github.com/miandbits/RaisingEngine/actions/runs/39307396608) passes on the package source commit, including translation coverage, headless/runtime build, route regression, rule extensions, save durability and public-content checks.
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| Windows x64 installer | 121788672 | `943fc221ea83214b3f68227541c640e3017457fa0b9cb5e222da2e40a633a572` |
+| Windows x64 portable ZIP | 167046998 | `c0c8199e3896f3d7dbf9ff4a248c077f1e2e05ca258bb9a3b19941cc64de5d86` |
+
 Reproduce via [preview preparation](preview-0.1.0.md). Local screenshots and detailed logs are generated under `.cache/preview-i18n/evidence`; generated package/install receipts are not source assets and are not committed.
