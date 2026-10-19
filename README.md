@@ -19,6 +19,8 @@ This preview is **unsigned**: Windows may display an unknown-publisher warning o
 
 Installation, first-game and export guides: **[한국어](docs/getting-started/preview/ko.md)** · **[English](docs/getting-started/preview/en.md)** · **[日本語](docs/getting-started/preview/ja.md)**.
 
+**WinGet:** package `miandbits.RaisingEngine.Preview` has been [submitted for registration (#456322)](https://github.com/microsoft/winget-pkgs/pull/456322). Approval and source indexing are pending; use the direct downloads above meanwhile. See [package status and install commands](packaging/winget/README.md).
+
 ## Make a game
 
 Open `RaisingStudioQt.exe` to create or open a project. Keep user projects outside the engine checkout.
