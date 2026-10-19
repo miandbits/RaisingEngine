@@ -1,4 +1,4 @@
-# 0.1.0-preview.2 preparation
+# 0.1.0-preview.3 preparation
 
 Prepared from the public `miandbits/RaisingEngine` history, without the private repository's binaries, projects or animation worktree. The installed editor is `RaisingStudioQt.exe`.
 
@@ -18,9 +18,10 @@ Use README prerequisites and build headless, native player, Web and Qt from this
 ```powershell
 npm run check:editor-i18n
 npm run prepare:qt-source
-$env:QT_PACKAGE_OUT = 'release/0.1.0-preview.2/RaisingStudio'
-$env:QT_INSTALLER_OUT = 'release/0.1.0-preview.2/RaisingEngine-0.1.0-preview.2-windows-x64.exe'
+$env:QT_PACKAGE_OUT = 'release/0.1.0-preview.3/RaisingStudio'
+$env:QT_INSTALLER_OUT = 'release/0.1.0-preview.3/RaisingEngine-0.1.0-preview.3-windows-x64.exe'
 $env:NSIS_COMPILER = 'C:/path/to/makensis.exe'
+node --test tests/release/sample-media.test.mjs
 npm run package:qt-studio
 node scripts/audit-preview-package.mjs
 npm run installer:qt-studio
@@ -37,6 +38,6 @@ The installer receipt records SHA-256 and signing status. `package-manifest.json
 
 ## Remaining checks
 
-This is an **unsigned preview**, not a stable release. A clean Windows VM test, signing decision, public sample media permission review and native-speaker editorial review remain. No mobile or console certification is implied. Prepare versioned assets in a draft GitHub Release for review; do not publish the draft or mark `publicReleaseReady` true solely because local tests pass. See [dependency review](preview-license-review.md) and [language scope](../manual/editor-languages.md).
+This is an **unsigned preview**, not a stable release. The remaining blocking decisions are tracked in `config/preview-release.json`. Binary sample images now use audited MIT geometric replacements. Automated and model-assisted language review does not claim independent native-speaker review. No mobile or console certification is implied. Prepare versioned assets in a draft GitHub Release for review; do not publish the draft or mark `publicReleaseReady` true solely because local tests pass. See [dependency review](preview-license-review.md) and [language scope](../manual/editor-languages.md).
 
 GitHub Releases is the download channel for the desktop application. GitHub Packages is intended for dependency/container distributions and is not required to install this editor. A future winget manifest should reference an already published, immutable installer and its verified hash; no package-manager publication is claimed by this preview.

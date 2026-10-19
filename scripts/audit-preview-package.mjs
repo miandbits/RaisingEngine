@@ -2,6 +2,7 @@ import {readFile,stat,readdir,mkdir,writeFile} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
+import {auditReleaseMedia} from './release-sample-media.mjs';
 const root=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
 const manifest=JSON.parse(await readFile(join(root,'package-manifest.json'),'utf8'));
 const present=new Map(manifest.files.map(f=>[f.path,f]));
@@ -23,7 +24,8 @@ for(const dependency of manifest.dependencies){
  assert.ok((await readdir(folder)).some(file=>/^(license|copying|notice)/i.test(file)),'No retained dependency notice: '+dependency.name);
 }
 assert.ok(present.has('Qt6Core.dll')&&present.has('Qt6Widgets.dll'),'Qt must remain dynamically linked');
+const sampleMedia=await auditReleaseMedia(root,JSON.parse(await readFile('config/release-sample-media.json','utf8')));
 const result={ok:true,releaseVersion:manifest.releaseVersion,sourceCommit:manifest.sourceCommit,sourceTreeDirty:manifest.sourceTreeDirty,
  payloadFiles:manifest.files.length,qtSourceArchives:manifest.qtCorrespondingSource.length,editorLanguages:manifest.editorLanguages,
- noticesChecked:required.length,sourceRepository:'https://github.com/miandbits/RaisingEngine',legalClearance:false};
+ noticesChecked:required.length,sampleMedia,sourceRepository:'https://github.com/miandbits/RaisingEngine',legalClearance:false};
 const output=process.argv[2]||'.cache/preview-release/package-audit.json';await mkdir(dirname(output),{recursive:true});await writeFile(output,JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));

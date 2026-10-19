@@ -1,9 +1,10 @@
 {
-  "version": "0.1.0-preview.2",
+  "version": "0.1.0-preview.3",
   "channel": "unsigned-preview",
   "editorLanguages": ["ko", "en", "ja"],
   "editorTranslationStatus": "all Korean tr() editor messages and catalogued service diagnostics translated; user content and unknown external errors preserved",
   "sourceRepository": "https://github.com/miandbits/RaisingEngine",
   "publicReleaseReady": false,
-  "remainingReleaseChecks": ["clean Windows VM installation", "code signing decision", "sample media permission review", "native-speaker editorial review"]
+  "remainingReleaseChecks": ["isolated Windows VM validation", "code signing decision"],
+  "reviewNotes": ["Source artwork preserved; binary templates use MIT geometric replacements", "Language catalogs and actual Qt widgets reviewed; independent native-speaker review not performed", "Windows Server VM checks do not certify consumer Windows SmartScreen or Smart App Control behavior"]
 }

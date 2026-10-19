@@ -3,6 +3,7 @@ import {resolve,join,dirname,relative,basename} from 'node:path';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
+import {replaceReleaseMedia,auditReleaseMedia} from './release-sample-media.mjs';
 
 const root=resolve('.'),out=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
 const qt=resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio');
@@ -45,6 +46,11 @@ if(addon.executable===runtime.executable){await copy('dist/native/addon.json','e
 await copy(windows,'engine/dist/native-player-app');await copy(web,'engine/dist/web');
 for(const id of templates)await copy('examples/'+id,'engine/examples/'+id);
 await copy('examples/rule-extension-lab','engine/examples/rule-extension-lab');
+const mediaPolicy=JSON.parse(await readFile('config/release-sample-media.json','utf8'));
+await replaceReleaseMedia(out,mediaPolicy);
+await auditReleaseMedia(out,mediaPolicy);
+await copy('scripts/release-sample-media.mjs','licenses/sample-media-generator.mjs');
+await copy('docs/development/release-sample-assets.md','licenses/SAMPLE-ASSETS.md');
 await copy('LICENSE','LICENSE');await copy('licenses','licenses');await copy('THIRD_PARTY_NOTICES.md','THIRD_PARTY_NOTICES.md');
 for(const source of qtSources.archives)await copy(join(sourceDir,source.file),'licenses/qt/sources/'+source.file);
 await copy('config/qt-corresponding-source.json','licenses/qt/corresponding-source.json');

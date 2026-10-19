@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "replacements": [
+    {
+      "path": "engine/examples/academy-adventure/assets/image-3df09117b32e2f79.png",
+      "originalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742",
+      "kind": "home"
+    },
+    {
+      "path": "engine/examples/academy-adventure/assets/image-4988e195be1f84bf.png",
+      "originalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773",
+      "kind": "florist"
+    },
+    {
+      "path": "engine/examples/academy-adventure/assets/image-87d44308813dc6b7.png",
+      "originalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603",
+      "kind": "flowers"
+    },
+    {
+      "path": "engine/examples/academy-adventure/assets/visual/courtyard.png",
+      "originalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993",
+      "kind": "courtyard"
+    },
+    {
+      "path": "engine/examples/academy-adventure/assets/visual/haru.png",
+      "originalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860",
+      "kind": "haru"
+    },
+    {
+      "path": "engine/examples/academy-adventure/assets/visual/library.png",
+      "originalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f",
+      "kind": "library"
+    },
+    {
+      "path": "engine/examples/academy-adventure/assets/visual/yuna.png",
+      "originalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6",
+      "kind": "yuna"
+    },
+    {
+      "path": "engine/examples/academy-journey/assets/image-3df09117b32e2f79.png",
+      "originalSha256": "3df09117b32e2f798d53e9a68fb6828ae6f7166bcec832059584487d313f6742",
+      "kind": "home"
+    },
+    {
+      "path": "engine/examples/academy-journey/assets/image-4988e195be1f84bf.png",
+      "originalSha256": "4988e195be1f84bff1790ecfe6567225b9e63f71878ad16b8aaaa62e8e1e3773",
+      "kind": "florist"
+    },
+    {
+      "path": "engine/examples/academy-journey/assets/image-87d44308813dc6b7.png",
+      "originalSha256": "87d44308813dc6b7a0d85870b7e8db7d28aa40e77731f275216418bd4300b603",
+      "kind": "flowers"
+    },
+    {
+      "path": "engine/examples/academy-journey/assets/visual/courtyard.png",
+      "originalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993",
+      "kind": "courtyard"
+    },
+    {
+      "path": "engine/examples/academy-journey/assets/visual/haru.png",
+      "originalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860",
+      "kind": "haru"
+    },
+    {
+      "path": "engine/examples/academy-journey/assets/visual/library.png",
+      "originalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f",
+      "kind": "library"
+    },
+    {
+      "path": "engine/examples/academy-journey/assets/visual/yuna.png",
+      "originalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6",
+      "kind": "yuna"
+    },
+    {
+      "path": "engine/examples/academy-visual/assets/visual/courtyard.png",
+      "originalSha256": "efafc0b545d71d7bfded36bae7f649f4c53da92c4559c6a18b55b01ca5a20993",
+      "kind": "courtyard"
+    },
+    {
+      "path": "engine/examples/academy-visual/assets/visual/haru.png",
+      "originalSha256": "4a123fbdf11e62dbe97bcdaf66b108f1348f549300dbaa843bcaa4303fa4c860",
+      "kind": "haru"
+    },
+    {
+      "path": "engine/examples/academy-visual/assets/visual/library.png",
+      "originalSha256": "c88d3bf32c4fcd609ccd52c449a2d6a5a7cdf55b9098f8acc750c2964fe0778f",
+      "kind": "library"
+    },
+    {
+      "path": "engine/examples/academy-visual/assets/visual/yuna.png",
+      "originalSha256": "08cdea387cffbfaaf5e85bf2c7cc9d14304f49814708d6dc261326c366ee26b6",
+      "kind": "yuna"
+    }
+  ]
+}

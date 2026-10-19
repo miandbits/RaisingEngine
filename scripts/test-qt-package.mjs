@@ -23,8 +23,8 @@ for(const name of Object.keys(env))if((name.startsWith('RAISING_')&&!['RAISING_Q
 // Only the test driver and QtTest DLL are temporary; the editor/service/player use installed files.
 const driver=join(installed,'release-workflow-test.exe'),testDll=join(installed,'Qt6Test.dll'),offscreen=join(installed,'platforms/qoffscreen.dll');
 await cp(resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio','qt-studio-test.exe'),driver);
-await cp(resolve(process.env.QT_ROOT||'C:/Qt/6.10.1/mingw_64','bin/Qt6Test.dll'),testDll);
-await cp(resolve(process.env.QT_ROOT||'C:/Qt/6.10.1/mingw_64','plugins/platforms/qoffscreen.dll'),offscreen);
+await cp(process.env.QT_VALIDATION_KIT?resolve(process.env.QT_VALIDATION_KIT,'Qt6Test.dll'):resolve(process.env.QT_ROOT||'C:/Qt/6.10.1/mingw_64','bin/Qt6Test.dll'),testDll);
+await cp(process.env.QT_VALIDATION_KIT?resolve(process.env.QT_VALIDATION_KIT,'qoffscreen.dll'):resolve(process.env.QT_ROOT||'C:/Qt/6.10.1/mingw_64','plugins/platforms/qoffscreen.dll'),offscreen);
 try{run(join(installed,'RaisingStudioQt.exe'),['--help'],env);run(driver,['releasePackageWorkflow','-o',join(evidence,'qt-tests.txt')+',txt'],env,180000);}finally{await unlink(driver);await unlink(testDll);await unlink(offscreen);}
 const workflow=JSON.parse(await readFile(join(evidence,'qt-workflow.json'),'utf8'));assert.ok(workflow.ok);
 const game=join(evidence,'windows'),steps=join(evidence,'native-steps.json'),report=join(evidence,'native-report.json'),save=join(evidence,'play-save.json');

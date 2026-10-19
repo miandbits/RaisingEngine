@@ -1,0 +1,83 @@
+name: Preview Windows installation
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Draft release containing the matching installer and validation kit
+        required: true
+        default: v0.1.0-preview.3
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify draft release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Get-Content config/preview-release.json | ConvertFrom-Json
+          if ($env:RELEASE_TAG -ne "v$($release.version)") { throw 'Release/config mismatch' }
+          New-Item -ItemType Directory .cache/vm-download,.cache/vm-validation | Out-Null
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir .cache/vm-download
+          if ($LASTEXITCODE -ne 0) { throw 'Download failed' }
+          foreach ($line in Get-Content .cache/vm-download/SHA256SUMS.txt) {
+            if ($line -notmatch '^([a-f0-9]{64})  ([a-zA-Z0-9._-]+)$') { throw 'Invalid checksum entry' }
+            if ((Get-FileHash ".cache/vm-download/$($Matches[2])" -Algorithm SHA256).Hash.ToLower() -ne $Matches[1]) { throw 'Artifact hash mismatch' }
+          }
+          $kit = Get-Content config/preview-validation-kit.json | ConvertFrom-Json
+          if ((Get-FileHash ".cache/vm-download/$($kit.file)" -Algorithm SHA256).Hash.ToLower() -ne $kit.sha256) { throw 'Validation kit hash mismatch' }
+          Expand-Archive ".cache/vm-download/RaisingEngine-$($release.version)-windows-x64-portable.zip" "$env:RUNNER_TEMP/preview-portable"
+          Expand-Archive ".cache/vm-download/$($kit.file)" "$env:RUNNER_TEMP/preview-kit"
+          "QT_PACKAGE_OUT=$env:RUNNER_TEMP/preview-portable/RaisingStudio" >> $env:GITHUB_ENV
+          "QT_INSTALLER_OUT=$env:GITHUB_WORKSPACE/.cache/vm-download/RaisingEngine-$($release.version)-windows-x64.exe" >> $env:GITHUB_ENV
+          "QT_STUDIO_OUT=$env:RUNNER_TEMP/preview-kit" >> $env:GITHUB_ENV
+          "QT_VALIDATION_KIT=$env:RUNNER_TEMP/preview-kit" >> $env:GITHUB_ENV
+          Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber | ConvertTo-Json > .cache/vm-validation/environment.json
+      - name: Install, author, export, restore saves and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $node = "$env:QT_PACKAGE_OUT/engine/node.exe"
+          $env:RAISING_TEST_UI_LANGUAGE = 'en'
+          & $node scripts/test-qt-package.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Installed workflow failed' }
+          Copy-Item .cache/qt-release/latest.json .cache/vm-validation/installed-en.json
+          foreach ($locale in @('ja','ko')) {
+            $env:RAISING_TEST_UI_LANGUAGE = $locale
+            & $node scripts/test-qt-package.mjs --portable
+            if ($LASTEXITCODE -ne 0) { throw "Portable $locale workflow failed" }
+            Copy-Item .cache/qt-release/latest.json ".cache/vm-validation/portable-$locale.json"
+          }
+      - name: Advanced editor languages, glyphs and diagnostic boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item "$env:QT_VALIDATION_KIT/qt-editor-language-test.exe","$env:QT_VALIDATION_KIT/Qt6Test.dll" $env:QT_PACKAGE_OUT
+          Copy-Item "$env:QT_VALIDATION_KIT/qoffscreen.dll" "$env:QT_PACKAGE_OUT/platforms/"
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:RAISING_LANGUAGE_EVIDENCE = "$env:GITHUB_WORKSPACE/.cache/vm-validation/languages"
+          $env:PATH = "$env:SystemRoot/System32"
+          Push-Location "$env:QT_PACKAGE_OUT/engine"
+          foreach ($locale in @('ko','en','ja')) {
+            & "$env:QT_PACKAGE_OUT/qt-editor-language-test.exe" $locale
+            if ($LASTEXITCODE -ne 0) { throw "Language $locale failed with exit $LASTEXITCODE" }
+          }
+          Pop-Location
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: preview-windows-install-evidence
+          path: |
+            .cache/vm-validation/
+            .cache/qt-release/run-*/evidence/qt-tests.txt
+            .cache/qt-release/run-*/evidence/qt-workflow.json
+            .cache/vm-download/validation-kit-windows-x64.zip
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30

@@ -62,6 +62,7 @@ int main(int argc, char **argv) {
   const auto expectedDiagnostic=(locale=="ja"?QString::fromUtf8("読み込み中に変更されました："):locale=="en"?QString("Changed while reading: "):QString::fromUtf8("읽는 동안 변경되었습니다: "))+opaque;
   if(editorDiagnostic(diagnosticSource)!=expectedDiagnostic)return 22;
   if(TableLogic::keyword("Dialogue")!="대사"||TableLogic::keyword("活動前")!="활동 전")return 18;
+  if(TableLogic::keyword("結末")!="결말")return 23;
   ProjectManager manager(QDir::currentPath()); manager.show(); app.processEvents();
   auto create=manager.findChild<QPushButton*>("launcherCreate");
   const QString expected=locale=="ja"?"プロジェクトを作成":locale=="en"?"Create project":"프로젝트 만들기";
@@ -82,6 +83,13 @@ int main(int argc, char **argv) {
   QElapsedTimer waiting;waiting.start();
   while((window.busy()||window.currentView().value("root").toString().isEmpty())&&waiting.elapsed()<20000)QTest::qWait(50);
   if(window.currentView().value("root").toString().isEmpty()){qCritical()<<window.lastError;return 19;}
+  // Exercise the actual Node service -> bridge -> translated editor response boundary.
+  StudioBridge diagnosticBridge(QDir::currentPath());
+  QTest::qWait(200);bool replyReceived=false;QString responseError;
+  diagnosticBridge.request("release-i18n-probe",{},[&](QJsonObject reply){replyReceived=true;responseError=reply.value("error").toString();});
+  waiting.restart();while(!replyReceived&&waiting.elapsed()<15000)QTest::qWait(25);
+  const auto expectedService=locale=="en"?QString("Unknown request: release-i18n-probe"):locale=="ja"?QString::fromUtf8("不明な要求：release-i18n-probe"):QString::fromUtf8("알 수 없는 요청: release-i18n-probe");
+  if(!replyReceived||responseError!=expectedService){std::fprintf(stderr,"Diagnostic boundary: %s\n",qPrintable(responseError));return 24;}
   QJsonArray inspections;
   for(const auto &name:{"editComponents","editDataUi","editBattleHud","editExpeditions","editTimeSessions","editRules","editRuleExtensions","goalRoutes","editLocalization"}) {
     auto action=window.findChild<QAction*>(name);if(!action||!action->isEnabled())return 20;
