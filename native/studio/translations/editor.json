@@ -2902,5 +2902,7 @@
   ["편성 중인 일정 요약","Draft schedule summary","編成中の予定の概要"],
   ["활동 진행 위치","Activity progress","活動の進行状況"],
   ["기본 선택지 목록","Default choice list","標準の選択肢リスト"],
-  ["번호가 있는 선택 카드","Numbered choice cards","番号付きの選択肢カード"]
+  ["번호가 있는 선택 카드","Numbered choice cards","番号付きの選択肢カード"],
+  ["저장한 기록 요약","Saved record summary","保存した記録の概要"],
+  ["플레이어 처리 결과","Player feedback","プレイヤー処理結果"]
 ]

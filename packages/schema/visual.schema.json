@@ -819,7 +819,7 @@
             "data-value",
             "context-name",
             "schedule-summary",
-            "activity-progress"
+            "activity-progress", "save-summary", "player-notice"
           ]
         },
         "imageSource": {
@@ -2869,7 +2869,7 @@
             "data-value",
             "context-name",
             "schedule-summary",
-            "activity-progress"
+            "activity-progress", "save-summary", "player-notice"
           ]
         },
         "imageSource": {

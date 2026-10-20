@@ -185,6 +185,7 @@ public:
     game.planner_state=[this]{return markup.plan_save();};
     game.planner_restore=[this](const Json& draft){markup.restore_plan(draft);markup.forecast_key.clear();};
     game.content=bundle.at("content"); game.refresh();
+    refresh_save_preview();
     game.gallery_content=[this]{return localized_content(game.content,markup.locale);};
     if(game.content.at("project").contains("gallery"))game.gallery.open(this->save_file.parent_path()/("collection-"+game.content.at("project").value("gameId","game")+".json"),game.content.at("project").value("gameId","game"));
 #ifdef SDL_PLATFORM_ANDROID
@@ -285,6 +286,17 @@ public:
       auto found=markup.actions.find(element->GetId());
       if(found!=markup.actions.end()) {if(!element->HasAttribute("disabled"))pending.push_back(found->second);return;}
     }
+  }
+  void refresh_save_preview() {
+    markup.saved_preview={{"status","empty"}};
+    try {
+      if(!fs::exists(save_file))return;
+      const auto value=read_json(save_file),saved=value.value("state",Json());
+      if(!saved.is_object()||!saved.value("attributes",Json()).is_object()||!saved.value("periodIndex",Json()).is_number_integer()||!saved.value("phase",Json()).is_string()||!value.value("commands",Json()).is_array())throw std::runtime_error("Invalid save preview");
+      if(saved.at("periodIndex").get<int64_t>()<0||saved.at("periodIndex").get<int64_t>()>1000000)throw std::runtime_error("Invalid save period");
+      for(const auto& attribute:saved.at("attributes"))if(!attribute.is_number_integer())throw std::runtime_error("Invalid save attribute");
+      markup.saved_preview={{"status","ready"},{"sameContent",value.value("contentFingerprint",Json())==game.content.at("contentFingerprint")},{"state",saved}};
+    } catch(...) {markup.saved_preview={{"status","invalid"}};}
   }
   void rebuild() {
     auto& markup=active_markup();auto& game=recalling()?recollection->game:this->game;
@@ -395,7 +407,7 @@ public:
         bool found=false;for(const auto& s:game.content.at("project").at("visual").at("screens"))if(s.at("id")==action.at("screenId")&&!s.value("modal",false))found=true;
         if(!found)throw std::runtime_error("이동할 화면을 찾을 수 없습니다.");markup.title_screen=action.at("screenId");dirty=true;return;
       }
-      if(type=="openModal"){markup.ui_modal=action.at("screenId");dirty=true;return;}
+      if(type=="openModal"){refresh_save_preview();markup.ui_modal=action.at("screenId");dirty=true;return;}
       if(type=="closeModal"){markup.ui_modal.clear();dirty=true;return;}
       if(type=="uiBack"&&!markup.ui_modal.empty()){markup.ui_modal.clear();dirty=true;return;}
       if(type=="playSequence"){if(game.state.is_null())throw std::runtime_error("게임 시작 후 연출을 재생하세요.");game.direction_cursor=direction_start(direction_config(game.content),action.at("sequenceId"));dirty=true;return;}
@@ -458,7 +470,7 @@ public:
           if(target){const auto found=markup.actions.find(target->value("id",""));if(found!=markup.actions.end())game.send(found->second);}
         }
       }
-      else if(type=="save"){game.save(save_file);recording.checkpoint(game);}
+      else if(type=="save"){game.save(save_file);refresh_save_preview();markup.saved_preview["justSaved"]=true;recording.checkpoint(game);}
       else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
       else if(type=="sound") {muted=!muted;game.message=muted?"소리를 껐습니다.":"소리를 켰습니다.";}
       else if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction") {
@@ -484,11 +496,15 @@ public:
         game.settle();
       } else {
         const auto before=game.state;game.send(action);game.settle();
-        if(type=="interact") {
+        if(type=="buy"){
+          std::string name=action.value("itemId","");for(const auto& item:game.content.at("project").value("gameplay",Json::object()).value("items",Json::array()))if(item.at("id")==name){name=item.value("name",name);break;}
+          game.message=name+" "+std::to_string(action.value("quantity",1))+"개를 받았습니다.";
+        }
+        if(type=="interact"||type=="executeAction") {
           std::string feedback="";
           for(const auto& a:game.content.at("attributes")){const auto id=a.at("id").get<std::string>();const int delta=game.state.at("attributes").value(id,0)-before.at("attributes").value(id,0);if(delta)feedback+=a.value("label",id)+" "+(delta>0?"+":"")+std::to_string(delta)+"  ";}
           for(const auto& c:game.content.at("characters"))for(const auto& r:c.at("relationships")){auto cid=c.at("id").get<std::string>(),rid=r.at("id").get<std::string>();const int delta=game.state.at("relationships").at(cid).value(rid,0)-before.at("relationships").at(cid).value(rid,0);if(delta)feedback+=r.value("label",rid)+" "+(delta>0?"+":"")+std::to_string(delta)+"  ";}
-          game.message=feedback.empty()?"이야기를 나누었습니다.":feedback;
+          game.message=feedback.empty()?(type=="interact"?"이야기를 나누었습니다.":"행동을 완료했습니다."):feedback;
         }
       }
       const auto presentation=game.state.is_null()?game.content.at("project").at("visual").value("defaultScene",Json::object()):game.state.at("presentation");

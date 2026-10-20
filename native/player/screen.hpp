@@ -99,6 +99,9 @@ public:
   Json pending_purchase=nullptr;
   Json pending_confirmation=Json::object();
   Json ui_selections=Json::object();std::string ui_modal;
+  // Supplied by the host from its configured save file. Never inferred from the
+  // live state: a designer's save screen must distinguish current and saved play.
+  Json saved_preview=Json::object();
   Json selected_values(const std::string& key) const {
     if(!ui_selections.contains(key))return Json();const auto selected=ui_selections.at(key);
     for(const auto& row:collection_rows(selected.at("source")))if(row.at("id")==selected.at("rowId")&&row.value("enabled",true))return row.at("values");return Json();
@@ -321,6 +324,37 @@ public:
   }
 #include "data-binding.inc"
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
+    if(name=="player-notice")return game.message;
+    if(name=="save-summary"){
+      const auto status=saved_preview.value("status","empty");
+      if(element.value("valueFormat","")=="write-warning")return saved_preview.value("justSaved",false)?"":"저장하면 기존 기록을 지금의 진행으로 바꿉니다.";
+      if(status=="empty")return element.value("valueFormat","")=="status"?"아직 저장한 기록이 없습니다.":"—";
+      if(status=="invalid")return element.value("valueFormat","")=="status"?"기록을 읽을 수 없습니다. 원본 파일은 보존됩니다.":"—";
+      if(element.value("valueFormat","")=="status")return saved_preview.value("sameContent",false)?"이어 읽을 수 있는 기록":"다른 콘텐츠 버전의 기록 · 불러올 때 호환성을 확인합니다.";
+      const auto& saved=saved_preview.at("state");const auto& project=display_content.at("project");
+      if(element.value("valueFormat","")=="attributes"){
+        Json attributes=display_content.at("attributes");
+        if(element.contains("attributeIds")){attributes=Json::array();for(const auto& id:element.at("attributeIds"))for(const auto& a:display_content.at("attributes"))if(a.at("id")==id)attributes.push_back(a);}
+        std::string out;for(const auto& a:attributes){
+          const auto id=a.at("id").get<std::string>();
+          if(element.contains("attributeIds")&&std::find(element.at("attributeIds").begin(),element.at("attributeIds").end(),a.at("id"))==element.at("attributeIds").end())continue;
+          if(!out.empty())out+="\n";out+=a.value("label",id)+"   "+std::to_string(saved.at("attributes").value(id,int64_t(0)));
+        }return out;
+      }
+      const int period=saved.value("periodIndex",0),months=period/game.periods(),month=project.value("startMonth",1)-1+months;
+      std::string chapter=std::to_string(project.value("startYear",1)+month/12)+"년 "+std::to_string(month%12+1)+"월";
+      if(saved.value("phase","")=="finished")return chapter+" · 마무리 기록";
+      chapter+=" · "+std::to_string(period%game.periods()+1)+"번째 일정";
+      const auto gp=saved.value("gameplay",Json::object());
+      const auto destination=gp.value("screenId",std::string());
+      std::string place;
+      for(const auto& s:project.at("visual").at("screens"))if(s.at("id")==destination)place=s.value("label",destination);
+      if(place.empty())for(const auto& l:project.value("gameplay",Json::object()).value("locations",Json::array()))if(l.at("id")==gp.value("locationId",""))place=l.value("name","");
+      const auto narrative=saved.value("activeNarrative",Json());
+      if(narrative.is_object())chapter+="\n이야기 중";
+      else chapter+="\n"+(place.empty()?std::string(saved.value("phase","")=="planning"?"일정을 정하는 중":"하루를 보내는 중"):place);
+      return chapter;
+    }
     if(name=="schedule-summary"){
       std::string out;const bool current=!game.state.is_null()&&plan_month==game.state.value("periodIndex",0)/game.periods();
       for(size_t i=0;current&&i<plan.size();++i){
@@ -575,6 +609,7 @@ public:
   }
   std::string render_node(const Json& raw) {
     if(!visible(raw))return "";
+    if(!ui_modal.empty()&&!raw.contains("_authoredModal")&&raw.value("binding","")=="player-notice")return "";
     if(raw.contains("_clipRect")) {
       const auto clip=raw.at("_clipRect");if(clip.value("width",0.0)<=0||clip.value("height",0.0)<=0)return "";
       auto inner=raw;inner.erase("_clipRect");inner["x"]=raw.value("x",0.0)-clip.value("x",0.0);inner["y"]=raw.value("y",0.0)-clip.value("y",0.0);
@@ -603,6 +638,7 @@ public:
         const auto end=body.find('>',at);if(body.substr(at,end-at).find(" disabled")==std::string::npos)body.insert(at+tag.size(),"disabled=\"disabled\" ");at=body.find('>',at)+1;
       }
     }
+    if(kind=="button"&&body.substr(0,body.find('>')).find("disabled=")!=std::string::npos)style+="opacity:"+number(e.value("opacity",1.0)*0.45)+";";
     return "<div id=\"node-"+escape(e.value("id",""))+"\" data-tooltip=\""+escape(e.value("tooltip",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
   }
   std::string roster_stats() {
@@ -697,7 +733,8 @@ public:
         if(!e.value("autoLabel",true)){label=e.value("text","");if(raw_phase=="planning"&&plan_month>=0&&plan_selected!=((1<<game.periods())-1))enabled=false;}
       }
       if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){if(game.state.at("progression").contains("sessions")){enabled=game.available({{"type","advanceSession"}});label="다음 시점까지 진행";}else {enabled=false;label="행동 진행 중";}}
-      if(type=="save")enabled=!game.state.is_null();
+      if(type=="save")enabled=!game.state.is_null()&&(ui_modal.empty()||!saved_preview.value("justSaved",false));
+      if(type=="load"&&!replay_controls)enabled=saved_preview.value("status","")=="ready";
       if(type=="commitPlan"){
         ensure_plan();
         enabled=!game.state.is_null()&&(raw_phase=="planning"||raw_phase=="ready")&&!progress_pending()&&plan_selected==((1<<game.periods())-1);
@@ -907,6 +944,12 @@ public:
     if(visual.value("widgetTheme","default")=="ornate")extra_css+="body{color:#fff0d0;} .list{padding:0;} .list button{background-color:transparent;color:#fff0d0;border-width:0;border-radius:0;padding:4px 8px;margin-bottom:4px;text-align:left;min-height:30px;} .list button:hover{color:#ffe673;background-color:#733e42;} .list button:focus{border-color:#ffd979;border-width:1px;} .list .muted,.list .reason{color:#c8a999;} .list .heading{font-size:22px;} .list .row{border-bottom-width:0;padding:3px;} .list .offer{padding:2px;} .list .offer button{margin-top:2px;} .node.schedule{z-index:20;} .button>button{padding:0;min-height:0;text-align:center;} .status{background-color:#46262d;color:#ffdf9b;}";
     extra_css+=".plan-categories{position:absolute;right:0;top:210px;width:310px;padding:10px 4px;background-color:#46343e;border-width:2px;border-color:#e5c880;}.plan-options>button{display:inline-block;vertical-align:top;width:244px;height:78px;margin:0 16px 16px 0;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;white-space:normal;}.plan-icon{float:left;width:60px;height:60px;margin-right:6px;} .compact-stat{position:relative;height:32px;font-size:28px;line-height:32px;} .stat-name{display:inline-block;width:126px;background-color:#733c44;} .stat-number{display:inline-block;width:58px;text-align:right;} .stat-meter{position:absolute;left:184px;top:5px;height:22px;width:168px;border-width:1px;border-color:#ba8c84;background-color:#34151d;} .stat-meter>div{height:100%;background-color:#df5454;} .node.schedule .calendar-cell{border-width:1px;padding:0;margin:0;min-height:0;font-size:26px;background-color:transparent;}";
     extra_css+=".shop-card{display:inline-block;vertical-align:top;width:292px;height:112px;margin:0 12px 8px 0;}.shop-card>button{height:112px;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;line-height:26px;}.shop-card .item-icon{float:left;width:56px;height:56px;margin-right:8px;}.card-description{clear:both;font-size:21px;padding-top:4px;}.purchase-dialog{position:absolute;z-index:100;right:8px;top:430px;width:304px;padding:12px;background-color:#46343e;color:#fff0d0;border-width:2px;border-color:#e5c880;}";
+    Json modal_elements=Json::array();
+    if(!authored_gallery()&&!ui_modal.empty())for(const auto& modal:visual.at("screens"))if(modal.at("id")==ui_modal&&modal.value("modal",false)){
+      modal_elements=expanded_collections(expanded_elements(visual,modal,width,height,phase()));
+      const auto prefix=ui_modal+"__";
+      for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();e["_authoredModal"]=true;for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}break;
+    }
     for(const auto& raw:render_elements) {
       const auto e=resolved_style(visual,raw);
       const auto selector="#node-"+e.value("id","");
@@ -932,22 +975,20 @@ public:
     extra_css+="scrollbarvertical{width:14px;} scrollbarhorizontal{height:14px;} scrollbarvertical slidertrack,scrollbarhorizontal slidertrack{background-color:#302c3a;} scrollbarvertical sliderbar,scrollbarhorizontal sliderbar{min-width:12px;min-height:24px;background-color:#8e809c;} scrollbarvertical sliderarrowdec,scrollbarvertical sliderarrowinc{height:12px;} scrollbarhorizontal sliderarrowdec,scrollbarhorizontal sliderarrowinc{width:12px;}";
     out.insert(out.find("</style>"),extra_css);
     out.insert(out.find("</style>"),".timeline-control button{width:100%;height:44px;min-height:0;padding:6px;border-width:1px;border-color:#acc6b3;background-color:#355c4c;color:#ffffff;font-size:18px;} .timeline-disabled button{background-color:#69796e;color:#bcc9c0;}");
-    std::string base;for(const auto& raw:render_elements)if(!raw.contains("_collectionParent")&&!raw.contains("_scrollParent"))base+=render_node(raw);
+    std::string base;for(const auto& raw:render_elements)if(!raw.contains("_authoredModal")&&!raw.contains("_collectionParent")&&!raw.contains("_scrollParent"))base+=render_node(raw);
     if(!authored_gallery()&&!ui_modal.empty()){
       for(const std::string tag:{"<button ","<input ","<select "})for(size_t at=0;(at=base.find(tag,at))!=std::string::npos;at+=tag.size()+21)base.insert(at+tag.size(),"disabled=\"disabled\" ");
     }out+=base;
     if(!authored_gallery()&&!ui_modal.empty())for(const auto& modal:visual.at("screens"))if(modal.at("id")==ui_modal&&modal.value("modal",false)){
       out+="<div id=\"ui-modal-shade\" style=\"z-index:9000;position:absolute;left:0;top:0;width:100%;height:100%;background-color:#000000aa;pointer-events:auto;\"></div><div id=\"ui-modal\" style=\"z-index:9001;position:absolute;left:0;top:0;width:100%;height:100%;\">";
-      auto modal_elements=expanded_collections(expanded_elements(visual,modal,width,height,phase()));
-      const auto prefix=ui_modal+"__";
-      for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}
       for(const auto& e:modal_elements)if(!e.contains("_collectionParent")&&!e.contains("_scrollParent"))out+=render_node(e);out+="</div>";break;
     }
     out+="<div id=\"ui-tooltip\" style=\"display:none;position:absolute;pointer-events:none;width:280px;padding:10px;background-color:#202838;color:#ffffff;border-width:1px;border-color:#b9cde8;z-index:10000;\"></div>";
     if(!authored_gallery()&&!pending_purchase.is_null())out+="<div class=\"transaction-shade\" style=\"z-index:10010;\"></div><div id=\"ui-confirmation\" class=\"purchase-dialog list\" style=\"z-index:10011;left:"+number(std::max(8,(width-540)/2))+"px;top:"+number(std::max(8,(height-440)/2))+"px;width:516px;\"><h3>"+escape(pending_confirmation.value("title","거래 확인"))+"</h3><p>"+escape(pending_confirmation.value("message","계속하시겠습니까?"))+"</p><p>"+escape(transaction_summary(pending_purchase))+"</p>"+button("confirm-purchase",pending_confirmation.value("confirmLabel","확인"),{{"type","confirmPurchase"}})+button("cancel-purchase",pending_confirmation.value("cancelLabel","취소"),{{"type","cancelPurchase"}})+"</div>";
     const auto localization=display_content.at("project").value("localization",Json::object());
     if(screen_id=="title"&&localization.value("locales",Json::array()).size()>1){std::string label=locale;for(const auto& l:localization.at("locales"))if(l.at("id")==locale)label=l.value("label",locale);out+="<div style=\"position:absolute;right:12px;bottom:12px;width:240px;z-index:200;\">"+button("engine-language","Language: "+label+" · F2",{{"type","nextLocale"}})+"</div>";}
-    if(!game.message.empty())out+="<div class=\"status\">"+escape(game.message)+"</div>";
+    bool authored_notice=false;for(const auto& node:render_elements)if(node.value("binding","")=="player-notice"&&visible(node)&&(ui_modal.empty()?!node.contains("_authoredModal"):node.contains("_authoredModal")))authored_notice=true;
+    if(!game.message.empty()&&!authored_notice)out+="<div class=\"status\">"+escape(game.message)+"</div>";
     if(!authored_gallery()){out+=timeline_overlay();out+=direction_overlay();}
     out+=gallery_overlay();
     if(extensions&&!authored_gallery())extensions->end_sync();

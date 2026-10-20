@@ -510,6 +510,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                                       {"schedule-prompt", tr("일정 선택 안내")},
                                       {"schedule-summary", tr("편성 중인 일정 요약")},
                                       {"activity-progress", tr("활동 진행 위치")},
+                                      {"save-summary", tr("저장한 기록 요약")},
+                                      {"player-notice", tr("플레이어 처리 결과")},
                                       {"title", tr("게임 제목")},
                                       {"location", tr("현재 장소")},
                                       {"ending", tr("엔딩 제목")},

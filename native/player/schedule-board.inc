@@ -71,7 +71,7 @@
       const auto id=a.at("id").get<std::string>();
       std::string label=a.value("label",id);
       const auto cost=cost_summary(a);
-      label+="  ·  "+(cost.empty()?"비용 없음":cost);
+      label+="  ·  "+(cost.empty()?"비용 없음":"비용 "+cost);
       const bool chosen=plan_slot<int(plan.size())&&plan[plan_slot]==id&&(plan_selected&(1<<plan_slot));
       auto html=card("board-activity-"+id,label,{{"type","boardActivity"},{"activityId",id}},0,ay,left-16,94,chosen);
       if(chosen){
@@ -87,32 +87,34 @@
     const double sw=(right-12*(std::min(4,game.periods())-1))/std::min(4,game.periods());
     out+="<div style=\""+at(left+gap,46,right,130)+"overflow-x:auto;overflow-y:hidden;pointer-events:auto;\"><div style=\"position:relative;width:"+number((sw+12)*game.periods()-12)+"px;height:116px;\">";
     for(int i=0;i<game.periods();++i){
-      std::string label=std::string(i==plan_slot?"▼ ":"")+std::to_string(i+1)+"주\n";
+      std::string label=std::to_string(i+1)+"주\n";
       const bool assigned=plan_selected&(1<<i);std::string activity=assigned?plan[i]:"활동 선택";
       for(const auto& a:display_content.at("activities"))if(a.at("id")==activity)activity=a.value("label",activity);
       label+=activity;
       out+=card("board-slot-"+std::to_string(i),label,{{"type","boardSlot"},{"slot",i}},double(i)*(sw+12),0,sw,116,i==plan_slot,i>=first);
     }
     out+="</div></div>";
-    std::string description="주 칸을 선택하고 왼쪽 활동을 누르세요.\n모든 칸을 정한 뒤 시작할 수 있습니다.";
+    std::string description=std::to_string(plan_slot+1)+"주를 선택했습니다.\n왼쪽에서 활동을 골라 주세요.";
     if(plan_slot<int(plan.size())&&(plan_selected&(1<<plan_slot)))
       for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[plan_slot])description=a.value("description","");
     out+="<div style=\""+at(left+gap,184,right-150,66)+"overflow-y:auto;pointer-events:auto;font-size:"+number(fs)+"px;line-height:"+number(fs*1.55)+"px;\">"+escape(description)+"</div>";
-    out+=card("board-clear",std::to_string(plan_slot+1)+"주 비우기",{{"type","boardClear"}},w-136,184,136,44,false,plan_selected&(1<<plan_slot));
+    if(plan_selected&(1<<plan_slot))out+=card("board-clear",std::to_string(plan_slot+1)+"주 비우기",{{"type","boardClear"}},w-136,184,136,44,false);
     const auto forecast=plan_forecast();
-    out+=title("현재 → 활동 후 예상",left+gap,253,right);
-    if(forecast.value("ok",false)){
+    const bool predicted=forecast.value("ok",false);
+    const bool incomplete=!forecast.value("complete",false);
+    out+=title(predicted?"현재 → 활동 후 예상":incomplete?"현재 상태 · 모든 주를 채우면 예상 표시":"활동 예상",left+gap,253,right);
+    if(predicted||incomplete){
       int index=0;
       for(const auto& a:display_content.at("attributes")){
         if(e.contains("attributeIds")&&std::find(e["attributeIds"].begin(),e["attributeIds"].end(),a["id"])==e["attributeIds"].end())continue;
-        const auto id=a.at("id").get<std::string>();const auto before=game.state.at("attributes").value(id,0),after=forecast.at("attributes").value(id,0);
+        const auto id=a.at("id").get<std::string>();const auto before=game.state.at("attributes").value(id,0),after=predicted?forecast.at("attributes").value(id,0):before;
         const int delta=after-before;
         bool decreaseGood=false;for(const auto& v:e.value("decreasingAttributeIds",Json::array()))if(v==id)decreaseGood=true;
         const std::string color=delta==0?"#596D62":((delta>0)!=decreaseGood?"#2F5D50":"#7A3E57");
         const double cx=left+gap+(index%3)*(right/3),cy=293+(index/3)*60;
-        out+="<div style=\""+at(cx,cy,right/3-10,58)+"border-top-width:1px;border-color:#C9BFA9;font-size:18px;padding-top:5px;\">"+escape(a.value("label",id))+"  "+std::to_string(before)+" → "+std::to_string(after)+"<div style=\"color:"+color+";font-size:20px;\"><b>"+(delta>0?"+":"")+std::to_string(delta)+"</b></div></div>";++index;
+        out+="<div style=\""+at(cx,cy,right/3-10,58)+"border-top-width:1px;border-color:#C9BFA9;font-size:18px;padding-top:5px;\">"+escape(a.value("label",id))+"  "+std::to_string(before)+(predicted?" → "+std::to_string(after)+"<div style=\"color:"+color+";font-size:20px;\"><b>"+(delta>0?"+":"")+std::to_string(delta)+"</b></div>":"")+"</div>";++index;
       }
     }else out+="<div style=\""+at(left+gap,293,right,105)+"font-size:"+number(fs)+"px;white-space:pre-wrap;overflow-y:auto;pointer-events:auto;\">"+escape(forecast.value("reason","계획을 정하면 예상 변화가 표시됩니다."))+"</div>";
-    out+="<div style=\""+at(left+gap,418,right,52)+"font-size:16px;line-height:23px;color:#455C50;\">사건·월말 정산을 제외한 순서대로의 활동 예상입니다.<br/>실제 변화는 만남과 선택에 따라 달라집니다.</div>";
+    if(predicted)out+="<div style=\""+at(left+gap,418,right,52)+"font-size:16px;line-height:23px;color:#455C50;\">사건·월말 정산을 제외한 순서대로의 활동 예상입니다.<br/>실제 변화는 만남과 선택에 따라 달라집니다.</div>";
     return out+"</div>";
   }

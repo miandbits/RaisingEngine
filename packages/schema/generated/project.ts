@@ -2967,7 +2967,9 @@ export type Element = {
     | "data-value"
     | "context-name"
     | "schedule-summary"
-    | "activity-progress";
+    | "activity-progress"
+    | "save-summary"
+    | "player-notice";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -8362,7 +8364,9 @@ export type ComponentChild = {
     | "data-value"
     | "context-name"
     | "schedule-summary"
-    | "activity-progress";
+    | "activity-progress"
+    | "save-summary"
+    | "player-notice";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
