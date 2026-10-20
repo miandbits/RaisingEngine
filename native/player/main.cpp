@@ -269,6 +269,10 @@ public:
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=markup.activity_preview(activity);
             summary->SetInnerRML(escape(value));
           }
+          if(auto* description=document->GetElementById("plan-description-"+std::to_string(index))) {
+            std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=activity.value("description","");
+            description->SetInnerRML(escape(value));
+          }
         }
       }
       return;
