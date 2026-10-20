@@ -303,6 +303,19 @@ private slots:
     QTest::mouseClick(w.findChild<QPushButton*>("widgetSettings"),Qt::LeftButton);
     auto result=[&] {for(auto s:w.projectData()["visual"].toObject()["screens"].toArray())for(auto e:s.toObject()["elements"].toArray())if(e.toObject()["id"]==resultId)return e.toObject();return QJsonObject();};
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&result()["resultLayout"]=="changes",10000);
+    auto choicesAction=w.findChild<QAction*>("add-element-choices");QVERIFY(choicesAction);choicesAction->trigger();
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.selectedId().startsWith("choices-"),10000);
+    const auto choicesId=w.selectedId();
+    QTimer::singleShot(100,&w,[]{
+      auto d=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(d);
+      auto mode=d->findChild<QComboBox*>("widgetLayout");QVERIFY(mode);QVERIFY(mode->findData("cards")>=0);mode->setCurrentIndex(mode->findData("cards"));
+      QTest::mouseClick(d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);
+    });
+    QTest::mouseClick(w.findChild<QPushButton*>("widgetSettings"),Qt::LeftButton);
+    auto choices=[&] {for(auto s:w.projectData()["visual"].toObject()["screens"].toArray())for(auto e:s.toObject()["elements"].toArray())if(e.toObject()["id"]==choicesId)return e.toObject();return QJsonObject();};
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&choices()["choiceLayout"]=="cards",10000);
+    w.findChild<QAction*>("undoEdit")->trigger();
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&choices()["choiceLayout"]!="cards",10000);
   }
   void sharedStyleAuthoring() {
     StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));

@@ -52,6 +52,7 @@ void StudioWindow::editWidgetSettings() {
   if (kind == "stats") {key="statsLayout"; mode->addItem(tr("능력 막대"),"bars"); mode->addItem(tr("압축 표"),"compact");}
   if (kind == "shop") {key="shopLayout"; mode->addItem(tr("목록"),"list"); mode->addItem(tr("상품 카드"),"cards");}
   if (kind == "result") {key="resultLayout"; mode->addItem(tr("활동 결과 요약"),"summary"); mode->addItem(tr("연출에 맞춰 변화만 표시"),"changes");}
+  if (kind == "choices") {key="choiceLayout"; mode->addItem(tr("기본 선택지 목록"),"list"); mode->addItem(tr("번호가 있는 선택 카드"),"cards");}
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));

@@ -5461,6 +5461,7 @@ export type Element = {
   activityId?: string;
   decreasingAttributeIds?: string[];
   resultLayout?: "summary" | "changes";
+  choiceLayout?: "list" | "cards";
 };
 export type Condition =
   | {
@@ -10870,6 +10871,7 @@ export type ComponentChild = {
   activityId?: string;
   decreasingAttributeIds?: string[];
   resultLayout?: "summary" | "changes";
+  choiceLayout?: "list" | "cards";
 };
 
 export interface VisualDesign {

@@ -1837,6 +1837,12 @@
             "summary",
             "changes"
           ]
+        },
+        "choiceLayout": {
+          "enum": [
+            "list",
+            "cards"
+          ]
         }
       },
       "required": [
@@ -3680,6 +3686,12 @@
           "enum": [
             "summary",
             "changes"
+          ]
+        },
+        "choiceLayout": {
+          "enum": [
+            "list",
+            "cards"
           ]
         }
       },

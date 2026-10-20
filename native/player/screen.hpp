@@ -582,11 +582,12 @@ public:
     }
     const auto e=resolved_style(display_content.at("project").at("visual"),raw);const auto kind=e.value("kind","panel");
     std::string style="left:"+number(e.value("x",0.0))+"px;top:"+number(e.value("y",0.0))+"px;width:"+number(e.value("width",1.0))+"px;height:"+number(e.value("height",1.0))+"px;";
-    if(e.contains("fill"))style+="background-color:"+css_color(e.at("fill"))+";";
+    const bool choice_cards=kind=="choices"&&e.value("choiceLayout","list")=="cards";
+    if(e.contains("fill")&&!choice_cards)style+="background-color:"+css_color(e.at("fill"))+";";
     if(e.contains("color"))style+="color:"+css_color(e.at("color"))+";";
     if(e.contains("fontAssetId"))style+="font-family:engine-"+e.at("fontAssetId").get<std::string>()+";";
     if(e.contains("padding"))style+="padding:"+number(e.at("padding"))+"px;";
-    if(e.contains("borderWidth"))style+="border-width:"+number(e.at("borderWidth"))+"px;border-color:"+css_color(e.value("borderColor","#ffffff"))+";";
+    if(e.contains("borderWidth")&&!choice_cards)style+="border-width:"+number(e.at("borderWidth"))+"px;border-color:"+css_color(e.value("borderColor","#ffffff"))+";";
     style+="font-size:"+number(e.value("fontSize",20.0))+"px;border-radius:"+number(e.value("radius",0.0))+"px;opacity:"+number(e.value("opacity",1.0))+";text-align:"+e.value("align","left")+";";
     if(kind=="group"&&e.value("overflow","")=="scroll")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
     if(kind=="collection")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
@@ -756,7 +757,17 @@ public:
         out+="</div>";
       }
     }
-    if(kind=="choices"&&!story.is_null())for(const auto& choice:story.value("choices",Json::array()))out+=button("choose-"+choice.value("id",""),choice.value("text",""),{{"type","choose"},{"choiceId",choice.at("id")}},choice.value("enabled",false));
+    if(kind=="choices"&&!story.is_null()){
+      int index=0;
+      for(const auto& choice:story.value("choices",Json::array())){
+        auto row=button("choose-"+choice.value("id",""),choice.value("text",""),{{"type","choose"},{"choiceId",choice.at("id")}},choice.value("enabled",false));
+        if(e.value("choiceLayout","list")=="cards"){
+          const auto ordinal=std::to_string(++index);
+          row.insert(row.find('>')+1,std::string("<span style=\"display:inline-block;width:34px;opacity:0.6;\">")+(index<10?"0":"")+ordinal+"</span>");
+        }
+        out+=row;
+      }
+    }
     if(kind=="locations"&&!gp.is_null())for(const auto& location:gp.at("locations")) {
       bool current=location.at("id")==gp.at("location").at("id");
       out+=button("visit-"+location.value("id",""),location.value("name","")+(current?" · 현재":""),{{"type","visit"},{"locationId",location.at("id")}},location.value("enabled",false)&&!current,location.value("reason",Json()).is_string()?location.at("reason").get<std::string>():"");
@@ -901,6 +912,10 @@ public:
       const auto selector="#node-"+e.value("id","");
       std::string typography;
       if(e.value("kind","")=="button")extra_css+=selector+">button{color:"+css_color(e.value("color","#ffffff"))+";}";
+      if(e.value("kind","")=="choices"&&e.value("choiceLayout","list")=="cards"){
+        extra_css+=selector+">button{min-height:"+number(e.value("rowHeight",56.0))+"px;margin-bottom:"+number(e.value("gap",10.0))+"px;padding:12px 18px;text-align:left;white-space:normal;color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#f5efdf"))+";border-width:"+number(e.value("borderWidth",1.0))+"px;border-color:"+css_color(e.value("borderColor","#c7b99a"))+";border-radius:"+number(e.value("radius",2.0))+"px;}";
+        extra_css+=selector+">button:focus{border-width:3px;border-color:"+css_color(e.value("borderColor","#c7b99a"))+";}";
+      }
       if(e.contains("fontAssetId"))typography+="font-family:engine-"+e.at("fontAssetId").get<std::string>()+";";
       if(raw.contains("styleId")||visual.contains("defaultStyle")){if(e.contains("fontSize"))typography+="font-size:"+number(e.at("fontSize"))+"px;";if(e.contains("color"))typography+="color:"+css_color(e.at("color"))+";";}
       if(!typography.empty())extra_css+=selector+","+selector+" button,"+selector+" select,"+selector+" .heading,"+selector+" .row{"+typography+"}";

@@ -2900,5 +2900,7 @@
   ["예상에서 낮아질수록 좋은 항목","Forecast: lower values are better","予測で低い方がよい項目"],
   ["월 계획 확정 · 자동 진행 시작","Confirm month plan and start","月の予定を確定して開始"],
   ["편성 중인 일정 요약","Draft schedule summary","編成中の予定の概要"],
-  ["활동 진행 위치","Activity progress","活動の進行状況"]
+  ["활동 진행 위치","Activity progress","活動の進行状況"],
+  ["기본 선택지 목록","Default choice list","標準の選択肢リスト"],
+  ["번호가 있는 선택 카드","Numbered choice cards","番号付きの選択肢カード"]
 ]
