@@ -49,6 +49,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.scheduleLayout==='board'||e.resultLayout==='changes'||e.action==='commitPlan'||e.binding==='schedule-summary'||e.binding==='activity-progress'))requiredFeatures.push('schedule-board-v1');
   if(usesUiContext(visual))requiredFeatures.push('component-context-v1');
   if(visual?.routing?.conditions?.length)requiredFeatures.push('conditional-routing-v1');
   if(content.project.stateGroups?.length)requiredFeatures.push('custom-states-v1');

@@ -43,15 +43,20 @@ inline Json plan_result_playback(const Json& content,const Json& state,const Jso
   if(!result.at("success").is_null())title+=result.at("success").value("passed",false)?" · 성공":" · 실패";
   return {{"resultRevision",state.at("stateRevision")},{"activityId",result.at("activityId")},{"timelineId","inline-result"},{"clips",clips},{"totalDurationMs",total},{"resultPlayback",{{"title",title},{"rows",rows}}}};
 }
-inline std::string result_playback_text(const Json& plan,const Json& cursor) {
+inline std::string result_playback_text(const Json& plan,const Json& cursor,bool changes_only=false) {
   if(!plan.contains("resultPlayback"))return "";
-  const auto& playback=plan.at("resultPlayback");std::string text=playback.at("title");const auto& rows=playback.at("rows");
+  const auto& playback=plan.at("resultPlayback");std::string text=changes_only?"":playback.at("title").get<std::string>();const auto& rows=playback.at("rows");
   for(size_t i=0;i<rows.size();i++){
     const auto& row=rows.at(i);const int index=cursor.at("clipIndex");const double progress=cursor.value("completed",false)||index>int(i+1)?1:index==int(i+1)?std::min(1.0,cursor.at("elapsedMs").get<double>()/plan.at("clips").at(i+1).at("durationMs").get<double>()):0;
     const int64_t before=row.at("before"),after=row.at("after"),delta=static_cast<int64_t>((after-before)*progress);
-    text+="\n"+row.at("label").get<std::string>()+"  "+std::to_string(before)+" → "+std::to_string(before+delta)+"  ("+(delta>=0?"+":"")+std::to_string(delta)+")";
+    if(changes_only){
+      if(delta==0)continue;
+      if(!text.empty())text+="\n";
+      const auto total=after-before;
+      text+=row.at("label").get<std::string>()+" "+(total>0?"+":"")+std::to_string(total)+"   현재 "+std::to_string(before+delta);
+    }else text+="\n"+row.at("label").get<std::string>()+"  "+std::to_string(before)+" → "+std::to_string(before+delta)+"  ("+(delta>=0?"+":"")+std::to_string(delta)+")";
   }
-  if(rows.empty())text+="\n능력 변화 없음";return text;
+  if(rows.empty()&&(!changes_only||cursor.value("completed",false)))text+="능력 변화 없음";return text;
 }
 inline Json plan_activity_timeline(const Json& content,const Json& state) {
   if(state.is_null()||state.value("phase","")!="activity-result"||state.value("lastActivityResult",Json()).is_null())return nullptr;

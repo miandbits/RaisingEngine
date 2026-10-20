@@ -94,6 +94,8 @@ public:
   int plan_slot=0;
   std::string plan_group;
   int plan_selected=0,plan_month=-1;
+  mutable std::string forecast_key;
+  mutable Json forecast_cache=nullptr;
   Json pending_purchase=nullptr;
   Json pending_confirmation=Json::object();
   Json ui_selections=Json::object();std::string ui_modal;
@@ -319,6 +321,28 @@ public:
   }
 #include "data-binding.inc"
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
+    if(name=="schedule-summary"){
+      std::string out;const bool current=!game.state.is_null()&&plan_month==game.state.value("periodIndex",0)/game.periods();
+      for(size_t i=0;current&&i<plan.size();++i){
+        if(i)out+="  /  ";out+=std::to_string(i+1)+"주 ";
+        if(!(plan_selected&(1<<i))){out+="미정";continue;}
+        std::string label=plan[i];for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])label=a.value("label",label);
+        out+=label;
+      }
+      if(element.value("valueFormat","")=="count"){
+        int selected=0;for(size_t i=0;current&&i<plan.size();++i)if(plan_selected&(1<<i))++selected;
+        return selected?std::to_string(selected)+" / "+std::to_string(game.periods())+"주 편성됨":std::to_string(game.periods())+"주의 일정을 정해 주세요";
+      }
+      return out.empty()?"아직 정하지 않은 일정":out;
+    }
+    if(name=="activity-progress"){
+      if(game.state.is_null())return "";
+      std::string label;const auto result=game.state.value("lastActivityResult",Json());
+      if(result.is_object())for(const auto& a:display_content.at("activities"))if(a.at("id")==result.value("activityId",""))label=a.value("label","");
+      const int current=game.state.value("periodIndex",0)%game.periods();
+      std::string track;for(int i=0;i<game.periods();++i)track+=(i<current?"■ ":i==current?"◆ ":"□ ")+std::to_string(i+1)+"주    ";
+      return track+" ·   "+label;
+    }
     if(name=="data-value")return data_binding(element);
     const auto& project=display_content.at("project");
     if(name=="context-name") {
@@ -496,6 +520,7 @@ public:
     }
     return out;
   }
+  #include "schedule-board.inc"
   std::string calendar_schedule(const Json& e) {
     const bool editable=!progress_pending()&&!game.state.is_null()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
     const int period=game.state.is_null()?0:game.state.value("periodIndex",0)%game.periods();
@@ -672,6 +697,11 @@ public:
       }
       if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){if(game.state.at("progression").contains("sessions")){enabled=game.available({{"type","advanceSession"}});label="다음 시점까지 진행";}else {enabled=false;label="행동 진행 중";}}
       if(type=="save")enabled=!game.state.is_null();
+      if(type=="commitPlan"){
+        ensure_plan();
+        enabled=!game.state.is_null()&&(raw_phase=="planning"||raw_phase=="ready")&&!progress_pending()&&plan_selected==((1<<game.periods())-1);
+        if(enabled)try{game.call({{"operation","command"},{"state",game.state},{"command",{{"type","setSchedule"},{"activityIds",plan}}},{"expectedRevision",game.state.at("stateRevision")}});}catch(...){enabled=false;}
+      }
       if(type=="assignActivities"||type=="executeActorAction"||type=="navigate"||type=="visit"||type=="buy"||type=="sell"||type=="useService"||type=="setDiet"||type=="executeAction"||type=="selectPolicy"||type=="interact") {
         enabled=raw_phase=="planning"||raw_phase=="ready"||(raw_phase=="expedition"&&type=="executeAction");
         // Preview against a serialized copy through the same C++ command contract.
@@ -711,6 +741,7 @@ public:
     }
     if(kind=="schedule"&&display_content.at("project").contains("roster"))return roster_schedule();
     if(kind=="schedule") {
+      if(e.value("scheduleLayout","columns")=="board")return schedule_board(e);
       if(e.value("scheduleLayout","columns")!="columns")return calendar_schedule(e);
       if(plan.size()!=size_t(game.periods())) {plan.clear();for(int i=0;i<game.periods();i++)plan.push_back(display_content.at("activities").at(0).value("id",""));}
       const int period=game.state.is_null()?0:game.state.value("periodIndex",0)%game.periods();
@@ -749,7 +780,7 @@ public:
     }
     if(kind=="inventory"&&!gp.is_null()) {if(gp.at("inventory").empty())out="<p class=\"muted\">가방이 비어 있습니다.</p>";for(const auto& item:gp.at("inventory"))out+="<div class=\"row\">"+item_icon(item.value("id",""))+escape(item.value("name",""))+" <b>× "+std::to_string(item.value("quantity",0))+"</b></div>";}
     if(kind=="interactions"&&!gp.is_null())for(const auto& interaction:gp.at("interactions"))out+=item_icon(interaction.value("itemId",""))+button("interact-"+interaction.value("id",""),interaction.value("name",""),{{"type","interact"},{"interactionId",interaction.at("id")}},interaction.value("enabled",false),interaction.value("reason",Json()).is_string()?interaction.at("reason").get<std::string>():"");
-    if(kind=="result"&&game.timeline_active()&&game.timeline_plan.contains("resultPlayback"))return "<div data-result-playback=\"true\" style=\"white-space:pre-wrap;line-height:38px;\">"+escape(result_playback_text(game.timeline_plan,game.timeline_cursor))+"</div>";
+    if(kind=="result"&&game.timeline_active()&&game.timeline_plan.contains("resultPlayback"))return "<div data-result-playback=\"true\" data-result-changes=\""+std::string(e.value("resultLayout","summary")=="changes"?"true":"false")+"\" style=\"white-space:pre-wrap;line-height:38px;\">"+result_playback_markup(e.value("resultLayout","summary")=="changes")+"</div>";
     if(kind=="result"&&!game.state.is_null()&&!game.state.at("lastActivityResult").is_null()&&game.state.at("lastActivityResult").contains("actorResults")) {
       for(const auto& actor:game.state.at("lastActivityResult").at("actorResults")) {
         std::string name=actor.value("characterId","");for(const auto& c:display_content.at("characters"))if(c.at("id")==actor.at("characterId"))name=c.value("name",name);

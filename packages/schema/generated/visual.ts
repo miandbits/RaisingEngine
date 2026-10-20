@@ -107,7 +107,9 @@ export type Element = {
     | "replay-mode"
     | "replay-speed"
     | "data-value"
-    | "context-name";
+    | "context-name"
+    | "schedule-summary"
+    | "activity-progress";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -115,7 +117,7 @@ export type Element = {
    * Show the selected activity's authored description below each schedule column. Off by default.
    */
   showActivityDescription?: boolean;
-  scheduleLayout?: "columns" | "calendar" | "menu";
+  scheduleLayout?: "columns" | "calendar" | "menu" | "board";
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**
@@ -983,7 +985,8 @@ export type Element = {
     | "recollectionSkip"
     | "galleryBranches"
     | "galleryBranch"
-    | "assignActivity";
+    | "assignActivity"
+    | "commitPlan";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -5456,6 +5459,8 @@ export type Element = {
   contextField?:
     "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
   activityId?: string;
+  decreasingAttributeIds?: string[];
+  resultLayout?: "summary" | "changes";
 };
 export type Condition =
   | {
@@ -5581,11 +5586,13 @@ export type ComponentChild = {
     | "replay-mode"
     | "replay-speed"
     | "data-value"
-    | "context-name";
+    | "context-name"
+    | "schedule-summary"
+    | "activity-progress";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
-  scheduleLayout?: "columns" | "calendar" | "menu";
+  scheduleLayout?: "columns" | "calendar" | "menu" | "board";
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**
@@ -6453,7 +6460,8 @@ export type ComponentChild = {
     | "recollectionSkip"
     | "galleryBranches"
     | "galleryBranch"
-    | "assignActivity";
+    | "assignActivity"
+    | "commitPlan";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -10860,6 +10868,8 @@ export type ComponentChild = {
   contextField?:
     "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
   activityId?: string;
+  decreasingAttributeIds?: string[];
+  resultLayout?: "summary" | "changes";
 };
 
 export interface VisualDesign {

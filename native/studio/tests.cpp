@@ -262,7 +262,7 @@ private slots:
     StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
     auto palette=w.findChild<QToolButton*>("elementPalette");QVERIFY(palette);
-    palette->menu()->actions().at(4)->trigger();
+    auto scheduleAction=w.findChild<QAction*>("add-element-schedule");QVERIFY(scheduleAction);scheduleAction->trigger();
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.selectedId().startsWith("schedule-"),10000);
     const auto id=w.selectedId();
     QTimer::singleShot(100,&w,[]{
@@ -280,6 +280,29 @@ private slots:
     QCOMPARE(element()["scheduleGroups"].toArray().size(),1);QCOMPARE(element()["scheduleGroups"].toArray()[0].toObject()["activityIds"].toArray().size(),1);
     QCOMPARE(w.projectData()["visual"].toObject()["widgetTheme"].toString(),QString("ornate"));
     w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&element()["scheduleLayout"]!="menu",10000);
+    QTimer::singleShot(100,&w,[]{
+      auto d=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(d);
+      auto mode=d->findChild<QComboBox*>("widgetLayout");QVERIFY(mode);QVERIFY(mode->findData("board")>=0);mode->setCurrentIndex(mode->findData("board"));
+      auto decreasing=d->findChild<QListWidget*>("decreasingAttributes");QVERIFY(decreasing);QVERIFY(decreasing->count()>0);decreasing->item(0)->setCheckState(Qt::Checked);
+      QTest::mouseClick(d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);
+    });
+    QTest::mouseClick(w.findChild<QPushButton*>("widgetSettings"),Qt::LeftButton);
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&element()["scheduleLayout"]=="board",10000);
+    QCOMPARE(element()["decreasingAttributeIds"].toArray().size(),1);
+    QVERIFY(w.findChild<QComboBox*>("buttonAction")->findData("commitPlan")>=0);
+    QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("schedule-summary")>=0);
+    QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("activity-progress")>=0);
+    auto resultAction=w.findChild<QAction*>("add-element-result");QVERIFY(resultAction);resultAction->trigger();
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.selectedId().startsWith("result-"),10000);
+    const auto resultId=w.selectedId();
+    QTimer::singleShot(100,&w,[]{
+      auto d=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(d);
+      auto mode=d->findChild<QComboBox*>("widgetLayout");QVERIFY(mode);QVERIFY(mode->findData("changes")>=0);mode->setCurrentIndex(mode->findData("changes"));
+      QTest::mouseClick(d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);
+    });
+    QTest::mouseClick(w.findChild<QPushButton*>("widgetSettings"),Qt::LeftButton);
+    auto result=[&] {for(auto s:w.projectData()["visual"].toObject()["screens"].toArray())for(auto e:s.toObject()["elements"].toArray())if(e.toObject()["id"]==resultId)return e.toObject();return QJsonObject();};
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&result()["resultLayout"]=="changes",10000);
   }
   void sharedStyleAuthoring() {
     StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));

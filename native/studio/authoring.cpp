@@ -48,9 +48,10 @@ void StudioWindow::editWidgetSettings() {
   confirm->setChecked(projectData()["visual"].toObject()["confirmPurchases"].toBool()); form->addRow(confirm);
   auto mode = new QComboBox; mode->setObjectName("widgetLayout"); QString key;
   const auto kind = value["kind"].toString();
-  if (kind == "schedule") {key="scheduleLayout"; mode->addItem(tr("일정 칸 목록"),"columns"); mode->addItem(tr("월간 달력"),"calendar"); mode->addItem(tr("분류 → 활동 메뉴"),"menu");}
+  if (kind == "schedule") {key="scheduleLayout"; mode->addItem(tr("일정 칸 목록"),"columns"); mode->addItem(tr("월간 달력"),"calendar"); mode->addItem(tr("분류 → 활동 메뉴"),"menu"); mode->addItem(tr("활동 카드 · 계획 · 예상 변화"),"board");}
   if (kind == "stats") {key="statsLayout"; mode->addItem(tr("능력 막대"),"bars"); mode->addItem(tr("압축 표"),"compact");}
   if (kind == "shop") {key="shopLayout"; mode->addItem(tr("목록"),"list"); mode->addItem(tr("상품 카드"),"cards");}
+  if (kind == "result") {key="resultLayout"; mode->addItem(tr("활동 결과 요약"),"summary"); mode->addItem(tr("연출에 맞춰 변화만 표시"),"changes");}
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));
@@ -64,6 +65,12 @@ void StudioWindow::editWidgetSettings() {
   table->setSelectionBehavior(QAbstractItemView::SelectRows);table->setObjectName("scheduleGroups");
   for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();table->setItem(i,0,new QTableWidgetItem(g["id"].toString()));table->setItem(i,1,new QTableWidgetItem(g["label"].toString()));}
   auto list = new QListWidget;list->setObjectName("widgetEntries");
+  auto decreasing = new QListWidget;decreasing->setObjectName("decreasingAttributes");decreasing->setMaximumHeight(110);
+  for(auto d:view["documents"].toArray())if(d.toObject()["kind"]=="attributes")for(auto v:d.toObject()["data"].toObject()["attributes"].toArray()){
+    auto a=v.toObject();auto item=new QListWidgetItem(a["label"].toString(),decreasing);item->setData(Qt::UserRole,a["id"].toString());
+    item->setCheckState(value["decreasingAttributeIds"].toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);
+  }
+  if(kind=="schedule")form->addRow(tr("예상에서 낮아질수록 좋은 항목"),decreasing);else decreasing->hide();
   QJsonArray entries;
   for(auto d:view["documents"].toArray()){
     auto doc=d.toObject();auto data=doc["data"].toObject();
@@ -88,6 +95,7 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="schedule") {for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();g["id"]=table->item(i,0)->text().trimmed();g["label"]=table->item(i,1)->text();groups[i]=g;}value["scheduleGroups"]=groups;}
   if(kind=="stats"||kind=="actions"){QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove(selectionField);else value[selectionField]=ids;}
   if(kind=="button")value["autoLabel"]=autoLabel->isChecked();
+  if(kind=="schedule"){QJsonArray ids;for(int i=0;i<decreasing->count();i++)if(decreasing->item(i)->checkState()==Qt::Checked)ids.append(decreasing->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove("decreasingAttributeIds");else value["decreasingAttributeIds"]=ids;}
   if(kind=="schedule"){if(activityDescription->isChecked())value["showActivityDescription"]=true;else value.remove("showActivityDescription");}
   auto project=projectData();auto visual=project["visual"].toObject();auto screens=visual["screens"].toArray();
   for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s["id"]!=screenId)continue;auto elements=s["elements"].toArray();for(int j=0;j<elements.size();j++)if(elements[j].toObject()["id"]==selection)elements[j]=value;s["elements"]=elements;screens[i]=s;}

@@ -2893,5 +2893,12 @@
   ["수치 변화는 실제 활동 결과에서 표시됩니다","Stat changes appear in actual activity results","数値変化は実際の活動結果に表示します"],
   ["클립을 추가하고 이미지와 문구를 연결하세요","Add clips and bind images and text","クリップを追加し、画像と文言を接続してください"],
   ["부품 인스턴스","Component instance","部品インスタンス"],
-  ["플래그 조건은 =켜짐 또는 =꺼짐을 사용하세요: ","Use =true or =false for flag conditions: ","フラグ条件には =true または =false を使用してください: "]
+  ["플래그 조건은 =켜짐 또는 =꺼짐을 사용하세요: ","Use =true or =false for flag conditions: ","フラグ条件には =true または =false を使用してください: "],
+  ["활동 카드 · 계획 · 예상 변화","Activity cards, plan and forecast","活動カード・計画・予測"],
+  ["활동 결과 요약","Activity result summary","活動結果のまとめ"],
+  ["연출에 맞춰 변화만 표시","Reveal changes with playback","演出に合わせて変化だけ表示"],
+  ["예상에서 낮아질수록 좋은 항목","Forecast: lower values are better","予測で低い方がよい項目"],
+  ["월 계획 확정 · 자동 진행 시작","Confirm month plan and start","月の予定を確定して開始"],
+  ["편성 중인 일정 요약","Draft schedule summary","編成中の予定の概要"],
+  ["활동 진행 위치","Activity progress","活動の進行状況"]
 ]

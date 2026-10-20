@@ -1,3 +1,11 @@
+  std::string result_playback_markup(bool changes_only) const {
+    const auto text=result_playback_text(game.timeline_plan,game.timeline_cursor,changes_only);
+    if(!changes_only)return escape(text);
+    std::istringstream lines(text);std::string line,out;
+    while(std::getline(lines,line))if(!line.empty())
+      out+="<div style=\"background-color:#213c34e8;color:#fff8e6;padding:4px 12px;margin-bottom:7px;border-left-width:3px;border-left-color:#c9a96b;\">"+escape(line)+"</div>";
+    return out;
+  }
   std::string timeline_stage(const Json& stage,double elapsed,double availableWidth,double availableHeight) const {
     const double stageWidth=stage.at("width"),stageHeight=stage.at("height");
     const double scale=std::min(availableWidth/stageWidth,availableHeight/stageHeight);
@@ -20,10 +28,10 @@
       const int barWidth=std::min(720,width-32),buttonWidth=(barWidth-24)/3;
       const std::vector<Json> controls={
         {{"id","timeline-pause"},{"label",paused?"계속 재생":"일시정지"},{"type","timelinePause"}},
-        {{"id","timeline-speed"},{"label",cursor.value("speed",1)==1?"배속 ×1 → ×4":"배속 ×4 → ×1"},{"type","timelineSpeed"}},
+        {{"id","timeline-speed"},{"label",cursor.value("speed",1)==1?"재생 속도 ×1":"재생 속도 ×4"},{"type","timelineSpeed"}},
         {{"id","timeline-skip"},{"label","이번 활동 연출 건너뛰기"},{"type","timelineSkip"}}
       };
-      std::string out="<div id=\"result-playback-controls\" style=\"position:absolute;left:"+number((width-barWidth)/2)+"px;top:"+number(height-80)+"px;width:"+number(barWidth)+"px;height:48px;z-index:121;\">";
+      std::string out="<div id=\"result-playback-controls\" style=\"position:absolute;left:"+number((width-barWidth)/2)+"px;top:"+number(height-60)+"px;width:"+number(barWidth)+"px;height:48px;z-index:121;\">";
       for(size_t i=0;i<controls.size();i++){const auto& c=controls[i];out+="<div style=\"position:absolute;left:"+number(i*(buttonWidth+12))+"px;top:0;width:"+number(buttonWidth)+"px;height:48px;\">"+button(c.at("id"),c.at("label"),{{"type",c.at("type")}},!completed)+"</div>";}
       return out+"</div>";
     }

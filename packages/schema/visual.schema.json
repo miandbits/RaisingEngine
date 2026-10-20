@@ -817,7 +817,9 @@
             "replay-mode",
             "replay-speed",
             "data-value",
-            "context-name"
+            "context-name",
+            "schedule-summary",
+            "activity-progress"
           ]
         },
         "imageSource": {
@@ -847,7 +849,8 @@
           "enum": [
             "columns",
             "calendar",
-            "menu"
+            "menu",
+            "board"
           ]
         },
         "statsLayout": {
@@ -958,7 +961,8 @@
             "recollectionSkip",
             "galleryBranches",
             "galleryBranch",
-            "assignActivity"
+            "assignActivity",
+            "commitPlan"
           ]
         },
         "screenId": {
@@ -1819,6 +1823,20 @@
         },
         "activityId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "decreasingAttributeIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "resultLayout": {
+          "type": "string",
+          "enum": [
+            "summary",
+            "changes"
+          ]
         }
       },
       "required": [
@@ -2843,7 +2861,9 @@
             "replay-mode",
             "replay-speed",
             "data-value",
-            "context-name"
+            "context-name",
+            "schedule-summary",
+            "activity-progress"
           ]
         },
         "imageSource": {
@@ -2869,7 +2889,8 @@
           "enum": [
             "columns",
             "calendar",
-            "menu"
+            "menu",
+            "board"
           ]
         },
         "statsLayout": {
@@ -2980,7 +3001,8 @@
             "recollectionSkip",
             "galleryBranches",
             "galleryBranch",
-            "assignActivity"
+            "assignActivity",
+            "commitPlan"
           ]
         },
         "screenId": {
@@ -3645,6 +3667,20 @@
         },
         "activityId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "decreasingAttributeIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "resultLayout": {
+          "type": "string",
+          "enum": [
+            "summary",
+            "changes"
+          ]
         }
       },
       "required": [

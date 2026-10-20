@@ -23,6 +23,8 @@ inline Json read_json(const fs::path& file, uintmax_t limit = 64 * 1024 * 1024) 
 
 class GameSession {
 public:
+  std::function<Json()> planner_state;
+  std::function<void(const Json&)> planner_restore;
   GalleryProfile gallery;
   GalleryCapture gallery_capture;
   Json gallery_pending=Json::array();
@@ -177,6 +179,11 @@ public:
     if(schedule_speed!=1||timeline_active()||!battle_selection.is_null()||!extensions.is_null()||!direction_cursor.is_null()){envelope["playerPresentation"]={{"version",1},{"timeline",timeline_cursor}};if(!battle_selection.is_null())envelope["playerPresentation"]["battleSelection"]=battle_selection;if(!extensions.is_null())envelope["playerPresentation"]["extensions"]=extensions;}
     if(!direction_cursor.is_null())envelope["playerPresentation"]["direction"]=direction_cursor;
     if(schedule_speed!=1)envelope["playerPresentation"]["scheduleSpeed"]=schedule_speed;
+    const Json draft=planner_state?planner_state():Json();
+    if(!draft.is_null()){
+      if(!envelope.contains("playerPresentation"))envelope["playerPresentation"]={{"version",1},{"timeline",nullptr}};
+      envelope["playerPresentation"]["scheduleDraft"]=draft;
+    }
     if(!gallery_capture.pending.is_null()){
       if(!envelope.contains("playerPresentation"))envelope["playerPresentation"]={{"version",1},{"timeline",nullptr}};
       envelope["playerPresentation"]["galleryCapture"]=gallery_capture.pending;
@@ -218,11 +225,22 @@ public:
     }
     if (replay != saved.at("state")) throw std::runtime_error("저장 데이터와 명령 재현 결과가 다릅니다.");
     const auto restored_plan=plan_activity_timeline(content,replay);Json restored_cursor=restored_plan.is_null()?Json():create_timeline_cursor(restored_plan);
-    Json restored_battle=nullptr,restored_extensions=nullptr,restored_direction=nullptr;int restored_speed=1;
+    Json restored_battle=nullptr,restored_extensions=nullptr,restored_direction=nullptr,restored_draft=nullptr;int restored_speed=1;
     if(saved.contains("playerPresentation")) {
       const auto presentation=saved.at("playerPresentation");
       if(!presentation.is_object()||!presentation.contains("version")||presentation.at("version")!=1||!presentation.contains("timeline"))throw std::runtime_error("Invalid player presentation save");
-      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction"&&it.key()!="scheduleSpeed"&&it.key()!="galleryCapture")throw std::runtime_error("Invalid player presentation save");
+      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction"&&it.key()!="scheduleSpeed"&&it.key()!="galleryCapture"&&it.key()!="scheduleDraft")throw std::runtime_error("Invalid player presentation save");
+      if(presentation.contains("scheduleDraft")){
+        const auto d=presentation.at("scheduleDraft");
+        if(!d.is_object()||d.size()!=4||!d.value("month",Json()).is_number_integer()||!d.value("slot",Json()).is_number_integer()||!d.value("selected",Json()).is_number_integer()||!d.value("activities",Json()).is_array())throw std::runtime_error("Invalid schedule draft");
+        if(d.at("month")!=replay.value("periodIndex",0)/periods()||d.at("slot")<0||d.at("slot")>=periods()||d.at("selected")<0||d.at("selected")>((1<<periods())-1)||d.at("activities").size()!=size_t(periods()))throw std::runtime_error("Invalid schedule draft");
+        for(int i=0;i<periods();++i){
+          const auto id=d.at("activities").at(i);bool known=id=="";
+          for(const auto& a:content.at("activities"))if(a.at("id")==id)known=true;
+          if(!id.is_string()||!known||((d.at("selected").get<int>()&(1<<i))&&id==""))throw std::runtime_error("Invalid schedule draft activity");
+        }
+        restored_draft=d;
+      }
       if(presentation.contains("scheduleSpeed")){const auto speed=presentation.at("scheduleSpeed");if(!speed.is_number_integer()||(speed!=1&&speed!=4))throw std::runtime_error("Invalid schedule speed");restored_speed=speed.get<int>();}
       // Opaque plugin states; a missing plugin later ignores (and preserves) its entry.
       if(presentation.contains("extensions")){if(!presentation.at("extensions").is_object())throw std::runtime_error("Invalid player presentation save");restored_extensions=presentation.at("extensions");}
@@ -247,6 +265,7 @@ public:
     relationship_changes=std::move(restored_changes);
     schedule_speed=restored_speed;state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
     collect_gallery_media();
+    if(planner_restore)planner_restore(restored_draft);
     message = "저장한 지점에서 이어갑니다.";
   }
 };

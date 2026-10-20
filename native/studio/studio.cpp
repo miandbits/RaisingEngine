@@ -250,8 +250,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
            {"equipment", tr("장비")},
            {"expedition", tr("탐험")},
            {"battle", tr("전투")}})
-    paletteMenu->addAction(pair.second, this,
-                           [this, pair] { addElement(pair.first); });
+    {
+      auto action=paletteMenu->addAction(pair.second, this,[this, pair] { addElement(pair.first); });
+      action->setObjectName("add-element-"+pair.first);
+    }
   palette->setMenu(paletteMenu);
   screenOnlyActions << toolbar->addWidget(palette);
   toolbar->addAction(undoAction);
@@ -506,6 +508,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                                       {"calendar-day", tr("달력 · 일")},
                                       {"calendar-weekday", tr("달력 · 요일")},
                                       {"schedule-prompt", tr("일정 선택 안내")},
+                                      {"schedule-summary", tr("편성 중인 일정 요약")},
+                                      {"activity-progress", tr("활동 진행 위치")},
                                       {"title", tr("게임 제목")},
                                       {"location", tr("현재 장소")},
                                       {"ending", tr("엔딩 제목")},
@@ -628,6 +632,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField->addItem(tr("게임 불러오기"), "load");
   actionField->addItem(tr("새 게임 시작"), "start");
   actionField->addItem(tr("진행 · 대화 / 결과 확인"), "advance");
+  actionField->addItem(tr("월 계획 확정 · 자동 진행 시작"), "commitPlan");
   actionField->addItem(tr("공통 행동 실행"), "executeAction");
   actionField->addItem(tr("전투 행동 선택"), "selectBattleAction");
   actionField->addItem(tr("전투 대상 선택"), "selectBattleTarget");
