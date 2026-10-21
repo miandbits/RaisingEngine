@@ -2932,6 +2932,7 @@ export type Element = {
     | "input"
     | "plugin"
     | "saveSlots"
+    | "playerSettings"
     | "loadSlots";
   label?: string;
   x: number;
@@ -2971,7 +2972,8 @@ export type Element = {
     | "schedule-summary"
     | "activity-progress"
     | "save-summary"
-    | "player-notice";
+    | "player-notice"
+    | "reading-status";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -8329,7 +8331,18 @@ export type ComponentChild = {
   [k: string]: unknown;
 } & {
   id: string;
-  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input" | "component" | "saveSlots" | "loadSlots";
+  kind:
+    | "panel"
+    | "text"
+    | "image"
+    | "button"
+    | "meter"
+    | "group"
+    | "input"
+    | "component"
+    | "saveSlots"
+    | "playerSettings"
+    | "loadSlots";
   label?: string;
   x: number;
   y: number;
@@ -8368,7 +8381,8 @@ export type ComponentChild = {
     | "schedule-summary"
     | "activity-progress"
     | "save-summary"
-    | "player-notice";
+    | "player-notice"
+    | "reading-status";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";

@@ -5,6 +5,7 @@
 #include "layout.hpp"
 #include "extension-host.hpp"
 #include "presentation-variants.hpp"
+#include "preferences.hpp"
 #include <algorithm>
 #include <map>
 #include <iomanip>
@@ -49,6 +50,7 @@ public:
   Json assets,display_content,display_projection,render_elements=Json::array();
   Json user_values_draft=Json::object();
   #include "save-slots-markup.inc"
+  #include "settings-markup.inc"
   Json preview_scene=nullptr;
   Json display_scene() const {
     auto scene=game.state.is_null()?display_content.at("project").at("visual").value("defaultScene",Json::object()):game.state.at("presentation");
@@ -326,6 +328,7 @@ public:
 #include "data-binding.inc"
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
     if(name=="player-notice")return game.message;
+    if(name=="reading-status")return player_preferences.value("autoAdvance",false)?(phase()=="choice"?settings_words("자동 진행 대기 · 고르면 이어집니다","Auto paused · choose to continue","自動送り待機 · 選択後に再開"):settings_words("자동 진행 중 · 선택지에서 멈춤","Auto · stops at choices","自動送り · 選択肢で停止")):settings_words("직접 읽기","Manual reading","手動送り");
     if(name=="save-summary"){
       const auto status=saved_preview.value("status","empty");
       if(element.value("valueFormat","")=="write-warning")return saved_preview.value("justSaved",false)?"":"저장하면 기존 기록을 지금의 진행으로 바꿉니다.";
@@ -689,6 +692,7 @@ public:
     if(kind=="input"){const auto id=e.value("userFieldId","");return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;color:inherit;font-size:inherit;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
     if(kind=="meter"){const double maximum=e.value("maxValue",100.0),value=e.value("value",0.0),ratio=maximum>0?std::clamp(value/maximum,0.0,1.0):0.0;return "<div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div>";}
     if(kind=="saveSlots"||kind=="loadSlots")return slots_body(e);
+    if(kind=="playerSettings")return settings_body(e);
     if(kind=="image")return image(e);
     if(kind=="plugin")return plugin_body(e);
     if(kind=="text")return escape(e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
@@ -962,6 +966,7 @@ public:
         extra_css+=selector+" button.slot-selected{border-width:3px;border-color:"+css_color(e.value("hoverFill","#345C50"))+";}";
         extra_css+=selector+" button:focus{border-width:3px;border-color:"+css_color("#B38B49")+";}";
       }
+      if(e.value("kind","")=="playerSettings")extra_css+=selector+" button:focus,"+selector+" button:hover{border-width:2px;border-color:"+css_color("#B38B49")+";}";
       if(e.value("kind","")=="choices"&&e.value("choiceLayout","list")=="cards"){
         extra_css+=selector+">button{min-height:"+number(e.value("rowHeight",56.0))+"px;margin-bottom:"+number(e.value("gap",10.0))+"px;padding:12px 18px;text-align:left;white-space:normal;color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#f5efdf"))+";border-width:"+number(e.value("borderWidth",1.0))+"px;border-color:"+css_color(e.value("borderColor","#c7b99a"))+";border-radius:"+number(e.value("radius",2.0))+"px;}";
         extra_css+=selector+">button:focus{border-width:3px;border-color:"+css_color(e.value("borderColor","#c7b99a"))+";}";

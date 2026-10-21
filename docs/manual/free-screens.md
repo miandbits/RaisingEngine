@@ -12,6 +12,8 @@
 
 저장·불러오기 창도 모달 화면으로 제작할 수 있다. 저장한 값과 현재 값을 나란히 표시하는 방법은 [저장 패널](save-panels.md)을 참고한다.
 
+음량·전체화면·대사 속도와 자동 진행을 조절하는 모달은 [플레이어 설정](player-settings.md)의 `playerSettings` 부품으로 제작한다. 설정은 게임 진행과 분리해 저장된다.
+
 ## 계약과 호환성
 
 - `visual.routing.defaultScreenId`: 기본 화면.

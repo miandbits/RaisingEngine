@@ -49,6 +49,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='playerSettings'||e.binding==='reading-status'))requiredFeatures.push('player-settings-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.binding==='save-summary'||e.binding==='player-notice'))requiredFeatures.push('save-panel-v1');
   if(visual&&(visual.saveSystem||[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='saveSlots'||e.kind==='loadSlots')))requiredFeatures.push('save-slots-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.choiceLayout==='cards'))requiredFeatures.push('narrative-cards-v1');

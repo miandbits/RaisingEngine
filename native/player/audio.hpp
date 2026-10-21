@@ -12,6 +12,8 @@ class GameAudio {
   std::map<std::string,std::unique_ptr<ma_sound>> sounds;
   ma_sound* music=nullptr;
   std::string current_music;
+  float music_level=1.f,effects_level=1.f;
+  std::map<ma_sound*,float> effect_gains;
   void initialize() {
     if(initialized)return;
     auto config=ma_engine_config_init();
@@ -34,16 +36,19 @@ public:
   bool ready() const{return initialized;}
   bool playing() const{return music&&ma_sound_is_playing(music);}
   size_t loaded_count() const{return sounds.size();}
+  void set_levels(float background,float effects){music_level=background;effects_level=effects;if(music)ma_sound_set_volume(music,music_level);for(const auto& [sound,gain]:effect_gains)ma_sound_set_volume(sound,gain*effects_level);}
+  float music_gain() const{return music?ma_sound_get_volume(music):music_level;}
+  float effects_gain() const{return effects_level;}
   void mute(bool muted){if(initialized)ma_engine_set_volume(&engine,muted?0.f:1.f);}
   void suspend(bool paused){if(initialized){if(paused)ma_engine_stop(&engine);else ma_engine_start(&engine);}}
   void sync_music(const std::string& file,bool muted){
-    if(file==current_music){mute(muted);return;}
+    if(file==current_music){if(music)ma_sound_set_volume(music,music_level);mute(muted);return;}
     if(music){ma_sound_stop(music);music=nullptr;}
     current_music.clear();
-    if(!file.empty()){music=sound(file,true);ma_sound_set_looping(music,MA_TRUE);ma_sound_seek_to_pcm_frame(music,0);ma_sound_start(music);current_music=file;}
+    if(!file.empty()){music=sound(file,true);ma_sound_set_volume(music,music_level);ma_sound_set_looping(music,MA_TRUE);ma_sound_seek_to_pcm_frame(music,0);ma_sound_start(music);current_music=file;}
     mute(muted);
   }
   void effect(const std::string& file,bool muted){effect(file,muted,1.f,0.f);}
   /** volume 0..1, pan -1 (left)..1 (right): plugin event sounds (extension notifications). */
-  void effect(const std::string& file,bool muted,float volume,float pan){if(file.empty()||muted)return;auto* value=sound(file);ma_sound_set_looping(value,MA_FALSE);ma_sound_set_volume(value,volume);ma_sound_set_pan(value,pan);ma_sound_seek_to_pcm_frame(value,0);ma_sound_start(value);}
+  void effect(const std::string& file,bool muted,float volume,float pan){if(file.empty()||muted)return;auto* value=sound(file);effect_gains[value]=volume;ma_sound_set_looping(value,MA_FALSE);ma_sound_set_volume(value,volume*effects_level);ma_sound_set_pan(value,pan);ma_sound_seek_to_pcm_frame(value,0);ma_sound_start(value);}
 };

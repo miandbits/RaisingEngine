@@ -767,6 +767,7 @@
             "input",
             "plugin",
           "saveSlots",
+          "playerSettings",
           "loadSlots"
           ]
         },
@@ -829,7 +830,7 @@
             "data-value",
             "context-name",
             "schedule-summary",
-            "activity-progress", "save-summary", "player-notice"
+            "activity-progress", "save-summary", "player-notice", "reading-status"
           ]
         },
         "imageSource": {
@@ -2819,6 +2820,7 @@
             "input",
             "component",
             "saveSlots",
+            "playerSettings",
             "loadSlots"
           ]
         },
@@ -2881,7 +2883,7 @@
             "data-value",
             "context-name",
             "schedule-summary",
-            "activity-progress", "save-summary", "player-notice"
+            "activity-progress", "save-summary", "player-notice", "reading-status"
           ]
         },
         "imageSource": {

@@ -90,6 +90,7 @@ public:
   bool preview() const {return !markup.preview_screen.empty();}
   int auto_revision=-1,auto_attempted=-1;
   double auto_elapsed=0;
+  #include "settings-app.inc"
   void advance_schedule_clock(double delta) {
     if(preview()||backgrounded||game.gallery.active||!markup.ui_modal.empty()||game.state.is_null())return;
     const int revision=game.state.value("stateRevision",-1);
@@ -364,9 +365,11 @@ public:
     if(preview())return;
     editor_command=incoming;
     try {
+      if(setting_action(incoming))return;
       if(recalling()){recollection_action(incoming.value("type",""));return;}
       const auto action=markup.selection_action(incoming);
       game.message.clear();const std::string type=action.value("type","");
+      if(reveal_before_advance(type))return;
       if(type=="galleryOpen"){if(!game.content.at("project").contains("gallery"))return;game.gallery.reload();game.flush_gallery();game.gallery.active=true;audio.suspend(true);gallery_audio.suspend(false);markup.gallery_entry.clear();markup.gallery_branch_view=false;dirty=true;return;}
       if(game.gallery.active){
         if((type=="galleryBranches"||type=="galleryBranch"||type=="galleryView"||type=="galleryReplay"||type=="galleryMusicToggle"||type=="galleryMusicStop")&&action.contains("entryId")){
@@ -484,7 +487,7 @@ public:
         }
       }
       else if(type=="save"){game.save(save_file);refresh_save_preview();markup.saved_preview["justSaved"]=true;recording.checkpoint(game);}
-      else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
+      else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);dialogue_key.clear();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
       else if(type=="sound") {muted=!muted;game.message=muted?"소리를 껐습니다.":"소리를 켰습니다.";}
       else if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction") {
         const auto command=game.battle_ui(action);if(!command.is_null()){game.send(command);game.settle();}
@@ -517,7 +520,7 @@ public:
           std::string feedback="";
           for(const auto& a:game.content.at("attributes")){const auto id=a.at("id").get<std::string>();const int delta=game.state.at("attributes").value(id,0)-before.at("attributes").value(id,0);if(delta)feedback+=a.value("label",id)+" "+(delta>0?"+":"")+std::to_string(delta)+"  ";}
           for(const auto& c:game.content.at("characters"))for(const auto& r:c.at("relationships")){auto cid=c.at("id").get<std::string>(),rid=r.at("id").get<std::string>();const int delta=game.state.at("relationships").at(cid).value(rid,0)-before.at("relationships").at(cid).value(rid,0);if(delta)feedback+=r.value("label",rid)+" "+(delta>0?"+":"")+std::to_string(delta)+"  ";}
-          game.message=feedback.empty()?(type=="interact"?"이야기를 나누었습니다.":"행동을 완료했습니다."):feedback;
+          game.message=feedback.empty()?(game.state.value("phase","")=="narrative"?"":type=="interact"?"이야기를 나누었습니다.":"행동을 완료했습니다."):feedback;
         }
       }
       const auto presentation=game.state.is_null()?game.content.at("project").at("visual").value("defaultScene",Json::object()):game.state.at("presentation");
@@ -643,12 +646,12 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
       {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
-      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicPlaying",audio.playing()},{"musicCursor",audio.cursor()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
+      {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicGain",audio.music_gain()},{"effectsGain",audio.effects_gain()},{"musicPlaying",audio.playing()},{"musicCursor",audio.cursor()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
   }
   Rml::Element* find_element(const std::string& id) {
     if(auto* element=document->GetElementById(id))return element;
@@ -777,6 +780,7 @@ int main(int argc,char** argv) {
       }
       if(!requested_locale.empty()){app.markup.locale=requested_locale;app.dirty=true;}
       app.editor_events=editor_events;
+      if(!app.preview())app.initialize_player_preferences();
 #ifdef SDL_PLATFORM_ANDROID
       app.restore_autosave();
 #endif
@@ -787,9 +791,9 @@ int main(int argc,char** argv) {
         SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
         if(app.backgrounded){SDL_Delay(50);continue;}
         app.drain_actions();
-        if(!app.timeline_manual_clock){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.extension_dt+=timeline_delta;}
+        if(!app.timeline_manual_clock){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.advance_dialogue_clock(std::min(250.0,timeline_delta));app.extension_dt+=timeline_delta;}
         if(app.dirty)app.rebuild();
-        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();
+        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();
         if(wait_frames>0)--wait_frames;
         else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];
@@ -822,6 +826,7 @@ int main(int argc,char** argv) {
           if(command.contains("timelineRealtime")){app.timeline_manual_clock=!command.at("timelineRealtime").get<bool>();app.extension_dt=0;}
           if(command.contains("timelineAdvanceMs")){app.advance_timeline_clock(command.at("timelineAdvanceMs").get<double>());app.advance_extensions(command.at("timelineAdvanceMs").get<double>());}
           if(command.contains("scheduleAdvanceMs")){double remaining=command.at("scheduleAdvanceMs").get<double>();if(!std::isfinite(remaining)||remaining<0||remaining>60000)throw std::runtime_error("Invalid schedule clock delta");while(remaining>0){const double delta=std::min(250.0,remaining);app.advance_schedule_clock(delta);remaining-=delta;}}
+          if(command.contains("dialogueAdvanceMs")){double remaining=command.at("dialogueAdvanceMs").get<double>();if(!std::isfinite(remaining)||remaining<0||remaining>60000)throw std::runtime_error("Invalid dialogue clock delta");while(remaining>0){const double delta=std::min(250.0,remaining);app.advance_dialogue_clock(delta);if(app.dirty)app.rebuild();app.update_dialogue_visual();remaining-=delta;}}
           // Presentation-only clock step for extensions (deterministic under the manual automation clock).
           if(command.contains("extensionAdvanceMs"))for(int i=0,n=command.value("extensionSteps",1);i<std::max(1,n);i++)app.advance_extensions(command.at("extensionAdvanceMs").get<double>()/std::max(1,n));
           if(command.contains("resize")){const auto size=command.at("resize");SDL_SetWindowSize(window,size.at("width"),size.at("height"));}
