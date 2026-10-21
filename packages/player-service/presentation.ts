@@ -2,8 +2,9 @@ import {directionValid,type DirectionCursor,type Direction} from '../visual/dire
 import type {ContentSnapshot,RunState} from '../core/model.js';
 import {planActivityTimeline,createTimelineCursor,validateTimelineCursor,advanceTimeline,skipTimeline,type TimelineCursor,type TimelinePlan} from '../visual/timeline.js';
 import {validateBattleSelection,type BattleSelection} from './battle.js';
+import {validSaveRecord,validScheduleDraft,type SaveRecord,type ScheduleDraft} from './save-metadata.js';
 
-export interface PlayerPresentationEnvelope {version:1;timeline:TimelineCursor|null;scheduleSpeed?:1|4;battleSelection?:BattleSelection|null;/** Opaque per-plugin state (plugin-host CONTRACT §8), keyed by plugin id. */direction?:DirectionCursor;extensions?:Record<string,unknown>}
+export interface PlayerPresentationEnvelope {version:1;timeline:TimelineCursor|null;scheduleSpeed?:1|4;battleSelection?:BattleSelection|null;/** Opaque per-plugin state (plugin-host CONTRACT §8), keyed by plugin id. */direction?:DirectionCursor;extensions?:Record<string,unknown>;scheduleDraft?:ScheduleDraft;saveRecord?:SaveRecord}
 export interface TimelineView {plan:TimelinePlan;cursor:TimelineCursor}
 export type TimelineAction={type:'timelineTick';deltaMs:number}|{type:'timelinePause'}|{type:'timelineSpeed'}|{type:'timelineSkip'};
 
@@ -30,7 +31,9 @@ export class PlayerPresentation {
     return {version:1,...(this.scheduleSpeed!==1?{scheduleSpeed:this.scheduleSpeed}:{}),...(this.direction?{direction:structuredClone(this.direction)}:{}),timeline:this.view(content,state)?.cursor??null,...(selection?{battleSelection:selection}:{}),...(Object.keys(this.extensions).length?{extensions:structuredClone(this.extensions)}:{})};
   }
   restore(content:ContentSnapshot,state:RunState,envelope:PlayerPresentationEnvelope|undefined):string|null {
-    if(envelope!==undefined&&(!envelope||typeof envelope!=='object'||!Object.hasOwn(envelope,'timeline')||Object.keys(envelope).some(key=>!['timeline','version','battleSelection','extensions','direction','scheduleSpeed'].includes(key))||envelope.version!==1))return '지원하지 않는 연출 저장 구조입니다.';
+    if(envelope!==undefined&&(!envelope||typeof envelope!=='object'||!Object.hasOwn(envelope,'timeline')||Object.keys(envelope).some(key=>!['timeline','version','battleSelection','extensions','direction','scheduleSpeed','scheduleDraft','saveRecord'].includes(key))||envelope.version!==1))return '지원하지 않는 연출 저장 구조입니다.';
+    if(envelope?.saveRecord!==undefined&&!validSaveRecord(envelope.saveRecord))return 'Invalid save slot metadata.';
+    if(envelope?.scheduleDraft!==undefined&&!validScheduleDraft(content,state,envelope.scheduleDraft))return 'Invalid schedule draft.';
     if(envelope?.extensions!==undefined&&(!envelope.extensions||typeof envelope.extensions!=='object'||Array.isArray(envelope.extensions)))return '플러그인 연출 저장 구조가 올바르지 않습니다.';
     const plan=planActivityTimeline(content,state),cursor=envelope?.timeline;
     if(envelope?.scheduleSpeed!==undefined&&![1,4].includes(envelope.scheduleSpeed))return '잘못된 일정 배속입니다.';

@@ -52,6 +52,13 @@ assigned-period bitmask and activity IDs. The native loader validates the draft
 before committing the replayed save. Older saves without this optional field
 continue to load. A malformed draft cannot partially replace the simulation.
 
+The shared save codec also accepts and validates native `saveRecord` metadata
+(date, location, screenshot basename and sequence), so migration tools can read
+native multi-slot saves. Metadata never changes simulation results. Migration
+still requires an explicit presentation reset; a caller may retain presentation
+only after validating it against the target content. This does not add a web
+schedule-board or multi-slot UI.
+
 Opening an authored modal pauses automatic schedule progress, result playback and
 live animation playback. Closing it resumes the existing pause/speed state.
 
