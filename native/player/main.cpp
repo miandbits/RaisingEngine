@@ -1,6 +1,7 @@
 #include <RmlUi/Core.h>
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_SDL.h"
+#include "density-font.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
@@ -648,7 +649,7 @@ public:
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
     return {{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
-      {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height}}},
+      {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
       {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
       {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicGain",audio.music_gain()},{"effectsGain",audio.effects_gain()},{"musicPlaying",audio.playing()},{"musicCursor",audio.cursor()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
@@ -747,14 +748,14 @@ int main(int argc,char** argv) {
 #endif
     if(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD))throw std::runtime_error(SDL_GetError());
     if(save_file.empty()) {auto* pref=SDL_GetPrefPath("RaisingEngine",bundle.at("content").at("project").value("gameId","game").c_str());if(!pref)throw std::runtime_error(SDL_GetError());save_file=fs::u8path(pref)/"slot-1.json";SDL_free(pref);}
-    auto flags=SDL_WINDOW_RESIZABLE|(hidden?SDL_WINDOW_HIDDEN:0);
+    auto flags=SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|(hidden?SDL_WINDOW_HIDDEN:0);
     auto* window=SDL_CreateWindow(bundle.at("content").at("project").value("title","Raising Player").c_str(),1280,720,flags);
     if(!window)throw std::runtime_error(SDL_GetError());
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);
     {
-      SystemInterface_SDL system;system.SetWindow(window);RenderInterface_SDL render(renderer);
-      Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
+      SystemInterface_SDL system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;
+      Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
       static Rml::ElementInstancerGeneric<ExtensionElement> extension_instancer;Rml::Factory::RegisterElementInstancer("raising-extension",&extension_instancer);
 #ifdef SDL_PLATFORM_ANDROID
       const auto font=bundle_root/"fonts/NotoSansKR.ttf";
@@ -793,6 +794,8 @@ int main(int argc,char** argv) {
         app.drain_actions();
         if(!app.timeline_manual_clock){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.advance_dialogue_clock(std::min(250.0,timeline_delta));app.extension_dt+=timeline_delta;}
         if(app.dirty)app.rebuild();
+        SDL_FRect display_rect{};SDL_GetRenderLogicalPresentationRect(renderer,&display_rect);
+        fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
         app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();
         if(wait_frames>0)--wait_frames;
         else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
