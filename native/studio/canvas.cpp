@@ -68,10 +68,12 @@ public:
     } else if (kind == "plugin") {
       paintPlugin(p);
     } else if (kind == "meter") {
-      p->fillRect(box,rgba(data.value("fill").toString(),QColor("#16242e")));
+      const double thickness=qMin(box.height(),data.value("meterThickness").toDouble(box.height()));
+      const QRectF track(0,(box.height()-thickness)/2,box.width(),thickness);
+      p->fillRect(track,rgba(data.value("fill").toString(),QColor("#16242e")));
       const double maximum=qMax(0.0001,data.value("maxValue").toDouble(100));
       const double ratio=qBound(0.0,data.value("value").toDouble()/maximum,1.0);
-      p->fillRect(QRectF(0,0,box.width()*ratio,box.height()),rgba(data.value("color").toString(),QColor("#68c6a0")));
+      p->fillRect(QRectF(0,track.y(),box.width()*ratio,thickness),rgba(data.value("color").toString(),QColor("#68c6a0")));
       p->setPen(rgba(data.value("color").toString(),Qt::white));
       p->drawText(box,Qt::AlignCenter,data.value("text").toString());
     } else if (kind == "schedule" && data["scheduleLayout"] == "calendar") {

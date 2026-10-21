@@ -9,8 +9,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "manualSlots": {"type":"integer","minimum":1,"maximum":30},
-        "autoSlots": {"type":"integer","minimum":0,"maximum":9}
+        "manualSlots": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "autoSlots": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        }
       }
     },
     "widgetTheme": {
@@ -766,9 +774,9 @@
             "group",
             "input",
             "plugin",
-          "saveSlots",
-          "playerSettings",
-          "loadSlots"
+            "saveSlots",
+            "playerSettings",
+            "loadSlots"
           ]
         },
         "label": {
@@ -830,7 +838,10 @@
             "data-value",
             "context-name",
             "schedule-summary",
-            "activity-progress", "save-summary", "player-notice", "reading-status"
+            "activity-progress",
+            "save-summary",
+            "player-notice",
+            "reading-status"
           ]
         },
         "imageSource": {
@@ -1856,6 +1867,11 @@
             "list",
             "cards"
           ]
+        },
+        "meterThickness": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4320
         }
       },
       "required": [
@@ -2885,7 +2901,10 @@
             "data-value",
             "context-name",
             "schedule-summary",
-            "activity-progress", "save-summary", "player-notice", "reading-status"
+            "activity-progress",
+            "save-summary",
+            "player-notice",
+            "reading-status"
           ]
         },
         "imageSource": {
@@ -3711,6 +3730,11 @@
             "list",
             "cards"
           ]
+        },
+        "meterThickness": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4320
         }
       },
       "required": [

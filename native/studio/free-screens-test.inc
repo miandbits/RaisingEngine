@@ -20,9 +20,17 @@ void StudioTests::freeScreenAuthoring() {
   add("텍스트");geometry(40,100,700,45);
   auto picker=w.findChild<QPushButton*>("dataBindingPicker");QVERIFY(picker);QTest::mouseClick(picker,Qt::LeftButton);
   auto dialog=w.findChild<QDialog*>("dataBindingDialog");QVERIFY(dialog);auto sources=dialog->findChild<QListWidget*>("dataBindingSources");QVERIFY(sources);QListWidgetItem* relation=nullptr;bool attributes=false;
-  for(int i=0;i<sources->count();++i){const auto target=sources->item(i)->data(Qt::UserRole).toJsonObject().value("dataBinding").toObject();if(target.value("kind")=="attribute")attributes=true;if(target.value("kind")=="relationship"&&sources->item(i)->text().contains("소하"))relation=sources->item(i);}
+  for(int i=0;i<sources->count();++i){const auto target=sources->item(i)->data(Qt::UserRole).toJsonObject().value("dataBinding").toObject();if(target.value("kind")=="attribute")attributes=true;if(target.value("kind")=="relationship"&&!relation)relation=sources->item(i);}
   QVERIFY(attributes);QVERIFY(relation);sources->setCurrentItem(relation);QTest::mouseClick(sources->viewport(),Qt::LeftButton,Qt::NoModifier,sources->visualItemRect(relation).center());dialog->findChild<QLineEdit*>("dataBindingFormat")->setText("{label}: {value}");
   QTest::mouseClick(dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);settle();
+  add("게이지 · 수치 데이터");geometry(820,490,350,24);
+  QTest::mouseClick(picker,Qt::LeftButton);dialog=w.findChild<QDialog*>("dataBindingDialog");QVERIFY(dialog);
+  sources=dialog->findChild<QListWidget*>("dataBindingSources");QVERIFY(sources);QVERIFY(sources->count()>0);
+  for(int i=0;i<sources->count();++i)QVERIFY(sources->item(i)->data(Qt::UserRole).toJsonObject().contains("dataBinding"));
+  sources->setCurrentRow(0);auto maximum=dialog->findChild<QSpinBox*>("dataMeterMaximum"),thickness=dialog->findChild<QSpinBox*>("dataMeterThickness");QVERIFY(maximum&&thickness);maximum->setValue(100);thickness->setValue(4);
+  QTest::mouseClick(dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);settle();
+  QJsonObject authoredMeter;for(const auto& row:w.projectData().value("visual").toObject().value("screens").toArray())if(row.toObject().value("id")==canvas)for(const auto& value:row.toObject().value("elements").toArray())if(value.toObject().value("kind")=="meter")authoredMeter=value.toObject();
+  QVERIFY(authoredMeter.contains("dataBinding"));QCOMPARE(authoredMeter.value("meterThickness").toInt(),4);
   add("일정 선택");geometry(40,170,740,170);combo("visibilityPhase","planning");
   add("활동 결과");geometry(40,350,740,100);combo("visibilityPhase","result");
   add("대사");geometry(40,470,740,120);
@@ -42,6 +50,7 @@ void StudioTests::freeScreenAuthoring() {
   button("저장","save",600,620);
   for(int i=0;i<tabs->count();++i)if(tabs->tabData(i)==canvas){tabs->setCurrentIndex(i);break;}
   action("saveProject");settle();QVERIFY(!w.currentView().value("dirty").toBool());
+  QVERIFY(QDir().mkpath(QDir(engine).filePath(".cache/free-screens")));
   const auto evidence=QDir(engine).filePath(".cache/free-screens/editor-authored.png");QVERIFY(w.grab().save(evidence));
   QFile info(QDir(engine).filePath(".cache/free-screens/gui-result.json"));QVERIFY(info.open(QIODevice::WriteOnly));info.write(QJsonDocument(QJsonObject{{"screenId",canvas},{"project",project},{"view",w.currentView()}}).toJson());
   // Exercise the production Play action: the shared service packages this saved draft.

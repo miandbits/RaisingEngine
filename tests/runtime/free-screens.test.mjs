@@ -6,7 +6,7 @@ import {encodeSave,decodeSave,runScenario} from '../../dist/packages/runtime-ser
 import {dispatchCommand} from '../../dist/packages/core/run.js';
 import {resolveScreen} from '../../dist/packages/visual/routing.js';
 import {createVisual} from '../../dist/packages/visual/model.js';
-import {dataBindingText} from '../../dist/packages/visual/data-binding.js';
+import {dataBindingText,dataBindingValue} from '../../dist/packages/visual/data-binding.js';
 
 const design=()=>({width:1280,height:720,routing:{defaultScreenId:'canvas',phases:[]},screens:[
   {id:'canvas',label:'빈 화면에서 조립',elements:[]},{id:'details',label:'상세 보기',elements:[]}
@@ -44,7 +44,20 @@ test('typed data binding projects shared and individual values without mutating 
   for(const [target,label,shared,owned] of [[{kind:'attribute',attributeId:'power'},'내공',4,8],[{kind:'relationship',characterId:'mentor',relationshipId:'trust'},'스승 · 신뢰',3,7],[{kind:'inventory',itemId:'tea'},'차',2,5]]){
     assert.equal(dataBindingText({binding:'data-value',dataBinding:target},ctx),`${label}: ${shared}`);
     assert.equal(dataBindingText({binding:'data-value',dataBinding:{...target,owner:{kind:'character',characterId:'child'}}},ctx),`${label}: ${owned}`);
+    assert.equal(dataBindingValue({kind:'meter',dataBinding:target},ctx),shared);
+    assert.equal(dataBindingValue({kind:'meter',dataBinding:{...target,owner:{kind:'character',characterId:'child'}}},ctx),owned);
   }assert.deepEqual(ctx,before);
+  assert.equal(dataBindingValue({kind:'meter',value:75},ctx),undefined);
+  assert.equal(dataBindingValue({kind:'meter',dataBinding:{kind:'attribute',attributeId:'missing'}},ctx),undefined);
+});
+
+test('gauges accept typed numeric bindings and thin tracks; invalid owners still fail',async()=>{
+  const p=structuredClone(loaded);p.documents=p.documents.filter(d=>d.kind!=='scenario');
+  const attribute=p.documents.find(d=>d.kind==='attributes').data.attributes[0].id;
+  const v=design();v.screens[0].elements=[{id:'gauge',kind:'meter',x:10,y:10,width:200,height:24,meterThickness:4,maxValue:100,binding:'data-value',dataBinding:{kind:'attribute',attributeId:attribute}}];doc(p,'project').visual=v;
+  const ok=await buildSnapshot(p);assert.equal(ok.ok,true,JSON.stringify(ok.diagnostics));
+  v.screens[0].elements[0].dataBinding.owner={kind:'character',characterId:'missing'};
+  const bad=await buildSnapshot(p);assert.equal(bad.ok,false);assert.ok(bad.diagnostics.some(d=>d.code==='UI_DATA_OWNER'));
 });
 test('both legacy scenarios and arbitrary-screen scenarios reach endings and restore saves',async()=>{
   for(const custom of [false,true]){

@@ -5,7 +5,7 @@ export function checkScreenBinding(ctx: SemanticContext, doc: ProjectDocument, e
   if(element.binding!=='data-value'&&!element.dataBinding)return;
   const target=element.dataBinding as JsonObject|undefined;
   if(!target){ctx.report(doc,path+'/dataBinding','UI_DATA_BINDING_REQUIRED','표시할 데이터를 선택하세요.');return;}
-  if(element.kind!=='text')ctx.report(doc,path+'/kind','UI_DATA_BINDING_KIND','수치 데이터 연결은 텍스트 요소에 설정하세요.');
+  if(element.kind!=='text'&&element.kind!=='meter')ctx.report(doc,path+'/kind','UI_DATA_BINDING_KIND','수치 데이터 연결은 텍스트 또는 게이지 요소에 설정하세요.');
   const root=doc.data as JsonObject, roster=root.roster as JsonObject|undefined, owner=target.owner as JsonObject|undefined;
   if(owner){
     if(owner.kind==='actor'&&!allowActor)ctx.report(doc,path+'/dataBinding/owner','UI_DATA_OWNER','부품 배치본에 실행 인물을 연결하거나 특정 인물을 선택하세요.');

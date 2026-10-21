@@ -1,6 +1,7 @@
 #include "studio.hpp"
 #include "logic-editor.hpp"
 #include <memory>
+#include <QSpinBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -44,7 +45,8 @@ void StudioWindow::editScreenRouting() {
 }
 
 void StudioWindow::editDataBinding() {
-  if(busy()||currentElement().value("kind")!="text"){errorLabel->setText(tr("텍스트 요소를 선택한 뒤 데이터를 연결하세요."));return;}
+  const bool meter=currentElement().value("kind")=="meter";
+  if(busy()||(!meter&&currentElement().value("kind")!="text")){errorLabel->setText(tr("텍스트 또는 게이지를 선택한 뒤 데이터를 연결하세요."));return;}
   const auto original=currentElement(),project=projectData();const auto revision=view.value("revision"),root=view.value("root");const auto selected=selection,screen=screenId;
   auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("dataBindingDialog");dialog->setWindowTitle(tr("표시할 데이터 연결"));dialog->resize(600,560);
   auto layout=new QVBoxLayout(dialog);auto search=new QLineEdit;search->setObjectName("dataBindingSearch");search->setPlaceholderText(tr("인물·능력·관계·물품 이름으로 검색"));layout->addWidget(search);
@@ -64,7 +66,14 @@ void StudioWindow::editDataBinding() {
   }
   for(const auto& row:project.value("gameplay").toObject().value("items").toArray()){const auto item=row.toObject();numeric(item.value("name").toString()+tr(" 수량"),{{"kind","inventory"},{"itemId",item.value("id")}});}
   for(const auto& row:project.value("userFields").toArray()){const auto f=row.toObject();add(tr("입력값 / ")+f.value("label").toString(),{{"binding","user-field"},{"userFieldId",f.value("id")}});}
-  auto format=new QLineEdit(original.value("valueFormat").toString("{label}: {value}"));format->setObjectName("dataBindingFormat");layout->addWidget(new QLabel(tr("수치·입력값 표시 형식 ({label}, {value})")));layout->addWidget(format);
+  auto format=new QLineEdit(original.value("valueFormat").toString("{label}: {value}"));format->setObjectName("dataBindingFormat");auto formatLabel=new QLabel(tr("수치·입력값 표시 형식 ({label}, {value})"));layout->addWidget(formatLabel);layout->addWidget(format);
+  QSpinBox *maximum=nullptr,*thickness=nullptr;
+  if(meter){
+    for(int i=list->count()-1;i>=0;--i)if(!list->item(i)->data(Qt::UserRole).toJsonObject().contains("dataBinding"))delete list->takeItem(i);
+    format->hide();formatLabel->hide();auto meterForm=new QFormLayout;layout->addLayout(meterForm);
+    maximum=new QSpinBox;maximum->setObjectName("dataMeterMaximum");maximum->setRange(1,1000000);maximum->setValue(original.value("maxValue").toInt(100));meterForm->addRow(tr("게이지 최댓값"),maximum);
+    thickness=new QSpinBox;thickness->setObjectName("dataMeterThickness");thickness->setRange(1,4320);thickness->setValue(original.value("meterThickness").toInt(original.value("height").toInt(16)));meterForm->addRow(tr("게이지 선 두께"),thickness);
+  }
   auto error=new QLabel;layout->addWidget(error);auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Ok)->setText(tr("연결"));layout->addWidget(buttons);
   connect(search,&QLineEdit::textChanged,dialog,[=](QString text){for(int i=0;i<list->count();++i)list->item(i)->setHidden(!list->item(i)->text().contains(text,Qt::CaseInsensitive));});
   connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
@@ -72,6 +81,6 @@ void StudioWindow::editDataBinding() {
     if(busy()||view.value("revision")!=revision||view.value("root")!=root||screenId!=screen||selection!=selected){error->setText(tr("프로젝트 또는 선택 요소가 바뀌었습니다. 다시 열어 주세요."));return;}
     if(!list->currentItem()||list->currentItem()->isHidden()){error->setText(tr("표시할 데이터를 선택하세요."));return;}
     const auto payload=list->currentItem()->data(Qt::UserRole).toJsonObject();const auto text=format->text();
-    updateElement([=](QJsonObject& e){for(const auto key:{"dataBinding","attributeId","characterId","relationshipId","itemId","userFieldId","valueFormat"})e.remove(key);for(auto it=payload.begin();it!=payload.end();++it)e[it.key()]=it.value();if(payload.value("binding")=="data-value"||payload.value("binding")=="user-field")e["valueFormat"]=text;});dialog->accept();
+    updateElement([=](QJsonObject& e){for(const auto key:{"dataBinding","attributeId","characterId","relationshipId","itemId","userFieldId","valueFormat"})e.remove(key);for(auto it=payload.begin();it!=payload.end();++it)e[it.key()]=it.value();if(payload.value("binding")=="data-value"||payload.value("binding")=="user-field")e["valueFormat"]=text;if(meter){e["maxValue"]=maximum->value();e["meterThickness"]=thickness->value();e["valueFormat"]="{value}";}});dialog->accept();
   });dialog->open();
 }

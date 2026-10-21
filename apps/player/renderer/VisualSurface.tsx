@@ -2,7 +2,7 @@ import { resolvePresentation, presentationActivity } from '../../../packages/vis
 import React, { useEffect, useRef, useState } from 'react';
 import type { Element, ScreenId, ReadonlyDesign } from '../../../packages/visual/model.js';
 import './visual.css';
-import { dataBindingText } from '../../../packages/visual/data-binding.js';
+import { dataBindingText, dataBindingValue } from '../../../packages/visual/data-binding.js';
 import { numericBinding, userFieldBinding } from '../../../packages/visual/bindings.js';
 import { JourneyWidget, type WidgetCommand, type GameWidgetsView, type RelationshipRow } from './JourneyWidgets.js';
 import { SystemsWidget } from './SystemsWidget.js';
@@ -105,7 +105,9 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
         const field=context.userFields?.find(f=>f.id===element.userFieldId);
         body=<input className="visual-input" type="text" aria-label={field?.label??element.label??element.id} value={context.userValues?.[element.userFieldId??'']??field?.initial??''} disabled={busy||!enabled||!field||editing||!context.userFieldsEditable} autoComplete="off" spellCheck={false} onChange={event=>field&&onUserValue?.(field.id,event.target.value)}/>;
       }
-      if(element.kind==='meter')body=<div className="visual-meter" style={{'--meter-track':element.fill??'transparent'} as React.CSSProperties}><span>{element.text??element.label??''}</span><progress aria-label={element.label??element.text??element.id} max={Math.max(1,element.maxValue??100)} value={Math.max(0,Math.min(element.value??0,element.maxValue??100))}/></div>;
+      if(element.kind==='meter'&&element.meterThickness!==undefined)style.background='transparent';
+      const meterValue=element.dataBinding?(dataBindingValue(element,context)??0):(element.value??0);
+      if(element.kind==='meter')body=<div className="visual-meter" style={{'--meter-track':element.fill??'transparent'} as React.CSSProperties}><span>{element.text??element.label??''}</span><progress aria-label={element.label??element.text??element.id} style={element.meterThickness===undefined?undefined:{height:Math.min(element.height,element.meterThickness)}} max={Math.max(1,element.maxValue??100)} value={Math.max(0,Math.min(meterValue,element.maxValue??100))}/></div>;
       if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
       if(element.kind==='schedule')body=context.dataState?.roster
         ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)}/>

@@ -642,6 +642,7 @@ public:
         const auto end=body.find('>',at);if(body.substr(at,end-at).find(" disabled")==std::string::npos)body.insert(at+tag.size(),"disabled=\"disabled\" ");at=body.find('>',at)+1;
       }
     }
+    if(kind=="meter"&&e.contains("meterThickness"))style+="background-color:transparent;";
     if(kind=="button"&&body.substr(0,body.find('>')).find("disabled=")!=std::string::npos)style+="opacity:"+number(e.value("opacity",1.0)*0.45)+";";
     return "<div id=\"node-"+escape(e.value("id",""))+"\" data-tooltip=\""+escape(e.value("tooltip",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
   }
@@ -690,7 +691,13 @@ public:
     }
     if(kind=="panel"||kind=="group")return "";
     if(kind=="input"){const auto id=e.value("userFieldId","");return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;color:inherit;font-size:inherit;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
-    if(kind=="meter"){const double maximum=e.value("maxValue",100.0),value=e.value("value",0.0),ratio=maximum>0?std::clamp(value/maximum,0.0,1.0):0.0;return "<div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div>";}
+    if(kind=="meter"){
+      double value=e.value("value",0.0);
+      if(e.contains("dataBinding")){auto numeric=e;numeric["valueFormat"]="{value}";try{value=std::stod(data_binding(numeric));}catch(...){value=0;}}
+      const double maximum=e.value("maxValue",100.0),ratio=maximum>0?std::clamp(value/maximum,0.0,1.0):0.0;
+      const double height=e.value("height",16.0),thickness=std::min(height,e.value("meterThickness",height));
+      return "<div style=\"position:absolute;left:0;top:"+number((height-thickness)/2)+"px;width:100%;height:"+number(thickness)+"px;background-color:"+css_color(e.value("fill",Json("#00000000")))+";\"><div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div></div>";
+    }
     if(kind=="saveSlots"||kind=="loadSlots")return slots_body(e);
     if(kind=="playerSettings")return settings_body(e);
     if(kind=="image")return image(e);

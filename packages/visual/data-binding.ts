@@ -2,6 +2,15 @@ import type { Element } from './model.js';
 import type { RunState } from '../core/model.js';
 import type { NumericBindings } from './bindings.js';
 
+/** Numeric projection for a gauge, using the same ownership rules as text. */
+export function dataBindingValue(element: Element, context: NumericBindings & {dataState?: RunState | null}): number | undefined {
+  if (!element.dataBinding) return undefined;
+  const text = dataBindingText({...element,binding:'data-value',valueFormat:'{value}'},context);
+  if (text === null || text === '—') return undefined;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 /** Read-only field projection, shared by all screens and reusable components. */
 export function dataBindingText(element: Element, context: NumericBindings & {dataState?: RunState | null}): string | null {
   if (element.binding !== 'data-value') return null;

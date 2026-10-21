@@ -1,4 +1,5 @@
 [
+  ["수치 데이터 연결은 텍스트 또는 게이지 요소에 설정하세요.","Numeric data bindings require a text or gauge element.","数値データはテキストまたはゲージ要素に接続してください。"],
   ["제작 미리보기: %1","Authoring preview: %1","制作プレビュー：%1"],
   ["가상 검사 상태입니다. 실제 도달 가능성·플레이 결과 검증을 대신하지 않습니다. 본편·프로젝트·저장 파일은 변경하지 않습니다.","This is a hypothetical inspection state, not a substitute for reachability or play-result validation. The main game, project, and saves are unchanged.","仮想検査状態であり、到達可能性・プレイ結果の検証の代わりにはなりません。本編・プロジェクト・保存は変更しません。"],
   ["제작 유형·제목·초기 자금을 확인하세요.","Check the authoring type, title, and starting funds.","制作種類・タイトル・初期資金を確認してください。"],

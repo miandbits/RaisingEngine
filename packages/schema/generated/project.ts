@@ -8328,6 +8328,7 @@ export type Element = {
   decreasingAttributeIds?: string[];
   resultLayout?: "summary" | "changes";
   choiceLayout?: "list" | "cards";
+  meterThickness?: number;
 };
 export type ComponentChild = {
   [k: string]: unknown;
@@ -13669,6 +13670,7 @@ export type ComponentChild = {
   decreasingAttributeIds?: string[];
   resultLayout?: "summary" | "changes";
   choiceLayout?: "list" | "cards";
+  meterThickness?: number;
 };
 export type Effects = (
   | {

@@ -234,6 +234,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
            {"panel", tr("패널")},
            {"image", tr("이미지 · 에셋 선택 후 추가")},
            {"stats", tr("능력·자원 목록")},
+           {"meter", tr("게이지 · 수치 데이터")},
            {"schedule", tr("일정 선택")},
            {"saveSlots", tr("저장 슬롯 · 기록하기")},
            {"playerSettings", tr("플레이어 설정 · 소리와 읽기")},
