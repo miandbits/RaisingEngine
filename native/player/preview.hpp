@@ -22,6 +22,7 @@ inline Json rendered_node_report(const Json& entry,Rml::Element* element,int vie
   result["fontFamily"]=element->GetProperty("font-family")->ToString();
   result["fontSize"]=element->GetProperty("font-size")->ToString();
   result["color"]=element->GetProperty("color")->ToString();
+  result["opacity"]=element->GetProperty<float>("opacity");
   const bool has_text=contains_rendered_text(element);
   const bool overflow_x=element->GetScrollWidth()>element->GetClientWidth()+.5f,overflow_y=element->GetScrollHeight()>element->GetClientHeight()+.5f;
   result["overflowX"]=overflow_x;result["overflowY"]=overflow_y;result["textMeasured"]=has_text;

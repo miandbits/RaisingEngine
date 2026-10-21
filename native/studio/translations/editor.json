@@ -2919,5 +2919,8 @@
   ["일정 연출 · 현재 활동 넘기기","Schedule playback · skip activity","予定演出 · 現在の活動をスキップ"],
   ["활동별 아이콘 선택…","Choose activity icons…","活動別アイコンを選択…"],
   ["활동별 아이콘","Activity icons","活動別アイコン"],
-  ["아이콘 없음","No icon","アイコンなし"]
+  ["아이콘 없음","No icon","アイコンなし"],
+  ["선택지 아래에 효과와 후속 안내 표시","Show effects and consequences below choices","選択肢の下に効果と後続の案内を表示"],
+  ["선택 결과 · 실제 변화","Choice result · actual changes","選択結果 · 実際の変化"],
+  ["결과 안내","Consequence hint","結果の案内"]
 ]

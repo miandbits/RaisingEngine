@@ -171,7 +171,7 @@ public:
   Json editor_command=Json::object();
   std::optional<SDL_FingerID> active_finger;
   int lifecycle_saves=0;
-  std::string presentation_key;
+  std::map<std::string,std::string> entrance_keys;
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
   PlayerApplication(Json bundle, fs::path root, SDL_Window* window, SDL_Renderer* renderer, fs::path save_file)
     :markup(game,bundle.at("assets"),std::move(root)),window(window),renderer(renderer),save_file(std::move(save_file)) {
@@ -318,9 +318,12 @@ public:
     if(!context)throw std::runtime_error("렌더링 컨텍스트를 만들지 못했습니다.");
     context->SetDimensions({markup.width,markup.height});
     SDL_SetRenderLogicalPresentation(renderer,markup.width,markup.height,SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    // Keep shared image resources alive while the replacement document acquires them.
+    // Closing first can evict a large background on every dialogue/UI update.
+    auto* replacement=context->LoadDocumentFromMemory(source);
+    if(!replacement)throw std::runtime_error("화면 문서를 만들지 못했습니다.");
     if(document)document->Close();
-    document=context->LoadDocumentFromMemory(source);
-    if(!document)throw std::runtime_error("화면 문서를 만들지 못했습니다.");
+    document=replacement;
     document->AddEventListener("mouseover",this);document->AddEventListener("mouseout",this);document->AddEventListener("focus",this,true);document->AddEventListener("blur",this,true);document->AddEventListener("keydown",this);document->AddEventListener("click",this);document->AddEventListener("change",this);document->AddEventListener("input",this);document->Show();
     for(int i=0;i<game.periods();i++)if(auto* select=document->GetElementById("plan-"+std::to_string(i))) {
       if(auto* box=select->QuerySelector("selectbox"))box->SetProperty("width",number(std::max(60.f,select->GetProperty<float>("width")))+"px");
@@ -342,10 +345,16 @@ public:
       const auto found=collection_scroll.find(markup.screen_id+"/"+entry.value("id",""));
       if(found!=collection_scroll.end())if(auto* element=document->GetElementById("node-"+entry.value("id","")))element->SetScrollTop(found->second);
     }
-    const auto key=markup.screen_id+":"+(game.state.is_null()?"title":game.state.at("presentation").dump());
-    if(!preview()&&key!=presentation_key)for(const auto& entry:markup.render_elements) {
+    std::map<std::string,std::string> next_entrance_keys;
+    if(!preview())for(const auto& entry:markup.render_elements) {
       const auto motion=entry.value("motion","none");if(motion=="none")continue;
       auto* element=document->GetElementById("node-"+entry.value("id",""));if(!element)continue;
+      const auto id=markup.screen_id+":"+entry.value("id","");
+      // A new speaker or dialogue line must not restart an unchanged background.
+      // The rendered body includes the resolved image URL, including variants/bindings.
+      const auto key=motion+":"+element->GetInnerRML();
+      next_entrance_keys[id]=key;
+      if(entrance_keys.count(id)&&entrance_keys.at(id)==key)continue;
       const float duration=entry.value("durationMs",300)/1000.f;
       Rml::Property zero(0.f,Rml::Unit::NUMBER);
       element->Animate("opacity",Rml::Property(entry.value("opacity",1.f),Rml::Unit::NUMBER),duration,Rml::Tween{},1,false,0,&zero);
@@ -358,7 +367,7 @@ public:
     }
     if(previous_screen==markup.screen_id&&!previous_focus.empty()&&active_modal.empty())
       if(auto* focus=document->GetElementById(previous_focus);focus&&!focus->HasAttribute("disabled"))focus->Focus();
-    presentation_key=key;dirty=false;
+    entrance_keys=std::move(next_entrance_keys);dirty=false;
     try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
     if(editor_events){std::cout<<Json({{"event","editor-view"},{"command",editor_command},{"view",ui_state()}}).dump()<<std::endl;editor_command=Json::object();}
   }

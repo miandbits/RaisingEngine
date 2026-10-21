@@ -331,13 +331,16 @@ private slots:
     QTimer::singleShot(100,&w,[]{
       auto d=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(d);
       auto mode=d->findChild<QComboBox*>("widgetLayout");QVERIFY(mode);QVERIFY(mode->findData("cards")>=0);mode->setCurrentIndex(mode->findData("cards"));
+      auto effects=d->findChild<QCheckBox*>("showChoiceEffects");QVERIFY(effects);effects->setChecked(true);
       QTest::mouseClick(d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);
     });
     QTest::mouseClick(w.findChild<QPushButton*>("widgetSettings"),Qt::LeftButton);
     auto choices=[&] {for(auto s:w.projectData()["visual"].toObject()["screens"].toArray())for(auto e:s.toObject()["elements"].toArray())if(e.toObject()["id"]==choicesId)return e.toObject();return QJsonObject();};
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&choices()["choiceLayout"]=="cards",10000);
+    QVERIFY(choices()["showChoiceEffects"].toBool());
     w.findChild<QAction*>("undoEdit")->trigger();
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&choices()["choiceLayout"]!="cards",10000);
+    QVERIFY(!choices()["showChoiceEffects"].toBool());
   }
   void sharedStyleAuthoring() {
     StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));

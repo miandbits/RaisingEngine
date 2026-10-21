@@ -19,6 +19,7 @@ void StudioTests::scriptAuthoringCreateConnectRoundTrip(){
   auto create=[&](QString type){kind->setCurrentIndex(kind->findData(type));add->click();};
   create("choice");dialog.findChild<QPlainTextEdit*>("script-prompt")->setPlainText("Choose a route");dialog.findChild<QPushButton*>("scriptChoiceAdd")->click();
   auto choices=dialog.findChild<QTableWidget*>("scriptChoices");QCOMPARE(choices->rowCount(),2);choices->item(0,1)->setText("Study");choices->item(1,1)->setText("Rest");
+  QCOMPARE(choices->columnCount(),4);choices->item(0,3)->setText("Meet again at the library.");
   create("dialogue");dialog.findChild<QPlainTextEdit*>("script-text")->setPlainText("Study result");dialog.findChild<QLineEdit*>("scriptNodeId")->setText("study-line");dialog.findChild<QPushButton*>("scriptNodeRename")->click();
   create("branch");auto thenField=dialog.findChild<QComboBox*>("script-then");thenField->setCurrentIndex(thenField->findData("study-line"));
   QTimer::singleShot(0,[&]{auto editor=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(editor);QCOMPARE(editor->objectName(),QString("logicEditor"));editor->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();});
@@ -29,6 +30,7 @@ void StudioTests::scriptAuthoringCreateConnectRoundTrip(){
   dialog.findChild<QPushButton*>("scriptNodeDuplicate")->click();QCOMPARE(dialog.findChild<QLineEdit*>("scriptNodeId")->text(),QString("copy-1"));
   dialog.findChild<QDialogButtonBox*>("scriptButtons")->button(QDialogButtonBox::Save)->click();QCOMPARE(dialog.result(),int(QDialog::Accepted));
   const auto edits=dialog.edits();QCOMPARE(edits.size(),1);const auto data=edits.first().toObject().value("data").toObject();QVERIFY(scriptGraphIssues(data).isEmpty());QCOMPARE(data.value("nodes").toArray().size(),8);
+  for(auto v:data.value("nodes").toArray())if(v.toObject().value("type")=="choice")QCOMPARE(v.toObject().value("choices").toArray()[0].toObject().value("consequenceText").toString(),QString("Meet again at the library."));
   QJsonObject branch;for(auto v:data.value("nodes").toArray())if(v.toObject().value("id")=="branch-1")branch=v.toObject();QCOMPARE(branch.value("then").toString(),QString("study-line"));QCOMPARE(branch.value("condition").toObject().value("op").toString(),QString("always"));
   auto context=scriptTestContext();auto docs=context.value("documents").toArray();auto doc=docs[0].toObject();doc["data"]=data;docs[0]=doc;context["documents"]=docs;ScriptAuthoringDialog reopened(context,{});QVERIFY(reopened.edits().isEmpty());QVERIFY(!reopened.findChild<QGraphicsView*>("scriptGraph")->scene()->items().isEmpty());
 }

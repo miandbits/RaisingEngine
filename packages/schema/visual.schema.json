@@ -841,7 +841,8 @@
             "activity-progress",
             "save-summary",
             "player-notice",
-            "reading-status"
+            "reading-status",
+            "choice-result"
           ]
         },
         "imageSource": {
@@ -1873,6 +1874,11 @@
             "list",
             "cards"
           ]
+        },
+        "showChoiceEffects": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show authored consequence text and immediate choice effects below each option."
         },
         "meterThickness": {
           "type": "number",

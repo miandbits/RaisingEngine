@@ -63,6 +63,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.binding==='save-summary'||e.binding==='player-notice'))requiredFeatures.push('save-panel-v1');
   if(visual&&(visual.saveSystem||[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='saveSlots'||e.kind==='loadSlots')))requiredFeatures.push('save-slots-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.choiceLayout==='cards'))requiredFeatures.push('narrative-cards-v1');
+  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.showChoiceEffects||e.binding==='choice-result'))requiredFeatures.push('choice-feedback-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.scheduleLayout==='board'||e.resultLayout==='changes'||e.action==='commitPlan'||e.binding==='schedule-summary'||e.binding==='activity-progress'))requiredFeatures.push('schedule-board-v1');
   if(usesUiContext(visual))requiredFeatures.push('component-context-v1');
   if(visual?.routing?.conditions?.length)requiredFeatures.push('conditional-routing-v1');

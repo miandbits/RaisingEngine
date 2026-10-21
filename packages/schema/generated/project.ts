@@ -2973,7 +2973,8 @@ export type Element = {
     | "activity-progress"
     | "save-summary"
     | "player-notice"
-    | "reading-status";
+    | "reading-status"
+    | "choice-result";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
@@ -8334,6 +8335,10 @@ export type Element = {
   decreasingAttributeIds?: string[];
   resultLayout?: "summary" | "changes";
   choiceLayout?: "list" | "cards";
+  /**
+   * Show authored consequence text and immediate choice effects below each option.
+   */
+  showChoiceEffects?: boolean;
   meterThickness?: number;
   /**
    * @maxItems 1000

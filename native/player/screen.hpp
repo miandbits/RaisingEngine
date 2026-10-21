@@ -329,6 +329,18 @@ public:
 #include "data-binding.inc"
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
     if(name=="player-notice")return game.message;
+    if(name=="choice-result") {
+      if(game.choice_feedback.is_null()||phase()!="dialogue")return "";
+      std::string out;
+      for(const auto& change:game.choice_feedback.value("changes",Json::array()))if(change.value("kind","")=="numeric") {
+        if(!out.empty())out+=" · ";
+        const auto delta=change.value("delta",0.0);
+        out+=target_name(change.at("target"))+" "+number(change.at("before"))+" → "+number(change.at("after"))+" ("+(delta>=0?"+":"−")+number(std::abs(delta))+")";
+      }
+      if(out.empty())out=settings_words("능력치·관계 수치 변화 없음","No stat or relationship change","能力値・関係値の変化なし");
+      const auto hint=game.choice_feedback.value("consequenceText","");
+      return settings_words("선택 결과 · ","Choice result · ","選択結果 · ")+out+(hint.empty()?"":"\n"+hint);
+    }
     if(name=="reading-status")return player_preferences.value("autoAdvance",false)?(phase()=="choice"?settings_words("자동 진행 대기 · 고르면 이어집니다","Auto paused · choose to continue","自動送り待機 · 選択後に再開"):settings_words("자동 진행 중 · 선택지에서 멈춤","Auto · stops at choices","自動送り · 選択肢で停止")):settings_words("직접 읽기","Manual reading","手動送り");
     if(name=="save-summary"){
       const auto status=saved_preview.value("status","empty");
@@ -834,6 +846,12 @@ public:
         if(e.value("choiceLayout","list")=="cards"){
           const auto ordinal=std::to_string(++index);
           row.insert(row.find('>')+1,std::string("<span style=\"display:inline-block;width:34px;opacity:0.6;\">")+(index<10?"0":"")+ordinal+"</span>");
+        }
+        if(e.value("showChoiceEffects",false))for(const auto& definition:story.at("node").value("choices",Json::array()))if(definition.at("id")==choice.at("id")) {
+          const auto effects=effect_summary(definition),hint=definition.value("consequenceText","");
+          std::string summary=effects.empty()?settings_words("수치 변화 없음","No numeric change","数値の変化なし"):effects;
+          if(!hint.empty())summary+="\n"+hint;
+          row.insert(row.rfind("</button>"),"<span style=\"display:block;font-size:14px;line-height:18px;white-space:pre-wrap;opacity:0.85;\">"+escape(summary)+"</span>");
         }
         out+=row;
       }

@@ -583,6 +583,11 @@
         "text": {
           "$ref": "#/$defs/text"
         },
+        "consequenceText": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Player-facing explanation of non-numeric consequences, shown by opt-in choice feedback UI."
+        },
         "requirements": {
           "$ref": "#/$defs/condition"
         },

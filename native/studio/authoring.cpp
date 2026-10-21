@@ -58,6 +58,9 @@ void StudioWindow::editWidgetSettings() {
   else mode->hide();
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));
   auto activityDescription = new QCheckBox(tr("일정 칸 아래에 선택한 활동 설명 표시"));
+  auto choiceEffects = new QCheckBox(tr("선택지 아래에 효과와 후속 안내 표시"));
+  choiceEffects->setObjectName("showChoiceEffects");choiceEffects->setChecked(value.value("showChoiceEffects").toBool());
+  if(kind=="choices")form->addRow(choiceEffects);else choiceEffects->hide();
   activityDescription->setObjectName("showActivityDescription");
   activityDescription->setChecked(value.value("showActivityDescription").toBool());
   if(kind=="schedule")form->addRow(activityDescription);else activityDescription->hide();
@@ -113,6 +116,7 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="schedule") {for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();g["id"]=table->item(i,0)->text().trimmed();g["label"]=table->item(i,1)->text();groups[i]=g;}value["scheduleGroups"]=groups;}
   if(kind=="stats"||kind=="actions"){QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove(selectionField);else value[selectionField]=ids;}
   if(kind=="button")value["autoLabel"]=autoLabel->isChecked();
+  if(kind=="choices"){if(choiceEffects->isChecked())value["showChoiceEffects"]=true;else value.remove("showChoiceEffects");}
   if(kind=="schedule"){QJsonArray ids;for(int i=0;i<decreasing->count();i++)if(decreasing->item(i)->checkState()==Qt::Checked)ids.append(decreasing->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove("decreasingAttributeIds");else value["decreasingAttributeIds"]=ids;}
   if(kind=="schedule"){if(activityIcons.isEmpty())value.remove("activityIcons");else value["activityIcons"]=activityIcons;}
   if(kind=="schedule"){if(activityDescription->isChecked())value["showActivityDescription"]=true;else value.remove("showActivityDescription");}

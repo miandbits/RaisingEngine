@@ -516,6 +516,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                                       {"activity-progress", tr("활동 진행 위치")},
                                       {"save-summary", tr("저장한 기록 요약")},
                                       {"reading-status", tr("대사 자동 진행 상태")},
+                                      {"choice-result", tr("선택 결과 · 실제 변화")},
                                       {"player-notice", tr("플레이어 처리 결과")},
                                       {"title", tr("게임 제목")},
                                       {"location", tr("현재 장소")},

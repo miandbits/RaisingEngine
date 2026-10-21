@@ -20,6 +20,7 @@ inline Json read_json(const fs::path& file, uintmax_t limit = 64 * 1024 * 1024) 
 }
 
 #include "gallery.hpp"
+#include "choice-feedback.hpp"
 
 class GameSession {
 public:
@@ -57,6 +58,7 @@ public:
   }
   Json content, state = nullptr, commands = Json::array(), projection;
   Json relationship_changes = Json::object();
+  Json choice_feedback = nullptr;
   std::string message;
   std::vector<std::string> sound_cues;
   Json timeline_plan=nullptr,timeline_cursor=nullptr;
@@ -129,6 +131,7 @@ public:
     gallery_capture.pending=nullptr;
     schedule_speed=1;
     relationship_changes=Json::object();
+    choice_feedback=nullptr;
     state = call({{"operation", "create"}, {"seed", seed}, {"options", {{"mode", "full"},{"userValues",userValues}}}}).at("state");
     commands = Json::array(); message.clear(); sound_cues.clear(); battle_selection=nullptr;refresh(); sync_timeline();
     origin = {{"seed",seed},{"mode","full"},{"initialOverrides",{{"attributes",Json::object()},{"flags",Json::object()},{"relationships",Json::object()}}}};
@@ -149,6 +152,7 @@ public:
     try {result = call({{"operation", "command"}, {"state", state}, {"command", command}, {"expectedRevision", state.at("stateRevision")}});}
     catch(const std::exception& error){if(observer)observer(before,before,command,error.what());throw;}
     raising::track_relationship_changes(relationship_changes,state,result.at("state"));
+    track_choice_feedback(choice_feedback,content,state,command,result);
     state = result.at("state"); commands.push_back(command);
     for(const auto& cue:result.at("transition").value("soundCues",Json::array()))sound_cues.push_back(cue.get<std::string>());
     refresh(); sync_timeline();sync_battle_selection();
@@ -218,8 +222,11 @@ public:
     if (saved.at("coreVersion") != replay.at("coreVersion")) throw std::runtime_error("실행 규칙 버전이 다릅니다.");
     GalleryCapture restored_capture;
     Json restored_changes=Json::object();
+    Json restored_choice=nullptr;
     for (const auto& command : saved.at("commands")) {
-      const auto next=call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}}).at("state");
+      const auto result=call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}});
+      const auto next=result.at("state");
+      track_choice_feedback(restored_choice,content,replay,command,result);
       raising::track_relationship_changes(restored_changes,replay,next);
       if(content.at("project").contains("gallery")&&!replay.value("activeNarrative",Json()).is_null()){
         const auto narrative=call({{"operation","view"},{"state",replay}}).value("narrative",Json());
@@ -267,6 +274,7 @@ public:
     }
     gallery_capture=std::move(restored_capture);
     relationship_changes=std::move(restored_changes);
+    choice_feedback=std::move(restored_choice);
     schedule_speed=restored_speed;state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
     collect_gallery_media();
     if(planner_restore)planner_restore(restored_draft);

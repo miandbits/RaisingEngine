@@ -305,6 +305,10 @@ export interface Scene {
 export interface Choice {
   id: string;
   text: string;
+  /**
+   * Player-facing explanation of non-numeric consequences, shown by opt-in choice feedback UI.
+   */
+  consequenceText?: string;
   requirements: Condition;
   effects: Effects;
   next: string;
