@@ -35,6 +35,17 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      if(e.activityIcons!==undefined){
+        if(e.kind!=='schedule')ctx.report(doc,ep+'/activityIcons','UI_SCHEDULE_ICONS_KIND','활동 아이콘은 일정 요소에 연결하세요.');
+        const assigned=new Set<string>();
+        for(const [i,icon]of objectItems(e.activityIcons).entries()){
+          const at=ep+'/activityIcons/'+i,id=String(icon.activityId);
+          ctx.resolve(ctx.activities,id,doc,at+'/activityId','활동');
+          if(assigned.has(id))ctx.report(doc,at+'/activityId','UI_SCHEDULE_ICON_DUPLICATE','같은 활동의 아이콘은 한 번만 연결하세요.');assigned.add(id);
+          const image=ctx.resolve(ctx.assets,String(icon.imageAssetId),doc,at+'/imageAssetId','이미지');
+          if(image&&image.data.kind!=='image')ctx.report(doc,at+'/imageAssetId','UI_IMAGE_KIND','이미지 에셋을 선택하세요.');
+        }
+      }
       checkUiContext(ctx,doc,e,ep);
       const contextFields=(e.contextBindings??[]) as string[];
       boundFields=new Set([...boundFields,...contextFields]);

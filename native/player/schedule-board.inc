@@ -62,6 +62,9 @@
       html.insert(html.find('>')," style=\""+at(x,y,cw,ch)+"padding:10px 14px;margin:0;text-align:left;white-space:pre-wrap;font-size:"+number(fs)+"px;line-height:"+number(fs*1.45)+"px;color:"+css_color(e.value("color","#273F3B"))+";background-color:"+std::string(selected?"#E1EADF":"#F9F5EA")+";border-radius:3px;border-width:"+std::string(selected?"3":"1")+"px;border-color:"+std::string(selected?"#476960":"#C9BFA9")+";\"");
       return html;
     };
+    auto icon_id=[&](const std::string& activity){for(const auto& icon:e.value("activityIcons",Json::array()))if(icon.value("activityId","")==activity)return icon.value("imageAssetId","");return std::string();};
+    auto icon_markup=[&](const std::string& asset,double x,double y,double size){if(asset.empty())return std::string();return "<div style=\""+at(x,y,size,size)+"pointer-events:none;\">"+image({{"imageAssetId",asset},{"fit","contain"}})+"</div>";};
+    auto body=[&](std::string html,const std::string& content){const auto start=html.find('>')+1,end=html.rfind("</button>");if(end!=std::string::npos)html.replace(start,end-start,content);return html;};
     std::string out="<div class=\"schedule-board\" style=\"position:relative;pointer-events:auto;width:100%;height:"+number(h)+"px;\">";
     out+=title(std::to_string(plan_slot+1)+"주에 담을 활동",0,0,left);
     out+=title(e.value("label","이번 달의 계획"),left+gap,0,right);
@@ -80,6 +83,14 @@
       }
       const auto end=html.rfind("</button>");
       if(end!=std::string::npos)html.insert(end,"<div style=\"font-size:16px;line-height:23px;margin-top:5px;\">"+escape(effect_summary({{"effects",a.value("baseEffects",Json::array())}}))+"</div>");
+      if(e.contains("activityIcons")){
+        const auto art=icon_id(id);const double tx=art.empty()?14:66;
+        std::string content=icon_markup(art,14,13,38);
+        content+="<div style=\""+at(tx,10,left-tx-34,30)+"font-size:"+number(fs+1)+"px;\">"+escape(a.value("label",id))+"</div>";
+        content+="<div style=\""+at(tx,38,left-tx-34,25)+"font-size:15px;color:#70675D;\">"+escape(cost.empty()?"비용 없음":"비용 "+cost)+"</div>";
+        content+="<div style=\""+at(14,66,left-44,24)+"font-size:15px;\">"+escape(effect_summary({{"effects",a.value("baseEffects",Json::array())}}))+"</div>";
+        html=body(html,content);
+      }
       out+=html;ay+=104;
     }
     out+="</div>";
@@ -91,7 +102,12 @@
       const bool assigned=plan_selected&(1<<i);std::string activity=assigned?plan[i]:"활동 선택";
       for(const auto& a:display_content.at("activities"))if(a.at("id")==activity)activity=a.value("label",activity);
       label+=activity;
-      out+=card("board-slot-"+std::to_string(i),label,{{"type","boardSlot"},{"slot",i}},double(i)*(sw+12),0,sw,116,i==plan_slot,i>=first);
+      auto slot=card("board-slot-"+std::to_string(i),label,{{"type","boardSlot"},{"slot",i}},double(i)*(sw+12),0,sw,116,i==plan_slot,i>=first);
+      if(e.contains("activityIcons")){
+        const auto art=assigned?icon_id(plan[i]):std::string();
+        slot=body(slot,"<div style=\""+at(14,12,sw-28,24)+"font-size:16px;color:#70675D;\">"+std::to_string(i+1)+"주</div>"+icon_markup(art,sw-42,10,24)+"<div style=\""+at(14,46,sw-28,60)+"font-size:"+number(fs)+"px;line-height:27px;\">"+escape(activity)+"</div>");
+      }
+      out+=slot;
     }
     out+="</div></div>";
     std::string description=std::to_string(plan_slot+1)+"주를 선택했습니다.\n왼쪽에서 활동을 골라 주세요.";

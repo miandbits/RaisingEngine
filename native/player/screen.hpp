@@ -744,10 +744,11 @@ public:
       const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
       if(type=="timelinePause"||type=="timelineSpeed"||type=="timelineSkip"){
         authored_timeline_controls|=type=="timelinePause"?1:type=="timelineSpeed"?2:4;
-        enabled=game.timeline_active()&&!game.timeline_cursor.value("completed",false)&&!replay_controls;
+        const auto cursor=game.timeline_cursor.is_object()?game.timeline_cursor:Json::object();
+        enabled=game.timeline_active()&&!cursor.value("completed",false)&&!replay_controls;
         if(e.value("autoLabel",true)){
-          if(type=="timelinePause")label=game.timeline_cursor.value("paused",false)?settings_words("계속 재생","Resume","再開"):settings_words("일시정지","Pause","一時停止");
-          if(type=="timelineSpeed")label=settings_words("속도 ×","Speed ×","速度 ×")+std::to_string(game.timeline_cursor.value("speed",1));
+          if(type=="timelinePause")label=cursor.value("paused",false)?settings_words("계속 재생","Resume","再開"):settings_words("일시정지","Pause","一時停止");
+          if(type=="timelineSpeed")label=settings_words("속도 ×","Speed ×","速度 ×")+std::to_string(cursor.value("speed",1));
           if(type=="timelineSkip")label=settings_words("이번 활동 넘기기","Skip activity","この活動をスキップ");
         }
       }

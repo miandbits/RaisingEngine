@@ -17,6 +17,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSet>
+#include <QScrollArea>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <limits>
@@ -61,6 +62,22 @@ void StudioWindow::editWidgetSettings() {
   activityDescription->setChecked(value.value("showActivityDescription").toBool());
   if(kind=="schedule")form->addRow(activityDescription);else activityDescription->hide();
   autoLabel->setChecked(value.value("autoLabel").toBool(true)); if(kind=="button")form->addRow(autoLabel); else autoLabel->hide();
+  auto activityIcons=value.value("activityIcons").toArray();
+  if(kind=="schedule"){
+    auto iconsButton=new QPushButton(tr("활동별 아이콘 선택…"));iconsButton->setObjectName("scheduleIconsButton");form->addRow(iconsButton);
+    connect(iconsButton,&QPushButton::clicked,&dialog,[&]{
+      QDialog iconsDialog(&dialog);iconsDialog.setObjectName("scheduleIconsDialog");iconsDialog.setWindowTitle(tr("활동별 아이콘"));iconsDialog.resize(540,400);
+      auto iconsLayout=new QVBoxLayout(&iconsDialog);auto scroll=new QScrollArea;scroll->setWidgetResizable(true);auto content=new QWidget;auto fields=new QFormLayout(content);scroll->setWidget(content);iconsLayout->addWidget(scroll);QMap<QString,QComboBox*> iconFields;
+      for(const auto& row:view["documents"].toArray())if(row.toObject()["kind"]=="activity"){
+        const auto activity=row.toObject()["data"].toObject();const auto id=activity["id"].toString();auto field=new QComboBox;field->setObjectName("scheduleIcon-"+id);field->addItem(tr("아이콘 없음"),QString());
+        for(const auto& asset:assets)if(asset.toObject()["kind"]=="image")field->addItem(asset.toObject()["id"].toString(),asset.toObject()["id"].toString());
+        for(const auto& icon:activityIcons)if(icon.toObject()["activityId"]==id)field->setCurrentIndex(qMax(0,field->findData(icon.toObject()["imageAssetId"].toString())));
+        fields->addRow(activity["label"].toString(),field);iconFields[id]=field;
+      }
+      auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);iconsLayout->addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,&iconsDialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&iconsDialog,&QDialog::reject);
+      if(iconsDialog.exec()==QDialog::Accepted){activityIcons=QJsonArray();for(auto it=iconFields.begin();it!=iconFields.end();++it)if(!it.value()->currentData().toString().isEmpty())activityIcons.append(QJsonObject{{"activityId",it.key()},{"imageAssetId",it.value()->currentData().toString()}});}
+    });
+  }
   auto groups = value.value("scheduleGroups").toArray();
   auto table = new QTableWidget(groups.size(),2);table->setHorizontalHeaderLabels({tr("분류 ID"),tr("표시 이름")});table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
   table->setSelectionBehavior(QAbstractItemView::SelectRows);table->setObjectName("scheduleGroups");
@@ -97,6 +114,7 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="stats"||kind=="actions"){QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove(selectionField);else value[selectionField]=ids;}
   if(kind=="button")value["autoLabel"]=autoLabel->isChecked();
   if(kind=="schedule"){QJsonArray ids;for(int i=0;i<decreasing->count();i++)if(decreasing->item(i)->checkState()==Qt::Checked)ids.append(decreasing->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove("decreasingAttributeIds");else value["decreasingAttributeIds"]=ids;}
+  if(kind=="schedule"){if(activityIcons.isEmpty())value.remove("activityIcons");else value["activityIcons"]=activityIcons;}
   if(kind=="schedule"){if(activityDescription->isChecked())value["showActivityDescription"]=true;else value.remove("showActivityDescription");}
   auto project=projectData();auto visual=project["visual"].toObject();auto screens=visual["screens"].toArray();
   for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s["id"]!=screenId)continue;auto elements=s["elements"].toArray();for(int j=0;j<elements.size();j++)if(elements[j].toObject()["id"]==selection)elements[j]=value;s["elements"]=elements;screens[i]=s;}

@@ -59,6 +59,13 @@ test('gauges accept typed numeric bindings and thin tracks; invalid owners still
   v.screens[0].elements[0].dataBinding.owner={kind:'character',characterId:'missing'};
   const bad=await buildSnapshot(p);assert.equal(bad.ok,false);assert.ok(bad.diagnostics.some(d=>d.code==='UI_DATA_OWNER'));
 });
+test('schedule icons reject missing references, duplicate activities and inappropriate element kinds',async()=>{
+  const p=structuredClone(loaded);p.documents=p.documents.filter(d=>d.kind!=='scenario');
+  const activity=p.documents.find(d=>d.kind==='activity').data.id;
+  const v=design();v.screens[0].elements=[{id:'board',kind:'schedule',x:0,y:0,width:900,height:500,activityIcons:[{activityId:activity,imageAssetId:'missing'},{activityId:activity,imageAssetId:'missing'},{activityId:'missing',imageAssetId:'missing'}]}];doc(p,'project').visual=v;
+  const r=await buildSnapshot(p);assert.equal(r.ok,false);assert.ok(r.diagnostics.some(d=>d.code==='UI_SCHEDULE_ICON_DUPLICATE'));assert.ok(r.diagnostics.some(d=>d.pointer.endsWith('/activityIcons/2/activityId')));assert.ok(r.diagnostics.some(d=>d.pointer.endsWith('/activityIcons/0/imageAssetId')));
+  v.screens[0].elements[0].kind='text';const bad=await buildSnapshot(p);assert.ok(bad.diagnostics.some(d=>d.code==='UI_SCHEDULE_ICONS_KIND'));
+});
 test('both legacy scenarios and arbitrary-screen scenarios reach endings and restore saves',async()=>{
   for(const custom of [false,true]){
     const c=await content(p=>{if(custom)doc(p,'project').visual=design();});

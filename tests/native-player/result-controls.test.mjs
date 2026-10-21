@@ -49,6 +49,7 @@ for(const authored of [false,true])test(`${authored?'authored':'legacy'} native 
   const project=resolve('tests/fixtures/projects/last-grandson-polished'),loaded=await loadProject(project);
   if(authored){const visual=loaded.documents.find(d=>d.kind==='project').data.visual;
     visual.screens.find(s=>s.id==='schedule').elements.push(...['timelinePause','timelineSpeed','timelineSkip'].map((action,i)=>({id:`authored-${["pause","speed","skip"][i]}`,kind:'button',action,x:40+i*220,y:650,width:210,height:48,visibleWhen:'result'})));
+    visual.screens.find(s=>s.id==='title').elements.push(...['timelinePause','timelineSpeed','timelineSkip'].map((action,i)=>({id:`inactive-${i}`,kind:'button',action,x:40+i*220,y:650,width:210,height:48})));
   }
   const built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot,runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
@@ -60,11 +61,13 @@ for(const authored of [false,true])test(`${authored?'authored':'legacy'} native 
     let baseline;
     for(const mode of ['normal','fast','skip']){
       const path=resolve(evidence,ending+'-'+mode),plan=route(content,ending,mode,evidence),save=path+'-save.json';
+      if(authored)plan.steps.unshift({checkpoint:'no-timeline'});
       if(authored)for(const step of plan.steps)if(step.click?.startsWith('timeline-'))step.click={'timeline-pause':'authored-pause','timeline-speed':'authored-speed','timeline-skip':'authored-skip'}[step.click];
       await writeFile(path+'-steps.json',JSON.stringify(plan.steps));
       const played=spawnSync(resolve(game,'RaisingPlayer.exe'),['--bundle',game,'--seed','42','--save',save,'--automation',path+'-steps.json','--report',path+'-report.json','--hidden'],{encoding:'utf8',windowsHide:true,timeout:90000});
       const report=JSON.parse(await readFile(path+'-report.json','utf8'));assert.equal(played.status,0,JSON.stringify(report.error??played.stderr));assert.equal(report.ok,true);
       const ui=id=>report.steps.find(s=>s.command.checkpoint===id).ui;
+      if(authored)for(let i=0;i<3;i++)assert.equal(ui('no-timeline').elements.find(e=>e.id===`inactive-${i}`)?.enabled,false,'authored controls are safe and disabled without a timeline');
       if(authored){assert.ok(ui('start-0-0').elements.some(e=>e.id==='authored-pause'));assert.ok(!ui('start-0-0').elements.some(e=>e.id==='timeline-pause'),'authored controls replace fallback');}
       for(const [id,state]of Object.entries(plan.expected))assert.deepEqual(ui(id).state,state,`${ending}/${mode}/${id}`);
       if(!baseline)baseline=ui('finished').state;else assert.deepEqual(ui('finished').state,baseline,'mode must not change state, RNG, history or ending');

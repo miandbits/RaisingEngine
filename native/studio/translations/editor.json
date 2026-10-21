@@ -2916,5 +2916,8 @@
   ["플레이어 처리 결과","Player feedback","プレイヤー処理結果"],
   ["일정 연출 · 일시정지/재개","Schedule playback · pause/resume","予定演出 · 一時停止/再開"],
   ["일정 연출 · 배속 변경","Schedule playback · change speed","予定演出 · 速度変更"],
-  ["일정 연출 · 현재 활동 넘기기","Schedule playback · skip activity","予定演出 · 現在の活動をスキップ"]
+  ["일정 연출 · 현재 활동 넘기기","Schedule playback · skip activity","予定演出 · 現在の活動をスキップ"],
+  ["활동별 아이콘 선택…","Choose activity icons…","活動別アイコンを選択…"],
+  ["활동별 아이콘","Activity icons","活動別アイコン"],
+  ["아이콘 없음","No icon","アイコンなし"]
 ]

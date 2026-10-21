@@ -1878,6 +1878,26 @@
           "type": "number",
           "minimum": 1,
           "maximum": 4320
+        },
+        "activityIcons": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "activityId",
+              "imageAssetId"
+            ],
+            "properties": {
+              "activityId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "imageAssetId": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
         }
       },
       "required": [
@@ -3747,6 +3767,26 @@
           "type": "number",
           "minimum": 1,
           "maximum": 4320
+        },
+        "activityIcons": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "activityId",
+              "imageAssetId"
+            ],
+            "properties": {
+              "activityId": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "imageAssetId": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
         }
       },
       "required": [

@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QImage>
 #include <QInputDialog>
@@ -274,6 +275,9 @@ private slots:
   void calendarWidgetAuthoring() {
     StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+    const auto iconFile=QDir(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath())).filePath(".cache/schedule-icon.png");QImage iconImage(64,64,QImage::Format_ARGB32);iconImage.fill(QColor("#456B59"));QVERIFY(iconImage.save(iconFile));
+    QTimer::singleShot(150,&w,[&]{auto d=qobject_cast<QFileDialog*>(QApplication::activeModalWidget());QVERIFY(d);d->selectFile(iconFile);if(auto name=d->findChild<QLineEdit*>("fileNameEdit"))name->setText(iconFile);QMetaObject::invokeMethod(d,"accept",Qt::DirectConnection);});
+    w.findChild<QPushButton*>("importImage")->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
     auto palette=w.findChild<QToolButton*>("elementPalette");QVERIFY(palette);
     auto scheduleAction=w.findChild<QAction*>("add-element-schedule");QVERIFY(scheduleAction);scheduleAction->trigger();
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.selectedId().startsWith("schedule-"),10000);
@@ -296,12 +300,15 @@ private slots:
     QTimer::singleShot(100,&w,[]{
       auto d=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(d);
       auto mode=d->findChild<QComboBox*>("widgetLayout");QVERIFY(mode);QVERIFY(mode->findData("board")>=0);mode->setCurrentIndex(mode->findData("board"));
+      QTimer::singleShot(100,d,[]{auto icons=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(icons);QCOMPARE(icons->objectName(),QString("scheduleIconsDialog"));const auto fields=icons->findChildren<QComboBox*>();QVERIFY(!fields.isEmpty());QVERIFY(fields.first()->count()>1);fields.first()->setCurrentIndex(1);QTest::mouseClick(icons->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);});
+      QTest::mouseClick(d->findChild<QPushButton*>("scheduleIconsButton"),Qt::LeftButton);
       auto decreasing=d->findChild<QListWidget*>("decreasingAttributes");QVERIFY(decreasing);QVERIFY(decreasing->count()>0);decreasing->item(0)->setCheckState(Qt::Checked);
       QTest::mouseClick(d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok),Qt::LeftButton);
     });
     QTest::mouseClick(w.findChild<QPushButton*>("widgetSettings"),Qt::LeftButton);
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&element()["scheduleLayout"]=="board",10000);
     QCOMPARE(element()["decreasingAttributeIds"].toArray().size(),1);
+    QCOMPARE(element()["activityIcons"].toArray().size(),1);
     QVERIFY(w.findChild<QComboBox*>("buttonAction")->findData("commitPlan")>=0);
     QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("schedule-summary")>=0);
     QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("activity-progress")>=0);

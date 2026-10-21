@@ -22,7 +22,7 @@ test('schedule board drafts survive navigation/save/load; menu freezes playback;
   for(const s of content.project.visual.screens)s.elements=s.elements.filter(e=>e.kind!=='plugin'&&e.kind!=='component');
   const schedule=content.project.visual.screens.find(s=>s.id==='schedule');
   schedule.elements=[
-    el('plan','schedule',40,100,1200,480,{scheduleLayout:'board',fontSize:20,attributeIds:['skill','money','stamina','stress'],decreasingAttributeIds:['stress'],visibleWhen:'planning'}),
+    el('plan','schedule',40,100,1200,480,{scheduleLayout:'board',fontSize:20,attributeIds:['skill','money','stamina','stress'],decreasingAttributeIds:['stress'],visibleWhen:'planning',activityIcons:[{activityId:'rest',imageAssetId:content.assets.find(a=>a.kind==='image').id}]}),
     button('back','navigate',40,650,{screenId:'home',visibleWhen:'planning'}),
     button('commit','commitPlan',1020,650,{visibleWhen:'planning'}),
     button('menu','openModal',1060,20,{screenId:'pause'}),
@@ -40,7 +40,7 @@ test('schedule board drafts survive navigation/save/load; menu freezes playback;
   await writeFile(resolve(unsupported,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:['.wav'],visualFeatures:[]}));
   for(const target of ['windows','web'])await assert.rejects(
     exportGame({content,projectRoot:project,destination:resolve(root,'unsupported-'+target),target,runtimes:{windows:unsupported,web:unsupported}}),
-    /schedule-board-v1/,'a runtime without the board contract must not silently export broken UI');
+    /schedule-board-icons-v1/,'a runtime without authored icons must not silently export broken UI');
   const run=async(name,steps)=>{
     const script=resolve(root,name+'.json'),report=resolve(root,name+'-report.json');
     await writeFile(script,JSON.stringify(steps));

@@ -8335,6 +8335,13 @@ export type Element = {
   resultLayout?: "summary" | "changes";
   choiceLayout?: "list" | "cards";
   meterThickness?: number;
+  /**
+   * @maxItems 1000
+   */
+  activityIcons?: {
+    activityId: string;
+    imageAssetId: string;
+  }[];
 };
 export type ComponentChild = {
   [k: string]: unknown;
@@ -13683,6 +13690,13 @@ export type ComponentChild = {
   resultLayout?: "summary" | "changes";
   choiceLayout?: "list" | "cards";
   meterThickness?: number;
+  /**
+   * @maxItems 1000
+   */
+  activityIcons?: {
+    activityId: string;
+    imageAssetId: string;
+  }[];
 };
 export type Effects = (
   | {

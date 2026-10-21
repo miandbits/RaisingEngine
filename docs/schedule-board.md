@@ -13,6 +13,9 @@ In the Qt editor:
 5. A text element can bind to **Draft schedule summary** or **Activity progress**.
 6. For a Result element, choose **Reveal changes with playback** to hide
    unrevealed zero deltas and show changes alongside an animation.
+7. Open **Choose activity icons…** to select an imported image for each
+   activity by name. The board displays it on the activity card and assigned
+   period. Selecting **None** removes an assignment.
 
 The board selects a period, then assigns an activity. Selecting another activity
 replaces the selected period. Clear affects only that period. Navigation does not
@@ -25,6 +28,11 @@ events and narrative choices retain their normal stops.
 - `scheduleLayout: "board"` opts in; existing layouts keep their behavior.
 - `decreasingAttributeIds` identifies attributes whose reductions are favorable.
 - `attributeIds` limits the forecast attributes shown.
+- `activityIcons: [{ activityId, imageAssetId }]` optionally gives each activity
+  an icon. Missing assignments remain text-only. IDs must refer to existing
+  activities and image assets; duplicate activity assignments are rejected.
+  This requires native `schedule-board-icons-v1`; web export rejects it until
+  that renderer supports the same feature.
 - `action: "commitPlan"` confirms and starts the schedule.
 - `binding: "schedule-summary"` displays the draft. `valueFormat: "count"`
   displays a short assigned-period count.
