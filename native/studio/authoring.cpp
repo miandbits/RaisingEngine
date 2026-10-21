@@ -131,6 +131,11 @@ void StudioWindow::addElement(const QString &kind, const QString &assetId) {
                       {"height", kind == "text" ? 60 : 280},
                       {"fontSize", 24},
                       {"color", "#203a34"}};
+  if(kind=="saveSlots"||kind=="loadSlots"){
+    element["x"]=40;element["y"]=100;element["width"]=qMax(560,visual.value("width").toInt(1280)-80);element["height"]=qMax(300,visual.value("height").toInt(720)-180);
+    element["fontSize"]=18;element["fill"]="#F5EFDF";element["color"]="#263C36";element["hoverFill"]="#345C50";element["borderColor"]="#C7B99A";
+    if(!visual.contains("saveSystem"))visual["saveSystem"]=QJsonObject{{"manualSlots",6},{"autoSlots",3}};
+  }
   if (kind == "text") {
     element["text"] = tr("새 텍스트");
     element["binding"] = "none";

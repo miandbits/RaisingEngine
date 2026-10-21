@@ -1,5 +1,7 @@
 # Authored save panels (Windows source builds)
 
+For multiple manual slots and automatic checkpoints, see [Save slots](save-slots.md).
+
 Create a modal screen and open it with an `openModal` button. Its `save`, `load`,
 and `closeModal` buttons operate on the player's configured save file. Opening a
 panel does not advance the simulation or change its location.
@@ -31,8 +33,7 @@ Load buttons are disabled for missing or unreadable save metadata. A successfull
 saved modal disables its save button until the panel is reopened. Invalid files
 are never overwritten just by opening a preview. Loading still performs the
 runtime's full save verification; readable metadata is not a guarantee that an
-older save is compatible. The initial implementation previews the configured
-single file, not a multi-slot browser or a cloud-save service.
+older save is compatible. Projects without slot widgets continue to preview the configured single file.
 
 These bindings require `save-panel-v1`. Export rejects runtimes without that
 capability, including the current web runtime. They are not included in previously

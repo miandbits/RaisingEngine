@@ -1,4 +1,6 @@
 [
+  ["저장 슬롯 · 기록하기","Save slots · write record","保存スロット · 記録する"],
+  ["저장 슬롯 · 불러오기","Save slots · load record","保存スロット · 読み込む"],
   ["변경한 편집기 언어는 다음 실행부터 적용됩니다. 게임 언어는 다국어 작업실에서 따로 설정합니다.","Editor language changes take effect after restart. Set game languages separately in the Localization workspace.","エディターの言語は再起動後に適用されます。ゲームの言語は翻訳ワークスペースで別途設定します。"],
   ["Raising Studio — 프로젝트","Raising Studio — Projects","Raising Studio — プロジェクト"],
   ["육성 시뮬레이션 제작 도구  ·  프로젝트를 선택해 작업을 시작하세요.","Raising simulation editor · Choose a project to start creating.","育成シミュレーション制作ツール · プロジェクトを選んで制作を始めましょう。"],

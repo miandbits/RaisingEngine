@@ -258,6 +258,19 @@ private slots:
     w.findChild<QAction *>("undoEdit")->trigger();
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy() && find(imageId).isEmpty(), 10000);
   }
+  void saveSlotsAuthoring() {
+    StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+    for(const auto kind:{"saveSlots","loadSlots"}){
+      auto action=w.findChild<QAction*>(QString("add-element-")+kind);QVERIFY(action);action->trigger();
+      QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.selectedId().startsWith(kind),10000);
+      bool found=false;for(const auto s:w.projectData()["visual"].toObject()["screens"].toArray())for(const auto e:s.toObject()["elements"].toArray())if(e.toObject()["id"]==w.selectedId()){
+        found=true;QCOMPARE(e.toObject()["kind"].toString(),QString(kind));QVERIFY(e.toObject()["width"].toInt()>=560);QCOMPARE(e.toObject()["fill"].toString(),QString("#F5EFDF"));
+      }QVERIFY(found);
+    }
+    QCOMPARE(w.projectData()["visual"].toObject()["saveSystem"].toObject()["manualSlots"].toInt(),6);
+    QCOMPARE(w.projectData()["visual"].toObject()["saveSystem"].toObject()["autoSlots"].toInt(),3);
+  }
   void calendarWidgetAuthoring() {
     StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(qEnvironmentVariable("RAISING_QT_PROJECT"));
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);

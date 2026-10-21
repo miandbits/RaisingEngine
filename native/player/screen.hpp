@@ -48,6 +48,7 @@ public:
   std::string replay_notice,replay_title;
   Json assets,display_content,display_projection,render_elements=Json::array();
   Json user_values_draft=Json::object();
+  #include "save-slots-markup.inc"
   Json preview_scene=nullptr;
   Json display_scene() const {
     auto scene=game.state.is_null()?display_content.at("project").at("visual").value("defaultScene",Json::object()):game.state.at("presentation");
@@ -687,6 +688,7 @@ public:
     if(kind=="panel"||kind=="group")return "";
     if(kind=="input"){const auto id=e.value("userFieldId","");return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;color:inherit;font-size:inherit;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
     if(kind=="meter"){const double maximum=e.value("maxValue",100.0),value=e.value("value",0.0),ratio=maximum>0?std::clamp(value/maximum,0.0,1.0):0.0;return "<div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div>";}
+    if(kind=="saveSlots"||kind=="loadSlots")return slots_body(e);
     if(kind=="image")return image(e);
     if(kind=="plugin")return plugin_body(e);
     if(kind=="text")return escape(e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
@@ -955,6 +957,11 @@ public:
       const auto selector="#node-"+e.value("id","");
       std::string typography;
       if(e.value("kind","")=="button")extra_css+=selector+">button{color:"+css_color(e.value("color","#ffffff"))+";}";
+      if(e.value("kind","")=="saveSlots"||e.value("kind","")=="loadSlots"){
+        extra_css+=selector+" button{border-width:2px;border-color:"+css_color(e.value("borderColor","#C7B99A"))+";}";
+        extra_css+=selector+" button.slot-selected{border-width:3px;border-color:"+css_color(e.value("hoverFill","#345C50"))+";}";
+        extra_css+=selector+" button:focus{border-width:3px;border-color:"+css_color("#B38B49")+";}";
+      }
       if(e.value("kind","")=="choices"&&e.value("choiceLayout","list")=="cards"){
         extra_css+=selector+">button{min-height:"+number(e.value("rowHeight",56.0))+"px;margin-bottom:"+number(e.value("gap",10.0))+"px;padding:12px 18px;text-align:left;white-space:normal;color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#f5efdf"))+";border-width:"+number(e.value("borderWidth",1.0))+"px;border-color:"+css_color(e.value("borderColor","#c7b99a"))+";border-radius:"+number(e.value("radius",2.0))+"px;}";
         extra_css+=selector+">button:focus{border-width:3px;border-color:"+css_color(e.value("borderColor","#c7b99a"))+";}";

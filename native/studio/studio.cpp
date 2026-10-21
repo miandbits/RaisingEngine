@@ -235,6 +235,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
            {"image", tr("이미지 · 에셋 선택 후 추가")},
            {"stats", tr("능력·자원 목록")},
            {"schedule", tr("일정 선택")},
+           {"saveSlots", tr("저장 슬롯 · 기록하기")},
+           {"loadSlots", tr("저장 슬롯 · 불러오기")},
            {"dialogue", tr("대사")},
            {"choices", tr("선택지")},
            {"result", tr("활동 결과")},

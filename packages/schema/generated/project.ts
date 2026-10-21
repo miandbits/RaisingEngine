@@ -2930,7 +2930,9 @@ export type Element = {
     | "meter"
     | "group"
     | "input"
-    | "plugin";
+    | "plugin"
+    | "saveSlots"
+    | "loadSlots";
   label?: string;
   x: number;
   y: number;
@@ -8327,7 +8329,7 @@ export type ComponentChild = {
   [k: string]: unknown;
 } & {
   id: string;
-  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input" | "component";
+  kind: "panel" | "text" | "image" | "button" | "meter" | "group" | "input" | "component" | "saveSlots" | "loadSlots";
   label?: string;
   x: number;
   y: number;
@@ -14211,6 +14213,10 @@ export interface Overrides {
   };
 }
 export interface VisualDesign {
+  saveSystem?: {
+    manualSlots?: number;
+    autoSlots?: number;
+  };
   widgetTheme?: "default" | "ornate";
   confirmPurchases?: boolean;
   width: number;

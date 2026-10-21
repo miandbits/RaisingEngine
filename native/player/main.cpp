@@ -18,6 +18,9 @@
 #include <deque>
 #include <chrono>
 #include <optional>
+#include <ctime>
+#include <set>
+#include "save-slots.hpp"
 
 #include "route-recording.hpp"
 #include "recollection.hpp"
@@ -248,7 +251,7 @@ public:
     // Plugin hit tests (CONTRACT.md §7): observed for the animation, never consumed; the click goes on below.
     if(eventType=="click")ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
-    if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
+    if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.slot_confirmation.empty())markup.slot_confirmation.clear();else if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
     if(event.GetType()=="change"||event.GetType()=="input") {
       auto* element=event.GetTargetElement();const auto field=element->GetAttribute<Rml::String>("data-user-field","");
@@ -287,6 +290,7 @@ public:
       if(found!=markup.actions.end()) {if(!element->HasAttribute("disabled"))pending.push_back(found->second);return;}
     }
   }
+  #include "save-slots-app.inc"
   void refresh_save_preview() {
     markup.saved_preview={{"status","empty"}};
     try {
@@ -323,7 +327,15 @@ public:
     const std::string active_modal=!markup.pending_purchase.is_null()?"ui-confirmation":!markup.ui_modal.empty()?"ui-modal":"";
     if(!active_modal.empty()){Rml::ElementList all;document->QuerySelectorAll(all,"button,select,input");for(auto* e:all){bool inside=false;for(auto* p=e;p;p=p->GetParentNode())if(p->GetId()==active_modal)inside=true;if(!inside)e->SetAttribute("disabled","disabled");}}
     if(recalling()){Rml::ElementList controls;document->QuerySelectorAll(controls,"button,select,input");for(auto* control:controls)if(!markup.actions.count(control->GetId()))control->SetAttribute("disabled","disabled");}
-    apply_preview();context->Update();if(!active_modal.empty())if(auto* modal=document->GetElementById(active_modal))if(auto* first=modal->QuerySelector("button:not([disabled])"))first->Focus();
+    apply_preview();context->Update();
+    if(!active_modal.empty())if(auto* modal=document->GetElementById(active_modal)){
+      Rml::Element* focus=nullptr;
+      if(!markup.slot_confirmation.empty())for(const auto& [id,action]:markup.actions)if(action.value("type","")=="cancelSlot")focus=document->GetElementById(id);
+      if(!focus&&(previous_focus.size()>8&&(previous_focus.substr(previous_focus.size()-8)=="-confirm"||previous_focus.substr(previous_focus.size()-7)=="-cancel")))for(const auto& [id,action]:markup.actions)
+        if(action.value("type","")=="selectSaveSlot"&&action.value("index",-1)==markup.slot_selected&&action.value("automatic",false)==markup.slot_auto)focus=document->GetElementById(id);
+      if(!focus&&!previous_focus.empty())if(auto* prior=document->GetElementById(previous_focus);prior&&!prior->HasAttribute("disabled"))for(auto* parent=prior;parent;parent=parent->GetParentNode())if(parent==modal)focus=prior;
+      if(!focus)focus=modal->QuerySelector("button:not([disabled])");if(focus)focus->Focus();
+    }
     for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll")) {
       const auto found=collection_scroll.find(markup.screen_id+"/"+entry.value("id",""));
       if(found!=collection_scroll.end())if(auto* element=document->GetElementById("node-"+entry.value("id","")))element->SetScrollTop(found->second);
@@ -407,7 +419,8 @@ public:
         bool found=false;for(const auto& s:game.content.at("project").at("visual").at("screens"))if(s.at("id")==action.at("screenId")&&!s.value("modal",false))found=true;
         if(!found)throw std::runtime_error("이동할 화면을 찾을 수 없습니다.");markup.title_screen=action.at("screenId");dirty=true;return;
       }
-      if(type=="openModal"){refresh_save_preview();markup.ui_modal=action.at("screenId");dirty=true;return;}
+      if(slot_action(action))return;
+      if(type=="openModal"){capture_slot_frame();refresh_slot_catalog();markup.slot_confirmation.clear();markup.slot_auto=false;markup.slot_selected=0;markup.slot_page=0;refresh_save_preview();markup.ui_modal=action.at("screenId");dirty=true;return;}
       if(type=="closeModal"){markup.ui_modal.clear();dirty=true;return;}
       if(type=="uiBack"&&!markup.ui_modal.empty()){markup.ui_modal.clear();dirty=true;return;}
       if(type=="playSequence"){if(game.state.is_null())throw std::runtime_error("게임 시작 후 연출을 재생하세요.");game.direction_cursor=direction_start(direction_config(game.content),action.at("sequenceId"));dirty=true;return;}
@@ -431,7 +444,7 @@ public:
         std::string reason;if(!game.available(action,&reason))throw std::runtime_error(reason);
         markup.pending_purchase=action;markup.pending_confirmation=transaction.value("confirmation",Json::object());markup.pending_revision=game.state.value("stateRevision",0);dirty=true;return;
       }
-      if(type=="start") {recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
+      if(type=="start") {slot_auto_revision=-1;recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
       else if(type=="quantity"){auto& value=markup.quantities[action.value("key","")];value=std::clamp(value+action.value("delta",0),1,std::max(1,action.value("maximum",1)));}
       else if(type=="confirmPurchase"){auto purchase=markup.pending_purchase;markup.pending_purchase=nullptr;if(!purchase.is_null()){
         if(game.state.value("stateRevision",-1)!=markup.pending_revision)throw std::runtime_error("상태가 변경되었습니다. 내용을 다시 확인해 주세요.");
@@ -776,7 +789,7 @@ int main(int argc,char** argv) {
         app.drain_actions();
         if(!app.timeline_manual_clock){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.extension_dt+=timeline_delta;}
         if(app.dirty)app.rebuild();
-        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();
+        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();
         if(wait_frames>0)--wait_frames;
         else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];

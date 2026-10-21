@@ -170,7 +170,7 @@ public:
     }
     throw std::runtime_error("대본 자동 진행 한도를 초과했습니다.");
   }
-  void save(const fs::path& file) {
+  void save(const fs::path& file,const Json& save_record=Json()) {
     if (state.is_null()) throw std::runtime_error("저장할 게임이 없습니다.");
     Json envelope = {{"saveVersion", "1.0.0"}, {"coreVersion", state.at("coreVersion")}, {"contentFingerprint", content.at("contentFingerprint")},
       {"origin", origin},
@@ -187,6 +187,10 @@ public:
     if(!gallery_capture.pending.is_null()){
       if(!envelope.contains("playerPresentation"))envelope["playerPresentation"]={{"version",1},{"timeline",nullptr}};
       envelope["playerPresentation"]["galleryCapture"]=gallery_capture.pending;
+    }
+    if(!save_record.is_null()){
+      if(!envelope.contains("playerPresentation"))envelope["playerPresentation"]={{"version",1},{"timeline",nullptr}};
+      envelope["playerPresentation"]["saveRecord"]=save_record;
     }
     fs::create_directories(file.parent_path());
     auto temp = file; temp += ".tmp";
@@ -229,7 +233,7 @@ public:
     if(saved.contains("playerPresentation")) {
       const auto presentation=saved.at("playerPresentation");
       if(!presentation.is_object()||!presentation.contains("version")||presentation.at("version")!=1||!presentation.contains("timeline"))throw std::runtime_error("Invalid player presentation save");
-      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction"&&it.key()!="scheduleSpeed"&&it.key()!="galleryCapture"&&it.key()!="scheduleDraft")throw std::runtime_error("Invalid player presentation save");
+      for(auto it=presentation.begin();it!=presentation.end();++it)if(it.key()!="version"&&it.key()!="timeline"&&it.key()!="battleSelection"&&it.key()!="extensions"&&it.key()!="direction"&&it.key()!="scheduleSpeed"&&it.key()!="galleryCapture"&&it.key()!="scheduleDraft"&&it.key()!="saveRecord")throw std::runtime_error("Invalid player presentation save");
       if(presentation.contains("scheduleDraft")){
         const auto d=presentation.at("scheduleDraft");
         if(!d.is_object()||d.size()!=4||!d.value("month",Json()).is_number_integer()||!d.value("slot",Json()).is_number_integer()||!d.value("selected",Json()).is_number_integer()||!d.value("activities",Json()).is_array())throw std::runtime_error("Invalid schedule draft");
