@@ -52,8 +52,7 @@ inline std::string result_playback_text(const Json& plan,const Json& cursor,bool
     if(changes_only){
       if(delta==0)continue;
       if(!text.empty())text+="\n";
-      const auto total=after-before;
-      text+=row.at("label").get<std::string>()+" "+(total>0?"+":"")+std::to_string(total)+"   현재 "+std::to_string(before+delta);
+      text+=row.at("label").get<std::string>()+" "+(delta>0?"+":"−")+std::to_string(delta>0?delta:-delta)+"   현재 "+std::to_string(before+delta);
     }else text+="\n"+row.at("label").get<std::string>()+"  "+std::to_string(before)+" → "+std::to_string(before+delta)+"  ("+(delta>=0?"+":"")+std::to_string(delta)+")";
   }
   if(rows.empty()&&(!changes_only||cursor.value("completed",false)))text+="능력 변화 없음";return text;

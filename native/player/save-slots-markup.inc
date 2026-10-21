@@ -1,4 +1,5 @@
   Json save_slots=Json::array();
+  Json current_save_record=Json::object();
   bool slot_auto=false;
   int slot_selected=0,slot_page=0;
   std::string slot_confirmation;
@@ -19,7 +20,7 @@
     };
     auto control=[&](const std::string& suffix,const std::string& label,Json action,double x,double y,double width,bool enabled=true,bool primary=false){
       const auto bid=id+"-"+suffix;actions[bid]=action;labels[bid]=label;
-      return box(x,y,width,42,"<button id=\""+escape(bid)+"\""+(enabled?"":" disabled=\"disabled\"")+" style=\"box-sizing:border-box;width:100%;height:100%;min-height:0;margin:0;padding:4px 12px;font-size:20px;line-height:28px;text-align:center;border-radius:3px;color:"+(primary&&enabled?paper:ink)+";background-color:"+(!enabled?"#E8E2D4":primary?accent:paper)+";\">"+escape(label)+"</button>");
+      return box(x,y,width,42,"<button id=\""+escape(bid)+"\""+(enabled?"":" disabled=\"disabled\"")+" style=\"box-sizing:border-box;width:100%;height:100%;min-height:0;margin:0;padding:4px 12px;font-size:20px;line-height:28px;text-align:center;border-radius:3px;color:"+(primary&&enabled?paper:ink)+";background-color:"+(!enabled?"#E8E2D4":primary?(suffix=="confirm"&&slot_confirmation=="save"?std::string("#8A3A4A"):accent):paper)+";\">"+escape(label)+"</button>");
     };
     std::string out;
     const bool confirming=!slot_confirmation.empty();
@@ -29,7 +30,7 @@
       const auto slot_label=(slot_auto?slot_words("자동 기록 ","Auto ","自動記録 "):slot_words("기록 ","Record ","記録 "))+std::to_string(selected==save_slots.end()?slot_selected+1:selected->value("displayNumber",slot_selected+1));
       out+=control("cancel",slot_words("취소 · 기록 목록으로","Cancel · back to records","キャンセル · 記録へ"),{{"type","cancelSlot"}},w/2-270,h/2+130,240,true);
       out+=control("confirm",slot_label+(slot_confirmation=="save"?slot_words("에 덮어쓰기"," · overwrite","に上書き"):slot_words(" 불러오기"," · load","を読み込む")),{{"type","confirmSlot"}},w/2-10,h/2+130,280,true,true);
-      const auto title=slot_confirmation=="save"?slot_words("이 기억을 새로 적을까요?","Replace this memory?","この記憶を書き換えますか？"):slot_words("이날의 이야기로 돌아갈까요?","Return to this moment?","この日の物語に戻りますか？");
+      const auto title=slot_confirmation=="save"?slot_label+slot_words("을 지금의 진행으로 덮어쓸까요?",": overwrite with current progress?","を現在の進行で上書きしますか？"):slot_words("이날의 이야기로 돌아갈까요?","Return to this moment?","この日の物語に戻りますか？");
       const auto warning=slot_confirmation=="save"?slot_words("선택한 기록이 지금의 진행으로 바뀝니다.","The selected record will be replaced by your current progress.","選んだ記録を現在の進行で上書きします。"):slot_words("저장하지 않은 진행은 사라집니다.","Unsaved progress will be lost.","保存していない進行は失われます。");
       out+=box(40,h/2-150,w-80,44,escape(title),"font-size:28px;text-align:center;color:"+ink+";");
       if(selected!=save_slots.end()){
@@ -40,7 +41,8 @@
         const auto record=selected->value("record",Json::object());
         out+=box(w/2-80,h/2-42,350,74,escape(slot_date(*selected)+" · "+record.value("place","")+"\n"+record.value("savedAt","")),"font-size:18px;line-height:25px;color:"+ink+";");
       }
-      out+=box(40,h/2+58,w-80,54,escape(warning),"font-size:19px;line-height:29px;text-align:center;color:"+ink+";");
+      if(!current_save_record.empty())out+=box(40,h/2+42,w-80,30,escape(slot_words("현재 진행  ","Current progress  ","現在の進行  ")+current_save_record.value("date","")+" · "+current_save_record.value("place","")),"font-size:17px;text-align:center;color:"+ink+";");
+      out+=box(40,h/2+80,w-80,42,escape(warning),"font-size:18px;line-height:24px;text-align:center;color:#8A3A4A;");
       return out;
     }
     out+=control("manual",slot_words("내가 남긴 기록","Manual records","手動の記録"),{{"type","slotGroup"},{"automatic",false}},0,0,210,true,!slot_auto);

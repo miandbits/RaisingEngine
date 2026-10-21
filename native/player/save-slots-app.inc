@@ -22,7 +22,7 @@
       SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);
       render->BeginFrame();context->Render();render->EndFrame();
     }
-    slot_frame.reset(SDL_RenderReadPixels(renderer,nullptr));slot_frame_record=current_slot_record();
+    slot_frame.reset(SDL_RenderReadPixels(renderer,nullptr));slot_frame_record=current_slot_record();markup.current_save_record=slot_frame_record;
   }
   void refresh_slot_catalog() {
     if(!slots_enabled())return;

@@ -48,8 +48,10 @@ function route(content,ending,mode,evidence){
 for(const authored of [false,true])test(`${authored?'authored':'legacy'} native controls freeze SD/stats, restore pause and speed, preserve both endings and stop at every event`, {timeout:240000},async()=>{
   const project=resolve('tests/fixtures/projects/last-grandson-polished'),loaded=await loadProject(project);
   if(authored){const visual=loaded.documents.find(d=>d.kind==='project').data.visual;
-    visual.screens.find(s=>s.id==='schedule').elements.push(...['timelinePause','timelineSpeed','timelineSkip'].map((action,i)=>({id:`authored-${["pause","speed","skip"][i]}`,kind:'button',action,x:40+i*220,y:650,width:210,height:48,visibleWhen:'result'})));
+    visual.widgetTheme='default';
+    visual.screens.find(s=>s.id==='schedule').elements.push(...['timelinePause','timelineSpeed','timelineSkip'].map((action,i)=>({id:`authored-${["pause","speed","skip"][i]}`,kind:'button',action,x:40+i*220,y:650,width:210,height:40,borderWidth:1,borderColor:'#345C50',fontSize:17,visibleWhen:'result'})));
     visual.screens.find(s=>s.id==='title').elements.push(...['timelinePause','timelineSpeed','timelineSkip'].map((action,i)=>({id:`inactive-${i}`,kind:'button',action,x:40+i*220,y:650,width:210,height:48})));
+    visual.screens.find(s=>s.id==='schedule').elements.find(e=>e.kind==='result').resultLayout='changes';
   }
   const built=await buildSnapshot(loaded);assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
   const content=built.snapshot,runtime=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player');
@@ -69,12 +71,26 @@ for(const authored of [false,true])test(`${authored?'authored':'legacy'} native 
       const ui=id=>report.steps.find(s=>s.command.checkpoint===id).ui;
       if(authored)for(let i=0;i<3;i++)assert.equal(ui('no-timeline').elements.find(e=>e.id===`inactive-${i}`)?.enabled,false,'authored controls are safe and disabled without a timeline');
       if(authored){assert.ok(ui('start-0-0').elements.some(e=>e.id==='authored-pause'));assert.ok(!ui('start-0-0').elements.some(e=>e.id==='timeline-pause'),'authored controls replace fallback');}
+      if(authored)for(const id of ['authored-pause','authored-speed','authored-skip']){
+        const node=ui('start-0-0').nodes.find(n=>n.id===id);
+        assert.equal(node.clientHeight,38,'authored border leaves a 38px content box');
+        assert.equal(node.overflowY,false,'default minimum button height must not exceed authored content box');
+        assert.equal(node.clickableAtCenter,true,'compact authored controls remain clickable');
+      }
       for(const [id,state]of Object.entries(plan.expected))assert.deepEqual(ui(id).state,state,`${ending}/${mode}/${id}`);
       if(!baseline)baseline=ui('finished').state;else assert.deepEqual(ui('finished').state,baseline,'mode must not change state, RNG, history or ending');
       if(mode!=='normal'){
         const sd=id=>ui(id).extensions.instances.find(i=>i.instance==='schedule/sd-character');
         assert.deepEqual(ui('held').timeline,ui('paused').timeline);assert.deepEqual(sd('held').items,sd('paused').items,'SD freezes');
         assert.equal(ui('held').texts.result,ui('paused').texts.result,'partially changed displayed stats freeze');
+        if(authored){
+          const {plan,cursor}=ui('paused').timeline;
+          for(const [i,row]of plan.resultPlayback.rows.entries()){
+            const progress=cursor.completed||cursor.clipIndex>i+1?1:cursor.clipIndex===i+1?Math.min(1,cursor.elapsedMs/plan.clips[i+1].durationMs):0;
+            const delta=Math.trunc((row.after-row.before)*progress);if(!delta)continue;
+            assert.ok(ui('paused').texts.result.includes(`${row.label} ${delta>0?'+':'−'}${Math.abs(delta)}   현재 ${row.before+delta}`),'displayed change and current value use the same playback instant');
+          }
+        }
         assert.deepEqual(ui('loaded').timeline,ui('saved').timeline);assert.equal(ui('loaded').timeline.cursor.speed,4);assert.equal(ui('loaded').timeline.cursor.paused,true);
         assert.equal(ui('loaded').texts.result,ui('saved').texts.result,'partially changed displayed stats restore');
         assert.deepEqual(ui('loaded-held').timeline,ui('loaded').timeline);assert.deepEqual(sd('loaded-held').items,sd('loaded').items,'restored SD remains frozen');
