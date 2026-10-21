@@ -55,6 +55,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>["timelinePause","timelineSpeed","timelineSkip"].includes(e.action??"")||(e.binding==="activity-progress"&&e.valueFormat)))requiredFeatures.push("authored-playback-controls-v1");
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='meter'&&(e.dataBinding||e.meterThickness!==undefined)))requiredFeatures.push('data-meters-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.action==='dialogueAuto'))requiredFeatures.push('dialogue-controls-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='playerSettings'||e.binding==='reading-status'))requiredFeatures.push('player-settings-v1');

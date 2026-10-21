@@ -3851,7 +3851,10 @@ export type Element = {
     | "galleryBranches"
     | "galleryBranch"
     | "assignActivity"
-    | "commitPlan";
+    | "commitPlan"
+    | "timelinePause"
+    | "timelineSpeed"
+    | "timelineSkip";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -3952,7 +3955,10 @@ export type Element = {
         | "recollectionSpeed"
         | "recollectionSkip"
         | "galleryBranches"
-        | "galleryBranch";
+        | "galleryBranch"
+        | "timelinePause"
+        | "timelineSpeed"
+        | "timelineSkip";
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -9259,7 +9265,10 @@ export type ComponentChild = {
     | "galleryBranches"
     | "galleryBranch"
     | "assignActivity"
-    | "commitPlan";
+    | "commitPlan"
+    | "timelinePause"
+    | "timelineSpeed"
+    | "timelineSkip";
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -11473,7 +11482,10 @@ export type ComponentChild = {
         | "recollectionSpeed"
         | "recollectionSkip"
         | "galleryBranches"
-        | "galleryBranch";
+        | "galleryBranch"
+        | "timelinePause"
+        | "timelineSpeed"
+        | "timelineSkip";
       screenId?: string;
       locationId?: string;
       shopId?: string;

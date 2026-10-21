@@ -42,6 +42,7 @@ inline std::string css_color(std::string hex) {
 
 class ScreenMarkup {
 public:
+  unsigned authored_timeline_controls=0;
   GameSession& game;
   bool replay_controls=false,replay_autoplay=false;
   int replay_speed=1;
@@ -378,6 +379,11 @@ public:
       std::string label;const auto result=game.state.value("lastActivityResult",Json());
       if(result.is_object())for(const auto& a:display_content.at("activities"))if(a.at("id")==result.value("activityId",""))label=a.value("label","");
       const int current=game.state.value("periodIndex",0)%game.periods();
+      if(element.contains("valueFormat")){
+        auto text=element.at("valueFormat").get<std::string>();
+        for(const auto& item:std::vector<std::pair<std::string,std::string>>{{"{activity}",label},{"{current}",std::to_string(current+1)},{"{total}",std::to_string(game.periods())}}){std::size_t pos=0;while((pos=text.find(item.first,pos))!=std::string::npos){text.replace(pos,item.first.size(),item.second);pos+=item.second.size();}}
+        return text;
+      }
       std::string track;for(int i=0;i<game.periods();++i)track+=(i<current?"■ ":i==current?"◆ ":"□ ")+std::to_string(i+1)+"주    ";
       return track+" ·   "+label;
     }
@@ -736,6 +742,15 @@ public:
       auto boundAction=action;bool hasSelection=true;try{boundAction=selection_action(action);}catch(...){hasSelection=false;}
       const auto type=action.value("type","");std::string label=e.value("text","버튼");bool enabled=hasSelection;
       const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
+      if(type=="timelinePause"||type=="timelineSpeed"||type=="timelineSkip"){
+        authored_timeline_controls|=type=="timelinePause"?1:type=="timelineSpeed"?2:4;
+        enabled=game.timeline_active()&&!game.timeline_cursor.value("completed",false)&&!replay_controls;
+        if(e.value("autoLabel",true)){
+          if(type=="timelinePause")label=game.timeline_cursor.value("paused",false)?settings_words("계속 재생","Resume","再開"):settings_words("일시정지","Pause","一時停止");
+          if(type=="timelineSpeed")label=settings_words("속도 ×","Speed ×","速度 ×")+std::to_string(game.timeline_cursor.value("speed",1));
+          if(type=="timelineSkip")label=settings_words("이번 활동 넘기기","Skip activity","この活動をスキップ");
+        }
+      }
       if(type=="dialogueAuto"){
         enabled=!replay_controls;
         if(e.value("autoLabel",true))label=player_preferences.value("autoAdvance",false)?settings_words("자동 진행: 켜짐","Auto: On","自動送り: オン"):settings_words("자동 진행: 꺼짐","Auto: Off","自動送り: オフ");
@@ -845,7 +860,7 @@ public:
     }
     if(kind=="inventory"&&!gp.is_null()) {if(gp.at("inventory").empty())out="<p class=\"muted\">가방이 비어 있습니다.</p>";for(const auto& item:gp.at("inventory"))out+="<div class=\"row\">"+item_icon(item.value("id",""))+escape(item.value("name",""))+" <b>× "+std::to_string(item.value("quantity",0))+"</b></div>";}
     if(kind=="interactions"&&!gp.is_null())for(const auto& interaction:gp.at("interactions"))out+=item_icon(interaction.value("itemId",""))+button("interact-"+interaction.value("id",""),interaction.value("name",""),{{"type","interact"},{"interactionId",interaction.at("id")}},interaction.value("enabled",false),interaction.value("reason",Json()).is_string()?interaction.at("reason").get<std::string>():"");
-    if(kind=="result"&&game.timeline_active()&&game.timeline_plan.contains("resultPlayback"))return "<div data-result-playback=\"true\" data-result-changes=\""+std::string(e.value("resultLayout","summary")=="changes"?"true":"false")+"\" style=\"white-space:pre-wrap;line-height:38px;\">"+result_playback_markup(e.value("resultLayout","summary")=="changes")+"</div>";
+    if(kind=="result"&&game.timeline_active()&&game.timeline_plan.contains("resultPlayback"))return "<div data-result-playback=\"true\" data-result-fill=\""+escape(e.value("fill","#213c34e8"))+"\" data-result-color=\""+escape(e.value("color","#fff8e6"))+"\" data-result-changes=\""+std::string(e.value("resultLayout","summary")=="changes"?"true":"false")+"\" style=\"white-space:pre-wrap;line-height:38px;\">"+result_playback_markup(e.value("resultLayout","summary")=="changes",e)+"</div>";
     if(kind=="result"&&!game.state.is_null()&&!game.state.at("lastActivityResult").is_null()&&game.state.at("lastActivityResult").contains("actorResults")) {
       for(const auto& actor:game.state.at("lastActivityResult").at("actorResults")) {
         std::string name=actor.value("characterId","");for(const auto& c:display_content.at("characters"))if(c.at("id")==actor.at("characterId"))name=c.value("name",name);
@@ -899,7 +914,7 @@ public:
   std::string document() {
     refreshDisplay();
     if(extensions&&!authored_gallery())extensions->begin_sync();
-    actions.clear(); labels.clear();
+    actions.clear(); labels.clear(); authored_timeline_controls=0;
     const auto& visual=display_content.at("project").at("visual");
     const auto dimensions=logical_viewport(visual,viewport_width,viewport_height);width=dimensions.first;height=dimensions.second;
     const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");

@@ -2913,5 +2913,8 @@
   ["기본 선택지 목록","Default choice list","標準の選択肢リスト"],
   ["번호가 있는 선택 카드","Numbered choice cards","番号付きの選択肢カード"],
   ["저장한 기록 요약","Saved record summary","保存した記録の概要"],
-  ["플레이어 처리 결과","Player feedback","プレイヤー処理結果"]
+  ["플레이어 처리 결과","Player feedback","プレイヤー処理結果"],
+  ["일정 연출 · 일시정지/재개","Schedule playback · pause/resume","予定演出 · 一時停止/再開"],
+  ["일정 연출 · 배속 변경","Schedule playback · change speed","予定演出 · 速度変更"],
+  ["일정 연출 · 현재 활동 넘기기","Schedule playback · skip activity","予定演出 · 現在の活動をスキップ"]
 ]

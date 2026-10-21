@@ -985,7 +985,10 @@
             "galleryBranches",
             "galleryBranch",
             "assignActivity",
-            "commitPlan"
+            "commitPlan",
+            "timelinePause",
+            "timelineSpeed",
+            "timelineSkip"
           ]
         },
         "screenId": {
@@ -1248,7 +1251,10 @@
                       "recollectionSpeed",
                       "recollectionSkip",
                       "galleryBranches",
-                      "galleryBranch"
+                      "galleryBranch",
+                      "timelinePause",
+                      "timelineSpeed",
+                      "timelineSkip"
                     ]
                   },
                   "screenId": {
@@ -3044,7 +3050,10 @@
             "galleryBranches",
             "galleryBranch",
             "assignActivity",
-            "commitPlan"
+            "commitPlan",
+            "timelinePause",
+            "timelineSpeed",
+            "timelineSkip"
           ]
         },
         "screenId": {
@@ -3481,7 +3490,10 @@
                       "recollectionSpeed",
                       "recollectionSkip",
                       "galleryBranches",
-                      "galleryBranch"
+                      "galleryBranch",
+                      "timelinePause",
+                      "timelineSpeed",
+                      "timelineSkip"
                     ]
                   },
                   "screenId": {

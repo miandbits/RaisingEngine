@@ -96,8 +96,9 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
         else if(!objectItems(character.data.relationships).some(r=>r.id===e.relationshipId))ctx.report(doc,`${ep}/relationshipId`,'UI_BINDING_REFERENCE',`해당 인물에 관계 수치 '${e.relationshipId}'가 없습니다.`);
       }
       if(typeof e.valueFormat==='string'){
-        const invalid=e.binding==='relationship-value'?/\{(?!value\}|label\}|delta\})[^}]*\}/:/\{(?!value\}|label\})[^}]*\}/;
-        if(invalid.test(e.valueFormat))ctx.report(doc,`${ep}/valueFormat`,'UI_BINDING_FORMAT',e.binding==='relationship-value'?'관계 표시 형식에는 {value}, {label}, {delta}를 사용할 수 있습니다.':'표시 형식에는 {value}, {label}만 사용할 수 있습니다.');
+        const progress=e.binding==='activity-progress';
+        const invalid=progress?/\{(?!activity\}|current\}|total\})[^}]*\}/:e.binding==='relationship-value'?/\{(?!value\}|label\}|delta\})[^}]*\}/:/\{(?!value\}|label\})[^}]*\}/;
+        if(invalid.test(e.valueFormat))ctx.report(doc,`${ep}/valueFormat`,'UI_BINDING_FORMAT',progress?'활동 진행 형식에는 {activity}, {current}, {total}만 사용할 수 있습니다.':e.binding==='relationship-value'?'관계 표시 형식에는 {value}, {label}, {delta}를 사용할 수 있습니다.':'표시 형식에는 {value}, {label}만 사용할 수 있습니다.');
       }
       for(const [field,ids] of Object.entries(refs))if(e[field]!==undefined&&!ids.has(e[field]))ctx.report(doc,`${ep}/${field}`,'UI_ACTION_REFERENCE',`연결 대상 '${e[field]}'가 없습니다. 화면 또는 육성 작업실에서 대상을 확인하세요.`);
       if(!root.gameplay&&(['locations','shop','inventory','interactions','diets','services','sell'].includes(String(e.kind))||['visit','buy','interact','sell','setDiet','useService'].includes(String(e.action))))ctx.report(doc,ep,'UI_GAMEPLAY_REQUIRED','이 요소는 육성 작업실의 장소·행동 설정이 필요합니다.');

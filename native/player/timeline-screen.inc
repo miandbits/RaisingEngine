@@ -1,9 +1,9 @@
-  std::string result_playback_markup(bool changes_only) const {
+  std::string result_playback_markup(bool changes_only,const Json& element) const {
     const auto text=result_playback_text(game.timeline_plan,game.timeline_cursor,changes_only);
     if(!changes_only)return escape(text);
     std::istringstream lines(text);std::string line,out;
     while(std::getline(lines,line))if(!line.empty())
-      out+="<div style=\"background-color:#213c34e8;color:#fff8e6;padding:4px 12px;margin-bottom:7px;border-left-width:3px;border-left-color:#c9a96b;\">"+escape(line)+"</div>";
+      out+="<div style=\"background-color:"+css_color(element.value("fill","#213c34e8"))+";color:"+css_color(element.value("color","#fff8e6"))+";padding:4px 12px;margin-bottom:7px;border-left-width:"+std::string(element.value("fill","")=="#00000000"?"0":"3")+"px;border-left-color:#c9a96b;\">"+escape(line)+"</div>";
     return out;
   }
   std::string timeline_stage(const Json& stage,double elapsed,double availableWidth,double availableHeight) const {
@@ -25,6 +25,7 @@
     const auto& plan=game.timeline_plan;const auto& cursor=game.timeline_cursor;
     const bool completed=cursor.value("completed",false),paused=cursor.value("paused",false);
     if(plan.contains("resultPlayback")){
+      if(authored_timeline_controls==7)return "";
       const int barWidth=std::min(720,width-32),buttonWidth=(barWidth-24)/3;
       const std::vector<Json> controls={
         {{"id","timeline-pause"},{"label",paused?"계속 재생":"일시정지"},{"type","timelinePause"}},

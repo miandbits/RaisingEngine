@@ -39,6 +39,7 @@ void StudioTests::freeScreenAuthoring() {
   button("처음 시작","start",40,620);combo("visibilityPhase","title");
   button("새로 시작","start",40,620);combo("visibilityPhase","finished");
   button("계속","advance",1040,620);
+  for(const auto& pair:QList<QPair<QString,QString>>{{"일시정지","timelinePause"},{"배속","timelineSpeed"},{"넘기기","timelineSkip"}}){button(pair.first,pair.second,600,570);combo("visibilityPhase","result");}
   button("저장","save",600,620);
   button("불러오기","load",820,620);
   // A normal screen can also serve as a menu during narrative or after the ending.

@@ -56,7 +56,7 @@
     const double w=e.value("width",1184.0),h=e.value("height",510.0),left=w*.32,gap=28,right=w-left-gap;
     const double fs=e.value("fontSize",20.0);
     auto at=[](double x,double y,double w,double h){return "position:absolute;box-sizing:border-box;left:"+number(x)+"px;top:"+number(y)+"px;width:"+number(w)+"px;height:"+number(h)+"px;";};
-    auto title=[&](const std::string& text,double x,double y,double width){return "<div style=\""+at(x,y,width,32)+"color:inherit;font-size:"+number(fs)+"px;\">"+escape(text)+"</div>";};
+    auto title=[&](const std::string& text,double x,double y,double width){return "<div style=\""+at(x,y,width,32)+"font-size:"+number(fs)+"px;\">"+escape(text)+"</div>";};
     auto card=[&](std::string id,std::string label,Json action,double x,double y,double cw,double ch,bool selected,bool enabled=true){
       auto html=button(id,label,action,editable&&enabled);
       html.insert(html.find('>')," style=\""+at(x,y,cw,ch)+"padding:10px 14px;margin:0;text-align:left;white-space:pre-wrap;font-size:"+number(fs)+"px;line-height:"+number(fs*1.45)+"px;color:"+css_color(e.value("color","#273F3B"))+";background-color:"+std::string(selected?"#E1EADF":"#F9F5EA")+";border-radius:3px;border-width:"+std::string(selected?"3":"1")+"px;border-color:"+std::string(selected?"#476960":"#C9BFA9")+";\"");

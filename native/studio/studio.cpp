@@ -663,6 +663,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField->addItem(tr("자동 재생 · 멈춤"),"recollectionAuto");actionField->addItem(tr("대화 자동 진행 · 켜기/끄기"),"dialogueAuto");
   actionField->addItem(tr("회상 배속 변경"),"recollectionSpeed");
   actionField->addItem(tr("회상 끝으로 건너뛰기"),"recollectionSkip");
+  actionField->addItem(tr("일정 연출 · 일시정지/재개"),"timelinePause");
+  actionField->addItem(tr("일정 연출 · 배속 변경"),"timelineSpeed");
+  actionField->addItem(tr("일정 연출 · 현재 활동 넘기기"),"timelineSkip");
   actionField->setProperty("builtinActionCount", actionField->count());
   targetField = new QComboBox;
   targetField->setObjectName("actionTarget");

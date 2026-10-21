@@ -115,7 +115,7 @@ public:
       Rml::ElementList elements;document->GetElementsByTagName(elements,"div");
       for(auto* element:elements)if(element->GetAttribute<bool>("data-result-playback",false)){
         const auto text=result_playback_text(game.timeline_plan,game.timeline_cursor,element->GetAttribute<bool>("data-result-changes",false));
-        if(element->GetAttribute<std::string>("data-result-text","")!=text){element->SetInnerRML(markup.result_playback_markup(element->GetAttribute<bool>("data-result-changes",false)));element->SetAttribute("data-result-text",text);}
+        if(element->GetAttribute<std::string>("data-result-text","")!=text){element->SetInnerRML(markup.result_playback_markup(element->GetAttribute<bool>("data-result-changes",false),{{"fill",element->GetAttribute<std::string>("data-result-fill","#213c34e8")},{"color",element->GetAttribute<std::string>("data-result-color","#fff8e6")}}));element->SetAttribute("data-result-text",text);}
       }
       return;
     }
