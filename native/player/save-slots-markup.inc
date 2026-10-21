@@ -37,7 +37,7 @@
         const auto thumbnail=selected->value("thumbnail","");
         out+=box(w/2-290,h/2-86,580,122,"","background-color:#E8E2D4;border-width:1px;border-color:"+line+";");
         if(!thumbnail.empty())out+=box(w/2-280,h/2-76,181,102,"<img src=\""+escape(thumbnail)+"\" style=\"width:100%;height:100%;\"/>");
-        out+=box(w/2-80,h/2-76,350,30,escape((slot_confirmation=="save"?slot_words("덮어쓸 ","Replacing ","上書きする "):std::string())+slot_label),"font-size:22px;color:"+accent+";");
+        out+=box(w/2-80,h/2-76,350,30,escape((slot_confirmation=="save"?slot_words("덮어쓸 ","Replacing ","上書きする "):std::string())+slot_label),"font-size:22px;color:"+(slot_confirmation=="save"?std::string("#8A3A4A"):accent)+";");
         const auto record=selected->value("record",Json::object());
         out+=box(w/2-80,h/2-42,350,74,escape(slot_date(*selected)+" · "+record.value("place","")+"\n"+slot_words("남긴 시각  ","Saved  ","保存日時  ")+record.value("savedAt","")),"font-size:18px;line-height:25px;color:"+ink+";");
       }
