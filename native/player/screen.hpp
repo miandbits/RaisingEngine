@@ -312,7 +312,12 @@ public:
     const auto phase = game.state.value("phase", "planning");
     if (phase == "narrative") return narrative().at("node").value("type", "") == "choice" ? "choice" : "dialogue";
     if (phase == "activity-result") return "result";
-    if (phase == "ready" && game.continuous() && game.content.at("project").at("visual").contains("resultPlayback") && game.message.empty()) return "auto-ready";
+    if (phase == "ready" && game.continuous() && game.content.at("project").at("visual").contains("resultPlayback")) {
+      // A successful save/load notice does not turn an ongoing schedule into
+      // planning. Keep the planning fallback when the next command is blocked.
+      const auto next = game.schedule_step();
+      if (game.message.empty() || (!next.empty() && game.available({{"type",next}}))) return "auto-ready";
+    }
     if (phase == "finished") return "finished";
     if (phase == "battle" || phase == "expedition") return phase;
     return "planning";
