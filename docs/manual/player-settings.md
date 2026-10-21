@@ -29,4 +29,6 @@ The native player keeps authored coordinates when a window is resized or switche
 
 `tests/native-player/display-density.test.mjs` checks fractional scaling, 2×/3× output, letterboxing/pillarboxing, return to 1×, mouse/touch hit testing and save restoration without changing the authored layout.
 
+For an existing release, the export service supports [image-only updates](image-only-updates.md) that preserve its save baseline while explicitly recording replacement image checksums.
+
 `tests/native-player/settings.test.mjs` covers persistence across launches and save restoration, independent audio gains, UTF-8 reveal, first-click reveal, automatic choice/modal stops, malformed preferences, write rollback and unsupported exports. The Qt `saveSlotsAuthoring` test includes creating and retaining the widget. Fullscreen toggling and relaunch persistence additionally require a real display test.

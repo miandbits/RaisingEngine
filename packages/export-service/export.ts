@@ -7,12 +7,15 @@ import type { ContentSnapshot } from '../core/model.js';
 import type { ExportTarget, GameBundle } from './model.js';
 import type { PreparedExtensions } from '../plugin-host/bundle.js';
 import { PluginError } from '../plugin-host/zip.js';
+import { preparePresentationRevision } from './presentation-revision.js';
 
 export interface ExportOptions {
   content: ContentSnapshot; projectRoot: string; destination: string; target: ExportTarget;
   runtimes: { web: string; windows: string };
   /** Plugin runtime modules + documents from StudioEditor.exportExtensions (null/absent when no plugin element is used). */
   extensions?: PreparedExtensions | null | undefined;
+  /** Published bundle to preserve for a strictly image-only update. No implicit save migration. */
+  presentationBase?: GameBundle;
   /** Recheck the source immediately before publishing the owned staging directory. */
   beforePublish?: () => Promise<void>;
 }
@@ -35,6 +38,9 @@ export function hasPortraitTransforms(value: unknown): boolean {
 /** Export a validated immutable snapshot. Source assets are rechecked to prevent stale content packaging. */
 export async function exportGame(options: ExportOptions): Promise<ExportResult> {
   const { content, target } = options;
+  const presentation = options.presentationBase
+    ? preparePresentationRevision(content, options.presentationBase, options.extensions?.game) : undefined;
+  const runtimeContent = presentation?.content ?? content;
   if (target !== 'web' && target !== 'windows') throw new Error('지원하지 않는 내보내기 대상입니다.');
   const projectRoot = await realpath(options.projectRoot);
   const destination = path.resolve(options.destination);
@@ -199,18 +205,20 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
       assets[asset.id] = asset.target;
     }
     // `extensions` is omitted entirely for plugin-free games so their bundles stay byte-identical.
-    const bundle: GameBundle = extensions ? { formatVersion: '1', content, assets, extensions: extensions.game } : { formatVersion: '1', content, assets };
+    const bundle: GameBundle = extensions ? { formatVersion: '1', content: runtimeContent, assets, extensions: extensions.game } : { formatVersion: '1', content: runtimeContent, assets };
+    if (presentation) bundle.presentationRevision = presentation.presentationRevision;
     await writeFile(path.join(staging, 'game.json'), JSON.stringify(bundle), { flag: 'wx' });
     await writeFile(path.join(staging, 'README.txt'), target === 'web'
       ? `${content.project.title}\n\n이 폴더 전체를 정적 웹 호스팅에 올리세요. index.html은 HTTP 또는 HTTPS에서 열어야 합니다.\n저장하기는 JSON 파일을 내려받고 불러오기는 그 파일을 선택합니다.\nC++ 코어의 WebAssembly 빌드로 실행합니다.\n`
       : `${content.project.title}\n\nRaisingPlayer.exe를 실행하세요. 같은 폴더의 game.json과 assets 폴더가 필요합니다.\nC++ / SDL3 / RmlUi 독립 플레이어입니다.\n`, { flag: 'wx' });
     await writeFile(path.join(staging, 'export.json'), JSON.stringify({ formatVersion: '1', target,
-      contentFingerprint: content.contentFingerprint, coreVersion: '0.2.0', assetCount: content.assets.length }, null, 2), { flag: 'wx' });
+      contentFingerprint: runtimeContent.contentFingerprint, coreVersion: '0.2.0', assetCount: content.assets.length,
+      ...(presentation ? { presentationRevision: presentation.presentationRevision } : {}) }, null, 2), { flag: 'wx' });
     await options.beforePublish?.();
     // A competing export or user-created directory must never be replaced.
     if (await exists(actualDestination)) throw new Error('출력 폴더가 이미 있습니다. 새 이름을 선택하세요.');
     await rename(staging, actualDestination);
-    return { directory: actualDestination, target, contentFingerprint: content.contentFingerprint, assetCount: content.assets.length };
+    return { directory: actualDestination, target, contentFingerprint: runtimeContent.contentFingerprint, assetCount: content.assets.length };
   } catch (error) {
     // Only the uniquely named staging directory created above is removed on failure.
     await rm(staging, { recursive: true, force: true }); throw error;
