@@ -1,4 +1,7 @@
 #include "story-connections.hpp"
+#include "story-followup.hpp"
+#include <QDialogButtonBox>
+#include <QPlainTextEdit>
 #include "script-authoring.hpp"
 #include <QApplication>
 #include <QPushButton>
@@ -20,10 +23,10 @@ int main(int argc,char **argv){
   auto set=[](bool value){return QJsonObject{{"op","setFlag"},{"flagId","promise"},{"value",value}};};
   auto script=[](QString id,QJsonObject requirements){return QJsonObject{{"id",id},{"label",id},{"requirements",requirements},{"entryNodeId","end"},{"nodes",QJsonArray{QJsonObject{{"id","end"},{"type","end"}}}}};};
   auto a=script("first",{{"op","stateIs"},{"stateGroupId","activity"},{"stateValueId","rest"}});
-  a["entryNodeId"]="ask";a["nodes"]=QJsonArray{QJsonObject{{"id","ask"},{"type","choice"},{"choices",QJsonArray{
+  a["entryNodeId"]="ask";a["nodes"]=QJsonArray{QJsonObject{{"id","ask"},{"type","choice"},{"prompt","Will you keep your promise?"},{"choices",QJsonArray{
     QJsonObject{{"id","yes"},{"text","Keep the promise"},{"effects",QJsonArray{set(true)}},{"requirements",QJsonObject{{"op","always"}}},{"next","end"}},
     QJsonObject{{"id","no"},{"text","Decline"},{"effects",QJsonArray{set(false)}},{"requirements",QJsonObject{{"op","always"}}},{"next","end"}}}}},
-    QJsonObject{{"id","end"},{"type","end"}},QJsonObject{{"id","orphan"},{"type","effect"},{"effects",QJsonArray{QJsonObject{{"op","setFlag"},{"flagId","unreachable"},{"value",true}}}}}};
+    QJsonObject{{"id","end"},{"type","end"}},QJsonObject{{"id","orphan"},{"type","effect"},{"next","end"},{"effects",QJsonArray{QJsonObject{{"op","setFlag"},{"flagId","unreachable"},{"value",true}}}}}};
   auto b=script("follow",{{"op","all"},{"conditions",QJsonArray{flag(true),QJsonObject{{"op","eventCompleted"},{"eventId","first"}}}}});
   auto c=script("alternative",{{"op","any"},{"conditions",QJsonArray{flag(false),QJsonObject{{"op","eventCompleted"},{"eventId","follow"}}}}});
   auto d=script("blocked",{{"op","not"},{"condition",QJsonObject{{"op","eventCompleted"},{"eventId","first"}}}});
@@ -68,6 +71,43 @@ int main(int argc,char **argv){
   ScriptAuthoringDialog author(ctx,{});author.selectDocument("events/follow.json");auto label=author.findChild<QLineEdit*>("scriptLabel");check(label!=nullptr,"authoring label");label->setFocus();label->selectAll();QTest::keyClicks(label,"Draft followup");
   QTimer::singleShot(0,&author,[&]{auto map=author.findChild<QDialog*>("storyConnectionsDialog");check(map!=nullptr,"map opens within authoring");QTimer::singleShot(0,map,[&,map]{check(map->findChild<QLabel*>("connectionsDetails")->text().contains("Draft followup"),"unsaved draft visible in map");map->reject();});});
   author.findChild<QPushButton*>("scriptConnections")->click();check(author.edits().size()==1,"map preserves existing draft");author.reject();
+  auto creationDocs=documents;auto project=creationDocs[5].toObject();auto projectData=project.value("data").toObject();projectData["durationMonths"]=2;projectData["periodsPerMonth"]=4;projectData["initialState"]=QJsonObject{{"flags",QJsonObject{{"promise",false}}}};project["data"]=projectData;creationDocs[5]=project;
+  QJsonObject flagDocument{{"formatVersion","0.1.0"},{"flags",QJsonArray{QJsonObject{{"id","promise"},{"label","Promise"},{"initial",false}}}}};
+  creationDocs.append(QJsonObject{{"kind","flags"},{"file","flags.json"},{"data",flagDocument}});
+  const QJsonObject settings{{"title","A promise remembered"},{"dialogue","You returned."},{"speakerId",QJsonValue::Null},{"fromPeriod",1},{"throughPeriod",7},{"promise",flag(true)}};
+  const auto originalDocs=creationDocs;auto plan=makeStoryFollowup(creationDocs,"event:first/ask/yes",settings);
+  check(plan.error.isEmpty()&&plan.documents.size()==creationDocs.size()+1,"create followup with detached documents");
+  check(creationDocs==originalDocs,"creation leaves input untouched");
+  auto created=plan.documents.last().toObject().value("data").toObject();auto conditions=created.value("requirements").toObject().value("conditions").toArray();
+  check(conditions.size()==3&&conditions.contains(flag(true)),"completion plus chosen promise plus exact choice");
+  check(created.value("window").toObject().value("fromPeriod")==1&&created.value("trigger")=="period-end","explicit window and period-end trigger");
+  check(scriptGraphIssues(created).isEmpty(),"generated script links valid");
+  auto changed=plan.documents[0].toObject().value("data").toObject();auto createdOptions=changed.value("nodes").toArray()[0].toObject().value("choices").toArray();
+  check(createdOptions[1]==a.value("nodes").toArray()[0].toObject().value("choices").toArray()[1],"other choice untouched");
+  const auto marker=createdOptions[0].toObject().value("effects").toArray().last().toObject().value("flagId").toString();
+  check(!marker.isEmpty()&&marker!="promise","dedicated choice marker avoids shared-promise ambiguity");
+  check(!plan.documents[5].toObject().value("data").toObject().value("initialState").toObject().value("flags").toObject().value(marker).toBool(true),"choice marker starts false");
+  auto repeated=settings;repeated["targetFile"]=plan.file;auto relink=makeStoryFollowup(plan.documents,"event:first/ask/yes",repeated);
+  check(relink.error.isEmpty()&&relink.documents==plan.documents,"repeated linking is idempotent");
+  auto other=settings;other["targetFile"]="events/follow.json";auto linked=makeStoryFollowup(creationDocs,"event:first/ask/yes",other);
+  check(linked.error.isEmpty()&&linked.documents.size()==creationDocs.size(),"link existing event without duplicate");
+  check(linked.documents[1].toObject().value("data").toObject().value("nodes")==b.value("nodes"),"existing script preserved");
+  other["targetFile"]="events/first.json";check(!makeStoryFollowup(creationDocs,"event:first/ask/yes",other).error.isEmpty(),"self dependency rejected");
+  other["targetFile"]="events/first.json";other.remove("promise");check(!makeStoryFollowup(creationDocs,"event:follow",other).error.isEmpty(),"completion cycle rejected");
+  auto invalid=settings;invalid["throughPeriod"]=8;check(!makeStoryFollowup(creationDocs,"event:first/ask/yes",invalid).error.isEmpty(),"out-of-project window rejected");
+  invalid=settings;invalid["promise"]=flag(false);check(!makeStoryFollowup(creationDocs,"event:first/ask/yes",invalid).error.isEmpty(),"unrelated promise cannot be inferred");
+  invalid=settings;invalid["title"]=" ";check(!makeStoryFollowup(creationDocs,"event:first/ask/yes",invalid).error.isEmpty(),"empty title rejected");
+  auto fromEvent=settings;fromEvent.remove("promise");auto simple=makeStoryFollowup(creationDocs,"event:first",fromEvent);
+  check(simple.error.isEmpty()&&simple.documents[0]==creationDocs[0]&&simple.documents[6]==creationDocs[6],"event-only link needs no choice marker");
+  auto createdGraph=buildStoryConnections(plan.documents);bool exactEdge=false;for(auto e:createdGraph.edges)if(e.from=="event:first/ask/yes"&&e.to=="event:followup-1")exactEdge=true;check(exactEdge,"new choice connection immediately visible");
+  ScriptAuthoringDialog creator(QJsonObject{{"documents",creationDocs}},{});creator.selectDocument("events/first.json");
+  QTimer::singleShot(0,&creator,[&]{auto map=creator.findChild<QDialog*>("storyConnectionsDialog");check(map!=nullptr,"creation map opens");map->findChild<QComboBox*>("connectionsFocus")->setCurrentIndex(map->findChild<QComboBox*>("connectionsFocus")->findData("event:first/ask/yes"));
+    QTimer::singleShot(0,map,[&,map]{auto form=map->findChild<QDialog*>("storyFollowupDialog");check(form!=nullptr,"followup form opens");form->findChild<QLineEdit*>("followupTitle")->setText("From the graph");form->findChild<QPlainTextEdit*>("followupDialogue")->setPlainText("You kept your word.");form->findChild<QComboBox*>("followupPromise")->setCurrentIndex(1);form->findChild<QDialogButtonBox*>("followupButtons")->button(QDialogButtonBox::Save)->click();});
+    map->findChild<QPushButton*>("connectionsFollowup")->click();check(map->findChild<QLabel*>("connectionsDetails")->text().contains("From the graph"),"new event focused after draft mutation");map->reject();});
+  creator.findChild<QPushButton*>("scriptConnections")->click();auto changes=creator.edits();check(changes.size()==5,"source flags project add and replacement in same batch");
+  bool addBeforeReplace=false;for(auto v:changes){auto edit=v.toObject();if(edit.value("type")=="add")addBeforeReplace=true;if(edit.value("file")=="events/followup-1.json")check(addBeforeReplace,"new document added before replacement");}
+  bool applied=false;creator.setApplyHandler([&](QJsonArray batch,std::function<void(QString)> done){applied=true;check(batch==changes,"save applies the complete draft atomically");done({});});
+  creator.findChild<QDialogButtonBox*>("scriptButtons")->button(QDialogButtonBox::Save)->click();if(!applied)std::cerr<<creator.findChild<QLabel*>("scriptError")->text().toStdString()<<std::endl;check(applied&&creator.result()==QDialog::Accepted,"parent save accepts new event");
   auto large=documents;for(int i=0;i<700;++i)large.append(doc("event",script("large-"+QString::number(i),{{"op","eventCompleted"},{"eventId",i?"large-"+QString::number(i-1):"first"}})));
   QElapsedTimer timer;timer.start();auto big=buildStoryConnections(large);check(big.nodes.contains("event:large-699"),"large projects not truncated");check(big.edges.size()>=700,"large dependency chain complete");
   std::cout<<"PASS "<<checks<<" checks; 700-event graph "<<timer.elapsed()<<" ms\n";

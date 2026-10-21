@@ -1,4 +1,5 @@
 #include "story-connections.hpp"
+#include "story-followup.hpp"
 #include "script-identity.hpp"
 #include "script-graph.hpp"
 #include <QComboBox>
@@ -140,18 +141,20 @@ QSet<QString> storyConnectionNeighborhood(const StoryConnections &graph,const QS
 }
 
 StoryConnectionsDialog::StoryConnectionsDialog(QJsonObject context,QString file,QWidget *parent,
-    std::function<QJsonObject(QString,QString,QString,QWidget*)> editConditions):QDialog(parent) {
+    std::function<QJsonObject(QString,QString,QString,QWidget*)> editConditions,
+    std::function<QJsonObject(QJsonArray)> applyDraft):QDialog(parent) {
   setObjectName("storyConnectionsDialog");setWindowTitle(tr("사건 연결 지도"));resize(1380,900);
   auto outer=new QVBoxLayout(this);auto help=new QLabel(tr("활동·장소 → 사건·선택 → 약속·상태 조건 → 후속 사건. 점선은 실행 경로와 다른 조건에 따라 달라지는 연결입니다. 도달 가능성은 플레이 검증으로 확인하세요."));help->setWordWrap(true);outer->addWidget(help);
   auto row=new QHBoxLayout;auto search=new QLineEdit;search->setObjectName("connectionsSearch");search->setStyleSheet("QLineEdit { placeholder-text-color: #a5b3bb; }");search->setPlaceholderText(tr("사건·인물·활동·장소 검색"));auto focus=new QComboBox;focus->setObjectName("connectionsFocus");focus->setMinimumWidth(360);auto depth=new QComboBox;depth->setObjectName("connectionsDepth");for(int i=1;i<=4;++i)depth->addItem(tr("%1단계 연결").arg(i),i);depth->setCurrentIndex(1);auto all=new QCheckBox(tr("프로젝트 전체"));row->addWidget(search,1);row->addWidget(focus,1);row->addWidget(depth);row->addWidget(all);outer->addLayout(row);
   auto split=new QSplitter;outer->addWidget(split,1);auto graph=new ScriptGraphView;graph->setObjectName("connectionsGraph");auto scene=new QGraphicsScene(graph);graph->setScene(scene);graph->setBackgroundBrush(QColor("#17232a"));graph->setRenderHint(QPainter::Antialiasing);graph->setDragMode(QGraphicsView::ScrollHandDrag);split->addWidget(graph);
   auto side=new QWidget;auto sideLayout=new QVBoxLayout(side);auto details=new QLabel;details->setObjectName("connectionsDetails");details->setTextFormat(Qt::PlainText);details->setWordWrap(true);sideLayout->addWidget(details);auto reasons=new QTreeWidget;reasons->setObjectName("connectionsReasons");reasons->setHeaderLabels({tr("연결 대상 / 조건")});reasons->setWordWrap(true);sideLayout->addWidget(reasons,1);
   auto condition=new QPushButton(tr("선택한 사건·선택의 조건 편집…"));condition->setObjectName("connectionsConditions");auto script=new QPushButton(tr("선택한 대본 편집…"));script->setObjectName("connectionsScript");auto center=new QPushButton(tr("선택한 항목을 중심으로 보기"));center->setObjectName("connectionsCenter");sideLayout->addWidget(condition);sideLayout->addWidget(script);sideLayout->addWidget(center);split->addWidget(side);split->setSizes({990,350});
+  auto followup=new QPushButton(tr("후속 사건 만들기 · 연결…"));followup->setObjectName("connectionsFollowup");sideLayout->insertWidget(2,followup);
   auto bottom=new QHBoxLayout;auto overview=new ScriptGraphOverview(graph);bottom->addWidget(overview);auto info=new QLabel;info->setObjectName("connectionsCount");info->setWordWrap(true);bottom->addWidget(info,1);auto fit=new QPushButton(tr("흐름 전체 보기"));bottom->addWidget(fit);auto close=new QPushButton(tr("이야기 편집기로 돌아가기"));bottom->addWidget(close);outer->addLayout(bottom);
   struct State {QJsonObject context;StoryConnections model;QString selected;QMap<QString,QGraphicsRectItem*> items;};auto state=std::make_shared<State>();state->context=context;state->model=buildStoryConnections(context.value("documents").toArray());
   auto selection=[=](QString id){state->selected=id;const auto n=state->model.nodes.value(id);details->setText(kindName(n.kind)+" · "+n.title+"\n"+n.detail);reasons->clear();
     for(const auto &e:state->model.edges)if(e.from==id||e.to==id){const auto other=e.from==id?e.to:e.from;auto item=new QTreeWidgetItem(reasons,{(e.from==id?tr("다음 → "):tr("이전 ← "))+state->model.nodes.value(other).title+"\n"+e.reason});item->setData(0,Qt::UserRole,other);item->setToolTip(0,e.reason);item->setSizeHint(0,QSize(300,110));}
-    const bool editable=n.kind=="event"||n.kind=="ending"||n.kind=="choice";condition->setEnabled(editable);script->setEnabled(editable);center->setEnabled(!id.isEmpty());
+    const bool editable=n.kind=="event"||n.kind=="ending"||n.kind=="choice";condition->setEnabled(editable);script->setEnabled(editable);center->setEnabled(!id.isEmpty());followup->setEnabled(bool(applyDraft)&&(n.kind=="event"||n.kind=="choice")&&n.id.startsWith("event:"));
     for(auto it=state->items.begin();it!=state->items.end();++it)it.value()->setPen(QPen(it.key()==id?QColor("#ffdc94"):QColor("#607782"),it.key()==id?3:1));
   };
   auto render=[=]{QSignalBlocker blocker(scene);state->items.clear();scene->clear();const auto root=focus->currentData().toString();QSet<QString> visible;if(all->isChecked())for(auto it=state->model.nodes.begin();it!=state->model.nodes.end();++it)visible.insert(it.key());else visible=storyConnectionNeighborhood(state->model,root,depth->currentData().toInt());
@@ -171,5 +174,10 @@ StoryConnectionsDialog::StoryConnectionsDialog(QJsonObject context,QString file,
   connect(center,&QPushButton::clicked,this,[=]{const auto id=state->selected;search->clear();focus->setCurrentIndex(focus->findData(id));});
   connect(reasons,&QTreeWidget::itemDoubleClicked,this,[=](QTreeWidgetItem *item,int){auto id=item->data(0,Qt::UserRole).toString();selection(id);if(state->items.contains(id)){graph->resetTransform();graph->centerOn(state->items[id]);}else {search->clear();focus->setCurrentIndex(focus->findData(id));}});
   connect(condition,&QPushButton::clicked,this,[=]{const auto n=state->model.nodes.value(state->selected);state->context=editConditions(n.file,n.scriptNode,n.choice,this);state->model=buildStoryConnections(state->context.value("documents").toArray());auto root=focus->currentData().toString();populate(root);render();});
+  connect(followup,&QPushButton::clicked,this,[=]{StoryFollowupDialog dialog(state->context.value("documents").toArray(),state->selected,this);if(dialog.exec()!=QDialog::Accepted)return;
+    state->context=applyDraft(dialog.resultPlan.documents);state->model=buildStoryConnections(state->context.value("documents").toArray());
+    QString id;for(const auto &n:state->model.nodes)if(n.file==dialog.resultPlan.file&&n.kind=="event")id=n.id;
+    {QSignalBlocker block(search);search->clear();}state->selected=id;populate(id);render();
+  });
   connect(script,&QPushButton::clicked,this,[=]{const auto n=state->model.nodes.value(state->selected);selectedFile=n.file;selectedNode=n.scriptNode;accept();});connect(close,&QPushButton::clicked,this,&QDialog::reject);QTimer::singleShot(0,this,render);
 }

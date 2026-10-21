@@ -123,3 +123,35 @@ disconnected cycles, same-title selection, metadata refresh and viewport retenti
 It also covers option-text search and combined captions for converging choices.
 Richer summaries of arbitrary activity/choice conditions remain future work; these
 workflows do not introduce new runtime rules.
+## Creating follow-ups from the event connection map
+
+In the story workshop, open **Event connections**, select an event or a choice
+card, then choose **Create / connect follow-up**. No identifiers or JSON are
+required. Enter a name, opening dialogue, speaker, and eligible period range,
+or select an existing end-of-period event. Period numbers in this form start at 1.
+
+The preview lists the conditions that will be added:
+
+- Completion of the source event.
+- For a choice card, a persistent record that this exact choice was selected at
+  least once. Another choice granting the same promise does not satisfy it.
+- Optionally, a promise flag/value authored on that branch. Its current value
+  must still match when the follow-up is evaluated.
+
+Existing target conditions, dialogue, rewards, and source choice effects are
+preserved. The new event starts with the entered dialogue and, when present,
+the source's opening scene. Further presentation and rewards remain editable
+in the story workshop. Follow-ups run at eligible period-end checks; they do
+not interrupt the current dialogue. A project allowing only one event per
+period can defer a follow-up behind higher-priority events.
+
+The map updates immediately, but all changes remain part of the workshop
+draft. Save applies the new event, choice record, and flag definitions in one
+batch under the existing revision guard. Cancel discards them; project undo
+reverts the batch. Reconnecting the same source choice and target is idempotent.
+Mandatory completion cycles and invalid period ranges are rejected.
+
+This workflow currently handles shared events. Actor-scoped events and direct
+interaction targets are rejected rather than silently changing their scope or
+trigger. Choice records are not retroactively reconstructed from older saves;
+the source choice must be played with the new connection present.

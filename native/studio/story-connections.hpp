@@ -24,6 +24,7 @@ QSet<QString> storyConnectionNeighborhood(const StoryConnections &, const QStrin
 class StoryConnectionsDialog final : public QDialog {
 public:
   StoryConnectionsDialog(QJsonObject context, QString file, QWidget *parent,
-    std::function<QJsonObject(QString,QString,QString,QWidget*)> editConditions);
+    std::function<QJsonObject(QString,QString,QString,QWidget*)> editConditions,
+    std::function<QJsonObject(QJsonArray)> applyDraft = {});
   QString selectedFile, selectedNode;
 };

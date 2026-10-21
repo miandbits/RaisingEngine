@@ -124,6 +124,7 @@ QStringList ScriptAuthoringDialog::externalReferences(QString id, QString choice
   QStringList result;
   if (documentIndex < 0 || documents[documentIndex].toObject().value("kind") != "event") return result;
   for (auto doc : externalDocuments) {
+    if (doc.toObject().value("kind") != "scenario") continue;
     QStringList hits; scenarioReferences(doc.toObject().value("data"), {}, data().value("id").toString(), id, id, choice, choice, &hits);
     for (const auto &hit : hits) result << doc.toObject().value("file").toString() + " · " + hit;
   }
@@ -134,6 +135,7 @@ void ScriptAuthoringDialog::renameExternalReferences(QString from, QString to, Q
   int count = 0;
   for (int i = 0; i < externalDocuments.size(); ++i) {
     auto doc = externalDocuments[i].toObject(); QStringList hits;
+    if (doc.value("kind") != "scenario") continue;
     doc["data"] = scenarioReferences(doc.value("data"), {}, data().value("id").toString(), from, to, choiceFrom, choiceTo, &hits);
     count += hits.size(); externalDocuments[i] = doc;
   }

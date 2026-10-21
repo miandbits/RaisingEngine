@@ -81,7 +81,7 @@ QStringList scriptGraphIssues(const QJsonObject &script){
 }
 
 ScriptAuthoringDialog::ScriptAuthoringDialog(QJsonObject ctx,QJsonArray images,QWidget *parent,std::function<QString()> guard,std::function<void(QJsonObject,std::function<void(QJsonObject)>)> preview):QDialog(parent),context(ctx),assets(images),saveGuard(std::move(guard)),scenePreview(std::move(preview)){
-  for(auto v:ctx.value("documents").toArray()){const auto d=v.toObject();if(d.value("kind")=="event"||d.value("kind")=="ending")documents.append(d);}original=documents;for(auto v:ctx.value("documents").toArray())if(v.toObject().value("kind")=="scenario")externalDocuments.append(v);externalOriginal=externalDocuments;
+  for(auto v:ctx.value("documents").toArray()){const auto d=v.toObject();if(d.value("kind")=="event"||d.value("kind")=="ending")documents.append(d);}original=documents;for(auto v:ctx.value("documents").toArray())if(QStringList{"scenario","flags","project"}.contains(v.toObject().value("kind").toString()))externalDocuments.append(v);externalOriginal=externalDocuments;
   setObjectName("scriptAuthoringDialog");setWindowTitle(tr("사건 · 조건 · 결말 작업실"));resize(1380,880);
   auto outer=new QVBoxLayout(this);auto help=new QLabel(tr("장면·대사·선택지·조건 분기·효과를 연결하세요. 시작 노드와 모든 연결을 검사하고, 적용한 문서들은 한 번의 실행 취소로 되돌릴 수 있습니다."));help->setWordWrap(true);outer->addWidget(help);
   auto docRow=new QHBoxLayout;outer->addLayout(docRow);documentField=new QComboBox;documentField->setObjectName("scriptDocument");for(auto v:documents){const auto d=v.toObject(),s=d.value("data").toObject();documentField->addItem(s.value("label").toString(s.value("id").toString()));}docRow->addWidget(new QLabel(tr("사건·엔딩")));documentField->setItemDelegate(new StoryIdentityDelegate(documentField));documentField->view()->setMinimumWidth(740);documentField->setMaxVisibleItems(9);documentField->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);documentField->setMinimumContentsLength(20);docRow->addWidget(documentField,1);entryField=new QComboBox;entryField->setObjectName("scriptEntry");docRow->addWidget(new QLabel(tr("시작 노드")));docRow->addWidget(entryField);
@@ -272,11 +272,11 @@ void ScriptAuthoringDialog::previewScene(){
   auto close=new QDialogButtonBox(QDialogButtonBox::Close);layout->addWidget(close);connect(close,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
   refreshContext();QTimer::singleShot(0,renderer,&RendererPreviewDock::begin);dialog.exec();
 }
-QJsonArray ScriptAuthoringDialog::edits()const{QJsonArray result;for(int i=0;i<documents.size();++i)if(documents[i]!=original[i]){auto d=documents[i].toObject();result.append(QJsonObject{{"type","replace"},{"file",d.value("file")},{"data",d.value("data")}});}for(int i=0;i<externalDocuments.size();++i)if(externalDocuments[i]!=externalOriginal[i]){auto d=externalDocuments[i].toObject();result.append(QJsonObject{{"type","replace"},{"file",d.value("file")},{"data",d.value("data")}});}return result;}
+QJsonArray ScriptAuthoringDialog::edits()const{QJsonArray result;for(int i=0;i<documents.size();++i)if(documents[i]!=original[i]){auto d=documents[i].toObject();if(original[i].toObject().isEmpty())result.append(QJsonObject{{"type","add"},{"kind",d.value("kind")},{"id",d.value("data").toObject().value("id")}});result.append(QJsonObject{{"type","replace"},{"file",d.value("file")},{"data",d.value("data")}});}for(int i=0;i<externalDocuments.size();++i)if(externalDocuments[i]!=externalOriginal[i]){auto d=externalDocuments[i].toObject();result.append(QJsonObject{{"type","replace"},{"file",d.value("file")},{"data",d.value("data")}});}return result;}
 void ScriptAuthoringDialog::openConnections(){
   if(documentIndex<0||!commitId())return;
   auto snapshot=[this]{auto result=context;auto all=context.value("documents").toArray();
-    for(int i=0;i<all.size();++i){auto file=all[i].toObject().value("file");for(auto v:documents)if(v.toObject().value("file")==file)all[i]=v;for(auto v:externalDocuments)if(v.toObject().value("file")==file)all[i]=v;}
+    for(const auto &drafts:{documents,externalDocuments})for(auto v:drafts){int at=-1;for(int i=0;i<all.size();++i)if(all[i].toObject().value("file")==v.toObject().value("file"))at=i;if(at<0)all.append(v);else all[at]=v;}
     result["documents"]=all;return result;};
   StoryConnectionsDialog map(snapshot(),documents[documentIndex].toObject().value("file").toString(),this,
     [this,snapshot](QString file,QString nodeId,QString choiceId,QWidget *parent){
@@ -286,7 +286,13 @@ void ScriptAuthoringDialog::openConnections(){
         if(ci<0)return snapshot();requirements=choices[ci].toObject().value("requirements");}
       LogicEditor editor(requirements,"condition",snapshot(),parent);
       if(editor.exec()==QDialog::Accepted){if(ni<0)d["requirements"]=editor.value();else {auto c=choices[ci].toObject();c["requirements"]=editor.value();choices[ci]=c;auto n=nodes[ni].toObject();n["choices"]=choices;nodes[ni]=n;d["nodes"]=nodes;}setData(d);refreshMetadata();refreshNodes(nodeId);}
-      return snapshot();});
+      return snapshot();},[this,snapshot](QJsonArray next){
+      {QSignalBlocker block(documentField);for(auto v:next){auto d=v.toObject();auto kind=d.value("kind").toString();const bool script=kind=="event"||kind=="ending";
+        if(!script&&!QStringList{"scenario","flags","project"}.contains(kind))continue;
+        auto &drafts=script?documents:externalDocuments;auto &baseline=script?original:externalOriginal;int at=-1;
+        for(int i=0;i<drafts.size();++i)if(drafts[i].toObject().value("file")==d.value("file"))at=i;
+        if(at<0){drafts.append(d);baseline.append(QJsonObject{});if(script)documentField->addItem(d.value("data").toObject().value("label").toString());}else drafts[at]=d;
+      }}refreshDocumentIdentities();refreshMetadata();refreshNodes();return snapshot();});
   if(map.exec()==QDialog::Accepted){selectDocument(map.selectedFile);refreshNodes(map.selectedNode.isEmpty()?data().value("entryNodeId").toString():map.selectedNode);focusGraphNode();}
 }
 void StudioWindow::editScripts(){
