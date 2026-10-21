@@ -26,7 +26,7 @@ test('successful load notice keeps continuous schedule UI; a blocked activity st
   content.project.visual.routing={defaultScreenId:'home',useLocationScreens:false,phases:[{phase:'title',screenId:'title'},{phase:'planning',screenId:'home'},{phase:'ready',screenId:'home'},{phase:'activity-result',screenId:'schedule'}]};
   delete content.project.visual.saveSystem;
   if(blocked){content.project.initialState.attributes.money=0;content.activities.find(a=>a.id==='rest').costs=[{attributeId:'money',amount:1}];}
-  const game=resolve(root,tag);await exportGame({content,projectRoot,target:'windows',destination:game,runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-month-two')}});
+  const game=resolve(root,tag);await exportGame({content,projectRoot,target:'windows',destination:game,runtimes:{windows:resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-app')}});
   const steps=[{click:'start'},...[0,1,2].map(i=>({select:'plan-'+i,value:'rest'})),{click:'advance'},{checkpoint:'ready'},
    {key:'F5'},{checkpoint:'saved'},{key:'F9'},{checkpoint:'loaded'},{scheduleAdvanceMs:750},{checkpoint:'advanced'}];
   const script=resolve(root,tag+'-steps.json'),reportFile=resolve(root,tag+'-report.json');await writeFile(script,JSON.stringify(steps.flatMap(s=>s.click||s.key?[s,{waitFrames:2}]:[s])));
