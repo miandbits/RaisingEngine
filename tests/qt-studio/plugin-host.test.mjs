@@ -9,6 +9,43 @@ import { QtStudioService } from '../../apps/qt-studio/service.mjs';
 import { writeZip } from '../../dist/packages/plugin-host/index.js';
 
 const sha = data => createHash('sha256').update(data).digest('hex');
+
+test('project-local plugin store recovery preserves unsaved content, undo and pins', async () => {
+  await mkdir(path.resolve('.cache/qt-ui'), { recursive: true });
+  const work = await mkdtemp(path.resolve('.cache/qt-ui/plugin-environment-'));
+  const primary = path.join(work, 'primary'), alternate = path.join(work, 'alternate'), root = path.join(work, 'project');
+  const service = new QtStudioService({ pluginStore: primary });
+  let reply = await service.handle({ method: 'create', params: { root } });
+  const call = (method, params = {}) => service.handle({ method, params: { revision: service.editor.revision, ...params } });
+  await mkdir(alternate); await writeFile(path.join(alternate, 'registry.json'), JSON.stringify({ version: 1, installed: [] }));
+  await call('pluginStore', { directory: alternate });
+  await call('pluginInstall', { file: await probePackage(work) });
+  await call('pluginEnable', { id: 'host-probe', version: '1.0.0' });
+  const draft = service.editor.view();
+  await call('pluginStore', { directory: alternate });
+  const after = service.editor.view();
+  assert.equal(after.draftVersion, draft.draftVersion); assert.deepEqual(after.documents, draft.documents);
+  assert.equal(after.revision, draft.revision); assert.equal(after.dirty, true); assert.equal(after.undo, true);
+  await assert.rejects(call('pluginStore', { directory: path.join(work, 'missing') }));
+  assert.equal(service.pluginStore.toLowerCase(), alternate.toLowerCase());
+  assert.deepEqual(service.editor.view().documents, draft.documents);
+  await assert.rejects(service.handle({ method: 'pluginStore', params: { directory: alternate, revision: -1 } }), /갱신/);
+  await call('save');
+  const reopened = new QtStudioService({ pluginStore: primary });
+  reply = await reopened.handle({ method: 'open', params: { root, pluginStore: alternate } });
+  assert.equal(reply.plugins.project[0].state, 'active'); assert.equal(reply.view.dirty, false);
+  const savedVersion = reply.view.draftVersion;
+  reply = await reopened.handle({ method: 'open', params: { root, pluginStore: path.join(work, 'removed-disk') } });
+  assert.match(reply.environmentWarning, /저장소/); assert.equal(reply.view.draftVersion, savedVersion);
+  assert.equal(reply.plugins.project[0].state, 'missing');
+  const missingDiagnostics = structuredClone(reopened.editor.diagnostics);
+  await assert.rejects(reopened.handle({ method: 'open', params: { root: path.join(work, 'missing-project'), pluginStore: alternate } }));
+  assert.equal(reopened.pluginStore, primary);
+  assert.deepEqual(reopened.editor.diagnostics, missingDiagnostics, 'failed open preserves the current project diagnostics');
+  await call('create', { root: path.join(work, 'next-project') });
+  assert.equal(service.pluginStore, primary, 'a new project does not inherit another project local store');
+  assert.equal(service.editor.pluginStore, primary);
+});
 async function probePackage(directory) {
   const files = { 'schema/controller.schema.json': Buffer.from(JSON.stringify({ type: 'object' })),
     // Not a real DLL: the editor must reject it from metadata and keep working.

@@ -56,7 +56,7 @@ const textOf = (doc: DraftDocument) => { let text = texts.get(doc); if (text ===
 export interface StudioEditorOptions { /** Plugin store directory; default $RAISING_PLUGIN_STORE or <engine>/plugin-store. */ pluginStore?: string | null | undefined }
 export class StudioEditor {
   root: string | null = null;
-  readonly pluginStore: string | null;
+  pluginStore: string | null;
   documents: DraftDocument[] = [];
   revision = 0;
   readOnly = false;
@@ -68,6 +68,22 @@ export class StudioEditor {
   private history: DraftDocument[][] = [];
   private future: DraftDocument[][] = [];
   constructor(options: StudioEditorOptions = {}) { this.pluginStore = options.pluginStore ?? null; }
+
+  /** Local environment only: preserve the draft, undo history and project fingerprint. */
+  async configurePluginStore(store: string, revision: number): Promise<void> {
+    this.current(revision);
+    if (!path.isAbsolute(store)) throw new Error('플러그인 저장소의 절대 경로를 선택하세요.');
+    const directory = await realpath(store);
+    const registry = JSON.parse(await readFile(path.join(directory, 'registry.json'), 'utf8'));
+    if (registry?.version !== 1 || !Array.isArray(registry.installed))
+      throw new Error('플러그인 저장소의 registry.json 형식이 올바르지 않습니다.');
+    this.current(revision);
+    const previous = this.pluginStore;
+    const previousDiagnostics = this.diagnostics;
+    this.pluginStore = directory;
+    try { await this.plugins(); if (this.root) await this.validate(revision); }
+    catch (error) { this.pluginStore = previous; this.diagnostics = previousDiagnostics; throw error; }
+  }
 
   diskVersion(): string {
     if (!this.root) throw new Error('프로젝트를 열어 주세요.');

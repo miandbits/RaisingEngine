@@ -23,6 +23,7 @@ public:
   QJsonObject state() const { return pluginState; }
   /** Loads newly active authoring DLLs and unloads disabled/missing ones or those of another project. */
   void sync(const QString &projectRoot);
+  void retryFailed() { failures.clear(); }
   void notifyViewChanged();
   void unloadAll();
   raising::StudioPlugin *plugin(const QString &id) const;

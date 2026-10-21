@@ -1,4 +1,5 @@
 #include "script-authoring.hpp"
+#include "script-continuation.hpp"
 #include "logic-editor.hpp"
 #include <QCheckBox>
 #include <QComboBox>
@@ -35,6 +36,8 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
   connect(repeatable, &QCheckBox::toggled, this, [this](bool checked) { if (!filling && data().contains("window")) { auto d=data(); if (checked) d["repeatable"]=true; else d.remove("repeatable"); setData(d); } });
   referenceSummary = new QLabel(tr("대사·표시 이름을 바꿀 때 ID를 바꿀 필요는 없습니다. ID 변경은 연결과 시나리오 참조를 함께 갱신합니다."));
   referenceSummary->setObjectName("scriptReferenceSummary"); referenceSummary->setWordWrap(true); grid->addWidget(referenceSummary, 2, 0, 1, 5);
+  auto predecessors = new QLabel; predecessors->setObjectName("scriptPredecessorSummary"); predecessors->setWordWrap(true);
+  grid->addWidget(predecessors, 4, 0, 1, 5);
   connect(name, &QLineEdit::textChanged, this, [this, name] {
     if (filling || documentIndex < 0) return;
     auto d = data(); d["label"] = name->text(); setData(d);
@@ -57,7 +60,7 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
   connect(conditions, &QPushButton::clicked, this, [this] {
     if (documentIndex < 0) return;
     LogicEditor editor(data().value("requirements"), "condition", context, this);
-    if (editor.exec() == QDialog::Accepted) { auto d = data(); d["requirements"] = editor.value(); setData(d); }
+    if (editor.exec() == QDialog::Accepted) { auto d = data(); d["requirements"] = editor.value(); setData(d); refreshMetadata(); }
   });
   connect(references, &QPushButton::clicked, this, [this] {
     const auto id = node().value("id").toString(); if (id.isEmpty()) return;
@@ -85,6 +88,14 @@ void ScriptAuthoringDialog::refreshMetadata() {
   auto scope = metadata->findChild<QComboBox *>("scriptScope"); scope->setVisible(event); scope->setCurrentIndex(scope->findData(d.value("scope").toString("shared")));
   auto trigger = metadata->findChild<QComboBox *>("scriptTrigger"); trigger->setVisible(event); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(scope->currentData() != "actor");
   auto repeatable = metadata->findChild<QCheckBox *>("scriptRepeatable"); repeatable->setVisible(event); repeatable->setEnabled(trigger->currentData()=="interaction"); repeatable->setChecked(d.value("repeatable").toBool());
+  QStringList preceding;
+  for (const auto &id : requiredEvents(d.value("requirements").toObject())) {
+    QString name = id;
+    for (auto v : documents) if (v.toObject().value("data").toObject().value("id") == id) name = v.toObject().value("data").toObject().value("label").toString(id);
+    preceding << name;
+  }
+  preceding.sort();
+  metadata->findChild<QLabel *>("scriptPredecessorSummary")->setText(preceding.isEmpty() ? tr("앞선 사건 연결 없음 · 발생 조건에서 활동과 날짜를 확인하세요.") : tr("먼저 완료할 사건: %1 → %2").arg(preceding.join(tr(" 및 ")), d.value("label").toString()));
   filling = previous;
 }
 void ScriptAuthoringDialog::selectDocument(const QString &file) {

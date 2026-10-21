@@ -1,0 +1,67 @@
+# Project diagnostics and continuing an existing story
+
+The Qt editor can repair a project's local plugin-store connection and extend an
+existing event without editing its JSON or writing node identifiers.
+
+## Repair a missing animation or other plugin
+
+1. Open the project. If a required plugin is missing, disabled, incompatible, or
+   its native editor fails to load, use the plugin health button in the status bar.
+2. In **Plugins → Manage plugins**, inspect the required version and diagnostics.
+   Missing packages and native editor loading failures have separate messages.
+3. Select an existing plugin store (a directory containing `registry.json`) and
+   choose **Connect to this project**. Alternatively install the required package.
+4. Use **Check again** after repairing a package or a native dependency.
+
+The store path is a machine-local setting keyed by the project's canonical path.
+It is not written into project content, shared lock files, or game saves. Changing
+the store preserves drafts, undo history, document versions and pinned versions.
+Reopening the project restores its connection. An unavailable remembered store
+produces a warning while still opening the content. New projects use the default
+store rather than inheriting the previous project's connection.
+
+## Continue an existing event
+
+1. Open **Story authoring → Find existing events / continue a story**.
+2. Search by event name or dialogue and select the event.
+3. Choose **Connect an earlier event** and select its name. The summary shows the
+   required predecessor and the current event.
+4. Select an existing dialogue, scene or effect, then choose **Insert dialogue
+   after the selected dialogue/scene**. Write the new line and select its speaker.
+5. Review the graph, apply the changes, then save the project. Export or play the
+   result using the normal editor commands.
+
+The predecessor adds an `eventCompleted` requirement while preserving existing
+activity, date, choice and other conditions. Adding the same predecessor twice is
+idempotent. Direct and mandatory transitive completion cycles are rejected; this
+is not a proof that every combination of arbitrary conditions is reachable.
+
+Insertion reconnects the selected node to the new dialogue and the new dialogue
+to the original next node. Existing rewards, effects, scenes and node identifiers
+are preserved. The advanced identifier controls remain available for repairs.
+
+Changing the selected search result does not discard edits. Applying is a single
+shared-service edit transaction. Stale revisions and service failures retain the
+draft and display an error. Inputs are disabled during the apply request so a
+late keystroke cannot be lost after a successful response.
+
+## Verification
+
+- `node --test tests/qt-studio/service.test.mjs tests/qt-studio/plugin-host.test.mjs`
+- `qt-story-flow-dialog-test` and `qt-script-continuation-test` from a Qt build
+- `node scripts/check-editor-translations.mjs`
+
+On Windows, Qt test executables need the Qt and MinGW `bin` directories on PATH.
+For headless tests also set `QT_QPA_PLATFORM=offscreen` and point
+`QT_QPA_PLATFORM_PLUGIN_PATH` to that Qt installation's `plugins/platforms`.
+Do not treat a startup dialog or an empty log as a passing test.
+
+The continuation tests cover guard and reward preservation, insertion wiring,
+cycle checks, search/draft retention, revision conflicts, failed-apply retry and
+canonical per-project settings. The service tests cover store changes, unavailable
+paths, failed opens, reopening, and new-project isolation.
+
+Remaining authoring work includes better differentiation of events with identical
+display names, a more readable overview for long graphs, and richer named summaries
+of complex activity/choice conditions. Those workflows still use the existing
+condition editor and do not gain new runtime rules from this UI change.

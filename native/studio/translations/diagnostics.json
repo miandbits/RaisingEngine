@@ -539,5 +539,8 @@
   ["'%1' %2이(가) 다른 내용으로 이미 설치되어 있습니다. 설치된 버전은 바꿀 수 없으니 버전 번호를 올려 다시 패키징하세요.","'%1' %2 is already installed with different content. Installed versions are immutable; increment the version and repackage.","「%1」%2が異なる内容でインストール済みです。インストール済みの版は変更できないため、バージョンを上げて再パッケージしてください。"],
   ["중단된 저장을 이전 상태로 복구했습니다.","Recovered the interrupted save to its previous state.","中断された保存を以前の状態に復元しました。"],
   ["활동 아이콘은 일정 요소에 연결하세요.","Activity icons require a schedule element.","活動アイコンは予定要素に接続してください。"],
-  ["같은 활동의 아이콘은 한 번만 연결하세요.","Assign only one icon per activity.","同じ活動に割り当てるアイコンは一つにしてください。"]
+  ["같은 활동의 아이콘은 한 번만 연결하세요.","Assign only one icon per activity.","同じ活動に割り当てるアイコンは一つにしてください。"],
+  ["플러그인 저장소의 절대 경로를 선택하세요.","Select an absolute path to a plugin store.","プラグイン保管先の絶対パスを選んでください。"],
+  ["플러그인 저장소의 registry.json 형식이 올바르지 않습니다.","The plugin store registry.json has an invalid format.","プラグイン保管先のregistry.jsonの形式が不正です。"],
+  ["저장된 플러그인 저장소를 사용할 수 없습니다: %1","The saved plugin store is unavailable: %1","保存したプラグイン保管先を使用できません：%1"]
 ]

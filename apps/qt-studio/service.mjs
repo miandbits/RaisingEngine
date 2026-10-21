@@ -52,6 +52,7 @@ export class QtStudioService {
     this.runtimes = runtimes;
     this.shareViews = shareViews;
     this.pluginStore = pluginStorePath(pluginStore);
+    this.defaultPluginStore = this.pluginStore;
     this.editor = new StudioEditor({ pluginStore: this.pluginStore });
   }
   /** The target player's capabilities.json visualFeatures (plugins prepare exports for them, e.g. atlases). */
@@ -188,12 +189,39 @@ export class QtStudioService {
         const job=await this.analysisJobs.start(this.editor.root,content,this.editor.draftVersion(),params.revision,{runs:5000,seed:42,strategy:'random',maxCommands:1000,timeoutMs:3600000,...params.options});
         extra={analysis:{job}};break;
       }
-      case 'open': await this.editor.open(params.root); this.debugSession = null; break;
-      case 'create':
+      case 'open': {
+        // A remembered local path is optional. A missing disk must not prevent opening content.
+        const previousStore = this.pluginStore;
+        const previousDiagnostics = this.editor.diagnostics;
+        this.editor.pluginStore = this.defaultPluginStore;
+        this.pluginStore = this.defaultPluginStore;
+        if (params.pluginStore) {
+          try { await this.editor.configurePluginStore(params.pluginStore, this.editor.revision); this.pluginStore = this.editor.pluginStore; }
+          catch (error) { extra.environmentWarning = `저장된 플러그인 저장소를 사용할 수 없습니다: ${error.message}`; }
+        }
+        try { await this.editor.open(params.root); }
+        catch (error) { this.editor.pluginStore = previousStore; this.pluginStore = previousStore; this.editor.diagnostics = previousDiagnostics; throw error; }
+        this.debugSession = null; break;
+      }
+      case 'create': {
         if(params.template==='existing')await createProjectFromSource(params.source,params.root);
         else await createTemplateProject(path.join(engineRoot, 'examples'), params.template??'academy-adventure', params.root);
-        await this.editor.open(params.root); this.debugSession = null; break;
-      case 'view': case 'pluginStatus': break;
+        const previousStore = this.pluginStore;
+        this.editor.pluginStore = this.defaultPluginStore;
+        this.pluginStore = this.defaultPluginStore;
+        try { await this.editor.open(params.root); }
+        catch (error) { this.editor.pluginStore = previousStore; this.pluginStore = previousStore; throw error; }
+        this.debugSession = null; break;
+      }
+      case 'view': break;
+      case 'pluginStatus': if (this.editor.root) await this.editor.validate(params.revision); break;
+      case 'pluginStore': {
+        await this.editor.configurePluginStore(params.directory, params.revision);
+        this.pluginStore = this.editor.pluginStore;
+        this.debugSession = null;
+        extra.pluginStoreConfigured = this.pluginStore;
+        break;
+      }
       case 'pluginInstall': {
         if (typeof params.file !== 'string' || !path.isAbsolute(params.file)) throw new Error('설치할 .raiseplugin 파일의 절대 경로를 지정하세요.');
         const { plugin, alreadyInstalled } = await installPackage(this.pluginStore, params.file, { source: 'local' });

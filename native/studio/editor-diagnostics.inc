@@ -64,6 +64,7 @@ QString editorDiagnostic(const QString &message) {
 
 QJsonObject localizeEditorReply(QJsonObject reply) {
   translateDiagnosticField(reply,"error"); translateDiagnosticField(reply,"notice");
+  translateDiagnosticField(reply,"environmentWarning");
   auto view=reply.value("view").toObject();
   auto diagnostics=view.value("diagnostics").toArray();
   for(qsizetype i=0;i<diagnostics.size();++i) {

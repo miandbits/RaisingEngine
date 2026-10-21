@@ -1,6 +1,7 @@
 #include <QObject>
 #include "save-migration.hpp"
 #include "studio.hpp"
+#include "project-environment.hpp"
 #include "component-preview.hpp"
 #include "tabular-input.hpp"
 #include "table-logic.hpp"
@@ -898,6 +899,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   errorLabel->setWordWrap(true);
   errorLabel->setStyleSheet("color:#ffb2ae");
   statusBar()->addWidget(errorLabel, 1);
+  auto pluginHealth = new QPushButton(tr("플러그인 확인"));
+  pluginHealth->setObjectName("projectPluginHealth");
+  pluginHealth->hide();
+  statusBar()->addPermanentWidget(pluginHealth);
+  connect(pluginHealth, &QPushButton::clicked, this, &StudioWindow::showPluginManager);
   status = new QLabel;
   statusBar()->addPermanentWidget(status);
   resizeDocks({treeDock, propertiesDock}, {210, 330}, Qt::Horizontal);
@@ -1197,7 +1203,12 @@ void StudioWindow::request(QString method, QJsonObject params,
   });
 }
 void StudioWindow::openProject(const QString &root) {
-  request("open", {{"root", root}});
+  request("open", {{"root", root}, {"pluginStore", projectPluginStore(root)}}, [this](QJsonObject reply) {
+    if (!reply.value("environmentWarning").toString().isEmpty()) {
+      errorLabel->setText(reply.value("environmentWarning").toString());
+      if (auto health = findChild<QPushButton *>("projectPluginHealth")) health->show();
+    }
+  });
 }
 void StudioWindow::refresh(bool fit) {
   filling = true;

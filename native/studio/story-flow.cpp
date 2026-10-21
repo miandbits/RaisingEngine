@@ -1,3 +1,4 @@
+#include <QTimer>
 #include "story-flow.hpp"
 #include "studio.hpp"
 #include <QtWidgets>
@@ -25,6 +26,8 @@ StoryFlowDialog::StoryFlowDialog(QJsonObject context, QWidget *parent, std::func
   setObjectName("storyFlowDialog");setWindowTitle(tr("이야기 제작 · 인물에서 후속 사건까지"));resize(1120,810);
   auto outer=new QVBoxLayout(this);
   auto intro=new QLabel(tr("이름을 고르고 대사를 쓰면 활동 → 만남 → 선택 → 관계 변화 → 후속 사건이 연결됩니다. 내부 연결 이름은 자동으로 관리합니다."));intro->setWordWrap(true);outer->addWidget(intro);
+  auto existing=new QPushButton(tr("기존 사건 찾기 · 후속 이야기 이어쓰기…"));existing->setObjectName("storyExistingEvents");outer->addWidget(existing);
+  connect(existing,&QPushButton::clicked,this,[this]{done(42);});
   auto selectorRow=new QHBoxLayout;auto selector=new QComboBox;selector->setObjectName("storyFlowSelector");selector->addItem(tr("＋ 새 이야기 만들기"),QJsonObject{});
   QJsonObject project;for(auto v:context.value("documents").toArray())if(v.toObject().value("kind")=="project")project=v.toObject().value("data").toObject();
   for(auto v:project.value("authoring").toObject().value("storyFlows").toArray())selector->addItem(v.toObject().value("name").toString(),v.toObject());
@@ -115,6 +118,7 @@ void StudioWindow::editStoryFlow() {
   auto *dialog=new StoryFlowDialog(view,this,[this,revision,root]{if(bridge.busy())return tr("다른 작업을 처리 중입니다. 잠시 뒤 적용하세요.");if(view.value("revision")!=revision||view.value("root")!=root)return tr("프로젝트가 다른 곳에서 변경되었습니다. 입력을 덮어쓰지 않았습니다. 창을 다시 열어 현재 내용을 확인하세요.");return QString{};},
     [this](QJsonArray edits,std::function<void(QString)> done){request("edit",{{"edit",QJsonObject{{"type","batch"},{"edits",edits}}}},[done](QJsonObject reply){done(reply.value("error").toString());});});
   // Return from accessibility Invoke before entering the dialog's input loop.
+  connect(dialog,&QDialog::finished,this,[this](int result){if(result==42)QTimer::singleShot(0,this,&StudioWindow::editScripts);});
   dialog->setAttribute(Qt::WA_DeleteOnClose);
   dialog->open();
 }

@@ -1,5 +1,6 @@
 #include "plugin-host.hpp"
 #include "studio.hpp"
+#include "project-environment.hpp"
 #include <QActionGroup>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -508,6 +509,18 @@ void StudioWindow::applyPluginState(const QJsonObject &state, bool load) {
   if (plugins->loadedIds() != before && currentElement().value("kind") == "plugin") updateInspector();
   canvas->viewport()->update();
   plugins->notifyViewChanged();
+  if (auto health = findChild<QPushButton *>("projectPluginHealth")) {
+    QStringList issues;
+    for (auto v : plugins->rows()) {
+      const auto entry = v.toObject();
+      if (!entry.value("inProject").toBool()) continue;
+      if (entry.value("state") != "active" || !entry.value("loadError").toString().isEmpty())
+        issues << entry.value("id").toString() + " " + entry.value("version").toString() + " · " + entry.value("loadError").toString(entry.value("state").toString());
+    }
+    health->setVisible(!issues.isEmpty());
+    health->setText(tr("플러그인 확인 (%1)").arg(issues.size()));
+    health->setToolTip(issues.join('\n'));
+  }
 }
 void StudioWindow::rebuildPluginUi() {
   for (auto action : paletteMenu->actions())
@@ -601,15 +614,46 @@ void StudioWindow::editPluginProps() {
   updateElement([props](QJsonObject &e) { auto ext = e.value("extension").toObject(); ext["props"] = props; e["extension"] = ext; });
 }
 void StudioWindow::showPluginManager() {
-  QDialog dialog(this);
-  dialog.setObjectName("pluginManager");
-  dialog.setWindowTitle(tr("플러그인 관리"));
-  dialog.resize(820, 520);
-  auto layout = new QVBoxLayout(&dialog);
+  auto dialog = new QDialog(this);
+  dialog->setObjectName("pluginManager");
+  dialog->setWindowTitle(tr("플러그인 관리"));
+  dialog->resize(820, 520);
+  auto layout = new QVBoxLayout(dialog);
   auto summary = new QLabel;
   summary->setObjectName("pluginManagerStatus");
   summary->setWordWrap(true);
   layout->addWidget(summary);
+  auto storeRow = new QHBoxLayout;
+  auto storePath = new QLineEdit(plugins->state().value("store").toString());
+  storePath->setObjectName("pluginStorePath");
+  storePath->setPlaceholderText(tr("설치된 플러그인 저장소 폴더"));
+  auto browse = new QPushButton(tr("폴더 선택…")); browse->setObjectName("pluginStoreBrowse");
+  auto useStore = new QPushButton(tr("이 프로젝트에 연결")); useStore->setObjectName("pluginStoreConnect");
+  auto retry = new QPushButton(tr("다시 검사")); retry->setObjectName("pluginRetry");
+  storeRow->addWidget(storePath, 1); storeRow->addWidget(browse); storeRow->addWidget(useStore); storeRow->addWidget(retry);
+  layout->addLayout(storeRow);
+  auto environmentHelp = new QLabel(tr("저장소 연결은 이 PC에서 프로젝트별로 기억합니다. 프로젝트 콘텐츠와 저장 파일은 변경하지 않습니다. 필요한 버전이 없으면 패키지를 설치하세요."));
+  environmentHelp->setWordWrap(true); layout->addWidget(environmentHelp);
+  connect(browse, &QPushButton::clicked, dialog, [dialog, storePath] {
+    const auto folder = QFileDialog::getExistingDirectory(dialog, tr("플러그인 저장소 선택"), storePath->text());
+    if (!folder.isEmpty()) storePath->setText(folder);
+  });
+  connect(useStore, &QPushButton::clicked, dialog, [this, storePath, summary] {
+    if (bridge.busy() || view.value("root").toString().isEmpty()) return;
+    const auto root = view.value("root").toString();
+    QPointer<QLabel> message(summary);
+    request("pluginStore", {{"directory", storePath->text().trimmed()}}, [root, message](QJsonObject reply) {
+      const auto configured = reply.value("pluginStoreConfigured").toString();
+      if (!configured.isEmpty() && reply.value("error").toString().isEmpty()) {
+        QSettings().setValue(projectPluginStoreKey(root), configured);
+        if (message) message->setText(QObject::tr("연결을 기억했습니다. 다음에 이 프로젝트를 열 때 자동으로 사용합니다."));
+      } else if (message) message->setText(reply.value("error").toString());
+    });
+  });
+  connect(retry, &QPushButton::clicked, dialog, [this] {
+    if (bridge.busy()) return;
+    plugins->retryFailed(); request("pluginStatus");
+  });
   auto table = new QTableWidget(0, 5);
   table->setObjectName("pluginTable");
   table->setHorizontalHeaderLabels({tr("ID"), tr("이름"), tr("버전"), tr("상태"), tr("설치 위치")});
@@ -638,7 +682,7 @@ void StudioWindow::showPluginManager() {
   row->addStretch();
   row->addWidget(close);
   layout->addLayout(row);
-  connect(close, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  connect(close, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
   static const QMap<QString, QString> states{{"active", tr("사용 중")}, {"disabled", tr("사용 중지됨")}, {"missing", tr("설치 필요")},
                                              {"incompatible", tr("호환되지 않음")}, {"notLocked", tr("잠금 파일에 없음 · 문서 보존")},
                                              {"available", tr("설치됨 · 프로젝트 미사용")}};
@@ -651,6 +695,9 @@ void StudioWindow::showPluginManager() {
       lines << (d.isEmpty() ? v.toString() : QStringList{d.value("severity").toString(), d.value("code").toString(), d.value("message").toString()}.join(" · "));
     };
     if (!entry.isEmpty()) {
+      lines << tr("필요한 플러그인: %1 · 버전 %2").arg(entry.value("id").toString(), entry.value("version").toString());
+      if (entry.value("state") == "missing") lines << tr("이 저장소에 필요한 버전이 없습니다. 설치된 저장소를 연결하거나 해당 버전의 패키지를 설치하세요.");
+      if (entry.value("state") == "active") lines << (entry.value("loaded").toBool() ? tr("데이터 계약 정상 · 편집 도구 로딩 정상") : tr("데이터 계약 정상 · 편집 도구 로딩 결과를 확인하세요."));
       for (auto d : entry.value("diagnostics").toArray()) add(d);
       if (!entry.value("loadError").toString().isEmpty()) lines << tr("편집 도구: ") + entry.value("loadError").toString();
     }
@@ -684,33 +731,36 @@ void StudioWindow::showPluginManager() {
     summary->setText(plugins->state().isEmpty() ? tr("프로젝트 서비스가 플러그인 정보를 보내지 않았습니다. 플러그인 없이 편집합니다.")
                                                 : tr("플러그인 저장소: %1\n엔진 플러그인 API %2").arg(store.isEmpty() ? tr("(알 수 없음)") : store).arg(plugins->state().value("engineApi").toVariant().toString()));
     install->setEnabled(!bridge.busy() && !plugins->state().isEmpty());
+    if (table->currentRow() < 0 && table->rowCount()) table->setCurrentCell(0, 0);
     describe();
   };
-  connect(table, &QTableWidget::itemSelectionChanged, &dialog, describe);
-  connect(this, &StudioWindow::updated, &dialog, fill);
-  connect(install, &QPushButton::clicked, &dialog, [this, &dialog, summary] {
+  connect(table, &QTableWidget::itemSelectionChanged, dialog, describe);
+  connect(this, &StudioWindow::updated, dialog, [dialog, fill] { QTimer::singleShot(0, dialog, fill); });
+  connect(install, &QPushButton::clicked, dialog, [this, dialog, summary] {
     const auto file = !pluginPackagePath.isEmpty() ? pluginPackagePath
-                      : QFileDialog::getOpenFileName(&dialog, tr("플러그인 패키지 설치"), {}, tr("Raising 플러그인 (*.raiseplugin)"));
+                      : QFileDialog::getOpenFileName(dialog, tr("플러그인 패키지 설치"), {}, tr("Raising 플러그인 (*.raiseplugin)"));
     if (file.isEmpty() || bridge.busy()) return;
-    request("pluginInstall", {{"file", file}}, [summary](QJsonObject reply) {
+    request("pluginInstall", {{"file", file}}, [summary=QPointer<QLabel>(summary)](QJsonObject reply) {
+      if (!summary) return;
       const auto done = reply.value("pluginInstalled").toObject();
       if (reply.value("error").toString().isEmpty() && !done.isEmpty())
         summary->setText(tr("설치됨: %1 %2 · ‘이 프로젝트에서 사용’으로 연결하세요.").arg(done.value("id").toString(), done.value("version").toString()));
     });
   });
-  connect(enable, &QPushButton::clicked, &dialog, [this, selected] {
+  connect(enable, &QPushButton::clicked, dialog, [this, selected] {
     const auto entry = selected();
     if (entry.isEmpty() || bridge.busy()) return;
     QJsonObject params{{"id", entry.value("id")}};
     if (!entry.value("version").toString().isEmpty()) params["version"] = entry.value("version");
     request("pluginEnable", params);
   });
-  connect(disable, &QPushButton::clicked, &dialog, [this, selected] {
+  connect(disable, &QPushButton::clicked, dialog, [this, selected] {
     const auto entry = selected();
     if (!entry.isEmpty() && !bridge.busy()) request("pluginDisable", {{"id", entry.value("id")}});
   });
   fill();
   // Refresh the store listing; an old service without plugin support is not asked.
   if (!bridge.busy() && plugins->state().contains("store")) request("pluginStatus");
-  dialog.exec();
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  dialog->open();
 }

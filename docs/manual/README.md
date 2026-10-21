@@ -4,6 +4,7 @@ Start with [your first game](../getting-started/first-game.md). Templates are st
 
 | Work | Guide |
 |---|---|
+| Project/plugin diagnostics and continuing an existing event | [Authoring workflow](authoring-workflow.md) |
 | Characters, activities, meetings and follow-up stories | [Story workshop](story-flow-workshop.md), [integrated workspace](integrated-designer-workspace.md) |
 | Conditions, costs, effects and progression | [Generic rules](generic-rules.md), [rule packages](rule-extensions.md) |
 | Personal data and actions | [Character rules](character-scoped-rules.md) |

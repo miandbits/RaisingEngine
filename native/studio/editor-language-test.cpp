@@ -58,6 +58,9 @@ int main(int argc, char **argv) {
   if(localized["view"].toObject()["diagnostics"].toArray()[0].toObject()["pointer"]!="/이름/%1")return 16;
   if(editorDiagnostic("unknown third-party diagnostic %1")!="unknown third-party diagnostic %1")return 17;
   const auto opaque=QString::fromUtf8("C:/사용자/%1/[test].json");
+  const auto environmentWarning=QString::fromUtf8("저장된 플러그인 저장소를 사용할 수 없습니다: ")+opaque;
+  const auto localizedEnvironment=localizeEditorReply(QJsonObject{{"environmentWarning",environmentWarning}}).value("environmentWarning").toString();
+  if(locale!="ko"&&(localizedEnvironment==environmentWarning||!localizedEnvironment.contains(opaque))){qCritical("Plugin environment warning translation lost its path");return 30;}
   const auto diagnosticSource=QString::fromUtf8("읽는 동안 변경되었습니다: ")+opaque;
   const auto expectedDiagnostic=(locale=="ja"?QString::fromUtf8("読み込み中に変更されました："):locale=="en"?QString("Changed while reading: "):QString::fromUtf8("읽는 동안 변경되었습니다: "))+opaque;
   if(editorDiagnostic(diagnosticSource)!=expectedDiagnostic)return 22;

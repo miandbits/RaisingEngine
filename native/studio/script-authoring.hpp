@@ -16,6 +16,7 @@ public:
   ScriptAuthoringDialog(QJsonObject context,QJsonArray assets,QWidget *parent=nullptr,std::function<QString()> saveGuard={},std::function<void(QJsonObject,std::function<void(QJsonObject)>)> scenePreview={});
   QJsonArray edits() const;
   void selectDocument(const QString &file);
+  void setApplyHandler(std::function<void(QJsonArray,std::function<void(QString)>)> handler) { applyEdits = std::move(handler); }
 private:
   QJsonObject context;
   QJsonArray original,documents,assets;
@@ -29,6 +30,7 @@ private:
   int documentIndex=-1,nodeIndex=-1;
   bool filling=false;
   std::function<QString()> saveGuard;
+  std::function<void(QJsonArray,std::function<void(QString)>)> applyEdits;
   std::function<void(QJsonObject,std::function<void(QJsonObject)>)> scenePreview;
   QComboBox *documentField,*entryField,*kindField;
   QListWidget *nodeList;
@@ -47,6 +49,8 @@ private:
   void fillProperties();
   void refreshGraph();
   void addNode();
+  void insertDialogueAfter();
+  void connectPredecessor();
   void addRounds();
   void duplicateNode();
   void removeNode();
