@@ -41,7 +41,6 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
   connect(name, &QLineEdit::textChanged, this, [this, name] {
     if (filling || documentIndex < 0) return;
     auto d = data(); d["label"] = name->text(); setData(d);
-    documentField->setItemText(documentIndex, name->text() + " · " + documents[documentIndex].toObject().value("file").toString());
   });
   connect(priority, qOverload<int>(&QSpinBox::valueChanged), this, [this](int n) { if (!filling && documentIndex >= 0) { auto d = data(); d["priority"] = n; setData(d); } });
   const auto updateWindow = [this, from, through] {
@@ -88,6 +87,12 @@ void ScriptAuthoringDialog::refreshMetadata() {
   auto scope = metadata->findChild<QComboBox *>("scriptScope"); scope->setVisible(event); scope->setCurrentIndex(scope->findData(d.value("scope").toString("shared")));
   auto trigger = metadata->findChild<QComboBox *>("scriptTrigger"); trigger->setVisible(event); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(scope->currentData() != "actor");
   auto repeatable = metadata->findChild<QCheckBox *>("scriptRepeatable"); repeatable->setVisible(event); repeatable->setEnabled(trigger->currentData()=="interaction"); repeatable->setChecked(d.value("repeatable").toBool());
+  refreshPredecessorSummary();
+  filling = previous;
+}
+void ScriptAuthoringDialog::refreshPredecessorSummary() {
+  if (!metadata) return;
+  const auto d = data();
   QStringList preceding;
   for (const auto &id : requiredEvents(d.value("requirements").toObject())) {
     QString name = id;
@@ -96,7 +101,6 @@ void ScriptAuthoringDialog::refreshMetadata() {
   }
   preceding.sort();
   metadata->findChild<QLabel *>("scriptPredecessorSummary")->setText(preceding.isEmpty() ? tr("앞선 사건 연결 없음 · 발생 조건에서 활동과 날짜를 확인하세요.") : tr("먼저 완료할 사건: %1 → %2").arg(preceding.join(tr(" 및 ")), d.value("label").toString()));
-  filling = previous;
 }
 void ScriptAuthoringDialog::selectDocument(const QString &file) {
   for (int i = 0; i < documents.size(); ++i) if (documents[i].toObject().value("file") == file) { documentField->setCurrentIndex(i); return; }

@@ -61,7 +61,37 @@ cycle checks, search/draft retention, revision conflicts, failed-apply retry and
 canonical per-project settings. The service tests cover store changes, unavailable
 paths, failed opens, reopening, and new-project isolation.
 
-Remaining authoring work includes better differentiation of events with identical
-display names, a more readable overview for long graphs, and richer named summaries
-of complex activity/choice conditions. Those workflows still use the existing
-condition editor and do not gain new runtime rules from this UI change.
+## Navigate a long script
+
+The graph reads from top to bottom. Choice and condition branches occupy separate
+lanes; a shared continuation appears below the longest incoming branch. Invalid
+cycles and disconnected nodes remain visible so they can be repaired. Disconnected
+nodes have a dashed border and an explanatory tooltip.
+
+- Search within the current script to select and reveal dialogue or a choice.
+- Choice captions show the source card number. Converging options share one
+  caption above their destination; its tooltip retains the full option text.
+- Use **Focus current node · 100%** to return from the overview to readable text.
+- Click or drag in the small overview to move through a long script. The outlined
+  rectangle shows the visible area. Ctrl+wheel zooms; ordinary scrolling moves.
+- **Show entire flow** fits the complete graph. Large scripts are not silently
+  truncated at 500 nodes. Full dialogue remains in the inspector and tooltips.
+- Selecting a node keeps its context in view. Editing text preserves zoom and
+  scroll position. Expand **Event settings** to edit names, timing and conditions.
+
+The event picker and predecessor picker display character names, one-based schedule
+periods, and mandatory earlier events beneath each title. Search accepts this
+context as well as titles and dialogue. Character names are inferred from explicit
+speaker, portrait and character/actor references; they do not prove who will appear
+on every conditional branch. Periods are project schedule indices, not months.
+
+Labels and summaries are derived editor information. Selection still uses the
+original document and event identifiers. Full context and the source filename are
+available in tooltips, including when two events have identical names and context.
+Renaming a label or changing timing updates the summaries without rewriting IDs.
+
+`qt-script-navigation-test` covers a 601-node script, uneven branches and merges,
+disconnected cycles, same-title selection, metadata refresh and viewport retention.
+It also covers option-text search and combined captions for converging choices.
+Richer summaries of arbitrary activity/choice conditions remain future work; these
+workflows do not introduce new runtime rules.

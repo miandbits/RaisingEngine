@@ -1,6 +1,12 @@
 #include "script-authoring.hpp"
 #include "script-rounds.hpp"
 #include "script-continuation.hpp"
+#include "script-identity.hpp"
+#include "script-graph.hpp"
+#include <QApplication>
+#include <QFontMetrics>
+#include <QStyledItemDelegate>
+#include <QPainter>
 #include <QCheckBox>
 #include <QListView>
 #include "studio.hpp"
@@ -28,10 +34,27 @@
 #include <QVBoxLayout>
 
 namespace {
+constexpr int identityRole = Qt::UserRole + 4;
+class StoryIdentityDelegate final : public QStyledItemDelegate {
+public:
+  using QStyledItemDelegate::QStyledItemDelegate;
+  QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override { return {720,72}; }
+  void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override {
+    QStyleOptionViewItem o(option);initStyleOption(&o,index);o.text.clear();
+    const auto style=o.widget?o.widget->style():QApplication::style();style->drawControl(QStyle::CE_ItemViewItem,&o,p,o.widget);
+    p->save();p->setClipRect(option.rect);const auto area=option.rect.adjusted(10,4,-10,-4);
+    p->setPen(option.palette.color(option.state&QStyle::State_Selected?QPalette::HighlightedText:QPalette::Text));
+    QFont title=option.font;title.setBold(true);p->setFont(title);
+    p->drawText(area,Qt::AlignLeft|Qt::AlignTop,QFontMetrics(title).elidedText(index.data().toString(),Qt::ElideRight,area.width()));
+    p->setFont(option.font);const auto lines=index.data(identityRole).toString().split('\n');
+    for(int i=0;i<lines.size();++i)p->drawText(area.adjusted(0,23+i*19,0,0),Qt::AlignLeft|Qt::AlignTop,QFontMetrics(option.font).elidedText(lines[i],Qt::ElideRight,area.width()));
+    p->restore();
+  }
+};
 bool validId(QString id){return id.size()<=64&&QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(id).hasMatch();}
 QString uniqueId(QJsonArray values,QString prefix){QSet<QString> ids;for(auto v:values)ids.insert(v.toObject().value("id").toString());for(int n=1;;++n){auto id=prefix+QString::number(n);if(!ids.contains(id))return id;}}
 QStringList links(QJsonObject n){const auto type=n.value("type").toString();QStringList out;if(QStringList{"scene","dialogue","effect"}.contains(type))out<<n.value("next").toString();if(type=="branch")out<<n.value("then").toString()<<n.value("else").toString();if(type=="choice")for(auto c:n.value("choices").toArray())out<<c.toObject().value("next").toString();return out;}
-QList<QPair<QString,QString>> labelledLinks(QJsonObject n){QList<QPair<QString,QString>> result;if(n.value("type")=="branch")return {{n.value("then").toString(),QObject::tr("참")},{n.value("else").toString(),QObject::tr("거짓")}};if(n.value("type")=="choice"){for(auto v:n.value("choices").toArray()){auto c=v.toObject();result.append({c.value("next").toString(),c.value("text").toString().left(20)});}return result;}for(auto to:links(n))result.append({to,{}});return result;}
+QList<QPair<QString,QString>> labelledLinks(QJsonObject n){QList<QPair<QString,QString>> result;if(n.value("type")=="branch")return {{n.value("then").toString(),QObject::tr("참")},{n.value("else").toString(),QObject::tr("거짓")}};if(n.value("type")=="choice"){for(auto v:n.value("choices").toArray()){auto c=v.toObject();result.append({c.value("next").toString(),c.value("text").toString()});}return result;}for(auto to:links(n))result.append({to,{}});return result;}
 QJsonObject renameLinks(QJsonObject n,QString from,QString to){for(auto key:{"next","then","else"})if(n.value(key)==from)n[key]=to;if(n.value("type")=="choice"){auto a=n.value("choices").toArray();for(int i=0;i<a.size();++i){auto c=a[i].toObject();if(c.value("next")==from)c["next"]=to;a[i]=c;}n["choices"]=a;}return n;}
 QPushButton *button(QBoxLayout *row,QString id,QString text){auto b=new QPushButton(text);b->setObjectName(id);row->addWidget(b);return b;}
 QJsonObject choice(QString id,QString next){return {{"id",id},{"text",QObject::tr("새 선택지")},{"requirements",QJsonObject{{"op","always"}}},{"effects",QJsonArray{}},{"next",next}};}
@@ -60,30 +83,44 @@ ScriptAuthoringDialog::ScriptAuthoringDialog(QJsonObject ctx,QJsonArray images,Q
   for(auto v:ctx.value("documents").toArray()){const auto d=v.toObject();if(d.value("kind")=="event"||d.value("kind")=="ending")documents.append(d);}original=documents;for(auto v:ctx.value("documents").toArray())if(v.toObject().value("kind")=="scenario")externalDocuments.append(v);externalOriginal=externalDocuments;
   setObjectName("scriptAuthoringDialog");setWindowTitle(tr("사건 · 조건 · 결말 작업실"));resize(1380,880);
   auto outer=new QVBoxLayout(this);auto help=new QLabel(tr("장면·대사·선택지·조건 분기·효과를 연결하세요. 시작 노드와 모든 연결을 검사하고, 적용한 문서들은 한 번의 실행 취소로 되돌릴 수 있습니다."));help->setWordWrap(true);outer->addWidget(help);
-  auto docRow=new QHBoxLayout;outer->addLayout(docRow);documentField=new QComboBox;documentField->setObjectName("scriptDocument");for(auto v:documents){const auto d=v.toObject(),s=d.value("data").toObject();documentField->addItem(s.value("label").toString(s.value("id").toString())+" · "+d.value("file").toString());}docRow->addWidget(new QLabel(tr("사건·엔딩")));docRow->addWidget(documentField,1);entryField=new QComboBox;entryField->setObjectName("scriptEntry");docRow->addWidget(new QLabel(tr("시작 노드")));docRow->addWidget(entryField);
+  auto docRow=new QHBoxLayout;outer->addLayout(docRow);documentField=new QComboBox;documentField->setObjectName("scriptDocument");for(auto v:documents){const auto d=v.toObject(),s=d.value("data").toObject();documentField->addItem(s.value("label").toString(s.value("id").toString()));}docRow->addWidget(new QLabel(tr("사건·엔딩")));documentField->setItemDelegate(new StoryIdentityDelegate(documentField));documentField->view()->setMinimumWidth(740);documentField->setMaxVisibleItems(9);documentField->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);documentField->setMinimumContentsLength(20);docRow->addWidget(documentField,1);entryField=new QComboBox;entryField->setObjectName("scriptEntry");docRow->addWidget(new QLabel(tr("시작 노드")));docRow->addWidget(entryField);
   auto findRow=new QHBoxLayout;
-  auto search=new QLineEdit;search->setObjectName("scriptSearch");search->setPlaceholderText(tr("사건 이름이나 대사로 찾기"));
+  auto search=new QLineEdit;search->setObjectName("scriptSearch");search->setStyleSheet("QLineEdit { placeholder-text-color: #a5b3bb; }");search->setPlaceholderText(tr("사건·인물·시기·선행 사건·대사 검색"));
   auto continuation=new QPushButton(tr("앞선 사건 연결…"));continuation->setObjectName("scriptConnectPredecessor");
   findRow->addWidget(search,1);findRow->addWidget(continuation);outer->addLayout(findRow);
   connect(search,&QLineEdit::textChanged,this,[this](const QString &text){
     int first=-1;auto list=qobject_cast<QListView*>(documentField->view());
-    for(int i=0;i<documents.size();++i){const auto d=documents[i].toObject().value("data").toObject();bool match=text.trimmed().isEmpty()||d.value("label").toString().contains(text,Qt::CaseInsensitive);
+    for(int i=0;i<documents.size();++i){const auto d=documents[i].toObject().value("data").toObject();bool match=text.trimmed().isEmpty()||d.value("label").toString().contains(text,Qt::CaseInsensitive)||scriptIdentity(documents[i].toObject(),documents,context.value("documents").toArray()).contains(text,Qt::CaseInsensitive);
       for(auto v:d.value("nodes").toArray())if(v.toObject().value("text").toString().contains(text,Qt::CaseInsensitive))match=true;
       if(list)list->setRowHidden(i,!match);if(match&&first<0)first=i;}
     if(first>=0)documentField->setCurrentIndex(first);
     if(error)error->setText(first<0?tr("검색 결과가 없습니다. 검색어를 바꾸세요."):QString());
   });
   connect(continuation,&QPushButton::clicked,this,&ScriptAuthoringDialog::connectPredecessor);
-  metadata=makeMetadata();outer->addWidget(metadata);
-  auto split=new QSplitter;outer->addWidget(split,1);auto left=new QWidget;auto leftBox=new QVBoxLayout(left);leftBox->setContentsMargins(0,0,0,0);nodeList=new QListWidget;nodeList->setObjectName("scriptNodes");leftBox->addWidget(nodeList,1);auto row=new QHBoxLayout;leftBox->addLayout(row);kindField=new QComboBox;kindField->setObjectName("scriptNodeKind");for(const auto &p:QList<QPair<QString,QString>>{{"scene",tr("장면")},{"dialogue",tr("대사")},{"choice",tr("선택지")},{"branch",tr("조건 분기")},{"effect",tr("효과")},{"end",tr("종료")}})kindField->addItem(p.second,p.first);row->addWidget(kindField);auto add=button(row,"scriptNodeAdd",tr("추가"));auto controls=new QHBoxLayout;leftBox->addLayout(controls);auto duplicate=button(controls,"scriptNodeDuplicate",tr("복제")),remove=button(controls,"scriptNodeRemove",tr("삭제"));split->addWidget(left);
-  graph=new QGraphicsView;graph->setObjectName("scriptGraph");graphScene=new QGraphicsScene(graph);graph->setScene(graphScene);graph->setRenderHint(QPainter::Antialiasing);graph->setDragMode(QGraphicsView::ScrollHandDrag);split->addWidget(graph);
-  auto scroll=new QScrollArea;scroll->setWidgetResizable(true);properties=new QWidget;auto propertiesBox=new QVBoxLayout(properties);propertiesBox->setContentsMargins(0,0,0,0);form=new QFormLayout;form->setFormAlignment(Qt::AlignLeft|Qt::AlignTop);form->setLabelAlignment(Qt::AlignLeft|Qt::AlignTop);form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);propertiesBox->addLayout(form);propertiesBox->addStretch(1);scroll->setWidget(properties);split->addWidget(scroll);split->setSizes({260,610,420});
+  auto showMetadata=new QCheckBox(tr("사건 설정 · 이름·시기·조건"));showMetadata->setObjectName("scriptMetadataToggle");outer->addWidget(showMetadata);metadata=makeMetadata();outer->addWidget(metadata);metadata->hide();connect(showMetadata,&QCheckBox::toggled,metadata,&QWidget::setVisible);auto identity=new QLabel;identity->setObjectName("scriptIdentitySummary");identity->setTextFormat(Qt::PlainText);identity->setWordWrap(true);identity->setStyleSheet("color:#c4d9d0;padding:4px;background:#1d3032");outer->addWidget(identity);
+  auto split=new QSplitter;split->setObjectName("scriptWorkspaceSplit");split->setChildrenCollapsible(false);outer->addWidget(split,1);auto left=new QWidget;auto leftBox=new QVBoxLayout(left);leftBox->setContentsMargins(0,0,0,0);nodeSearch=new QLineEdit;nodeSearch->setObjectName("scriptNodeSearch");nodeSearch->setStyleSheet("QLineEdit { placeholder-text-color: #a5b3bb; }");nodeSearch->setPlaceholderText(tr("이 대본에서 대사·선택 찾기"));leftBox->addWidget(nodeSearch);nodeList=new QListWidget;nodeList->setObjectName("scriptNodes");leftBox->addWidget(nodeList,1);auto row=new QHBoxLayout;leftBox->addLayout(row);kindField=new QComboBox;kindField->setObjectName("scriptNodeKind");for(const auto &p:QList<QPair<QString,QString>>{{"scene",tr("장면")},{"dialogue",tr("대사")},{"choice",tr("선택지")},{"branch",tr("조건 분기")},{"effect",tr("효과")},{"end",tr("종료")}})kindField->addItem(p.second,p.first);row->addWidget(kindField);auto add=button(row,"scriptNodeAdd",tr("추가"));auto controls=new QHBoxLayout;leftBox->addLayout(controls);auto duplicate=button(controls,"scriptNodeDuplicate",tr("복제")),remove=button(controls,"scriptNodeRemove",tr("삭제"));split->addWidget(left);
+  graph=new ScriptGraphView;graph->setObjectName("scriptGraph");graphScene=new QGraphicsScene(graph);graph->setScene(graphScene);graph->setRenderHint(QPainter::Antialiasing);graph->setDragMode(QGraphicsView::ScrollHandDrag);graph->setBackgroundBrush(QColor("#17232a"));graph->setMinimumWidth(280);split->addWidget(graph);
+  auto scroll=new QScrollArea;scroll->setMinimumWidth(300);scroll->setWidgetResizable(true);properties=new QWidget;auto propertiesBox=new QVBoxLayout(properties);propertiesBox->setContentsMargins(0,0,0,0);form=new QFormLayout;form->setFormAlignment(Qt::AlignLeft|Qt::AlignTop);form->setLabelAlignment(Qt::AlignLeft|Qt::AlignTop);form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);form->setRowWrapPolicy(QFormLayout::WrapLongRows);propertiesBox->addLayout(form);propertiesBox->addStretch(1);scroll->setWidget(properties);split->addWidget(scroll);split->setSizes({230,720,360});split->setStretchFactor(1,1);
+  auto navigation=new QHBoxLayout;graphOverview=new ScriptGraphOverview(graph);navigation->addWidget(graphOverview);auto navText=new QVBoxLayout;graphPosition=new QLabel;graphPosition->setObjectName("scriptGraphPosition");graphPosition->setTextFormat(Qt::PlainText);graphPosition->setWordWrap(true);navText->addWidget(graphPosition);auto navHelp=new QLabel(tr("위에서 아래로 읽습니다. 전체 지도를 클릭해 이동 · Ctrl+휠로 확대/축소"));navHelp->setWordWrap(true);navText->addWidget(navHelp);auto focus=new QPushButton(tr("현재 노드 보기 · 100%"));focus->setObjectName("scriptGraphFocus");navText->addWidget(focus);navigation->addLayout(navText,1);outer->addLayout(navigation);connect(focus,&QPushButton::clicked,this,&ScriptAuthoringDialog::focusGraphNode);static_cast<ScriptGraphView*>(graph)->viewChanged=[this]{syncGraphSelection();};
+  connect(nodeSearch,&QLineEdit::textChanged,this,[this](QString query){
+    int first=-1;
+    const auto nodes=data().value("nodes").toArray();
+    for(int i=0;i<nodeList->count();++i){
+      const auto n=nodes[i].toObject();
+      QString text=nodeLabel(n)+" "+n.value("text").toString()+" "+n.value("prompt").toString();
+      for(const auto option:n.value("choices").toArray())text+=" "+option.toObject().value("text").toString();
+      const bool match=text.contains(query,Qt::CaseInsensitive);
+      nodeList->item(i)->setHidden(!match);if(match&&first<0)first=i;
+    }
+    if(first>=0){nodeList->setCurrentRow(first);focusGraphNode();}
+    else graphPosition->setText(tr("이 대본에 일치하는 노드가 없습니다."));
+  });
   auto graphControls=new QHBoxLayout;outer->addLayout(graphControls);auto fit=button(graphControls,"scriptGraphFit",tr("흐름 전체 보기"));auto zoomIn=button(graphControls,"scriptGraphZoomIn",tr("확대")),zoomOut=button(graphControls,"scriptGraphZoomOut",tr("축소"));auto insert=button(graphControls,"scriptInsertAfter",tr("선택한 대사·연출 뒤에 대사 추가"));connect(insert,&QPushButton::clicked,this,&ScriptAuthoringDialog::insertDialogueAfter);auto rounds=button(graphControls,"scriptRounds",tr("라운드 흐름 추가…"));connect(rounds,&QPushButton::clicked,this,&ScriptAuthoringDialog::addRounds);graphControls->addStretch();
   error=new QLabel;error->setObjectName("scriptError");error->setWordWrap(true);error->setStyleSheet("color:#ed987f");outer->addWidget(error);auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->setObjectName("scriptButtons");outer->addWidget(buttons);
   connect(documentField,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int i){loadDocument(i);});connect(entryField,qOverload<int>(&QComboBox::currentIndexChanged),this,[this]{if(filling||documentIndex<0)return;auto d=data();d["entryNodeId"]=entryField->currentData().toString();setData(d);refreshGraph();});
   connect(nodeList,&QListWidget::itemSelectionChanged,this,[this]{const auto rows=nodeList->selectedItems();if(rows.size()==1&&nodeList->currentItem()!=rows.first())nodeList->setCurrentItem(rows.first());});
-  connect(nodeList,&QListWidget::currentRowChanged,this,[this](int i){if(filling)return;nodeIndex=i;fillProperties();refreshGraph();});connect(add,&QPushButton::clicked,this,&ScriptAuthoringDialog::addNode);connect(duplicate,&QPushButton::clicked,this,&ScriptAuthoringDialog::duplicateNode);connect(remove,&QPushButton::clicked,this,&ScriptAuthoringDialog::removeNode);
-  connect(fit,&QPushButton::clicked,this,[this]{graph->fitInView(graphScene->itemsBoundingRect().adjusted(-20,-20,20,20),Qt::KeepAspectRatio);});connect(zoomIn,&QPushButton::clicked,this,[this]{graph->scale(1.2,1.2);});connect(zoomOut,&QPushButton::clicked,this,[this]{graph->scale(1/1.2,1/1.2);});
+  connect(nodeList,&QListWidget::currentRowChanged,this,[this](int i){if(filling)return;nodeIndex=i;fillProperties();syncGraphSelection(true);});connect(add,&QPushButton::clicked,this,&ScriptAuthoringDialog::addNode);connect(duplicate,&QPushButton::clicked,this,&ScriptAuthoringDialog::duplicateNode);connect(remove,&QPushButton::clicked,this,&ScriptAuthoringDialog::removeNode);
+  connect(fit,&QPushButton::clicked,this,[this]{graph->fitInView(graphScene->sceneRect(),Qt::KeepAspectRatio);syncGraphSelection();});connect(zoomIn,&QPushButton::clicked,this,[this]{static_cast<ScriptGraphView*>(graph)->zoomBy(1.2);});connect(zoomOut,&QPushButton::clicked,this,[this]{static_cast<ScriptGraphView*>(graph)->zoomBy(1/1.2);});
   connect(graphScene,&QGraphicsScene::selectionChanged,this,[this]{if(filling)return;const auto values=graphScene->selectedItems();if(values.isEmpty())return;auto id=values.first()->data(0).toString();QTimer::singleShot(0,this,[this,id]{for(int i=0;i<nodeList->count();++i)if(nodeList->item(i)->data(Qt::UserRole)==id){nodeList->setCurrentRow(i);break;}});});
   connect(buttons,&QDialogButtonBox::rejected,this,&QDialog::reject);connect(buttons,&QDialogButtonBox::accepted,this,[this]{if(saveGuard){const auto message=saveGuard();if(!message.isEmpty()){error->setText(message);return;}}if(!commitId())return;for(auto v:documents){auto d=v.toObject().value("data").toObject();auto w=d.value("window").toObject();if(d.value("label").toString().trimmed().isEmpty()||(d.contains("window")&&w.value("fromPeriod").toInt()>w.value("throughPeriod").toInt())){error->setText(tr("표시 이름을 입력하고 발생 시작 일정을 마지막 일정 이하로 설정하세요."));return;}}if(edits().size()>100){error->setText(tr("한 번에 최대 100개 문서를 저장할 수 있습니다. 변경을 줄인 뒤 다시 저장하세요. 현재 편집 내용은 유지됩니다."));return;}for(int i=0;i<documents.size();++i){if(documents[i]==original[i])continue;const auto issues=scriptGraphIssues(documents[i].toObject().value("data").toObject());if(!issues.isEmpty()){documentField->setCurrentIndex(i);error->setText(issues.join('\n'));return;}}
     if(applyEdits){QPointer<ScriptAuthoringDialog> self(this);setEnabled(false);applyEdits(edits(),[self](QString problem){if(!self)return;self->setEnabled(true);if(problem.isEmpty())self->accept();else self->error->setText(problem);});}
@@ -93,9 +130,9 @@ ScriptAuthoringDialog::ScriptAuthoringDialog(QJsonObject ctx,QJsonArray images,Q
 QJsonObject ScriptAuthoringDialog::data()const{return documentIndex<0?QJsonObject{}:documents[documentIndex].toObject().value("data").toObject();}
 void ScriptAuthoringDialog::addRounds(){if(documentIndex<0||!commitId())return;ScriptRoundsDialog dialog(context,data(),node().value("id").toString(),this);if(dialog.exec()!=QDialog::Accepted)return;setData(dialog.resultScript());refreshNodes();}
 QJsonObject ScriptAuthoringDialog::node()const{const auto a=data().value("nodes").toArray();return nodeIndex<0||nodeIndex>=a.size()?QJsonObject{}:a[nodeIndex].toObject();}
-void ScriptAuthoringDialog::setData(QJsonObject value){if(documentIndex<0)return;auto d=documents[documentIndex].toObject();d["data"]=value;documents[documentIndex]=d;}
+void ScriptAuthoringDialog::setData(QJsonObject value){if(documentIndex<0)return;auto d=documents[documentIndex].toObject();d["data"]=value;documents[documentIndex]=d;refreshDocumentIdentities();}
 void ScriptAuthoringDialog::setNode(QJsonObject value){auto d=data();auto a=d.value("nodes").toArray();if(nodeIndex<0||nodeIndex>=a.size())return;a[nodeIndex]=value;d["nodes"]=a;setData(d);nodeList->item(nodeIndex)->setText(nodeLabel(value));refreshGraph();}
-void ScriptAuthoringDialog::loadDocument(int index){documentIndex=index;nodeIndex=-1;refreshMetadata();refreshNodes();}
+void ScriptAuthoringDialog::loadDocument(int index){documentIndex=index;nodeIndex=-1;{QSignalBlocker b(nodeSearch);nodeSearch->clear();}refreshMetadata();refreshNodes(data().value("entryNodeId").toString());refreshDocumentIdentities();focusGraphNode();}
 void ScriptAuthoringDialog::refreshNodes(QString selected){filling=true;nodeList->clear();entryField->clear();const auto d=data();int row=0;for(auto v:d.value("nodes").toArray()){auto n=v.toObject();auto id=n.value("id").toString();auto item=new QListWidgetItem(nodeLabel(n),nodeList);item->setData(Qt::UserRole,id);entryField->addItem(nodeLabel(n),id);if(id==selected)row=nodeList->count()-1;}auto entry=d.value("entryNodeId").toString();if(entryField->findData(entry)<0)entryField->addItem(tr("없는 노드: ")+entry,entry);entryField->setCurrentIndex(entryField->findData(entry));nodeList->setCurrentRow(nodeList->count()?row:-1);nodeIndex=nodeList->currentRow();filling=false;fillProperties();refreshGraph();}
 void ScriptAuthoringDialog::addNode(){if(documentIndex<0)return;auto d=data();auto a=d.value("nodes").toArray();const auto type=kindField->currentData().toString();QString end;for(auto v:a)if(v.toObject().value("type")=="end"){end=v.toObject().value("id").toString();break;}if(type!="end"&&end.isEmpty()){end=uniqueId(a,"end-");a.append(QJsonObject{{"id",end},{"type","end"}});}const auto id=uniqueId(a,type+"-");QJsonObject n{{"id",id},{"type",type}};if(type=="scene")n["scene"]=QJsonObject{{"backgroundAssetId",QJsonValue::Null}};if(type=="dialogue"){n["speakerId"]=QJsonValue::Null;n["text"]=tr("새 대사");}if(type=="choice"){n["prompt"]=tr("어떻게 할까요?");n["choices"]=QJsonArray{choice("choice-1",end)};}if(type=="branch"){n["condition"]=QJsonObject{{"op","always"}};n["then"]=end;n["else"]=end;}if(type=="effect")n["effects"]=QJsonArray{};if(QStringList{"scene","dialogue","effect"}.contains(type))n["next"]=end;a.append(n);d["nodes"]=a;if(d.value("entryNodeId").toString().isEmpty())d["entryNodeId"]=id;setData(d);refreshNodes(id);}
 void ScriptAuthoringDialog::duplicateNode(){if(node().isEmpty())return;auto d=data();auto a=d.value("nodes").toArray();auto n=node();auto id=uniqueId(a,"copy-");n["id"]=id;a.append(n);d["nodes"]=a;setData(d);refreshNodes(id);}
@@ -127,12 +164,83 @@ void ScriptAuthoringDialog::fillProperties(){
   filling=false;
 }
 
+void ScriptAuthoringDialog::refreshDocumentIdentities() {
+  if(documentIndex<0)return;
+  const auto all=context.value("documents").toArray();
+  QSignalBlocker blocker(documentField);
+  for(int i=0;i<documents.size();++i){
+    const auto doc=documents[i].toObject(), script=doc.value("data").toObject();
+    const auto identity=scriptIdentity(doc,documents,all);
+    documentField->setItemText(i,script.value("label").toString(script.value("id").toString()));
+    documentField->setItemData(i,identity,identityRole);
+    documentField->setItemData(i,identity+"\n"+doc.value("file").toString(),Qt::ToolTipRole);
+  }
+  if(auto summary=findChild<QLabel*>("scriptIdentitySummary"))summary->setText(documentField->itemData(documentIndex,identityRole).toString());
+  refreshPredecessorSummary();
+}
+void ScriptAuthoringDialog::focusGraphNode(){
+  const auto item=graphItems.value(node().value("id").toString());if(!item)return;
+  graph->resetTransform();graph->centerOn(item->rect().center());syncGraphSelection();
+}
+void ScriptAuthoringDialog::syncGraphSelection(bool reveal){
+  const auto id=node().value("id").toString();
+  for(auto it=graphItems.begin();it!=graphItems.end();++it){
+    const bool selected=it.key()==id;
+    auto pen=it.value()->pen();pen.setColor(selected?QColor("#f3c779"):it.value()->data(1).value<QColor>());pen.setWidthF(selected?3:1.5);it.value()->setPen(pen);
+  }
+  if(reveal&&graphItems.contains(id))graph->ensureVisible(graphItems[id]->rect(),32,32);
+  if(graphPosition)graphPosition->setText(tr("%1 · %2개 노드 · 확대 %3%").arg(nodeLabel(node())).arg(graphItems.size()).arg(qRound(graph->transform().m11()*100)));
+  if(graphOverview)graphOverview->viewport()->update();
+}
 void ScriptAuthoringDialog::refreshGraph(){
-  QSignalBlocker blocker(graphScene);graphScene->clear();const auto d=data();const auto nodes=d.value("nodes").toArray();QMap<QString,QJsonObject> map;for(auto v:nodes)map[v.toObject().value("id").toString()]=v.toObject();
-  QMap<QString,int> depth;QStringList pending{d.value("entryNodeId").toString()};depth[pending.first()]=0;for(int i=0;i<pending.size()&&i<2000;i++){auto id=pending[i];for(auto next:links(map.value(id)))if(map.contains(next)&&!depth.contains(next)){depth[next]=depth.value(id)+1;pending<<next;}}
-  QMap<int,int> rows;QMap<QString,QRectF> rectangles;int count=0;for(auto v:nodes){if(count++>=500)break;auto n=v.toObject();auto id=n.value("id").toString();int x=depth.contains(id)?depth.value(id):0;QRectF rect(x*230,rows[x]++*115,200,86);rectangles[id]=rect;auto item=graphScene->addRect(rect,QPen(id==node().value("id").toString()?QColor("#edc16e"):QColor("#5b897d"),2),QBrush(id==d.value("entryNodeId").toString()?QColor("#375e53"):QColor("#243e3b")));item->setFlag(QGraphicsItem::ItemIsSelectable);item->setData(0,id);auto text=graphScene->addText(nodeLabel(n));text->setDefaultTextColor(Qt::white);text->setTextWidth(185);text->setPos(rect.topLeft()+QPointF(5,4));text->setAcceptedMouseButtons(Qt::NoButton);}
-  for(auto v:nodes){auto n=v.toObject();auto from=n.value("id").toString();if(!rectangles.contains(from))continue;int labelRow=0;for(auto edgeValue:labelledLinks(n)){auto to=edgeValue.first;if(!rectangles.contains(to))continue;const auto a=rectangles[from],b=rectangles[to];QPointF p(a.right(),a.center().y()),q(b.left(),b.center().y());QPainterPath line(p);line.cubicTo(p+QPointF(45,0),q-QPointF(45,0),q);auto edge=graphScene->addPath(line,QPen(QColor("#91bbae"),1.5));edge->setZValue(-1);if(!edgeValue.second.isEmpty()){auto label=graphScene->addText(edgeValue.second);label->setDefaultTextColor(QColor("#dbce9e"));label->setPos(p+QPointF(0,-24+labelRow++*15));label->setAcceptedMouseButtons(Qt::NoButton);}graphScene->addLine(QLineF(q,q+QPointF(-8,-4)),QPen(QColor("#91bbae"),1.5));graphScene->addLine(QLineF(q,q+QPointF(-8,4)),QPen(QColor("#91bbae"),1.5));}}
-  graphScene->setSceneRect(graphScene->itemsBoundingRect().adjusted(-20,-20,20,20));auto issues=scriptGraphIssues(d);if(nodes.size()>500)issues.prepend(tr("미리보기는 처음 500개 노드를 표시합니다. 전체 데이터는 유지됩니다."));error->setText(issues.join('\n'));
+  const auto center=graph->mapToScene(graph->viewport()->rect().center());
+  QSignalBlocker blocker(graphScene);graphItems.clear();graphScene->clear();
+  const auto d=data();const auto layout=layoutScriptGraph(d);QMap<QString,QJsonObject> nodes;
+  for(auto value:d.value("nodes").toArray()){const auto n=value.toObject();nodes[n.value("id").toString()]=n;}
+  int sequence=0;
+  for(const auto &id:layout.order){
+    const auto n=nodes[id];const auto rect=layout.rectangles[id];const auto type=n.value("type").toString();
+    const bool unreachable=layout.unreachable.contains(id),start=id==d.value("entryNodeId").toString();
+    const QColor border=unreachable?QColor("#e5a36d"):QColor("#668b9a");
+    QColor fill=type=="choice"||type=="branch"?QColor("#423b55"):type=="scene"?QColor("#284848"):QColor("#253640");
+    auto item=graphScene->addRect(rect,QPen(border,1.5,unreachable?Qt::DashLine:Qt::SolidLine),QBrush(fill));
+    item->setFlag(QGraphicsItem::ItemIsSelectable);item->setData(0,id);item->setData(1,border);graphItems[id]=item;
+    auto title=new QGraphicsTextItem(item);title->setPlainText(QString::number(++sequence)+"  "+(start?tr("시작 · "):QString())+nodeLabel(n).section(" · ",0,0));title->setDefaultTextColor(QColor("#e8c88e"));title->setPos(rect.topLeft()+QPointF(8,3));title->setAcceptedMouseButtons(Qt::NoButton);
+    QString description=n.value("text").toString(n.value("prompt").toString());
+    if(description.isEmpty())description=type=="scene"?tr("배경·인물·음악 연출"):type=="effect"?tr("%1개 효과 적용").arg(n.value("effects").toArray().size()):type=="branch"?tr("조건에 따라 참·거짓으로 나뉩니다"):type=="end"?tr("이야기 종료"):nodeLabel(n);
+    const QString tooltip=nodeLabel(n)+"\n"+description+"\n"+id+(unreachable?"\n"+tr("시작 노드에서 연결되지 않음"):QString());item->setToolTip(tooltip);
+    // Bound the card text while retaining full narration in the inspector/tooltip.
+    auto body=new QGraphicsTextItem(item);body->setTextWidth(250);body->setPlainText(description.simplified().left(70)+(description.simplified().size()>70?QString("…"):QString()));body->setDefaultTextColor(QColor("#e5ecef"));body->setPos(rect.topLeft()+QPointF(8,27));body->setAcceptedMouseButtons(Qt::NoButton);
+  }
+  QMap<QString,QStringList> incomingCaptions;
+  for(const auto &id:layout.order){
+    const auto edges=labelledLinks(nodes[id]);int branch=0;
+    for(const auto &connection:edges){
+      const auto to=connection.first;if(!graphItems.contains(to))continue;
+      const auto a=layout.rectangles[id],b=layout.rectangles[to];
+      const QPointF p(a.left()+a.width()*(branch+1)/(edges.size()+1),a.bottom()),q(b.center().x(),b.top());
+      QPainterPath line(p);line.cubicTo(p+QPointF(0,36),q-QPointF(0,36),q);
+      const QColor color=edges.size()>1?QColor("#c3abd9"):QColor("#7cb4b3");auto edge=graphScene->addPath(line,QPen(color,2));edge->setZValue(-2);edge->setToolTip(connection.second);
+      graphScene->addPolygon(QPolygonF{q,q+QPointF(-5,-9),q+QPointF(5,-9)},QPen(color),QBrush(color))->setZValue(-1);
+      if(!connection.second.isEmpty())incomingCaptions[to] << QString::number(layout.order.indexOf(id)+1)+": "+connection.second;
+      ++branch;
+    }
+  }
+  // One caption per destination prevents converging choices from painting on
+  // top of one another. Source numbers map back to the numbered graph cards.
+  for(auto it=incomingCaptions.begin();it!=incomingCaptions.end();++it){
+    const auto text=it.value().join(" / ");
+    auto label=graphScene->addText(QFontMetrics(font()).elidedText(text,Qt::ElideRight,240));
+    label->setDefaultTextColor(QColor("#eed9b4"));label->setToolTip(it.value().join('\n'));
+    label->setData(2,"edge-caption");label->setData(3,it.key());
+    const auto target=layout.rectangles[it.key()];
+    label->setPos(target.center().x()-label->boundingRect().width()/2,target.top()-33);
+    auto backing=graphScene->addRect(label->sceneBoundingRect().adjusted(-2,0,2,0),Qt::NoPen,QBrush(QColor("#17232a")));
+    backing->setZValue(-1);
+  }
+  graphScene->setSceneRect(graphScene->itemsBoundingRect().adjusted(-24,-24,24,24));
+  graph->centerOn(center);if(graphOverview)graphOverview->fitInView(graphScene->sceneRect(),Qt::KeepAspectRatio);
+  syncGraphSelection();error->setText(scriptGraphIssues(d).join('\n'));
 }
 
 void ScriptAuthoringDialog::editPortraits(){

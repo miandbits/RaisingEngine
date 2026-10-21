@@ -1,5 +1,6 @@
 #include "script-authoring.hpp"
 #include "script-continuation.hpp"
+#include "script-identity.hpp"
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QLabel>
@@ -26,11 +27,11 @@ void ScriptAuthoringDialog::insertDialogueAfter() {
 void ScriptAuthoringDialog::connectPredecessor() {
   if (documentIndex < 0) return;
   auto dialog = new QDialog(this); dialog->setObjectName("storyPredecessorDialog");
-  dialog->setWindowTitle(tr("앞선 사건과 연결")); dialog->resize(660, 460);
+  dialog->setWindowTitle(tr("앞선 사건과 연결")); dialog->resize(820, 560);
   auto layout = new QVBoxLayout(dialog);
   auto help = new QLabel(tr("선택한 사건을 끝낸 뒤에만 현재 사건이 열립니다. 기존 활동·날짜·선택 조건과 연출·효과는 그대로 유지합니다."));
   help->setWordWrap(true); layout->addWidget(help);
-  auto search = new QLineEdit; search->setObjectName("predecessorSearch"); search->setPlaceholderText(tr("앞선 사건 이름 검색")); layout->addWidget(search);
+  auto search = new QLineEdit; search->setObjectName("predecessorSearch"); search->setPlaceholderText(tr("사건·인물·시기·선행 사건 검색")); layout->addWidget(search);
   auto list = new QListWidget; list->setObjectName("predecessorEvents"); layout->addWidget(list, 1);
   const auto target = data().value("id").toString();
   const auto existing = requiredEvents(data().value("requirements").toObject());
@@ -38,8 +39,10 @@ void ScriptAuthoringDialog::connectPredecessor() {
     const auto doc = value.toObject(), event = doc.value("data").toObject();
     if (doc.value("kind") != "event" || event.value("id") == target) continue;
     const auto id = event.value("id").toString();
-    auto row = new QListWidgetItem(event.value("label").toString(id) + (existing.contains(id) ? tr(" · 연결됨") : QString()), list);
-    row->setData(Qt::UserRole, id); row->setToolTip(doc.value("file").toString());
+    const auto identity = scriptIdentity(doc, documents, context.value("documents").toArray());
+    auto row = new QListWidgetItem(event.value("label").toString(id) + (existing.contains(id) ? tr(" · 연결됨") : QString()) + "\n" + identity, list);
+    row->setData(Qt::UserRole, id); row->setToolTip(identity + "\n" + doc.value("file").toString());
+    row->setSizeHint(QSize(700, 72));
   }
   connect(search, &QLineEdit::textChanged, dialog, [list](const QString &query) {
     for (int i=0; i<list->count(); ++i) list->item(i)->setHidden(!list->item(i)->text().contains(query, Qt::CaseInsensitive));

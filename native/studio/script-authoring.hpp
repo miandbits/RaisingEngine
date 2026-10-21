@@ -2,6 +2,7 @@
 #include <QDialog>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMap>
 #include <functional>
 class QComboBox;
 class QListWidget;
@@ -10,6 +11,8 @@ class QLabel;
 class QLineEdit;
 class QGraphicsView;
 class QGraphicsScene;
+class QGraphicsRectItem;
+class ScriptGraphOverview;
 QStringList scriptGraphIssues(const QJsonObject &script);
 class ScriptAuthoringDialog final : public QDialog {
 public:
@@ -25,6 +28,7 @@ private:
   QLabel *referenceSummary = nullptr;
   QWidget *makeMetadata();
   void refreshMetadata();
+  void refreshPredecessorSummary();
   QStringList externalReferences(QString nodeId, QString choiceId = {}) const;
   void renameExternalReferences(QString from, QString to, QString choiceFrom = {}, QString choiceTo = {});
   int documentIndex=-1,nodeIndex=-1;
@@ -40,6 +44,13 @@ private:
   QLabel *error;
   QGraphicsView *graph;
   QGraphicsScene *graphScene;
+  ScriptGraphOverview *graphOverview=nullptr;
+  QLabel *graphPosition=nullptr;
+  QMap<QString,QGraphicsRectItem*> graphItems;
+  QLineEdit *nodeSearch=nullptr;
+  void focusGraphNode();
+  void syncGraphSelection(bool reveal=false);
+  void refreshDocumentIdentities();
   QJsonObject data() const;
   QJsonObject node() const;
   void setData(QJsonObject data);
