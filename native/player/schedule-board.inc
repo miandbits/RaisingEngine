@@ -128,9 +128,9 @@
         bool decreaseGood=false;for(const auto& v:e.value("decreasingAttributeIds",Json::array()))if(v==id)decreaseGood=true;
         const std::string color=delta==0?"#596D62":((delta>0)!=decreaseGood?"#2F5D50":"#7A3E57");
         const double cx=left+gap+(index%3)*(right/3),cy=293+(index/3)*60;
-        out+="<div style=\""+at(cx,cy,right/3-10,58)+"border-top-width:1px;border-color:#C9BFA9;font-size:18px;padding-top:5px;\">"+escape(a.value("label",id))+"  "+std::to_string(before)+(predicted?" → "+std::to_string(after)+"<div style=\"color:"+color+";font-size:20px;\"><b>"+(delta>0?"+":"")+std::to_string(delta)+"</b></div>":"")+"</div>";++index;
+        out+="<div style=\""+at(cx,cy,right/3-10,58)+"border-top-width:1px;border-color:#C9BFA9;font-size:18px;padding-top:5px;\">"+escape(a.value("label",id))+"  "+std::to_string(before)+(predicted?" → "+std::to_string(after)+"<div style=\"color:"+color+";font-size:20px;\"><b>"+(delta>0?"+":"")+(delta<0?"−"+std::to_string(-int64_t(delta)):std::to_string(delta))+"</b></div>":"")+"</div>";++index;
       }
     }else out+="<div style=\""+at(left+gap,293,right,105)+"font-size:"+number(fs)+"px;white-space:pre-wrap;overflow-y:auto;pointer-events:auto;\">"+escape(forecast.value("reason","계획을 정하면 예상 변화가 표시됩니다."))+"</div>";
-    if(predicted)out+="<div style=\""+at(left+gap,418,right,52)+"font-size:16px;line-height:23px;color:#455C50;\">사건·월말 정산을 제외한 순서대로의 활동 예상입니다.<br/>실제 변화는 만남과 선택에 따라 달라집니다.</div>";
+    if(predicted)out+="<div style=\""+at(left+gap,418,right,52)+"font-size:16px;line-height:23px;color:#455C50;\">사건·월말 정산을 빼고, 모든 주를 차례로 마쳤을 때의 예상입니다.<br/>실제 변화는 만남과 선택에 따라 달라집니다.</div>";
     return out+"</div>";
   }

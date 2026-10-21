@@ -37,17 +37,17 @@
         const auto thumbnail=selected->value("thumbnail","");
         out+=box(w/2-290,h/2-86,580,122,"","background-color:#E8E2D4;border-width:1px;border-color:"+line+";");
         if(!thumbnail.empty())out+=box(w/2-280,h/2-76,181,102,"<img src=\""+escape(thumbnail)+"\" style=\"width:100%;height:100%;\"/>");
-        out+=box(w/2-80,h/2-76,350,30,escape(slot_label),"font-size:22px;color:"+accent+";");
+        out+=box(w/2-80,h/2-76,350,30,escape((slot_confirmation=="save"?slot_words("덮어쓸 ","Replacing ","上書きする "):std::string())+slot_label),"font-size:22px;color:"+accent+";");
         const auto record=selected->value("record",Json::object());
-        out+=box(w/2-80,h/2-42,350,74,escape(slot_date(*selected)+" · "+record.value("place","")+"\n"+record.value("savedAt","")),"font-size:18px;line-height:25px;color:"+ink+";");
+        out+=box(w/2-80,h/2-42,350,74,escape(slot_date(*selected)+" · "+record.value("place","")+"\n"+slot_words("남긴 시각  ","Saved  ","保存日時  ")+record.value("savedAt","")),"font-size:18px;line-height:25px;color:"+ink+";");
       }
-      if(!current_save_record.empty())out+=box(40,h/2+42,w-80,30,escape(slot_words("현재 진행  ","Current progress  ","現在の進行  ")+current_save_record.value("date","")+" · "+current_save_record.value("place","")),"font-size:17px;text-align:center;color:"+ink+";");
+      if(!current_save_record.empty())out+=box(w/2-290,h/2+42,580,36,escape((slot_confirmation=="save"?slot_words("새로 남길 진행 · ","Saving now · ","新しく保存する進行 · "):slot_words("현재 진행 · ","Current progress · ","現在の進行 · "))+current_save_record.value("date","")+" · "+current_save_record.value("place","")),"font-size:18px;text-align:left;color:"+ink+";");
       out+=box(40,h/2+80,w-80,42,escape(warning),"font-size:18px;line-height:24px;text-align:center;color:#8A3A4A;");
       return out;
     }
     out+=control("manual",slot_words("내가 남긴 기록","Manual records","手動の記録"),{{"type","slotGroup"},{"automatic",false}},0,0,210,true,!slot_auto);
     out+=control("auto",slot_words("자동으로 남긴 기록","Automatic records","自動の記録"),{{"type","slotGroup"},{"automatic",true}},222,0,228,true,slot_auto);
-    const auto hint=slot_auto?slot_words("이야기의 갈림길과 일정 진행 뒤 · 최근 기록부터","After choices and schedule progress · newest first","選択や予定の進行後 · 新しい順"):slot_words("마음에 남은 순간을 따로 간직하세요","Keep the moments you want to return to","戻りたい瞬間を残しましょう");
+    const auto hint=slot_auto?slot_words("이야기의 갈림길과 일정 진행 뒤 · 최근 기록부터","After choices and schedule progress · newest first","選択や予定の進行後 · 新しい順"):saving?slot_words("마음에 남은 순간을 따로 간직하세요","Keep the moments you want to return to","戻りたい瞬間を残しましょう"):slot_words("이야기를 이어 갈 기록을 골라 주세요","Choose a record to continue your story","物語を続ける記録を選んでください");
     out+=box(470,8,w-470,34,escape(hint),"font-size:19px;color:"+ink+";");
     std::vector<Json> rows;for(const auto& r:save_slots)if(r.at("automatic")==slot_auto)rows.push_back(r);
     if(slot_auto)std::stable_sort(rows.begin(),rows.end(),[](const Json& a,const Json& b){return a.value("record",Json::object()).value("sequence",int64_t(0))>b.value("record",Json::object()).value("sequence",int64_t(0));});

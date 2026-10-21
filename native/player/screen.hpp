@@ -193,7 +193,7 @@ public:
       if(!out.empty())out+=" · ";
       const auto target=effect.value("target",Json::object());out+=target_name(target);
       const auto value=effect.value("value",Json::object());
-      if(value.value("op","")=="literal"){const auto amount=value.value("value",0.0)*(op=="add"?quantity:1);out+=(op=="set"?" = ":amount>=0?" +":" ")+number(amount);}else out+=" (현재 상태 기준 계산)";
+      if(value.value("op","")=="literal"){const auto amount=value.value("value",0.0)*(op=="add"?quantity:1);out+=(op=="set"?" = ":amount>=0?" +":" ")+(amount<0?"−"+number(-amount):number(amount));}else out+=" (현재 상태 기준 계산)";
     }
     return out;
   }
