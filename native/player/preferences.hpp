@@ -9,7 +9,7 @@ inline Json default_player_preferences() {
 }
 inline bool has_player_settings(const Json& visual) {
   for(const auto* group:{"screens","components"})for(const auto& owner:visual.value(group,Json::array()))
-    for(const auto& e:owner.value("elements",Json::array()))if(e.value("kind","")=="playerSettings")return true;
+    for(const auto& e:owner.value("elements",Json::array()))if((e.value("kind","")=="playerSettings"||e.value("action","")=="dialogueAuto"))return true;
   return false;
 }
 inline Json checked_player_preferences(const Json& raw) {

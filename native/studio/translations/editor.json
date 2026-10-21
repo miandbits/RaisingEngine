@@ -1,5 +1,6 @@
 [
   ["플레이어 설정 · 소리와 읽기","Player settings · sound and reading","プレイヤー設定 · 音と読み方"],
+  ["대화 자동 진행 · 켜기/끄기","Dialogue auto-advance · toggle","台詞の自動送り · 切り替え"],
   ["대사 자동 진행 상태","Dialogue auto-advance status","台詞の自動送り状態"],
   ["저장 슬롯 · 기록하기","Save slots · write record","保存スロット · 記録する"],
   ["저장 슬롯 · 불러오기","Save slots · load record","保存スロット · 読み込む"],

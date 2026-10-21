@@ -729,6 +729,10 @@ public:
       auto boundAction=action;bool hasSelection=true;try{boundAction=selection_action(action);}catch(...){hasSelection=false;}
       const auto type=action.value("type","");std::string label=e.value("text","버튼");bool enabled=hasSelection;
       const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
+      if(type=="dialogueAuto"){
+        enabled=!replay_controls;
+        if(e.value("autoLabel",true))label=player_preferences.value("autoAdvance",false)?settings_words("자동 진행: 켜짐","Auto: On","自動送り: オン"):settings_words("자동 진행: 꺼짐","Auto: Off","自動送り: オフ");
+      }
       if(type=="galleryFilter"){
         const auto filter=e.value("galleryFilter","");
         if(filter=="kind:"+gallery_kind||filter=="status:"+gallery_status||(!gallery_category.empty()&&filter=="category:"+gallery_category))label="● "+label;

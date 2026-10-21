@@ -17,11 +17,13 @@ Changes apply and save immediately. Delay controls are disabled while automatic 
 
 Automatic reading stops at choices, menus, staged direction and inactive windows. It does not choose answers or advance an ending. Schedule playback and gallery/recollection playback keep their existing, separate controls. Opening a modal also pauses schedule playback.
 
+An authored button can use **Dialogue auto-advance · toggle** (`action: "dialogueAuto"`) directly on a dialogue screen or reusable component. With `autoLabel: true`, its label reports **Auto: On / Auto: Off** in the player language. It toggles the current preference, persists immediately, and does not change game state. It remains usable while a choice waits, but never selects a choice. Use `autoLabel: false` for your own text. The control is disabled during recollection, which has separate playback controls.
+
 ## Persistence and compatibility
 
 Preferences are stored beside the active save file in `settings-<gameId>.json`. They are separate from game progress, so loading an earlier save does not undo the player's settings. A custom `--save` directory has its own preferences. Failed writes retain the previous live values and file and show a notice. Invalid settings files open with defaults without overwriting the unreadable file.
 
-The feature is opt-in: projects without a `playerSettings` element retain their existing reading and audio behavior. Editor previews do not change the player's settings or display mode. New exports require the `player-settings-v1` runtime capability. A runtime lacking the capability, including the current web runtime, rejects the export explicitly rather than silently dropping the widget.
+The feature is opt-in: projects without a `playerSettings` element or `dialogueAuto` button retain their existing reading and audio behavior. The toggle also works without a settings panel. Editor previews do not change the player's settings or display mode. Settings widgets require `player-settings-v1`; authored dialogue toggles additionally require `dialogue-controls-v1`. A runtime lacking the required capability, including the current web runtime, rejects the export explicitly rather than silently dropping the widget.
 
 ## Verification
 

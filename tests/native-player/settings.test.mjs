@@ -16,7 +16,7 @@ test('player preferences survive restart/load, mix buses, reveal UTF-8 and stop 
  const b=(id,action,y,extra={})=>e(id,'button',30,y,270,44,{text:id,action,autoLabel:false,...extra});
  content.project.visual.screens=[
   {id:'title',label:'Title',elements:[b('start','start',20),b('settings','openModal',80,{screenId:'prefs'})]},
-  {id:'home',label:'Home',elements:[b('talk','executeAction',20,{actionId:'read-story'}),b('settings','openModal',80,{screenId:'prefs'}),b('save','save',140),b('load','load',200)]},
+  {id:'home',label:'Home',elements:[b('talk','executeAction',20,{actionId:'read-story'}),b('settings','openModal',80,{screenId:'prefs'}),b('save','save',140),b('load','load',200),b('auto','dialogueAuto',260,{autoLabel:true})]},
   {id:'schedule',label:'Schedule',elements:[]},{id:'ending',label:'Ending',elements:[]},
   {id:'story',label:'Story',elements:[e('text','dialogue',40,100,1100,140),e('choices','choices',40,300,900,200),b('next','advance',560,{visibleWhen:'dialogue',autoLabel:true}),b('settings','openModal',620,{screenId:'prefs'}),b('save','save',20),e('status','text',400,620,700,40,{binding:'reading-status'})]},
   {id:'prefs',label:'Preferences',modal:true,elements:[b('close','closeModal',660),e('controls','playerSettings',40,40,1200,540)]}
@@ -51,6 +51,14 @@ test('player preferences survive restart/load, mix buses, reveal UTF-8 and stop 
  const persisted=JSON.parse(await readFile(prefs,'utf8'));assert.equal(persisted.textSpeed,70);assert.equal(persisted.autoAdvance,false);
  const restarted=await run('restarted',[{checkpoint:'startup'},{click:'start'},{waitFrames:2},{click:'load'},{waitFrames:2},{checkpoint:'loaded'}]);
  assert.deepEqual(restarted.steps[0].ui.settings.values,persisted);assert.deepEqual(restarted.final.settings.values,persisted);assert.deepEqual(restarted.final.state,at('third').state);assert.equal(restarted.final.dialogueReading.complete,false);
+ // An authored toggle must flip the live value (including after settings change),
+ // persist independently of saves, and never issue a gameplay command.
+ const toggled=await run('toggle',[{click:'start'},{waitFrames:2},{checkpoint:'before'},{click:'auto'},{waitFrames:2},{checkpoint:'on'},{click:'auto'},{waitFrames:2},{checkpoint:'off'}]);
+ const toggleAt=id=>toggled.steps.find(s=>s.command.checkpoint===id).ui;
+ assert.equal(toggleAt('on').settings.values.autoAdvance,true);assert.equal(toggleAt('off').settings.values.autoAdvance,false);
+ assert.deepEqual(toggleAt('before').state,toggleAt('on').state);assert.deepEqual(toggleAt('on').state,toggleAt('off').state);
+ assert.equal(toggleAt('on').elements.find(e=>e.id==='auto').label,'자동 진행: 켜짐');assert.equal(toggleAt('off').elements.find(e=>e.id==='auto').label,'자동 진행: 꺼짐');
+ assert.deepEqual(JSON.parse(await readFile(prefs,'utf8')),persisted);
  // A failed settings write must roll back live audio and keep the prior file.
  await mkdir(prefs+'.tmp');const failed=await run('write-failed',[{click:'settings'},{waitFrames:2},{click:'prefs__controls-musicVolume-down'},{waitFrames:2}]);
  assert.deepEqual(failed.final.settings.values,persisted);assert.ok(failed.final.settings.notice);assert.ok(Math.abs(failed.final.audio.musicGain-.7)<.001);assert.deepEqual(JSON.parse(await readFile(prefs,'utf8')),persisted);await rmdir(prefs+'.tmp');
@@ -60,4 +68,13 @@ test('player preferences survive restart/load, mix buses, reveal UTF-8 and stop 
  const old=join(root,'old');await mkdir(old);for(const f of ['RaisingPlayer.exe','index.html'])await writeFile(join(old,f),'');
  const caps=JSON.parse(await readFile(join(runtime,'capabilities.json'),'utf8'));caps.visualFeatures=caps.visualFeatures.filter(f=>f!=='player-settings-v1');await writeFile(join(old,'capabilities.json'),JSON.stringify(caps));
  for(const target of ['windows','web'])await assert.rejects(exportGame({projectRoot:source,content,target,destination:join(root,`old-${target}`),runtimes:{windows:old,web:old}}),/player-settings-v1/);
+ caps.visualFeatures.push('player-settings-v1');caps.visualFeatures=caps.visualFeatures.filter(f=>f!=='dialogue-controls-v1');await writeFile(join(old,'capabilities.json'),JSON.stringify(caps));
+ for(const target of ['windows','web'])await assert.rejects(exportGame({projectRoot:source,content,target,destination:join(root,`old-toggle-${target}`),runtimes:{windows:old,web:old}}),/dialogue-controls-v1/);
+ // No settings panel is required: a designer can place the toggle on any screen.
+ content.project.visual.screens=content.project.visual.screens.filter(s=>s.id!=='prefs');
+ for(const screen of content.project.visual.screens)screen.elements=screen.elements.filter(e=>e.id!=='settings');
+ await exportGame({projectRoot:source,content,target:'windows',destination:join(root,'standalone'),runtimes:{windows:runtime,web:runtime}});
+ const script=join(root,'standalone-steps.json'),report=join(root,'standalone-report.json');await writeFile(script,JSON.stringify([{click:'start'},{waitFrames:2},{click:'auto'},{waitFrames:2}]));
+ const standalone=spawnSync(join(root,'standalone/RaisingPlayer.exe'),['--bundle',join(root,'standalone'),'--save',join(root,'standalone-save.json'),'--automation',script,'--report',report,'--hidden'],{windowsHide:true,encoding:'utf8',timeout:60000});
+ assert.equal(standalone.status,0,standalone.stderr||String(standalone.error));assert.equal(JSON.parse(await readFile(report,'utf8')).final.settings.values.autoAdvance,true);
 });
