@@ -1,5 +1,33 @@
 # Project diagnostics and continuing an existing story
 
+## Follow connections between events
+
+Open **Story authoring → Find existing events → Event connections**. The map uses
+the current authoring draft, including changes you have not saved yet. Search by
+event, character, activity or place; inspect one to four upstream/downstream steps,
+or switch to the whole project. The overview and Ctrl+wheel help navigate large maps.
+
+Select a card to see its incoming and outgoing connections and the exact condition
+group behind each link. Double-click a connection in the side list to follow it.
+**Edit conditions** opens the same visual condition editor used elsewhere;
+**Edit script** returns directly to the event or choice in the script workspace.
+Condition changes stay in the story draft: save the story and project to apply
+them, or cancel the story editor to discard them. The normal batch validation,
+undo and project revision checks still apply.
+
+The map connects location interactions/actions that start events, completed-event
+requirements, and matching flag/state writes and reads. Choice effects, including
+effects in later script nodes, retain their choice origin. AND, OR and NOT are
+labelled separately. Identical event titles retain character, timing and predecessor
+context. Neither display labels nor graph layout change saved content identifiers.
+
+Dashed links are **possible dependencies**, not guaranteed play paths. Another
+condition, event priority, period limit, character context, later overwrite or
+script branch can prevent an event from occurring. Numeric expressions, extension
+rules, scheduled-event dispatch and arbitrary runtime dependencies are not inferred
+as edges in this version. Inspect the complete conditions and run route verification
+to prove that an event or ending can actually be reached.
+
 The Qt editor can repair a project's local plugin-store connection and extend an
 existing event without editing its JSON or writing node identifiers.
 

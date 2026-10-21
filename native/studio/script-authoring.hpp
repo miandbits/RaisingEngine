@@ -68,4 +68,5 @@ private:
   bool commitId();
   void editPortraits();
   void previewScene();
+  void openConnections();
 };

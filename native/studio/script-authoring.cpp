@@ -1,4 +1,5 @@
 #include "script-authoring.hpp"
+#include "story-connections.hpp"
 #include "script-rounds.hpp"
 #include "script-continuation.hpp"
 #include "script-identity.hpp"
@@ -87,7 +88,9 @@ ScriptAuthoringDialog::ScriptAuthoringDialog(QJsonObject ctx,QJsonArray images,Q
   auto findRow=new QHBoxLayout;
   auto search=new QLineEdit;search->setObjectName("scriptSearch");search->setStyleSheet("QLineEdit { placeholder-text-color: #a5b3bb; }");search->setPlaceholderText(tr("사건·인물·시기·선행 사건·대사 검색"));
   auto continuation=new QPushButton(tr("앞선 사건 연결…"));continuation->setObjectName("scriptConnectPredecessor");
-  findRow->addWidget(search,1);findRow->addWidget(continuation);outer->addLayout(findRow);
+  auto connections=new QPushButton(tr("사건 연결 지도…"));connections->setObjectName("scriptConnections");
+  connect(connections,&QPushButton::clicked,this,&ScriptAuthoringDialog::openConnections);
+  findRow->addWidget(search,1);findRow->addWidget(connections);findRow->addWidget(continuation);outer->addLayout(findRow);
   connect(search,&QLineEdit::textChanged,this,[this](const QString &text){
     int first=-1;auto list=qobject_cast<QListView*>(documentField->view());
     for(int i=0;i<documents.size();++i){const auto d=documents[i].toObject().value("data").toObject();bool match=text.trimmed().isEmpty()||d.value("label").toString().contains(text,Qt::CaseInsensitive)||scriptIdentity(documents[i].toObject(),documents,context.value("documents").toArray()).contains(text,Qt::CaseInsensitive);
@@ -270,6 +273,22 @@ void ScriptAuthoringDialog::previewScene(){
   refreshContext();QTimer::singleShot(0,renderer,&RendererPreviewDock::begin);dialog.exec();
 }
 QJsonArray ScriptAuthoringDialog::edits()const{QJsonArray result;for(int i=0;i<documents.size();++i)if(documents[i]!=original[i]){auto d=documents[i].toObject();result.append(QJsonObject{{"type","replace"},{"file",d.value("file")},{"data",d.value("data")}});}for(int i=0;i<externalDocuments.size();++i)if(externalDocuments[i]!=externalOriginal[i]){auto d=externalDocuments[i].toObject();result.append(QJsonObject{{"type","replace"},{"file",d.value("file")},{"data",d.value("data")}});}return result;}
+void ScriptAuthoringDialog::openConnections(){
+  if(documentIndex<0||!commitId())return;
+  auto snapshot=[this]{auto result=context;auto all=context.value("documents").toArray();
+    for(int i=0;i<all.size();++i){auto file=all[i].toObject().value("file");for(auto v:documents)if(v.toObject().value("file")==file)all[i]=v;for(auto v:externalDocuments)if(v.toObject().value("file")==file)all[i]=v;}
+    result["documents"]=all;return result;};
+  StoryConnectionsDialog map(snapshot(),documents[documentIndex].toObject().value("file").toString(),this,
+    [this,snapshot](QString file,QString nodeId,QString choiceId,QWidget *parent){
+      selectDocument(file);auto d=data();QJsonValue requirements=d.value("requirements");auto nodes=d.value("nodes").toArray();int ni=-1,ci=-1;QJsonArray choices;
+      if(!nodeId.isEmpty()){for(int i=0;i<nodes.size();++i)if(nodes[i].toObject().value("id")==nodeId)ni=i;
+        if(ni<0)return snapshot();choices=nodes[ni].toObject().value("choices").toArray();for(int i=0;i<choices.size();++i)if(choices[i].toObject().value("id")==choiceId)ci=i;
+        if(ci<0)return snapshot();requirements=choices[ci].toObject().value("requirements");}
+      LogicEditor editor(requirements,"condition",snapshot(),parent);
+      if(editor.exec()==QDialog::Accepted){if(ni<0)d["requirements"]=editor.value();else {auto c=choices[ci].toObject();c["requirements"]=editor.value();choices[ci]=c;auto n=nodes[ni].toObject();n["choices"]=choices;nodes[ni]=n;d["nodes"]=nodes;}setData(d);refreshMetadata();refreshNodes(nodeId);}
+      return snapshot();});
+  if(map.exec()==QDialog::Accepted){selectDocument(map.selectedFile);refreshNodes(map.selectedNode.isEmpty()?data().value("entryNodeId").toString():map.selectedNode);focusGraphNode();}
+}
 void StudioWindow::editScripts(){
   if(bridge.busy())return;
   const auto originalRevision=view.value("revision"),originalRoot=view.value("root");
