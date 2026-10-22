@@ -73,7 +73,7 @@ StoryFollowupResult makeStoryFollowup(const QJsonArray &input, const QString &so
     target=content(docs,targetAt);
     if((target.value("scope").toString("shared")=="actor")!=personal)return fail(QObject::tr("선행·후속 사건의 기록 범위가 다릅니다. 같은 범위의 사건을 선택하세요."));
     const auto trigger=target.value("trigger").toString("period-end");
-    if(!(personal?QStringList{"interaction","after-event"}:QStringList{"period-end","after-event"}).contains(trigger))return fail(QObject::tr("후속 사건의 실행 방식을 확인하세요."));
+    if(!(personal?QStringList{"interaction","after-event","period-start","after-activity","location-enter"}:QStringList{"period-end","after-event","period-start","after-activity","location-enter"}).contains(trigger))return fail(QObject::tr("후속 사건의 실행 방식을 확인하세요."));
     if(continuationCycle(docs,target.value("id").toString(),before.value("id").toString()))return fail(QObject::tr("서로의 완료를 기다리는 순환 연결입니다. 다른 후속 사건을 선택하세요."));
   }else{
     const int from=s.value("fromPeriod").toInt(-1),through=s.value("throughPeriod").toInt(-1);
@@ -95,6 +95,23 @@ StoryFollowupResult makeStoryFollowup(const QJsonArray &input, const QString &so
     target={{"formatVersion","0.1.0"},{"id",id},{"label",s.value("title").toString().trimmed()},{"window",QJsonObject{{"fromPeriod",from},{"throughPeriod",through}}},{"priority",50},{"trigger",personal?"after-event":"period-end"},{"requirements",QJsonObject{{"op","always"}}},{"entryNodeId",entry},{"nodes",nodes}};
   }
   if(personal)target["scope"]="actor";
+  // An omitted trigger preserves existing documents and legacy immediate links.
+  const auto occurrence=s.value("trigger").toString();
+  if(!occurrence.isEmpty()){
+    if(!QStringList{"after-event","period-end","period-start","after-activity","location-enter"}.contains(occurrence)||(personal&&occurrence=="period-end"))return fail(QObject::tr("후속 사건의 실행 방식을 확인하세요."));
+    const int from=s.value("fromPeriod").toInt(-1),through=s.value("throughPeriod").toInt(-1);
+    if(from<0||through<from||through>=total)return fail(QObject::tr("발생 기간을 프로젝트 일정 범위 안에서 설정하세요."));
+    target["window"]=QJsonObject{{"fromPeriod",from},{"throughPeriod",through}};
+    target["trigger"]=occurrence;target.remove("activityId");target.remove("locationId");target.remove("repeatable");
+    if(occurrence=="after-activity"){
+      bool found=false;for(auto v:docs){auto d=v.toObject();if(d.value("kind")=="activity"&&d.value("data").toObject().value("id")==s.value("activityId"))found=true;}
+      if(!found)return fail(QObject::tr("후속 사건을 시작할 활동을 선택하세요."));target["activityId"]=s.value("activityId");
+    }
+    if(occurrence=="location-enter"){
+      bool found=false;for(auto v:project.value("gameplay").toObject().value("locations").toArray())if(v.toObject().value("id")==s.value("locationId"))found=true;
+      if(!found)return fail(QObject::tr("후속 사건을 시작할 장소를 선택하세요."));target["locationId"]=s.value("locationId");
+    }
+  }
   QJsonObject completed{{"op","eventCompleted"},{"eventId",before.value("id")}};if(personal)completed["owner"]=QJsonObject{{"kind","actor"}};
   auto requirements=conjunction(target.value("requirements").toObject(),completed);
   const auto promise=s.value("promise").toObject();
@@ -128,26 +145,34 @@ StoryFollowupResult makeStoryFollowup(const QJsonArray &input, const QString &so
 }
 
 StoryFollowupDialog::StoryFollowupDialog(QJsonArray docs,QString source,QWidget *parent):QDialog(parent){
-  setObjectName("storyFollowupDialog");setWindowTitle(tr("후속 사건 만들기 · 연결"));resize(780,650);
-  const auto model=buildStoryConnections(docs);const auto n=model.nodes.value(source);const bool personal=content(docs,atFile(docs,n.file)).value("scope")=="actor";auto outer=new QVBoxLayout(this);
+  setObjectName("storyFollowupDialog");setWindowTitle(tr("후속 사건 만들기 · 연결"));resize(820,750);
+  const auto model=buildStoryConnections(docs);const auto n=model.nodes.value(source);const auto before=content(docs,atFile(docs,n.file));const bool personal=before.value("scope")=="actor";auto outer=new QVBoxLayout(this);
   auto summary=new QLabel(tr("선행: %1\n사건 완료 + 선택 기록 + 고른 약속을 모두 만족할 때 후속 사건이 열립니다. 선택 기록은 한 번이라도 선택했는지를 기억합니다.").arg(n.title));summary->setWordWrap(true);outer->addWidget(summary);
+  QJsonObject project;for(auto v:docs)if(v.toObject().value("kind")=="project")project=v.toObject().value("data").toObject();
+  const int perMonth=qMax(1,project.value("periodsPerMonth").toInt()),total=qMax(1,project.value("durationMonths").toInt()*perMonth);
   auto form=new QFormLayout;outer->addLayout(form);auto target=new QComboBox;target->setObjectName("followupTarget");target->addItem(tr("새 후속 사건 만들기"),"");
-  int total=1;QJsonObject before;for(auto v:docs){auto doc=v.toObject(),data=doc.value("data").toObject();if(doc.value("file")==n.file)before=data;
-    if(doc.value("kind")=="project")total=qMax(1,data.value("durationMonths").toInt()*data.value("periodsPerMonth").toInt());
-    if(doc.value("kind")=="event"&&doc.value("file")!=n.file&&(data.value("scope").toString("shared")=="actor")==personal&&(personal?QStringList{"interaction","after-event"}:QStringList{"period-end","after-event"}).contains(data.value("trigger").toString("period-end")))target->addItem(label(data)+" · "+scriptIdentity(doc,docs,docs),doc.value("file").toString());}
+  for(auto v:docs){const auto doc=v.toObject(),d=doc.value("data").toObject();if(doc.value("kind")=="event"&&doc.value("file")!=n.file&&(d.value("scope").toString("shared")=="actor")==personal&&(personal?QStringList{"interaction","after-event","period-start","after-activity","location-enter"}:QStringList{"period-end","after-event","period-start","after-activity","location-enter"}).contains(d.value("trigger").toString("period-end")))target->addItem(label(d)+" · "+scriptIdentity(doc,docs,docs),doc.value("file").toString());}
   form->addRow(tr("후속 사건"),target);auto title=new QLineEdit;title->setObjectName("followupTitle");form->addRow(tr("새 사건 이름"),title);
   auto speaker=new QComboBox;speaker->setObjectName("followupSpeaker");speaker->addItem(tr("해설"),QString());for(auto v:docs)if(v.toObject().value("kind")=="character"){auto d=v.toObject().value("data").toObject();speaker->addItem(label(d),d.value("id").toString());}form->addRow(tr("말하는 인물"),speaker);
-  auto dialogue=new QPlainTextEdit;dialogue->setObjectName("followupDialogue");dialogue->setMaximumHeight(150);form->addRow(tr("첫 대사"),dialogue);
-  auto from=new QSpinBox;from->setObjectName("followupFrom");from->setRange(1,total);from->setValue(qMin(total,before.value("window").toObject().value("fromPeriod").toInt()+(personal?1:2)));
-  auto through=new QSpinBox;through->setObjectName("followupThrough");through->setRange(1,total);through->setValue(total);form->addRow(tr("발생 시작 주기 (1부터)"),from);form->addRow(tr("발생 마지막 주기"),through);
+  auto dialogue=new QPlainTextEdit;dialogue->setObjectName("followupDialogue");dialogue->setMaximumHeight(100);form->addRow(tr("첫 대사"),dialogue);
+  auto occurrence=new QComboBox;occurrence->setObjectName("followupTrigger");occurrence->addItem(tr("기존 방식 유지 / 새 사건은 기본 방식"),"");occurrence->addItem(tr("사건 완료 후"),"after-event");if(!personal)occurrence->addItem(tr("기간 종료 때"),"period-end");occurrence->addItem(tr("약속 날짜 · 기간 시작"),"period-start");occurrence->addItem(tr("지정 활동을 마친 뒤"),"after-activity");occurrence->addItem(tr("지정 장소에 들어갈 때"),"location-enter");form->addRow(tr("발생 시점"),occurrence);
+  auto activity=new QComboBox;activity->setObjectName("followupActivity");activity->addItem(tr("활동 선택"),"");for(auto v:docs){auto d=v.toObject();if(d.value("kind")=="activity")activity->addItem(label(d.value("data").toObject()),d.value("data").toObject().value("id").toString());}form->addRow(tr("대상 활동"),activity);
+  auto location=new QComboBox;location->setObjectName("followupLocation");location->addItem(tr("장소 선택"),"");for(auto v:project.value("gameplay").toObject().value("locations").toArray()){auto d=v.toObject();location->addItem(d.value("name").toString(d.value("id").toString()),d.value("id").toString());}form->addRow(tr("대상 장소"),location);
+  auto from=new QComboBox;from->setObjectName("followupFrom");auto through=new QComboBox;through->setObjectName("followupThrough");
+  for(int i=0;i<total;++i){int month=project.value("startMonth").toInt(1)-1+i/perMonth;const auto date=tr("%1년 %2월 · %3번째 일정").arg(project.value("startYear").toInt(1)+month/12).arg(month%12+1).arg(i%perMonth+1);from->addItem(date,i);through->addItem(date,i);}
+  from->setCurrentIndex(qMin(total-1,before.value("window").toObject().value("fromPeriod").toInt()+(personal?0:1)));through->setCurrentIndex(total-1);form->addRow(tr("발생 시작 날짜"),from);form->addRow(tr("발생 마지막 날짜"),through);
   auto promise=new QComboBox;promise->setObjectName("followupPromise");promise->addItem(tr("약속 조건 추가 안 함"),QJsonObject{});for(auto v:storyFollowupPromises(docs,source)){auto p=v.toObject();promise->addItem(p.value("label").toString(),p.value("condition").toObject());}form->addRow(tr("함께 필요한 약속"),promise);
   auto preview=new QLabel;preview->setObjectName("followupPreview");preview->setWordWrap(true);outer->addWidget(preview);
-  auto update=[=]{const bool create=target->currentData().toString().isEmpty();for(auto w:QList<QWidget*>{title,speaker,dialogue,from,through})w->setEnabled(create);
-    preview->setText(tr("자동 조건: %1 완료").arg(label(before))+(n.kind=="choice"?tr("\n선택 기록: %1").arg(n.title):QString())+(promise->currentIndex()>0?tr("\n약속: %1").arg(promise->currentText()):QString())+(personal?tr("\n같은 실행자의 완료·선택·약속만 검사합니다. 새 사건은 대본 종료 후 같은 캐릭터로 이어집니다. 기존 사건의 실행 방식은 유지합니다."):tr("\n기존 조건과 효과는 유지합니다. 일정 끝에 검사하며 즉시 대본으로 뛰어들지 않습니다.")));};
-  connect(target,qOverload<int>(&QComboBox::currentIndexChanged),this,[=]{update();});connect(promise,qOverload<int>(&QComboBox::currentIndexChanged),this,[=]{update();});update();
+  auto update=[=]{const bool create=target->currentData().toString().isEmpty(),change=!occurrence->currentData().toString().isEmpty();for(auto w:QList<QWidget*>{title,speaker,dialogue})w->setEnabled(create);from->setEnabled(create||change);through->setEnabled(create||change);
+    const auto saved=create?QJsonObject{}:content(docs,atFile(docs,target->currentData().toString()));const auto trigger=change?occurrence->currentData().toString():saved.value("trigger").toString(personal?"after-event":"period-end");
+    activity->setEnabled(change&&trigger=="after-activity");location->setEnabled(change&&trigger=="location-enter");
+    QString timing=tr("사건 완료 후");if(trigger=="period-end")timing=tr("기간 종료 때");if(trigger=="interaction")timing=tr("행동에서 연결");if(trigger=="period-start")timing=tr("약속 날짜 · 기간 시작");if(trigger=="after-activity")timing=tr("지정 활동을 마친 뒤")+" · "+activity->currentText();if(trigger=="location-enter")timing=tr("지정 장소에 들어갈 때")+" · "+location->currentText();
+    preview->setText(tr("자동 조건: %1 완료").arg(label(before))+(n.kind=="choice"?tr("\n선택 기록: %1").arg(n.title):QString())+(promise->currentIndex()>0?tr("\n약속: %1").arg(promise->currentText()):QString())+"\n"+timing+"\n"+from->currentText()+" ~ "+through->currentText()+"\n"+tr("날짜는 프로젝트의 일정 칸 단위입니다. 시작과 마지막을 같게 하면 그 날짜에만 검사합니다.")+(personal?"\n"+tr("각 캐릭터의 완료·선택·약속만 검사합니다. 활동은 그 캐릭터의 실행 결과, 장소는 일행의 공용 위치를 기준으로 합니다."):QString()));};
+  connect(target,qOverload<int>(&QComboBox::currentIndexChanged),this,[=]{if(!target->currentData().toString().isEmpty()){const auto d=content(docs,atFile(docs,target->currentData().toString()));from->setCurrentIndex(d.value("window").toObject().value("fromPeriod").toInt());through->setCurrentIndex(d.value("window").toObject().value("throughPeriod").toInt());activity->setCurrentIndex(qMax(0,activity->findData(d.value("activityId").toString())));location->setCurrentIndex(qMax(0,location->findData(d.value("locationId").toString())));}occurrence->setCurrentIndex(0);update();});
+  for(auto combo:{occurrence,promise,activity,location,from,through})connect(combo,qOverload<int>(&QComboBox::currentIndexChanged),this,[=]{update();});update();
   auto error=new QLabel;error->setObjectName("followupError");error->setWordWrap(true);error->setStyleSheet("color:#ed987f");outer->addWidget(error);auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->setObjectName("followupButtons");outer->addWidget(buttons);
   connect(buttons,&QDialogButtonBox::rejected,this,&QDialog::reject);connect(buttons,&QDialogButtonBox::accepted,this,[=]{
-    QJsonObject settings{{"targetFile",target->currentData().toString()},{"title",title->text()},{"dialogue",dialogue->toPlainText()},{"speakerId",speaker->currentData().toString().isEmpty()?QJsonValue::Null:QJsonValue(speaker->currentData().toString())},{"fromPeriod",from->value()-1},{"throughPeriod",through->value()-1},{"promise",promise->currentData().value<QJsonObject>()}};
+    QJsonObject settings{{"targetFile",target->currentData().toString()},{"title",title->text()},{"dialogue",dialogue->toPlainText()},{"speakerId",speaker->currentData().toString().isEmpty()?QJsonValue::Null:QJsonValue(speaker->currentData().toString())},{"fromPeriod",from->currentData().toInt()},{"throughPeriod",through->currentData().toInt()},{"promise",promise->currentData().value<QJsonObject>()},{"trigger",occurrence->currentData().toString()},{"activityId",activity->currentData().toString()},{"locationId",location->currentData().toString()}};
     auto plan=makeStoryFollowup(docs,source,settings);if(!plan.error.isEmpty()){error->setText(plan.error);return;}resultPlan=plan;accept();
   });
 }

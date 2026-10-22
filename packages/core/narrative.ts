@@ -1,7 +1,7 @@
 import { syncRelationshipStages } from '../systems/service.js';
 import { runBoundaryRules } from '../gameplay/rules.js';
 import type { Scene } from '../schema/generated/event.js';
-import type { ContentSnapshot, DeepReadonly, EventDecision, NarrativeCursor, NarrativeNode, NarrativeStep, RunData, RunState } from './model.js';
+import type { AppointmentTrigger, ContentSnapshot, DeepReadonly, EventDecision, NarrativeCursor, NarrativeNode, NarrativeStep, RunData, RunState } from './model.js';
 import { applyEffects, evaluateCondition } from './evaluation.js';
 import { freeze, requireCore } from './util.js';
 import { eventCompleted, resolveOwner } from './roster.js';
@@ -14,7 +14,7 @@ export function inspectEvents(content: ContentSnapshot, state: RunState): EventD
   return [...content.events].sort(priorityOrder).map(event => {
     let reason: EventDecision['reason'];
     if (eventCompleted(content,state,event.id)) reason = 'completed';
-    else if (event.trigger === 'interaction' || event.trigger === 'after-event') reason = 'interaction-only';
+    else if (event.trigger && event.trigger !== 'period-end') reason = 'interaction-only';
     else if (state.periodIndex < event.window.fromPeriod) reason = 'before-window';
     else if (state.periodIndex > event.window.throughPeriod) reason = 'expired';
     else if (!evaluateCondition(content, state, event.requirements, `/events/${event.id}/requirements`)) reason = 'requirements';
@@ -84,6 +84,7 @@ export function finishPeriod(content: ContentSnapshot, draft: RunData): void {
     draft.periodIndex++;
     draft.phase = draft.periodIndex % content.project.periodsPerMonth === 0 ? 'planning' : 'ready';
     if (draft.phase === 'planning') draft.schedule = null;
+    startAppointmentEvents(content, draft, 'period-start');
   }
 }
 
@@ -144,6 +145,7 @@ export function stepNarrative(content: ContentSnapshot, draft: RunData, choiceId
           if (cursor.returnPhase) {
             draft.activeNarrative = null; draft.phase = cursor.returnPhase;
             if (cursor.returnPresentation) draft.presentation = structuredClone(cursor.returnPresentation);
+            if (cursor.appointmentTrigger && startAppointmentEvents(content, draft, cursor.appointmentTrigger)) break;
             if (cursor.finishPeriod) continuePeriodEvents(content, draft);
           }
           else continuePeriodEvents(content, draft);
@@ -163,8 +165,42 @@ function continueAfterEvent(content: ContentSnapshot, draft: RunData, cursor: Na
     if(draft.periodIndex<event.window.fromPeriod||draft.periodIndex>event.window.throughPeriod)continue;
     if(!evaluateCondition(content,draft,event.requirements,`/events/${event.id}/requirements`))continue;
     enterNarrative(content,draft,'event',event.id);
-    for(const key of ['returnPhase','returnPresentation','finishPeriod'] as const)if(cursor[key]!==undefined)Object.assign(draft.activeNarrative!,{[key]:structuredClone(cursor[key])});
+    for(const key of ['returnPhase','returnPresentation','finishPeriod','appointmentTrigger'] as const)if(cursor[key]!==undefined)Object.assign(draft.activeNarrative!,{[key]:structuredClone(cursor[key])});
     return true;
+  }
+  return false;
+}
+
+/** A boundary is resumed from its cursor, including between different actors after loading.
+ * Completion is persisted before scanning again; non-repeatable events bound the queue.
+ */
+export function startAppointmentEvents(content: ContentSnapshot, draft: RunData, trigger: AppointmentTrigger): boolean {
+  if (draft.mode !== 'full' || !content.events.some(e => e.trigger === trigger)) return false;
+  if (draft.activeNarrative) {
+    draft.activeNarrative.appointmentTrigger = trigger;
+    return true;
+  }
+  if (draft.phase !== 'planning' && draft.phase !== 'ready' && draft.phase !== 'period-end') return false;
+  for (const event of [...content.events].sort(priorityOrder)) {
+    if (event.trigger !== trigger || draft.periodIndex < event.window.fromPeriod || draft.periodIndex > event.window.throughPeriod) continue;
+    if (trigger === 'location-enter' && event.locationId !== draft.gameplay?.locationId) continue;
+    const actors = event.scope === 'actor' ? content.project.roster!.members.map(m => m.characterId) : [undefined];
+    for (const actorId of actors) {
+      if (trigger === 'after-activity') {
+        const result = actorId ? draft.lastActivityResult?.actorResults?.find(a => a.characterId === actorId)?.result : draft.lastActivityResult;
+        if (result?.activityId !== event.activityId) continue;
+      }
+      // Never let a preceding actor's cursor or transient action context leak into this probe.
+      const probe: RunData = { ...draft, activeNarrative: null, ...(draft.roster ? { roster: { ...draft.roster } } : {}) };
+      if (probe.roster) { if (actorId) probe.roster.actorId = actorId; else delete probe.roster.actorId; }
+      if (eventCompleted(content, probe, event.id) || !evaluateCondition(content, probe, event.requirements, `/events/${event.id}/requirements`)) continue;
+      const returnPhase = draft.phase, returnPresentation = structuredClone(draft.presentation);
+      if (draft.roster) { if (actorId) draft.roster.actorId = actorId; else delete draft.roster.actorId; }
+      enterNarrative(content, draft, 'event', event.id);
+      if (draft.roster) delete draft.roster.actorId;
+      Object.assign(draft.activeNarrative!, { returnPhase, returnPresentation, appointmentTrigger: trigger });
+      return true;
+    }
   }
   return false;
 }

@@ -353,6 +353,7 @@ void merge(const J &c, J &s, const J &o, const std::string &p) {
   }
 }
 J createSystems();
+bool startAppointmentEvents(const J &c, J &s, const std::string &trigger);
 void syncRelationshipStages(const J &c, J &s, bool finishingPeriod = false);
 int equipmentReserved(const J &c, const J &s, const std::string &itemId);
 #include "user-fields.inc"
@@ -440,6 +441,7 @@ J create(const J &c, const J &seed, const J &options) {
     auto members=c["project"].contains("roster")?c["project"]["roster"]["members"]:J::array({J{{"characterId",c["project"]["protagonistId"]}}});
     for(const auto &m:members){const auto id=str(m,"characterId");auto initial=cfg["actionPoints"]["initial"];for(const auto &pool:cfg.value("actorPools",J::array()))if(pool["actorId"]==id)initial=pool["initial"];p["actors"][id]={{"elapsed",0},{"actionPoints",initial}};}
   }
+  startAppointmentEvents(c,s,"period-start");
   return {{"ok", true}, {"state", s}};
 }
 void scene(J &s, const J &v, J &sounds) {
@@ -497,6 +499,34 @@ std::vector<J> ordered(const J &list) {
   });
   return out;
 }
+bool startAppointmentEvents(const J &c, J &s, const std::string &trigger) {
+  if (s["mode"] != "full" || std::none_of(c["events"].begin(), c["events"].end(), [&](const J &e) { return e.value("trigger", "") == trigger; })) return false;
+  if (!s["activeNarrative"].is_null()) { s["activeNarrative"]["appointmentTrigger"] = trigger; return true; }
+  if (s["phase"] != "planning" && s["phase"] != "ready" && s["phase"] != "period-end") return false;
+  for (const auto &e : ordered(c["events"])) {
+    if (e.value("trigger", "") != trigger || s["periodIndex"] < e["window"]["fromPeriod"] || s["periodIndex"] > e["window"]["throughPeriod"]) continue;
+    if (trigger == "location-enter" && e["locationId"] != s.value("gameplay", J::object()).value("locationId", "")) continue;
+    std::vector<std::string> actors;
+    if (e.value("scope", "") == "actor") for (const auto &m : c["project"]["roster"]["members"]) actors.push_back(str(m,"characterId")); else actors.push_back("");
+    for (const auto &actor : actors) {
+      if (trigger == "after-activity") {
+        J result=s["lastActivityResult"];
+        if (!actor.empty()) { J own=nullptr; if(result.is_object())for(const auto &a:result.value("actorResults",J::array()))if(a["characterId"]==actor)own=a["result"]; result=own; }
+        if (!result.is_object() || result["activityId"] != e["activityId"]) continue;
+      }
+      J probe=s; probe["activeNarrative"]=nullptr;
+      if(probe.contains("roster")){probe["roster"].erase("actorId");if(!actor.empty())probe["roster"]["actorId"]=actor;}
+      if(eventCompleted(c,probe,e["id"]) || !condition(c,probe,e["requirements"],"/events/"+str(e,"id")+"/requirements"))continue;
+      const auto returnPhase=s["phase"],returnPresentation=s["presentation"];
+      if(s.contains("roster")){s["roster"].erase("actorId");if(!actor.empty())s["roster"]["actorId"]=actor;}
+      enter(c,s,"event",e["id"]);
+      if(s.contains("roster"))s["roster"].erase("actorId");
+      s["activeNarrative"]["returnPhase"]=returnPhase;s["activeNarrative"]["returnPresentation"]=returnPresentation;s["activeNarrative"]["appointmentTrigger"]=trigger;
+      return true;
+    }
+  }
+  return false;
+}
 void finish(const J &c, J &s) {
   if (s.contains("systems")) {
     s["phase"] = "period-end"; s["activeNarrative"] = nullptr;
@@ -526,6 +556,7 @@ void finish(const J &c, J &s) {
     s["phase"] = number(s["periodIndex"]) % periods(c) == 0 ? "planning" : "ready";
     if (s["phase"] == "planning")
       s["schedule"] = nullptr;
+    startAppointmentEvents(c, s, "period-start");
   }
 }
 J inspect(const J &c, const J &s) {
@@ -535,7 +566,7 @@ J inspect(const J &c, const J &s) {
     std::string reason;
     if (eventCompleted(c,s,e["id"]))
       reason = "completed";
-    else if (e.value("trigger", "") == "interaction" || e.value("trigger", "") == "after-event")
+    else if (e.value("trigger", "period-end") != "period-end")
       reason = "interaction-only";
     else if (s["periodIndex"] < e["window"]["fromPeriod"])
       reason = "before-window";
@@ -572,7 +603,7 @@ bool continueAfterEvent(const J &c,J &s,const J &cursor) {
     if(s["periodIndex"]<e["window"]["fromPeriod"]||s["periodIndex"]>e["window"]["throughPeriod"])continue;
     if(!condition(c,s,e["requirements"],"/events/"+str(e,"id")+"/requirements"))continue;
     enter(c,s,"event",e["id"]);
-    for(const auto &key:{"returnPhase","returnPresentation","finishPeriod"})if(cursor.contains(key))s["activeNarrative"][key]=cursor[key];
+    for(const auto &key:{"returnPhase","returnPresentation","finishPeriod","appointmentTrigger"})if(cursor.contains(key))s["activeNarrative"][key]=cursor[key];
     return true;
   }
   return false;
@@ -620,7 +651,8 @@ J step(const J &c, J &s, const J &choice, J &sounds) {
           s["phase"] = cursor["returnPhase"];
           if (cursor.contains("returnPresentation"))
             s["presentation"] = cursor["returnPresentation"];
-          if (cursor.value("finishPeriod", false)) continuePeriodEvents(c, s);
+          if (cursor.contains("appointmentTrigger") && startAppointmentEvents(c, s, str(cursor,"appointmentTrigger"))) {}
+          else if (cursor.value("finishPeriod", false)) continuePeriodEvents(c, s);
         } else
           continuePeriodEvents(c, s);
       } else {
@@ -904,10 +936,12 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
   else if (type == "choose")
     narrative = step(c, s, cmd["choiceId"], sounds);
   J ruleChanges = J::array();
-  if (type == "visit") runRules(c, s, "locationEnter", {{"locationId",cmd["locationId"]}}, ruleChanges);
+  if (type == "visit" && s["gameplay"]["locationId"] != old["gameplay"]["locationId"]) runRules(c, s, "locationEnter", {{"locationId",cmd["locationId"]}}, ruleChanges);
   if (type == "buy") runRules(c, s, "purchaseComplete", {{"shopId",cmd["shopId"]},{"itemId",cmd["itemId"]}}, ruleChanges);
   syncRelationshipStages(c, s);
   relationshipRules(c, s, old["relationships"], ruleChanges);
+  if (type == "acknowledgeResult" && old["phase"] == "activity-result") startAppointmentEvents(c,s,"after-activity");
+  if (type == "visit" && s["gameplay"]["locationId"] != old["gameplay"]["locationId"]) startAppointmentEvents(c,s,"location-enter");
   if(s.contains("roster")){s["roster"].erase("actorId");s["roster"].erase("activityActorId");}
   if(s.contains("roster"))for(const auto &key:c["project"]["roster"]["localAttributeIds"])s["roster"]["attributes"][str(c["project"],"protagonistId")][key.get<std::string>()]=s["attributes"][key.get<std::string>()];
   if(s["phase"]!=old["phase"] || type=="visit" || type=="choose" || type=="advanceNarrative")s.erase("uiScreenId");

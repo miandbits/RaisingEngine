@@ -104,6 +104,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if(content.project.roster?.stateModel==='character-v1')requiredFeatures.push('character-scoped-rules-v1');
   const personalStory=(v:unknown):boolean=>!!v&&typeof v==='object'&&(Array.isArray(v)?v.some(personalStory):((v as any).trigger==='after-event'||(['flag','setFlag'].includes((v as any).op)&&!!(v as any).owner)||Object.values(v).some(personalStory)));
   if(personalStory(content))requiredFeatures.push('actor-story-links-v1');
+  if(content.events.some(e=>['period-start','after-activity','location-enter'].includes(e.trigger??'')))requiredFeatures.push('story-appointments-v1');
   if(content.project.periodsPerMonth!==3||content.project.schedulePlayback==='continuous')requiredFeatures.push('monthly-schedule-v1');
   if(content.project.gameplay?.actions?.some(action=>action.flow?.some(step=>step.chance)))requiredFeatures.push('probabilistic-actions-v1');
   const hasImmediateConfirmation=(value:unknown):boolean=>{if(!value||typeof value!=='object')return false;const obj=value as Record<string,unknown>;return (obj.confirmation as {enabled?:boolean}|undefined)?.enabled===false||Object.values(obj).some(hasImmediateConfirmation);};

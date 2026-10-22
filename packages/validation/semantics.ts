@@ -144,6 +144,11 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
       });
     }
     if (doc.kind === 'event') {
+      if (data.trigger === 'after-activity') ctx.resolve(ctx.activities, data.activityId as string, doc, '/activityId', '활동');
+      if (data.trigger === 'location-enter') {
+        const locations = isObject(project?.gameplay) ? objectItems(project.gameplay.locations) : [];
+        if (!locations.some(l => l.id === data.locationId)) ctx.report(doc, '/locationId', 'UNKNOWN_LOCATION', '후속 사건을 시작할 장소를 찾을 수 없습니다.', [String(data.locationId)]);
+      }
       const window = data.window as JsonObject;
       const from = window.fromPeriod as number, through = window.throughPeriod as number;
       if (from > through) ctx.report(doc, '/window/throughPeriod', 'EVENT_WINDOW_ORDER', '사건 종료 기간은 시작 기간 이상이어야 합니다.', [idOf(data)]);

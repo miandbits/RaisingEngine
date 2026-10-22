@@ -13,12 +13,14 @@ export type EventDefinition = Header &
     };
     requirements: Condition;
     priority: number;
-    trigger?: "period-end" | "interaction" | "after-event";
+    trigger?: "period-end" | "interaction" | "after-event" | "period-start" | "after-activity" | "location-enter";
     /**
      * An interaction may enter this event again after completion while its requirements hold. Completion history remains unique.
      */
     repeatable?: boolean;
     scope?: "shared" | "actor";
+    activityId?: string;
+    locationId?: string;
   };
 export type Condition =
   | {

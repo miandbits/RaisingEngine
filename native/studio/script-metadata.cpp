@@ -29,6 +29,12 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
   grid->addWidget(window, 1, 0, 1, 2);
   auto trigger = new QComboBox; trigger->setObjectName("scriptTrigger"); trigger->addItem(tr("기간 종료 때"), "period-end"); trigger->addItem(tr("행동에서 연결"), "interaction"); trigger->addItem(tr("사건 완료 후"), "after-event"); grid->addWidget(trigger, 1, 2);
   auto scope = new QComboBox; scope->setObjectName("scriptScope"); scope->addItem(tr("공유 완료 기록"), "shared"); scope->addItem(tr("실행자별 완료 기록"), "actor"); grid->addWidget(scope, 1, 3);
+  trigger->addItem(tr("약속 날짜 · 기간 시작"), "period-start"); trigger->addItem(tr("지정 활동을 마친 뒤"), "after-activity"); trigger->addItem(tr("지정 장소에 들어갈 때"), "location-enter");
+  auto appointmentActivity=new QComboBox;appointmentActivity->setObjectName("scriptAppointmentActivity");appointmentActivity->setToolTip(tr("대상 활동"));
+  auto appointmentLocation=new QComboBox;appointmentLocation->setObjectName("scriptAppointmentLocation");appointmentLocation->setToolTip(tr("대상 장소"));
+  for(auto v:context.value("documents").toArray()){const auto doc=v.toObject(),d=doc.value("data").toObject();if(doc.value("kind")=="activity")appointmentActivity->addItem(d.value("label").toString(d.value("id").toString()),d.value("id").toString());if(doc.value("kind")=="project")for(auto l:d.value("gameplay").toObject().value("locations").toArray()){auto location=l.toObject();appointmentLocation->addItem(location.value("name").toString(location.value("id").toString()),location.value("id").toString());}}
+  grid->addWidget(appointmentActivity,5,0,1,2);grid->addWidget(appointmentLocation,5,2,1,2);
+  for(auto pair:{qMakePair(appointmentActivity,QString("activityId")),qMakePair(appointmentLocation,QString("locationId"))})connect(pair.first,qOverload<int>(&QComboBox::currentIndexChanged),this,[this,pair]{if(filling)return;auto d=data();const auto expected=pair.second=="activityId"?"after-activity":"location-enter";if(d.value("trigger")!=expected)return;d[pair.second]=pair.first->currentData().toString();setData(d);});
   auto references = new QPushButton(tr("선택 노드의 참조 위치…")); references->setObjectName("scriptReferences"); grid->addWidget(references, 1, 4);
   auto repeatable = new QCheckBox(tr("조건을 만족하면 방문할 때 다시 시작")); repeatable->setObjectName("scriptRepeatable");
   repeatable->setToolTip(tr("보류한 상담·처방을 다음 방문에 다시 열 수 있습니다. 완료 기록은 하나로 유지되며, 효과는 대본 조건으로 제한하세요."));
@@ -49,11 +55,11 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
   };
   connect(from, qOverload<int>(&QSpinBox::valueChanged), this, updateWindow);
   connect(through, qOverload<int>(&QSpinBox::valueChanged), this, updateWindow);
-  connect(trigger, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, trigger, repeatable] { if (!filling && data().contains("window")) { auto d = data(); d["trigger"] = trigger->currentData().toString(); const bool direct=trigger->currentData()=="interaction"; if (!direct) d.remove("repeatable"); setData(d); QSignalBlocker blocker(repeatable); repeatable->setEnabled(direct); repeatable->setChecked(d.value("repeatable").toBool()); } });
+  connect(trigger, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, trigger, repeatable,appointmentActivity,appointmentLocation] { if (!filling && data().contains("window")) { auto d = data(); d["trigger"] = trigger->currentData().toString(); const bool direct=trigger->currentData()=="interaction"; if (!direct) d.remove("repeatable"); d.remove("activityId");d.remove("locationId");const bool activity=trigger->currentData()=="after-activity",location=trigger->currentData()=="location-enter";if(activity)d["activityId"]=appointmentActivity->currentData().toString();if(location)d["locationId"]=appointmentLocation->currentData().toString();appointmentActivity->setVisible(activity);appointmentLocation->setVisible(location);setData(d); QSignalBlocker blocker(repeatable); repeatable->setEnabled(direct); repeatable->setChecked(d.value("repeatable").toBool()); } });
   connect(scope, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, scope, trigger] {
     if (filling || !data().contains("window")) return;
     auto d = data(); d["scope"] = scope->currentData().toString();
-    if (scope->currentData() == "actor") d["trigger"] = "interaction";
+    if (scope->currentData() == "actor" && d.value("trigger").toString("period-end")=="period-end") d["trigger"] = "interaction";
     setData(d); QSignalBlocker blocker(trigger); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(true);
   });
   connect(conditions, &QPushButton::clicked, this, [this] {
@@ -86,6 +92,7 @@ void ScriptAuthoringDialog::refreshMetadata() {
   metadata->findChild<QSpinBox *>("scriptThroughPeriod")->setValue(w.value("throughPeriod").toInt() + 1);
   auto scope = metadata->findChild<QComboBox *>("scriptScope"); scope->setVisible(event); scope->setCurrentIndex(scope->findData(d.value("scope").toString("shared")));
   auto trigger = metadata->findChild<QComboBox *>("scriptTrigger"); trigger->setVisible(event); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(true);
+  for(auto pair:{qMakePair(QString("scriptAppointmentActivity"),QString("activityId")),qMakePair(QString("scriptAppointmentLocation"),QString("locationId"))}){auto combo=metadata->findChild<QComboBox*>(pair.first);combo->setVisible(event&&d.value("trigger")== (pair.second=="activityId"?"after-activity":"location-enter"));combo->setCurrentIndex(d.contains(pair.second)?combo->findData(d.value(pair.second).toString()):0);}
   auto repeatable = metadata->findChild<QCheckBox *>("scriptRepeatable"); repeatable->setVisible(event); repeatable->setEnabled(trigger->currentData()=="interaction"); repeatable->setChecked(d.value("repeatable").toBool());
   refreshPredecessorSummary();
   filling = previous;

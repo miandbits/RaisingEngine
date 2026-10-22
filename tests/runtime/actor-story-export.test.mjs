@@ -30,4 +30,11 @@ test('personal flags and post-event continuation require a capable export runtim
     for(const target of ['windows','web'])await assert.rejects(run(content,base,target),/actor-story-links-v1/,variant+' '+target);
     for(const target of ['windows','web'])await run(content,[...base,feature],target);
   }
+  for(const trigger of ['period-start','after-activity','location-enter']){
+    const content=structuredClone(built.snapshot),event=content.events.find(e=>e.id==='personal-gift');event.trigger=trigger;
+    if(trigger==='after-activity')event.activityId='study';if(trigger==='location-enter')event.locationId='home';
+    const compatible=caps.visualFeatures.filter(f=>f!=='story-appointments-v1');
+    for(const target of ['windows','web'])await assert.rejects(run(content,compatible,target),/story-appointments-v1/);
+    for(const target of ['windows','web'])await run(content,[...compatible,'story-appointments-v1'],target);
+  }
 });

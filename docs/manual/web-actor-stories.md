@@ -56,5 +56,6 @@ saves passed native command replay. Local screenshots and save evidence are
 kept outside the public source distribution.
 
 This covers Chrome on Windows. It does not certify other browsers or mobile and
-console platforms. Immediate post-event chains are not a future-date reservation
-system; they preserve the current actor and the source event's return context.
+console platforms. Immediate post-event chains preserve the current actor and
+the source event's return context. For calendar-period, completed-activity and
+location-entry follow-ups, see [story appointments](story-appointments.md).

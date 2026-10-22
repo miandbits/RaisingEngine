@@ -9,7 +9,7 @@ import { CORE_VERSION, type Command, type ContentSnapshot, type CreateResult, ty
 import { applyEffects, calendarTime, evaluateCondition, evaluateNumber } from './evaluation.js';
 import { seedRandom, sampleBelow } from './random.js';
 import { CoreFault, freeze, int32, object, requireCore } from './util.js';
-import { applyScene, finishPeriod, resolvePeriodEnd, stepNarrative } from './narrative.js';
+import { applyScene, finishPeriod, resolvePeriodEnd, stepNarrative, startAppointmentEvents } from './narrative.js';
 import { applyDiet, applyGameplay, createGameplay } from '../gameplay/service.js';
 import { applyPolicies, beginRuleCommand, emitRules, emitRelationshipRules, runBoundaryRules, runDayRules } from '../gameplay/rules.js';
 import { applySystems, createSystems, startExpedition, syncRelationshipStages } from '../systems/service.js';
@@ -85,6 +85,7 @@ export function createRun(content: ContentSnapshot, seed: number,
     createRoster(content, state);
     createCustomStates(content, state);
     createProgression(content, state);
+    startAppointmentEvents(content, state, 'period-start');
     return { ok: true, state: freeze(state) };
   } catch (error) {
     if (error instanceof CoreFault) return { ok: false, error: error.diagnostic() };
@@ -314,6 +315,8 @@ export function dispatchCommand(content: ContentSnapshot, state: RunState, input
     if (command.type === 'buy') emitRules(content, draft, { type: 'purchaseComplete', shopId: command.shopId, itemId: command.itemId });
     syncRelationshipStages(content, draft);
     emitRelationshipRules(content, draft);
+    if (command.type === 'acknowledgeResult' && state.phase === 'activity-result') startAppointmentEvents(content, draft, 'after-activity');
+    if (command.type === 'visit' && draft.gameplay?.locationId !== state.gameplay?.locationId) startAppointmentEvents(content, draft, 'location-enter');
     if(draft.roster){delete draft.roster.actorId;delete draft.roster.activityActorId;}
     if (draft.roster) for (const id of content.project.roster!.localAttributeIds) draft.roster.attributes[content.project.protagonistId]![id] = draft.attributes[id]!;
     if (draft.phase !== state.phase || command.type === 'visit' || command.type === 'choose' || command.type === 'advanceNarrative') delete draft.uiScreenId;

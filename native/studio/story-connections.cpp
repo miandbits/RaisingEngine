@@ -86,6 +86,10 @@ StoryConnections buildStoryConnections(const QJsonArray &documents) {
   }
   for(auto v:scripts){auto doc=v.toObject(),d=doc.value("data").toObject();auto id=doc.value("kind").toString()+":"+d.value("id").toString(),file=doc.value("file").toString();
     result.nodes[id].detail=scriptIdentity(doc,scripts,documents);
+    const auto trigger=d.value("trigger").toString();
+    if(trigger=="period-start")result.nodes[id].detail+="\n"+QObject::tr("약속 날짜 · 기간 시작");
+    if(trigger=="after-activity")edge("activity:"+d.value("activityId").toString(),id,QObject::tr("지정 활동을 마친 뒤"),true);
+    if(trigger=="location-enter")edge("location:"+d.value("locationId").toString(),id,QObject::tr("지정 장소에 들어갈 때"),true);
     consumers.append({id,d.value("requirements").toObject(),QObject::tr("발생 조건")});
     QMap<QString,QJsonObject> nodes;for(auto nv:d.value("nodes").toArray())nodes[nv.toObject().value("id").toString()]=nv.toObject();
     QSet<QString> reachable;QStringList queue{d.value("entryNodeId").toString()};

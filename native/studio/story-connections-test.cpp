@@ -115,7 +115,7 @@ int main(int argc,char **argv){
   auto personalYes=personalChoices[0].toObject();personalYes["effects"]=QJsonArray{personalSet};personalChoices[0]=personalYes;personalAsk["choices"]=personalChoices;personalNodes[0]=personalAsk;personal["nodes"]=personalNodes;personalDocs[0]=doc("event",personal);
   auto personalProject=personalDocs[5].toObject();auto pp=personalProject["data"].toObject();pp["roster"]=QJsonObject{{"stateModel","character-v1"}};personalProject["data"]=pp;personalDocs[5]=personalProject;
   StoryFollowupDialog personalForm(personalDocs,"event:first/ask/yes",nullptr);
-  check(personalForm.findChild<QSpinBox*>("followupFrom")->value()==personal["window"].toObject()["fromPeriod"].toInt()+1,"personal followup defaults to the source period for immediate continuation");
+  check(personalForm.findChild<QComboBox*>("followupFrom")->currentData().toInt()==personal["window"].toObject()["fromPeriod"].toInt(),"personal followup defaults to the source period for immediate continuation");
   auto personalSettings=settings;personalSettings["promise"]=personalPromise;auto personalPlan=makeStoryFollowup(personalDocs,"event:first/ask/yes",personalSettings);
   check(personalPlan.error.isEmpty(),"actor follow-up created");auto personalFollow=personalPlan.documents.last().toObject()["data"].toObject();
   check(personalFollow["scope"]=="actor"&&personalFollow["trigger"]=="after-event","actor follow-up retains scope and runs after event");
@@ -126,6 +126,24 @@ int main(int argc,char **argv){
   personalSettings["targetFile"]="events/follow.json";check(!makeStoryFollowup(personalDocs,"event:first/ask/yes",personalSettings).error.isEmpty(),"mixed scope target rejected");
   personalSettings.remove("targetFile");personalSettings["promise"]=flag(true);check(!makeStoryFollowup(personalDocs,"event:first/ask/yes",personalSettings).error.isEmpty(),"shared promise cannot become a personal gate");
   auto personalGraph=buildStoryConnections(personalDocs);bool leaked=false;for(auto e:personalGraph.edges)if(e.from=="event:first/ask/yes"&&e.to=="event:follow")leaked=true;check(!leaked,"personal promise must not draw a shared promise edge");
+  auto appointmentSettings=settings;appointmentSettings["promise"]=personalPromise;
+  for(const auto &trigger:{"period-start","after-activity","location-enter"}){
+    appointmentSettings["trigger"]=trigger;appointmentSettings["activityId"]="rest";appointmentSettings["locationId"]="clinic";
+    auto appointment=makeStoryFollowup(personalDocs,"event:first/ask/yes",appointmentSettings);check(appointment.error.isEmpty(),"appointment plan accepts date activity and location");
+    const auto event=appointment.documents.last().toObject()["data"].toObject();check(event["trigger"]==trigger&&event["scope"]=="actor","timing retains actor scope");
+    for(auto v:event["requirements"].toObject()["conditions"].toArray())check(v.toObject()["owner"]==actor,"appointment gates remain personal");
+    check(event.contains("activityId")== (QString(trigger)=="after-activity")&&event.contains("locationId")== (QString(trigger)=="location-enter"),"only relevant trigger references retained");
+    auto mapped=buildStoryConnections(appointment.documents);if(QString(trigger)!="period-start"){bool edge=false;for(auto e:mapped.edges)if(e.to=="event:followup-1"&&e.from==(QString(trigger)=="after-activity"?"activity:rest":"location:clinic"))edge=true;check(edge,"activity/place trigger visible on map");}
+    auto same=appointmentSettings;same["targetFile"]=appointment.file;check(makeStoryFollowup(appointment.documents,"event:first/ask/yes",same).documents==appointment.documents,"reconnecting appointment is idempotent");
+    ScriptAuthoringDialog metadata(QJsonObject{{"documents",appointment.documents}},{});metadata.selectDocument(appointment.file);
+    check(metadata.findChild<QComboBox*>("scriptTrigger")->currentData()==trigger,"metadata preserves appointment trigger");
+  }
+  StoryFollowupDialog appointmentForm(personalDocs,"event:first/ask/yes",nullptr);auto occurrence=appointmentForm.findChild<QComboBox*>("followupTrigger");occurrence->setCurrentIndex(occurrence->findData("after-activity"));
+  appointmentForm.findChild<QLineEdit*>("followupTitle")->setText("Practice appointment");appointmentForm.findChild<QPlainTextEdit*>("followupDialogue")->setPlainText("We meet after practice.");
+  auto appointmentActivity=appointmentForm.findChild<QComboBox*>("followupActivity");check(appointmentActivity->isEnabled()&&!appointmentForm.findChild<QComboBox*>("followupLocation")->isEnabled(),"only relevant selector enabled");appointmentActivity->setCurrentIndex(appointmentActivity->findData("rest"));
+  check(appointmentForm.findChild<QComboBox*>("followupFrom")->currentText().contains("월"),"dates shown in project calendar");appointmentForm.findChild<QDialogButtonBox*>("followupButtons")->button(QDialogButtonBox::Save)->click();check(appointmentForm.result()==QDialog::Accepted,"appointment authored through actual widgets");
+  appointmentSettings["trigger"]="after-activity";appointmentSettings["activityId"]="missing";check(!makeStoryFollowup(personalDocs,"event:first/ask/yes",appointmentSettings).error.isEmpty(),"missing activity rejected atomically");
+  appointmentSettings["trigger"]="location-enter";appointmentSettings["locationId"]="missing";check(!makeStoryFollowup(personalDocs,"event:first/ask/yes",appointmentSettings).error.isEmpty(),"missing location rejected atomically");
   auto large=documents;for(int i=0;i<700;++i)large.append(doc("event",script("large-"+QString::number(i),{{"op","eventCompleted"},{"eventId",i?"large-"+QString::number(i-1):"first"}})));
   QElapsedTimer timer;timer.start();auto big=buildStoryConnections(large);check(big.nodes.contains("event:large-699"),"large projects not truncated");check(big.edges.size()>=700,"large dependency chain complete");
   std::cout<<"PASS "<<checks<<" checks; 700-event graph "<<timer.elapsed()<<" ms\n";

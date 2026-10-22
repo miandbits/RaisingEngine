@@ -359,6 +359,13 @@
         },
         "actorId": {
           "type": "string"
+        },
+        "appointmentTrigger": {
+          "enum": [
+            "period-start",
+            "after-activity",
+            "location-enter"
+          ]
         }
       }
     },

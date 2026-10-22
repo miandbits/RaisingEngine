@@ -31,6 +31,60 @@
           "trigger"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "trigger": {
+            "const": "after-activity"
+          }
+        },
+        "required": [
+          "trigger"
+        ]
+      },
+      "then": {
+        "required": [
+          "activityId"
+        ],
+        "properties": {
+          "activityId": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "activityId": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "trigger": {
+            "const": "location-enter"
+          }
+        },
+        "required": [
+          "trigger"
+        ]
+      },
+      "then": {
+        "required": [
+          "locationId"
+        ],
+        "properties": {
+          "locationId": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "locationId": false
+        }
+      }
     }
   ],
   "properties": {
@@ -73,7 +127,10 @@
       "enum": [
         "period-end",
         "interaction",
-        "after-event"
+        "after-event",
+        "period-start",
+        "after-activity",
+        "location-enter"
       ]
     },
     "repeatable": {
@@ -85,6 +142,12 @@
         "shared",
         "actor"
       ]
+    },
+    "activityId": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "locationId": {
+      "$ref": "common.schema.json#/$defs/id"
     }
   },
   "required": [

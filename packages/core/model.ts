@@ -36,7 +36,9 @@ export interface RandomState {
 export type Phase = 'planning' | 'ready' | 'activity-result' | 'period-end' | 'narrative' | 'finished' | 'expedition' | 'battle';
 export type RunMode = 'activities-only' | 'full';
 export type NarrativeNode = Narrative['nodes'][number];
+export type AppointmentTrigger = 'period-start' | 'after-activity' | 'location-enter';
 export interface NarrativeCursor {
+  appointmentTrigger?: AppointmentTrigger;
   actorId?: string;
   kind: 'event' | 'ending'; id: string; nodeId: string;
   returnPhase?: 'planning' | 'ready' | 'period-end'; returnPresentation?: PresentationState;
