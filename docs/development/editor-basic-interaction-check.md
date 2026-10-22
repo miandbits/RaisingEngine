@@ -57,10 +57,12 @@ Ctrl+Z/Ctrl+Y, Ctrl+C/Ctrl+V and Ctrl+S were exercised in the focused field. Clo
 the editor confirmed the saved Korean name persisted. The final review build uses a separate
 output folder and test profile; existing user windows and project files were preserved.
 
-Evidence boundary: GUI Korean text was inserted as Unicode. Physical Microsoft Korean IME key
-composition was not verified: the desktop automation API did not support its Hangul toggle key.
-The event-level tests are not a substitute for testing that complete Windows IME pipeline,
-candidate windows, Japanese conversion, or every custom text widget.
+Evidence boundary for that pass: GUI Korean text was inserted as Unicode; native Microsoft
+Korean IME composition was not verified. A subsequent [Windows IME session](windows-ime-check.md)
+established real composition with user-assisted input-mode setup and verified save/reopen,
+but found unresolved Escape cancellation and undo-granularity differences. The synthetic
+first-Escape/Undo behavior above must not be read as a native Windows guarantee. Candidate
+windows, Japanese conversion, and every custom text widget remain unverified.
 
 Qt contracts: [input-method events](https://doc.qt.io/qt-6/qinputmethodevent.html),
 [commit/reset](https://doc.qt.io/qt-6/qinputmethod.html).

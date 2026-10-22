@@ -31,7 +31,12 @@ private slots:
     QTest::keyClick(field, Qt::Key_Y, Qt::ControlModifier); QCOMPARE(field->text(), QString("공방 한글"));
     field->selectAll(); QTest::keyClick(field, Qt::Key_C, Qt::ControlModifier);
     QCOMPARE(QApplication::clipboard()->text(), QString("공방 한글"));
+    field->deselect(); field->setCursorPosition(field->text().size());
     QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+    QTest::keyClick(field, Qt::Key_C, Qt::ControlModifier);
+    QCOMPARE(field->text(), QString("공방 한글"));
+    QCOMPARE(QApplication::clipboard()->text(), QString("공방 한글"));
+    QVERIFY(field->property("raisingInputComposing").toBool());
     QTest::keyClick(field, Qt::Key_Escape); QVERIFY(dialog.isVisible());
     QVERIFY(!field->property("raisingInputComposing").toBool());
     QTest::keyClick(field, Qt::Key_Escape); QVERIFY(!dialog.isVisible());
