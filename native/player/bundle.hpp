@@ -26,7 +26,9 @@ inline void validate_bundle(const Json& bundle,const fs::path& root) {
     if(!value.contains(key)||!value.at(key).is_number_integer()||value.at(key).get<double>()<minimum||value.at(key).get<double>()>maximum)fail(path+"."+key);
   };
   integer(visual,"width",640,3840,"visual");integer(visual,"height",360,2160,"visual");
-  if(!visual.contains("screens")||!visual.at("screens").is_array()||visual.at("screens").size()<4||visual.at("screens").size()>100)fail("visual.screens");
+  const bool routed=visual.contains("routing");
+  if(routed&&!visual.at("routing").is_object())fail("visual.routing");
+  if(!visual.contains("screens")||!visual.at("screens").is_array()||visual.at("screens").size()<(routed?1:4)||visual.at("screens").size()>100)fail("visual.screens");
   std::set<std::string> screens;
   for(const auto& screen:visual.at("screens")) {
     if(!screen.is_object()||!screen.contains("id")||!screen.at("id").is_string()||!screens.insert(screen.at("id").get<std::string>()).second)fail("visual.screens[].id");
@@ -39,7 +41,16 @@ inline void validate_bundle(const Json& bundle,const fs::path& root) {
       integer(element,"width",16,3840,"visual.element");integer(element,"height",16,2160,"visual.element");
     }
   }
-  for(const auto* required:{"title","schedule","story","ending"})if(!screens.count(required))fail("visual.screens: missing "+std::string(required));
+  if(!routed)for(const auto* required:{"title","schedule","story","ending"})if(!screens.count(required))fail("visual.screens: missing "+std::string(required));
+  if(routed){
+    const auto& routing=visual.at("routing");
+    if(!routing.contains("defaultScreenId")||!routing.at("defaultScreenId").is_string()||!screens.count(routing.at("defaultScreenId").get<std::string>()))fail("visual.routing.defaultScreenId");
+    if(!routing.contains("phases")||!routing.at("phases").is_array())fail("visual.routing.phases");
+    for(const auto* list:{"phases","conditions"})if(routing.contains(list)){
+      if(!routing.at(list).is_array())fail(std::string("visual.routing.")+list);
+      for(const auto& route:routing.at(list))if(!route.is_object()||!route.contains("screenId")||!route.at("screenId").is_string()||!screens.count(route.at("screenId").get<std::string>()))fail(std::string("visual.routing.")+list+".screenId");
+    }
+  }
   for(const auto* key:{"attributes","characters","activities","events","endings"})if(!content.contains(key)||!content.at(key).is_array())fail(std::string("content.")+key);
   if(content.at("activities").empty())fail("content.activities: empty");
 }

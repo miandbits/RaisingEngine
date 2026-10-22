@@ -13,7 +13,7 @@ test('native player reports corrupt bundle and invalid render geometry without p
   const projectRoot = resolve('examples/academy-journey'), built = await buildSnapshot(await loadProject(projectRoot));
   assert.equal(built.ok, true);
   await exportGame({ content: built.snapshot, projectRoot, destination, target: 'windows',
-    runtimes: { windows: resolve('dist/native-player-app'), web: resolve('dist/web') } });
+    runtimes: { windows: resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-app'), web: resolve('dist/web') } });
   const gameFile = resolve(destination, 'game.json'), original = JSON.parse(await readFile(gameFile, 'utf8'));
   const cases = [
     ['invalid-json', () => '{broken'],
