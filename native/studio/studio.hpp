@@ -176,6 +176,8 @@ private:
   void createProgressionActivity();
   void editScripts();
   void runValidation();
+  void validateForRepair(std::function<void(QString)> done);
+  void openValidationLocation(QJsonObject diagnostic, int revision, QString root);
   void showAnalysis();
   void addGroup();
   void reparentElement(QString id,QString parentId);

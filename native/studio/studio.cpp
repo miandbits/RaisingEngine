@@ -758,6 +758,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   validationSummary->setObjectName("validationSummary");
   validationSummary->setWordWrap(true);
   validationLayout->addWidget(validationSummary);
+  auto recheck=new QPushButton(tr("다시 검증"));recheck->setObjectName("validationRecheck");
+  connect(recheck,&QPushButton::clicked,this,&StudioWindow::runValidation);validationLayout->addWidget(recheck);
   validationLayout->addWidget(problems,1);
   log = new QPlainTextEdit;
   log->setReadOnly(true);
@@ -976,31 +978,14 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
           [this](QListWidgetItem *item) {
             openScreen(item->data(Qt::UserRole).toString());
           });
-  connect(
-      problems, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-        auto d = item->data(Qt::UserRole).toJsonObject();
-        auto pointer = d["pointer"].toString();
-        auto m =
-            QRegularExpression("/visual/screens/(\\d+)(?:/elements/(\\d+))?")
-                .match(pointer);
-        if (m.hasMatch()) {
-          int s = m.captured(1).toInt();
-          auto screens =
-              projectData()["visual"].toObject()["screens"].toArray();
-          if (s < screens.size()) {
-            screenId = screens[s].toObject()["id"].toString();
-            if (!openScreens.contains(screenId))
-              openScreens.append(screenId);
-            auto elems = screens[s].toObject()["elements"].toArray();
-            selection = m.captured(2).isEmpty()
-                            ? QString()
-                            : m.captured(2).toInt()>=elems.size()?QString():elems.at(m.captured(2).toInt())
-                                  .toObject()["id"]
-                                  .toString();
-            refresh(true);
-          }
-        }
-      });
+  auto openProblem=[this](QListWidgetItem *item){
+    const auto diagnostic=item->data(Qt::UserRole).toJsonObject();
+    const auto revision=item->data(Qt::UserRole+1).toInt();
+    const auto root=item->data(Qt::UserRole+2).toString();
+    openValidationLocation(diagnostic,revision,root);
+  };
+  connect(problems,&QListWidget::itemClicked,this,openProblem);
+  connect(problems,&QListWidget::itemActivated,this,openProblem);
   connect(nameField, &QLineEdit::editingFinished, this, [this] {
     if (!filling)
       updateElement([this](QJsonObject &e) { e["label"] = nameField->text(); });
@@ -1336,6 +1321,9 @@ void StudioWindow::refresh(bool fit) {
             v["file"].toString() + v["pointer"].toString(),
         problems);
     item->setData(Qt::UserRole, v);
+    item->setData(Qt::UserRole+1, view["revision"].toInt());
+    item->setData(Qt::UserRole+2, view["root"].toString());
+    item->setToolTip(v["code"].toString()+" · "+v["message"].toString());
   }
   bottom->setTabText(2, tr("문제 %1").arg(problems->count()));
   if(validatedRevision>=0&&validatedRevision!=view.value("revision").toInt())validationSummary->setText(tr("프로젝트가 수정되었습니다. 다시 검증하세요. 마지막 검증 r%1 · 현재 r%2").arg(validatedRevision).arg(view.value("revision").toInt()));
