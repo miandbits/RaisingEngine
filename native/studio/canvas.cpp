@@ -2,6 +2,7 @@
 #include "canvas.hpp"
 #include "design.hpp"
 #include "components.hpp"
+#include "selection-edit.hpp"
 #include "component-preview.hpp"
 #include <QGraphicsObject>
 #include <QDate>
@@ -31,6 +32,7 @@ public:
   QPointF origin;
   QRectF before;
   int corner = -1;
+  bool multipleDrag=false;
   VisualItem(QJsonObject value, QPixmap pixmap, ScreenCanvas *view, QSize size)
       : data(value), image(pixmap), canvas(view), bounds(size) {
     box = {0, 0, data["width"].toDouble(), data["height"].toDouble()};
@@ -204,12 +206,14 @@ public:
       e->ignore();
       return;
     }
-    scene()->clearSelection();
-    setSelected(true);
+    if(e->modifiers()&(Qt::ControlModifier|Qt::ShiftModifier))setSelected(!isSelected());
+    else if(!isSelected()){scene()->clearSelection();setSelected(true);}
     setFocus();
     origin = e->scenePos();
     before = QRectF(pos(), box.size());
     corner = -1;
+    multipleDrag=scene()->selectedItems().size()>1;
+    if(multipleDrag){canvas->startSelectionDrag();e->accept();return;}
     const QList<QPointF> corners = {box.topLeft(), box.topRight(),
                                     box.bottomLeft(), box.bottomRight()};
     for (int i = 0; i < corners.size(); i++)
@@ -218,6 +222,8 @@ public:
     e->accept();
   }
   void mouseMoveEvent(QGraphicsSceneMouseEvent *e) override {
+    if(!isSelected())return;
+    if(multipleDrag){canvas->previewSelectionDrag((e->scenePos()-origin).toPoint());e->accept();return;}
     if (data["locked"].toBool())
       return;
     QPointF delta = e->scenePos() - origin;
@@ -253,6 +259,7 @@ public:
     e->accept();
   }
   void mouseReleaseEvent(QGraphicsSceneMouseEvent *e) override {
+    if(multipleDrag){canvas->finishSelectionDrag();multipleDrag=false;e->accept();return;}
     const QRect rectangle = QRectF(pos(), box.size()).toRect();
     if (rectangle != before.toRect())
       emit canvas->geometryEdited(data["id"].toString(), rectangle.translated(-qRound(data.value("_parentX").toDouble()),-qRound(data.value("_parentY").toDouble())));
@@ -268,11 +275,13 @@ ScreenCanvas::ScreenCanvas(QWidget *parent) : QGraphicsView(parent) {
   setRenderHint(QPainter::SmoothPixmapTransform);
   setViewportUpdateMode(BoundingRectViewportUpdate);
   setFocusPolicy(Qt::StrongFocus);
+  setDragMode(RubberBandDrag);
+  setRubberBandSelectionMode(Qt::ContainsItemShape);
   connect(&scene, &QGraphicsScene::selectionChanged, this, [this] {
     if (!refreshing) {
-      auto items = scene.selectedItems();
-      emit selectionChanged(
-          items.isEmpty() ? QString() : items.first()->data(0).toString());
+      const auto ids=selectedIds();
+      emit selectionsChanged(ids);
+      if(ids.size()<2)emit selectionChanged(ids.value(0));
     }
   });
 }
@@ -281,6 +290,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
                              const QJsonArray &assets, const QString &selected,
                              bool fit) {
   refreshing = true;
+  sourceElements=screen.value("elements").toArray();dragStart.clear();dragDelta={};
   scene.clear();
   auto visual = project["visual"].toObject();
   canvasSize = {project["_previewWidth"].toInt(visual["width"].toInt(1280)), project["_previewHeight"].toInt(visual["height"].toInt(720))};
@@ -392,12 +402,29 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
   }
 }
 void ScreenCanvas::select(const QString &id) {
+  selectMany(id.isEmpty()?QStringList{}:QStringList{id});
+}
+void ScreenCanvas::selectMany(const QStringList &ids) {
   refreshing = true;
   for (auto item : scene.items())
     if (item->flags() & QGraphicsItem::ItemIsSelectable)
-      item->setSelected(item->data(0).toString() == id);
+      item->setSelected(ids.contains(item->data(0).toString()));
   refreshing = false;
 }
+QStringList ScreenCanvas::selectedIds() const {
+  QStringList ids;for(auto item:scene.items(Qt::AscendingOrder))if(item->isSelected()&&(item->flags()&QGraphicsItem::ItemIsSelectable))ids.append(item->data(0).toString());return ids;
+}
+void ScreenCanvas::startSelectionDrag(){
+  dragStart.clear();dragDelta={};auto ids=selectedIds();QSet<QString> affected(ids.begin(),ids.end());bool added=true;
+  while(added){added=false;for(auto v:sourceElements){auto e=v.toObject();auto id=e["id"].toString();if(affected.contains(e["parentId"].toString())&&!affected.contains(id)){affected.insert(id);added=true;}}}
+  for(auto item:scene.items()){const auto id=item->data(0).toString();bool include=affected.contains(id);for(const auto &root:affected)include=include||id.startsWith(root+"__");if(include)dragStart[item]=item->pos();}
+}
+void ScreenCanvas::previewSelectionDrag(QPoint delta){
+  const int grid=snap?8:1;dragDelta={qRound(double(delta.x())/grid)*grid,qRound(double(delta.y())/grid)*grid};QJsonArray next;QString error;
+  const bool valid=editSelection(sourceElements,selectedIds(),canvasSize,{{"mode","move"},{"dx",dragDelta.x()},{"dy",dragDelta.y()}},next,error);
+  for(auto it=dragStart.begin();it!=dragStart.end();++it)it.key()->setPos(it.value()+(valid?dragDelta:QPoint()));
+}
+void ScreenCanvas::finishSelectionDrag(){const auto delta=dragDelta;for(auto it=dragStart.begin();it!=dragStart.end();++it)it.key()->setPos(it.value());dragStart.clear();dragDelta={};if(!delta.isNull())emit selectionMoved(delta);}
 void ScreenCanvas::fitCanvas() {
   autoFit = true;
   fitInView(scene.sceneRect(), Qt::KeepAspectRatio);
@@ -443,6 +470,7 @@ void ScreenCanvas::keyPressEvent(QKeyEvent *e) {
     return;
   }
   auto selected = scene.selectedItems();
+  if(selected.size()>1){QPoint delta;const int step=e->modifiers()&Qt::ShiftModifier?10:1;if(e->key()==Qt::Key_Left)delta={-step,0};if(e->key()==Qt::Key_Right)delta={step,0};if(e->key()==Qt::Key_Up)delta={0,-step};if(e->key()==Qt::Key_Down)delta={0,step};if(!delta.isNull()){emit selectionMoved(delta);return;}}
   if (!selected.isEmpty()) {
     auto item = dynamic_cast<VisualItem *>(selected.first());
     int step = e->modifiers() & Qt::ShiftModifier ? 10 : 1;
@@ -471,7 +499,7 @@ void ScreenCanvas::keyPressEvent(QKeyEvent *e) {
 void ScreenCanvas::keyReleaseEvent(QKeyEvent *e) {
   if (e->key() == Qt::Key_Space && !e->isAutoRepeat()) {
     panning = false;
-    setDragMode(NoDrag);
+    setDragMode(RubberBandDrag);
     setInteractive(true);
     e->accept();
     return;

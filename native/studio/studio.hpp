@@ -34,6 +34,7 @@ public:
   QJsonObject currentView() const { return view; }
   QJsonObject projectData() const;
   QString selectedId() const { return selection; }
+  QStringList selectedIds() const { return selectedElements; }
   QString playAutomation, playReport;
   QString lastRecording, recordingRoot;
   QJsonObject lastGoalReport;
@@ -95,6 +96,7 @@ private:
   void removeWorkspaces(const QString &plugin);
   QByteArray screenDockState() { return activeWorkspace.isEmpty() ? saveState(1) : screenLayout; }
   QString engineRoot, screenId = "home", selection, projectFile;
+  QStringList selectedElements;
   QStringList openScreens;
   StudioBridge bridge;
   QJsonObject view;
@@ -144,6 +146,10 @@ private:
   void editVisibilityCondition();
   void updateTargets(const QString &action, const QJsonObject &element);
   void selectElement(const QString &id);
+  void selectElements(const QStringList &ids);
+  void editSelectedElements();
+  void moveSelectedElements(QPoint delta);
+  void replaceScreenElements(const QJsonArray &elements);
   QJsonObject currentScreen() const;
   QJsonObject currentElement() const;
   void replaceProject(QJsonObject data);
@@ -161,6 +167,8 @@ private:
   void applyTextBindingBatch();
   void editLocalization();
   void editComponents();
+  void openComponentSource();
+  QString componentToOpen;
   void editDataUi();
   void editTimelines();
   void editBattleHud();

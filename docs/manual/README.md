@@ -5,6 +5,7 @@ Start with [your first game](../getting-started/first-game.md). Templates are st
 | Work | Guide |
 |---|---|
 | Save protection, undo/redo, clipboard, hierarchy/layers and Git | [Editor basics](editor-basics.md) |
+| Multi-select, batch properties, alignment and component source editing | [Multi-selection](multi-selection.md) |
 | Follow a selected UI element through data, actions, conditions and stories | [Linked authoring](linked-authoring.md) |
 | Project/plugin diagnostics and continuing an existing event | [Authoring workflow](authoring-workflow.md) |
 | Characters, activities, meetings and follow-up stories | [Story workshop](story-flow-workshop.md), [integrated workspace](integrated-designer-workspace.md) |

@@ -310,13 +310,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto snap = canvasTools->addAction(tr("8px 스냅"));
   snap->setCheckable(true);
   connect(snap, &QAction::toggled, this, [this](bool b) { canvas->snap = b; });
-  canvasTools->addAction(tr("오른쪽 아래 정렬"), this, [this] {
-    auto visual = projectData()["visual"].toObject();
-    updateElement([visual](QJsonObject &e) {
-      e["x"] = qMax(0, visual["width"].toInt() - e["width"].toInt() - 32);
-      e["y"] = qMax(0, visual["height"].toInt() - e["height"].toInt() - 32);
-    });
-  });
+  canvasTools->addAction(tr("일괄 편집 · 정렬…"),this,&StudioWindow::editSelectedElements)->setObjectName("batchSelection");
   canvasTools->addSeparator();
   auto forward =
       canvasTools->addAction(tr("앞으로"), this, [this] { moveLayer(1); });
@@ -362,6 +356,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto hierarchyTree=new HierarchyTree;hierarchy=hierarchyTree;hierarchyTree->reparent=[this](QString id,QString parent){reparentElement(id,parent);};
   hierarchy->setDragEnabled(true);hierarchy->setAcceptDrops(true);hierarchy->setDropIndicatorShown(true);hierarchy->setDragDropMode(QAbstractItemView::InternalMove);
   hierarchy->setObjectName("hierarchy");
+  hierarchy->setSelectionMode(QAbstractItemView::ExtendedSelection);
   hierarchy->setHeaderHidden(false);
   hierarchy->setColumnCount(3);
   hierarchy->setHeaderLabels({tr("요소 · 부모 / 자식"),tr("순서"),tr("종류")});
@@ -387,6 +382,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   selectedTitle = new QLabel(tr("요소를 선택하세요"));
   selectedTitle->setStyleSheet("font-size:16px;font-weight:600");
   formLayout->addWidget(selectedTitle);
+  auto batch=new QPushButton(tr("선택 요소 일괄 편집 · 정렬…"));batch->setObjectName("selectionBatch");formLayout->addWidget(batch);connect(batch,&QPushButton::clicked,this,&StudioWindow::editSelectedElements);
+  auto source=new QPushButton(tr("부품 원본 편집 · 모든 배치에 반영…"));source->setObjectName("componentSource");formLayout->addWidget(source);connect(source,&QPushButton::clicked,this,&StudioWindow::openComponentSource);
   auto followLinks=new QPushButton(tr("데이터 · 행동 · 후속 사건 따라가기…"));
   followLinks->setObjectName("elementConnections");formLayout->addWidget(followLinks);
   connect(followLinks,&QPushButton::clicked,this,&StudioWindow::followSelectedElement);
@@ -955,17 +952,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(documents, &QTabBar::tabCloseRequested, this,
           &StudioWindow::closeScreen);
   connect(hierarchy, &QTreeWidget::itemSelectionChanged, this, [this] {
-    if (!filling && !bridge.busy() && !hierarchy->selectedItems().isEmpty()) {
-      const auto item=hierarchy->selectedItems().first();
-      const auto id=item->data(0,Qt::UserRole).toString();
-      const auto targetScreen=item->data(0,Qt::UserRole+1).toString();
-      if(!targetScreen.isEmpty()&&targetScreen!=screenId)openScreen(targetScreen);
-      selectElement(id);
-    }
+    if(filling||bridge.busy())return;QStringList ids;QString targetScreen;for(auto item:hierarchy->selectedItems()){const auto owner=item->data(0,Qt::UserRole+1).toString();if(targetScreen.isEmpty())targetScreen=owner;if(owner!=targetScreen){errorLabel->setText(tr("한 화면 안의 요소를 함께 선택하세요."));return;}ids.append(item->data(0,Qt::UserRole).toString());}
+    if(!targetScreen.isEmpty()&&targetScreen!=screenId)openScreen(targetScreen);selectElements(ids);
   });
   connect(hierarchySearch, &QLineEdit::textChanged, this, [this] { rebuildHierarchy(); });
-  connect(canvas, &ScreenCanvas::selectionChanged, this,
-          &StudioWindow::selectElement);
+  connect(canvas, &ScreenCanvas::selectionsChanged, this,&StudioWindow::selectElements);
+  connect(canvas, &ScreenCanvas::selectionMoved, this,&StudioWindow::moveSelectedElements);
   connect(canvas, &ScreenCanvas::geometryEdited, this,
           [this](QString id, QRect rect) {
             selection = id;
@@ -1319,6 +1311,9 @@ void StudioWindow::refresh(bool fit) {
   }
   auto translatedPreview=localizedProject(preview,previewLocaleField->currentData().toString());auto translatedScreen=currentScreen();for(auto s:translatedPreview["visual"].toObject()["screens"].toArray())if(s.toObject()["id"]==screenId)translatedScreen=s.toObject();
   canvas->setScreen(translatedPreview, translatedScreen, assets, selection, fit);
+  if(selection.isEmpty())selectedElements.clear();else if(!selectedElements.contains(selection))selectedElements={selection};
+  QStringList validSelection;for(auto e:currentScreen()["elements"].toArray())if(selectedElements.contains(e.toObject()["id"].toString()))validSelection.append(e.toObject()["id"].toString());selectedElements=validSelection;selection=selectedElements.value(0);canvas->selectMany(selectedElements);
+  {QTreeWidgetItemIterator it(hierarchy);while(*it){(*it)->setSelected((*it)->data(0,Qt::UserRole+1).toString()==screenId&&selectedElements.contains((*it)->data(0,Qt::UserRole).toString()));++it;}}
   rendererPreview->setDocuments(view["documents"].toArray());
   rendererPreview->setContext(project,screenId,selection,view["revision"].toInt(),view["root"].toString(),previewLocaleField->currentData().toString());
   canvas->setVisible(!screenId.isEmpty());
@@ -1366,15 +1361,7 @@ void StudioWindow::refresh(bool fit) {
   updateClipboardActions();
 }
 void StudioWindow::selectElement(const QString &id) {
-  selection = id;
-  updateClipboardActions();
-  filling = true;
-  canvas->select(id);
-  QTreeWidgetItemIterator it(hierarchy);while(*it){(*it)->setSelected((*it)->data(0,Qt::UserRole).toString()==id&&(*it)->data(0,Qt::UserRole+1).toString()==screenId);++it;}
-  filling = false;
-  updateInspector();
-  rendererPreview->setDocuments(view["documents"].toArray());
-  rendererPreview->setContext(projectData(),screenId,selection,view["revision"].toInt(),view["root"].toString(),previewLocaleField->currentData().toString());
+  selectElements(id.isEmpty()?QStringList{}:QStringList{id});
 }
 void StudioWindow::updateTargets(const QString &action, const QJsonObject &e) {
   targetField->clear();
@@ -1471,6 +1458,7 @@ void StudioWindow::editVisibilityCondition() {
 
 void StudioWindow::updateInspector() {
   filling = true;
+  for(auto child:inspector->findChildren<QWidget*>(QString(),Qt::FindDirectChildrenOnly))if(child->property("batchDisabled").toBool()){child->setEnabled(true);child->setProperty("batchDisabled",false);}
   auto setText = [](QLineEdit *field, const QString &value) {
     if (field->text() != value) field->setText(value);
   };
@@ -1586,6 +1574,10 @@ void StudioWindow::updateInspector() {
   visibilityField->setCurrentIndex(
       visibilityField->findData(e["visibleWhen"].toString("always")));
   updatePluginInspector(e);
+  const bool multi=selectedElements.size()>1;
+  if(multi)for(auto child:inspector->findChildren<QWidget*>(QString(),Qt::FindDirectChildrenOnly))if(child!=selectedTitle&&child->objectName()!="selectionBatch"&&child->objectName()!="componentSource"&&child->isEnabled()){child->setProperty("batchDisabled",true);child->setEnabled(false);}
+  if(multi)selectedTitle->setText(tr("%1개 요소 선택 · 일괄 편집으로 변경").arg(selectedElements.size()));
+  bool component=!e["componentId"].toString().isEmpty();for(auto v:currentScreen()["elements"].toArray())if(selectedElements.contains(v.toObject()["id"].toString())&&v.toObject()["componentId"]!=e["componentId"])component=false;findChild<QPushButton*>("componentSource")->setEnabled(component);
   filling = false;
 }
 void StudioWindow::replaceProject(QJsonObject data) {
@@ -1596,6 +1588,7 @@ void StudioWindow::replaceProject(QJsonObject data) {
 void StudioWindow::updateElement(std::function<void(QJsonObject &)> mutate) {
   if (filling || bridge.busy() || selection.isEmpty())
     return;
+  if(selectedElements.size()>1){errorLabel->setText(tr("여러 요소는 일괄 편집 도구에서 변경하세요."));return;}
   auto project = projectData();
   auto visual = project["visual"].toObject();
   auto screens = visual["screens"].toArray();
@@ -1680,8 +1673,9 @@ void StudioWindow::deleteElement() {
   if (currentElement().isEmpty() || bridge.busy())
     return;
   if(!elementLockOwner(currentScreen().value("elements").toArray(),selection).isEmpty()){errorLabel->setText(tr("배치 잠금을 먼저 해제하세요."));return;}
-  QSet<QString> removed{selection};const auto source=currentScreen().value("elements").toArray();bool added=true;while(added){added=false;for(auto value:source){auto e=value.toObject();auto id=e.value("id").toString();if(removed.contains(e.value("parentId").toString())&&!removed.contains(id)){removed.insert(id);added=true;}}}
-  if(removed.size()>1&&QMessageBox::question(this,tr("그룹 삭제"),tr("그룹과 자식 %1개를 삭제할까요? 실행 취소로 복원할 수 있습니다.").arg(removed.size()-1))!=QMessageBox::Yes)return;
+  for(auto id:selectedElements)if(!elementLockOwner(currentScreen()["elements"].toArray(),id).isEmpty()){errorLabel->setText(tr("배치 잠금을 먼저 해제하세요."));return;}
+  QSet<QString> removed(selectedElements.begin(),selectedElements.end());const auto source=currentScreen().value("elements").toArray();bool added=true;while(added){added=false;for(auto value:source){auto e=value.toObject();auto id=e.value("id").toString();if(removed.contains(e.value("parentId").toString())&&!removed.contains(id)){removed.insert(id);added=true;}}}
+  if(removed.size()>1&&QMessageBox::question(this,tr("그룹 삭제"),tr("선택 요소와 자식 %1개를 삭제할까요? 실행 취소로 복원할 수 있습니다.").arg(removed.size()))!=QMessageBox::Yes)return;
   auto p = projectData();
   auto v = p["visual"].toObject();
   auto screens = v["screens"].toArray();
@@ -1702,10 +1696,11 @@ void StudioWindow::deleteElement() {
   replaceProject(p);
 }
 void StudioWindow::duplicateElement() {
+  for(auto id:selectedElements)if(!elementLockOwner(currentScreen()["elements"].toArray(),id).isEmpty()){errorLabel->setText(tr("배치 잠금을 먼저 해제하세요."));return;}
   if(!elementLockOwner(currentScreen().value("elements").toArray(),selection).isEmpty()){errorLabel->setText(tr("배치 잠금을 먼저 해제하세요."));return;}
-  auto original=currentElement();if(original.empty()||bridge.busy())return;auto p=projectData(),v=p.value("visual").toObject();auto screens=v.value("screens").toArray();auto elements=currentScreen().value("elements").toArray();QSet<QString> subtree{selection},ids;for(auto value:elements)ids.insert(value.toObject().value("id").toString());bool changed=true;while(changed){changed=false;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(subtree.contains(e.value("parentId").toString())&&!subtree.contains(id)){subtree.insert(id);changed=true;}}}if(elements.size()+subtree.size()>100){errorLabel->setText(tr("복제 후 화면 요소 수가 100개를 초과합니다."));return;}
+  auto original=currentElement();if(original.empty()||bridge.busy())return;auto p=projectData(),v=p.value("visual").toObject();auto screens=v.value("screens").toArray();auto elements=currentScreen().value("elements").toArray();QSet<QString> subtree(selectedElements.begin(),selectedElements.end()),ids;for(auto value:elements)ids.insert(value.toObject().value("id").toString());bool changed=true;while(changed){changed=false;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(subtree.contains(e.value("parentId").toString())&&!subtree.contains(id)){subtree.insert(id);changed=true;}}}if(elements.size()+subtree.size()>100){errorLabel->setText(tr("복제 후 화면 요소 수가 100개를 초과합니다."));return;}
   QMap<QString,QString> copies;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(!subtree.contains(id))continue;auto base=id.left(45)+"-copy";int n=1;while(ids.contains(base+QString::number(n)))++n;copies[id]=base+QString::number(n);ids.insert(copies[id]);}
-  QJsonArray added;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(!copies.contains(id))continue;e["id"]=copies[id];if(copies.contains(e.value("parentId").toString()))e["parentId"]=copies[e.value("parentId").toString()];if(id==selection){e["label"]=label(e)+tr(" 복사");if(!e.contains("parentId")){e["x"]=qMin(v.value("width").toInt()-e.value("width").toInt(),e.value("x").toInt()+16);e["y"]=qMin(v.value("height").toInt()-e.value("height").toInt(),e.value("y").toInt()+16);}else{e["x"]=e.value("x").toInt()+16;e["y"]=e.value("y").toInt()+16;}}added.append(e);}for(auto e:added)elements.append(e);selection=copies[selection];for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s.value("id")==screenId){s["elements"]=elements;screens[i]=s;}}v["screens"]=screens;p["visual"]=v;replaceProject(p);
+  QJsonArray added;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(!copies.contains(id))continue;e["id"]=copies[id];if(copies.contains(e.value("parentId").toString()))e["parentId"]=copies[e.value("parentId").toString()];if(selectedElements.contains(id)&&!copies.contains(value.toObject().value("parentId").toString())){e["label"]=label(e)+tr(" 복사");if(!e.contains("parentId")){e["x"]=qMin(v.value("width").toInt()-e.value("width").toInt(),e.value("x").toInt()+16);e["y"]=qMin(v.value("height").toInt()-e.value("height").toInt(),e.value("y").toInt()+16);}else{e["x"]=e.value("x").toInt()+16;e["y"]=e.value("y").toInt()+16;}}added.append(e);}for(auto e:added)elements.append(e);selection=copies[selection];QStringList newSelection;for(auto id:selectedElements)newSelection.append(copies[id]);selectedElements=newSelection;for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s.value("id")==screenId){s["elements"]=elements;screens[i]=s;}}v["screens"]=screens;p["visual"]=v;replaceProject(p);
 }
 void StudioWindow::save() {
   if(auto focus=QApplication::focusWidget();focus&&inspector->isAncestorOf(focus))focus->clearFocus();

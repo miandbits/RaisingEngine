@@ -5,7 +5,7 @@ void StudioTests::editorBasicsClipboardLayers(){
   const auto root=qEnvironmentVariable("RAISING_BASICS_PROJECT");if(root.isEmpty())QSKIP("Set RAISING_BASICS_PROJECT to an isolated project");
   StudioWindow w(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));w.show();w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().empty(),20000);
   auto tree=w.findChild<QTreeWidget*>("hierarchy");QCOMPARE(tree->columnCount(),3);QVERIFY(!tree->isHeaderHidden());
-  auto select=[&](QString id){for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole)==id){tree->setCurrentItem(*it);return;}QFAIL("Missing element");};
+  auto select=[&](QString id){for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole)==id){tree->setCurrentItem(*it,0,QItemSelectionModel::ClearAndSelect);return;}QFAIL("Missing element");};
   auto elements=[&](QString screen){for(auto v:w.projectData()["visual"].toObject()["screens"].toArray())if(v.toObject()["id"]==screen)return v.toObject()["elements"].toArray();return QJsonArray();};
   auto panel=w.findChild<QDockWidget*>("hierarchyDock");panel->hide();w.findChild<QAction*>("showHierarchy")->trigger();QVERIFY(panel->isVisible());
   const auto beforeLayer=w.projectData();select("child-a");w.findChild<QAction*>("layerForward")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);

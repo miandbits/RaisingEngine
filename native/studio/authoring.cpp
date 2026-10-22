@@ -236,6 +236,7 @@ void StudioWindow::importImage() {
 }
 
 void StudioWindow::moveLayer(int delta) {
+  if(selectedIds().size()>1){errorLabel->setText(tr("레이어 순서는 한 요소 또는 부모 그룹을 선택해 변경하세요."));return;}
   if (bridge.busy() || selection.isEmpty())
     return;
   if(!elementLockOwner(currentScreen().value("elements").toArray(),selection).isEmpty()){errorLabel->setText(tr("배치 잠금을 먼저 해제하세요."));return;}

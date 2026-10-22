@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "components.hpp"
+#include "selection-edit.hpp"
 #include <QApplication>
 #include <QClipboard>
 #include <QDockWidget>
@@ -54,8 +55,8 @@ void StudioWindow::setupBasicEditing(QMenu *edit) {
   viewMenu->addAction(tr("프로젝트 버전 관리…"),this,&StudioWindow::showVersionControl)->setObjectName("versionControl");
   hierarchy->setContextMenuPolicy(Qt::CustomContextMenu);
   connect(hierarchy,&QWidget::customContextMenuRequested,this,[this,copy,paste](QPoint point){
-    if(auto item=hierarchy->itemAt(point))hierarchy->setCurrentItem(item);
-    QMenu menu(this);menu.addAction(copy);menu.addAction(paste);menu.addAction(findChild<QAction*>("duplicateElementAction"));menu.addSeparator();
+    if(auto item=hierarchy->itemAt(point);item&&!item->isSelected())hierarchy->setCurrentItem(item);
+    QMenu menu(this);menu.addAction(findChild<QAction*>("batchSelection"));menu.addAction(copy);menu.addAction(paste);menu.addAction(findChild<QAction*>("duplicateElementAction"));menu.addSeparator();
     for(auto name:{"layerForward","layerBackward","layerFront","layerBack"})menu.addAction(findChild<QAction*>(name));
     menu.exec(hierarchy->viewport()->mapToGlobal(point));
   });
@@ -73,17 +74,17 @@ void StudioWindow::updateClipboardActions() {
 
 void StudioWindow::copyElements() {
   if(bridge.busy()||!activeWorkspace.isEmpty()||currentElement().isEmpty())return;
-  const auto elements=currentScreen().value("elements").toArray();QSet<QString> subtree{selection};
+  const auto elements=currentScreen().value("elements").toArray();const auto roots=selectionRoots(elements,selectedElements);QSet<QString> subtree(roots.begin(),roots.end());
   bool changed=true;while(changed){changed=false;for(auto v:elements){auto e=v.toObject();auto id=e.value("id").toString();if(subtree.contains(e.value("parentId").toString())&&!subtree.contains(id)){subtree.insert(id);changed=true;}}}
   QJsonArray copied;for(auto v:elements){auto e=v.toObject();if(!subtree.contains(e.value("id").toString()))continue;
-    if(e.value("id")==selection&&e.contains("parentId")){
+    if(roots.contains(e.value("id").toString())&&e.contains("parentId")){
       const auto visual=projectData().value("visual").toObject();const QSize size(visual.value("width").toInt(),visual.value("height").toInt());
-      for(auto item:hierarchyCanvasElements(elements,size,size))if(item.toObject().value("id")==selection)for(auto key:{"x","y","width","height"})e[key]=item.toObject().value(key);
+      for(auto item:hierarchyCanvasElements(elements,size,size))if(item.toObject().value("id")==e.value("id"))for(auto key:{"x","y","width","height"})e[key]=item.toObject().value(key);
       e.remove("parentId");e.remove("anchorX");e.remove("anchorY");
     }
     copied.append(e);
   }
-  auto data=new QMimeData;data->setData(mime,QJsonDocument(QJsonObject{{"format",1},{"project",view.value("root")},{"rootId",selection},{"elements",copied}}).toJson(QJsonDocument::Compact));QApplication::clipboard()->setMimeData(data);
+  auto data=new QMimeData;data->setData(mime,QJsonDocument(QJsonObject{{"format",1},{"project",view.value("root")},{"rootId",selection},{"rootIds",QJsonArray::fromStringList(roots)},{"elements",copied}}).toJson(QJsonDocument::Compact));QApplication::clipboard()->setMimeData(data);
   status->setText(tr("요소 %1개 복사됨 · 다른 화면에서도 붙여넣을 수 있습니다.").arg(copied.size()));
 }
 
@@ -98,14 +99,18 @@ void StudioWindow::pasteElements() {
   if(source.isEmpty()||source.size()+elements.size()>100){errorLabel->setText(tr("붙여넣기 후 화면 요소 수가 100개를 초과합니다."));return;}
   QSet<QString> used;for(auto e:elements)used.insert(e.toObject().value("id").toString());QMap<QString,QString> ids;
   for(auto v:source){const auto old=v.toObject().value("id").toString();if(old.isEmpty()||ids.contains(old))return;const auto base=old.left(45)+"-copy";int n=1;while(used.contains(base+QString::number(n)))++n;ids[old]=base+QString::number(n);used.insert(ids[old]);}
-  const auto root=data.value("rootId").toString();if(!ids.contains(root))return;
+  QStringList roots;for(auto v:data.value("rootIds").toArray())roots.append(v.toString());if(roots.isEmpty())roots.append(data.value("rootId").toString());for(auto root:roots)if(!ids.contains(root))return;
   auto p=projectData(),visual=p.value("visual").toObject();
+  int minDx=-3840,maxDx=3840,minDy=-2160,maxDy=2160;
+  for(auto v:source){const auto e=v.toObject();if(!roots.contains(e.value("id").toString()))continue;minDx=qMax(minDx,-e.value("x").toInt());minDy=qMax(minDy,-e.value("y").toInt());maxDx=qMin(maxDx,visual.value("width").toInt()-e.value("x").toInt()-e.value("width").toInt());maxDy=qMin(maxDy,visual.value("height").toInt()-e.value("y").toInt()-e.value("height").toInt());}
+  if(minDx>maxDx||minDy>maxDy){errorLabel->setText(tr("일괄 편집 결과가 배치 범위를 벗어납니다: %1").arg(roots.join(", ")));return;}
+  const int dx=qBound(minDx,16,maxDx),dy=qBound(minDy,16,maxDy);
   for(auto v:source){auto e=remapElements(v,ids).toObject();const auto old=e.value("id").toString();e["id"]=ids[old];
-    if(old==root){e.remove("parentId");e["label"]=e.value("label").toString(old)+tr(" 복사");e["x"]=qMax(0,qMin(visual.value("width").toInt()-e.value("width").toInt(),e.value("x").toInt()+16));e["y"]=qMax(0,qMin(visual.value("height").toInt()-e.value("height").toInt(),e.value("y").toInt()+16));}
+    if(roots.contains(old)){e.remove("parentId");e["label"]=e.value("label").toString(old)+tr(" 복사");e["x"]=e.value("x").toInt()+dx;e["y"]=e.value("y").toInt()+dy;}
     elements.append(e);
   }
   auto screens=visual.value("screens").toArray();for(int i=0;i<screens.size();++i){auto s=screens[i].toObject();if(s.value("id")==screenId){s["elements"]=elements;screens[i]=s;}}
-  visual["screens"]=screens;p["visual"]=visual;const auto pasted=ids[root];
+  visual["screens"]=screens;p["visual"]=visual;QStringList pasted;for(auto root:roots)pasted.append(ids[root]);
   // The shared revision-checked transaction owns validation, undo and redo.
-  request("edit",{{"edit",QJsonObject{{"type","replace"},{"file",projectFile},{"data",p}}}},[this,pasted](QJsonObject reply){if(reply.value("error").toString().isEmpty())selectElement(pasted);});
+  request("edit",{{"edit",QJsonObject{{"type","replace"},{"file",projectFile},{"data",p}}}},[this,pasted](QJsonObject reply){if(reply.value("error").toString().isEmpty())selectElements(pasted);});
 }

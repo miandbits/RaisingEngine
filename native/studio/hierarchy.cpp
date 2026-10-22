@@ -62,7 +62,8 @@ void StudioWindow::rebuildHierarchy(){
   }
   if(!visibleScreens){auto empty=new QTreeWidgetItem(hierarchy,{searching?tr("검색 결과 없음"):tr("프로젝트에서 화면을 열어 주세요")});empty->setFlags(Qt::ItemIsEnabled);}
   hierarchy->expandAll();
-  QTreeWidgetItemIterator it(hierarchy);while(*it){(*it)->setSelected((*it)->data(0,Qt::UserRole).toString()==selection&&(*it)->data(0,Qt::UserRole+1).toString()==screenId&&!selection.isEmpty());++it;}
+  const auto chosen=selectedElements.contains(selection)?selectedElements:QStringList{selection};
+  QTreeWidgetItemIterator it(hierarchy);while(*it){(*it)->setSelected(chosen.contains((*it)->data(0,Qt::UserRole).toString())&&(*it)->data(0,Qt::UserRole+1).toString()==screenId&&!selection.isEmpty());++it;}
 }
 void StudioWindow::addGroup(){
   if(bridge.busy()||currentScreen().empty())return;auto p=projectData(),v=p.value("visual").toObject();auto screens=v.value("screens").toArray();auto elements=currentScreen().value("elements").toArray();if(elements.size()>=100){errorLabel->setText(tr("화면당 최대 100개 요소입니다."));return;}QSet<QString> ids;for(auto e:elements)ids.insert(e.toObject().value("id").toString());int n=1;while(ids.contains("group-"+QString::number(n)))++n;selection="group-"+QString::number(n);elements.append(QJsonObject{{"id",selection},{"kind","group"},{"label",tr("새 UI 그룹")},{"x",0},{"y",0},{"width",v.value("width").toInt(1280)},{"height",v.value("height").toInt(720)},{"clipChildren",false}});for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s.value("id")==screenId){s["elements"]=elements;screens[i]=s;}}v["screens"]=screens;p["visual"]=v;replaceProject(p);

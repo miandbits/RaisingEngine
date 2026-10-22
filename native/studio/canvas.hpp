@@ -15,6 +15,11 @@ public:
                  const QJsonArray &assets, const QString &selected,
                  bool fit = false);
   void select(const QString &id);
+  void selectMany(const QStringList &ids);
+  QStringList selectedIds() const;
+  void startSelectionDrag();
+  void previewSelectionDrag(QPoint delta);
+  void finishSelectionDrag();
   void fitCanvas();
   bool snap = false;
   /** Kind "plugin": empty caption means the owning plugin may paint; otherwise draw a placeholder. */
@@ -23,6 +28,8 @@ public:
   std::function<bool(QPainter *, const QJsonObject &, const QRectF &)> pluginPaint;
 signals:
   void selectionChanged(QString id);
+  void selectionsChanged(QStringList ids);
+  void selectionMoved(QPoint delta);
   void geometryEdited(QString id, QRect rectangle);
   void deleteSelected();
   void duplicateSelected();
@@ -35,6 +42,9 @@ protected:
 
 private:
   QGraphicsScene scene;
+  QJsonArray sourceElements;
+  QMap<QGraphicsItem*,QPointF> dragStart;
+  QPoint dragDelta;
   QSize canvasSize{1280, 720};
   QMap<QString, QPixmap> imageCache;
   bool refreshing = false, autoFit = true, panning = false;
