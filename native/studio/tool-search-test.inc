@@ -19,6 +19,20 @@ void StudioTests::authoringToolSearch() {
     showAuthoringToolSearch(&owner,&menu);
   }
   QCOMPARE(opened.count(),1);QCOMPARE(blocked.count(),0);
+  auto inspector=new QPushButton("조건별 표현",&owner);inspector->setObjectName("presentationVariants");inspector->hide();
+  QSignalSpy inspectorOpened(inspector,&QPushButton::clicked);
+  for(const bool enabled:{true,false}){
+    inspector->setEnabled(enabled);
+    QTimer::singleShot(30,&owner,[&]{
+      auto dialog=owner.findChild<QDialog*>("authoringToolSearch");QVERIFY(dialog);
+      auto query=dialog->findChild<QLineEdit*>("authoringToolQuery");query->setText("조건별");
+      auto results=dialog->findChild<QListWidget*>("authoringToolResults");QCOMPARE(results->count(),1);
+      auto buttons=dialog->findChild<QDialogButtonBox*>();QCOMPARE(buttons->button(QDialogButtonBox::Open)->isEnabled(),enabled);
+      if(enabled)QTest::keyClick(query,Qt::Key_Return);else buttons->button(QDialogButtonBox::Cancel)->click();
+    });
+    showAuthoringToolSearch(&owner,&menu);
+  }
+  QCOMPARE(inspectorOpened.count(),1);
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());StudioWindow studio(engine);
   auto design=studio.findChild<QMenu*>("designToolsMenu");QVERIFY(design);QVERIFY(design->actions().size()<=12);
   auto group=design->findChild<QMenu*>("authoringCharacters");QVERIFY(group);

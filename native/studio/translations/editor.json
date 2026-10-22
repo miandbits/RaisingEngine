@@ -34,6 +34,7 @@
   ["부모 잠금을 먼저 해제하세요: %1", "Unlock the parent first: %1", "先に親のロックを解除してください：%1"],
   ["부품 원본 편집 · 모든 배치에 반영…", "Edit component source · Update all instances…", "部品の元データを編集・すべての配置に反映…"],
   ["사용", "Use", "使用"],
+  ["선택 요소", "Selected element", "選択要素"],
   ["선택 요소 일괄 편집 · 정렬", "Batch edit and align selection", "選択要素の一括編集・整列"],
   ["선택 요소 일괄 편집 · 정렬…", "Batch edit and align selection…", "選択要素の一括編集・整列…"],
   ["선택 요소와 자식 %1개를 삭제할까요? 실행 취소로 복원할 수 있습니다.", "Delete %1 selected elements and descendants? Undo can restore them.", "選択要素と子要素、計%1個を削除しますか？元に戻す操作で復元できます。"],

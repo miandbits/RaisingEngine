@@ -17,3 +17,9 @@ warnings; locations and deterministic ordering within each severity remain intac
 Verification includes the searchable choice-result binding through the Qt dialog
 and save/reopen, invalid-manifest/sibling validation, and restoration of genuine
 character-state errors after repairing the manifest.
+# Inspector tools in search
+
+Ctrl+K also searches the selected element's data binding, conditional presentation,
+visibility condition, batch edit and component source tools. Collapsed inspector
+sections do not hide these commands from search. The existing controls' enabled
+state and guarded handlers are retained; disabled commands cannot be invoked.

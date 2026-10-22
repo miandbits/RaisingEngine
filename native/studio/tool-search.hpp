@@ -24,6 +24,15 @@ inline void showAuthoringToolSearch(QWidget* parent,QMenu* menu) {
   };
   collect(menu,{});
   QDialog dialog(parent);dialog.setObjectName("authoringToolSearch");dialog.setWindowTitle(QObject::tr("제작 도구 찾기"));dialog.resize(700,520);
+  // Inspector-only tools must remain discoverable when their section is collapsed
+  // or scrolled out of view. Dispatch the existing button so its guards still apply.
+  for(const auto& id:{"dataBindingPicker","presentationVariants","elementVisibleCondition","selectionBatch","componentSource"}) {
+    auto button=parent->findChild<QPushButton*>(id);if(!button)continue;
+    auto action=new QAction(button->text(),&dialog);action->setEnabled(button->isEnabled());action->setToolTip(button->toolTip());
+    QPointer<QPushButton> target=button;
+    QObject::connect(action,&QAction::triggered,&dialog,[target]{if(target&&target->isEnabled())target->click();});
+    tools.push_back({action,QObject::tr("선택 요소")});
+  }
   auto layout=new QVBoxLayout(&dialog);
   auto search=new QLineEdit;search->setObjectName("authoringToolQuery");search->setPlaceholderText(QObject::tr("인물, 활동, 조건, 폰트처럼 작업 이름으로 찾으세요"));layout->addWidget(search);
   auto list=new QListWidget;list->setObjectName("authoringToolResults");layout->addWidget(list);
