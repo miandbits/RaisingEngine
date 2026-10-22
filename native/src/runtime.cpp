@@ -1,6 +1,7 @@
 #include "raising/runtime.hpp"
 #include "json.hpp"
 #include "raising/relationship-history.hpp"
+#include "raising/choice-feedback.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

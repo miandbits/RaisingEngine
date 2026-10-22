@@ -15,6 +15,8 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  choiceFeedback?:string;
+  choiceHints?:Readonly<Record<string,string>>;
   relationshipChanges?: RunSession['relationshipChanges'];
   userFields?: ContentSnapshot['project']['userFields'];
   userValues?: Readonly<Record<string, string>>;

@@ -17,6 +17,7 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  'choice-result'?:string;
   characters?: readonly {id:string;name:string}[];
   actorResults?: readonly {characterId:string;text:string}[];
   dataState?: import('../../../packages/core/model.js').RunState | null;
@@ -35,7 +36,7 @@ export interface VisualContext {
   activities:readonly ScheduleActivity[]; plan:readonly string[]; period:number;
   periodsPerMonth?:number; schedulePlayback?:string;
   calendarTime?:{year:number;month:number}; planningKey?:string; scheduleCommitted?:boolean;
-  choices:readonly {id:string;text:string;enabled:boolean}[]; result:string;
+  choices:readonly {id:string;text:string;enabled:boolean;hint?:string}[]; result:string;
 }
 export function isVisible(element:Pick<Element,'hidden'|'visibleWhen'>, context:Pick<VisualContext, 'phase'>): boolean {
   if(element.hidden)return false;
@@ -94,6 +95,10 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       else if(element.kind==='text'&&element.uiContext)style.padding=0;
       if(element.borderWidth!==undefined){style.borderWidth=element.borderWidth;style.borderStyle='solid';style.borderColor=element.borderColor??'#57806c';}
       Object.assign(style,{'--style-hover':element.hoverFill,'--style-pressed':element.pressedFill,'--style-disabled':element.disabledColor});
+      if(element.kind==='choices'&&element.choiceLayout==='cards'){
+        Object.assign(style,{'--choice-fill':element.fill??'#f5efdf','--choice-color':element.color??'#263c36','--choice-border':element.borderColor??'#c7b99a','--choice-border-width':`${element.borderWidth??1}px`,'--choice-radius':`${element.radius??2}px`});
+        style.background='transparent';style.borderWidth=0;
+      }
       const source=imageFor(element,context);
       const contextText=element.binding==='narrative-actor'?(context.characters?.find(c=>c.id===context.dataState?.activeNarrative?.actorId)?.name??''):element.binding==='context-name'?(context.dataUi?.contextNames?.[`${element.contextField}:${element.uiContext?.[element.contextField??'actorId']}`]??'—'):null;
       const text=contextText??userFieldBinding(element,context.userValues)??dataBindingText(element,context)??numericBinding(element,context)??calendarBinding(element.binding)??(element.binding==='schedule-prompt'?schedulePrompt:null)??(element.binding&&element.binding!=='none'&&element.binding in context?String(context[element.binding as keyof VisualContext]??''):element.text??'텍스트');
@@ -116,7 +121,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='result')body=context.actorResults?.length
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
-      if(element.kind==='choices')body=<div className="visual-choices">{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true},{id:'preview-two',text:'조금 더 준비한다',enabled:true}]:context.choices).map(c=><button key={c.id} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{c.text}{!c.enabled&&<small>조건 미충족</small>}</button>)}</div>;
+      if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
       if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||element.action==='advance'&&['choice','finished','title'].includes(context.phase)} onClick={()=>element.action&&onAction?.(element.action,element)}>{element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼'}</button>;
       if(element.kind==='collection'){
         style.padding=0;

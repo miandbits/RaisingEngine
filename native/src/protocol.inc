@@ -90,10 +90,13 @@ std::string process(const std::string &text) {
            "명령 기록은 100000개를 넘을 수 없습니다.", "/commands");
       J state = create(c, origin.at("seed"), origin).at("state");
       J relationshipChanges = J::object();
+      J choiceFeedback = nullptr;
       size_t index = 0;
       for (const auto &cmd : commands) {
         try {
-          auto next = command(c, state, cmd, state.at("stateRevision")).at("state");
+          auto result = command(c, state, cmd, state.at("stateRevision"));
+          if(request.value("includeChoiceFeedback",false))track_choice_feedback(choiceFeedback,c,state,cmd,result);
+          auto next = std::move(result.at("state"));
           if(request.value("includeRelationshipChanges",false))track_relationship_changes(relationshipChanges, state, next);
           state = std::move(next);
         } catch (const Fault &e) {
@@ -108,6 +111,7 @@ std::string process(const std::string &text) {
       }
       J reply={{"ok", true}, {"state", state}};
       if(request.value("includeRelationshipChanges",false))reply["relationshipChanges"]=relationshipChanges;
+      if(request.value("includeChoiceFeedback",false))reply["choiceFeedback"]=choiceFeedback;
       return reply.dump();
     }
     if (op == "evaluate") {

@@ -52,15 +52,18 @@ content changes or enters the screen, rather than for every scene-state update.
 
 ## Runtime compatibility
 
-Card layouts require the Windows runtime capability `narrative-cards-v1`.
-Export rejects older runtimes and the current web runtime when that feature is
-used. Choose the default list to retain the existing cross-platform choice
-presentation. This capability is a source-build feature; it does not change
-already published preview binaries.
+Card layouts require the runtime capability `narrative-cards-v1`. Current Windows
+and web source builds support it; older runtime exports are rejected. Existing
+projects retain the default list. This does not change already published preview
+binaries.
 
 Effect previews and result bindings additionally require `choice-feedback-v1`.
-This is currently supported in the native Windows runtime; unsupported runtime
-exports are rejected rather than silently omitting the feedback.
+Current Windows and web source builds support it. Unsupported runtime exports
+are rejected rather than silently omitting the feedback. Web results are rebuilt
+from validated command replay when a save is loaded. They do not apply effects
+again or add fields to the save format. Feedback stays with its event and actor,
+and is cleared on leaving that narrative. A new web run settles setup nodes and
+stops at the first dialogue or choice, matching Windows startup behavior.
 
 ## Verification
 
@@ -74,3 +77,7 @@ exports are rejected rather than silently omitting the feedback.
   of choices/results, and capability gating.
 - Qt `scriptAuthoringCreateConnectRoundTrip`: consequence text persists through
   story editing and duplication.
+- `tests/native/choice-feedback-web-controller.test.mjs`: two independent actors,
+  clamped results, no-change branch, fresh-player restore and rejected tampered save.
+- `tests/journey/choice-feedback-web.test.mjs`: actual Edge export, authored card
+  skin, initial scene settling, file download/upload and exact restored result.

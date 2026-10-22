@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import Ajv2020 from 'ajv/dist/2020.js';
+import createModule from '../../dist/wasm/raising-wasm.mjs';
+import {WasmRuntime} from '../../dist/packages/native-bridge/wasm.js';
+import {WebPlayerController} from '../../dist/packages/web-player/controller.js';
+import {actorStoryFixture} from './actor-story-fixture.mjs';
+
+const ajv=new Ajv2020({strict:true,allErrors:true});
+ajv.addSchema(JSON.parse(await readFile('packages/schema/common.schema.json','utf8')));
+const validate=ajv.compile(JSON.parse(await readFile('packages/runtime-service/save.schema.json','utf8')));
+
+for(const first of ['apprentice','mentor'])test(`choice feedback restores actual clamped results without changing either actor (${first})`,async t=>{
+ const {built}=await actorStoryFixture(t);assert.ok(built.ok);
+ const content=structuredClone(built.snapshot),other=first==='apprentice'?'mentor':'apprentice';
+ content.attributes.find(a=>a.id==='skill').max=11;
+ const event=content.events.find(e=>e.id==='personal-choice');
+ event.nodes.find(n=>n.id==='ask').choices.forEach(c=>{c.next='reply';c.consequenceText=c.id==='yes'?'Visit the workshop again.':'No appointment made.';});
+ event.nodes.find(n=>n.id==='ask').choices[0].effects.push({op:'add',target:{kind:'attribute',attributeId:'skill',owner:{kind:'actor'}},value:{op:'literal',value:10}});
+ event.nodes.push({id:'reply',type:'dialogue',speakerId:null,text:'Your answer is remembered.',next:'end'});
+ const runtime=new WasmRuntime(await createModule());let saved;
+ const make=()=>new WebPlayerController(content,runtime,{read:async()=>saved,write:async text=>{saved=text;}},validate);
+ let player=make();assert.equal((await player.newRun(null)).error,null);
+ const version=()=>({generation:player.generation,revision:player.session.state.stateRevision});
+ const send=async action=>{const r=await player.act(action,version());assert.equal(r.error,null);return r.view;};
+ const talk=id=>send({type:'executeActorAction',actorId:id,actionId:'talk',quantity:1});
+ await talk(first);await send({type:'continue'});
+ let v=(await player.view()).view;assert.match(v.choiceHints.yes,/\+10/);assert.match(v.choiceHints.yes,/Visit the workshop/);assert.doesNotMatch(v.choiceHints.yes,/personal-promise|personal-choice-record/);
+ await player.save(version());const choiceSave=saved;
+ v=await send({type:'choose',choiceId:'yes'});
+ assert.match(v.choiceFeedback,/10 → 11 \(\+1\)/);assert.doesNotMatch(v.choiceFeedback,/\+10/);assert.match(v.choiceFeedback,/Visit the workshop/);
+ assert.equal(v.state.roster.attributes[first].skill,11);assert.equal(v.state.roster.attributes[other].skill,10);
+ const resultState=structuredClone(v.state),resultText=v.choiceFeedback;
+ await player.save(version());const resultSave=saved;assert.equal(validate(JSON.parse(saved)),true,JSON.stringify(validate.errors));
+ player=make();v=(await player.load(null)).view;assert.deepEqual(v.state,resultState);assert.equal(v.choiceFeedback,resultText);
+ const corrupt=JSON.parse(resultSave);corrupt.state.roster.attributes[first].skill=0;saved=JSON.stringify(corrupt);
+ assert.match((await player.load(version())).error,/재현 결과/);assert.deepEqual(player.session.state,resultState);assert.equal((await player.view()).view.choiceFeedback,resultText);
+ saved=choiceSave;assert.equal((await player.load(version())).error,null);v=await send({type:'choose',choiceId:'other'});assert.match(v.choiceFeedback,/변화 없음/);assert.match(v.choiceFeedback,/No appointment made/);assert.equal(v.state.roster.attributes[first].skill,10);
+ await player.save(version());player=make();v=(await player.load(null)).view;assert.match(v.choiceFeedback,/변화 없음/);
+ v=await send({type:'continue'});assert.equal(v.choiceFeedback,'');
+ await talk(other);v=await send({type:'continue'});assert.equal(v.choiceFeedback,'');
+ v=await send({type:'choose',choiceId:'yes'});assert.equal(v.state.roster.attributes[other].skill,11);assert.equal(v.state.roster.attributes[first].skill,10);
+ assert.equal((await player.newRun(version())).view.choiceFeedback,'');
+});
