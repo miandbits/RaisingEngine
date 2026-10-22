@@ -664,6 +664,7 @@ public:
     // container must not swallow authored navigation buttons beneath it.
     // Plugin characters are decoration: they never swallow clicks meant for widgets beneath them.
     style+=((kind=="group"&&e.value("overflow","")!="scroll")||kind=="schedule"||kind=="plugin")?"pointer-events:none;":"pointer-events:auto;";
+    if(kind=="schedule"&&display_content.at("project").contains("roster"))style+="overflow:hidden;";
     if(kind=="schedule"&&e.value("scheduleLayout","columns")=="menu")for(const auto& a:display_content.at("activities"))if(!a.value("previewAttributes",Json::array()).empty()){style+="overflow-x:hidden;overflow-y:auto;pointer-events:auto;";break;}
     auto body=element_body(e);
     if(!e.value("_boundEnabled",true)||(e.contains("enabledCondition")&&!visual_condition(e.at("enabledCondition")))) {
@@ -700,19 +701,23 @@ public:
     if(game.state.is_null())return "새 게임을 시작하세요.";
     const auto phase=game.state.value("phase","");const bool editable=!progress_pending()&&(phase=="planning"||phase=="ready");
     if(roster_revision!=game.state.value("stateRevision",0)){roster_draft=game.state.at("roster").at("assignments");roster_revision=game.state.value("stateRevision",0);}
-    std::string out="<div style=\"margin:0;height:24px;\">이번 기간 · 캐릭터별 활동 (함께 정산)</div>";
+    const bool narrow=element.value("width",1100.0)<600;
+    const std::string card_width=narrow?"96%":"46%",footer_height=narrow?"112":"60",list_bottom=narrow?"116":"64";
+    std::string out="<div style=\"position:relative;width:100%;height:100%;\"><div style=\"margin:0;height:24px;\">이번 기간 · 캐릭터별 활동 (함께 정산)</div>";
+    out+="<div id=\"roster-actors-"+escape(element.value("id",""))+"\" style=\"position:absolute;left:0;right:0;top:"+(narrow?std::string("54"):std::string("30"))+"px;bottom:"+list_bottom+"px;overflow-x:hidden;overflow-y:auto;pointer-events:auto;\">";
     for(const auto& m:display_content.at("project").at("roster").at("members")) {
       const auto id=m.value("characterId","");std::string name=id;for(const auto& c:display_content.at("characters"))if(c.at("id")==id)name=c.value("name",id);
-      out+="<div style=\"display:inline-block;vertical-align:top;width:46%;margin:1%;\"><b>"+escape(name)+"</b><select id=\"roster-"+escape(id)+"\" style=\"width:95%;\""+(editable?std::string():" disabled=\"disabled\"")+">";
+      out+="<div style=\"display:inline-block;vertical-align:top;width:"+card_width+";margin:1%;\"><b>"+escape(name)+"</b><select id=\"roster-"+escape(id)+"\" style=\"width:95%;\""+(editable?std::string():" disabled=\"disabled\"")+">";
       for(const auto& a:display_content.at("activities"))if(!a.contains("expeditionId"))out+="<option value=\""+escape(a.value("id",""))+"\""+(roster_draft.value(id,"")==a.value("id","")?" selected=\"selected\"":"")+">"+escape(a.value("label",""))+"</option>";
       out+="</select>";
       if(element.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.value("id","")==roster_draft.value(id,""))
-        out+="<div id=\"roster-description-"+escape(id)+"\" style=\"font-size:17px;line-height:25px;max-height:100px;overflow:auto;white-space:normal;word-break:break-all;padding-top:10px;\">"+escape(a.value("description",""))+"</div>";
+        out+="<div id=\"roster-description-"+escape(id)+"\" style=\"width:100%;box-sizing:border-box;font-size:17px;line-height:25px;max-height:100px;overflow-x:hidden;overflow-y:auto;white-space:normal;word-break:break-all;padding:10px 4px 0 0;\">"+escape(a.value("description",""))+"</div>";
       out+="</div>";
     }
-    out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-assign","활동 배정 적용",{{"type","rosterCommit"}},editable)+"</div>";
-    out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-execute","배정한 활동 함께 실행",{{"type","executeActivity"}},editable&&phase=="ready"&&roster_draft==game.state.at("roster").at("assignments"))+"</div>";
-    return out;
+    out+="</div><div style=\"position:absolute;left:0;right:0;bottom:0;height:"+footer_height+"px;\">";
+    out+="<div style=\"display:inline-block;width:"+card_width+";margin:1%;\">"+button("roster-assign","활동 배정 적용",{{"type","rosterCommit"}},editable)+"</div>";
+    out+="<div style=\"display:inline-block;width:"+card_width+";margin:1%;\">"+button("roster-execute","배정한 활동 함께 실행",{{"type","executeActivity"}},editable&&phase=="ready"&&roster_draft==game.state.at("roster").at("assignments"))+"</div>";
+    return out+"</div></div>";
   }
   std::string element_body(const Json& e) {
     const std::string kind=e.value("kind","panel");

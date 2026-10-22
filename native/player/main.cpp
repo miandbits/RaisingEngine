@@ -312,6 +312,8 @@ public:
     ++document_generation;
     if(document)for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll"))
       if(auto* element=document->GetElementById("node-"+entry.value("id","")))collection_scroll[markup.screen_id+"/"+entry.value("id","")]=element->GetScrollTop();
+    if(document)for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")
+      if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))collection_scroll[markup.screen_id+"/roster-"+entry.value("id","")]=element->GetScrollTop();
     SDL_GetWindowSizeInPixels(window,&markup.viewport_width,&markup.viewport_height);
     const auto source=recalling()?recollection->document():markup.document();
     if(!context)context=Rml::CreateContext("game",{markup.width,markup.height});
@@ -344,6 +346,10 @@ public:
     for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll")) {
       const auto found=collection_scroll.find(markup.screen_id+"/"+entry.value("id",""));
       if(found!=collection_scroll.end())if(auto* element=document->GetElementById("node-"+entry.value("id","")))element->SetScrollTop(found->second);
+    }
+    for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule") {
+      const auto found=collection_scroll.find(markup.screen_id+"/roster-"+entry.value("id",""));
+      if(found!=collection_scroll.end())if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))element->SetScrollTop(found->second);
     }
     std::map<std::string,std::string> next_entrance_keys;
     if(!preview())for(const auto& entry:markup.render_elements) {
@@ -635,6 +641,10 @@ public:
         nodes.back()["scrollTop"]=element->GetScrollTop();nodes.back()["rowCount"]=entry.value("_collectionCount",0);
       }
       if(entry.contains("_collectionParent")){nodes.back()["collectionId"]=entry.at("_collectionParent");nodes.back()["rowId"]=entry.at("_rowId");}
+      if(entry.value("kind","")=="schedule")if(auto* actors=document->GetElementById("roster-actors-"+entry.value("id",""))) {
+        nodes.push_back(rendered_node_report({{"id",actors->GetId()},{"kind","roster-actors"}},actors,markup.width,markup.height,context));
+        nodes.back()["scrollTop"]=actors->GetScrollTop();
+      }
       if(element&&entry.value("kind","")!="button"){
         Rml::ElementList buttons;element->QuerySelectorAll(buttons,"button");
         for(auto* button:buttons){if(runtime_button_count++>=1024){runtime_buttons_truncated=true;break;}
