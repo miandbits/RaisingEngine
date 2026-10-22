@@ -1,4 +1,8 @@
 [
+  ["이전 작업 처리 중입니다. 완료 후 다시 실행하세요.", "A previous operation is still running. Try again when it finishes.", "前の処理を実行中です。完了してからもう一度実行してください。"],
+  ["플레이어가 이미 실행 중입니다.", "The player is already running.", "プレイヤーはすでに実行中です。"],
+  ["작업 완료 · %1", "Operation completed · %1", "処理完了・%1"],
+  ["플레이어를 실행했습니다.", "Player launched.", "プレイヤーを起動しました。"],
   ["초기 배정 미리보기 · 실행 결과 아님", "Initial assignment preview · not a run result", "初期割り当てのプレビュー・実行結果ではありません"],
   ["플레이에서 스크롤 · %1명 더", "Scroll in Play · %1 more characters", "プレイ中にスクロール・ほか%1人"],
   ["활동 미지정", "Activity not assigned", "活動未指定"],

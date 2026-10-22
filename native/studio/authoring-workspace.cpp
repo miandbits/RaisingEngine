@@ -48,7 +48,25 @@ void StudioWindow::showAuthoringWorkspace(){
   auto dock=new QDockWidget(tr("제작 작업실 · 데이터 / 행동 / 진행"),this);dock->setObjectName("authoringWorkspaceDock");auto panel=new QWidget;dock->setWidget(panel);auto layout=new QVBoxLayout(panel);auto state=std::make_shared<WorkspaceState>();
   auto guide=new QLabel(tr("① 데이터·상태 만들기 → ② 활동·행동과 비용·효과 → ③ 화면 요소·표현 연결 → ④ 규칙 검사·플레이\n목록과 연결 대상은 이름으로 선택합니다. 참조의 항목을 두 번 누르면 해당 편집 위치로 이동합니다."));guide->setWordWrap(true);layout->addWidget(guide);
   auto bar=new QHBoxLayout;layout->addLayout(bar);auto reload=new QPushButton(tr("새로 고침 / 입력 취소"));reload->setObjectName("workspaceReload");bar->addWidget(reload);
-  for(const auto &pair:QList<QPair<QString,QString>>{{"undoEdit",tr("되돌리기")},{"redoEdit",tr("다시 실행")},{"saveProject",tr("프로젝트 저장")},{"validateProject",tr("검증")},{"playProject",tr("플레이")}}){auto b=new QPushButton(pair.second);b->setObjectName("workspace-"+pair.first);bar->addWidget(b);connect(b,&QPushButton::clicked,panel,[this,pair,state]{if((state->dirty||state->editing)){statusBar()->showMessage(tr("작업실 입력을 먼저 적용하거나 취소하세요."),6000);return;}if(auto a=findChild<QAction*>(pair.first))a->trigger();});}
+  auto operation=new QLabel;operation->setObjectName("workspaceOperationStatus");operation->setWordWrap(true);operation->setTextFormat(Qt::PlainText);operation->setTextInteractionFlags(Qt::TextSelectableByMouse);layout->addWidget(operation);
+  auto pending=std::make_shared<QString>();
+  for(const auto &pair:QList<QPair<QString,QString>>{{"undoEdit",tr("되돌리기")},{"redoEdit",tr("다시 실행")},{"saveProject",tr("프로젝트 저장")},{"validateProject",tr("검증")},{"playProject",tr("플레이")}}){auto b=new QPushButton(pair.second);b->setObjectName("workspace-"+pair.first);bar->addWidget(b);connect(b,&QPushButton::clicked,panel,[this,pair,state,operation,pending]{
+    if(state->dirty||state->editing){operation->setText(tr("작업실 입력을 먼저 적용하거나 취소하세요."));return;}
+    if(bridge.busy()){operation->setText(tr("이전 작업 처리 중입니다. 완료 후 다시 실행하세요."));return;}
+    if(pair.first=="playProject"&&player.state()!=QProcess::NotRunning){operation->setText(tr("플레이어가 이미 실행 중입니다."));return;}
+    auto action=findChild<QAction*>(pair.first);if(!action||!action->isEnabled())return;
+    operation->setText(pair.second+" · "+tr("처리 중…"));*pending=pair.first;
+    if(pair.first=="validateProject"){pending->clear();QPointer<QLabel> target(operation);validateForRepair([target](QString result){if(target)target->setText(result);});return;}
+    action->trigger();
+  });}
+  connect(this,&StudioWindow::updated,panel,[this,operation,pending]{
+    if(pending->isEmpty())return;
+    if(!lastError.isEmpty()){operation->setText(lastError);pending->clear();return;}
+    if(*pending=="playProject")return; // QProcess confirms launch or reports its error.
+    operation->setText(tr("작업 완료 · %1").arg(status->text()));pending->clear();
+  });
+  connect(&player,&QProcess::started,panel,[this,operation,pending]{if(*pending=="playProject"){operation->setText(tr("플레이어를 실행했습니다."));pending->clear();}});
+  connect(&player,&QProcess::errorOccurred,panel,[this,operation,pending]{if(*pending=="playProject"){operation->setText(player.errorString());pending->clear();}});
   auto notice=new QLabel;notice->setObjectName("workspaceStatus");notice->setWordWrap(true);layout->addWidget(notice);
   auto nav=new QHBoxLayout;layout->addLayout(nav);
   auto back=new QPushButton(tr("← 이전 연결")),forward=new QPushButton(tr("다음 연결 →")),origin=new QPushButton(tr("출발 UI 요소"));

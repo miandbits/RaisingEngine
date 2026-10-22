@@ -64,10 +64,15 @@ void StudioTests::unifiedConnectionAuthoring(){
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
   QTemporaryDir temporary(engine+"/.cache/workspace-unified-XXXXXX");QVERIFY(temporary.isValid());const auto root=temporary.path()+"/game";
   QVERIFY(copyWorkspaceSample(engine+"/tests/fixtures/projects/time-session-demo",root));
+  const auto previousRuntime=qgetenv("RAISING_NATIVE_PLAYER_RUNTIME");const bool hadRuntime=qEnvironmentVariableIsSet("RAISING_NATIVE_PLAYER_RUNTIME");qputenv("RAISING_NATIVE_PLAYER_RUNTIME",(root+"/missing-runtime").toUtf8());
   StudioWindow w(engine);w.show();w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+  if(hadRuntime)qputenv("RAISING_NATIVE_PLAYER_RUNTIME",previousRuntime);else qunsetenv("RAISING_NATIVE_PLAYER_RUNTIME");
   w.findChild<QAction*>("showAuthoringWorkspace")->trigger();auto dock=w.findChild<QDockWidget*>("authoringWorkspaceDock");QVERIFY(dock);
   auto tree=dock->findChild<QTreeWidget*>("workspaceEntities");QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&tree->topLevelItemCount()>3,20000);
   auto button=[&](QString name){auto b=dock->findChild<QPushButton*>(name);Q_ASSERT(b);return b;};
+  auto operation=dock->findChild<QLabel*>("workspaceOperationStatus");QVERIFY(operation);
+  button("workspace-playProject")->click();QTRY_VERIFY2_WITH_TIMEOUT(!w.busy()&&operation->text().contains("missing-runtime"),qPrintable(operation->text()),20000);
+  button("workspace-validateProject")->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&operation->text().contains(QString::fromUtf8("검증 완료")),20000);QVERIFY(operation->text().contains(QString::fromUtf8("오류 0건")));
   auto document=[&](QString kind,QString label){for(auto v:w.currentView().value("documents").toArray()){auto d=v.toObject(),data=d.value("data").toObject();if(d.value("kind")==kind&&(data.value("label")==label||data.value("name")==label))return d;}return QJsonObject{};};
   selectWorkspaceItem(dock,"character:apprentice");button("workspaceActor")->click();QCOMPARE(tree->currentItem()->data(0,Qt::UserRole).toJsonObject().value("key"),QJsonValue("actor:apprentice"));button("workspaceAssignedActivity")->click();QCOMPARE(tree->currentItem()->data(0,Qt::UserRole).toJsonObject().value("key"),QJsonValue("activity:study"));
   // Creation and rule editing stay in the workspace. Cancel has no project edit.
