@@ -6,6 +6,7 @@
 #include "tabular-input.hpp"
 #include "table-logic.hpp"
 #include "tool-search.hpp"
+#include "toolbar-access.hpp"
 #include <QShortcut>
 #include "project-manager.hpp"
 #include "hierarchy-tree.hpp"
@@ -222,6 +223,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   toolbar->setObjectName("mainToolbar");
   toolbar->setMovable(false);
   toolbar->setIconSize({18, 18});
+  installToolbarAccess(toolbar, menuBar(), findChild<QAction*>("findAuthoringTool"));
   auto connectionsTool=findChild<QAction*>("showAuthoringWorkspace");connectionsTool->setText(tr("연결 작업실"));connectionsTool->setToolTip(tr("인물·활동·조건·효과·후속 사건을 한 작업실에서 만들고 연결합니다."));toolbar->addAction(connectionsTool);
   toolbar->addAction(tr("이야기 제작"),this,&StudioWindow::editStoryFlow)->setObjectName("storyFlowAction");
   auto storyTool=findChild<QAction*>("storyFlowAction");storyTool->setToolTip(tr("만남 · 선택지 · 관계 변화 · 약속 · 후속 사건을 연결합니다."));designMenu->insertAction(designMenu->actions().value(2),storyTool);

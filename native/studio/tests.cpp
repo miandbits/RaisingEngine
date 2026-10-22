@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "tool-search.hpp"
+#include "toolbar-access.hpp"
 #include "schedule-preview.hpp"
 #include "editor-language.hpp"
 #include "project-manager.hpp"
@@ -39,6 +40,7 @@ private slots:
   void initialRosterCanvasPreview();
   void initialChoiceCanvasPreview();
   void authoringToolSearch();
+  void toolbarAccessAtSmallSize();
   void editorBasicsClipboardLayers();
   void editorBasicsSaveProtection();
   void editorBasicsVersionControl();
@@ -1029,6 +1031,7 @@ private slots:
 #include "project-settings-test.inc"
 #include "roster-test.inc"
 #include "tool-search-test.inc"
+#include "toolbar-access-test.inc"
 #include "schedule-preview-test.inc"
 #include "character-state-test.inc"
 #include "time-session-test.inc"

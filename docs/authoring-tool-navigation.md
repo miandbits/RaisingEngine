@@ -8,6 +8,26 @@ The Design menu groups tools into characters/growth, story/rules, screens/presen
 
 This changes editor navigation only. Project data and save formats are unchanged.
 
+## Small windows and toolbar access
+
+The **Authoring tools** menu in the menu bar and the first **Authoring tools**
+button in the main toolbar expose every main-toolbar command, even when it does
+not fit on the screen. The menu also includes the preview language selector and
+**＋ Element** palette. It uses the original commands, so disabled tools remain
+disabled and shortcuts and checked states are preserved. **Find authoring tools…**
+is available at the top of this menu for the wider set of authoring workspaces.
+
+Qt's automatic toolbar overflow remains available; the explicit menu provides a
+labelled alternative to its small chevron. Changing the window size does not edit
+project data or save files.
+
+Verified with the real Qt widgets at 1000×680, 1280×720 and 1440×920 in Korean,
+English and Japanese. Tests cover repeated opening, the far-right renderer
+command, language selection, disabled commands and the existing tool finder.
+In a Windows editor narrowed to 1000 pixels, the menu also opened the hidden
+validation command and displayed its result. This is editor navigation coverage;
+it does not replace gameplay or export tests.
+
 ## Verification
 
 - Qt widget test: keyword matching, original action dispatch, disabled/no-result handling, cancellation, categories and shortcut.
