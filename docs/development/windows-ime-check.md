@@ -1,5 +1,34 @@
 # Windows Korean IME verification
 
+## Latest live verification — `ea65e00`
+
+The corrected executable was tested with Windows Microsoft Korean IME enabled
+by the user. Desktop key input produced visible `ㅎ → 하` preedit; runtime
+diagnostics confirmed genuine input-method events and the native callback's
+absent result slot. The disposable workshop copy was used throughout.
+
+| Operation | Latest observed result |
+| --- | --- |
+| Inspector Escape with preedit | Pass: only preedit disappeared; `공방 제목 · 입력 검증` stayed intact and the process survived. |
+| Inspector Ctrl+Z with preedit | Pass: only preedit disappeared; the previous field text stayed intact. |
+| Tool search Escape with preedit | Pass: the dialog stayed open and the existing query `화면` was preserved. |
+| Tool search Ctrl+Z with preedit | Pass: the dialog and existing query were preserved. |
+| Ordinary Undo/Redo after cancellation | Pass: the next Ctrl+Z removed the query, and Ctrl+Y restored it. |
+| Escape without preedit | Pass: the tool search closed normally. |
+| Ctrl+S during native preedit | Pass: `ㅎ → 하 → 한` was committed once and the saved project contains exactly `공방 제목 · 입력 검증한`. The editor returned to its clean saved state. |
+| Close and reopen | Normal close after saving and a responsive relaunched editor were confirmed. Final inspection inside the reopened window is unverified: the desktop helper repeatedly returned `foreground window did not report a process id`. |
+
+The final input/save check used actual Microsoft IME composition, not Unicode
+text insertion. The saved JSON was checked read-only after Ctrl+S. The reopened
+process is responsive, but its presence is not treated as proof that the name
+was displayed correctly after reopening. The automated save/reopen regression
+passes; the remaining live check is to inspect the saved name in that window.
+
+The earlier failures and pending checkpoints below are historical evidence,
+not the current result for the cancellation operations above. These checks use
+the actual Microsoft IME with automated key delivery; they do not certify every
+physical keyboard layout or other IME implementation.
+
 ## Queued native-message result safety
 
 After Hangul was enabled, the additional ordering guard correctly retained the
@@ -9,10 +38,9 @@ pointer. Queued Windows messages may have no result slot. The guard now checks
 the pointer, and the native cancellation regression also invokes it with
 `nullptr`, preserving both the committed field text and the dialog.
 
-All 10 interaction cases pass after this correction. Native cancellation and
-save/reopen acceptance of the corrected executable remain pending a Hangul-mode
-switch in the restarted trial editor. The previous native run is a failure,
-not a successful cancellation result.
+All 10 interaction cases pass after this correction. The first native run was
+a failure, not a successful cancellation result. The restarted executable's
+live cancellation results are recorded above.
 
 ## Native ordering follow-up
 
@@ -34,11 +62,11 @@ trailing empty IME events, preservation of text and undo/redo history, normal
 save-key/Control-release commits, and focus-out commits in QTextEdit and
 QPlainTextEdit as well as QLineEdit. Repository hygiene checks also pass.
 
-Native acceptance of this additional ordering fix is pending the new process's
-Hangul-mode switch. The new executable and disposable workshop project are
-ready; synthetic checks are not a substitute for that final native retest.
+At this checkpoint native acceptance was pending the new process's Hangul-mode
+switch. Subsequent live results are recorded above; synthetic checks alone
+were not used to claim acceptance.
 
-## Follow-up: cancellation fix, native retest pending
+## Earlier follow-up: cancellation fix, native retest pending
 
 The next 20-minute pass adds a Windows native-message guard for Escape and
 Ctrl+Z before normal Qt shortcut handling. It only owns text composition in
