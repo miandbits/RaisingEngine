@@ -1,3 +1,20 @@
+void StudioTests::rosterTemplateRoundtrip() {
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT");QTemporaryDir temp(engine+"/.cache/roster-template-XXXXXX");QVERIFY(temp.isValid());
+  const auto oldHistory=qgetenv("RAISING_PROJECT_HISTORY");qputenv("RAISING_PROJECT_HISTORY",(temp.path()+"/history.ini").toUtf8());
+  const auto restore=qScopeGuard([&]{if(oldHistory.isNull())qunsetenv("RAISING_PROJECT_HISTORY");else qputenv("RAISING_PROJECT_HISTORY",oldHistory);});
+  ProjectManager manager(engine);manager.show();auto picker=manager.findChild<QComboBox*>("launcherTemplate");
+  const int index=picker->findData("genre-suite/roster");QVERIFY(index>=0);picker->setCurrentIndex(index);
+  manager.findChild<QLineEdit*>("launcherDestination")->setText(temp.path()+"/launcher-game");manager.findChild<QPushButton*>("launcherCreate")->click();
+  QTRY_VERIFY_WITH_TIMEOUT(manager.findChild<QPushButton*>("launcherCreate")->isEnabled()||manager.result()==int(QDialog::Accepted),20000);
+  QVERIFY2(manager.result()==int(QDialog::Accepted),qPrintable(manager.findChild<QLabel*>("launcherMessage")->text()));
+  StudioWindow editor(engine);editor.show();editor.openProject(manager.selectedProject());QTRY_VERIFY_WITH_TIMEOUT(!editor.busy()&&!editor.projectData().isEmpty(),15000);
+  QCOMPARE(editor.projectData().value("roster").toObject().value("members").toArray().size(),2);
+  QTimer::singleShot(100,&editor,[&]{auto d=editor.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto p=d->findChild<QComboBox*>("newProjectTemplate");QVERIFY(p->findData("genre-suite/roster")>=0);p->setCurrentIndex(p->findData("genre-suite/roster"));d->findChild<QLineEdit*>("newProjectDestination")->setText(temp.path()+"/wizard-game");d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
+  editor.findChild<QAction*>("newProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!editor.busy(),15000);
+  QVERIFY2(editor.lastError.isEmpty(),qPrintable(editor.lastError));QCOMPARE(QDir::fromNativeSeparators(editor.currentView().value("root").toString()),temp.path()+"/wizard-game");
+  QCOMPARE(editor.projectData().value("roster").toObject().value("members").toArray().size(),2);
+}
+
 void StudioTests::projectManagerRoundtrip() {
   applyStudioTheme(*qobject_cast<QApplication*>(QApplication::instance()));
   // The Windows test runner suppresses the first native ShowWindow via STARTUPINFO.

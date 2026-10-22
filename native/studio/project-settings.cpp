@@ -22,7 +22,7 @@ void StudioWindow::newProjectWizard() {
   auto base=new QComboBox;base->setObjectName("newProjectTemplate");
   base->addItem(tr("최소 일정 육성 · 2개월"),"academy-demo");base->addItem(tr("일정 육성 · 12개월"),"academy-year");
   base->addItem(tr("비주얼 UI 샘플"),"academy-visual");base->addItem(tr("도시·상점·관계 샘플"),"academy-journey");
-  base->addItem(tr("탐험·전투 샘플"),"academy-adventure");base->addItem(tr("기존 프로젝트의 콘텐츠 재사용"),"existing");base->setCurrentIndex(4);form->addRow(tr("시작 구성"),base);
+  base->addItem(tr("탐험·전투 샘플"),"academy-adventure");base->addItem(tr("여러 인물 함께 육성 · 개인 능력과 공용 자금"),"genre-suite/roster");base->addItem(tr("기존 프로젝트의 콘텐츠 재사용"),"existing");base->setCurrentIndex(4);form->addRow(tr("시작 구성"),base);
   auto source=new QLineEdit(view.value("root").toString());source->setObjectName("newProjectSource");
   auto sourceRow=new QWidget;auto sourceLayout=new QHBoxLayout(sourceRow);sourceLayout->setContentsMargins(0,0,0,0);sourceLayout->addWidget(source);auto sourceBrowse=new QPushButton(tr("원본 선택…"));sourceLayout->addWidget(sourceBrowse);form->addRow(tr("원본 폴더"),sourceRow);
   const auto userProjects=QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("Raising Studio Projects");

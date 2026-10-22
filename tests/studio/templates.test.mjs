@@ -30,6 +30,26 @@ test('adventure template creates an independent valid project and preserves exis
   assert.deepEqual(await readFile('examples/academy-adventure/project.json'), originalProject);
 });
 
+test('multiple-trainee template is selectable and copied as an independent valid project', async () => {
+  assert.ok(studioTemplates.includes('genre-suite/roster'));
+  await mkdir('.cache/studio-template-tests', {recursive:true});
+  const target=await mkdtemp(resolve('.cache/studio-template-tests/roster-'));
+  const source=resolve('examples/genre-suite/roster');
+  await createTemplateProject(resolve('examples'),'genre-suite/roster',target);
+  const copied=await buildSnapshot(await loadProject(target));assert.ok(copied.ok,JSON.stringify(copied));
+  const original=await buildSnapshot(await loadProject(source));assert.ok(original.ok);
+  assert.equal(copied.snapshot.contentFingerprint,original.snapshot.contentFingerprint);
+  assert.equal(copied.snapshot.project.roster.members.length,2);
+  assert.equal(copied.snapshot.project.roster.stateModel,'character-v1');
+  assert.ok(copied.snapshot.project.roster.localAttributeIds.includes('skill'));
+  assert.ok(!copied.snapshot.project.roster.localAttributeIds.includes('money'));
+  const originalBytes=await readFile(join(source,'project.json'));
+  await writeFile(join(target,'creator-notes.txt'),'independent work');
+  await assert.rejects(createTemplateProject(resolve('examples'),'genre-suite/roster',target),/빈 폴더/);
+  assert.deepEqual(await readFile(join(source,'project.json')),originalBytes);
+  assert.equal(await readFile(join(target,'creator-notes.txt'),'utf8'),'independent work');
+});
+
 test('content reuse copies authored data and assets but excludes saves, analysis and unrelated files', async () => {
   await mkdir('.cache/studio-template-tests', {recursive:true});
   const sandbox=await mkdtemp(resolve('.cache/studio-template-tests/reuse-'));

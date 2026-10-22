@@ -100,6 +100,7 @@ ProjectManager::ProjectManager(const QString &engineRoot, QWidget *parent)
   base->addItem(tr("화면·UI 제작"), "academy-visual");
   base->addItem(tr("도시·상점·관계"), "academy-journey");
   base->addItem(tr("탐험·전투"), "academy-adventure");
+  base->addItem(tr("여러 인물 함께 육성 · 개인 능력과 공용 자금"), "genre-suite/roster");
   createLayout->addWidget(base);
   destination = new QLineEdit(QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("Raising Studio Projects/new-game"));
   destination->setObjectName("launcherDestination"); createLayout->addWidget(destination);

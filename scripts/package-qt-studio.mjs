@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
 import {replaceReleaseMedia,auditReleaseMedia} from './release-sample-media.mjs';
+import {studioTemplates} from '../dist/packages/studio-service/templates.js';
 
 const root=resolve('.'),out=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
 const qt=resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio');
@@ -18,8 +19,8 @@ for(const source of qtSources.archives){
 }
 try{await access(out);throw Error('Choose a new QT_PACKAGE_OUT; existing packages are never overwritten.');}catch(e){if(e.code!=='ENOENT')throw e;}
 const policy=JSON.parse(await readFile('config/repository-content.json','utf8'));
-const templates=['academy-demo','academy-year','academy-visual','academy-journey','academy-adventure'];
-for(const id of templates)if(!policy.publicSamples.includes('examples/'+id))throw Error('Template is not approved: '+id);
+const templates=studioTemplates;
+for(const id of templates)if(!policy.publicSamples.some(allowed=>'examples/'+id===allowed||('examples/'+id).startsWith(allowed+'/')))throw Error('Template is not approved: '+id);
 const copy=async(from,to)=>{await mkdir(dirname(join(out,to)),{recursive:true});await cp(from,join(out,to),{recursive:true,errorOnExist:true,force:false,filter:s=>!relative(from,s).split(/[\\/]/).some(p=>['.studio','.git','node_modules','.cache'].includes(p))});};
 await access(`licenses/node/LICENSE-${process.version}.txt`);
 await mkdir(dirname(out),{recursive:true});await mkdir(out,{recursive:false});

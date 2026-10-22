@@ -45,6 +45,7 @@ private slots:
   void componentContextAuthoring();
   void authoringStatePreview();
   void projectManagerRoundtrip();
+  void rosterTemplateRoundtrip();
   void designerQuickRules();
   void designerSmallGameAuthoring();
   void designerSampleCleanup();
