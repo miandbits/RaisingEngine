@@ -1,3 +1,33 @@
+#include <QTemporaryDir>
+
+void StudioTests::rosterNamedMembers() {
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
+  QTemporaryDir temporary(engine+"/.cache/roster-names-XXXXXX");QVERIFY(temporary.isValid());
+  const auto root=temporary.path()+"/game";StudioWindow w(engine);w.show();
+  QTimer::singleShot(80,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto preset=d->findChild<QComboBox*>("newProjectTemplate");preset->setCurrentIndex(preset->findData("academy-visual"));d->findChild<QLineEdit*>("newProjectDestination")->setText(root);d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
+  w.findChild<QAction*>("newProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+  auto character=[&](const QString &id){for(const auto &v:w.currentView()["documents"].toArray()){const auto d=v.toObject();if(d["kind"]=="character"&&d["data"].toObject()["id"]==id)return d["data"].toObject();}return QJsonObject{};};
+  const auto originalMentor=character("mentor");QVERIFY(!originalMentor.isEmpty());
+  QString firstGenerated,secondGenerated;
+  QTimer::singleShot(80,&w,[&]{auto d=w.findChild<QDialog*>("rosterAuthoringDialog");QVERIFY(d);QTimer::singleShot(10000,d,&QDialog::reject);
+    auto table=d->findChild<QTableWidget*>("rosterMembers");auto picker=d->findChild<QComboBox*>("rosterExistingCharacter");QVERIFY(table);QVERIFY(picker);QVERIFY(table->isColumnHidden(0));
+    const int mentor=picker->findData("mentor");QVERIFY(mentor>=0);QCOMPARE(picker->itemText(mentor),originalMentor["name"].toString());picker->setCurrentIndex(mentor);d->findChild<QPushButton*>("rosterAddExisting")->click();QCOMPARE(table->rowCount(),2);QCOMPARE(table->item(1,0)->text(),QString("mentor"));QVERIFY(!(table->item(1,0)->flags()&Qt::ItemIsEditable));QCOMPARE(picker->findData("mentor"),-1);
+    table->item(1,1)->setText("Second apprentice");
+    auto local=d->findChild<QListWidget*>("rosterLocalAttributes");for(int i=0;i<local->count();++i)if(local->item(i)->data(Qt::UserRole)=="money"){local->item(i)->setCheckState(Qt::Unchecked);QVERIFY(table->isColumnHidden(i+3));QVERIFY(!table->cellWidget(1,i+3)->isEnabled());local->item(i)->setCheckState(Qt::Checked);QVERIFY(!table->isColumnHidden(i+3));local->item(i)->setCheckState(Qt::Unchecked);}
+    d->findChild<QCheckBox*>("rosterShowIds")->setChecked(true);QVERIFY(!table->isColumnHidden(0));
+    d->findChild<QPushButton*>("rosterAddMember")->click();QCOMPARE(table->rowCount(),3);firstGenerated=table->item(2,0)->text();table->item(2,1)->setText("New apprentice");
+    d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();});
+  w.findChild<QAction*>("editRoster")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
+  auto expectedMentor=originalMentor;expectedMentor["name"]="Second apprentice";QCOMPARE(character("mentor"),expectedMentor);QVERIFY(!character(firstGenerated).isEmpty());
+  const auto firstRoster=w.projectData().value("roster");
+  QTimer::singleShot(80,&w,[&]{auto d=w.findChild<QDialog*>("rosterAuthoringDialog");QVERIFY(d);auto table=d->findChild<QTableWidget*>("rosterMembers");table->setCurrentCell(0,1);QVERIFY(!d->findChild<QPushButton*>("rosterRemoveMember")->isEnabled());table->setCurrentCell(2,1);d->findChild<QPushButton*>("rosterRemoveMember")->click();QCOMPARE(table->rowCount(),2);QVERIFY(d->findChild<QComboBox*>("rosterExistingCharacter")->findData(firstGenerated)>=0);d->findChild<QPushButton*>("rosterAddMember")->click();secondGenerated=table->item(2,0)->text();QVERIFY(secondGenerated!=firstGenerated);d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();});
+  w.findChild<QAction*>("editRoster")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
+  QVERIFY(!character(firstGenerated).isEmpty());QVERIFY(!character(secondGenerated).isEmpty());QCOMPARE(character("mentor"),expectedMentor);
+  const auto secondRoster=w.projectData().value("roster");w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData()["roster"],firstRoster);w.findChild<QAction*>("redoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData()["roster"],secondRoster);
+  QTimer::singleShot(60,&w,[&]{auto d=w.findChild<QDialog*>("rosterAuthoringDialog");QVERIFY(d);d->findChild<QPushButton*>("rosterAddMember")->click();d->reject();});w.findChild<QAction*>("editRoster")->trigger();QCOMPARE(w.projectData()["roster"],secondRoster);
+  w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),15000);QCOMPARE(w.projectData()["roster"],secondRoster);QCOMPARE(character("mentor"),expectedMentor);
+}
+
 void StudioTests::rosterAuthoringRoundtrip() {
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
   const auto root=qEnvironmentVariable("RAISING_ROSTER_PROJECT",engine+"/.cache/roster-authored-"+QString::number(QDateTime::currentMSecsSinceEpoch()));

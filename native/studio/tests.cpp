@@ -51,6 +51,7 @@ private slots:
   void designerSmallGamePlay();
   void designerPublishSample();
   void rosterAuthoringRoundtrip();
+  void rosterNamedMembers();
   void rosterPlayIntegration();
   void characterStateAuthoringRoundtrip();
   void characterStatePlayIntegration();

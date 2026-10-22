@@ -3204,5 +3204,13 @@
   ["선행 사건 없음", "No prerequisite event", "先行イベントなし"],
   ["먼저 완료할 사건", "Event to complete first", "先に完了するイベント"],
   ["선행 사건은 이 이야기 밖의 기존 사건을 선택하세요.", "Choose an existing prerequisite event outside this story.", "先行イベントには、この物語以外の既存イベントを選んでください。"],
-  ["관계 범위: %1 ~ %2. 관계 변화는 이 범위 안에서 적용되며, 후속 사건 기준도 같은 범위에서 고릅니다.", "Relationship range: %1 to %2. Changes stay within this range; choose the follow-up threshold within it too.", "関係の範囲: %1 ～ %2。関係の変化はこの範囲内で適用され、後続イベントの基準も同じ範囲から選びます。"]
+  ["관계 범위: %1 ~ %2. 관계 변화는 이 범위 안에서 적용되며, 후속 사건 기준도 같은 범위에서 고릅니다.", "Relationship range: %1 to %2. Changes stay within this range; choose the follow-up threshold within it too.", "関係の範囲: %1 ～ %2。関係の変化はこの範囲内で適用され、後続イベントの基準も同じ範囲から選びます。"],
+  ["기존 인물은 이름으로 찾아 추가하세요. 이름 변경은 해당 인물 콘텐츠에도 반영됩니다. 대상에서 제외해도 인물 콘텐츠는 보존됩니다.", "Find existing characters by name. Renaming also updates their character content. Removing a trainee keeps the character content.", "既存の人物を名前で探して追加します。名前の変更は人物データにも反映されます。育成対象から外しても人物データは残ります。"],
+  ["참조를 보존하기 위해 여기서는 ID를 바꾸지 않습니다. 콘텐츠 편집기의 ID 변경을 사용하세요.", "IDs are read-only here to preserve references. Use Rename ID in the content editor.", "参照を保つため、ここではIDを変更できません。コンテンツ編集のID変更を使ってください。"],
+  ["공유 값: %1 · 프로젝트 설정에서 초기값을 편집합니다.", "Shared values: %1 · Edit initial values in Project Settings.", "共有値: %1 · 初期値はプロジェクト設定で編集します。"],
+  ["기존 인물 이름 검색", "Search existing characters by name", "既存の人物を名前で検索"],
+  ["선택한 인물 추가", "Add selected character", "選択した人物を追加"],
+  ["육성 대상에서 제외", "Remove from trainees", "育成対象から外す"],
+  ["참조 ID 표시", "Show reference IDs", "参照IDを表示"],
+  ["새 육성 대상 %1", "New trainee %1", "新しい育成対象 %1"]
 ]
