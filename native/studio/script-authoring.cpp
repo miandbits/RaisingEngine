@@ -296,13 +296,17 @@ void ScriptAuthoringDialog::openConnections(){
   if(map.exec()==QDialog::Accepted){selectDocument(map.selectedFile);refreshNodes(map.selectedNode.isEmpty()?data().value("entryNodeId").toString():map.selectedNode);focusGraphNode();}
 }
 void StudioWindow::editScripts(){
+  openScriptDocument(contentList&&contentList->currentItem()?contentList->currentItem()->data(Qt::UserRole).toString():QString());
+}
+void StudioWindow::openScriptDocument(QString file,QString nodeId){
   if(bridge.busy())return;
   const auto originalRevision=view.value("revision"),originalRoot=view.value("root");
   auto dialog=new ScriptAuthoringDialog(view,assets,this,[this,originalRevision,originalRoot]{
     if(view.value("revision")!=originalRevision||view.value("root")!=originalRoot)return tr("프로젝트가 변경되었습니다. 입력 내용을 덮어쓰지 않았습니다. 창을 다시 열어 확인하세요.");
     if(bridge.busy())return tr("다른 요청을 처리 중입니다. 완료 후 다시 저장하세요.");return QString{};
   },[this](QJsonObject scene,std::function<void(QJsonObject)> done){request("preview",{{"scene",scene}},std::move(done));});
-  if(contentList&&contentList->currentItem())dialog->selectDocument(contentList->currentItem()->data(Qt::UserRole).toString());
+  if(!file.isEmpty())dialog->selectDocument(file);
+  if(!nodeId.isEmpty())dialog->selectScriptNode(nodeId);
   dialog->setApplyHandler([this](QJsonArray edits,std::function<void(QString)> done){if(edits.isEmpty()){done({});return;}request("edit",{{"edit",QJsonObject{{"type","batch"},{"edits",edits}}}},[done](QJsonObject reply){done(reply.value("error").toString());});});
   dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->open();
 }

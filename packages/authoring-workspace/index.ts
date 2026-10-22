@@ -13,10 +13,11 @@ export function authoringWorkspace(documents:readonly {file:string;kind:string;d
   const add=(kind:string,id:unknown,value:unknown,file:string,path:string,label?:string)=>{if(typeof id!=='string'||!object(value))return;nodes.push({key:`${kind}:${id}`,kind,id,label:label??String(value.name??value.label??id),file,path,value:structuredClone(value)});};
   for(const doc of documents){if(!object(doc.data))continue;const d=doc.data;
     if(doc.kind==='project'){
-      for(const [field,kind] of [['actions','action'],['rules','rule'],['items','item'],['locations','location'],['policyGroups','policy'],['policyBudgets','budget'],['shops','shop']])
+      for(const [field,kind] of [['actions','action'],['interactions','interaction'],['rules','rule'],['items','item'],['locations','location'],['policyGroups','policy'],['policyBudgets','budget'],['shops','shop']])
         array(d.gameplay?.[field!]).forEach((v:Row,i:number)=>add(kind!,v.id,v,doc.file,`/gameplay/${field}/${i}`));
       if(d.progression){add('clock','clock',{unitLabel:d.progression.unitLabel,actionPoints:d.progression.actionPoints},doc.file,'/progression');array(d.progression.actions).forEach((v:Row,i:number)=>add('timing',v.actionId,v,doc.file,`/progression/actions/${i}`));array(d.progression.appointments).forEach((v:Row,i:number)=>add('appointment',v.id,v,doc.file,`/progression/appointments/${i}`));}
       array(d.roster?.members).forEach((v:Row,i:number)=>add('actor',v.characterId,v,doc.file,`/roster/members/${i}`));
+      array(d.userFields).forEach((v:Row,i:number)=>add('userField',v.id,v,doc.file,`/userFields/${i}`));
       array(d.stateGroups).forEach((g:Row,i:number)=>{
         add('stateGroup',g.id,g,doc.file,`/stateGroups/${i}`);
         array(g.values).forEach((v:Row,j:number)=>add('stateValue',`${g.id}/${v.id}`,v,doc.file,`/stateGroups/${i}/values/${j}`,`${g.name} · ${v.name}`));
@@ -37,11 +38,17 @@ export function authoringWorkspace(documents:readonly {file:string;kind:string;d
     else if(typeof d.id==='string'){
       add(doc.kind,d.id,d,doc.file,'');
       if(doc.kind==='character')array(d.relationships).forEach((v:Row,i:number)=>add('relationship',`${d.id}/${v.id}`,v,doc.file,`/relationships/${i}`));
+      if(doc.kind==='event'||doc.kind==='ending')array(d.nodes).forEach((v:Row,i:number)=>{
+        if(typeof v.id!=='string')return;
+        const id=`${doc.kind}/${d.id}/${v.id}`;
+        add('scriptNode',id,v,doc.file,`/nodes/${i}`,`${d.label??d.id} · ${i+1}. ${v.text??v.prompt??v.type}`);
+        array(v.choices).forEach((c:Row,j:number)=>add('scriptChoice',`${id}/${c.id}`,c,doc.file,`/nodes/${i}/choices/${j}`,`${d.label??d.id} · ${c.text??c.id}`));
+      });
     }
   }
   const count=new Map<string,number>();for(const n of nodes)count.set(n.key,(count.get(n.key)??0)+1);
   const known=new Set([...count].filter(([,v])=>v===1).map(([k])=>k));
-  const references:Record<string,string>={stateGroupId:'stateGroup',defaultScreenId:'screen',actionId:'action',thenActionId:'action',elseActionId:'action',actionIds:'action',eventId:'event',activityId:'activity',activityIds:'activity',attributeId:'attribute',currencyAttributeId:'attribute',flagId:'flag',itemId:'item',characterId:'character',actorId:'actor',locationId:'location',locationIds:'location',shopId:'shop',groupId:'policy',groupIds:'policy',budgetId:'budget',screenId:'screen'};
+  const references:Record<string,string>={interactionId:'interaction',userFieldId:'userField',speakerId:'character',stateGroupId:'stateGroup',defaultScreenId:'screen',actionId:'action',thenActionId:'action',elseActionId:'action',actionIds:'action',eventId:'event',activityId:'activity',activityIds:'activity',attributeId:'attribute',currencyAttributeId:'attribute',flagId:'flag',itemId:'item',characterId:'character',actorId:'actor',locationId:'location',locationIds:'location',shopId:'shop',groupId:'policy',groupIds:'policy',budgetId:'budget',screenId:'screen'};
   const link=(n:WorkspaceNode,to:string,path:string,relation:string)=>edges.push({from:n.key,to,file:n.file,path,relation,resolved:known.has(to)});
   const walk=(n:WorkspaceNode,v:unknown,path:string)=>{
     if(Array.isArray(v)){v.forEach((x,i)=>walk(n,x,`${path}/${i}`));return;}if(!object(v))return;
@@ -60,6 +67,23 @@ export function authoringWorkspace(documents:readonly {file:string;kind:string;d
   // Duplicate definitions are shown separately; ambiguous links never silently jump.
   for(const n of nodes)if(duplicates.includes(n.key))n.key+=`@${n.file}${n.path}`;
   for(const n of nodes)walk(n,n.value,n.path);
+  // Explicit script ownership and local links use qualified IDs: repeated node or
+  // choice names in different events must never navigate to another document.
+  for(const n of nodes){
+    if(n.kind==='event'||n.kind==='ending'){
+      array(n.value.nodes).forEach((v:Row,i:number)=>link(n,`scriptNode:${n.kind}/${n.id}/${v.id}`,`/nodes/${i}`,'script'));
+    }
+    if(n.kind==='scriptNode'||n.kind==='scriptChoice'){
+      const parts=n.id.split('/'),prefix=parts.slice(0,2).join('/');
+      for(const field of ['next','then','else'])if(typeof n.value[field]==='string')link(n,`scriptNode:${prefix}/${n.value[field]}`,`${n.path}/${field}`,'script');
+      if(n.kind==='scriptNode')array(n.value.choices).forEach((v:Row,i:number)=>link(n,`scriptChoice:${n.id}/${v.id}`,`${n.path}/choices/${i}`,'choice'));
+    }
+  }
+  // A dependency is a candidate, not proof of reachability (NOT/OR, actor scope,
+  // dates and runtime conditions still apply). Keep the original condition path.
+  for(const e of [...edges])if(e.from.startsWith('event:')&&e.to.startsWith('event:')&&e.relation==='condition'&&e.resolved){
+    edges.push({from:e.to,to:e.from,file:e.file,path:e.path,relation:'followup',resolved:known.has(e.from)});
+  }
   return {nodes,edges,duplicates,staticOnly:true};
 }
 export function workspaceImpact(index:ReturnType<typeof authoringWorkspace>,key:string,depth=4){

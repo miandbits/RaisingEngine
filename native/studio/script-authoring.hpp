@@ -19,6 +19,7 @@ public:
   ScriptAuthoringDialog(QJsonObject context,QJsonArray assets,QWidget *parent=nullptr,std::function<QString()> saveGuard={},std::function<void(QJsonObject,std::function<void(QJsonObject)>)> scenePreview={});
   QJsonArray edits() const;
   void selectDocument(const QString &file);
+  void selectScriptNode(const QString &id) { refreshNodes(id); focusGraphNode(); }
   void setApplyHandler(std::function<void(QJsonArray,std::function<void(QString)>)> handler) { applyEdits = std::move(handler); }
 private:
   QJsonObject context;

@@ -66,6 +66,7 @@ private slots:
   void durabilityLargeProject();
   void replayUiAuthoring();
   void authoringWorkspaceRoundtrip();
+  void linkedAuthoringRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();
   void commercialPilotAuthoring();
@@ -1018,6 +1019,7 @@ private slots:
 #include "character-state-test.inc"
 #include "time-session-test.inc"
 #include "authoring-workspace-test.inc"
+#include "linked-authoring-test.inc"
 #include "ui-composition-test.inc"
 #include "tactics-test.inc"
 #include "direction-test.inc"

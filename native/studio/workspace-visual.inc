@@ -26,7 +26,7 @@
         const auto elementKind=state->draft.value("kind").toString();
         if(elementKind=="text"||elementKind=="button")text("text",tr("표시 문구"));
         logic("visibleCondition",tr("표시 조건…"),"condition");
-        if(elementKind=="text")linkedEditor("workspaceDataBinding",tr("표시할 능력·관계·데이터 선택…"),[this,select]{select();editDataBinding();});
+        if(elementKind=="text"||elementKind=="meter")linkedEditor("workspaceDataBinding",tr("표시할 능력·관계·데이터 선택…"),[this,select]{select();editDataBinding();});
         if(elementKind=="button"){
           logic("enabledCondition",tr("버튼 사용 조건…"),"condition");
           // Existing actions are preserved. Opt-in binding is explicit and name-based.

@@ -58,6 +58,7 @@ signals:
   void playerFinished(int code);
   void goalReportReady(QJsonObject report);
   void goalImpactReady(QJsonObject report);
+  void followAuthoringItem(QString key);
 
 protected:
   void closeEvent(QCloseEvent *event) override;
@@ -184,6 +185,8 @@ private:
   void showRuleDebugger();
   QWidget *makeRuleDebuggerPanel();
   void showAuthoringWorkspace();
+  void followSelectedElement();
+  void openScriptDocument(QString file, QString nodeId = {});
   void editUiComposition();
   void editTactics();
   void editDirection();

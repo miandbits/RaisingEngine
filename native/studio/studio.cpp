@@ -191,6 +191,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("다인 전투 · 탐험 · 성장…"),this,&StudioWindow::editTactics)->setObjectName("editTactics");
   designMenu->addAction(tr("UI 조합 · 중첩 / 배치 / 선택 / 모달…"),this,&StudioWindow::editUiComposition)->setObjectName("editUiComposition");
   designMenu->addAction(tr("제작 작업실 · 데이터 / 행동 / 진행…"),this,&StudioWindow::showAuthoringWorkspace)->setObjectName("showAuthoringWorkspace");
+  designMenu->addAction(tr("선택 요소 연결 따라가기…"),this,&StudioWindow::followSelectedElement)->setObjectName("followSelectedElement");
   designMenu->addAction(tr("다인 육성 · 대상과 활동 배정…"),this,&StudioWindow::editRoster)->setObjectName("editRoster");
   designMenu->addAction(tr("시간 · 행동력 · 예약 사건…"),this,&StudioWindow::editTimeSessions)->setObjectName("editTimeSessions");
   designMenu->addAction(tr("캐릭터 소유 상태 · 관계 · 행동 연결…"),this,&StudioWindow::editCharacterState)->setObjectName("editCharacterState");
@@ -386,6 +387,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   selectedTitle = new QLabel(tr("요소를 선택하세요"));
   selectedTitle->setStyleSheet("font-size:16px;font-weight:600");
   formLayout->addWidget(selectedTitle);
+  auto followLinks=new QPushButton(tr("데이터 · 행동 · 후속 사건 따라가기…"));
+  followLinks->setObjectName("elementConnections");formLayout->addWidget(followLinks);
+  connect(followLinks,&QPushButton::clicked,this,&StudioWindow::followSelectedElement);
   auto group = [formLayout](QString name) {
     auto container = new QWidget;
     auto layout = new QVBoxLayout(container);
