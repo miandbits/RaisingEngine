@@ -24,6 +24,7 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHeaderView>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QJsonDocument>
@@ -134,7 +135,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       QKeySequence::Open);
   file->addAction(tr("새 프로젝트…"), this, [this] { chooseProject(true); }, QKeySequence::New)->setObjectName("newProject");
   file->addAction(tr("프로젝트 선택기…"), this, [this] {
-    if (bridge.busy() || !mayDiscard()) return;
+    if (!mayDiscard()) return;
     ProjectManager manager(engineRoot, this);
     if (manager.exec() == QDialog::Accepted) openProject(manager.selectedProject());
   })->setObjectName("showProjectManager");
@@ -142,6 +143,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   saveAction = file->addAction(tr("프로젝트 저장"), this, &StudioWindow::save,
                                QKeySequence::Save);
   saveAction->setObjectName("saveProject");
+  file->addAction(tr("종료"),this,&QWidget::close,QKeySequence::Quit)->setObjectName("exitEditor");
   file->addAction(tr("게임 내보내기…"), this, &StudioWindow::exportGameDialog)->setObjectName("exportGame");
   file->addAction(tr("콘텐츠 업데이트 · 저장 이전 / 복구…"),this,[this]{showSaveMigration(engineRoot,view.value("root").toString(),this);})->setObjectName("saveMigration");
   auto edit = menuBar()->addMenu(tr("편집"));
@@ -359,13 +361,19 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto hierarchyTree=new HierarchyTree;hierarchy=hierarchyTree;hierarchyTree->reparent=[this](QString id,QString parent){reparentElement(id,parent);};
   hierarchy->setDragEnabled(true);hierarchy->setAcceptDrops(true);hierarchy->setDropIndicatorShown(true);hierarchy->setDragDropMode(QAbstractItemView::InternalMove);
   hierarchy->setObjectName("hierarchy");
-  hierarchy->setHeaderHidden(true);
-  hierarchy->setColumnCount(1);
+  hierarchy->setHeaderHidden(false);
+  hierarchy->setColumnCount(3);
+  hierarchy->setHeaderLabels({tr("요소 · 부모 / 자식"),tr("순서"),tr("종류")});
+  hierarchy->header()->setStretchLastSection(false);
+  hierarchy->header()->setSectionResizeMode(0,QHeaderView::Stretch);
+  hierarchy->header()->setSectionResizeMode(1,QHeaderView::ResizeToContents);
+  hierarchy->header()->setSectionResizeMode(2,QHeaderView::ResizeToContents);
+  hierarchy->setToolTip(tr("같은 부모 안에서 순서가 클수록 앞에 그립니다. 드래그로 그룹을 바꾸고 우클릭으로 복사·붙여넣기와 순서를 조절하세요."));
   treeLayout->addWidget(hierarchy);
   auto groupButton=new QPushButton(tr("＋ UI 그룹"));groupButton->setObjectName("addGroup");treeLayout->addWidget(groupButton);connect(groupButton,&QPushButton::clicked,this,&StudioWindow::addGroup);
   auto treeDock =
       dock(tr("계층"), "hierarchyDock", treePanel, Qt::LeftDockWidgetArea);
-  treeDock->setMinimumWidth(190);
+  treeDock->setMinimumWidth(320);
   auto scroll = new QScrollArea;
   scroll->setWidgetResizable(true);
   scroll->setMinimumWidth(310);
@@ -932,6 +940,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   viewMenu->addAction(tr("작업 공간 초기화"), this,
                       [this] { showWorkspace({}); restoreState(defaultLayout, 1); });
   setupWorkspaceUi();
+  setupBasicEditing(edit);
   connect(documents, &QTabBar::currentChanged, this, [this](int i) {
     if (filling || i < 0)
       return;
@@ -1350,9 +1359,11 @@ void StudioWindow::refresh(bool fit) {
   updateScreenActions();
   refreshContent();
   updateInspector();
+  updateClipboardActions();
 }
 void StudioWindow::selectElement(const QString &id) {
   selection = id;
+  updateClipboardActions();
   filling = true;
   canvas->select(id);
   QTreeWidgetItemIterator it(hierarchy);while(*it){(*it)->setSelected((*it)->data(0,Qt::UserRole).toString()==id&&(*it)->data(0,Qt::UserRole+1).toString()==screenId);++it;}
@@ -1693,6 +1704,7 @@ void StudioWindow::duplicateElement() {
   QJsonArray added;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(!copies.contains(id))continue;e["id"]=copies[id];if(copies.contains(e.value("parentId").toString()))e["parentId"]=copies[e.value("parentId").toString()];if(id==selection){e["label"]=label(e)+tr(" 복사");if(!e.contains("parentId")){e["x"]=qMin(v.value("width").toInt()-e.value("width").toInt(),e.value("x").toInt()+16);e["y"]=qMin(v.value("height").toInt()-e.value("height").toInt(),e.value("y").toInt()+16);}else{e["x"]=e.value("x").toInt()+16;e["y"]=e.value("y").toInt()+16;}}added.append(e);}for(auto e:added)elements.append(e);selection=copies[selection];for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s.value("id")==screenId){s["elements"]=elements;screens[i]=s;}}v["screens"]=screens;p["visual"]=v;replaceProject(p);
 }
 void StudioWindow::save() {
+  if(auto focus=QApplication::focusWidget();focus&&inspector->isAncestorOf(focus))focus->clearFocus();
   if (bridge.busy()) {
     QTimer::singleShot(50, this, &StudioWindow::save);
     return;
@@ -1812,17 +1824,23 @@ void StudioWindow::receivePlayer() {
   }
 }
 bool StudioWindow::mayDiscard() {
+  if(confirmingTransition)return false;
+  QScopedValueRollback<bool> guard(confirmingTransition,true);
+  // A field can still have an uncommitted editingFinished value when X/Ctrl+S is used.
+  lastError.clear();
+  if(auto focus=QApplication::focusWidget();focus&&isAncestorOf(focus))focus->clearFocus();
+  if(!waitForPendingEdits()||!lastError.isEmpty())return false;
   if (!view["dirty"].toBool())
     return true;
-  return QMessageBox::question(
-             this, tr("저장되지 않은 변경"),
-             tr("현재 변경을 버리고 계속하시겠습니까?\n유지하려면 취소 후 "
-                "프로젝트를 저장하세요."),
-             QMessageBox::Discard | QMessageBox::Cancel,
-             QMessageBox::Cancel) == QMessageBox::Discard;
+  QMessageBox dialog(QMessageBox::Warning,tr("저장되지 않은 변경"),tr("프로젝트에 저장하지 않은 변경이 있습니다. 저장하고 계속하시겠습니까?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,this);
+  dialog.setObjectName("unsavedChangesDialog");dialog.setDefaultButton(QMessageBox::Save);dialog.setEscapeButton(QMessageBox::Cancel);
+  dialog.button(QMessageBox::Save)->setText(tr("저장하고 계속"));dialog.button(QMessageBox::Discard)->setText(tr("저장하지 않고 계속"));dialog.button(QMessageBox::Cancel)->setText(tr("취소"));
+  const auto choice=dialog.exec();if(choice==QMessageBox::Cancel)return false;if(choice==QMessageBox::Discard)return true;
+  request("save");
+  return waitForPendingEdits()&&lastError.isEmpty()&&!view.value("dirty").toBool();
 }
 void StudioWindow::chooseProject(bool create) {
-  if (bridge.busy() || !mayDiscard())
+  if (!mayDiscard())
     return;
   if (create) { newProjectWizard(); return; }
   auto path = QFileDialog::getExistingDirectory(
@@ -1832,7 +1850,7 @@ void StudioWindow::chooseProject(bool create) {
   openProject(path);
 }
 void StudioWindow::closeEvent(QCloseEvent *e) {
-  if (bridge.busy() || !mayDiscard()) {
+  if (!mayDiscard()) {
     e->ignore();
     return;
   }

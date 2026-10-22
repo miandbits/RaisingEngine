@@ -228,4 +228,12 @@ private:
   void editProjectSettings();
   void receivePlayer();
   bool mayDiscard();
+  bool waitForPendingEdits();
+  bool confirmingTransition = false;
+  void setupBasicEditing(QMenu *edit);
+  void copyElements();
+  void pasteElements();
+  void updateClipboardActions();
+  void showHierarchy();
+  void showVersionControl();
 };

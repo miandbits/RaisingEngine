@@ -1,5 +1,6 @@
 #include "rule-extensions.hpp"
 #include "studio.hpp"
+#include "hierarchy-lock.hpp"
 #include "tabular-input.hpp"
 #include "logic-editor.hpp"
 #include "relationship-editor.hpp"
@@ -237,6 +238,7 @@ void StudioWindow::importImage() {
 void StudioWindow::moveLayer(int delta) {
   if (bridge.busy() || selection.isEmpty())
     return;
+  if(!elementLockOwner(currentScreen().value("elements").toArray(),selection).isEmpty()){errorLabel->setText(tr("배치 잠금을 먼저 해제하세요."));return;}
   auto p = projectData();
   auto visual = p["visual"].toObject();
   auto screens = visual["screens"].toArray();
@@ -245,16 +247,12 @@ void StudioWindow::moveLayer(int delta) {
     if (s["id"] != screenId)
       continue;
     auto elements = s["elements"].toArray();
-    for (int j = 0; j < elements.size(); ++j)
-      if (elements[j].toObject()["id"] == selection) {
-        const int next = j + delta;
-        if (next < 0 || next >= elements.size())
-          return;
-        const QJsonValue e = elements[j];
-        elements[j] = elements[next];
-        elements[next] = e;
-        break;
-      }
+    const auto parent=currentElement().value("parentId").toString();QList<int> siblings;int at=-1;
+    for(int j=0;j<elements.size();++j)if(elements[j].toObject().value("parentId").toString()==parent){if(elements[j].toObject()["id"]==selection)at=siblings.size();siblings.append(j);}
+    if(at<0)return;const int next=qBound(0,at+delta,int(siblings.size())-1);if(next==at)return;
+    const QJsonValue moving=elements[siblings[at]];const int direction=next>at?1:-1;
+    for(int j=at;j!=next;j+=direction)elements[siblings[j]]=elements[siblings[j+direction]];
+    elements[siblings[next]]=moving;
     s["elements"] = elements;
     screens[i] = s;
   }

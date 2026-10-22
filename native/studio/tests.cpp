@@ -32,6 +32,9 @@
 class StudioTests : public QObject {
   Q_OBJECT
 private slots:
+  void editorBasicsClipboardLayers();
+  void editorBasicsSaveProtection();
+  void editorBasicsVersionControl();
   void releasePackageWorkflow();
   void freeScreenAuthoring();
   void presentationVariantsAuthoring();
@@ -1032,6 +1035,7 @@ private slots:
 #include "user-fields-test.inc"
 #include "text-binding-batch-test.inc"
 #include "duplicate-element-test.inc"
+#include "editor-basics-test.inc"
 #include "visibility-condition-test.inc"
 #include "hierarchy-search-test.inc"
 #include "advance-button-test.inc"
