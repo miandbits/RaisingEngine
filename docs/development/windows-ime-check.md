@@ -1,5 +1,29 @@
 # Windows Korean IME verification
 
+## Native ordering follow-up
+
+The user enabled Hangul input for the previous cancellation build. Real
+`ㅎ → 하` composition then exposed an earlier Windows event order: the final
+IME commit arrived before Escape's key message, and between Control and Z.
+The earlier native-message guard alone therefore did not resolve either case.
+
+The new guard holds a final preedit commit while Escape or Control is down.
+Escape/Ctrl+Z discard it before it enters text or undo history. Other keys,
+Control release, and focus movement deliver the exact original commit event
+(including replacement offsets). A trailing empty IME event cannot prematurely
+flush the pending commit. Normal reset cancellation remains scoped to the
+focused field. No document snapshots or destructive text replacement are used.
+
+The interaction suite passes 10 cases including initialization/cleanup (8
+substantive cases). New regressions reproduce commit-before-key ordering,
+trailing empty IME events, preservation of text and undo/redo history, normal
+save-key/Control-release commits, and focus-out commits in QTextEdit and
+QPlainTextEdit as well as QLineEdit. Repository hygiene checks also pass.
+
+Native acceptance of this additional ordering fix is pending the new process's
+Hangul-mode switch. The new executable and disposable workshop project are
+ready; synthetic checks are not a substitute for that final native retest.
+
 ## Follow-up: cancellation fix, native retest pending
 
 The next 20-minute pass adds a Windows native-message guard for Escape and

@@ -15,6 +15,68 @@
 class EditorInteractionTests : public QObject {
   Q_OBJECT
 private slots:
+  void multilinePlatformCommitBeforeCancelKey() {
+    for (bool plain : {false, true}) {
+      QWidget owner; auto layout = new QVBoxLayout(&owner);
+      QWidget *field = plain ? static_cast<QWidget *>(new QPlainTextEdit(&owner))
+                             : static_cast<QWidget *>(new QTextEdit(&owner));
+      layout->addWidget(field);
+      EditorInputGuard guard(&owner, [] {}, [] { return true; });
+      auto contents = [field, plain] {
+        return plain ? static_cast<QPlainTextEdit *>(field)->toPlainText()
+                     : static_cast<QTextEdit *>(field)->toPlainText();
+      };
+      if (plain) static_cast<QPlainTextEdit *>(field)->setPlainText("공방");
+      else static_cast<QTextEdit *>(field)->setPlainText("공방");
+      owner.show(); owner.activateWindow(); field->setFocus(); QCoreApplication::processEvents();
+      QTest::keyClick(field, Qt::Key_End); QTest::keyClicks(field, " A");
+      for (auto key : {Qt::Key_Escape, Qt::Key_Z}) {
+        QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+        QInputMethodEvent finish; finish.setCommitString("한"); QApplication::sendEvent(field, &finish);
+        QTest::keyClick(field, key, key == Qt::Key_Z ? Qt::ControlModifier : Qt::NoModifier);
+        QCOMPARE(contents(), QString("공방 A"));
+      }
+      QTest::keyClick(field, Qt::Key_Z, Qt::ControlModifier); QCOMPARE(contents(), QString("공방"));
+      QTest::keyClick(field, Qt::Key_Y, Qt::ControlModifier); QCOMPARE(contents(), QString("공방 A"));
+      QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+      QInputMethodEvent finish; finish.setCommitString("한"); QApplication::sendEvent(field, &finish);
+      QFocusEvent leaving(QEvent::FocusOut); QApplication::sendEvent(field, &leaving);
+      QCOMPARE(contents(), QString("공방 A한"));
+    }
+  }
+  void platformCommitBeforeCancelKey() {
+    QWidget owner; owner.show();
+    QDialog dialog(&owner); auto layout = new QVBoxLayout(&dialog);
+    auto field = new QLineEdit("공방", &dialog); layout->addWidget(field);
+    EditorInputGuard guard(&owner, [] {}, [] { return true; });
+    dialog.show(); dialog.activateWindow(); field->setFocus(); QCoreApplication::processEvents();
+    field->setCursorPosition(field->text().size()); QTest::keyClicks(field, " A");
+    for (auto key : {Qt::Key_Escape, Qt::Key_Z}) {
+      QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+      QInputMethodEvent finish; finish.setCommitString("한"); QApplication::sendEvent(field, &finish);
+      QInputMethodEvent end; QApplication::sendEvent(field, &end);
+      QCOMPARE(field->text(), QString("공방 A"));
+      QVERIFY(field->property("raisingInputComposing").toBool());
+      QTest::keyClick(field, key, key == Qt::Key_Z ? Qt::ControlModifier : Qt::NoModifier);
+      QCOMPARE(field->text(), QString("공방 A")); QVERIFY(dialog.isVisible());
+      QVERIFY(!field->property("raisingInputComposing").toBool());
+    }
+    QTest::keyClick(field, Qt::Key_Z, Qt::ControlModifier); QCOMPARE(field->text(), QString("공방"));
+    QTest::keyClick(field, Qt::Key_Y, Qt::ControlModifier); QCOMPARE(field->text(), QString("공방 A"));
+    QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+    QInputMethodEvent finish; finish.setCommitString("한"); QApplication::sendEvent(field, &finish);
+    QTest::keyRelease(field, Qt::Key_Control);
+    QCOMPARE(field->text(), QString("공방 A한"));
+    QVERIFY(!field->property("raisingInputComposing").toBool());
+    QInputMethodEvent next("글", {}); QApplication::sendEvent(field, &next);
+    QInputMethodEvent finishNext; finishNext.setCommitString("글"); QApplication::sendEvent(field, &finishNext);
+    QTest::keyClick(field, Qt::Key_S, Qt::ControlModifier);
+    QCOMPARE(field->text(), QString("공방 A한글"));
+    QInputMethodEvent last("끝", {}); QApplication::sendEvent(field, &last);
+    QInputMethodEvent finishLast; finishLast.setCommitString("끝"); QApplication::sendEvent(field, &finishLast);
+    QVERIFY(commitEditorInput(&owner));
+    QCOMPARE(field->text(), QString("공방 A한글끝"));
+  }
   void cancellingDoesNotCommitPlatformPreedit() {
     QWidget owner; owner.show();
     QDialog dialog(&owner); auto layout = new QVBoxLayout(&dialog);
