@@ -3,8 +3,9 @@ import type {VisualContext} from './VisualSurface.js';
 import type {WidgetCommand} from './JourneyWidgets.js';
 
 /** A roster uses actor assignments, not the legacy monthly schedule command. */
-export function RosterSchedule({context, disabled, onCommand, onExecute}: {
+export function RosterSchedule({context, disabled, onCommand, onExecute, showActivityDescription=false}: {
   context: VisualContext; disabled: boolean;
+  showActivityDescription?: boolean;
   onCommand: ((command: WidgetCommand) => void) | undefined; onExecute: () => void;
 }) {
   const state=context.dataState, assignments=state?.roster?.assignments??{};
@@ -21,6 +22,9 @@ export function RosterSchedule({context, disabled, onCommand, onExecute}: {
         onChange={event=>setDraft(previous=>({...previous,[id]:event.target.value}))}>
         {context.activities.map(activity=><option key={activity.id} value={activity.id}>{activity.label}</option>)}
       </select>
+      {showActivityDescription&&<small id={`roster-description-${id}`} style={{display:'block',maxHeight:100,overflow:'auto',whiteSpace:'normal',lineHeight:'25px',paddingTop:10}}>
+        {context.activities.find(activity=>activity.id===(draft[id]??assignments[id]))?.description??''}
+      </small>}
     </label>)}</div>
     <div className="roster-schedule-actions">
       <button disabled={!editable||!onCommand} onClick={()=>onCommand?.({type:'assignActivities',assignments:{...draft}})}>활동 배정 적용</button>

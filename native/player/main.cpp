@@ -457,7 +457,7 @@ public:
         std::string reason;if(!game.available(action,&reason))throw std::runtime_error(reason);
         markup.pending_purchase=action;markup.pending_confirmation=transaction.value("confirmation",Json::object());markup.pending_revision=game.state.value("stateRevision",0);dirty=true;return;
       }
-      if(type=="start") {slot_auto_revision=-1;recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
+      if(type=="start") {slot_auto_revision=-1;recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);game.settle();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
       else if(type=="quantity"){auto& value=markup.quantities[action.value("key","")];value=std::clamp(value+action.value("delta",0),1,std::max(1,action.value("maximum",1)));}
       else if(type=="confirmPurchase"){auto purchase=markup.pending_purchase;markup.pending_purchase=nullptr;if(!purchase.is_null()){
         if(game.state.value("stateRevision",-1)!=markup.pending_revision)throw std::runtime_error("상태가 변경되었습니다. 내용을 다시 확인해 주세요.");

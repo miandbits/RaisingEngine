@@ -690,16 +690,19 @@ public:
     for(const auto& a:display_content.at("attributes")){bool local=false;for(const auto& key:r.at("localAttributeIds"))if(key==a.at("id"))local=true;if(!local)out+="<div>"+escape(a.value("label",""))+": "+std::to_string(game.state.at("attributes").at(a.value("id","")).get<int>())+"</div>";}
     return out;
   }
-  std::string roster_schedule() {
+  std::string roster_schedule(const Json& element) {
     if(game.state.is_null())return "새 게임을 시작하세요.";
     const auto phase=game.state.value("phase","");const bool editable=!progress_pending()&&(phase=="planning"||phase=="ready");
     if(roster_revision!=game.state.value("stateRevision",0)){roster_draft=game.state.at("roster").at("assignments");roster_revision=game.state.value("stateRevision",0);}
     std::string out="<div style=\"margin:0;height:24px;\">이번 기간 · 캐릭터별 활동 (함께 정산)</div>";
     for(const auto& m:display_content.at("project").at("roster").at("members")) {
       const auto id=m.value("characterId","");std::string name=id;for(const auto& c:display_content.at("characters"))if(c.at("id")==id)name=c.value("name",id);
-      out+="<div style=\"display:inline-block;width:46%;margin:1%;\"><b>"+escape(name)+"</b><select id=\"roster-"+escape(id)+"\" style=\"width:95%;\""+(editable?std::string():" disabled=\"disabled\"")+">";
+      out+="<div style=\"display:inline-block;vertical-align:top;width:46%;margin:1%;\"><b>"+escape(name)+"</b><select id=\"roster-"+escape(id)+"\" style=\"width:95%;\""+(editable?std::string():" disabled=\"disabled\"")+">";
       for(const auto& a:display_content.at("activities"))if(!a.contains("expeditionId"))out+="<option value=\""+escape(a.value("id",""))+"\""+(roster_draft.value(id,"")==a.value("id","")?" selected=\"selected\"":"")+">"+escape(a.value("label",""))+"</option>";
-      out+="</select></div>";
+      out+="</select>";
+      if(element.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.value("id","")==roster_draft.value(id,""))
+        out+="<div id=\"roster-description-"+escape(id)+"\" style=\"font-size:17px;line-height:25px;max-height:100px;overflow:auto;white-space:normal;word-break:break-all;padding-top:10px;\">"+escape(a.value("description",""))+"</div>";
+      out+="</div>";
     }
     out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-assign","활동 배정 적용",{{"type","rosterCommit"}},editable)+"</div>";
     out+="<div style=\"display:inline-block;width:46%;margin:1%;\">"+button("roster-execute","배정한 활동 함께 실행",{{"type","executeActivity"}},editable&&phase=="ready"&&roster_draft==game.state.at("roster").at("assignments"))+"</div>";
@@ -827,7 +830,7 @@ public:
       int value=game.state.is_null()?r.value("initial",0):game.state.at("relationships").at(c.at("id").get<std::string>()).value(r.at("id").get<std::string>(),0);
       out+="<div class=\"row\">"+escape(c.value("name","")+" · "+r.value("label",""))+" <b>"+std::to_string(value)+"</b></div>";
     }
-    if(kind=="schedule"&&display_content.at("project").contains("roster"))return roster_schedule();
+    if(kind=="schedule"&&display_content.at("project").contains("roster"))return roster_schedule(e);
     if(kind=="schedule") {
       if(e.value("scheduleLayout","columns")=="board")return schedule_board(e);
       if(e.value("scheduleLayout","columns")!="columns")return calendar_schedule(e);
