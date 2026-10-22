@@ -39,9 +39,11 @@ test('dialogue keeps unchanged backgrounds opaque; choices disclose and restore 
   {id:'two',type:'dialogue',speakerId:'apprentice',text:'A new speaker, same background.',next:'three'},
   {id:'three',type:'dialogue',speakerId:null,text:'One more line.',next:'question'},
   {id:'question',type:'choice',prompt:'Choose.',choices:[
-   {id:'accept',text:'Keep the promise',consequenceText:'Meet again at the library.',requirements:{op:'always'},effects:[{op:'add',target:{kind:'attribute',attributeId:'skill'},value:{op:'literal',value:10}},{op:'add',target:{kind:'relationship',characterId:'mentor',relationshipId:'trust'},value:{op:'literal',value:6}}],next:'reply'},
+   {id:'accept',text:'Keep the promise',consequenceText:'Meet again at the library.',requirements:{op:'always'},effects:[{op:'add',target:{kind:'relationship',characterId:'mentor',relationshipId:'trust'},value:{op:'literal',value:6}}],next:'choice-scene'},
    {id:'later',text:'Not yet',consequenceText:'No promise made.',requirements:{op:'always'},effects:[],next:'reply'}
   ]},
+  {id:'choice-scene',type:'scene',scene:{backgroundAssetId:'winter-courtyard'},next:'choice-effect'},
+  {id:'choice-effect',type:'effect',effects:[{op:'add',target:{kind:'attribute',attributeId:'skill'},value:{op:'literal',value:10}}],next:'reply'},
   {id:'reply',type:'dialogue',speakerId:null,text:'The answer is remembered.',next:'changed'},
   {id:'changed',type:'scene',scene:{backgroundAssetId:'apothecary'},next:'four'},
   {id:'four',type:'dialogue',speakerId:null,text:'A genuinely different background.',next:'end'},
@@ -56,7 +58,7 @@ test('dialogue keeps unchanged backgrounds opaque; choices disclose and restore 
  await assert.rejects(exportGame({content,projectRoot,target:'web',destination:resolve(root,'unsupported'),runtimes:{web:legacyRuntime}}),/choice-feedback-v1/);
  const steps=[{click:'start'},{click:'open'},{waitFrames:120},{checkpoint:'stable'},{screenshot:resolve(root,'stable.png')},
   {click:'next'},{checkpoint:'speaker-changed'},{screenshot:resolve(root,'speaker-changed.png')},
-  {click:'next'},{checkpoint:'line-changed'},{click:'next'},{checkpoint:'question'},
+  {click:'next'},{checkpoint:'line-changed'},{click:'next'},{checkpoint:'question'},{screenshot:resolve(root,'question.png')},
   {key:'F5'},{checkpoint:'choice-save'},{click:'choose-accept'},{checkpoint:'accepted'},
   {key:'F9'},{checkpoint:'choice-load'},{click:'choose-later'},{checkpoint:'no-change'},
   {key:'F9'},{click:'choose-accept'},

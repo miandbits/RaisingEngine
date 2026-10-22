@@ -5,6 +5,12 @@ export interface ChoiceFeedback {
   choiceId:string;
   consequenceText:string;
   changes:NonNullable<Transition['narrative']>['changes'];
+  collecting?:boolean;
+}
+function pendingFeedback(content:ContentSnapshot,state:RunState):boolean {
+  const cursor=state.activeNarrative;if(!cursor)return false;
+  const node=(cursor.kind==='ending'?content.endings:content.events).find(s=>s.id===cursor.id)?.nodes.find(n=>n.id===cursor.nodeId);
+  return !!node&&node.type!=='dialogue'&&node.type!=='choice'&&node.type!=='end';
 }
 function definition(content:ContentSnapshot,cursor:ChoiceFeedback['cursor'],choiceId:string){
   const script=(cursor.kind==='ending'?content.endings:content.events).find(s=>s.id===cursor.id);
@@ -15,9 +21,11 @@ function definition(content:ContentSnapshot,cursor:ChoiceFeedback['cursor'],choi
 export function trackChoiceFeedback(previous:ChoiceFeedback|null,content:ContentSnapshot,before:RunState,command:Command,result:{state:RunState;transition:Transition}):ChoiceFeedback|null {
   const cursor=before.activeNarrative;
   if(command.type==='choose'&&cursor)return {cursor,choiceId:command.choiceId,
-    consequenceText:definition(content,cursor,command.choiceId)?.consequenceText??'',changes:result.transition.narrative?.changes??[]};
+    consequenceText:definition(content,cursor,command.choiceId)?.consequenceText??'',changes:result.transition.narrative?.changes??[],collecting:pendingFeedback(content,result.state)};
   const next=result.state.activeNarrative,owner=previous?.cursor;
-  return owner&&next&&next.kind===owner.kind&&next.id===owner.id&&next.actorId===owner.actorId?previous:null;
+  if(!owner||!next||next.kind!==owner.kind||next.id!==owner.id||next.actorId!==owner.actorId)return null;
+  if(previous.collecting&&command.type==='advanceNarrative')return {...previous,changes:[...previous.changes,...result.transition.narrative?.changes??[]],collecting:pendingFeedback(content,result.state)};
+  return previous;
 }
 function targetName(content:ContentSnapshot,target:NumericTarget):string {
   if(target.kind==='attribute')return content.attributes.find(a=>a.id===target.attributeId)?.label??target.attributeId;
@@ -27,10 +35,12 @@ function targetName(content:ContentSnapshot,target:NumericTarget):string {
 }
 export function choiceHints(content:ContentSnapshot,state:RunState|null,locale='ko'):Record<string,string> {
   const cursor=state?.activeNarrative;if(!cursor)return {};
-  const node=(cursor.kind==='ending'?content.endings:content.events).find(s=>s.id===cursor.id)?.nodes.find(n=>n.id===cursor.nodeId);
+  const script=(cursor.kind==='ending'?content.endings:content.events).find(s=>s.id===cursor.id),node=script?.nodes.find(n=>n.id===cursor.nodeId);
   if(node?.type!=='choice')return {};
   return Object.fromEntries(node.choices.map(choice=>{
-    const effects=choice.effects.flatMap(effect=>{
+    const immediate=[...choice.effects],visited=new Set<string>();let next=choice.next;
+    while(!visited.has(next)){visited.add(next);const follow=script?.nodes.find(n=>n.id===next);if(!follow||(follow.type!=='effect'&&follow.type!=='scene'))break;if(follow.type==='effect')immediate.push(...follow.effects);next=follow.next;}
+    const effects=immediate.flatMap(effect=>{
       if(effect.op==='setFlag')return [];
       if(effect.op==='setState'){
         const group=content.project.stateGroups?.find(g=>g.id===effect.stateGroupId);

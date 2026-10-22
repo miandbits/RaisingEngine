@@ -871,7 +871,8 @@ public:
           row.insert(row.find('>')+1,std::string("<span style=\"display:inline-block;width:34px;opacity:0.6;\">")+(index<10?"0":"")+ordinal+"</span>");
         }
         if(e.value("showChoiceEffects",false))for(const auto& definition:story.at("node").value("choices",Json::array()))if(definition.at("id")==choice.at("id")) {
-          const auto effects=effect_summary(definition),hint=definition.value("consequenceText","");
+          auto preview=definition;preview["effects"]=raising::choice_immediate_effects(display_content,game.state.value("activeNarrative",Json()),definition);
+          const auto effects=effect_summary(preview),hint=definition.value("consequenceText","");
           std::string summary=effects.empty()?settings_words("수치 변화 없음","No numeric change","数値の変化なし"):effects;
           if(!hint.empty())summary+="\n"+hint;
           row.insert(row.rfind("</button>"),"<span style=\"display:block;font-size:14px;line-height:18px;white-space:pre-wrap;opacity:0.85;\">"+escape(summary)+"</span>");

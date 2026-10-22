@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import Ajv2020 from 'ajv/dist/2020.js';
-import createModule from '../../dist/wasm/raising-wasm.mjs';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {WasmRuntime} from '../../dist/packages/native-bridge/wasm.js';
 import {WebPlayerController} from '../../dist/packages/web-player/controller.js';
 import {actorStoryFixture} from './actor-story-fixture.mjs';
+
+const {default:createModule}=await import(pathToFileURL(resolve(process.env.RAISING_TEST_WASM_MODULE??'dist/wasm/raising-wasm.mjs')));
 
 const ajv=new Ajv2020({strict:true,allErrors:true});
 ajv.addSchema(JSON.parse(await readFile('packages/schema/common.schema.json','utf8')));
@@ -17,7 +20,8 @@ for(const first of ['apprentice','mentor'])test(`choice feedback restores actual
  content.attributes.find(a=>a.id==='skill').max=11;
  const event=content.events.find(e=>e.id==='personal-choice');
  event.nodes.find(n=>n.id==='ask').choices.forEach(c=>{c.next='reply';c.consequenceText=c.id==='yes'?'Visit the workshop again.':'No appointment made.';});
- event.nodes.find(n=>n.id==='ask').choices[0].effects.push({op:'add',target:{kind:'attribute',attributeId:'skill',owner:{kind:'actor'}},value:{op:'literal',value:10}});
+ event.nodes.find(n=>n.id==='ask').choices[0].next='choice-effect';
+ event.nodes.push({id:'choice-effect',type:'effect',effects:[{op:'add',target:{kind:'attribute',attributeId:'skill',owner:{kind:'actor'}},value:{op:'literal',value:10}}],next:'reply'});
  event.nodes.push({id:'reply',type:'dialogue',speakerId:null,text:'Your answer is remembered.',next:'end'});
  const runtime=new WasmRuntime(await createModule());let saved;
  const make=()=>new WebPlayerController(content,runtime,{read:async()=>saved,write:async text=>{saved=text;}},validate);
