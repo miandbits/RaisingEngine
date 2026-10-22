@@ -119,6 +119,10 @@ private slots:
     QCOMPARE(result, qintptr(0)); QCOMPARE(field->text(), QString("공방"));
     QVERIFY(dialog.isVisible()); QVERIFY(!field->property("raisingInputComposing").toBool());
     QVERIFY(!guard.nativeEventFilter("windows_generic_MSG", &message, &result));
+    QInputMethodEvent queuedPartial("한", {}); QApplication::sendEvent(field, &queuedPartial);
+    QVERIFY(guard.nativeEventFilter("windows_generic_MSG", &message, nullptr));
+    QCOMPARE(field->text(), QString("공방")); QVERIFY(dialog.isVisible());
+    QVERIFY(!field->property("raisingInputComposing").toBool());
     QTest::keyClick(field, Qt::Key_Escape); QVERIFY(!dialog.isVisible());
 #else
     QSKIP("Windows native message interception");

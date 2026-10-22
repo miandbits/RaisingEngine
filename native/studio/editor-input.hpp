@@ -58,10 +58,11 @@ public:
                       !(GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000);
     if (qEnvironmentVariableIsSet("RAISING_IME_TRACE"))
       qInfo() << "IME native" << msg->message << key << widget->objectName()
-              << widget->property("raisingInputComposing").toBool();
+              << widget->property("raisingInputComposing").toBool() << "hasResult" << bool(result);
     if ((key == VK_ESCAPE || undo) && widget->property("raisingInputComposing").toBool()) {
       cancelPreedit(widget);
-      *result = 0;
+      // Qt's dispatcher can filter a queued message without a result slot.
+      if (result) *result = 0;
       return true;
     }
     if (key != VK_CONTROL && key != VK_SHIFT && key != VK_MENU) flushPendingCommit();

@@ -1,5 +1,19 @@
 # Windows Korean IME verification
 
+## Queued native-message result safety
+
+After Hangul was enabled, the additional ordering guard correctly retained the
+commit until Escape arrived, but the live editor terminated during cancellation.
+Inspection found an unconditional write through the native callback's result
+pointer. Queued Windows messages may have no result slot. The guard now checks
+the pointer, and the native cancellation regression also invokes it with
+`nullptr`, preserving both the committed field text and the dialog.
+
+All 10 interaction cases pass after this correction. Native cancellation and
+save/reopen acceptance of the corrected executable remain pending a Hangul-mode
+switch in the restarted trial editor. The previous native run is a failure,
+not a successful cancellation result.
+
 ## Native ordering follow-up
 
 The user enabled Hangul input for the previous cancellation build. Real
