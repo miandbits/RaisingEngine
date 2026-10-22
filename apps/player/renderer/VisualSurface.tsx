@@ -95,6 +95,14 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.padding!==undefined)style.padding=element.padding;
       else if(element.kind==='text'&&element.uiContext)style.padding=0;
       if(element.borderWidth!==undefined){style.borderWidth=element.borderWidth;style.borderStyle='solid';style.borderColor=element.borderColor??'#57806c';}
+      if(element.kind==='text'){
+        // Compact authored labels should not scroll just because the default
+        // paragraph leading exceeds their box. Keep normal leading in taller
+        // boxes, and retain scrolling when the text itself really overflows.
+        const size=element.fontSize??22,padding=element.padding??(element.uiContext?0:4);
+        const available=element.height-2*(padding+(element.borderWidth??0));
+        style.lineHeight=`${Math.min(size*1.5,Math.max(size,available))}px`;
+      }
       Object.assign(style,{'--style-hover':element.hoverFill,'--style-pressed':element.pressedFill,'--style-disabled':element.disabledColor});
       if(element.kind==='choices'&&element.choiceLayout==='cards'){
         Object.assign(style,{'--choice-fill':element.fill??'#f5efdf','--choice-color':element.color??'#263c36','--choice-border':element.borderColor??'#c7b99a','--choice-border-width':`${element.borderWidth??1}px`,'--choice-radius':`${element.radius??2}px`});
