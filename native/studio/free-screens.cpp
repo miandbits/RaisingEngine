@@ -54,6 +54,7 @@ void StudioWindow::editDataBinding() {
   auto add=[&](QString label,QJsonObject payload){auto item=new QListWidgetItem(label,list);item->setData(Qt::UserRole,payload);};
   for(const auto& pair:QList<QPair<QString,QString>>{{"title",tr("게임 제목")},{"description",tr("게임 소개")},{"calendar",tr("현재 날짜")},{"location",tr("현재 장소")},{"speaker",tr("대화 인물")},{"story",tr("현재 대사·선택 질문")},{"ending",tr("엔딩 제목")}})add(pair.second,{{"binding",pair.first}});
   const auto roster=project.value("roster").toObject();
+  add(tr("현재 사건의 대상 인물"),{{"binding","narrative-actor"}});
   QMap<QString,QString> names;for(const auto& d:view.value("documents").toArray())if(d.toObject().value("kind")=="character"){const auto c=d.toObject().value("data").toObject();names[c.value("id").toString()]=c.value("name").toString();}
   auto numeric=[&](QString label,QJsonObject target){add(tr("공용 / ")+label,{{"binding","data-value"},{"dataBinding",target}});
     if(target.value("kind")=="attribute"?!roster.value("localAttributeIds").toArray().contains(target.value("attributeId")):roster.value("stateModel")!="character-v1")return;

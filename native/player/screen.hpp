@@ -466,6 +466,12 @@ public:
     }
     if (name=="title") return project.value("title","");
     if (name=="user-field") {auto format=element.value("valueFormat","{value}");const auto value=user_field_value(element.value("userFieldId",""));for(size_t pos=0;(pos=format.find("{value}",pos))!=std::string::npos;pos+=value.size())format.replace(pos,7,value);return format;}
+    if (name=="narrative-actor") {
+      if(game.state.is_null()||game.state.value("activeNarrative",Json()).is_null())return "";
+      const auto id=game.state.at("activeNarrative").value("actorId","");
+      for(const auto& character:display_content.at("characters"))if(character.at("id")==id)return character.value("name","");
+      return "";
+    }
     if (name=="description") return project.value("description","");
     if (name=="location") return gameplay().is_null()?"":gameplay().at("location").value("name","");
     if (name=="calendar") { const auto time=display_projection.value("time",Json()); if(time.is_null())return ""; return std::to_string(time.at("year").get<int>())+"년 "+std::to_string(time.at("month").get<int>())+"월 · "+std::to_string(time.at("periodInMonth").get<int>()+1)+"번째 일정"; }

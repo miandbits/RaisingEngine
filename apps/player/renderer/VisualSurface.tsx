@@ -95,7 +95,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.borderWidth!==undefined){style.borderWidth=element.borderWidth;style.borderStyle='solid';style.borderColor=element.borderColor??'#57806c';}
       Object.assign(style,{'--style-hover':element.hoverFill,'--style-pressed':element.pressedFill,'--style-disabled':element.disabledColor});
       const source=imageFor(element,context);
-      const contextText=element.binding==='context-name'?(context.dataUi?.contextNames?.[`${element.contextField}:${element.uiContext?.[element.contextField??'actorId']}`]??'—'):null;
+      const contextText=element.binding==='narrative-actor'?(context.characters?.find(c=>c.id===context.dataState?.activeNarrative?.actorId)?.name??''):element.binding==='context-name'?(context.dataUi?.contextNames?.[`${element.contextField}:${element.uiContext?.[element.contextField??'actorId']}`]??'—'):null;
       const text=contextText??userFieldBinding(element,context.userValues)??dataBindingText(element,context)??numericBinding(element,context)??calendarBinding(element.binding)??(element.binding==='schedule-prompt'?schedulePrompt:null)??(element.binding&&element.binding!=='none'&&element.binding in context?String(context[element.binding as keyof VisualContext]??''):element.text??'텍스트');
       let body:React.ReactNode=null;
       if(element.kind==='image')body=source?<TransitionImage src={assetUrl(source)} element={element}/>:editing?<div className="visual-placeholder">{element.imageSource??'이미지'} · 에셋 선택</div>:null;

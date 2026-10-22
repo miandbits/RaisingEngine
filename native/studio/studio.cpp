@@ -532,6 +532,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
                                       {"location", tr("현재 장소")},
                                       {"ending", tr("엔딩 제목")},
                                       {"speaker", tr("대화 인물")},
+                                      {"narrative-actor", tr("현재 사건의 대상 인물")},
                                       {"story", tr("대사")}})
     bindingField->addItem(p.second, p.first);
   bindingField->addItem(tr("도감 해금 수"),"gallery-summary");bindingField->addItem(tr("도감 필터 상태"),"gallery-filter");bindingField->addItem(tr("도감 오류"),"gallery-error");

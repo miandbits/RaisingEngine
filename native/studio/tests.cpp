@@ -52,6 +52,7 @@ private slots:
   void designerPublishSample();
   void rosterAuthoringRoundtrip();
   void rosterNamedMembers();
+  void narrativeActorBinding();
   void rosterPlayIntegration();
   void characterStateAuthoringRoundtrip();
   void characterStatePlayIntegration();

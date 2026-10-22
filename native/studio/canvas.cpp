@@ -334,6 +334,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
       else if (binding == "title")
         e["text"] = project["title"];
       else if (binding == "context-name") e["text"] = contextNameForPreview(project,e);
+      else if (binding == "narrative-actor") e["text"] = tr("사건 대상 · 플레이 중 결정");
       else if (binding == "calendar-year") e["text"] = QString::number(project["startYear"].toInt(1));
       else if (binding == "calendar-month") e["text"] = QString::number(project["startMonth"].toInt(1)) + QObject::tr("월");
       else if (binding == "calendar-day") e["text"] = "1";

@@ -1,5 +1,28 @@
 #include <QTemporaryDir>
 
+void StudioTests::narrativeActorBinding() {
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
+  QTemporaryDir temporary(engine+"/.cache/narrative-actor-XXXXXX");QVERIFY(temporary.isValid());
+  const auto root=temporary.path()+"/game";StudioWindow w(engine);w.show();
+  QTimer::singleShot(80,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto preset=d->findChild<QComboBox*>("newProjectTemplate");preset->setCurrentIndex(preset->findData("academy-visual"));d->findChild<QLineEdit*>("newProjectDestination")->setText(root);d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
+  w.findChild<QAction*>("newProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+  QSet<QString> originalIds;for(const auto &screen:w.projectData().value("visual").toObject().value("screens").toArray())for(const auto &item:screen.toObject().value("elements").toArray())originalIds.insert(item.toObject().value("id").toString());
+  auto addedElement=[&]{for(const auto &screen:w.projectData().value("visual").toObject().value("screens").toArray())for(const auto &item:screen.toObject().value("elements").toArray())if(!originalIds.contains(item.toObject().value("id").toString()))return item.toObject();return QJsonObject{};};
+  auto palette=w.findChild<QToolButton*>("elementPalette");QVERIFY(palette);bool added=false;
+  for(auto action:palette->menu()->actions())if(action->text()=="텍스트"){action->trigger();added=true;break;}QVERIFY(added);
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(addedElement().value("kind").toString(),QString("text"));
+  auto field=w.findChild<QComboBox*>("textBinding");QVERIFY(field);QVERIFY(field->findData("narrative-actor")>=0);
+  w.findChild<QPushButton*>("dataBindingPicker")->click();auto dialog=w.findChild<QDialog*>("dataBindingDialog");QVERIFY(dialog);
+  auto list=dialog->findChild<QListWidget*>("dataBindingSources");QListWidgetItem* source=nullptr;
+  for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toJsonObject().value("binding")=="narrative-actor")source=list->item(i);
+  QVERIFY(source);QCOMPARE(source->text(),QString("현재 사건의 대상 인물"));list->setCurrentItem(source);
+  dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok)->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  QCOMPARE(addedElement().value("binding").toString(),QString("narrative-actor"));
+  const auto elementId=addedElement().value("id");
+  w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  bool found=false;for(const auto &screen:w.projectData().value("visual").toObject().value("screens").toArray())for(const auto &item:screen.toObject().value("elements").toArray())if(item.toObject().value("id")==elementId){found=true;QCOMPARE(item.toObject().value("binding").toString(),QString("narrative-actor"));}QVERIFY(found);
+}
+
 void StudioTests::rosterNamedMembers() {
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
   QTemporaryDir temporary(engine+"/.cache/roster-names-XXXXXX");QVERIFY(temporary.isValid());
