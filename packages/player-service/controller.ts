@@ -15,6 +15,7 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  rosterCharacterIds?: readonly string[];
   choiceFeedback?:string;
   choiceHints?:Readonly<Record<string,string>>;
   relationshipChanges?: RunSession['relationshipChanges'];
@@ -88,6 +89,7 @@ export class PlayerController {
       ...(c.project.localization?{localization:c.project.localization,locale:localeId(c.project.localization)}:{}),
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
+      rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
       durationMonths: c.project.durationMonths, periodsPerMonth: c.project.periodsPerMonth, schedulePlayback: c.project.schedulePlayback ?? 'manual', attributes: c.attributes, characters: c.characters,
       activities: c.activities, assets: c.assets, state, relationshipChanges:this.session?.relationshipChanges,
       visual: c.project.visual ?? null,

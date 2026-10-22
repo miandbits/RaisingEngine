@@ -17,7 +17,8 @@ for(const first of ['apprentice','mentor'])test(`web actor story: independent re
   const content=built.snapshot,second=first==='apprentice'?'mentor':'apprentice';
   const runtime=new WasmRuntime(await createModule());let saved;
   const make=()=>new WebPlayerController(content,runtime,{read:async()=>saved,write:async text=>{saved=text;}},validate);
-  let player=make();assert.equal((await player.newRun(null)).error,null);
+  let player=make();const started=await player.newRun(null);assert.equal(started.error,null);
+  assert.deepEqual(started.view.rosterCharacterIds,content.project.roster.members.map(member=>member.characterId));
   const version=()=>({generation:player.generation,revision:player.session.state.stateRevision});
   const state=()=>player.session.state;
   const parity=()=>{

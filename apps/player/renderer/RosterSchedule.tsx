@@ -15,10 +15,14 @@ export function RosterSchedule({context, disabled, onCommand, onExecute, showAct
   const revision=state?.stateRevision, key=JSON.stringify(assignments);
   useEffect(()=>{setDraft(JSON.parse(key));},[key,revision,context.planningKey]);
   const editable=!disabled&&['planning','ready'].includes(context.phase);
+  // Save serializers may sort object keys; presentation follows the authored roster.
+  // Keep older integrations without roster metadata usable and retain unknown assignments.
+  const actorIds=[...new Set([...(context.rosterCharacterIds??[]),...Object.keys(assignments)])]
+    .filter(id=>Object.hasOwn(assignments,id));
   const changed=Object.keys(assignments).some(id=>draft[id]!==assignments[id]);
   return <div className="roster-schedule">
     <div>이번 기간 · 캐릭터별 활동 (함께 정산)</div>
-    <div className="roster-schedule-actors">{Object.keys(assignments).map(id=><label key={id}>
+    <div className="roster-schedule-actors">{actorIds.map(id=><label key={id}>
       <span>{context.characters?.find(c=>c.id===id)?.name??id}</span>
       <select aria-label={`${context.characters?.find(c=>c.id===id)?.name??id} 활동`} value={draft[id]??assignments[id]} disabled={!editable}
         onChange={event=>setDraft(previous=>({...previous,[id]:event.target.value}))}>

@@ -72,6 +72,7 @@ export class WebPlayerController implements PlayerBridge {
     const c = localizeContent(this.content,this.content.project.localization,this.locale), state = this.session?.state ?? null, cursor = state?.activeNarrative;
     const projection = this.projection(state,c);
     return { generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
+      rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       ...(c.project.localization?{localization:c.project.localization,locale:this.locale}:{}),
       choiceFeedback:choiceFeedbackText(c,state,this.choiceFeedback,this.locale),choiceHints:choiceHints(c,state,this.locale),

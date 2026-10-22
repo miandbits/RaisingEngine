@@ -17,6 +17,7 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  rosterCharacterIds?: readonly string[];
   'choice-result'?:string;
   characters?: readonly {id:string;name:string}[];
   actorResults?: readonly {characterId:string;text:string}[];
