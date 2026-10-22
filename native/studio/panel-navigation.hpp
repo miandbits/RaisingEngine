@@ -5,6 +5,7 @@
 #include <QMenu>
 #include <QPointer>
 #include <algorithm>
+#include "editor-input.hpp"
 
 // Keep panel navigation available even when a dock's tab or toolbar is clipped.
 inline void installPanelNavigation(QMainWindow *window, QMenu *viewMenu) {
@@ -21,8 +22,9 @@ inline void installPanelNavigation(QMainWindow *window, QMenu *viewMenu) {
       if (!dock->isHidden()) result.append(dock);
     return result;
   };
-  auto focusPanel = [](QWidget *panel) {
+  auto focusPanel = [window](QWidget *panel) {
     if (!panel) return;
+    if (!commitEditorInput(window)) return;
     panel->show();
     if (auto dock = qobject_cast<QDockWidget *>(panel)) dock->raise();
     if (auto previous = panel->focusWidget(); previous && previous->isVisible() && previous->isEnabled()) {

@@ -7,6 +7,7 @@
 #include "table-logic.hpp"
 #include "tool-search.hpp"
 #include "toolbar-access.hpp"
+#include "editor-input.hpp"
 #include <QShortcut>
 #include "project-manager.hpp"
 #include "hierarchy-tree.hpp"
@@ -1713,7 +1714,8 @@ void StudioWindow::duplicateElement() {
   QJsonArray added;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(!copies.contains(id))continue;e["id"]=copies[id];if(copies.contains(e.value("parentId").toString()))e["parentId"]=copies[e.value("parentId").toString()];if(selectedElements.contains(id)&&!copies.contains(value.toObject().value("parentId").toString())){e["label"]=label(e)+tr(" 복사");if(!e.contains("parentId")){e["x"]=qMin(v.value("width").toInt()-e.value("width").toInt(),e.value("x").toInt()+16);e["y"]=qMin(v.value("height").toInt()-e.value("height").toInt(),e.value("y").toInt()+16);}else{e["x"]=e.value("x").toInt()+16;e["y"]=e.value("y").toInt()+16;}}added.append(e);}for(auto e:added)elements.append(e);selection=copies[selection];QStringList newSelection;for(auto id:selectedElements)newSelection.append(copies[id]);selectedElements=newSelection;for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s.value("id")==screenId){s["elements"]=elements;screens[i]=s;}}v["screens"]=screens;p["visual"]=v;replaceProject(p);
 }
 void StudioWindow::save() {
-  if(auto focus=QApplication::focusWidget();focus&&inspector->isAncestorOf(focus))focus->clearFocus();
+  if (!commitEditorInput(this)) { errorLabel->setText(tr("입력 중인 글자를 확정하거나 취소한 뒤 다시 저장하세요.")); return; }
+  if(auto focus=QApplication::focusWidget();focus&&isAncestorOf(focus))focus->clearFocus();
   if (bridge.busy()) {
     QTimer::singleShot(50, this, &StudioWindow::save);
     return;
@@ -1834,6 +1836,7 @@ void StudioWindow::receivePlayer() {
 }
 bool StudioWindow::mayDiscard() {
   if(confirmingTransition)return false;
+  if (!commitEditorInput(this)) return false;
   QScopedValueRollback<bool> guard(confirmingTransition,true);
   // A submitted inline editor owns callbacks until its batch edit completes.
   // Settle it before offering to discard widgets or switch project roots.

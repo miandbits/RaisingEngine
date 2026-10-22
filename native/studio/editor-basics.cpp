@@ -2,6 +2,7 @@
 #include "components.hpp"
 #include "selection-edit.hpp"
 #include "panel-navigation.hpp"
+#include "editor-input.hpp"
 #include <QApplication>
 #include <QClipboard>
 #include <QDockWidget>
@@ -42,6 +43,7 @@ void StudioWindow::showHierarchy() {
 }
 
 void StudioWindow::setupBasicEditing(QMenu *edit) {
+  new EditorInputGuard(this);
   installPanelNavigation(this, viewMenu);
   auto copy=edit->addAction(tr("요소 복사"),QKeySequence::Copy,this,&StudioWindow::copyElements);copy->setObjectName("copyElements");
   auto paste=edit->addAction(tr("요소 붙여넣기"),QKeySequence::Paste,this,&StudioWindow::pasteElements);paste->setObjectName("pasteElements");

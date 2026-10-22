@@ -1,9 +1,11 @@
 #pragma once
+#include "editor-input.hpp"
 #include <QAction>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QKeySequence>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
@@ -12,7 +14,28 @@
 #include <QVBoxLayout>
 #include <functional>
 
+class ToolSearchNavigation final : public QObject {
+public:
+  ToolSearchNavigation(QLineEdit *search, QListWidget *list, QObject *parent)
+      : QObject(parent), search_(search), list_(list) { search->installEventFilter(this); }
+protected:
+  bool eventFilter(QObject *, QEvent *event) override {
+    if (event->type() != QEvent::KeyPress || search_->property("raisingInputComposing").toBool()) return false;
+    const auto key = static_cast<QKeyEvent *>(event);
+    if (key->key() != Qt::Key_Down && key->key() != Qt::Key_Up) return false;
+    const int direction = key->key() == Qt::Key_Down ? 1 : -1;
+    for (int row = list_->currentRow() + direction; row >= 0 && row < list_->count(); row += direction)
+      if (list_->item(row)->flags() & Qt::ItemIsEnabled) {
+        list_->setCurrentRow(row); list_->scrollToItem(list_->item(row)); break;
+      }
+    return true;
+  }
+private:
+  QLineEdit *search_; QListWidget *list_;
+};
+
 inline void showAuthoringToolSearch(QWidget* parent,QMenu* menu) {
+  if (!commitEditorInput(parent)) return;
   struct Tool { QPointer<QAction> action; QString path; };
   QList<Tool> tools;
   std::function<void(QMenu*,QString)> collect=[&](QMenu* branch,QString path){
@@ -36,6 +59,7 @@ inline void showAuthoringToolSearch(QWidget* parent,QMenu* menu) {
   auto layout=new QVBoxLayout(&dialog);
   auto search=new QLineEdit;search->setObjectName("authoringToolQuery");search->setPlaceholderText(QObject::tr("인물, 활동, 조건, 폰트처럼 작업 이름으로 찾으세요"));layout->addWidget(search);
   auto list=new QListWidget;list->setObjectName("authoringToolResults");layout->addWidget(list);
+  new ToolSearchNavigation(search, list, &dialog);
   auto status=new QLabel;status->setObjectName("authoringToolCount");layout->addWidget(status);
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Open|QDialogButtonBox::Cancel);layout->addWidget(buttons);
   auto open=buttons->button(QDialogButtonBox::Open);open->setDefault(true);

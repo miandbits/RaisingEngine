@@ -3332,5 +3332,6 @@
   ["선택 %1", "Choice %1", "選択 %1"],
   ["다음 패널","Next Panel","次のパネル"],
   ["이전 패널","Previous Panel","前のパネル"],
-  ["패널로 이동","Focus Panel","パネルへ移動"]
+  ["패널로 이동","Focus Panel","パネルへ移動"],
+  ["입력 중인 글자를 확정하거나 취소한 뒤 다시 저장하세요.","Confirm or cancel the text being composed, then save again.","変換中の文字を確定または取り消してから、もう一度保存してください。"]
 ]

@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "panel-navigation.hpp"
+#include "tool-search.hpp"
 #include <QApplication>
 #include <QClipboard>
 #include <QDockWidget>
@@ -14,6 +15,58 @@
 class EditorInteractionTests : public QObject {
   Q_OBJECT
 private slots:
+  void koreanCompositionAndCancel() {
+    QWidget owner; new EditorInputGuard(&owner); owner.show();
+    QDialog dialog(&owner); auto layout = new QVBoxLayout(&dialog);
+    auto field = new QLineEdit("공방", &dialog); layout->addWidget(field);
+    dialog.show(); dialog.activateWindow(); field->setFocus(); QCoreApplication::processEvents();
+    field->setCursorPosition(field->text().size());
+    QInputMethodEvent committed; committed.setCommitString(" 한글"); QApplication::sendEvent(field, &committed);
+    QCOMPARE(field->text(), QString("공방 한글"));
+    QInputMethodEvent composing("ㄱ", {}); QApplication::sendEvent(field, &composing);
+    QVERIFY(field->property("raisingInputComposing").toBool());
+    QTest::keyClick(field, Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(field->text(), QString("공방 한글")); QVERIFY(!field->property("raisingInputComposing").toBool());
+    QTest::keyClick(field, Qt::Key_Z, Qt::ControlModifier); QCOMPARE(field->text(), QString("공방"));
+    QTest::keyClick(field, Qt::Key_Y, Qt::ControlModifier); QCOMPARE(field->text(), QString("공방 한글"));
+    field->selectAll(); QTest::keyClick(field, Qt::Key_C, Qt::ControlModifier);
+    QCOMPARE(QApplication::clipboard()->text(), QString("공방 한글"));
+    QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+    QTest::keyClick(field, Qt::Key_Escape); QVERIFY(dialog.isVisible());
+    QVERIFY(!field->property("raisingInputComposing").toBool());
+    QTest::keyClick(field, Qt::Key_Escape); QVERIFY(!dialog.isVisible());
+  }
+  void toolSearchKeyboardAndIme() {
+    QWidget owner; new EditorInputGuard(&owner); owner.show();
+    QLineEdit source(&owner); source.show(); owner.activateWindow(); source.setFocus(); QCoreApplication::processEvents();
+    QMenu menu(&owner); auto first = menu.addAction("인물");
+    auto disabled = menu.addAction("사용 불가"); disabled->setEnabled(false);
+    auto relation = menu.addAction("관계"); bool invoked = false;
+    connect(relation, &QAction::triggered, &owner, [&] { invoked = true; });
+    Q_UNUSED(first);
+    QInputMethodEvent pending("ㅎ", {}); QApplication::sendEvent(&source, &pending);
+    bool openedDuringComposition = false; QTimer unexpectedDialog; unexpectedDialog.setSingleShot(true);
+    connect(&unexpectedDialog, &QTimer::timeout, &owner, [&] {
+      if (auto d = owner.findChild<QDialog *>("authoringToolSearch")) { openedDuringComposition = true; d->reject(); }
+    });
+    unexpectedDialog.start(100); showAuthoringToolSearch(&owner, &menu); unexpectedDialog.stop();
+    QVERIFY(!openedDuringComposition); QVERIFY(source.hasFocus()); QVERIFY(source.property("raisingInputComposing").toBool());
+    QTest::keyClick(&source, Qt::Key_Escape);
+    QTimer::singleShot(5000, &owner, [&] { if (auto d = owner.findChild<QDialog *>("authoringToolSearch")) d->reject(); });
+    QTimer::singleShot(50, &owner, [&] {
+      auto dialog = owner.findChild<QDialog *>("authoringToolSearch"); QVERIFY(dialog);
+      auto search = dialog->findChild<QLineEdit *>("authoringToolQuery");
+      auto list = dialog->findChild<QListWidget *>("authoringToolResults"); QVERIFY(search && list);
+      QTest::keyClick(search, Qt::Key_Down); QCOMPARE(list->currentRow(), 2); QVERIFY(search->hasFocus());
+      QTest::keyClick(search, Qt::Key_Up); QCOMPARE(list->currentRow(), 0);
+      QInputMethodEvent partial("ㄱ", {}); QApplication::sendEvent(search, &partial);
+      QTest::keyClick(search, Qt::Key_Down); QCOMPARE(list->currentRow(), 0);
+      QTest::keyClick(search, Qt::Key_Escape); QVERIFY(dialog->isVisible());
+      QInputMethodEvent committed; committed.setCommitString("관계"); QApplication::sendEvent(search, &committed);
+      QCOMPARE(list->count(), 1); QTest::keyClick(search, Qt::Key_Return);
+    });
+    showAuthoringToolSearch(&owner, &menu); QVERIFY(invoked);
+  }
   void panelNavigationWithoutProject() {
     QMainWindow w; w.resize(1000, 680);
     auto center = new QLineEdit(&w); w.setCentralWidget(center);
@@ -71,9 +124,18 @@ private slots:
     for (QTreeWidgetItemIterator it(tree); *it; ++it)
       if ((*it)->data(0, Qt::UserRole).toString() == selectedId) { tree->setCurrentItem(*it); break; }
     auto name = w.findChild<QLineEdit *>("elementName"); QVERIFY(name && name->isEnabled());
+    name->setFocus();
+    const auto beforeComposition = w.projectData();
+    QInputMethodEvent preedit("ㅎ", {}); QApplication::sendEvent(name, &preedit);
+    w.findChild<QAction *>("saveProject")->trigger();
+    QCOMPARE(w.projectData(), beforeComposition); QVERIFY(!w.busy());
+    QVERIFY(name->property("raisingInputComposing").toBool());
+    w.findChild<QAction *>("focusNextPanel")->trigger(); QVERIFY(name->hasFocus());
+    QTest::keyClick(name, Qt::Key_Escape); QVERIFY(w.isVisible());
+    QVERIFY(!name->property("raisingInputComposing").toBool());
     name->setFocus(); name->selectAll(); QTest::keyClick(name, Qt::Key_C, Qt::ControlModifier);
     QCOMPARE(QApplication::clipboard()->text(), name->text());
-    const QString renamed = name->text() + " edited";
+    const QString renamed = name->text() + QString::fromUtf8(" 한글 저장");
     QApplication::clipboard()->setText(renamed);
     QTest::keyClick(name, Qt::Key_V, Qt::ControlModifier);
     QCOMPARE(name->text(), renamed);
