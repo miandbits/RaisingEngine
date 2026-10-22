@@ -2981,6 +2981,10 @@ export type Element = {
   imageAssetId?: string;
   fit?: "cover" | "contain";
   /**
+   * Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default.
+   */
+  showActivityRules?: boolean;
+  /**
    * Show the selected activity's authored description below each schedule column. Off by default.
    */
   showActivityDescription?: boolean;

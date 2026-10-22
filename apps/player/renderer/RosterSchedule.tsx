@@ -1,11 +1,13 @@
 import React, {useEffect, useState} from 'react';
+import {activityRuleLines} from '../../../packages/visual/activity-rules.js';
 import type {VisualContext} from './VisualSurface.js';
 import type {WidgetCommand} from './JourneyWidgets.js';
 
 /** A roster uses actor assignments, not the legacy monthly schedule command. */
-export function RosterSchedule({context, disabled, onCommand, onExecute, showActivityDescription=false}: {
+export function RosterSchedule({context, disabled, onCommand, onExecute, showActivityDescription=false, showActivityRules=false}: {
   context: VisualContext; disabled: boolean;
   showActivityDescription?: boolean;
+  showActivityRules?: boolean;
   onCommand: ((command: WidgetCommand) => void) | undefined; onExecute: () => void;
 }) {
   const state=context.dataState, assignments=state?.roster?.assignments??{};
@@ -22,6 +24,9 @@ export function RosterSchedule({context, disabled, onCommand, onExecute, showAct
         onChange={event=>setDraft(previous=>({...previous,[id]:event.target.value}))}>
         {context.activities.map(activity=><option key={activity.id} value={activity.id}>{activity.label}</option>)}
       </select>
+      {showActivityRules&&<small id={`roster-rules-${id}`} className="activity-rules" style={{display:'block',whiteSpace:'normal',lineHeight:'25px',paddingTop:10}}>
+        {activityRuleLines(context.activities.find(activity=>activity.id===(draft[id]??assignments[id]))??{}, {attributes:context.stats,characters:context.characters??[],actorId:id,localAttributeIds:Object.keys(state?.roster?.attributes[id]??{})}).map((line,index)=><div key={index}>{line}</div>)}
+      </small>}
       {showActivityDescription&&<small id={`roster-description-${id}`} style={{display:'block',maxHeight:100,overflow:'auto',whiteSpace:'normal',lineHeight:'25px',paddingTop:10}}>
         {context.activities.find(activity=>activity.id===(draft[id]??assignments[id]))?.description??''}
       </small>}

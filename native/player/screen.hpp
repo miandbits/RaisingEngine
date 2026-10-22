@@ -697,6 +697,7 @@ public:
     for(const auto& a:display_content.at("attributes")){bool local=false;for(const auto& key:r.at("localAttributeIds"))if(key==a.at("id"))local=true;if(!local)out+="<div>"+escape(a.value("label",""))+": "+std::to_string(game.state.at("attributes").at(a.value("id","")).get<int>())+"</div>";}
     return out;
   }
+#include "activity-rules.inc"
   std::string roster_schedule(const Json& element) {
     if(game.state.is_null())return "새 게임을 시작하세요.";
     const auto phase=game.state.value("phase","");const bool editable=!progress_pending()&&(phase=="planning"||phase=="ready");
@@ -710,6 +711,8 @@ public:
       out+="<div style=\"display:inline-block;vertical-align:top;width:"+card_width+";margin:1%;\"><b>"+escape(name)+"</b><select id=\"roster-"+escape(id)+"\" style=\"width:95%;\""+(editable?std::string():" disabled=\"disabled\"")+">";
       for(const auto& a:display_content.at("activities"))if(!a.contains("expeditionId"))out+="<option value=\""+escape(a.value("id",""))+"\""+(roster_draft.value(id,"")==a.value("id","")?" selected=\"selected\"":"")+">"+escape(a.value("label",""))+"</option>";
       out+="</select>";
+      if(element.value("showActivityRules",false))for(const auto& a:display_content.at("activities"))if(a.value("id","")==roster_draft.value(id,""))
+        out+="<div id=\"roster-rules-"+escape(id)+"\" style=\"width:100%;box-sizing:border-box;font-size:17px;line-height:25px;white-space:normal;word-break:break-all;padding-top:10px;\">"+activity_rules(a,id)+"</div>";
       if(element.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.value("id","")==roster_draft.value(id,""))
         out+="<div id=\"roster-description-"+escape(id)+"\" style=\"width:100%;box-sizing:border-box;font-size:17px;line-height:25px;max-height:100px;overflow-x:hidden;overflow-y:auto;white-space:normal;word-break:break-all;padding:10px 4px 0 0;\">"+escape(a.value("description",""))+"</div>";
       out+="</div>";
@@ -854,6 +857,7 @@ public:
         out+="</select><span class=\"dropdown-marker\">▼</span>";
         std::string selected_summary;for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])selected_summary=activity_preview(a);
         out+="<div id=\"plan-summary-"+std::to_string(i)+"\" class=\"activity-preview\" style=\"font-size:16px;max-height:120px;overflow:auto;white-space:normal;word-break:break-all;\">"+escape(selected_summary)+"</div>";
+        if(e.value("showActivityRules",false))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])out+="<div id=\"plan-rules-"+std::to_string(i)+"\" style=\"font-size:17px;line-height:25px;max-height:150px;overflow:auto;white-space:normal;padding-top:10px;\">"+activity_rules(a)+"</div>";
         if(e.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])out+="<div id=\"plan-description-"+std::to_string(i)+"\" style=\"font-size:17px;line-height:25px;max-height:125px;overflow:auto;white-space:normal;word-break:break-all;padding-top:10px;\">"+escape(a.value("description",""))+"</div>";
         out+="</div>";
       }

@@ -58,6 +58,10 @@ void StudioWindow::editWidgetSettings() {
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));
+  auto activityRules = new QCheckBox(tr("일정 칸·다인 배정에 비용과 기본 효과 표시 (최종 결과 예측 아님)"));
+  activityRules->setObjectName("showActivityRules");
+  activityRules->setChecked(value.value("showActivityRules").toBool());
+  if(kind=="schedule")form->addRow(activityRules);else activityRules->hide();
   auto activityDescription = new QCheckBox(tr("일정 칸 아래에 선택한 활동 설명 표시"));
   auto choiceEffects = new QCheckBox(tr("선택지 아래에 효과와 후속 안내 표시"));
   choiceEffects->setObjectName("showChoiceEffects");choiceEffects->setChecked(value.value("showChoiceEffects").toBool());
@@ -120,6 +124,7 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="choices"){if(choiceEffects->isChecked())value["showChoiceEffects"]=true;else value.remove("showChoiceEffects");}
   if(kind=="schedule"){QJsonArray ids;for(int i=0;i<decreasing->count();i++)if(decreasing->item(i)->checkState()==Qt::Checked)ids.append(decreasing->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove("decreasingAttributeIds");else value["decreasingAttributeIds"]=ids;}
   if(kind=="schedule"){if(activityIcons.isEmpty())value.remove("activityIcons");else value["activityIcons"]=activityIcons;}
+  if(kind=="schedule"){if(activityRules->isChecked())value["showActivityRules"]=true;else value.remove("showActivityRules");}
   if(kind=="schedule"){if(activityDescription->isChecked())value["showActivityDescription"]=true;else value.remove("showActivityDescription");}
   auto project=projectData();auto visual=project["visual"].toObject();auto screens=visual["screens"].toArray();
   for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s["id"]!=screenId)continue;auto elements=s["elements"].toArray();for(int j=0;j<elements.size();j++)if(elements[j].toObject()["id"]==selection)elements[j]=value;s["elements"]=elements;screens[i]=s;}

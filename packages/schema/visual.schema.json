@@ -865,6 +865,10 @@
             "contain"
           ]
         },
+        "showActivityRules": {
+          "type": "boolean",
+          "description": "Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default."
+        },
         "showActivityDescription": {
           "type": "boolean",
           "description": "Show the selected activity's authored description below each schedule column. Off by default."

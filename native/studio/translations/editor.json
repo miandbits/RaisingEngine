@@ -1,4 +1,5 @@
 [
+  ["일정 칸·다인 배정에 비용과 기본 효과 표시 (최종 결과 예측 아님)", "Show costs and base effects in schedule columns / roster (not an outcome forecast)", "予定欄・複数人物の割り当てに費用と基本効果を表示（最終結果の予測ではありません）"],
   ["제작 도구 찾기", "Find authoring tools", "制作ツールを検索"],
   ["제작 도구 찾기…", "Find authoring tools…", "制作ツールを検索…"],
   ["인물, 활동, 조건, 폰트처럼 작업 이름으로 찾으세요", "Search by task: characters, activities, conditions, fonts", "人物、活動、条件、フォントなどの作業名で検索"],

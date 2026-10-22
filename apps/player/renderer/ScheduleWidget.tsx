@@ -1,10 +1,14 @@
 import { periodLabel } from '../../../packages/player-service/schedule.js';
 import React, {useEffect, useState} from 'react';
 import type {Element} from '../../../packages/visual/model.js';
+import {activityRuleLines} from '../../../packages/visual/activity-rules.js';
+import type {ContentSnapshot} from '../../../packages/core/model.js';
 import {activityPreview} from '../../../packages/visual/activity-summary.js';
 
 export interface ScheduleActivity {
   id:string; label:string; iconAssetId?:string; description?:string;
+  baseEffects?:ContentSnapshot['activities'][number]['baseEffects'];
+  successCheck?:NonNullable<ContentSnapshot['activities'][number]['successCheck']>;
   costs?:readonly {attributeId:string;amount:number}[];
   previewAttributes?:readonly {attributeId:string;label?:string;valueFormat?:string}[];
 }
@@ -85,6 +89,6 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
     const activity=context.activities.find(a=>a.id===context.plan[index]);const summary=activity?activityPreview(activity,context.stats):'';
     return <label key={period}>{period}<select aria-label={`${period} 활동`} value={context.plan[index]??''} disabled={!editable||index<context.period} onChange={event=>chooseActivity(event.target.value,index)}>
       {context.activities.map(value=><option key={value.id} value={value.id}>{value.label}{value.previewAttributes?.length?` · ${activityPreview(value,context.stats)}`:''}</option>)}
-    </select>{summary&&<small className="activity-preview">{summary}</small>}{element.showActivityDescription&&activity?.description&&<small className="activity-preview activity-description">{activity.description}</small>}</label>;
+    </select>{element.showActivityRules&&activity&&<small className="activity-preview activity-rules">{activityRuleLines(activity,{attributes:context.stats}).map((line,index)=><div key={index}>{line}</div>)}</small>}{summary&&<small className="activity-preview">{summary}</small>}{element.showActivityDescription&&activity?.description&&<small className="activity-preview activity-description">{activity.description}</small>}</label>;
   })}</div>;
 }
