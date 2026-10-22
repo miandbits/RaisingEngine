@@ -15,6 +15,53 @@
 class EditorInteractionTests : public QObject {
   Q_OBJECT
 private slots:
+  void cancellingDoesNotCommitPlatformPreedit() {
+    QWidget owner; owner.show();
+    QDialog dialog(&owner); auto layout = new QVBoxLayout(&dialog);
+    auto field = new QLineEdit("공방", &dialog); layout->addWidget(field);
+    EditorInputGuard guard(&owner, [field] {
+      QInputMethodEvent platformReset; platformReset.setCommitString("한");
+      QApplication::sendEvent(field, &platformReset);
+    });
+    dialog.show(); dialog.activateWindow(); field->setFocus(); QCoreApplication::processEvents();
+    field->setCursorPosition(field->text().size());
+    QTest::keyClicks(field, " A");
+    for (auto key : {Qt::Key_Escape, Qt::Key_Z}) {
+      QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+      QTest::keyClick(field, key, key == Qt::Key_Z ? Qt::ControlModifier : Qt::NoModifier);
+      QCOMPARE(field->text(), QString("공방 A")); QVERIFY(dialog.isVisible());
+      QVERIFY(!field->property("raisingInputComposing").toBool());
+    }
+    QTest::keyClick(field, Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(field->text(), QString("공방"));
+    QTest::keyClick(field, Qt::Key_Y, Qt::ControlModifier);
+    QCOMPARE(field->text(), QString("공방 A"));
+  }
+  void nativeCompositionEscape() {
+#ifdef Q_OS_WIN
+    QWidget owner; EditorInputGuard guard(&owner); owner.show();
+    QDialog dialog(&owner); auto layout = new QVBoxLayout(&dialog);
+    auto field = new QLineEdit("공방", &dialog); layout->addWidget(field);
+    dialog.show(); dialog.activateWindow(); field->setFocus(); QCoreApplication::processEvents();
+    QInputMethodEvent partial("한", {}); QApplication::sendEvent(field, &partial);
+    MSG message{}; message.message = WM_KEYDOWN; message.wParam = VK_ESCAPE;
+    qintptr result = -1;
+    QWidget otherOwner; EditorInputGuard unrelatedGuard(&otherOwner);
+    QVERIFY(!unrelatedGuard.nativeEventFilter("windows_generic_MSG", &message, &result));
+    QVERIFY(field->property("raisingInputComposing").toBool());
+    message.wParam = VK_F6;
+    QVERIFY(!guard.nativeEventFilter("windows_generic_MSG", &message, &result));
+    QVERIFY(field->property("raisingInputComposing").toBool());
+    message.wParam = VK_ESCAPE;
+    QVERIFY(guard.nativeEventFilter("windows_generic_MSG", &message, &result));
+    QCOMPARE(result, qintptr(0)); QCOMPARE(field->text(), QString("공방"));
+    QVERIFY(dialog.isVisible()); QVERIFY(!field->property("raisingInputComposing").toBool());
+    QVERIFY(!guard.nativeEventFilter("windows_generic_MSG", &message, &result));
+    QTest::keyClick(field, Qt::Key_Escape); QVERIFY(!dialog.isVisible());
+#else
+    QSKIP("Windows native message interception");
+#endif
+  }
   void koreanCompositionAndCancel() {
     QWidget owner; new EditorInputGuard(&owner); owner.show();
     QDialog dialog(&owner); auto layout = new QVBoxLayout(&dialog);

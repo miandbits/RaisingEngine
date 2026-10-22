@@ -1,6 +1,36 @@
 # Windows Korean IME verification
 
-## Result: partial, with two open input issues
+## Follow-up: cancellation fix, native retest pending
+
+The next 20-minute pass adds a Windows native-message guard for Escape and
+Ctrl+Z before normal Qt shortcut handling. It only owns text composition in
+its editor's widgets and child dialogs; unrelated windows and movement keys
+are left alone. The existing Qt event guard remains the cross-platform path.
+
+One underlying issue was confirmed in the installed Qt version's upstream
+implementation: Windows `reset()` sends a commit event before cancelling the
+IME. The editor now suppresses input-method events to the cancellation target
+only during that synchronous reset, then clears its preedit. It does not
+replace the field text, clear its undo history, or suppress normal save commits.
+See [Qt 6.10.1 Windows input context](https://github.com/qt/qtbase/blob/v6.10.1/src/plugins/platforms/windows/qwindowsinputcontext.cpp).
+
+The updated interaction suite passed 8 cases including initialization/cleanup
+(6 substantive cases). New regressions model a platform reset that commits
+text, verify both Escape and Ctrl+Z preserve earlier text and dialog visibility,
+and verify that subsequent normal undo/redo still work. A Windows-message test
+also covers owner isolation, non-cancel keys and second Escape after cancellation.
+
+The final Windows editor also saved and reopened a disposable workshop copy
+with the exact name `공방 제목 · 입력 검증` and a clean saved state. This GUI
+roundtrip used Unicode text insertion, not an active Microsoft IME composition.
+
+**Actual Microsoft IME acceptance remains pending.** The new process started
+in Latin input mode; desktop input continued to produce Latin G. A user-assisted
+Hangul switch/composition was requested but not yet received. Synthetic tests
+and the source-confirmed reset fix do not prove native Escape/Ctrl+Z acceptance.
+The prior failures below remain acceptance criteria until retested.
+
+## Earlier native-input observations
 
 On 2026-10-22, a 20-minute session used Qt 6.10.1 on Windows and Korean
 Microsoft IME in Hangul mode, with a disposable workshop project and a separate
@@ -26,11 +56,10 @@ effects. Do not treat this session as a pass for every Windows keyboard path.
 | Save, close and reopen | Passed: the exact visible test name `한ㅎㅎㅎㅎㅎ` persisted, and the reopened editor was clean. |
 
 The two open issue groups are **Escape cancellation** (inspector and child
-dialog) and **undo granularity during composition**. They remain unresolved in
-this commit. Production input handling was not changed speculatively in the
-remaining time. The next fix needs native message/input-method event ordering
-evidence, followed by actual Microsoft IME retesting; a passing synthetic test
-alone is insufficient.
+dialog) and **undo granularity during composition**. In the initial verification
+commit, production input handling was unchanged. The follow-up above addresses
+the reset path, but actual Microsoft IME retesting is still necessary; a passing
+synthetic test alone is insufficient.
 
 ## Automated regression scope
 
