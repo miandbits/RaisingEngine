@@ -3329,5 +3329,8 @@
   ["캐릭터별 전환 미리보기…", "Preview per-character conversion…", "キャラクター別への変換を確認…"],
   [" · 캐릭터별 전환", " · Per-character conversion", " · キャラクター別へ変換"],
   ["대본 %1", "Script %1", "台本 %1"],
-  ["선택 %1", "Choice %1", "選択 %1"]
+  ["선택 %1", "Choice %1", "選択 %1"],
+  ["다음 패널","Next Panel","次のパネル"],
+  ["이전 패널","Previous Panel","前のパネル"],
+  ["패널로 이동","Focus Panel","パネルへ移動"]
 ]

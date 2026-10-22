@@ -1,6 +1,7 @@
 #include "studio.hpp"
 #include "components.hpp"
 #include "selection-edit.hpp"
+#include "panel-navigation.hpp"
 #include <QApplication>
 #include <QClipboard>
 #include <QDockWidget>
@@ -41,6 +42,7 @@ void StudioWindow::showHierarchy() {
 }
 
 void StudioWindow::setupBasicEditing(QMenu *edit) {
+  installPanelNavigation(this, viewMenu);
   auto copy=edit->addAction(tr("요소 복사"),QKeySequence::Copy,this,&StudioWindow::copyElements);copy->setObjectName("copyElements");
   auto paste=edit->addAction(tr("요소 붙여넣기"),QKeySequence::Paste,this,&StudioWindow::pasteElements);paste->setObjectName("pasteElements");
   copy->setToolTip(tr("선택한 요소와 자식 전체를 복사합니다. 같은 프로젝트의 다른 화면에도 붙여넣을 수 있습니다."));

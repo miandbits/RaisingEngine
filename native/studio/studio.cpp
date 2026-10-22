@@ -1840,7 +1840,7 @@ bool StudioWindow::mayDiscard() {
   if(bridge.busy()&&!waitForPendingEdits())return false;
   if(auto workspace=findChild<QDockWidget*>("authoringWorkspaceDock");workspace&&workspace->property("workspaceInputPending").toBool()){
     QMessageBox draft(QMessageBox::Warning,tr("작업실에 적용하지 않은 입력"),tr("작업실에 적용하지 않은 입력이 있습니다. 돌아가서 적용하거나 입력을 버리고 계속하세요."),QMessageBox::Discard|QMessageBox::Cancel,this);
-    draft.setObjectName("workspaceUnsavedDialog");draft.setDefaultButton(QMessageBox::Cancel);draft.button(QMessageBox::Cancel)->setText(tr("작업실로 돌아가기"));draft.button(QMessageBox::Discard)->setText(tr("입력 버리고 계속"));
+    draft.setObjectName("workspaceUnsavedDialog");draft.setDefaultButton(QMessageBox::Cancel);draft.setEscapeButton(QMessageBox::Cancel);draft.button(QMessageBox::Cancel)->setText(tr("작업실로 돌아가기"));draft.button(QMessageBox::Discard)->setText(tr("입력 버리고 계속"));
     if(draft.exec()!=QMessageBox::Discard){workspace->show();workspace->raise();return false;}
     if(auto discard=workspace->findChild<QPushButton*>("workspaceDiscardDrafts"))discard->click();
   }
