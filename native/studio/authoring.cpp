@@ -94,7 +94,7 @@ void StudioWindow::editWidgetSettings() {
   auto decreasing = new QListWidget;decreasing->setObjectName("decreasingAttributes");decreasing->setMaximumHeight(110);
   for(auto d:view["documents"].toArray())if(d.toObject()["kind"]=="attributes")for(auto v:d.toObject()["data"].toObject()["attributes"].toArray()){
     auto a=v.toObject();auto item=new QListWidgetItem(a["label"].toString(),decreasing);item->setData(Qt::UserRole,a["id"].toString());
-    item->setCheckState(value["decreasingAttributeIds"].toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);
+    item->setCheckState(value.value("decreasingAttributeIds").toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);
   }
   if(kind=="schedule")form->addRow(tr("예상에서 낮아질수록 좋은 항목"),decreasing);else decreasing->hide();
   QJsonArray entries;

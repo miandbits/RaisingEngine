@@ -1,6 +1,24 @@
 #include <QScrollArea>
 #include <QScrollBar>
 
+void StudioTests::widgetSettingsPreserveRoster() {
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT");QTemporaryDir temp(engine+"/.cache/widget-roster-XXXXXX");QVERIFY(temp.isValid());
+  StudioWindow w(engine);w.resize(1280,800);w.show();
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("newProjectDialog");QVERIFY(d);auto p=d->findChild<QComboBox*>("newProjectTemplate");p->setCurrentIndex(p->findData("genre-suite/roster"));d->findChild<QLineEdit*>("newProjectDestination")->setText(temp.path()+"/game");d->findChild<QDialogButtonBox*>("newProjectButtons")->button(QDialogButtonBox::Ok)->click();});
+  w.findChild<QAction*>("newProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+  const auto roster=w.projectData()["roster"].toObject();QCOMPARE(roster["stateModel"].toString(),QString("character-v1"));
+  w.findChild<QAction*>("add-element-choices")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  auto before=w.projectData();before.remove("visual");
+  QTimer::singleShot(40,&w,[&]{auto d=w.findChild<QDialog*>("widgetSettingsDialog");QVERIFY(d);auto mode=d->findChild<QComboBox*>("widgetLayout");mode->setCurrentIndex(mode->findData("cards"));d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok)->click();});
+  w.findChild<QPushButton*>("widgetSettings")->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  QCOMPARE(w.projectData()["roster"].toObject(),roster);auto after=w.projectData();after.remove("visual");QCOMPARE(after,before);
+  bool found=false;for(const auto& screen:w.projectData()["visual"].toObject()["screens"].toArray())for(const auto& entry:screen.toObject()["elements"].toArray())if(entry.toObject()["id"]==w.selectedId()){
+    QCOMPARE(entry.toObject()["choiceLayout"].toString(),QString("cards"));QVERIFY(!entry.toObject().contains("decreasingAttributeIds"));found=true;
+  }QVERIFY(found);
+  w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  QFile f(temp.path()+"/game/project.json");QVERIFY(f.open(QIODevice::ReadOnly));const auto saved=QJsonDocument::fromJson(f.readAll()).object();QCOMPARE(saved["roster"].toObject(),roster);QCOMPARE(saved["visual"],w.projectData()["visual"]);
+}
+
 void StudioTests::pinnedWidgetTools() {
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT");QTemporaryDir temp(engine+"/.cache/pinned-widget-XXXXXX");QVERIFY(temp.isValid());
   StudioWindow w(engine);w.resize(1280,800);w.show();

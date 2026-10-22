@@ -35,6 +35,7 @@ class StudioTests : public QObject {
   Q_OBJECT
 private slots:
   void pinnedWidgetTools();
+  void widgetSettingsPreserveRoster();
   void initialRosterCanvasPreview();
   void authoringToolSearch();
   void editorBasicsClipboardLayers();
