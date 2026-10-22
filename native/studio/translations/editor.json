@@ -1,4 +1,11 @@
 [
+  ["초기 배정 미리보기 · 실행 결과 아님", "Initial assignment preview · not a run result", "初期割り当てのプレビュー・実行結果ではありません"],
+  ["플레이에서 스크롤 · %1명 더", "Scroll in Play · %1 more characters", "プレイ中にスクロール・ほか%1人"],
+  ["활동 미지정", "Activity not assigned", "活動未指定"],
+  ["비용 · %1", "Cost · %1", "費用・%1"],
+  ["활동 배정 적용", "Apply activity assignments", "活動の割り当てを適用"],
+  ["배정한 활동 함께 실행", "Run assigned activities together", "割り当てた活動を一緒に実行"],
+
   ["일정 칸·다인 배정에 비용과 기본 효과 표시 (최종 결과 예측 아님)", "Show costs and base effects in schedule columns / roster (not an outcome forecast)", "予定欄・複数人物の割り当てに費用と基本効果を表示（最終結果の予測ではありません）"],
   ["제작 도구 찾기", "Find authoring tools", "制作ツールを検索"],
   ["제작 도구 찾기…", "Find authoring tools…", "制作ツールを検索…"],

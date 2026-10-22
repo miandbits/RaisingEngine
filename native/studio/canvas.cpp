@@ -4,6 +4,7 @@
 #include "components.hpp"
 #include "selection-edit.hpp"
 #include "component-preview.hpp"
+#include "schedule-preview.hpp"
 #include <QGraphicsObject>
 #include <QDate>
 #include <QGraphicsSceneMouseEvent>
@@ -78,6 +79,8 @@ public:
       p->fillRect(QRectF(0,track.y(),box.width()*ratio,thickness),rgba(data.value("color").toString(),QColor("#68c6a0")));
       p->setPen(rgba(data.value("color").toString(),Qt::white));
       p->drawText(box,Qt::AlignCenter,data.value("text").toString());
+    } else if (kind == "schedule" && !data.value("_rosterPreview").toArray().isEmpty()) {
+      paintRosterPreview(p,box,data);
     } else if (kind == "schedule" && data["scheduleLayout"] == "calendar") {
       p->fillRect(box, QColor("#080706")); p->setPen(QColor("#cba99d"));
       QFont font(data["_fontFamily"].toString("Noto Sans KR"));font.setPixelSize(data["fontSize"].toInt(24));p->setFont(font);
@@ -318,7 +321,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     auto e = resolvedStyle(visual,v.toObject());
     const auto fontPath=paths.value(e["fontAssetId"].toString(),project["_defaultFontPath"].toString());
     const auto family=projectFontFamily(fontPath);if(!family.isEmpty())e["_fontFamily"]=family;
-    if(e["kind"]=="schedule"){e["_year"]=project["startYear"];e["_month"]=project["startMonth"];}
+    if(e["kind"]=="schedule"){e["_year"]=project["startYear"];e["_month"]=project["startMonth"];e["_rosterPreview"]=initialRosterPreview(project);}
     if (e["hidden"].toBool() || project["_previewHiddenIds"].toArray().contains(e["id"]))
       continue;
     if(e["kind"]=="input"||(e["kind"]=="text"&&e["binding"]=="user-field")){

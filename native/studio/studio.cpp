@@ -386,11 +386,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   formLayout->setSpacing(12);
   selectedTitle = new QLabel(tr("요소를 선택하세요"));
   selectedTitle->setStyleSheet("font-size:16px;font-weight:600");
-  formLayout->addWidget(selectedTitle);
+  selectedTitle->setWordWrap(true);
   auto batch=new QPushButton(tr("선택 요소 일괄 편집 · 정렬…"));batch->setObjectName("selectionBatch");formLayout->addWidget(batch);connect(batch,&QPushButton::clicked,this,&StudioWindow::editSelectedElements);
   auto source=new QPushButton(tr("부품 원본 편집 · 모든 배치에 반영…"));source->setObjectName("componentSource");formLayout->addWidget(source);connect(source,&QPushButton::clicked,this,&StudioWindow::openComponentSource);
   auto followLinks=new QPushButton(tr("데이터 · 행동 · 후속 사건 따라가기…"));
-  followLinks->setObjectName("elementConnections");formLayout->addWidget(followLinks);
+  followLinks->setObjectName("elementConnections");
   connect(followLinks,&QPushButton::clicked,this,&StudioWindow::followSelectedElement);
   auto group = [formLayout](QString name) {
     auto container = new QWidget;
@@ -581,7 +581,6 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto batchBinding=new QPushButton(tr("다른 화면에 이 텍스트 연결 적용…"));batchBinding->setObjectName("textBindingBatch");dataForm->addRow(batchBinding);connect(batchBinding,&QPushButton::clicked,this,&StudioWindow::applyTextBindingBatch);
   auto widgetSettings = new QPushButton(tr("위젯 구성 · 분류 / 표시 항목"));
   widgetSettings->setObjectName("widgetSettings");
-  dataForm->addRow(widgetSettings);
   connect(widgetSettings, &QPushButton::clicked, this, &StudioWindow::editWidgetSettings);
   connect(imageField, qOverload<int>(&QComboBox::activated), this, [this] {
     if (filling)
@@ -734,8 +733,14 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   formLayout->addStretch();
   scroll->setWidget(inspector);
   new InspectorWheelGuard(inspector, scroll);
+  auto inspectorPanel=new QWidget;
+  auto inspectorLayout=new QVBoxLayout(inspectorPanel);inspectorLayout->setContentsMargins(6,6,6,6);inspectorLayout->setSpacing(5);
+  auto quickTools=new QWidget;quickTools->setObjectName("inspectorQuickTools");
+  auto quickLayout=new QVBoxLayout(quickTools);quickLayout->setContentsMargins(6,4,6,4);quickLayout->setSpacing(5);
+  quickLayout->addWidget(selectedTitle);quickLayout->addWidget(widgetSettings);quickLayout->addWidget(followLinks);
+  inspectorLayout->addWidget(quickTools);inspectorLayout->addWidget(scroll,1);
   auto propertiesDock =
-      dock(tr("속성"), "inspectorDock", scroll, Qt::RightDockWidgetArea);
+      dock(tr("속성"), "inspectorDock", inspectorPanel, Qt::RightDockWidgetArea);
   bottom = new QTabWidget;
   bottom->setObjectName("bottomTabs");
   projectList = new QListWidget;
@@ -1255,6 +1260,8 @@ void StudioWindow::refresh(bool fit) {
   rebuildPluginUi();
   auto preview = project;
   preview["_previewContextNames"]=contextNamesForPreview(view);
+  QJsonArray previewActivities;for(const auto& row:view["documents"].toArray())if(row.toObject()["kind"]=="activity")previewActivities.append(row.toObject()["data"]);
+  preview["_previewActivities"]=previewActivities;
   QJsonObject previewPortraits, previewAttributes, previewRelationships;
   for (auto d : view["documents"].toArray()) {
     auto doc = d.toObject();
@@ -1569,6 +1576,10 @@ void StudioWindow::updateInspector() {
       visibilityField->findData(e["visibleWhen"].toString("always")));
   updatePluginInspector(e);
   const bool multi=selectedElements.size()>1;
+  const bool one=selectedElements.size()==1&&!selection.isEmpty()&&!bridge.busy();
+  findChild<QPushButton*>("elementConnections")->setEnabled(one);
+  const bool configurable=QStringList{"schedule","stats","shop","result","choices","button","collection","policies","services","diets","sell"}.contains(e["kind"].toString());
+  findChild<QPushButton*>("widgetSettings")->setEnabled(one&&configurable);
   if(multi)for(auto child:inspector->findChildren<QWidget*>(QString(),Qt::FindDirectChildrenOnly))if(child!=selectedTitle&&child->objectName()!="selectionBatch"&&child->objectName()!="componentSource"&&child->isEnabled()){child->setProperty("batchDisabled",true);child->setEnabled(false);}
   if(multi)selectedTitle->setText(tr("%1개 요소 선택 · 일괄 편집으로 변경").arg(selectedElements.size()));
   bool component=!e["componentId"].toString().isEmpty();for(auto v:currentScreen()["elements"].toArray())if(selectedElements.contains(v.toObject()["id"].toString())&&v.toObject()["componentId"]!=e["componentId"])component=false;findChild<QPushButton*>("componentSource")->setEnabled(component);
