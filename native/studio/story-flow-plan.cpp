@@ -27,7 +27,7 @@ QJsonObject newStoryFlowSettings(const QJsonObject &view) {
     {"newCharacter", true}, {"characterName", ""}, {"newRelationship", true}, {"relationshipLabel", QObject::tr("신뢰")}, {"relationshipInitial", 0},
     {"newActivity", true}, {"activityLabel", ""}, {"cost", 0}, {"gain", 1},
     {"encounterTitle", ""}, {"encounterText", ""}, {"prompt", QObject::tr("어떻게 답할까?")},
-    {"fromPeriod", 1}, {"throughPeriod", periods}, {"choices", QJsonArray{}}};
+    {"meetingTrigger", "after-activity"}, {"fromPeriod", 1}, {"throughPeriod", periods}, {"choices", QJsonArray{}}};
 }
 
 StoryFlowPlan makeStoryFlowPlan(const QJsonObject &view, QJsonObject s) {
@@ -65,6 +65,8 @@ StoryFlowPlan makeStoryFlowPlan(const QJsonObject &view, QJsonObject s) {
     if (s.value(key).toString().trimmed().isEmpty()) return fail(QObject::tr("이야기 이름, 만남 제목, 대사와 질문을 입력하세요."));
   if (!integer(s.value("fromPeriod"), 1, total) || !integer(s.value("throughPeriod"), s.value("fromPeriod").toInt(), total))
     return fail(QObject::tr("만남의 시작·마지막 일정을 프로젝트 기간 안에서 지정하세요."));
+  const auto meetingTrigger=s.value("meetingTrigger").toString("period-end");
+  if(meetingTrigger!="period-end"&&meetingTrigger!="after-activity")return fail(QObject::tr("만남이 열리는 때를 선택하세요."));
   if (s.value("newCharacter").toBool()) s["characterId"] = id + "-person";
   if (s.value("newRelationship").toBool()) s["relationshipId"] = id + "-bond";
   if (s.value("newActivity").toBool()) s["activityId"] = id + "-activity";
@@ -148,15 +150,26 @@ StoryFlowPlan makeStoryFlowPlan(const QJsonObject &view, QJsonObject s) {
     if(row.value("followupEnabled").toBool()) {
       if(row.value("followupTitle").toString().trimmed().isEmpty()||row.value("followupText").toString().trimmed().isEmpty())return fail(QObject::tr("후속 사건을 켠 선택지에는 제목과 대사를 입력하세요."));
       if(!integer(row.value("followupFrom"),s.value("fromPeriod").toInt(),total)||!integer(row.value("minimumRelationship"),bond.value("min").toInt(),bond.value("max").toInt()))return fail(QObject::tr("후속 사건의 시작 일정과 관계 기준이 범위를 벗어났습니다."));
+      const int through=row.value("followupThrough").toInt(total);
+      const auto trigger=row.value("followupTrigger").toString("period-end");
+      if((row.contains("followupThrough")&&!integer(row.value("followupThrough"),row.value("followupFrom").toInt(),total)) || (trigger!="period-end"&&trigger!="after-activity"))return fail(QObject::tr("후속 사건의 마지막 날짜와 발생 시점을 확인하세요."));
       const auto eventId=id+"-"+cid+"-next";
-      QJsonObject event{{"formatVersion","0.1.0"},{"id",eventId},{"label",row.value("followupTitle")},{"window",QJsonObject{{"fromPeriod",row.value("followupFrom").toInt()-1},{"throughPeriod",total-1}}},{"priority",70},{"trigger","period-end"},
+      QJsonObject event{{"formatVersion","0.1.0"},{"id",eventId},{"label",row.value("followupTitle")},{"window",QJsonObject{{"fromPeriod",row.value("followupFrom").toInt()-1},{"throughPeriod",through-1}}},{"priority",70},{"trigger",trigger},
         {"requirements",QJsonObject{{"op","all"},{"conditions",QJsonArray{QJsonObject{{"op","eventCompleted"},{"eventId",meetingId}},flag(branchFlag),QJsonObject{{"op","compare"},{"comparator","gte"},{"left",QJsonObject{{"op","read"},{"target",relationTarget}}},{"right",literal(row.value("minimumRelationship").toInt())}}}}}},
         {"entryNodeId","line"},{"nodes",QJsonArray{QJsonObject{{"id","line"},{"type","dialogue"},{"speakerId",personId},{"text",row.value("followupText")},{"next","end"}},QJsonObject{{"id","end"},{"type","end"}}}}};
+      if(trigger=="after-activity")event["activityId"]=activityId;
       if(!put("event","events/"+eventId+".json",event,true))return fail(QObject::tr("후속 사건 파일이 충돌합니다."));
     }
   }
   nodes.append(QJsonObject{{"id","question"},{"type","choice"},{"prompt",s.value("prompt")},{"choices",choices}});nodes.append(QJsonObject{{"id","end"},{"type","end"}});
-  QJsonObject meeting{{"formatVersion","0.1.0"},{"id",meetingId},{"label",s.value("encounterTitle")},{"window",QJsonObject{{"fromPeriod",s.value("fromPeriod").toInt()-1},{"throughPeriod",s.value("throughPeriod").toInt()-1}}},{"requirements",flag(doneFlag)},{"priority",80},{"trigger","period-end"},{"entryNodeId","greeting"},{"nodes",nodes}};
+  QJsonObject meeting{{"formatVersion","0.1.0"},{"id",meetingId},{"label",s.value("encounterTitle")},{"window",QJsonObject{{"fromPeriod",s.value("fromPeriod").toInt()-1},{"throughPeriod",s.value("throughPeriod").toInt()-1}}},{"requirements",flag(doneFlag)},{"priority",80},{"trigger",meetingTrigger},{"entryNodeId","greeting"},{"nodes",nodes}};
+  const auto predecessor=s.value("predecessorEventId").toString();
+  if(!predecessor.isEmpty()) {
+    bool found=false;for(const auto &doc:docs)if(doc.value("kind")=="event"&&doc.value("data").toObject().value("id")==predecessor)found=true;
+    if(!found||predecessor==meetingId||predecessor.startsWith(id+"-"))return fail(QObject::tr("선행 사건은 이 이야기 밖의 기존 사건을 선택하세요."));
+    meeting["requirements"]=QJsonObject{{"op","all"},{"conditions",QJsonArray{flag(doneFlag),QJsonObject{{"op","eventCompleted"},{"eventId",predecessor}}}}};
+  }
+  if(meetingTrigger=="after-activity")meeting["activityId"]=activityId;
   if(!put("event","events/"+meetingId+".json",meeting,true))return fail(QObject::tr("만남 사건 파일이 충돌합니다."));
   // Removed branches keep their documents but become unreachable, preserving outside references and saves.
   for(auto v:previous.value("ownedDocuments").toArray()){auto d=v.toObject();const auto file=d.value("file").toString();if(!replacements.contains(file)&&file.startsWith("events/")){

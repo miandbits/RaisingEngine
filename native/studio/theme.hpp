@@ -10,6 +10,7 @@ inline void applyStudioTheme(QApplication &app) {
   p.setColor(QPalette::Base, QColor("#1e2329"));
   p.setColor(QPalette::AlternateBase, QColor("#293039"));
   p.setColor(QPalette::Text, QColor("#e3e9ef"));
+  p.setColor(QPalette::PlaceholderText, QColor("#9aa7b4"));
   p.setColor(QPalette::Button, QColor("#303740"));
   p.setColor(QPalette::ButtonText, QColor("#e3e9ef"));
   p.setColor(QPalette::Highlight, QColor("#356ca7"));

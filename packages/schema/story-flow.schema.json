@@ -27,6 +27,8 @@
     "encounterTitle": {"type":"string","minLength":1},
     "encounterText": {"type":"string","minLength":1},
     "prompt": {"type":"string","minLength":1},
+    "predecessorEventId": {"type":"string"},
+    "meetingTrigger": {"type":"string","enum":["period-end","after-activity"]},
     "fromPeriod": {"type":"integer","minimum":1},
     "throughPeriod": {"type":"integer","minimum":1},
     "choices": {"type":"array","minItems":2,"maxItems":8,"items":{
@@ -36,7 +38,9 @@
         "label":{"type":"string","minLength":1},"reply":{"type":"string","minLength":1},
         "delta":{"type":"integer","minimum":-1000000,"maximum":1000000},
         "followupEnabled":{"type":"boolean"},"followupTitle":{"type":"string"},"followupText":{"type":"string"},
-        "minimumRelationship":{"type":"integer"},"followupFrom":{"type":"integer","minimum":1}
+        "minimumRelationship":{"type":"integer"},"followupFrom":{"type":"integer","minimum":1},
+        "followupThrough":{"type":"integer","minimum":1},
+        "followupTrigger":{"type":"string","enum":["period-end","after-activity"]}
       }
     }},
     "ownedDocuments": {"type":"array","items":{"type":"object","additionalProperties":false,"required":["file","digest"],"properties":{"file":{"type":"string"},"digest":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}}

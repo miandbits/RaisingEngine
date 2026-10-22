@@ -13819,6 +13819,8 @@ export interface StoryFlowAuthoringMetadata {
   encounterTitle: string;
   encounterText: string;
   prompt: string;
+  predecessorEventId?: string;
+  meetingTrigger?: "period-end" | "after-activity";
   fromPeriod: number;
   throughPeriod: number;
   /**
@@ -13837,6 +13839,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13848,6 +13852,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         }
       ]
     | [
@@ -13861,6 +13867,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13872,6 +13880,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13883,6 +13893,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         }
       ]
     | [
@@ -13896,6 +13908,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13907,6 +13921,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13918,6 +13934,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13929,6 +13947,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         }
       ]
     | [
@@ -13942,6 +13962,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13953,6 +13975,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13964,6 +13988,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13975,6 +14001,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -13986,6 +14014,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         }
       ]
     | [
@@ -13999,6 +14029,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14010,6 +14042,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14021,6 +14055,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14032,6 +14068,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14043,6 +14081,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14054,6 +14094,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         }
       ]
     | [
@@ -14067,6 +14109,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14078,6 +14122,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14089,6 +14135,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14100,6 +14148,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14111,6 +14161,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14122,6 +14174,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14133,6 +14187,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         }
       ]
     | [
@@ -14146,6 +14202,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14157,6 +14215,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14168,6 +14228,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14179,6 +14241,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14190,6 +14254,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14201,6 +14267,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14212,6 +14280,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         },
         {
           id: string;
@@ -14223,6 +14293,8 @@ export interface StoryFlowAuthoringMetadata {
           followupText?: string;
           minimumRelationship?: number;
           followupFrom?: number;
+          followupThrough?: number;
+          followupTrigger?: "period-end" | "after-activity";
         }
       ];
   ownedDocuments: {

@@ -72,3 +72,35 @@ test('activity → choice → relationship → follow-up runs in native and TS; 
   await save();
  }
 });
+
+test('calendar authoring waits for the same activity, bounds follow-ups, and resumes exact saved state',async()=>{
+ for(const lastActivity of ['story-test-flow-activity','rest']){
+  const s=structuredClone(settings);s.meetingTrigger='after-activity';s.choices[0].followupTrigger='after-activity';s.choices[0].followupThrough=3;
+  const p=await plan(view,s);assert.equal(p.error,'');const c=await snapshot(p);
+  const event=c.events.find(e=>e.id==='story-test-flow-yes-next');assert.equal(event.activityId,'story-test-flow-activity');assert.equal(event.window.throughPeriod,2);
+  const origin={seed:73,mode:'full',initialOverrides:{attributes:{},flags:{},relationships:{}}},commands=[];
+  let state=createRun(c,73,origin).state;
+  const send=command=>{const ts=dispatchCommand(c,state,command,state.stateRevision),native=nativeDispatchCommand(c,state,command,state.stateRevision);assert.deepEqual(native,ts);assert.equal(ts.ok,true,JSON.stringify(ts));state=ts.state;commands.push(command);};
+  const save=async()=>{const encoded=await encodeSave(c,{origin,commands,state});assert.equal(encoded.ok,true);const decoded=await decodeSave(c,encoded.text);assert.equal(decoded.ok,true,JSON.stringify(decoded));assert.deepEqual(decoded.session.state,state);assert.deepEqual(nativeReplay(c,origin,commands),{ok:true,state});state=decoded.session.state;};
+  const drain=()=>{for(let i=0;state.phase==='narrative';++i){assert.ok(i<30);send({type:'advanceNarrative'});}};
+  const boundary=()=>{const period=state.periodIndex;for(let i=0;state.periodIndex===period;++i){assert.ok(i<30);if(state.phase==='narrative')drain();else send({type:'resolvePeriodEnd'});}};
+  send({type:'setSchedule',activityIds:['story-test-flow-activity','rest',lastActivity]});send({type:'executeActivity'});await save();send({type:'acknowledgeResult'});
+  assert.equal(state.activeNarrative.id,'story-test-flow-meeting');send({type:'advanceNarrative'});await save();send({type:'choose',choiceId:'yes'});drain();await save();boundary();
+  send({type:'executeActivity'});send({type:'acknowledgeResult'});assert.notEqual(state.activeNarrative?.id,event.id,'unrelated activity must not consume the promise');boundary();
+  send({type:'executeActivity'});await save();send({type:'acknowledgeResult'});
+  if(lastActivity==='story-test-flow-activity'){assert.equal(state.activeNarrative.id,event.id);await save();drain();}
+  else assert.ok(!state.completedEvents.includes(event.id),'follow-up remains unseen without revisiting');
+  await save();
+ }
+ for(const modify of [s=>{s.meetingTrigger='invalid';},s=>{s.choices[0].followupThrough=1;},s=>{s.choices[0].followupThrough=2.5;},s=>{s.choices[0].followupTrigger='invalid';}]){const s=structuredClone(settings);modify(s);const p=await plan(view,s);assert.ok(p.error);assert.deepEqual(p.edits,[]);}
+});
+
+test('named prerequisite connects story chapters without changing existing documents',async()=>{
+ const first=await plan(view,settings),v=updated(view,first);
+ const second={...structuredClone(settings),id:'story-second-flow',predecessorEventId:'story-test-flow-meeting',meetingTrigger:'after-activity'};
+ const p=await plan(v,second);assert.equal(p.error,'');
+ const meeting=p.edits.find(e=>e.file==='events/story-second-flow-meeting.json').data;
+ assert.ok(meeting.requirements.conditions.some(c=>c.op==='eventCompleted'&&c.eventId==='story-test-flow-meeting'));
+ assert.ok(!p.edits.some(e=>e.file==='events/story-test-flow-meeting.json'));
+ for(const id of ['missing-event','story-second-flow-meeting','story-second-flow-yes-next']){const invalid=await plan(v,{...second,predecessorEventId:id});assert.ok(invalid.error);assert.deepEqual(invalid.edits,[]);}
+});

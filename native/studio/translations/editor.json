@@ -3187,5 +3187,22 @@
   ["편집 내용이 바뀌어 오류 목록을 갱신했습니다. 새 목록에서 다시 선택하세요.", "The content changed, so the diagnostic list was refreshed. Select a location from the new list.", "編集内容が変わったため、エラー一覧を更新しました。新しい一覧から選択し直してください。"],
   ["이 위치는 일반 필드 편집 대상이 아닙니다. 파일 또는 플러그인 진단에서 수정한 뒤 다시 검증하세요.", "This location is not an editable content field. Fix it using file or plugin diagnostics, then revalidate.", "この箇所は通常のフィールドではありません。ファイルまたはプラグインの診断で修正し、再検証してください。"],
   ["수정이 적용되었습니다. 닫은 뒤 갱신된 목록에서 다음 오류를 선택하세요.", "The edit was applied. Close this dialog and select the next issue from the refreshed list.", "修正を適用しました。閉じてから、更新された一覧で次のエラーを選択してください。"],
-  ["문자", "Text", "文字"]
+  ["문자", "Text", "文字"],
+  ["배정한 활동을 마친 뒤", "After completing the assigned activity", "割り当てた活動の終了後"],
+  ["활동 경험 후 어느 일정 끝에서든", "At any period end after trying the activity", "活動を経験した後、いずれかの日程終了時"],
+  ["만남 시작 날짜", "Encounter start date", "出会いの開始日"],
+  ["만남 마지막 날짜", "Encounter last date", "出会いの最終日"],
+  ["만남이 열리는 때", "When the encounter occurs", "出会いの発生時点"],
+  ["날짜는 프로젝트 달력을 따릅니다. 배정한 활동을 마친 뒤를 고르면 다른 활동을 한 날에는 만남이 열리지 않습니다. 기존 방식도 선택할 수 있습니다.", "Dates use the project calendar. Choose the assigned activity to prevent encounters on unrelated activity days. The existing timing remains available.", "日付はプロジェクトの暦に従います。割り当てた活動の終了後を選ぶと、別の活動をした日には出会いが発生しません。従来の方式も選べます。"],
+  ["후속 사건 시작 날짜", "Follow-up start date", "後続イベントの開始日"],
+  ["후속 사건 마지막 날짜", "Follow-up last date", "後続イベントの最終日"],
+  ["후속 사건이 열리는 때", "When the follow-up occurs", "後続イベントの発生時点"],
+  ["선택·관계·날짜를 모두 만족해야 합니다. 배정한 활동을 마친 뒤를 고르면 같은 활동에 다시 참여할 때 후속 사건이 열립니다. 선택하지 않은 분기는 열리지 않습니다.", "The choice, relationship and date must all match. Choose the assigned activity to trigger the follow-up when that activity is repeated. Unchosen branches stay closed.", "選択・関係・日付をすべて満たす必要があります。割り当てた活動の終了後を選ぶと、同じ活動への再参加時に後続イベントが発生します。選んでいない分岐は開きません。"],
+  ["이 선택 + %1 ≥ %2", "This choice + %1 ≥ %2", "この選択 + %1 ≥ %2"],
+  ["만남이 열리는 때를 선택하세요.", "Select when the encounter occurs.", "出会いの発生時点を選んでください。"],
+  ["후속 사건의 마지막 날짜와 발생 시점을 확인하세요.", "Check the follow-up last date and trigger.", "後続イベントの最終日と発生時点を確認してください。"],
+  ["선행 사건 없음", "No prerequisite event", "先行イベントなし"],
+  ["먼저 완료할 사건", "Event to complete first", "先に完了するイベント"],
+  ["선행 사건은 이 이야기 밖의 기존 사건을 선택하세요.", "Choose an existing prerequisite event outside this story.", "先行イベントには、この物語以外の既存イベントを選んでください。"],
+  ["관계 범위: %1 ~ %2. 관계 변화는 이 범위 안에서 적용되며, 후속 사건 기준도 같은 범위에서 고릅니다.", "Relationship range: %1 to %2. Changes stay within this range; choose the follow-up threshold within it too.", "関係の範囲: %1 ～ %2。関係の変化はこの範囲内で適用され、後続イベントの基準も同じ範囲から選びます。"]
 ]
