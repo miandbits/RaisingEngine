@@ -3238,5 +3238,8 @@
   ["새 육성 대상 %1", "New trainee %1", "新しい育成対象 %1"],
   ["현재 사건의 대상 인물", "Current story participant", "現在のイベント対象人物"],
   ["사건 대상 · 플레이 중 결정", "Story participant · determined during play", "イベント対象 · プレイ中に決定"],
-  ["여러 인물 함께 육성 · 개인 능력과 공용 자금", "Multiple trainees · personal skills and shared funds", "複数人物の育成 · 個人能力と共有資金"]
+  ["여러 인물 함께 육성 · 개인 능력과 공용 자금", "Multiple trainees · personal skills and shared funds", "複数人物の育成 · 個人能力と共有資金"],
+  ["선택지 영역 · 대본의 선택 노드를 만든 뒤 확인", "Choice area · add a choice node to a script first", "選択肢の領域・台本に選択ノードを作成してください"],
+  ["배치 예시 · %1 · 조건과 효과는 플레이에서 확인", "Layout sample · %1 · check conditions and effects in play", "配置例・%1・条件と効果はプレイで確認"],
+  ["영역 밖 선택지 %1개 · 높이 또는 글자 크기 확인", "%1 choices outside the area · check height or font size", "領域外の選択肢 %1 件・高さまたは文字サイズを確認"]
 ]

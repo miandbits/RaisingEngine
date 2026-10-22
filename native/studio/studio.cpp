@@ -1262,6 +1262,8 @@ void StudioWindow::refresh(bool fit) {
   preview["_previewContextNames"]=contextNamesForPreview(view);
   QJsonArray previewActivities;for(const auto& row:view["documents"].toArray())if(row.toObject()["kind"]=="activity")previewActivities.append(row.toObject()["data"]);
   preview["_previewActivities"]=previewActivities;
+  QJsonArray previewNarratives;for(const auto& row:view["documents"].toArray())if(row.toObject()["kind"]=="event"||row.toObject()["kind"]=="ending")previewNarratives.append(row);
+  preview["_previewNarratives"]=previewNarratives;
   QJsonObject previewPortraits, previewAttributes, previewRelationships;
   for (auto d : view["documents"].toArray()) {
     auto doc = d.toObject();

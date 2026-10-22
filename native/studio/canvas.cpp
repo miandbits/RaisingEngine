@@ -5,6 +5,7 @@
 #include "selection-edit.hpp"
 #include "component-preview.hpp"
 #include "schedule-preview.hpp"
+#include "choice-preview.hpp"
 #include <QGraphicsObject>
 #include <QDate>
 #include <QGraphicsSceneMouseEvent>
@@ -79,6 +80,8 @@ public:
       p->fillRect(QRectF(0,track.y(),box.width()*ratio,thickness),rgba(data.value("color").toString(),QColor("#68c6a0")));
       p->setPen(rgba(data.value("color").toString(),Qt::white));
       p->drawText(box,Qt::AlignCenter,data.value("text").toString());
+    } else if (kind == "choices") {
+      paintChoicePreview(p,box,data);
     } else if (kind == "schedule" && !data.value("_rosterPreview").toArray().isEmpty()) {
       paintRosterPreview(p,box,data);
     } else if (kind == "schedule" && data["scheduleLayout"] == "calendar") {
@@ -322,6 +325,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     const auto fontPath=paths.value(e["fontAssetId"].toString(),project["_defaultFontPath"].toString());
     const auto family=projectFontFamily(fontPath);if(!family.isEmpty())e["_fontFamily"]=family;
     if(e["kind"]=="schedule"){e["_year"]=project["startYear"];e["_month"]=project["startMonth"];e["_rosterPreview"]=initialRosterPreview(project);}
+    if(e["kind"]=="choices")e["_choicePreview"]=initialChoicePreview(project.value("_previewNarratives").toArray());
     if (e["hidden"].toBool() || project["_previewHiddenIds"].toArray().contains(e["id"]))
       continue;
     if(e["kind"]=="input"||(e["kind"]=="text"&&e["binding"]=="user-field")){

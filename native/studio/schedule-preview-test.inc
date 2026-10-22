@@ -1,5 +1,17 @@
 #include <QScrollArea>
 #include <QScrollBar>
+#include "choice-preview.hpp"
+
+void StudioTests::initialChoiceCanvasPreview() {
+  const QJsonObject node{{"id","choose"},{"type","choice"},{"choices",QJsonArray{QJsonObject{{"text","Work together"},{"consequenceText","A personal promise"}},QJsonObject{{"text","Work alone"}}}}};
+  const QJsonArray docs{QJsonObject{{"kind","activity"},{"data",QJsonObject{{"nodes",QJsonArray{node}}}}},QJsonObject{{"kind","event"},{"data",QJsonObject{{"id","meeting"},{"label","First meeting"},{"nodes",QJsonArray{node}}}}}};
+  const auto original=docs;const auto sample=initialChoicePreview(docs);QCOMPARE(sample.value("rows").toArray().size(),2);QCOMPARE(sample.value("source").toString(),QString("First meeting / choose"));QCOMPARE(docs,original);QVERIFY(initialChoicePreview({}).isEmpty());
+  QImage image(700,320,QImage::Format_ARGB32);image.fill(Qt::magenta);QPainter p(&image);
+  QJsonObject data{{"_choicePreview",sample},{"choiceLayout","cards"},{"showChoiceEffects",true}};
+  paintChoicePreview(&p,QRectF(0,0,640,280),data);p.end();QCOMPARE(image.pixelColor(680,300),QColor(Qt::magenta));QVERIFY(image.pixelColor(10,35)!=QColor(Qt::magenta));
+  const auto before=image;data["showChoiceEffects"]=false;image.fill(Qt::magenta);p.begin(&image);paintChoicePreview(&p,QRectF(0,0,640,280),data);p.end();QVERIFY(image!=before);
+  image.fill(Qt::magenta);p.begin(&image);paintChoicePreview(&p,QRectF(0,0,80,35),data);p.end();QCOMPARE(image.pixelColor(90,40),QColor(Qt::magenta));
+}
 
 void StudioTests::widgetSettingsPreserveRoster() {
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT");QTemporaryDir temp(engine+"/.cache/widget-roster-XXXXXX");QVERIFY(temp.isValid());

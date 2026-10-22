@@ -37,6 +37,7 @@ private slots:
   void pinnedWidgetTools();
   void widgetSettingsPreserveRoster();
   void initialRosterCanvasPreview();
+  void initialChoiceCanvasPreview();
   void authoringToolSearch();
   void editorBasicsClipboardLayers();
   void editorBasicsSaveProtection();
