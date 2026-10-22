@@ -424,6 +424,7 @@ export type Condition =
       op: "flag";
       flagId: string;
       equals: boolean;
+      owner?: CharacterOwner;
     }
   | {
       op: "eventCompleted";

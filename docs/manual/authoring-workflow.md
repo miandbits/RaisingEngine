@@ -128,7 +128,7 @@ workflows do not introduce new runtime rules.
 In the story workshop, open **Event connections**, select an event or a choice
 card, then choose **Create / connect follow-up**. No identifiers or JSON are
 required. Enter a name, opening dialogue, speaker, and eligible period range,
-or select an existing end-of-period event. Period numbers in this form start at 1.
+or select a compatible existing event. Period numbers in this form start at 1.
 
 The preview lists the conditions that will be added:
 
@@ -141,9 +141,8 @@ The preview lists the conditions that will be added:
 Existing target conditions, dialogue, rewards, and source choice effects are
 preserved. The new event starts with the entered dialogue and, when present,
 the source's opening scene. Further presentation and rewards remain editable
-in the story workshop. Follow-ups run at eligible period-end checks; they do
-not interrupt the current dialogue. A project allowing only one event per
-period can defer a follow-up behind higher-priority events.
+in the story workshop. Shared follow-ups run at eligible period-end checks;
+a project allowing only one event per period can defer them behind higher-priority events.
 
 The map updates immediately, but all changes remain part of the workshop
 draft. Save applies the new event, choice record, and flag definitions in one
@@ -151,7 +150,33 @@ batch under the existing revision guard. Cancel discards them; project undo
 reverts the batch. Reconnecting the same source choice and target is idempotent.
 Mandatory completion cycles and invalid period ranges are rejected.
 
-This workflow currently handles shared events. Actor-scoped events and direct
-interaction targets are rejected rather than silently changing their scope or
-trigger. Choice records are not retroactively reconstructed from older saves;
-the source choice must be played with the new connection present.
+### Character-specific choices and promises
+
+Enable character-owned state (`character-v1`) and set the source event's scope to
+the acting character. In a choice's effect editor, use **Set flag → Owner → Acting
+character** to record a personal promise. The same flag definition can be used by
+several characters: each has a separate value. Omitting the owner retains the
+existing shared-flag behavior; existing projects are not silently converted.
+
+From that event or choice card, **Create / connect follow-up** automatically adds
+completion, exact-choice and selected promise conditions owned by the same acting
+character. The promise picker offers that character's writes, not shared writes
+or another fixed character's records. The preview explains the scope, and the map
+labels personal flag links separately from shared ones.
+
+A newly created personal follow-up uses **After event**: it starts after the
+current script finishes, with the same actor and return screen/phase. Its default
+period range includes the source period. Chains retain that context through saves
+and loading; completed follow-ups run once per character. Higher-priority eligible
+follow-ups run first. To defer a meeting, configure its period/other conditions and
+an appropriate later trigger; this is not an automatic future-date reservation.
+Existing personal interaction targets retain their explicit-action trigger. Only
+targets with the same shared/personal scope are offered; mixed-scope links are rejected.
+
+Personal flag values are saved separately and fall back to the flag definition's
+initial value when absent, never another character's or the shared current value.
+Old saves without personal flags remain valid. Choice records are not retroactively
+reconstructed from older saves; the source choice must be played with the connection
+present. Windows export requires `actor-story-links-v1` for these new rules.
+Older runtimes, including web packages without this capability, reject export with
+a feature diagnostic instead of silently sharing records.

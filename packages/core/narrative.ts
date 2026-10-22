@@ -14,7 +14,7 @@ export function inspectEvents(content: ContentSnapshot, state: RunState): EventD
   return [...content.events].sort(priorityOrder).map(event => {
     let reason: EventDecision['reason'];
     if (eventCompleted(content,state,event.id)) reason = 'completed';
-    else if (event.trigger === 'interaction') reason = 'interaction-only';
+    else if (event.trigger === 'interaction' || event.trigger === 'after-event') reason = 'interaction-only';
     else if (state.periodIndex < event.window.fromPeriod) reason = 'before-window';
     else if (state.periodIndex > event.window.throughPeriod) reason = 'expired';
     else if (!evaluateCondition(content, state, event.requirements, `/events/${event.id}/requirements`)) reason = 'requirements';
@@ -56,9 +56,9 @@ function ensureAvailableChoice(content: ContentSnapshot, state: RunState): void 
 export function enterNarrative(content: ContentSnapshot, draft: RunData, kind: 'event' | 'ending', id: string): void {
   const definition = (kind === 'event' ? content.events : content.endings).find(n => n.id === id);
   requireCore(definition, 'UNKNOWN_NARRATIVE', `알 수 없는 대본: ${id}`, '/activeNarrative');
+  const actorId=kind==='event' && 'scope' in definition && definition.scope==='actor'?resolveOwner(content,draft,{kind:'actor'},'/activeNarrative/actorId'):undefined;
   draft.phase = 'narrative';
-  draft.activeNarrative = { kind, id, nodeId: definition.entryNodeId };
-  if(kind==='event' && 'scope' in definition && definition.scope==='actor')draft.activeNarrative.actorId=resolveOwner(content,draft,{kind:'actor'},'/activeNarrative/actorId')!;
+  draft.activeNarrative = { kind, id, nodeId: definition.entryNodeId, ...(actorId?{actorId}:{}) };
   ensureAvailableChoice(content, draft);
 }
 
@@ -140,6 +140,7 @@ export function stepNarrative(content: ContentSnapshot, draft: RunData, choiceId
         if (cursor.kind === 'event') {
           const completed=cursor.actorId?draft.roster!.completedEvents![cursor.actorId]!:draft.completedEvents;
           if(!completed.includes(cursor.id))completed.push(cursor.id);
+          if (continueAfterEvent(content,draft,cursor)) break;
           if (cursor.returnPhase) {
             draft.activeNarrative = null; draft.phase = cursor.returnPhase;
             if (cursor.returnPresentation) draft.presentation = structuredClone(cursor.returnPresentation);
@@ -153,4 +154,17 @@ export function stepNarrative(content: ContentSnapshot, draft: RunData, choiceId
   }
   ensureAvailableChoice(content, draft);
   return step;
+}
+
+/** A completed event retains its actor and return context across the whole follow-up chain. */
+function continueAfterEvent(content: ContentSnapshot, draft: RunData, cursor: NarrativeCursor): boolean {
+  for(const event of [...content.events].sort(priorityOrder)) {
+    if(event.trigger!=='after-event'||(event.scope==='actor')!==!!cursor.actorId||eventCompleted(content,draft,event.id))continue;
+    if(draft.periodIndex<event.window.fromPeriod||draft.periodIndex>event.window.throughPeriod)continue;
+    if(!evaluateCondition(content,draft,event.requirements,`/events/${event.id}/requirements`))continue;
+    enterNarrative(content,draft,'event',event.id);
+    for(const key of ['returnPhase','returnPresentation','finishPeriod'] as const)if(cursor[key]!==undefined)Object.assign(draft.activeNarrative!,{[key]:structuredClone(cursor[key])});
+    return true;
+  }
+  return false;
 }

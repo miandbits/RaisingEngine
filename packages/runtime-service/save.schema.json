@@ -814,6 +814,15 @@
                   "type": "string"
                 }
               }
+            },
+            "flags": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "boolean"
+                }
+              }
             }
           }
         },

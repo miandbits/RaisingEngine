@@ -13,7 +13,7 @@ export type EventDefinition = Header &
     };
     requirements: Condition;
     priority: number;
-    trigger?: "period-end" | "interaction";
+    trigger?: "period-end" | "interaction" | "after-event";
     /**
      * An interaction may enter this event again after completion while its requirements hold. Completion history remains unique.
      */
@@ -45,6 +45,7 @@ export type Condition =
       op: "flag";
       flagId: string;
       equals: boolean;
+      owner?: CharacterOwner;
     }
   | {
       op: "eventCompleted";
@@ -131,6 +132,7 @@ export type Effects = (
       op: "setFlag";
       flagId: string;
       value: boolean;
+      owner?: CharacterOwner;
     }
   | {
       op: "setState";

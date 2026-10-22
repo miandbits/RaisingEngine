@@ -60,7 +60,7 @@ export interface NumericChange {
   before: number; operand: number; requested: number; after: number; delta: number;
   clamped: false | 'min' | 'max';
 }
-export interface FlagChange { kind: 'flag'; source: string; flagId: string; before: boolean; after: boolean }
+export interface FlagChange { characterId?: string; kind: 'flag'; source: string; flagId: string; before: boolean; after: boolean }
 export interface StateChange { kind: 'state'; source: string; stateGroupId: string; characterId?: string; before: string; after: string }
 export type Change = NumericChange | FlagChange | StateChange;
 export interface ActivityResult {

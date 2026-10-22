@@ -2798,6 +2798,7 @@ export type Condition =
       op: "flag";
       flagId: string;
       equals: boolean;
+      owner?: CharacterOwner;
     }
   | {
       op: "eventCompleted";
@@ -13729,6 +13730,7 @@ export type Effects = (
       op: "setFlag";
       flagId: string;
       value: boolean;
+      owner?: CharacterOwner;
     }
   | {
       op: "setState";

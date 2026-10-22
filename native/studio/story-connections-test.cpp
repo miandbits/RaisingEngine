@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QTreeWidget>
+#include <QSpinBox>
 #include <QTest>
 #include <iostream>
 
@@ -108,6 +109,23 @@ int main(int argc,char **argv){
   bool addBeforeReplace=false;for(auto v:changes){auto edit=v.toObject();if(edit.value("type")=="add")addBeforeReplace=true;if(edit.value("file")=="events/followup-1.json")check(addBeforeReplace,"new document added before replacement");}
   bool applied=false;creator.setApplyHandler([&](QJsonArray batch,std::function<void(QString)> done){applied=true;check(batch==changes,"save applies the complete draft atomically");done({});});
   creator.findChild<QDialogButtonBox*>("scriptButtons")->button(QDialogButtonBox::Save)->click();if(!applied)std::cerr<<creator.findChild<QLabel*>("scriptError")->text().toStdString()<<std::endl;check(applied&&creator.result()==QDialog::Accepted,"parent save accepts new event");
+  auto personalDocs=creationDocs;auto personal=a;personal["scope"]="actor";personal["trigger"]="interaction";
+  auto personalNodes=personal["nodes"].toArray();auto personalAsk=personalNodes[0].toObject();auto personalChoices=personalAsk["choices"].toArray();
+  QJsonObject actor{{"kind","actor"}};auto personalSet=set(true);personalSet["owner"]=actor;auto personalPromise=flag(true);personalPromise["owner"]=actor;
+  auto personalYes=personalChoices[0].toObject();personalYes["effects"]=QJsonArray{personalSet};personalChoices[0]=personalYes;personalAsk["choices"]=personalChoices;personalNodes[0]=personalAsk;personal["nodes"]=personalNodes;personalDocs[0]=doc("event",personal);
+  auto personalProject=personalDocs[5].toObject();auto pp=personalProject["data"].toObject();pp["roster"]=QJsonObject{{"stateModel","character-v1"}};personalProject["data"]=pp;personalDocs[5]=personalProject;
+  StoryFollowupDialog personalForm(personalDocs,"event:first/ask/yes",nullptr);
+  check(personalForm.findChild<QSpinBox*>("followupFrom")->value()==personal["window"].toObject()["fromPeriod"].toInt()+1,"personal followup defaults to the source period for immediate continuation");
+  auto personalSettings=settings;personalSettings["promise"]=personalPromise;auto personalPlan=makeStoryFollowup(personalDocs,"event:first/ask/yes",personalSettings);
+  check(personalPlan.error.isEmpty(),"actor follow-up created");auto personalFollow=personalPlan.documents.last().toObject()["data"].toObject();
+  check(personalFollow["scope"]=="actor"&&personalFollow["trigger"]=="after-event","actor follow-up retains scope and runs after event");
+  for(auto v:personalFollow["requirements"].toObject()["conditions"].toArray())check(v.toObject()["owner"]==actor,"every personal gate uses current actor");
+  auto recorded=personalPlan.documents[0].toObject()["data"].toObject()["nodes"].toArray()[0].toObject()["choices"].toArray()[0].toObject()["effects"].toArray().last().toObject();
+  check(recorded["owner"]==actor&&recorded["flagId"]!=marker,"personal choice record has own storage and identity");
+  personalSettings["targetFile"]=personalPlan.file;check(makeStoryFollowup(personalPlan.documents,"event:first/ask/yes",personalSettings).documents==personalPlan.documents,"personal reconnect idempotent");
+  personalSettings["targetFile"]="events/follow.json";check(!makeStoryFollowup(personalDocs,"event:first/ask/yes",personalSettings).error.isEmpty(),"mixed scope target rejected");
+  personalSettings.remove("targetFile");personalSettings["promise"]=flag(true);check(!makeStoryFollowup(personalDocs,"event:first/ask/yes",personalSettings).error.isEmpty(),"shared promise cannot become a personal gate");
+  auto personalGraph=buildStoryConnections(personalDocs);bool leaked=false;for(auto e:personalGraph.edges)if(e.from=="event:first/ask/yes"&&e.to=="event:follow")leaked=true;check(!leaked,"personal promise must not draw a shared promise edge");
   auto large=documents;for(int i=0;i<700;++i)large.append(doc("event",script("large-"+QString::number(i),{{"op","eventCompleted"},{"eventId",i?"large-"+QString::number(i-1):"first"}})));
   QElapsedTimer timer;timer.start();auto big=buildStoryConnections(large);check(big.nodes.contains("event:large-699"),"large projects not truncated");check(big.edges.size()>=700,"large dependency chain complete");
   std::cout<<"PASS "<<checks<<" checks; 700-event graph "<<timer.elapsed()<<" ms\n";

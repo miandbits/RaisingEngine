@@ -27,7 +27,7 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
   auto through = new QSpinBox; through->setObjectName("scriptThroughPeriod"); through->setRange(1, std::numeric_limits<int>::max());
   range->addWidget(new QLabel(tr("전체 일정 중"))); range->addWidget(from); range->addWidget(new QLabel(tr("번째부터"))); range->addWidget(through); range->addWidget(new QLabel(tr("번째까지 (1부터)")));
   grid->addWidget(window, 1, 0, 1, 2);
-  auto trigger = new QComboBox; trigger->setObjectName("scriptTrigger"); trigger->addItem(tr("기간 종료 때"), "period-end"); trigger->addItem(tr("행동에서 연결"), "interaction"); grid->addWidget(trigger, 1, 2);
+  auto trigger = new QComboBox; trigger->setObjectName("scriptTrigger"); trigger->addItem(tr("기간 종료 때"), "period-end"); trigger->addItem(tr("행동에서 연결"), "interaction"); trigger->addItem(tr("사건 완료 후"), "after-event"); grid->addWidget(trigger, 1, 2);
   auto scope = new QComboBox; scope->setObjectName("scriptScope"); scope->addItem(tr("공유 완료 기록"), "shared"); scope->addItem(tr("실행자별 완료 기록"), "actor"); grid->addWidget(scope, 1, 3);
   auto references = new QPushButton(tr("선택 노드의 참조 위치…")); references->setObjectName("scriptReferences"); grid->addWidget(references, 1, 4);
   auto repeatable = new QCheckBox(tr("조건을 만족하면 방문할 때 다시 시작")); repeatable->setObjectName("scriptRepeatable");
@@ -54,7 +54,7 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
     if (filling || !data().contains("window")) return;
     auto d = data(); d["scope"] = scope->currentData().toString();
     if (scope->currentData() == "actor") d["trigger"] = "interaction";
-    setData(d); QSignalBlocker blocker(trigger); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(scope->currentData() != "actor");
+    setData(d); QSignalBlocker blocker(trigger); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(true);
   });
   connect(conditions, &QPushButton::clicked, this, [this] {
     if (documentIndex < 0) return;
@@ -85,7 +85,7 @@ void ScriptAuthoringDialog::refreshMetadata() {
   metadata->findChild<QSpinBox *>("scriptFromPeriod")->setValue(w.value("fromPeriod").toInt() + 1);
   metadata->findChild<QSpinBox *>("scriptThroughPeriod")->setValue(w.value("throughPeriod").toInt() + 1);
   auto scope = metadata->findChild<QComboBox *>("scriptScope"); scope->setVisible(event); scope->setCurrentIndex(scope->findData(d.value("scope").toString("shared")));
-  auto trigger = metadata->findChild<QComboBox *>("scriptTrigger"); trigger->setVisible(event); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(scope->currentData() != "actor");
+  auto trigger = metadata->findChild<QComboBox *>("scriptTrigger"); trigger->setVisible(event); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(true);
   auto repeatable = metadata->findChild<QCheckBox *>("scriptRepeatable"); repeatable->setVisible(event); repeatable->setEnabled(trigger->currentData()=="interaction"); repeatable->setChecked(d.value("repeatable").toBool());
   refreshPredecessorSummary();
   filling = previous;

@@ -35,3 +35,12 @@ void beginActorAction(const J &c,J &s,const J &cmd){
   const auto actions=c["project"].value("gameplay",J::object()).value("actions",J::array());const auto action=find(actions,cmd["actionId"]);
   need(!action||!action->contains("expeditionId"),"ACTOR_SESSION_UNSUPPORTED","대상 지정 행동의 탐험 진입은 별도 세션 계약이 필요합니다.","/command/actionId");s["roster"]["actorId"]=actor;
 }
+
+bool readFlag(const J &c,const J &s,const J &e,const std::string &p) {
+  const auto id=str(e,"flagId");const auto definition=find(c.at("flags"),id);
+  need(definition,"UNKNOWN_FLAG","플래그가 없습니다.",p+"/flagId");
+  const auto actor=ownerId(c,s,e.value("owner",J()),p+"/owner");
+  if(actor.empty())return s.at("flags").at(id).get<bool>();
+  const auto flags=s.at("roster").value("flags",J::object());
+  return flags.value(actor,J::object()).value(id,definition->at("initial").get<bool>());
+}

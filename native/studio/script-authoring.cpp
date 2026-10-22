@@ -292,7 +292,7 @@ void ScriptAuthoringDialog::openConnections(){
         auto &drafts=script?documents:externalDocuments;auto &baseline=script?original:externalOriginal;int at=-1;
         for(int i=0;i<drafts.size();++i)if(drafts[i].toObject().value("file")==d.value("file"))at=i;
         if(at<0){drafts.append(d);baseline.append(QJsonObject{});if(script)documentField->addItem(d.value("data").toObject().value("label").toString());}else drafts[at]=d;
-      }}refreshDocumentIdentities();refreshMetadata();refreshNodes();return snapshot();});
+      }}context=snapshot();refreshDocumentIdentities();refreshMetadata();refreshNodes();return snapshot();});
   if(map.exec()==QDialog::Accepted){selectDocument(map.selectedFile);refreshNodes(map.selectedNode.isEmpty()?data().value("entryNodeId").toString():map.selectedNode);focusGraphNode();}
 }
 void StudioWindow::editScripts(){

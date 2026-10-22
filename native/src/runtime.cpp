@@ -174,9 +174,7 @@ bool conditionValue(const J &c, const J &s, const J &e, const std::string &p, in
   if (op == "not")
     return !condition(c, s, e.at("condition"), p + "/condition", d + 1);
   if (op == "flag") {
-    need(s.at("flags").contains(str(e, "flagId")), "UNKNOWN_FLAG", "플래그가 없습니다.",
-         p + "/flagId");
-    return s.at("flags").at(str(e, "flagId")) == e.at("equals");
+    return readFlag(c,s,e,p) == e.at("equals");
   }
   if (op == "eventCompleted")
     return eventCompleted(c,s,e.at("eventId"),e.value("owner",J()));
@@ -229,13 +227,15 @@ void effects(const J &c, J &s, const J &list, const std::string &src, J &changes
     }
     if (e.at("op") == "setFlag") {
       auto id = str(e, "flagId");
-      need(s.at("flags").contains(id), "UNKNOWN_FLAG", "플래그가 없습니다.", p + "/flagId");
+      const auto before=readFlag(c,s,e,p);
+      const auto actor=ownerId(c,s,e.value("owner",J()),p+"/owner");
       changes.push_back({{"kind", "flag"},
                          {"source", p},
                          {"flagId", id},
-                         {"before", s["flags"][id]},
+                         {"before", before},
                          {"after", e.at("value")}});
-      s["flags"][id] = e.at("value");
+      if(actor.empty())s["flags"][id] = e.at("value");
+      else {s["roster"]["flags"][actor][id]=e.at("value");changes.back()["characterId"]=actor;}
       traceExecution({{"kind","effect"},{"path",p},{"status","applied"},
                       {"before",changes.back()["before"]},{"after",e.at("value")}});
       continue;
@@ -484,9 +484,10 @@ void available(const J &c, const J &s) {
 void enter(const J &c, J &s, const std::string &kind, const J &id) {
   auto def = find(c[kind == "event" ? "events" : "endings"], id);
   need(def, "UNKNOWN_NARRATIVE", "알 수 없는 대본: " + id.get<std::string>(), "/activeNarrative");
+  const auto actor=kind=="event"&&def->value("scope","")=="actor"?ownerId(c,s,{{"kind","actor"}},"/activeNarrative/actorId"):std::string();
   s["phase"] = "narrative";
   s["activeNarrative"] = {{"kind", kind}, {"id", id}, {"nodeId", (*def)["entryNodeId"]}};
-  if(kind=="event"&&def->value("scope","")=="actor")s["activeNarrative"]["actorId"]=ownerId(c,s,{{"kind","actor"}},"/activeNarrative/actorId");
+  if(!actor.empty())s["activeNarrative"]["actorId"]=actor;
   available(c, s);
 }
 std::vector<J> ordered(const J &list) {
@@ -534,7 +535,7 @@ J inspect(const J &c, const J &s) {
     std::string reason;
     if (eventCompleted(c,s,e["id"]))
       reason = "completed";
-    else if (e.value("trigger", "") == "interaction")
+    else if (e.value("trigger", "") == "interaction" || e.value("trigger", "") == "after-event")
       reason = "interaction-only";
     else if (s["periodIndex"] < e["window"]["fromPeriod"])
       reason = "before-window";
@@ -564,6 +565,17 @@ void continuePeriodEvents(const J &c, J &s) {
     }
   }
   finish(c, s);
+}
+bool continueAfterEvent(const J &c,J &s,const J &cursor) {
+  for(const auto &e:ordered(c["events"])) {
+    if(e.value("trigger","")!="after-event"||(e.value("scope","")=="actor")!=cursor.contains("actorId")||eventCompleted(c,s,e["id"]))continue;
+    if(s["periodIndex"]<e["window"]["fromPeriod"]||s["periodIndex"]>e["window"]["throughPeriod"])continue;
+    if(!condition(c,s,e["requirements"],"/events/"+str(e,"id")+"/requirements"))continue;
+    enter(c,s,"event",e["id"]);
+    for(const auto &key:{"returnPhase","returnPresentation","finishPeriod"})if(cursor.contains(key))s["activeNarrative"][key]=cursor[key];
+    return true;
+  }
+  return false;
 }
 J step(const J &c, J &s, const J &choice, J &sounds) {
   need(s["mode"] == "full", "WRONG_PHASE", "전체 게임 모드가 필요합니다.", "/mode");
@@ -602,6 +614,7 @@ J step(const J &c, J &s, const J &choice, J &sounds) {
       if (cursor["kind"] == "event") {
         auto &completed=cursor.contains("actorId")?s["roster"]["completedEvents"][str(cursor,"actorId")]:s["completedEvents"];
         if(std::find(completed.begin(),completed.end(),cursor["id"])==completed.end())completed.push_back(cursor["id"]);
+        if (continueAfterEvent(c,s,cursor)) {available(c,s);return out;}
         if (cursor.contains("returnPhase")) {
           s["activeNarrative"] = nullptr;
           s["phase"] = cursor["returnPhase"];

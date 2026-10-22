@@ -328,6 +328,9 @@
             },
             "equals": {
               "type": "boolean"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
             }
           },
           "required": [
@@ -417,6 +420,9 @@
             },
             "value": {
               "type": "boolean"
+            },
+            "owner": {
+              "$ref": "#/$defs/owner"
             }
           },
           "required": [

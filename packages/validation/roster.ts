@@ -50,7 +50,7 @@ export function checkOwner(ctx:SemanticContext,project:JsonObject|undefined,doc:
   const roster=project&&isObject(project.roster)?project.roster:undefined;
   if(doc.kind==='event'&&pointer===''&&value.scope==='actor'){
     if(roster?.stateModel!=='character-v1')ctx.report(doc,'/scope','CHARACTER_STATE_REQUIRED','캐릭터별 사건에는 character-v1 설정이 필요합니다.');
-    if(value.trigger!=='interaction')ctx.report(doc,'/trigger','ACTOR_EVENT_TRIGGER','캐릭터별 사건은 행동에서 연결하는 interaction 사건이어야 합니다.');
+    if(value.trigger!=='interaction'&&value.trigger!=='after-event')ctx.report(doc,'/trigger','ACTOR_EVENT_TRIGGER','캐릭터별 사건은 행동 또는 사건 완료에서 연결해야 합니다.');
   }
   if(!isObject(value.owner))return;
   if(roster?.stateModel!=='character-v1'){ctx.report(doc,pointer+'/owner','CHARACTER_STATE_REQUIRED','캐릭터 소유 대상에는 character-v1 설정이 필요합니다.');return;}

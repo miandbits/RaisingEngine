@@ -11,8 +11,26 @@
       "$ref": "common.schema.json#/$defs/narrative"
     },
     {
-      "if": { "properties": { "repeatable": { "const": true } }, "required": ["repeatable"] },
-      "then": { "properties": { "trigger": { "const": "interaction" } }, "required": ["trigger"] }
+      "if": {
+        "properties": {
+          "repeatable": {
+            "const": true
+          }
+        },
+        "required": [
+          "repeatable"
+        ]
+      },
+      "then": {
+        "properties": {
+          "trigger": {
+            "const": "interaction"
+          }
+        },
+        "required": [
+          "trigger"
+        ]
+      }
     }
   ],
   "properties": {
@@ -54,7 +72,8 @@
     "trigger": {
       "enum": [
         "period-end",
-        "interaction"
+        "interaction",
+        "after-event"
       ]
     },
     "repeatable": {

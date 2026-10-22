@@ -2,7 +2,7 @@ import { customStateSlot } from './custom-states.js';
 import type { Condition, NumericExpression, Effects } from '../schema/generated/activity.js';
 import type { CalendarTime, ContentSnapshot, DeepReadonly, NumericTarget, RunState, RunData, Change } from './model.js';
 import { int32, requireCore } from './util.js';
-import { resolveOwner, eventCompleted } from './roster.js';
+import { resolveOwner, eventCompleted, readFlag } from './roster.js';
 
 export function calendarTime(content: ContentSnapshot, state: Pick<RunState, 'periodIndex'>): CalendarTime {
   const periodIndex = state.periodIndex;
@@ -56,8 +56,7 @@ export function evaluateCondition(content: ContentSnapshot, state: RunState, con
     case 'any': return condition.conditions.some((c, i) => evaluate(c, `conditions/${i}`));
     case 'not': return !evaluate(condition.condition, 'condition');
     case 'flag':
-      requireCore(Object.hasOwn(state.flags, condition.flagId), 'UNKNOWN_FLAG', '플래그가 없습니다.', `${path}/flagId`);
-      return state.flags[condition.flagId] === condition.equals;
+      return readFlag(content,state,condition.flagId,condition.owner,path) === condition.equals;
     case 'eventCompleted': return eventCompleted(content,state,condition.eventId,condition.owner);
     case 'compare': {
       const left = evaluateNumber(content, state, condition.left, `${path}/left`, depth + 1);
@@ -85,9 +84,11 @@ export function applyEffects(content: ContentSnapshot, draft: RunData, effects: 
       return;
     }
     if (effect.op === 'setFlag') {
-      requireCore(Object.hasOwn(draft.flags, effect.flagId), 'UNKNOWN_FLAG', '플래그가 없습니다.', `${path}/flagId`);
-      changes.push({ kind: 'flag', source: path, flagId: effect.flagId, before: draft.flags[effect.flagId]!, after: effect.value });
-      draft.flags[effect.flagId] = effect.value;
+      const before=readFlag(content,draft,effect.flagId,effect.owner,path);
+      const actor=resolveOwner(content,draft,effect.owner,path+'/owner');
+      changes.push({ kind: 'flag', source: path, flagId: effect.flagId, ...(actor?{characterId:actor}:{}), before, after: effect.value });
+      if(actor){draft.roster!.flags??={};draft.roster!.flags[actor]??={};draft.roster!.flags[actor]![effect.flagId]=effect.value;}
+      else draft.flags[effect.flagId] = effect.value;
       return;
     }
     const { definition, value: before, key, values: slotValues } = numericSlot(content, draft, effect.target, `${path}/target`);

@@ -2,6 +2,7 @@ import type { ActivityResult, ContentSnapshot, RunData, RunState, NumericTarget 
 import { requireCore } from './util.js';
 
 export interface RosterState {
+  flags?: Record<string, Record<string, boolean>>;
   attributes: Record<string, Record<string, number>>;
   assignments: Record<string, string>;
   inventory?: Record<string, Record<string, number>>;
@@ -104,4 +105,12 @@ export function executeRoster(content: ContentSnapshot, draft: RunData,
   draft.lastActivityResult = result;
   draft.phase = 'activity-result';
   return result;
+}
+
+/** Missing personal flags use the definition default, never another actor's/shared value. */
+export function readFlag(content: ContentSnapshot, state: RunState, flagId: string, owner: NumericTarget['owner'], path: string): boolean {
+  const definition=content.flags.find(f=>f.id===flagId);
+  requireCore(definition,'UNKNOWN_FLAG','플래그가 없습니다.',path+'/flagId');
+  const actor=resolveOwner(content,state,owner,path+'/owner');
+  return actor ? state.roster?.flags?.[actor]?.[flagId] ?? definition.initial : state.flags[flagId]!;
 }

@@ -25,9 +25,9 @@ namespace {
 QString name(QJsonValue v) { return v.isString()?v.toString():v.toObject().value("fallback").toString(); }
 QString text(const QJsonObject &d) { auto s=name(d.value("label"));if(s.isEmpty())s=name(d.value("name"));return s.isEmpty()?d.value("id").toString():s; }
 QString atom(const QJsonObject &o) {
-  const auto op=o.value("op").toString();
-  if(op=="flag"||op=="setFlag")return "flag:"+o.value("flagId").toString()+":"+(o.value(op=="flag"?"equals":"value").toBool()?"true":"false");
-  if(op=="stateIs"||op=="setState")return "state:"+o.value("stateGroupId").toString()+":"+o.value("stateValueId").toString();
+  const auto op=o.value("op").toString();const auto owner=o.value("owner").toObject();const auto suffix=owner.isEmpty()?QString():"@"+(owner.value("kind")=="actor"?QString("actor"):"character:"+owner.value("characterId").toString());
+  if(op=="flag"||op=="setFlag")return "flag:"+o.value("flagId").toString()+":"+(o.value(op=="flag"?"equals":"value").toBool()?"true":"false")+suffix;
+  if(op=="stateIs"||op=="setState")return "state:"+o.value("stateGroupId").toString()+":"+o.value("stateValueId").toString()+suffix;
   return {};
 }
 QStringList links(const QJsonObject &n) {
@@ -121,7 +121,8 @@ StoryConnections buildStoryConnections(const QJsonArray &documents) {
     QString role=negated?QObject::tr("배제 조건"):alternative?QObject::tr("대안 조건"):QObject::tr("필수 조건");
     if(op=="eventCompleted")edge(events.value(condition.value("eventId").toString()),c.node,role+" · "+path,alternative||negated);
     auto key=atom(condition);if(key.isEmpty())return;
-    auto label=atomNames.value(key,key.mid(key.indexOf(':')+1));
+    const auto base=key.section('@',0,0);auto label=atomNames.value(base,base.mid(base.indexOf(':')+1));
+    if(key.endsWith("@actor"))label+=QObject::tr(" · 실행자별");else if(key.contains("@character:"))label+=" · "+key.section("@character:",1);
     for(const auto &p:producers.value(key))edge(p.node,c.node,role+" · "+label+"\n"+p.detail+"\n"+path,true);
   };
   for(const auto &c:consumers)scan(c,c.condition,c.path,false,false);
