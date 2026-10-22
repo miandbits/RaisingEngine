@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "tool-search.hpp"
 #include "editor-language.hpp"
 #include "project-manager.hpp"
 #include "theme.hpp"
@@ -32,6 +33,7 @@
 class StudioTests : public QObject {
   Q_OBJECT
 private slots:
+  void authoringToolSearch();
   void editorBasicsClipboardLayers();
   void editorBasicsSaveProtection();
   void editorBasicsVersionControl();
@@ -1019,6 +1021,7 @@ private slots:
 #include "pm2-facilities-test.inc"
 #include "project-settings-test.inc"
 #include "roster-test.inc"
+#include "tool-search-test.inc"
 #include "character-state-test.inc"
 #include "time-session-test.inc"
 #include "authoring-workspace-test.inc"

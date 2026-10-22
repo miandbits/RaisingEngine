@@ -5,6 +5,7 @@
 #include "component-preview.hpp"
 #include "tabular-input.hpp"
 #include "table-logic.hpp"
+#include "tool-search.hpp"
 #include <QShortcut>
 #include "project-manager.hpp"
 #include "hierarchy-tree.hpp"
@@ -182,6 +183,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   viewMenu = menuBar()->addMenu(tr("보기"));
   viewMenu->addAction("언어 / Language / 言語…", this, [this] { showEditorLanguageSettings(this); })->setObjectName("editorLanguageSettings");
   auto designMenu = menuBar()->addMenu(tr("디자인"));
+  designMenu->setObjectName("designToolsMenu");
   designMenu->addAction(tr("완결 샘플 제작…"),this,&StudioWindow::createBenchmark)->setObjectName("createBenchmark");
   designMenu->addAction(tr("제작 시험 검증…"),this,&StudioWindow::runAssuranceDialog)->setObjectName("runAssurance");
   designMenu->addAction(tr("목표 경로 기록 · 회귀 검사…"),this,&StudioWindow::goalRoutesDialog)->setObjectName("goalRoutes");
@@ -214,11 +216,14 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("실행 시점 · 행동 흐름…"),this,&StudioWindow::editWorkflows)->setObjectName("editWorkflows");
   designMenu->addAction(tr("규칙 디버거 · 영향 분석"),this,&StudioWindow::showRuleDebugger)->setObjectName("showRuleDebugger");
   designMenu->addAction(tr("거래 · 기존 시설 데이터…"),this,&StudioWindow::editFacilities)->setObjectName("editFacilities");
+  organizeAuthoringTools(designMenu,this);
+  findChild<QAction*>("editRoster")->setToolTip(tr("인물 추가 · 이름 변경 · 개인 능력 · 공용 자원 · 일정과 활동 배정"));
   auto toolbar = addToolBar(tr("제작 도구"));
   toolbar->setObjectName("mainToolbar");
   toolbar->setMovable(false);
   toolbar->setIconSize({18, 18});
   toolbar->addAction(tr("이야기 제작"),this,&StudioWindow::editStoryFlow)->setObjectName("storyFlowAction");
+  auto storyTool=findChild<QAction*>("storyFlowAction");storyTool->setToolTip(tr("만남 · 선택지 · 관계 변화 · 약속 · 후속 사건을 연결합니다."));designMenu->insertAction(designMenu->actions().value(2),storyTool);
   toolbar->addAction(tr("관계 표시"),this,&StudioWindow::addRelationshipDisplay)->setObjectName("relationshipDisplayAction");
   previewLocaleField=new QComboBox;previewLocaleField->setObjectName("previewLocale");previewLocaleField->setToolTip(tr("캔버스와 다음 실행의 언어"));screenOnlyActions << toolbar->addWidget(previewLocaleField);
   connect(previewLocaleField,qOverload<int>(&QComboBox::activated),this,[this]{refresh();});
