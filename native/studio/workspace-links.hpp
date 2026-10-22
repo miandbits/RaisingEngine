@@ -8,7 +8,7 @@
 // presented as a guaranteed runtime sequence.
 inline QString workspaceRelation(const QString &relation) {
   const QMap<QString,QString> names{
-    {"condition",QObject::tr("조건에서 읽음")},{"cost",QObject::tr("비용")},
+    {"assignment",QObject::tr("인물·활동 배정")},{"condition",QObject::tr("조건에서 읽음")},{"cost",QObject::tr("비용")},
     {"effect",QObject::tr("효과로 변경")},{"branch",QObject::tr("행동 분기")},
     {"ui",QObject::tr("표시·행동 연결")},{"script",QObject::tr("대본")},
     {"choice",QObject::tr("선택지")},{"followup",QObject::tr("후속 사건 후보")},

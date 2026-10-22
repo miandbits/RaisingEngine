@@ -1,3 +1,13 @@
+    if(kind=="event"||kind=="ending"){
+      auto contents=new QTreeWidget;contents->setObjectName("workspaceStoryContents");contents->setHeaderLabel(tr("대사·선택 · 두 번 눌러 여기서 편집"));contents->setMaximumHeight(210);
+      QMap<QString,QTreeWidgetItem*> byNode;
+      for(auto v:state->nodes){auto row=v.toObject();if(row.value("file")!=n.value("file")||row.value("kind")!="scriptNode")continue;auto item=new QTreeWidgetItem(contents,{row.value("label").toString()});item->setData(0,Qt::UserRole,row.value("key").toString());byNode[row.value("id").toString()]=item;}
+      for(auto v:state->nodes){auto row=v.toObject();if(row.value("file")!=n.value("file")||row.value("kind")!="scriptChoice")continue;auto key=row.value("id").toString();auto parent=byNode.value(key.left(key.lastIndexOf('/')));if(!parent)continue;auto item=new QTreeWidgetItem(parent,{row.value("value").toObject().value("text").toString()});item->setData(0,Qt::UserRole,row.value("key").toString());parent->setExpanded(true);}
+      form->addRow(contents);connect(contents,&QTreeWidget::itemDoubleClicked,panel,[=](QTreeWidgetItem *item,int){if(state->dirty){notice->setText(tr("현재 입력을 먼저 적용하세요."));return;}locate(item->data(0,Qt::UserRole).toString());});
+    }
+    if(kind=="activity"){
+      auto encounter=new QPushButton(tr("＋ 이 활동에서 만나는 사건 만들기"));encounter->setObjectName("workspaceEncounter");form->addRow(encounter);connect(encounter,&QPushButton::clicked,panel,[=]{addKind->setCurrentIndex(addKind->findData("event"));add->click();});
+    }
     if(kind=="event"||kind=="ending"||kind=="scriptNode"||kind=="scriptChoice"){
       linkedEditor("workspaceScript",tr("이 사건의 대본·선택지·후속 연결 지도…"),[this,n]{
         const auto type=n.value("kind").toString();

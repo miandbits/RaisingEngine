@@ -94,6 +94,14 @@ void StudioTests::logicAstEditor() {
   QCOMPARE(logicValueAt(effects.value(),{"0","value","value","value"}).toInt(),25);
   QCOMPARE(logicValueAt(effects.value(),{"1","value"}).toBool(),false);
   effects.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click(); QCOMPARE(effects.result(),int(QDialog::Accepted));
+  // Popup activation must not delete its emitting combo while Qt is handling it.
+  for(bool embedded:{false,true}){
+    QWidget host;LogicEditor owned(QJsonObject{{"op","setFlag"},{"flagId","blessed"},{"value",true}},"effect",context);
+    if(embedded){owned.setParent(&host);owned.setWindowFlags(Qt::Widget);host.show();}owned.show();
+    QPointer<QComboBox> field=owned.findChild<QComboBox*>("logicOwner");QVERIFY(field);field->setCurrentIndex(1);QMetaObject::invokeMethod(field,"activated",Q_ARG(int,1));
+    QVERIFY2(field,"Owner popup destroyed synchronously during activation");QCOMPARE(owned.value().toObject().value("owner").toObject().value("kind"),QJsonValue("actor"));
+    QCoreApplication::processEvents();auto current=owned.findChild<QComboBox*>("logicOwner");QVERIFY(current);QCOMPARE(current->currentData().toJsonObject().value("kind"),QJsonValue("actor"));
+  }
 }
 
 void StudioTests::logicAuthoringAndDebug() {

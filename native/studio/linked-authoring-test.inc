@@ -36,7 +36,7 @@ void StudioTests::linkedAuthoringRoundtrip(){
     if(step.contains("logic")){
       const auto settings=step.value("logic").toObject();bool edited=false;
       QTimer::singleShot(50,&w,[&]{auto dialog=w.findChild<QDialog*>("logicEditor");QVERIFY(dialog);QStringList path;for(auto v:settings.value("path").toArray())path<<v.toString();characterNumber(dialog,path,settings.value("number").toInt());edited=true;dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();});
-      auto button=dock->findChild<QPushButton*>(settings.value("button").toString());QVERIFY(button);button->click();QVERIFY(edited);
+      auto button=dock->findChild<QPushButton*>(settings.value("button").toString());QVERIFY(button);button->click();QTRY_VERIFY(edited);
     }
     if(step.contains("text")||step.contains("number")||step.contains("logic")){
       const auto revision=w.currentView().value("revision").toInt();dock->findChild<QPushButton*>("workspaceApply")->click();

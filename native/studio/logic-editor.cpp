@@ -143,7 +143,10 @@ void LogicEditor::ownerField(){
   const auto path=selectedPath;const auto owner=node(path).toObject().value("owner").toObject();
   for(int i=0;i<field->count();i++)if(field->itemData(i).toJsonObject()==owner)field->setCurrentIndex(i);
   field->setToolTip(tr("실행자 대상은 캐릭터 행동·활동·대상별 사건에서 사용할 수 있습니다. 공유 항목은 기존 의미를 유지합니다."));form->addRow(tr("소유자"),field);
-  connect(field,qOverload<int>(&QComboBox::activated),this,[this,field,path]{auto object=node(path).toObject();const auto owner=field->currentData().toJsonObject();if(owner.empty())object.remove("owner");else object["owner"]=owner;update(path,object);});
+  connect(field,qOverload<int>(&QComboBox::activated),this,[this,field,path]{auto object=node(path).toObject();const auto owner=field->currentData().toJsonObject();if(owner.empty())object.remove("owner");else object["owner"]=owner;root=replaced(root,path,object);error->clear();
+    // Keep the combo alive until Qt finishes closing its popup and delivering input.
+    QTimer::singleShot(0,this,[this,path]{if(selectedPath==path)refresh(path);});
+  });
 }
 void LogicEditor::addChild(){auto path=selectedPath;auto value=node(path);if(value.isObject()&&(value.toObject().value("op")=="all"||value.toObject().value("op")=="any")){path<<"conditions";value=node(path);}if(!value.isArray()){error->setText(tr("효과 목록이나 AND/OR 조건 목록을 선택하세요."));return;}auto a=value.toArray();a.append(defaults(rootKind=="effects"&&path.empty()?"effect":"condition",rootKind=="effects"&&path.empty()?"add":"always"));update(path,a);error->clear();}
 void LogicEditor::removeChild(){if(selectedPath.empty())return;auto parent=selectedPath;int i=parent.takeLast().toInt();auto value=node(parent);if(!value.isArray())return;auto a=value.toArray();if(a.size()==1&&!(rootKind=="effects"&&parent.empty())){error->setText(tr("AND/OR에는 조건이 하나 이상 필요합니다."));return;}a.removeAt(i);update(parent,a);}

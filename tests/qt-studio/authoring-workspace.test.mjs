@@ -7,6 +7,15 @@ import {fixture} from '../gameplay/fixture.mjs';
 import {createSession,dispatchSession} from '../../dist/packages/runtime-service/session.js';
 import {encodeSave} from '../../dist/packages/runtime-service/save.js';
 
+test('workspace resolves named actors and follows person to assigned activity without changing documents',()=>{
+ const docs=[{kind:'project',file:'project.json',data:{roster:{members:[{characterId:'child',activityId:'pottery'}]}}},{kind:'character',file:'characters/child.json',data:{id:'child',name:'새 견습생'}},{kind:'activity',file:'activities/pottery.json',data:{id:'pottery',label:'물레 연습'}}];
+ const before=structuredClone(docs),index=authoringWorkspace(docs);
+ assert.equal(index.nodes.find(n=>n.key==='actor:child').label,'새 견습생');
+ assert.ok(index.edges.some(e=>e.from==='character:child'&&e.to==='actor:child'&&e.relation==='assignment'&&e.resolved));
+ assert.ok(index.edges.some(e=>e.from==='actor:child'&&e.to==='activity:pottery'&&e.relation==='assignment'&&e.resolved));
+ assert.deepEqual(docs,before);
+});
+
 test('draft index: transitive branches, qualified relationships, dangling and duplicate definitions',()=>{
  const docs=[{file:'project.json',kind:'project',data:{gameplay:{actions:[{id:'a',flow:[{thenActionId:'b'}]},{id:'b',effects:[{target:{kind:'relationship',characterId:'mentor',relationshipId:'trust'}},{target:{itemId:'missing'}}],flow:[{thenActionId:'a'}]}]},roster:{members:[{characterId:'child',initialInventory:{flower:2}}]}}},{file:'mentor.json',kind:'character',data:{id:'mentor',relationships:[{id:'trust'}]}}];
  const index=authoringWorkspace(docs),impact=workspaceImpact(index,'relationship:mentor/trust');

@@ -222,6 +222,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   toolbar->setObjectName("mainToolbar");
   toolbar->setMovable(false);
   toolbar->setIconSize({18, 18});
+  auto connectionsTool=findChild<QAction*>("showAuthoringWorkspace");connectionsTool->setText(tr("연결 작업실"));connectionsTool->setToolTip(tr("인물·활동·조건·효과·후속 사건을 한 작업실에서 만들고 연결합니다."));toolbar->addAction(connectionsTool);
   toolbar->addAction(tr("이야기 제작"),this,&StudioWindow::editStoryFlow)->setObjectName("storyFlowAction");
   auto storyTool=findChild<QAction*>("storyFlowAction");storyTool->setToolTip(tr("만남 · 선택지 · 관계 변화 · 약속 · 후속 사건을 연결합니다."));designMenu->insertAction(designMenu->actions().value(2),storyTool);
   toolbar->addAction(tr("관계 표시"),this,&StudioWindow::addRelationshipDisplay)->setObjectName("relationshipDisplayAction");
@@ -1832,6 +1833,15 @@ void StudioWindow::receivePlayer() {
 bool StudioWindow::mayDiscard() {
   if(confirmingTransition)return false;
   QScopedValueRollback<bool> guard(confirmingTransition,true);
+  // A submitted inline editor owns callbacks until its batch edit completes.
+  // Settle it before offering to discard widgets or switch project roots.
+  if(bridge.busy()&&!waitForPendingEdits())return false;
+  if(auto workspace=findChild<QDockWidget*>("authoringWorkspaceDock");workspace&&workspace->property("workspaceInputPending").toBool()){
+    QMessageBox draft(QMessageBox::Warning,tr("작업실에 적용하지 않은 입력"),tr("작업실에 적용하지 않은 입력이 있습니다. 돌아가서 적용하거나 입력을 버리고 계속하세요."),QMessageBox::Discard|QMessageBox::Cancel,this);
+    draft.setObjectName("workspaceUnsavedDialog");draft.setDefaultButton(QMessageBox::Cancel);draft.button(QMessageBox::Cancel)->setText(tr("작업실로 돌아가기"));draft.button(QMessageBox::Discard)->setText(tr("입력 버리고 계속"));
+    if(draft.exec()!=QMessageBox::Discard){workspace->show();workspace->raise();return false;}
+    if(auto discard=workspace->findChild<QPushButton*>("workspaceDiscardDrafts"))discard->click();
+  }
   // A field can still have an uncommitted editingFinished value when X/Ctrl+S is used.
   lastError.clear();
   if(auto focus=QApplication::focusWidget();focus&&isAncestorOf(focus))focus->clearFocus();

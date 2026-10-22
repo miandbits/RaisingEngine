@@ -76,6 +76,7 @@ private slots:
   void durabilityLargeProject();
   void replayUiAuthoring();
   void authoringWorkspaceRoundtrip();
+  void unifiedConnectionAuthoring();
   void linkedAuthoringRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();

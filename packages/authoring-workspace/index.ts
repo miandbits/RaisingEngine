@@ -10,13 +10,14 @@ const array=(v:unknown):Row[]=>{const rows:Row[]=[];if(Array.isArray(v))v.forEac
 const escape=(s:string)=>s.replace(/~/g,'~0').replace(/\//g,'~1');
 export function authoringWorkspace(documents:readonly {file:string;kind:string;data:unknown}[]) {
   const nodes:WorkspaceNode[]=[],edges:WorkspaceEdge[]=[];
+  const people=new Map(documents.filter(d=>d.kind==='character'&&object(d.data)).map(d=>[String((d.data as Row).id),String((d.data as Row).name??(d.data as Row).id)]));
   const add=(kind:string,id:unknown,value:unknown,file:string,path:string,label?:string)=>{if(typeof id!=='string'||!object(value))return;nodes.push({key:`${kind}:${id}`,kind,id,label:label??String(value.name??value.label??id),file,path,value:structuredClone(value)});};
   for(const doc of documents){if(!object(doc.data))continue;const d=doc.data;
     if(doc.kind==='project'){
       for(const [field,kind] of [['actions','action'],['interactions','interaction'],['rules','rule'],['items','item'],['locations','location'],['policyGroups','policy'],['policyBudgets','budget'],['shops','shop']])
         array(d.gameplay?.[field!]).forEach((v:Row,i:number)=>add(kind!,v.id,v,doc.file,`/gameplay/${field}/${i}`));
       if(d.progression){add('clock','clock',{unitLabel:d.progression.unitLabel,actionPoints:d.progression.actionPoints},doc.file,'/progression');array(d.progression.actions).forEach((v:Row,i:number)=>add('timing',v.actionId,v,doc.file,`/progression/actions/${i}`));array(d.progression.appointments).forEach((v:Row,i:number)=>add('appointment',v.id,v,doc.file,`/progression/appointments/${i}`));}
-      array(d.roster?.members).forEach((v:Row,i:number)=>add('actor',v.characterId,v,doc.file,`/roster/members/${i}`));
+      array(d.roster?.members).forEach((v:Row,i:number)=>add('actor',v.characterId,v,doc.file,`/roster/members/${i}`,people.get(v.characterId)));
       array(d.userFields).forEach((v:Row,i:number)=>add('userField',v.id,v,doc.file,`/userFields/${i}`));
       array(d.stateGroups).forEach((g:Row,i:number)=>{
         add('stateGroup',g.id,g,doc.file,`/stateGroups/${i}`);
@@ -70,6 +71,8 @@ export function authoringWorkspace(documents:readonly {file:string;kind:string;d
   // Explicit script ownership and local links use qualified IDs: repeated node or
   // choice names in different events must never navigate to another document.
   for(const n of nodes){
+    if(n.kind==='character'&&known.has(`actor:${n.id}`))link(n,`actor:${n.id}`,n.path,'assignment');
+    if(n.kind==='actor'&&typeof n.value.activityId==='string')link(n,`activity:${n.value.activityId}`,`${n.path}/activityId`,'assignment');
     if(n.kind==='event'||n.kind==='ending'){
       array(n.value.nodes).forEach((v:Row,i:number)=>link(n,`scriptNode:${n.kind}/${n.id}/${v.id}`,`/nodes/${i}`,'script'));
     }
