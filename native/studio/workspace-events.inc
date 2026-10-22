@@ -8,7 +8,25 @@
       auto timing=[=]{activity->setEnabled(trigger->currentData()=="after-activity");location->setEnabled(trigger->currentData()=="location-enter");};connect(trigger,qOverload<int>(&QComboBox::currentIndexChanged),panel,timing);timing();
       auto scope=new QComboBox;scope->setObjectName("workspaceEventScope");scope->addItem(tr("공용 · 모두가 같은 사건 기록"),"shared");scope->addItem(tr("캐릭터별 · 실행한 인물의 선택·약속 기록"),"actor");scope->setCurrentIndex(state->draft.value("scope")=="actor"?1:0);form->addRow(tr("기록 범위"),scope);
       state->fields["scope"]=[scope]{return scope->currentData().toString();};connect(scope,qOverload<int>(&QComboBox::currentIndexChanged),panel,dirty);
-      auto help=new QLabel(tr("캐릭터별 사건의 조건·효과에서 ‘행동 실행자’를 고르면 그 인물에게만 적용됩니다. 공용 일정 종료 사건은 캐릭터별 기록을 지원하지 않습니다. 범위를 바꾸어도 기존 조건·효과의 대상은 자동 변환되지 않습니다."));help->setWordWrap(true);form->addRow(help);
+      auto help=new QLabel(tr("공용 → 캐릭터별 전환은 조건·효과·선택·후속 사건의 변경 내용을 먼저 보여줍니다. 공동 자원과 특정 인물 대상은 구분하여 유지합니다."));help->setWordWrap(true);form->addRow(help);
+      if(n.value("value").toObject().value("scope")!="actor"){
+        auto preview=new QPushButton(tr("캐릭터별 전환 미리보기…"));preview->setObjectName("workspaceScopePreview");form->addRow(preview);
+        connect(preview,&QPushButton::clicked,panel,[=]{
+          if(bridge.busy()||state->revision!=view.value("revision").toInt()||state->root!=view.value("root").toString()){notice->setText(tr("프로젝트 버전이 바뀌었습니다. 새로 고침 후 다시 편집하세요."));return;}
+          collect();auto draft=state->draft;const auto trigger=draft.value("trigger").toString("period-end");if(trigger!="after-activity")draft.remove("activityId");if(trigger!="location-enter")draft.remove("locationId");
+          const auto docs=view.value("documents").toArray();const auto revision=view.value("revision"),root=view.value("root");
+          auto editor=new StoryScopeDialog(docs,n.value("file").toString(),draft);
+          embed(editor,n.value("label").toString()+tr(" · 캐릭터별 전환"),[=]{
+            if(bridge.busy()||revision!=view.value("revision")||root!=view.value("root")||docs!=view.value("documents").toArray()){editor->findChild<QLabel*>("scopeProblems")->setText(tr("프로젝트가 변경되었습니다. 취소하고 다시 연결하세요."));return false;}
+            if(!editor->resultPlan.errors.isEmpty())return false;QJsonArray edits;
+            for(auto v:editor->resultPlan.documents){auto d=v.toObject();for(auto old:docs)if(old.toObject().value("file")==d.value("file")&&old.toObject().value("data")!=d.value("data"))edits.append(QJsonObject{{"type","replace"},{"file",d.value("file")},{"data",d.value("data")}});}
+            if(edits.isEmpty())return true;
+            editor->setEnabled(false);request("edit",{{"edit",QJsonObject{{"type","batch"},{"edits",edits}}}},[=](QJsonObject r){editor->setEnabled(true);if(!r.value("error").toString().isEmpty()){editor->findChild<QLabel*>("scopeProblems")->setText(r.value("error").toString());return;}
+              state->dirty=false;state->pending=n.value("key").toString();inlineEditor->complete();emit updated();
+            });return false;
+          });
+        });
+      }
       const auto p=projectData();const int per=qMax(1,p.value("periodsPerMonth").toInt()),total=qMax(1,p.value("durationMonths").toInt()*per);
       for(const auto &field:QStringList{"fromPeriod","throughPeriod"}){
         auto date=new QComboBox;date->setObjectName("workspaceDate-"+field);

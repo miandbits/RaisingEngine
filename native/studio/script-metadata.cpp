@@ -1,6 +1,7 @@
 #include "script-authoring.hpp"
 #include "script-continuation.hpp"
 #include "logic-editor.hpp"
+#include "story-scope.hpp"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QGridLayout>
@@ -58,8 +59,18 @@ QWidget *ScriptAuthoringDialog::makeMetadata() {
   connect(trigger, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, trigger, repeatable,appointmentActivity,appointmentLocation] { if (!filling && data().contains("window")) { auto d = data(); d["trigger"] = trigger->currentData().toString(); const bool direct=trigger->currentData()=="interaction"; if (!direct) d.remove("repeatable"); d.remove("activityId");d.remove("locationId");const bool activity=trigger->currentData()=="after-activity",location=trigger->currentData()=="location-enter";if(activity)d["activityId"]=appointmentActivity->currentData().toString();if(location)d["locationId"]=appointmentLocation->currentData().toString();appointmentActivity->setVisible(activity);appointmentLocation->setVisible(location);setData(d); QSignalBlocker blocker(repeatable); repeatable->setEnabled(direct); repeatable->setChecked(d.value("repeatable").toBool()); } });
   connect(scope, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, scope, trigger] {
     if (filling || !data().contains("window")) return;
+    if(scope->currentData()=="actor"&&data().value("scope")!="actor"){
+      {QSignalBlocker block(scope);scope->setCurrentIndex(scope->findData("shared"));}
+      if(saveGuard){const auto message=saveGuard();if(!message.isEmpty()){error->setText(message);return;}}
+      auto all=context.value("documents").toArray();
+      for(const auto &drafts:{documents,externalDocuments})for(auto v:drafts)for(int i=0;i<all.size();++i)if(all[i].toObject().value("file")==v.toObject().value("file"))all[i]=v;
+      StoryScopeDialog preview(all,documents[documentIndex].toObject().value("file").toString(),data(),this);
+      if(preview.exec()!=QDialog::Accepted)return;
+      if(saveGuard){const auto message=saveGuard();if(!message.isEmpty()){error->setText(message);return;}}
+      for(auto v:preview.resultPlan.documents)for(int i=0;i<documents.size();++i)if(documents[i].toObject().value("file")==v.toObject().value("file"))documents[i]=v;
+      refreshDocumentIdentities();refreshMetadata();refreshNodes();return;
+    }
     auto d = data(); d["scope"] = scope->currentData().toString();
-    if (scope->currentData() == "actor" && d.value("trigger").toString("period-end")=="period-end") d["trigger"] = "interaction";
     setData(d); QSignalBlocker blocker(trigger); trigger->setCurrentIndex(trigger->findData(d.value("trigger").toString("period-end"))); trigger->setEnabled(true);
   });
   connect(conditions, &QPushButton::clicked, this, [this] {

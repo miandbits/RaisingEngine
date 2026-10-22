@@ -4,6 +4,7 @@
 #include "workspace-links.hpp"
 #include "workspace-inline.hpp"
 #include "story-followup.hpp"
+#include "story-scope.hpp"
 #include "story-connections.hpp"
 #include <QPlainTextEdit>
 #include <QApplication>
@@ -150,6 +151,9 @@ void StudioWindow::showAuthoringWorkspace(){
   connect(search,&QLineEdit::textChanged,panel,[tree](QString text){QTreeWidgetItemIterator it(tree);while(*it){auto item=*it;if(item->parent())item->setHidden(!(item->text(0)+item->text(1)+item->parent()->text(0)).contains(text,Qt::CaseInsensitive));++it;}});
   connect(reload,&QPushButton::clicked,panel,[refresh]{(*refresh)(true);});connect(this,&StudioWindow::updated,panel,[this,state,refresh]{if(view.value("revision").toInt()!=state->requested||view.value("root").toString()!=state->root)QTimer::singleShot(0,this,[refresh]{(*refresh)(false);});});
   connect(apply,&QPushButton::clicked,panel,[this,state,collect,notice,refresh,dock]{if(bridge.busy()||state->editing)return;if(state->revision!=view.value("revision").toInt()||state->root!=view.value("root").toString()){notice->setText(tr("프로젝트 버전이 바뀌었습니다. 새로 고침 후 다시 편집하세요."));return;}collect();auto value=state->draft;
+    if(state->selected.value("kind")=="event"&&state->selected.value("value").toObject().value("scope")!="actor"&&value.value("scope")=="actor"){
+      if(auto preview=dock->findChild<QPushButton*>("workspaceScopePreview"))preview->click();return;
+    }
     if(state->buttonMode&&state->buttonMode->currentData()!="keep"){
       if(!state->buttonTarget||state->buttonTarget->currentIndex()<0){notice->setText(tr("연결할 행동이나 화면을 먼저 만드세요."));return;}
       const auto mode=state->buttonMode->currentData().toString();

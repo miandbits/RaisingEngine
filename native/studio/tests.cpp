@@ -77,6 +77,7 @@ private slots:
   void replayUiAuthoring();
   void authoringWorkspaceRoundtrip();
   void unifiedConnectionAuthoring();
+  void storyScopeConversion();
   void linkedAuthoringRoundtrip();
   void uiCompositionAuthoringRoundtrip();
   void uiCompositionPlayIntegration();
@@ -1032,6 +1033,7 @@ private slots:
 #include "character-state-test.inc"
 #include "time-session-test.inc"
 #include "authoring-workspace-test.inc"
+#include "story-scope-test.inc"
 #include "linked-authoring-test.inc"
 #include "ui-composition-test.inc"
 #include "tactics-test.inc"
