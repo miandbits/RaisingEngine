@@ -1,5 +1,5 @@
 import type { ContentByKind } from '../schema/types.js';
-import { sortDiagnostics, type LoadedProject, type ProjectDocument, type ValidationResult } from './model.js';
+import { diagnostic, sortDiagnostics, type LoadedProject, type ProjectDocument, type ValidationResult } from './model.js';
 import { validateStructure } from './structure.js';
 import { validateSemantics } from './semantics.js';
 import { validatePlugins } from './plugins.js';
@@ -18,7 +18,17 @@ export async function validateProject(project: LoadedProject): Promise<Validatio
   }
   // Engine semantics never see plugin documents: their data is plugin-owned (e.g. an
   // `imageAssetId` inside a rig is checked by the plugin service, not the engine walker).
-  diagnostics.push(...validateSemantics(documents.filter((d) => d.kind !== 'extension' && d.kind !== 'pluginLock')));
+  // An invalid manifest is absent from documents. Do not interpret that as a
+  // legacy project with no roster, items or locations and flood the author with
+  // false missing-feature errors. All files still receive structural validation;
+  // cross-document semantics resume once the manifest can be trusted.
+  if (documents.some((d) => d.kind === 'project')) {
+    diagnostics.push(...validateSemantics(documents.filter((d) => d.kind !== 'extension' && d.kind !== 'pluginLock')));
+  } else {
+    const manifest = compiled.documents.find((d) => d.kind === 'project');
+    if (manifest) diagnostics.push(diagnostic(manifest, '', 'SEMANTICS_DEFERRED',
+      '프로젝트 형식 오류를 먼저 수정하세요. 문서 간 참조·규칙 검사는 수정 후 재검증됩니다.', [], 'warning'));
+  }
   const plugins = await validatePlugins(project, documents);
   diagnostics.push(...plugins.diagnostics);
   const structured = plugins.rejected.size ? documents.filter((d) => !plugins.rejected.has(d)) : documents;

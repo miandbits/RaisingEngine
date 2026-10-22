@@ -55,5 +55,5 @@ export function diagnostic(doc: ProjectDocument, pointer: string, code: string, 
 }
 export function sortDiagnostics(items: Diagnostic[]): Diagnostic[] {
   const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
-  return items.sort((a, b) => compare(a.file, b.file) || a.line - b.line || a.column - b.column || compare(a.code, b.code) || compare(a.pointer, b.pointer));
+  return items.sort((a, b) => Number(a.severity === 'warning') - Number(b.severity === 'warning') || compare(a.file, b.file) || a.line - b.line || a.column - b.column || compare(a.code, b.code) || compare(a.pointer, b.pointer));
 }

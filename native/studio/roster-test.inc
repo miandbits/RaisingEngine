@@ -18,9 +18,17 @@ void StudioTests::narrativeActorBinding() {
   QVERIFY(source);QCOMPARE(source->text(),QString("현재 사건의 대상 인물"));list->setCurrentItem(source);
   dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok)->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
   QCOMPARE(addedElement().value("binding").toString(),QString("narrative-actor"));
+  // A designer must find actual choice consequences without knowing a binding ID.
+  w.findChild<QPushButton*>("dataBindingPicker")->click();dialog=w.findChild<QDialog*>("dataBindingDialog");QVERIFY(dialog);
+  list=dialog->findChild<QListWidget*>("dataBindingSources");source=nullptr;
+  dialog->findChild<QLineEdit*>("dataBindingSearch")->setText("선택 결과");
+  for(int i=0;i<list->count();++i)if(!list->item(i)->isHidden()&&list->item(i)->text()=="선택 결과 · 실제 변화")source=list->item(i);
+  QVERIFY(source);list->setCurrentItem(source);
+  dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok)->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+  QCOMPARE(addedElement().value("binding").toString(),QString("choice-result"));
   const auto elementId=addedElement().value("id");
   w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);w.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
-  bool found=false;for(const auto &screen:w.projectData().value("visual").toObject().value("screens").toArray())for(const auto &item:screen.toObject().value("elements").toArray())if(item.toObject().value("id")==elementId){found=true;QCOMPARE(item.toObject().value("binding").toString(),QString("narrative-actor"));}QVERIFY(found);
+  bool found=false;for(const auto &screen:w.projectData().value("visual").toObject().value("screens").toArray())for(const auto &item:screen.toObject().value("elements").toArray())if(item.toObject().value("id")==elementId){found=true;QCOMPARE(item.toObject().value("binding").toString(),QString("choice-result"));}QVERIFY(found);
 }
 
 void StudioTests::rosterNamedMembers() {

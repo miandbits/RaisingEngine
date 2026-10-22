@@ -34,6 +34,28 @@ const findIssue = (result, code, file, pointer) => {
   if (issue.severity === 'error') assert.equal(result.valid, false);
   return issue;
 };
+
+test('an invalid manifest reports its cause without inventing missing character support', async (t) => {
+  const directory = await fixture(t);
+  await edit(directory, 'project.json', (d) => { d.unexpectedWidgetProperty = null; });
+  await edit(directory, 'activities/work.json', (d) => {
+    d.baseEffects.push({ op: 'add', target: { kind: 'attribute', attributeId: 'stamina', owner: { kind: 'actor' } }, value: { op: 'literal', value: 1 } });
+  });
+  let result = await checkProject(directory);
+  findIssue(result, 'SCHEMA_INVALID', 'project.json', '/unexpectedWidgetProperty');
+  findIssue(result, 'SEMANTICS_DEFERRED', 'project.json');
+  assert.equal(result.diagnostics.some(d => d.code === 'CHARACTER_STATE_REQUIRED'), false);
+  assert.equal(result.diagnostics[0].severity, 'error');
+  // Validating siblings still exposes their structural errors.
+  await edit(directory, 'activities/work.json', (d) => { d.unexpected = true; });
+  result = await checkProject(directory);
+  findIssue(result, 'SCHEMA_INVALID', 'activities/work.json', '/unexpected');
+  await edit(directory, 'activities/work.json', (d) => { delete d.unexpected; });
+  await edit(directory, 'project.json', (d) => { delete d.unexpectedWidgetProperty; });
+  result = await checkProject(directory);
+  findIssue(result, 'CHARACTER_STATE_REQUIRED', 'activities/work.json');
+  assert.equal(result.diagnostics.some(d => d.code === 'SEMANTICS_DEFERRED'), false);
+});
 // Test the CLI's own streams, without parent-process instrumentation preloaders.
 const { NODE_OPTIONS: ignoredNodeOptions, ...cliEnvironment } = process.env;
 const runCli = (...args) => spawnSync(process.execPath, [path.join(root, 'dist/apps/tools/cli/main.js'), ...args], { cwd: root, encoding: 'utf8', env: cliEnvironment });
