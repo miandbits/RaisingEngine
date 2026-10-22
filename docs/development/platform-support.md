@@ -6,6 +6,7 @@
 |---|---|---|---|
 | 일정·능력치·비용·효과·사건·엔딩 | 지원 | 지원 | 공통 C++ 규칙. 공개 표본·경로 회귀 검사 |
 | 인물별 관계·소지품·활동·대상 | 지원 | 지원 | `character-scoped-rules`, `roster-activities`, `component-context`; 별도 인물 연결 시험 기록 |
+| 캐릭터별 선택·약속·사건 후속 연결 | 지원 | 지원 | 2026-10-21 `actor-story-links-v1` 추가. [동일 샘플·양쪽 순서·중간 저장 검증](../manual/web-actor-stories.md). 이전 프리뷰 배포본은 별도 갱신 필요 |
 | 자유 화면·사용자 상태·조건부 표현·전환 | 지원 | 지원 | `free-screens`, `custom-states`, `presentation-variants`, `conditional-routing` |
 | 재사용 부품·앵커·기본 반응형·목록 데이터 | 지원 | 지원 | 기본 기능. 더 새로운 중첩·스크롤·툴팁 구성은 아래 UI composition 제한 참조 |
 | 상점·구매·소비·선물·관계 사건 | 지원 | 지원 | 공개 adventure/journey 및 이번 Web 구매·퀘스트·관계 사건 시험 |

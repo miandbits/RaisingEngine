@@ -177,6 +177,8 @@ Personal flag values are saved separately and fall back to the flag definition's
 initial value when absent, never another character's or the shared current value.
 Old saves without personal flags remain valid. Choice records are not retroactively
 reconstructed from older saves; the source choice must be played with the connection
-present. Windows export requires `actor-story-links-v1` for these new rules.
-Older runtimes, including web packages without this capability, reject export with
-a feature diagnostic instead of silently sharing records.
+present. Windows and Web exports require `actor-story-links-v1` for these new
+rules. Current C++/Wasm web builds support the same personal records and follow-up
+chains. Older runtimes without this capability reject export with a feature
+diagnostic instead of silently sharing records. See [Web actor stories](web-actor-stories.md)
+for browser play and save/load verification.

@@ -28,6 +28,6 @@ test('personal flags and post-event continuation require a capable export runtim
     if(variant==='effect')event.nodes.unshift({type:'effect',id:'personal-flag',effects:[{op:'setFlag',flagId:content.flags[0].id,value:true,owner:{kind:'actor'}}],next:event.entryNodeId});
     if(variant==='after-event')event.trigger='after-event';
     for(const target of ['windows','web'])await assert.rejects(run(content,base,target),/actor-story-links-v1/,variant+' '+target);
-    await run(content,[...base,feature],'windows');
+    for(const target of ['windows','web'])await run(content,[...base,feature],target);
   }
 });
