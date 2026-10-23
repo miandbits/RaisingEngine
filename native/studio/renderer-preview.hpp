@@ -25,7 +25,18 @@ public:
   void begin();
   void setDocuments(QJsonArray value){documents=value;}
   QJsonObject previewRequest() const {return requestedScenario;}
+  void setCanvasMode(bool value){canvasMode=value;}
+  void setCanvasViewport(QSize size);
+  void configureScenario(){editScenario();}
+  QJsonObject scenarioSettings() const {return scenario;}
+  void setScenarioSettings(QJsonObject value){scenario=value;changed();}
+  QString currentKey() const {return contextKey();}
+  bool snapshotCurrent() const {return !pending&&renderedContext==contextKey();}
+  QImage snapshotImage() const;
+  QString message() const {return status->text();}
+  QJsonObject explanation() const {return renderedExplanation;}
 signals:
+  void contextChanged();
   void snapshotRequested();
   void snapshotReady(bool ok);
   void elementPicked(QString id);
@@ -44,12 +55,14 @@ private:
   void showReasons(const QJsonObject& explanation);
   RenderImage *image,*reference;
   QJsonObject project,renderedUi;
+  QJsonObject renderedExplanation;
   QString screen,root,reportFile,imageFile,renderedContext,requestContext;
   QString requestedScreen,requestedLocale,requestedElement,requestedState;
   QString requestedRoot,renderedRoot,renderedScreen;
   QString contextSelection;
   int revision=0,requestedRevision=0,requestedWidth=0,requestedHeight=0;
   bool pending=false,filling=false;
+  bool canvasMode=false;
   QString contextKey() const;
   void changed();
   void complete(int code);

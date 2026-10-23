@@ -35,6 +35,14 @@ public:
   QRectF before;
   int corner = -1;
   bool multipleDrag=false;
+  bool runtimeLayer=false,runtimeVisible=true;
+  QRectF runtimeBase;
+  void setRuntimeGeometry(QRectF rect){prepareGeometryChange();setPos(rect.topLeft());box.setSize(rect.size());}
+  QRect authoredRectangle(QRectF rectangle) const {
+    if(runtimeLayer)rectangle=QRectF(QPointF(data["x"].toDouble(),data["y"].toDouble())+rectangle.topLeft()-runtimeBase.topLeft(),
+      QSizeF(data["width"].toDouble(),data["height"].toDouble())+rectangle.size()-runtimeBase.size());
+    return rectangle.toRect().translated(-qRound(data.value("_parentX").toDouble()),-qRound(data.value("_parentY").toDouble()));
+  }
   VisualItem(QJsonObject value, QPixmap pixmap, ScreenCanvas *view, QSize size)
       : data(value), image(pixmap), canvas(view), bounds(size) {
     box = {0, 0, data["width"].toDouble(), data["height"].toDouble()};
@@ -47,6 +55,7 @@ public:
   QRectF boundingRect() const override { return box.adjusted(-6, -6, 6, 6); }
   QPainterPath shape() const override {
     QPainterPath p;
+    if(runtimeLayer&&!runtimeVisible&&!isSelected())return p;
     if(data.value("kind")=="group"&&!isSelected()) {p.addRect(box.adjusted(-3,-3,3,3));p.addRect(box.adjusted(3,3,-3,-3));p.setFillRule(Qt::OddEvenFill);}
     else p.addRect(box);
     if(data.contains("_clipRect")){QPainterPath clip;clip.addRect(canvasClipRect(data.value("_clipRect").toObject()).translated(-pos()));return p.intersected(clip);}
@@ -54,6 +63,13 @@ public:
   }
   void paint(QPainter *p, const QStyleOptionGraphicsItem *,
              QWidget *) override {
+    if(runtimeLayer){
+      if(isSelected()){
+        QPen pen(QColor(runtimeVisible?"#65a6ff":"#e0a040"),2,runtimeVisible?Qt::SolidLine:Qt::DashLine);pen.setCosmetic(true);p->setPen(pen);p->setBrush(Qt::NoBrush);p->drawRect(box);
+        if(!data["locked"].toBool())for(auto pt:{box.topLeft(),box.topRight(),box.bottomLeft(),box.bottomRight()}){p->setBrush(Qt::white);p->drawRect(QRectF(pt-QPointF(4,4),QSizeF(8,8)));}
+      }
+      return;
+    }
     p->setRenderHint(QPainter::Antialiasing);
     p->save();
     if(data.contains("_clipRect"))p->setClipRect(canvasClipRect(data.value("_clipRect").toObject()).translated(-pos()));
@@ -268,7 +284,7 @@ public:
     if(multipleDrag){canvas->finishSelectionDrag();multipleDrag=false;e->accept();return;}
     const QRect rectangle = QRectF(pos(), box.size()).toRect();
     if (rectangle != before.toRect())
-      emit canvas->geometryEdited(data["id"].toString(), rectangle.translated(-qRound(data.value("_parentX").toDouble()),-qRound(data.value("_parentY").toDouble())));
+      emit canvas->geometryEdited(data["id"].toString(), authoredRectangle(rectangle));
     e->accept();
   }
 };
@@ -295,6 +311,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
                              const QJsonObject &screen,
                              const QJsonArray &assets, const QString &selected,
                              bool fit) {
+  cachedProject=project;cachedScreen=screen;cachedAssets=assets;runtimeActive=false;runtimeUi={};
   refreshing = true;
   sourceElements=screen.value("elements").toArray();dragStart.clear();dragDelta={};
   scene.clear();
@@ -409,6 +426,30 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     fitCanvas();
   }
 }
+void ScreenCanvas::clearRuntimePreview(){
+  if(!runtimeActive)return;
+  const auto ids=selectedIds();setScreen(cachedProject,cachedScreen,cachedAssets,ids.value(0));selectMany(ids);
+}
+void ScreenCanvas::setRuntimePreview(const QJsonObject& ui,const QImage& pixels){
+  if(pixels.isNull()||ui.value("screenId")!=cachedScreen.value("id"))return;
+  clearRuntimePreview();runtimeActive=true;runtimeUi=ui;
+  QMap<QString,QJsonObject> nodes;for(auto value:ui.value("nodes").toArray()){auto n=value.toObject();nodes[n.value("id").toString()]=n;}
+  const auto presentation=ui.value("presentation").toObject();
+  const double sx=canvasSize.width()/qMax(1.,presentation.value("width").toDouble(canvasSize.width()));
+  const double sy=canvasSize.height()/qMax(1.,presentation.value("height").toDouble(canvasSize.height()));
+  for(auto item:scene.items()){
+    auto visual=dynamic_cast<VisualItem*>(item);if(!visual){item->hide();continue;}
+    auto node=nodes.value(visual->data.value("id").toString());visual->runtimeLayer=true;
+    visual->runtimeVisible=node.value("visible").toBool()&&node.value("rendered").toBool()&&!node.value("outsideViewport").toBool();
+    if(visual->runtimeVisible){
+      visual->setRuntimeGeometry(QRectF((node.value("x").toDouble()-presentation.value("x").toDouble())*sx,(node.value("y").toDouble()-presentation.value("y").toDouble())*sy,node.value("width").toDouble()*sx,node.value("height").toDouble()*sy));
+    }
+    visual->runtimeBase=QRectF(visual->pos(),visual->box.size());
+    visual->setToolTip(ui.value("texts").toObject().value(visual->data.value("id").toString()).toString());visual->update();
+  }
+  auto backdrop=scene.addPixmap(QPixmap::fromImage(pixels));backdrop->setZValue(-2);backdrop->setAcceptedMouseButtons(Qt::NoButton);
+  QTransform scale;scale.scale(double(canvasSize.width())/pixels.width(),double(canvasSize.height())/pixels.height());backdrop->setTransform(scale);
+}
 void ScreenCanvas::select(const QString &id) {
   selectMany(id.isEmpty()?QStringList{}:QStringList{id});
 }
@@ -498,6 +539,7 @@ void ScreenCanvas::keyPressEvent(QKeyEvent *e) {
       const QPoint parent(qRound(item->data.value("_parentX").toDouble()),qRound(item->data.value("_parentY").toDouble()));
       if(nested){rect.translate(-parent);rect.moveLeft(qBound(-3840,rect.x(),3840));rect.moveTop(qBound(-2160,rect.y(),2160));}
       else {rect.moveLeft(qBound(0, rect.x(), canvasSize.width() - rect.width()));rect.moveTop(qBound(0, rect.y(), canvasSize.height() - rect.height()));}
+      if(item->runtimeLayer)rect=item->authoredRectangle(QRectF(item->pos(),item->box.size()).translated(delta));
       emit geometryEdited(item->data["id"].toString(), rect);
       return;
     }

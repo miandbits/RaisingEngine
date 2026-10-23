@@ -16,6 +16,7 @@
 #include <QTabWidget>
 #include <QTreeWidget>
 class RendererPreviewDock;
+class CanvasStateBar;
 class QPushButton;
 class QDockWidget;
 class QMenu;
@@ -110,6 +111,7 @@ private:
   int playRevision = 0;
   ScreenCanvas *canvas;
   RendererPreviewDock *rendererPreview;
+  CanvasStateBar *canvasState=nullptr;
   QTreeWidget *hierarchy;
   QLineEdit *hierarchySearch;
   QTabBar *documents;

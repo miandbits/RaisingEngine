@@ -71,6 +71,40 @@ test('legacy single-character project needs no roster or custom state migration'
   assert.equal(service.editor.view().dirty,false);
 });
 
+test('canvas actor defaults resolve unbound values and conditions without rebinding fixed instances',async()=>{
+  const {content}=await fixture();const c=structuredClone(content),screen=c.project.visual.screens.find(s=>s.id==='screen-1');
+  screen.elements.push({id:'actor-value',kind:'text',text:'value',binding:'data-value',dataBinding:{kind:'attribute',attributeId:'skill',owner:{kind:'actor'}},x:0,y:0,width:100,height:30,
+    visibleCondition:{op:'compare',left:{kind:'attribute',attributeId:'skill',owner:{kind:'actor'}},comparator:'gte',right:{kind:'constant',value:30}}});
+  // Use the fixture's valid expression shape.
+  screen.elements.at(-1).visibleCondition=structuredClone(c.events.find(e=>e.id==='exam-invitation').requirements);
+  screen.elements.at(-1).visibleCondition.left.target.owner={kind:'actor'};screen.elements.at(-1).visibleCondition.right.value=30;
+  const first=authoringPreview(c,{screenId:'screen-1',canvasContext:true,actorId:'apprentice'});
+  const second=authoringPreview(c,{screenId:'screen-1',canvasContext:true,actorId:'trainee-2'});
+  assert.equal(first.explanation.rules.find(r=>r.elementId==='actor-value').visible,false);
+  assert.equal(second.explanation.rules.find(r=>r.elementId==='actor-value').visible,true);
+  assert.equal(second.visual.screens.find(s=>s.id==='screen-1').elements.find(e=>e.id==='instance-1').uiContext.actorId,'apprentice');
+  assert.deepEqual(first.state,second.state);
+});
+
+test('canvas can inspect an older save after UI edits only when full replay still matches; normal loading stays strict',async()=>{
+  const {service,content,root}=await fixture();
+  const origin={seed:42,mode:'full',initialOverrides:{attributes:{},flags:{},relationships:{}}};
+  const initial=nativeRequest({operation:'create',content,seed:42,options:origin});assert.equal(initial.ok,true);
+  const encoded=await encodeSave(content,{origin,commands:[],state:initial.state});assert.equal(encoded.ok,true);
+  const file=path.join(root,'canvas-save.json');await writeFile(file,encoded.text);
+  const candidate=structuredClone(content.project);candidate.visual.screens[0].label+=' UI edit';
+  const projectDoc=service.editor.view().documents.find(d=>d.kind==='project');
+  await service.handle({method:'edit',params:{revision:service.editor.revision,edit:{type:'replace',file:projectDoc.file,data:candidate}}});
+  const context={screenId:'screen-1',savePath:file};
+  await assert.rejects(service.handle({method:'preview',params:{revision:service.editor.revision,authoringContext:context}}),/다른 콘텐츠/);
+  const response=await service.handle({method:'preview',params:{revision:service.editor.revision,authoringContext:{...context,canvasContext:true}}});
+  const inspection=JSON.parse(await readFile(response.play.inspection,'utf8'));
+  assert.deepEqual(inspection.state,{...initial.state,contentFingerprint:inspection.contentFingerprint});assert.equal(inspection.explanation.replayedUpdatedContent,true);
+  const bad=JSON.parse(encoded.text);bad.state.attributes.skill+=1;await writeFile(file,JSON.stringify(bad));
+  await assert.rejects(service.handle({method:'preview',params:{revision:service.editor.revision,authoringContext:{...context,canvasContext:true}}}),/재현 결과|세이브/);
+  assert.equal(await readFile(file,'utf8'),JSON.stringify(bad));
+});
+
 test('event inspection follows the chosen actor even during another actors dialogue',async()=>{
   const content=structuredClone((await fixture()).content);
   const event=content.events.find(e=>e.id==='exam-invitation');

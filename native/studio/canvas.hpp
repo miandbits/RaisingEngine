@@ -21,6 +21,10 @@ public:
   void previewSelectionDrag(QPoint delta);
   void finishSelectionDrag();
   void fitCanvas();
+  void setRuntimePreview(const QJsonObject& ui,const QImage& image);
+  void clearRuntimePreview();
+  bool hasRuntimePreview() const {return runtimeActive;}
+  QJsonObject runtimeResult() const {return runtimeUi;}
   bool snap = false;
   /** Kind "plugin": empty caption means the owning plugin may paint; otherwise draw a placeholder. */
   std::function<QString(const QJsonObject &)> pluginPlaceholder;
@@ -48,4 +52,7 @@ private:
   QSize canvasSize{1280, 720};
   QMap<QString, QPixmap> imageCache;
   bool refreshing = false, autoFit = true, panning = false;
+  bool runtimeActive=false;
+  QJsonObject runtimeUi,cachedProject,cachedScreen;
+  QJsonArray cachedAssets;
 };

@@ -1,6 +1,7 @@
 #include <QObject>
 #include "save-migration.hpp"
 #include "studio.hpp"
+#include "canvas-state.hpp"
 #include "project-environment.hpp"
 #include "component-preview.hpp"
 #include "tabular-input.hpp"
@@ -935,6 +936,16 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   resizeDocks({treeDock, propertiesDock}, {210, 330}, Qt::Horizontal);
   resizeDocks({bottomDock}, {180}, Qt::Vertical);
   rendererPreview=new RendererPreviewDock(this);
+  canvasState=new CanvasStateBar(canvas,this);
+  centerLayout->insertWidget(2,canvasState);
+  canvasState->busy=[this]{return bridge.busy();};
+  connect(canvasState,&CanvasStateBar::snapshotRequested,this,[this]{
+    auto renderer=canvasState->renderer();
+    request("preview",renderer->previewRequest(),[renderer](QJsonObject reply){
+      if(!reply.value("error").toString().isEmpty()||!reply.contains("play")){renderer->fail(reply.value("error").toString(tr("미리보기를 준비할 수 없습니다.")));return;}
+      renderer->launch(reply.value("play").toObject());
+    });
+  });
   addDockWidget(Qt::BottomDockWidgetArea,rendererPreview);
   rendererPreview->hide();
   viewMenu->addAction(rendererPreview->toggleViewAction());
@@ -1320,6 +1331,7 @@ void StudioWindow::refresh(bool fit) {
   {QTreeWidgetItemIterator it(hierarchy);while(*it){(*it)->setSelected((*it)->data(0,Qt::UserRole+1).toString()==screenId&&selectedElements.contains((*it)->data(0,Qt::UserRole).toString()));++it;}}
   rendererPreview->setDocuments(view["documents"].toArray());
   rendererPreview->setContext(project,screenId,selection,view["revision"].toInt(),view["root"].toString(),previewLocaleField->currentData().toString());
+  if(canvasState)canvasState->updateContext(view,screenId,previewLocaleField->currentData().toString(),QSize(preview.value("_previewWidth").toInt(visual.value("width").toInt(1280)),preview.value("_previewHeight").toInt(visual.value("height").toInt(720))));
   canvas->setVisible(!screenId.isEmpty());
   emptyDocument->setVisible(screenId.isEmpty());
   assetList->clear();

@@ -15,7 +15,13 @@ export function authoringPreview(content, input, savedState) {
   if (actor && !content.project.roster?.members.some(m => m.characterId === actor)) fail('제작 대상 캐릭터가 없습니다.');
   if (input.activityId && !content.activities.some(a => a.id === input.activityId)) fail('활동이 없습니다.');
   const elementId = input.elementId || undefined;
-  if (input.activityId && !elementId) fail('활동을 바꿀 검사 대상을 먼저 선택하세요.');
+  if (input.activityId && !elementId && !input.canvasContext) fail('활동을 바꿀 검사 대상을 먼저 선택하세요.');
+  if (input.canvasContext && (actor || input.activityId)) {
+    // Supply defaults, preserving deliberately bound character/activity instances.
+    for (const element of screen.elements) element.uiContext = {
+      ...(actor ? {actorId:actor} : {}), ...(input.activityId ? {activityId:input.activityId} : {}), ...element.uiContext
+    };
+  }
   if (elementId) {
     // Expanded child IDs are scoped to their authored instance; sibling instances keep their bindings.
     const element = screen.elements.find(e => e.id === elementId || elementId.startsWith(e.id + '__'));

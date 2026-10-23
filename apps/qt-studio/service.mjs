@@ -354,14 +354,29 @@ export class QtStudioService {
         const built = await this.editor.snapshot(revision);
         if (!built.ok) throw new Error('미리보기 스냅샷을 만들 수 없습니다.');
         const hasScene = Object.hasOwn(params, 'scene');
-        let previewState;
+        let previewState, replayedUpdatedContent = false;
         if (params.authoringContext?.savePath) {
           const session = new RuleDebugSession(built.snapshot, revision);
-          const loaded = await session.loadSave(await readFile(params.authoringContext.savePath, 'utf8'));
+          const text = await readFile(params.authoringContext.savePath, 'utf8');
+          let loaded = await session.loadSave(text);
+          if (!loaded.ok && loaded.error?.code === 'CONTENT_MISMATCH' && params.authoringContext.canvasContext === true) {
+            // Inspection only: revalidate the full schema, command replay AND exact saved state
+            // against the current draft. Never rewrite a save or relax normal player loading.
+            const candidate = JSON.parse(text);
+            if(candidate.state.contentFingerprint !== candidate.contentFingerprint)throw new Error('미리보기 저장 불러오기: 저장 문서와 상태의 콘텐츠 지문이 다릅니다.');
+            candidate.contentFingerprint = built.snapshot.contentFingerprint;
+            candidate.state.contentFingerprint = built.snapshot.contentFingerprint;
+            loaded = await session.loadSave(JSON.stringify(candidate));
+            replayedUpdatedContent = loaded.ok;
+          }
           if (!loaded.ok) throw new Error(`미리보기 저장 불러오기: ${loaded.error?.message ?? '저장 재현 검사 실패'}`);
           previewState = loaded.state;
         }
         const inspection = params.authoringContext ? authoringPreview(built.snapshot, params.authoringContext, previewState) : null;
+        if (inspection && replayedUpdatedContent) {
+          inspection.explanation.replayedUpdatedContent = true;
+          inspection.explanation.notice += ' 콘텐츠 변경 후 전체 명령과 저장 상태의 일치를 재검사했습니다. 저장 파일을 변환하지 않았습니다.';
+        }
         if (hasScene) {
           // Shares the (lazy) source locations: the scene check's diagnostics keep exact lines.
           const candidate = detachProject(this.editor.loaded());

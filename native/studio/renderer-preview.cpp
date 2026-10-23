@@ -75,7 +75,9 @@ RendererPreviewDock::RendererPreviewDock(QWidget* parent):QDockWidget(tr("실제
 }
 RendererPreviewDock::~RendererPreviewDock(){process.disconnect(this);if(process.state()!=QProcess::NotRunning){process.kill();process.waitForFinished(1000);}}
 QString RendererPreviewDock::contextKey() const {return root+"|"+QString::number(revision)+"|"+screen+"|"+QString::number(width->value())+"x"+QString::number(height->value())+"|"+locale->currentData().toString()+"|"+element->currentData().toString()+"|"+interaction->currentData().toString()+QString::fromUtf8(QJsonDocument(scenario).toJson(QJsonDocument::Compact));}
-void RendererPreviewDock::changed(){if(filling)return;if(!pending&&!renderedContext.isEmpty()&&contextKey()!=renderedContext)status->setText(tr("설정 또는 프로젝트가 변경되었습니다. 표시된 결과는 이전 스냅샷입니다. 다시 렌더링하세요."));image->selected=element->currentData().toString();image->update();}
+void RendererPreviewDock::changed(){if(filling)return;if(!pending&&!renderedContext.isEmpty()&&contextKey()!=renderedContext)status->setText(tr("설정 또는 프로젝트가 변경되었습니다. 표시된 결과는 이전 스냅샷입니다. 다시 렌더링하세요."));image->selected=element->currentData().toString();image->update();emit contextChanged();}
+QImage RendererPreviewDock::snapshotImage() const {return image->pixels;}
+void RendererPreviewDock::setCanvasViewport(QSize size){const QSignalBlocker w(width),h(height);width->setValue(size.width());height->setValue(size.height());changed();}
 void RendererPreviewDock::setContext(const QJsonObject& p,QString sid,QString selected,int rev,QString projectRoot,QString preferredLocale){
   filling=true;const bool other=root!=projectRoot;if(other){scenario={};showReasons({});}const bool selectionChanged=other||screen!=sid||contextSelection!=selected;contextSelection=selected;project=p;screen=sid;revision=rev;root=projectRoot;
   auto chosenLocale=other?preferredLocale:locale->currentData().toString();locale->clear();auto config=p["localization"].toObject();for(auto l:config["locales"].toArray())locale->addItem(l.toObject()["label"].toString(),l.toObject()["id"].toString());if(locale->count()==0)locale->addItem(tr("원문"),QString());int index=locale->findData(chosenLocale);if(index<0)index=locale->findData(config["defaultLocale"].toString());locale->setCurrentIndex(qMax(0,index));
@@ -85,6 +87,7 @@ void RendererPreviewDock::setContext(const QJsonObject& p,QString sid,QString se
   const int previousTarget=element->findData(old);const bool keepChild=previousTarget>=0&&element->itemData(previousTarget,Qt::UserRole+1).toString()==selected;
   int target=element->findData(selectionChanged&&!keepChild?selected:old);if(target<0)target=element->findData(old);element->setCurrentIndex(qMax(0,target));
   if(other&&resolution->currentIndex()==0){width->setValue(visual["width"].toInt(1280));height->setValue(visual["height"].toInt(720));}
+  if(canvasMode){element->setCurrentIndex(0);interaction->setCurrentIndex(0);int language=locale->findData(preferredLocale);if(language>=0)locale->setCurrentIndex(language);}
   render->setEnabled(!pending&&process.state()==QProcess::NotRunning&&!p.isEmpty()&&!sid.isEmpty());filling=false;changed();
 }
 void RendererPreviewDock::begin(){
@@ -93,11 +96,13 @@ void RendererPreviewDock::begin(){
   requestedScreen=screen;requestedLocale=locale->currentData().toString();requestedElement=element->currentData().toString();requestedState=interaction->currentData().toString();requestedRevision=revision;requestedWidth=width->value();requestedHeight=height->value();requestContext=contextKey();
   requestedRoot=root;
   requestedScenario={};if(scenario.value("enabled").toBool()){auto value=scenario;value["screenId"]=requestedScreen;value["elementId"]=requestedElement;requestedScenario["authoringContext"]=value;}
+  if(canvasMode){auto value=requestedScenario.value("authoringContext").toObject();value["screenId"]=requestedScreen;value["elementId"]="";value["followRouting"]=false;value["canvasContext"]=true;requestedScenario["authoringContext"]=value;}
   pending=true;render->setEnabled(false);cancel->setEnabled(false);status->setText(tr("저장 전 편집 내용을 임시 스냅샷으로 준비하는 중…"));emit snapshotRequested();
 }
-void RendererPreviewDock::fail(QString message){timeout.stop();pending=false;render->setEnabled(process.state()==QProcess::NotRunning&&!screen.isEmpty());cancel->setEnabled(false);status->setText(message);emit snapshotReady(false);}
+void RendererPreviewDock::fail(QString message){timeout.stop();pending=false;renderedContext.clear();render->setEnabled(process.state()==QProcess::NotRunning&&!screen.isEmpty());cancel->setEnabled(false);status->setText(message);emit snapshotReady(false);}
 void RendererPreviewDock::launch(QJsonObject descriptor){
   if(!pending)return;
+  renderedExplanation=descriptor.value("explanation").toObject();
   if(descriptor["revision"].toInt()!=requestedRevision){fail(tr("준비 중 프로젝트 버전이 변경되었습니다. 다시 렌더링하세요."));return;}
   if(descriptor.contains("inspection")){const auto routed=descriptor.value("screenId").toString(requestedScreen);if(routed!=requestedScreen){requestedElement.clear();requestedState="normal";}requestedScreen=routed;}showReasons(descriptor.value("explanation").toObject());
   const auto run=QFileInfo(descriptor["report"].toString()).absolutePath();imageFile=run+"/preview.png";reportFile=run+"/preview-report.json";const auto stepsFile=run+"/preview-steps.json";
