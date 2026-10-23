@@ -354,7 +354,14 @@ export class QtStudioService {
         const built = await this.editor.snapshot(revision);
         if (!built.ok) throw new Error('미리보기 스냅샷을 만들 수 없습니다.');
         const hasScene = Object.hasOwn(params, 'scene');
-        const inspection = params.authoringContext ? authoringPreview(built.snapshot, params.authoringContext) : null;
+        let previewState;
+        if (params.authoringContext?.savePath) {
+          const session = new RuleDebugSession(built.snapshot, revision);
+          const loaded = await session.loadSave(await readFile(params.authoringContext.savePath, 'utf8'));
+          if (!loaded.ok) throw new Error(`미리보기 저장 불러오기: ${loaded.error?.message ?? '저장 재현 검사 실패'}`);
+          previewState = loaded.state;
+        }
+        const inspection = params.authoringContext ? authoringPreview(built.snapshot, params.authoringContext, previewState) : null;
         if (hasScene) {
           // Shares the (lazy) source locations: the scene check's diagnostics keep exact lines.
           const candidate = detachProject(this.editor.loaded());

@@ -4,6 +4,9 @@ import {cp,mkdir,mkdtemp,readFile,writeFile,access} from 'node:fs/promises';
 import path from 'node:path';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 import {authoringPreview} from '../../apps/qt-studio/authoring-preview.mjs';
+import {nativeRequest} from '../../dist/packages/native-bridge/index.js';
+import {encodeSave} from '../../dist/packages/runtime-service/save.js';
+import {RuleDebugSession} from '../../dist/packages/rule-debug/index.js';
 
 async function fixture() {
   await mkdir('.cache/authoring-preview-tests',{recursive:true});
@@ -66,4 +69,57 @@ test('legacy single-character project needs no roster or custom state migration'
   const result=authoringPreview(content,{screenId:content.project.visual.screens[0].id,attributes:{[attribute.id]:value}});
   assert.equal(result.state.attributes[attribute.id],value);assert.equal(result.state.roster,undefined);
   assert.equal(service.editor.view().dirty,false);
+});
+
+test('event inspection follows the chosen actor even during another actors dialogue',async()=>{
+  const content=structuredClone((await fixture()).content);
+  const event=content.events.find(e=>e.id==='exam-invitation');
+  event.requirements.left.target.owner={kind:'actor'};event.requirements.right.value=30;
+  const initial=authoringPreview(content,{screenId:'screen-1'}).state;
+  const baseline=structuredClone(initial);
+  baseline.activeNarrative={kind:'event',id:event.id,nodeId:'intro',actorId:'apprentice',returnPhase:'planning'};baseline.phase='narrative';
+  const before=structuredClone(baseline);
+  const first=authoringPreview(content,{screenId:'screen-1',actorId:'apprentice',eventId:event.id},baseline);
+  const second=authoringPreview(content,{screenId:'screen-1',actorId:'trainee-2',eventId:event.id},baseline);
+  assert.equal(first.explanation.event.condition.leftValue,10);assert.equal(first.explanation.event.condition.value,false);
+  assert.equal(second.explanation.event.condition.leftValue,40);assert.equal(second.explanation.event.condition.value,true);
+  assert.equal(second.explanation.values.find(v=>v.id==='skill').value,40);
+  assert.equal(second.state.activeNarrative.actorId,'apprentice');assert.deepEqual(baseline,before);
+  const debug=new RuleDebugSession(content,1),prior=debug.view();debug.inspectSnapshot(baseline,{kind:'event',id:event.id,actorId:'trainee-2'});assert.deepEqual(debug.view().state,prior.state);
+  assert.throws(()=>authoringPreview(content,{screenId:'screen-1',eventId:'missing'}),/검사 대상/);
+});
+
+test('character flags and phase visibility match the rendered inspection without leaking shared records',async()=>{
+  const content=structuredClone((await fixture()).content);const flag=content.flags[0];
+  content.events[0].requirements={op:'flag',flagId:flag.id,equals:true,owner:{kind:'actor'}};
+  content.project.visual.screens.find(s=>s.id==='screen-1').elements.push({id:'phase-choice',kind:'text',text:'choice',x:0,y:0,width:100,height:30,visibleWhen:'choice'});
+  const selected=authoringPreview(content,{screenId:'screen-1',actorId:'trainee-2',eventId:content.events[0].id,flagScope:'character',flags:{[flag.id]:true}});
+  assert.equal(selected.state.roster.flags['trainee-2'][flag.id],true);
+  assert.notEqual(selected.state.flags[flag.id],true);assert.notEqual(selected.state.roster.flags.apprentice?.[flag.id],true);
+  assert.equal(selected.explanation.event.condition.leftValue,true);assert.equal(selected.explanation.modified,true);
+  assert.ok(selected.explanation.event.condition.subjectLabel.includes(flag.label??flag.name??''));
+  assert.equal(selected.explanation.rules.find(r=>r.elementId==='phase-choice').visible,false);
+  const state=structuredClone(selected.state);state.phase='narrative';state.activeNarrative={kind:'event',id:'exam-invitation',nodeId:'registration',actorId:'trainee-2',returnPhase:'planning'};
+  const choice=authoringPreview(content,{screenId:'screen-1'},state);
+  assert.equal(choice.explanation.phase,'choice');assert.equal(choice.explanation.rules.find(r=>r.elementId==='phase-choice').visible,true);
+});
+
+test('preview imports replay-validated saves and rejects corrupt states without editing project or source save',async()=>{
+  const {service,content,root}=await fixture();
+  const origin={seed:42,mode:'full',initialOverrides:{attributes:{},flags:{},relationships:{}}};
+  const initial=nativeRequest({operation:'create',content,seed:42,options:origin});assert.equal(initial.ok,true);
+  const command={type:'executeActorAction',actorId:'trainee-2',actionId:'action-1',quantity:1};
+  const next=nativeRequest({operation:'command',content,state:initial.state,command,expectedRevision:initial.state.stateRevision});assert.equal(next.ok,true,JSON.stringify(next.error));
+  const save=await encodeSave(content,{origin,commands:[command],state:next.state});assert.equal(save.ok,true,JSON.stringify(save));
+  const savePath=path.join(root,'preview-input.json');await writeFile(savePath,save.text);
+  const before=service.editor.view();
+  const params={revision:before.revision,authoringContext:{screenId:'screen-1',actorId:'trainee-2',savePath}};
+  const reply=await service.handle({method:'preview',params});
+  const inspection=JSON.parse(await readFile(reply.play.inspection,'utf8'));
+  assert.deepEqual(inspection.state,next.state);assert.equal(inspection.explanation.source,'validated-save');assert.equal(inspection.explanation.modified,false);
+  assert.equal(inspection.explanation.values.find(v=>v.id==='skill').value,45);
+  assert.equal(await readFile(savePath,'utf8'),save.text);
+  const changed=JSON.parse(save.text);changed.state.roster.attributes['trainee-2'].skill+=1;const bad=path.join(root,'invalid-preview.json');await writeFile(bad,JSON.stringify(changed));
+  await assert.rejects(service.handle({method:'preview',params:{...params,authoringContext:{...params.authoringContext,savePath:bad}}}),/미리보기 저장 불러오기/);
+  for(const key of ['documents','revision','dirty','undo','redo'])assert.deepEqual(service.editor.view()[key],before[key]);
 });

@@ -121,11 +121,17 @@ export class RuleDebugSession {
         result.children.push(this.expressionTree(condition[side], `${path}/${side}`));
       }
     }
-    if (condition.op === 'flag') { result.leftValue = this.current.flags[condition.flagId]; result.rightValue = condition.equals; }
+    if (condition.op === 'flag') { result.leftValue = evaluated.ok ? (evaluated.value ? condition.equals : !condition.equals) : null; result.rightValue = condition.equals; }
     if (condition.op === 'eventCompleted') { result.leftValue = evaluated.ok?evaluated.value:null; result.rightValue = true; }
     if (Array.isArray(condition.conditions)) result.children = condition.conditions.map((child: Row, index: number) => this.tree(child, `${path}/conditions/${index}`));
     if (object(condition.condition)) result.children.push(this.tree(condition.condition, `${path}/condition`));
     return result;
+  }
+  /** Inspect an editor-owned snapshot without replacing the debug session or running commands. */
+  inspectSnapshot(state: RunState, subject: DebugSubject): Row {
+    const previous = this.current;
+    try { this.current = clone(state); return this.inspect(subject).inspection; }
+    finally { this.current = previous; }
   }
   inspect(subject: DebugSubject): Row {
     if (!subject || !['action', 'event'].includes(subject.kind) || typeof subject.id !== 'string') throw new Error('검사할 행동 또는 사건을 선택하세요.');
@@ -134,7 +140,7 @@ export class RuleDebugSession {
     if (index < 0) throw new Error(`검사 대상이 없습니다: ${subject.id}`);
     if(subject.actorId && (this.content.project.roster?.stateModel!=='character-v1'||!this.content.project.roster.members.some(m=>m.characterId===subject.actorId)))throw new Error('검사할 육성 대상이 없습니다.');
     const inspectionState=clone(this.current) as any;
-    if(subject.actorId)inspectionState.roster.actorId=subject.actorId;
+    if(subject.actorId){inspectionState.roster.actorId=subject.actorId;if(inspectionState.activeNarrative)inspectionState.activeNarrative.actorId=subject.actorId;}
     this.inspectionState=inspectionState;
     try {
     const definition = rows[index] as unknown as Row;
