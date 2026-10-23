@@ -939,6 +939,12 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   canvasState=new CanvasStateBar(canvas,this);
   centerLayout->insertWidget(2,canvasState);
   canvasState->busy=[this]{return bridge.busy();};
+  connect(canvasState,&CanvasStateBar::playRequested,this,[this](QJsonObject params){
+    request("preview",params,[this](QJsonObject reply){
+      if(!reply.value("error").toString().isEmpty()||!reply.contains("play")){canvasState->failPlay(reply.value("error").toString(tr("미리보기를 준비할 수 없습니다.")));return;}
+      auto descriptor=reply.value("play").toObject();descriptor["locale"]=previewLocaleField->currentData().toString();canvasState->launchPlay(descriptor);
+    });
+  });
   connect(canvasState,&CanvasStateBar::snapshotRequested,this,[this]{
     auto renderer=canvasState->renderer();
     request("preview",renderer->previewRequest(),[renderer](QJsonObject reply){

@@ -7,7 +7,7 @@
   uint64_t dialogue_render_generation=0;
   void apply_player_preferences(const Json& value) {
     const bool fullscreen=value.at("fullscreen");
-    if(bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=fullscreen&&!SDL_SetWindowFullscreen(window,fullscreen))throw std::runtime_error(SDL_GetError());
+    if(!editor_live&&bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=fullscreen&&!SDL_SetWindowFullscreen(window,fullscreen))throw std::runtime_error(SDL_GetError());
     audio.set_levels(value.at("musicVolume").get<float>()/100.f,value.at("effectsVolume").get<float>()/100.f);
     gallery_audio.set_levels(value.at("musicVolume").get<float>()/100.f,value.at("effectsVolume").get<float>()/100.f);
     markup.player_preferences=value;
@@ -25,6 +25,7 @@
     if(!toggle&&action.value("type","")!="setPlayerSetting")return false;
     if(!preferences_enabled||preview())return true;
     const auto key=toggle?std::string("autoAdvance"):action.value("key","");if(!preferences.contains(key)||key=="version")throw std::runtime_error("Unknown player setting");
+    if(editor_live&&key=="fullscreen")return true; // The editor controls the embedded viewport.
     auto next=preferences;next[key]=toggle?Json(!preferences.value("autoAdvance",false)):action.at("value");next=checked_player_preferences(next);
     try{apply_player_preferences(next);write_player_preferences(preferences_file,next);preferences=next;dialogue_wait=0;markup.settings_notice.clear();}
     catch(...){apply_player_preferences(preferences);markup.settings_notice=markup.settings_words("설정을 저장하지 못했습니다. 이전 설정을 유지합니다.","Could not save settings. Previous values are retained.","設定を保存できませんでした。以前の設定を維持します。");}

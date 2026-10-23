@@ -8,7 +8,7 @@
 // Device initialization is lazy: a silent project needs no audio device.
 class GameAudio {
   ma_engine engine{};
-  bool initialized=false;
+  bool initialized=false,suspended=false;
   std::map<std::string,std::unique_ptr<ma_sound>> sounds;
   ma_sound* music=nullptr;
   std::string current_music;
@@ -19,6 +19,7 @@ class GameAudio {
     auto config=ma_engine_config_init();
     if(ma_engine_init(&config,&engine)!=MA_SUCCESS)throw std::runtime_error("오디오 장치를 열 수 없습니다.");
     initialized=true;
+    if(suspended)ma_engine_stop(&engine);
   }
   ma_sound* sound(const std::string& file,bool background=false) {
     initialize();
@@ -40,7 +41,7 @@ public:
   float music_gain() const{return music?ma_sound_get_volume(music):music_level;}
   float effects_gain() const{return effects_level;}
   void mute(bool muted){if(initialized)ma_engine_set_volume(&engine,muted?0.f:1.f);}
-  void suspend(bool paused){if(initialized){if(paused)ma_engine_stop(&engine);else ma_engine_start(&engine);}}
+  void suspend(bool paused){suspended=paused;if(initialized){if(paused)ma_engine_stop(&engine);else ma_engine_start(&engine);}}
   void sync_music(const std::string& file,bool muted){
     if(file==current_music){if(music)ma_sound_set_volume(music,music_level);mute(muted);return;}
     if(music){ma_sound_stop(music);music=nullptr;}

@@ -35,6 +35,11 @@ public:
   QImage snapshotImage() const;
   QString message() const {return status->text();}
   QJsonObject explanation() const {return renderedExplanation;}
+  QJsonObject interactiveRequest() const {
+    auto value=scenario.value("enabled").toBool()?scenario:QJsonObject{};
+    value["screenId"]=screen;value["elementId"]="";value["followRouting"]=false;value["canvasContext"]=true;
+    return {{"revision",revision},{"interactive",true},{"authoringContext",value}};
+  }
 signals:
   void contextChanged();
   void snapshotRequested();

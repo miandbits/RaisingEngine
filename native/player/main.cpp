@@ -25,6 +25,7 @@
 
 #include "route-recording.hpp"
 #include "recollection.hpp"
+#include "editor-preview.hpp"
 
 class PlayerApplication : public Rml::EventListener {
 public:
@@ -83,12 +84,12 @@ public:
   std::deque<Json> pending;
   std::map<std::string,float> collection_scroll;
   bool dirty=true, running=true, muted=false, backgrounded=false,timeline_manual_clock=false;
-  bool editor_events=false;
+  bool editor_events=false,editor_live=false,editor_paused=false;
   double extension_dt=0;
   uint64_t document_generation=0;
   bool syncing_user_inputs=false;
   std::string preview_element,preview_state="normal",preview_source="initial";
-  bool preview() const {return !markup.preview_screen.empty();}
+  bool preview() const {return !editor_live&&!markup.preview_screen.empty();}
   int auto_revision=-1,auto_attempted=-1;
   double auto_elapsed=0;
   #include "settings-app.inc"
@@ -247,7 +248,7 @@ public:
     }
   }
   void ProcessEvent(Rml::Event& event) override {
-    if(preview())return;
+    if(preview()||editor_paused)return;
     auto& markup=active_markup();
     const auto eventType=event.GetType();
     // Plugin hit tests (CONTRACT.md §7): observed for the animation, never consumed; the click goes on below.
@@ -382,7 +383,8 @@ public:
     if(editor_events){std::cout<<Json({{"event","editor-view"},{"command",editor_command},{"view",ui_state()}}).dump()<<std::endl;editor_command=Json::object();}
   }
   void execute(const Json& incoming) {
-    if(preview())return;
+    if(preview()||editor_paused)return;
+    if(editor_live)markup.preview_screen.clear();
     editor_command=incoming;
     try {
       if(setting_action(incoming))return;
@@ -559,6 +561,7 @@ public:
       return;
     }
     if(backgrounded)return;
+    if(editor_paused&&((event.type>=SDL_EVENT_KEY_DOWN&&event.type<=SDL_EVENT_KEYMAP_CHANGED)||(event.type>=SDL_EVENT_MOUSE_MOTION&&event.type<=SDL_EVENT_MOUSE_WHEEL)||(event.type>=SDL_EVENT_GAMEPAD_AXIS_MOTION&&event.type<=SDL_EVENT_GAMEPAD_TOUCHPAD_UP)))return;
     if(event.type==SDL_EVENT_FINGER_DOWN||event.type==SDL_EVENT_FINGER_MOTION||event.type==SDL_EVENT_FINGER_UP||event.type==SDL_EVENT_FINGER_CANCELED) {
       if(!context)return;
       const auto& finger=event.tfinger;
@@ -731,7 +734,7 @@ int main(int argc,char** argv) {
 #endif
   int max_frames=0;bool hidden=false,editor_events=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
-  fs::path preview_scene_file,preview_inspection_file,recording_file;Json preview_scene=nullptr;
+  fs::path preview_scene_file,preview_inspection_file,recording_file,editor_directory;Json preview_scene=nullptr;
   try {
   for(int i=1;i<argc;i++) {
     const std::string arg=argv[i];
@@ -739,6 +742,7 @@ int main(int argc,char** argv) {
     else if(arg=="--locale"&&i+1<argc)requested_locale=argv[++i];
     else if(arg=="--preview-screen"&&i+1<argc)preview_screen=argv[++i];
     else if(arg=="--preview-inspection"&&i+1<argc)preview_inspection_file=fs::u8path(argv[++i]);
+    else if(arg=="--editor-live-preview"&&i+1<argc)editor_directory=fs::u8path(argv[++i]);
     else if(arg=="--preview-scene"&&i+1<argc)preview_scene_file=fs::u8path(argv[++i]);
     else if(arg=="--preview-element"&&i+1<argc)preview_element=argv[++i];
     else if(arg=="--preview-state"&&i+1<argc)preview_state=argv[++i];
@@ -754,6 +758,13 @@ int main(int argc,char** argv) {
   }
     const auto bundle=read_json(bundle_root/"game.json");
     validate_bundle(bundle,bundle_root);
+    if(!editor_directory.empty()){
+#ifndef _WIN32
+      throw std::runtime_error("Embedded editor preview currently requires Windows");
+#endif
+      if(preview_inspection_file.empty()||preview_screen.empty()||!automation_file.empty())throw std::runtime_error("Live editor preview requires an inspection snapshot and no automation file");
+      fs::create_directories(editor_directory);save_file=editor_directory/"save.json";recording_file.clear();editor_events=false;
+    }
     if(!preview_scene_file.empty()) {
       if(preview_screen.empty())throw std::runtime_error("Preview scene requires --preview-screen");
       preview_scene=read_preview_scene(preview_scene_file,bundle.at("content"));
@@ -777,7 +788,7 @@ int main(int argc,char** argv) {
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);
     {
-      SystemInterface_SDL system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;
+      EditorClockSystem system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;
       Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
       static Rml::ElementInstancerGeneric<ExtensionElement> extension_instancer;Rml::Factory::RegisterElementInstancer("raising-extension",&extension_instancer);
 #ifdef SDL_PLATFORM_ANDROID
@@ -793,6 +804,7 @@ int main(int argc,char** argv) {
         if(bytes.empty()||!Rml::LoadFontFace(Rml::Span<const Rml::byte>(bytes.data(),bytes.size()),"engine-"+id,Rml::Style::FontStyle::Normal))throw std::runtime_error("Cannot load project font: "+id);
       }
       PlayerApplication app(bundle,bundle_root,window,renderer,save_file);
+      EditorPreviewControl editor;editor.directory=editor_directory;app.editor_live=!editor_directory.empty();app.editor_paused=app.editor_live;
       ExtensionElement::host=&app.extensions;
       app.game.seed=requested_seed;app.recording.file=recording_file;
       if(!preview_screen.empty()){app.markup.preview_screen=preview_screen;app.markup.preview_scene=preview_scene;app.preview_element=preview_element;app.preview_state=preview_state;if(preview_screen!="title"||!preview_scene.is_null())app.game.start();}
@@ -801,10 +813,18 @@ int main(int argc,char** argv) {
         if(inspection.value("version",0)!=1||inspection.value("contentFingerprint",Json())!=app.game.content.at("contentFingerprint")||inspection.value("screenId","")!=preview_screen||!inspection.value("state",Json()).is_object()||!inspection.value("visual",Json()).is_object())throw std::runtime_error("Invalid authoring inspection snapshot");
         app.game.gallery_recording=false;app.game.gallery_pending=Json::array();
         app.game.state=inspection.at("state");app.game.content["project"]["visual"]=inspection.at("visual");app.game.refresh();app.preview_source="authoring";app.dirty=true;
+        if(app.editor_live){app.game.inspection_session=editor_directory.u8string();app.game.inspection_baseline=app.game.state;app.game.commands=Json::array();app.game.sync_timeline();app.preview_source="authoring-live";}
       }
       if(!requested_locale.empty()){app.markup.locale=requested_locale;app.dirty=true;}
       app.editor_events=editor_events;
       if(!app.preview())app.initialize_player_preferences();
+      if(app.editor_live){
+        system.pause(true);app.audio.suspend(true);app.gallery_audio.suspend(true);
+#ifdef _WIN32
+        const auto handle=reinterpret_cast<uintptr_t>(SDL_GetPointerProperty(SDL_GetWindowProperties(window),SDL_PROP_WINDOW_WIN32_HWND_POINTER,nullptr));
+        std::cout<<Json({{"editorPreview",{{"ready",true},{"windowHandle",std::to_string(handle)}}}}).dump()<<std::endl;
+#endif
+      }
 #ifdef SDL_PLATFORM_ANDROID
       app.restore_autosave();
 #endif
@@ -812,10 +832,20 @@ int main(int argc,char** argv) {
       app.timeline_manual_clock=!automation.empty();
       while(app.running) {
         const auto timeline_now=SDL_GetTicks();const double timeline_delta=double(timeline_now-timeline_clock);timeline_clock=timeline_now;
+        const auto control=editor.poll();
+        if(!control.is_null()){
+          const auto type=control.value("type","");
+          if(type=="stop")app.running=false;
+          if(type=="pause"){
+            editor.paused=control.value("paused",true);app.editor_paused=editor.paused;system.pause(editor.paused);
+            app.audio.suspend(editor.paused||app.recalling()||app.game.gallery.active);app.gallery_audio.suspend(editor.paused||(!app.recalling()&&!app.game.gallery.active));
+          }
+          if(type=="click"&&!editor.paused&&app.document)app.click(control.value("id",""));
+        }
         SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
         if(app.backgrounded){SDL_Delay(50);continue;}
         app.drain_actions();
-        if(!app.timeline_manual_clock){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.advance_dialogue_clock(std::min(250.0,timeline_delta));app.extension_dt+=timeline_delta;}
+        if(!app.timeline_manual_clock&&!app.editor_paused){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.advance_dialogue_clock(std::min(250.0,timeline_delta));app.extension_dt+=timeline_delta;if(app.editor_live)editor.elapsed+=timeline_delta;}
         if(app.dirty)app.rebuild();
         SDL_FRect display_rect{};SDL_GetRenderLogicalPresentationRect(renderer,&display_rect);
         fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
@@ -864,7 +894,9 @@ int main(int argc,char** argv) {
           if(command.contains("expectScreen")&&app.markup.screen_id!=command.at("expectScreen"))throw std::runtime_error("Unexpected screen: "+app.markup.screen_id);
           report["steps"].push_back({{"command",command},{"ui",app.ui_state()}});
         }
-        SDL_RenderPresent(renderer);frames++;SDL_Delay(8);
+        SDL_RenderPresent(renderer);
+        if(!control.is_null())std::cout<<Json({{"editorPreview",{{"serial",editor.serial},{"paused",editor.paused},{"elapsedMs",editor.elapsed},{"ui",app.ui_state()}}}}).dump()<<std::endl;
+        frames++;SDL_Delay(8);
         if(max_frames&&frames>=max_frames)break;
         if(!automation.empty()&&step==automation.size()&&frames%3==0&&app.pending.empty()&&wait_frames==0)break;
       }

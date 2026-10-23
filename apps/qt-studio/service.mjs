@@ -391,6 +391,8 @@ export class QtStudioService {
         }
         const requirePreview = async directory => {
           const capabilities = JSON.parse(await readFile(path.join(directory, 'capabilities.json'), 'utf8'));
+          if (params.interactive === true && (!inspection || !capabilities.visualFeatures?.includes('editor-live-preview-v1')))
+            throw new Error('현재 플레이어는 캔버스 재생(editor-live-preview-v1)을 지원하지 않습니다. 플레이어를 다시 빌드하세요.');
           if (inspection && !capabilities.visualFeatures?.includes('authoring-preview-v1'))
             throw new Error('현재 플레이어는 제작 상태 미리보기(authoring-preview-v1)를 지원하지 않습니다. 플레이어를 다시 빌드하세요.');
           if (!Array.isArray(capabilities.visualFeatures) || !capabilities.visualFeatures.includes('renderer-preview-v1'))
