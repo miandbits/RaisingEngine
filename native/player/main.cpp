@@ -194,12 +194,12 @@ public:
     refresh_save_preview();
     game.gallery_content=[this]{return localized_content(game.content,markup.locale);};
     if(game.content.at("project").contains("gallery"))game.gallery.open(this->save_file.parent_path()/("collection-"+game.content.at("project").value("gameId","game")+".json"),game.content.at("project").value("gameId","game"));
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     SDL_AddEventWatch(watch_lifecycle,this);
 #endif
   }
   ~PlayerApplication(){
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     SDL_RemoveEventWatch(watch_lifecycle,this);
 #endif
     for(auto& [_,pad]:gamepads)SDL_CloseGamepad(pad);
@@ -555,7 +555,7 @@ public:
   void event(SDL_Event& event) {
     if(event.type==SDL_EVENT_QUIT)running=false;
     if(event.type==SDL_EVENT_WILL_ENTER_BACKGROUND||event.type==SDL_EVENT_DID_ENTER_BACKGROUND||event.type==SDL_EVENT_DID_ENTER_FOREGROUND||event.type==SDL_EVENT_TERMINATING) {
-#ifndef SDL_PLATFORM_ANDROID
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
       watch_lifecycle(this,&event);
 #endif
       return;
@@ -731,6 +731,9 @@ int main(int argc,char** argv) {
   fs::path bundle_root=internal?fs::u8path(internal)/"game":fs::path("game"),save_file,automation_file,report_file;
 #else
   fs::path bundle_root=fs::u8path(SDL_GetBasePath()),save_file,automation_file,report_file;
+#ifdef SDL_PLATFORM_IOS
+  bundle_root/="game";
+#endif
 #endif
   int max_frames=0;bool hidden=false,editor_events=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
@@ -759,8 +762,8 @@ int main(int argc,char** argv) {
     const auto bundle=read_json(bundle_root/"game.json");
     validate_bundle(bundle,bundle_root);
     if(!editor_directory.empty()){
-#ifndef _WIN32
-      throw std::runtime_error("Embedded editor preview currently requires Windows");
+#if !defined(_WIN32) && !defined(SDL_PLATFORM_MACOS)
+      throw std::runtime_error("Live editor preview currently requires Windows or macOS");
 #endif
       if(preview_inspection_file.empty()||preview_screen.empty()||!automation_file.empty())throw std::runtime_error("Live editor preview requires an inspection snapshot and no automation file");
       fs::create_directories(editor_directory);save_file=editor_directory/"save.json";recording_file.clear();editor_events=false;
@@ -776,7 +779,7 @@ int main(int argc,char** argv) {
     if(!preview_screen.empty()){bool found=false;for(const auto& screen:bundle.at("content").at("project").at("visual").at("screens"))if(screen.at("id")==preview_screen)found=true;if(!found)throw std::runtime_error("Unknown preview screen: "+preview_screen);}
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     const auto& visual=bundle.at("content").at("project").at("visual");
     SDL_SetHint(SDL_HINT_ORIENTATIONS,visual.at("width").get<int>()>=visual.at("height").get<int>()?"LandscapeLeft LandscapeRight":"Portrait PortraitUpsideDown");
 #endif
@@ -791,7 +794,7 @@ int main(int argc,char** argv) {
       EditorClockSystem system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;
       Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
       static Rml::ElementInstancerGeneric<ExtensionElement> extension_instancer;Rml::Factory::RegisterElementInstancer("raising-extension",&extension_instancer);
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
       const auto font=bundle_root/"fonts/NotoSansKR.ttf";
 #else
       const auto font=fs::u8path(SDL_GetBasePath())/"fonts/NotoSansKR.ttf";
@@ -823,9 +826,11 @@ int main(int argc,char** argv) {
 #ifdef _WIN32
         const auto handle=reinterpret_cast<uintptr_t>(SDL_GetPointerProperty(SDL_GetWindowProperties(window),SDL_PROP_WINDOW_WIN32_HWND_POINTER,nullptr));
         std::cout<<Json({{"editorPreview",{{"ready",true},{"windowHandle",std::to_string(handle)}}}}).dump()<<std::endl;
+#else
+        std::cout<<Json({{"editorPreview",{{"ready",true},{"embedded",false}}}}).dump()<<std::endl;
 #endif
       }
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
       app.restore_autosave();
 #endif
       auto automation=automation_file.empty()?Json::array():read_json(automation_file);size_t step=0;int frames=0,wait_frames=0;Json report={{"steps",Json::array()}};uint64_t timeline_clock=SDL_GetTicks();

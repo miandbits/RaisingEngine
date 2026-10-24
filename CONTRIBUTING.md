@@ -10,7 +10,7 @@ Original engine/editor code is MIT licensed. Reference-game assets, fonts, plugi
 - Windows player: `native/player`; web player: `apps/web`.
 - Archived Electron shells/editor: `legacy/`, opt-in `legacy:*` commands. The shared React renderer in `apps/player/renderer` remains current Web code.
 
-Follow the [root setup instructions](README.md). Qt desktop development is currently verified on Windows. A successful Linux headless CI run is not proof that the desktop editor works on Linux.
+Follow the [root setup instructions](README.md). Qt desktop development is verified on Windows and macOS; see the current platform-specific evidence in the first-game guide. A successful Linux headless CI run is not proof that the desktop editor works on Linux.
 
 ## Changes and verification
 
@@ -34,3 +34,30 @@ Use a separate `QT_STUDIO_OUT`, `NATIVE_PLAYER_BUILD` and `NATIVE_PLAYER_OUT` wh
 - Run `npm run check:repository`, `npm run check:public-content` and `npm run test:public-content` after structural/sample changes. A local project that still exists on your PC is not a valid dependency for public CI. Test a fresh clone when changing build prerequisites or bootstrap scripts.
 
 No contributor license agreement, DCO requirement, or project-wide formatting migration is introduced by this document. Those are owner decisions for the release preparation phase.
+
+## Creator smoke test (P1)
+
+After `npm ci` and `npm run build:headless`, run:
+
+```sh
+npm run test:creator-smoke
+npm run benchmark:creator
+```
+
+The first command checks the starter, recovery with imported files, release archives and pinned dependencies, ending explanations, editing/reference navigation, iOS source packaging, and named-playtest failure/approval semantics. It writes logs and a machine-readable report under `.cache/creator-smoke/`. The route checks take around two minutes on the tested Mac. Local loopback networking is required for preview-server tests.
+
+For the real graphical path, build `npm run build:player` and `npm run build:studio`, then `npm run test:creator-smoke -- --desktop`. The Qt harness links the same editor UI library and operates its actual forms. It creates an activity and branching encounter, edits/undoes/redoes, restores recovery, inspects an ending, corrects an export failure, plays to completion, exports and reopens. The native player test exercises both routes and save restoration. The desktop smoke also runs story-form guards and a disposable diagnostics-to-form repair journey, including invalid input retention. Existing Windows installation verification remains `npm run test:qt-package`.
+
+Build Web with the pinned Emscripten SDK documented in `native/README.md`, install the Playwright browser (`npx playwright install chromium`), and add `--web` to exercise the exported WASM game. To use installed Chrome instead, set `RAISING_BROWSER_CHANNEL=chrome`.
+
+On macOS, package with `npm run package:macos` using the standalone Node distribution documented in the README. Then run:
+
+```sh
+npm run test:creator-smoke -- --web --desktop --package dist/macos/RaisingStudio.app
+```
+
+The package gate audits bundled binary dependencies and signatures with developer paths removed, launches the actual app and exported player, and reruns the Qt journey against the bundled Node/services/templates/runtime. The test harness itself uses the matching development Qt build. This is not a clean-machine or human usability study.
+
+`benchmark:creator` measures service round trips for the 17-document starter and a synthetic 517-document project, including recovery and compatibility work. `CREATOR_EVENTS=1000` changes the added-story count. Reports include hardware, first/median/p95 timings and explicit investigation thresholds. Synthetic tests do not establish long-session GUI responsiveness or media-heavy project performance.
+
+`.github/workflows/creator-journey.yml` runs service smoke and timing checks on pushes/PRs. Manual runs and published releases also build and check the macOS package and Web game. Run the manual gate before publishing; the release event is a post-publication audit, not an enforced release approval. Workflow definitions require an actual GitHub run before their remote status can be claimed.

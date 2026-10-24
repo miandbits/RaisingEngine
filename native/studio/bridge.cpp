@@ -36,7 +36,13 @@ StudioBridge::StudioBridge(const QString &engineRoot, QObject *parent)
                  QString::fromUtf8(process.readAllStandardError()));
           });
   process.setWorkingDirectory(engineRoot);
-  const auto bundledNode=QDir(engineRoot).filePath("node.exe");
+  const auto bundledNode=QDir(engineRoot).filePath(
+#ifdef Q_OS_WIN
+      "node.exe"
+#else
+      "node"
+#endif
+  );
   process.start(qEnvironmentVariable("RAISING_NODE", QFileInfo::exists(bundledNode)?bundledNode:"node"),
                 {QDir(engineRoot).filePath("apps/qt-studio/service.mjs")});
 }

@@ -14,13 +14,22 @@ endif()
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
-add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  # SDL 3.4 implements the scene lifecycle required by recent iOS SDKs.
+  add_subdirectory(vendor/SDL-ios vendor/SDL EXCLUDE_FROM_ALL)
+else()
+  add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
+endif()
 set(SDLIMAGE_INSTALL OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_SAMPLES OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_AVIF OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_WEBP ON CACHE BOOL "" FORCE)
 set(SDLIMAGE_VENDORED ON CACHE BOOL "" FORCE)
 set(SDLIMAGE_BACKEND_STB ON CACHE BOOL "" FORCE)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  # Use the same portable PNG/JPEG decoder as the other mobile build.
+  set(SDLIMAGE_BACKEND_IMAGEIO OFF CACHE BOOL "" FORCE)
+endif()
 set(SDLIMAGE_WEBP_SHARED OFF CACHE BOOL "" FORCE)
 foreach(option ANIM_UTILS CWEBP DWEBP GIF2WEBP IMG2WEBP VWEBP WEBPINFO LIBWEBPMUX WEBPMUX EXTRAS)
   set(WEBP_BUILD_${option} OFF CACHE BOOL "" FORCE)
@@ -51,7 +60,15 @@ if(ANDROID)
 else()
   add_executable(raising-player ${RAISING_PLAYER_SOURCES})
   set_target_properties(raising-player PROPERTIES OUTPUT_NAME RaisingPlayer)
-  target_compile_definitions(raising-player PRIVATE SDL_MAIN_HANDLED)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_compile_definitions(raising-player PRIVATE SDL_MAIN_HANDLED)
+  endif()
+  if(APPLE)
+    set_target_properties(raising-player PROPERTIES MACOSX_BUNDLE TRUE
+      MACOSX_BUNDLE_GUI_IDENTIFIER "org.raisingengine.player"
+      MACOSX_BUNDLE_BUNDLE_NAME "Raising Player"
+      MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0")
+  endif()
 endif()
 target_include_directories(raising-player PRIVATE ../vendor vendor/RmlUi/Backends)
 target_compile_definitions(raising-player PRIVATE RMLUI_SDL_VERSION_MAJOR=3)
@@ -62,3 +79,24 @@ if(MINGW)
 endif()
 add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
   ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:raising-player>/fonts)
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_BUNDLE_CONTENT_DIR:raising-player>/Resources/fonts)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  enable_language(OBJC)
+  set_source_files_properties(audio.c PROPERTIES LANGUAGE OBJC)
+  target_link_libraries(raising-player PRIVATE "-framework AVFoundation")
+  set(RAISING_APP_ID "org.raisingengine.player" CACHE STRING "iOS application identifier")
+  set_target_properties(raising-player PROPERTIES
+    MACOSX_BUNDLE_GUI_IDENTIFIER "${RAISING_APP_ID}"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/../mobile/ios/Info.plist.in"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${RAISING_APP_ID}"
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+    XCODE_GENERATE_SCHEME TRUE)
+  if(RAISING_GAME_BUNDLE)
+    add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${RAISING_GAME_BUNDLE}" $<TARGET_BUNDLE_CONTENT_DIR:raising-player>/game)
+  endif()
+endif()

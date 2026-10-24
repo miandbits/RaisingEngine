@@ -231,6 +231,13 @@ private:
   void play();
   void chooseProject(bool create);
   void newProjectWizard();
+  QDockWidget *firstGameDock = nullptr;
+  QJsonObject firstGameState, releaseCompatibility, recoveryState;
+  void showDraftRecovery();
+  QSet<QString> firstGameObserved;
+  void showFirstGameChecklist();
+  void updateFirstGameChecklist();
+  void observeFirstGamePlay(const QJsonObject &state);
   void showGettingStarted();
   void editStoryFlow();
   void initializeStarterScreens();

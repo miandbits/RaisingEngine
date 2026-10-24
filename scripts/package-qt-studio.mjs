@@ -34,6 +34,8 @@ for(const entry of await readdir(qt,{withFileTypes:true})){
 await writeFile(join(out,'qt.conf'),'[Paths]\nPlugins=.\n');
 await copy('native/studio/fonts','fonts');
 await copy('apps/qt-studio','engine/apps/qt-studio');
+await copy('config/native-dependencies.json','engine/config/native-dependencies.json');
+await copy('scripts/lib/ios-project.mjs','engine/scripts/lib/ios-project.mjs');
 await copy('dist/packages','engine/dist/packages');
 await copy('packages/schema','engine/packages/schema');
 await copy('packages/plugin-host','engine/packages/plugin-host');

@@ -8,14 +8,17 @@ import {routeFromRecording,runGoalRoute,validateGoalRoute} from '../../dist/pack
 import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 import {loadProject} from '../../dist/packages/project-service/loader.js';
 
-const project=path.resolve('examples/starlight-three-months'),evidence=path.resolve('docs/evidence/goal-routes');
+const project=path.resolve('examples/starlight-three-months'),evidence=path.resolve('.cache/goal-routes-service');
 const names={success:'별빛 길드의 동료',relationship:'마을에 남은 약속',ordinary:'다시 시작하는 계절'};
-async function recording(kind){return JSON.parse(await readFile(path.join(evidence,(kind==='success'?'play':kind)+'-recording.json'),'utf8'));}
-test('recorded pilot endings: latest content replay, every save boundary and autosave regression',{timeout:180000},async()=>{
+// Synthetic recording envelopes from committed route commands: no private GUI evidence required.
+async function recording(kind){const route=JSON.parse(await readFile(path.join(project,'playtests/routes',kind+'.json'),'utf8'));return {recordingVersion:1,gameId:route.gameId,contentFingerprint:route.recordedFingerprint,origin:route.origin,commands:route.commands,checkpoints:route.checkpoints,state:{endingId:route.endingId}};}
+
+test('committed pilot routes: recording import, latest content replay, every save boundary and autosave regression',{timeout:180000},async()=>{
  const root=await mkdtemp(path.resolve('.cache/goal-regression-'));await cp(project,root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')&&!s.split(path.sep).includes('playtests')});
  const service=new QtStudioService();await service.handle({method:'open',params:{root}});
  const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,...params}});
  for(const kind of Object.keys(names)){
+   await mkdir(evidence,{recursive:true});await writeFile(path.join(evidence,(kind==='success'?'play':kind)+'-recording.json'),JSON.stringify(await recording(kind)));
    const imported=await call('goalRouteImport',{file:path.join(evidence,(kind==='success'?'play':kind)+'-recording.json'),metadata:{id:kind,name:names[kind],checkpointEvery:7}});
    assert.ok(imported.goalRoute.commands.length>40);await call('goalRouteSave',{route:imported.goalRoute,expectedRevision:null});
  }
@@ -45,8 +48,10 @@ test('route import rejects malformed origin, traversal IDs, oversized/invalid ch
  const built=await buildSnapshot(await loadProject(project));assert.equal((await runGoalRoute(built.snapshot,{...route,gameId:'foreign'})).failure.code,'GAME_MISMATCH');assert.equal((await runGoalRoute(built.snapshot,{...route,endingId:'missing'})).failure.code,'UNKNOWN_ENDING');
 });
 test('recording capability is explicit; older runtimes fail before launching',async()=>{
- const supported=new QtStudioService({runtimes:{windows:path.resolve('dist/native-player-routes'),web:path.resolve('dist/web')}});
- const unsupported=new QtStudioService({runtimes:{windows:path.resolve('dist/native-player-direction'),web:path.resolve('dist/web')}});
+ await mkdir('.cache/goal-routes-service',{recursive:true});const runtimes=await mkdtemp(path.resolve('.cache/goal-routes-service/runtime-'));
+ for(const [name,toolFeatures] of [['supported',['goal-route-recording-v1']],['unsupported',[]]]){await mkdir(path.join(runtimes,name));await writeFile(path.join(runtimes,name,'capabilities.json'),JSON.stringify({toolFeatures}));}
+ const supported=new QtStudioService({nativeTarget:'windows',runtimes:{windows:path.join(runtimes,'supported')}});
+ const unsupported=new QtStudioService({nativeTarget:'windows',runtimes:{windows:path.join(runtimes,'unsupported')}});
  assert.equal((await supported.handle({method:'goalRecordPrepare'})).recordingSupported,true);
  await assert.rejects(unsupported.handle({method:'goalRecordPrepare'}),/기록을 지원하지/);
 });

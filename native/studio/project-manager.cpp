@@ -95,6 +95,7 @@ ProjectManager::ProjectManager(const QString &engineRoot, QWidget *parent)
   auto createGroup = new QGroupBox(tr("새 프로젝트"));
   auto createLayout = new QVBoxLayout(createGroup);
   base = new QComboBox; base->setObjectName("launcherTemplate");
+  base->addItem(tr("My first raising game · recommended"), "my-first-raising-game");
   base->addItem(tr("최소 일정 육성 · 2개월"), "academy-demo");
   base->addItem(tr("일정 육성 · 12개월"), "academy-year");
   base->addItem(tr("화면·UI 제작"), "academy-visual");

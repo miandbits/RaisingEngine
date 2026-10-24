@@ -1,0 +1,17 @@
+import {mkdir,mkdtemp,writeFile,readFile} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import path from 'node:path';
+import {loadProject} from '../dist/packages/project-service/loader.js';
+import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
+import {firstGameRoute} from '../tests/qt-studio/first-game-route.mjs';
+await mkdir('.cache/first-game-ui',{recursive:true});
+const out=await mkdtemp(path.resolve('.cache/first-game-ui/run-'));
+const built=await buildSnapshot(await loadProject(path.resolve('examples/my-first-raising-game')));
+if(!built.ok)throw Error(JSON.stringify(built.diagnostics));
+await writeFile(path.join(out,'route.json'),JSON.stringify(firstGameRoute(built.snapshot,true).steps));
+const executable=path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio','qt-first-game-test'+(process.platform==='win32'?'.exe':''));
+const log=path.join(out,'ui.txt');
+const run=spawnSync(executable,['-o',log+',txt'],{encoding:'utf8',timeout:180000,env:{...process.env,RAISING_NODE:process.env.RAISING_NODE??process.execPath,RAISING_FIRST_GAME_PROOF:out,RAISING_ENGINE_ROOT:process.env.RAISING_ENGINE_ROOT??path.resolve('.'),RAISING_PROJECT_HISTORY:path.join(out,'recent.ini'),RAISING_QT_TEST:'1'}});
+console.log(await readFile(log,'utf8').catch(()=>run.stderr));
+await writeFile('.cache/first-game-ui/latest.json',JSON.stringify({out,status:run.status},null,2));
+if(run.error)throw run.error;process.exitCode=run.status??1;

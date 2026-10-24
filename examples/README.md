@@ -4,6 +4,7 @@ These projects are independent of locally installed reference games. Engine code
 
 | Project | Purpose |
 |---|---|
+| `my-first-raising-game` | Recommended no-code starter: three months, branching story, two endings, guided checklist |
 | `academy-demo` | Minimal two-month data/runtime example |
 | `academy-year` | Twelve-month content example |
 | `academy-visual` | Basic visual editing example |

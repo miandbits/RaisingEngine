@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Schedule-based raising simulation engine — validated data and deterministic headless core",
+  "description": "Schedule-based raising simulation engine \u2014 validated data and deterministic headless core",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -82,7 +82,15 @@
     "test:installed": "npm run test:qt-package",
     "test:qt-preview": "node scripts/test-qt-package.mjs --portable",
     "check:repository": "node scripts/check-repository.mjs",
-    "package:preview-artifacts": "node scripts/package-preview-artifacts.mjs"
+    "package:preview-artifacts": "node scripts/package-preview-artifacts.mjs",
+    "build:ios": "node scripts/build-ios.mjs",
+    "test:first-game": "node --test tests/qt-studio/first-game.test.mjs",
+    "package:macos": "node scripts/package-macos-studio.mjs",
+    "test:first-game-native": "node --test tests/native-player/first-game.test.mjs",
+    "test:first-game-ui": "node scripts/test-first-game-ui.mjs",
+    "test:creator-smoke": "node scripts/smoke-creator.mjs",
+    "test:first-game-web": "node --test tests/journey/first-game-web.test.mjs",
+    "benchmark:creator": "node scripts/benchmark-creator.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

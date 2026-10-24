@@ -40,4 +40,12 @@
 
 이번 Web 검증 대상은 데스크톱 Chromium이다. Safari·Firefox, 실제 모바일 터치/오디오 정책·백그라운드 복귀는 별도 검증이 필요하다. Windows 검토판은 개발 PC에서 개발 도구 경로를 제거해 검증한 결과이며 새 VM·서명·SmartScreen 평판 검증을 대신하지 않는다.
 
-Android는 소스/패키징 준비와 가짜 SDK 기반 검사까지다. iOS·macOS는 실제 빌드·실기 미검증이다. Linux는 서비스 CI만 검증했으며 Qt/플레이어 배포 지원을 뜻하지 않는다. Switch·PlayStation·Xbox는 공식 SDK·개발기 확보 전까지 미지원/미검증 상태다.
+Android는 소스/패키징 준비와 가짜 SDK 기반 검사까지다. macOS·iOS의 새 소스 빌드 현황은 아래 Apple 플랫폼 항목을 본다. Linux는 서비스 CI만 검증했으며 Qt/플레이어 배포 지원을 뜻하지 않는다. Switch·PlayStation·Xbox는 공식 SDK·개발기 확보 전까지 미지원/미검증 상태다.
+
+## Apple platforms — 2026-10-23 source changes
+
+The Apple Silicon Qt editor now builds as an app bundle and selects a native macOS player. The starter's actual GUI create/customize/play/export/reopen journey passed, and both exported player routes matched 61 checkpoints including midgame and fresh-process save restoration. Live canvas playback uses a separate controlled window on macOS. The standalone editor passed a dependency audit and create/play/export checks with developer tool paths removed; it bundles Qt, Node, services and the player.
+
+iOS exports contain source, game resources and regenerable Xcode presets for simulator and device builds (minimum iOS 16). SDL is pinned separately to 3.4.18 because [Apple requires the scene lifecycle for apps linked with the iOS 27 SDK](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle). Builds use Objective-C audio compilation and the portable SDL_image decoder. Simulator and unsigned arm64 device builds passed with Xcode 27.1. Both starter routes passed 61 state checkpoints on an iOS 27 iPhone simulator using touch events, including midgame save/load and fresh-process restoration.
+
+These are development targets, not certified public binaries. Apple native plugin binaries, Intel Mac execution, physical iPhone/iPad testing, Developer ID notarization and App Store distribution have separate verification requirements. Existing published Windows/Web evidence above is unchanged. Reproducible commands are in the root README; local proof is generated under `.cache/first-game-*`.

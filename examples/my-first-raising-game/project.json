@@ -1,0 +1,382 @@
+{
+  "formatVersion": "0.1.0",
+  "gameId": "my-first-raising-game",
+  "title": "My first raising game",
+  "description": "A season at Willow Academy. Help Rowan grow, meet Mira in the garden, and choose what kind of future to build. Every name, activity, story, and screen can be edited.",
+  "startYear": 1,
+  "startMonth": 1,
+  "durationMonths": 3,
+  "periodsPerMonth": 3,
+  "protagonistId": "apprentice",
+  "initialState": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "defaultEndingId": "own-path",
+  "visual": {
+    "width": 1280,
+    "height": 720,
+    "screens": [
+      {
+        "id": "title",
+        "label": "Title",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#172b2b"
+          },
+          {
+            "id": "eyebrow",
+            "kind": "text",
+            "x": 80,
+            "y": 90,
+            "width": 1100,
+            "height": 48,
+            "text": "YOUR FIRST COMPLETE RAISING GAME",
+            "fontSize": 20,
+            "color": "#f1eee4"
+          },
+          {
+            "id": "title",
+            "kind": "text",
+            "x": 80,
+            "y": 180,
+            "width": 1100,
+            "height": 110,
+            "binding": "title",
+            "fontSize": 46,
+            "color": "#f1eee4"
+          },
+          {
+            "id": "description",
+            "kind": "text",
+            "x": 80,
+            "y": 310,
+            "width": 1100,
+            "height": 160,
+            "binding": "description",
+            "fontSize": 24,
+            "color": "#d1dace"
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 80,
+            "y": 555,
+            "width": 310,
+            "height": 52,
+            "text": "Start a new season",
+            "action": "start",
+            "fontSize": 22,
+            "color": "#ffffff",
+            "fill": "#3c6e64",
+            "radius": 10
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 420,
+            "y": 555,
+            "width": 340,
+            "height": 52,
+            "text": "Continue a saved game",
+            "action": "load",
+            "fontSize": 22,
+            "color": "#ffffff",
+            "fill": "#3c6e64",
+            "radius": 10
+          }
+        ]
+      },
+      {
+        "id": "schedule",
+        "label": "Schedule and growth",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#172b2b"
+          },
+          {
+            "id": "calendar",
+            "kind": "text",
+            "x": 32,
+            "y": 24,
+            "width": 790,
+            "height": 68,
+            "binding": "calendar"
+          },
+          {
+            "id": "save-controls",
+            "kind": "component",
+            "x": 880,
+            "y": 24,
+            "width": 360,
+            "height": 52,
+            "componentId": "save-controls"
+          },
+          {
+            "id": "stats",
+            "kind": "stats",
+            "x": 32,
+            "y": 128,
+            "width": 300,
+            "height": 470,
+            "fontSize": 24,
+            "color": "#f1eee4"
+          },
+          {
+            "id": "schedule",
+            "kind": "schedule",
+            "x": 360,
+            "y": 130,
+            "width": 880,
+            "height": 240,
+            "visibleWhen": "planning",
+            "fontSize": 24
+          },
+          {
+            "id": "result",
+            "kind": "result",
+            "x": 360,
+            "y": 390,
+            "width": 880,
+            "height": 180,
+            "visibleWhen": "result",
+            "fontSize": 24
+          },
+          {
+            "id": "hint",
+            "kind": "text",
+            "x": 360,
+            "y": 580,
+            "width": 880,
+            "height": 54,
+            "text": "Choose training, work, rest, or a garden walk. A season lasts three months.",
+            "fontSize": 20,
+            "color": "#f1eee4"
+          },
+          {
+            "id": "bond",
+            "kind": "text",
+            "x": 32,
+            "y": 620,
+            "width": 800,
+            "height": 48,
+            "binding": "relationship-value",
+            "characterId": "mira",
+            "relationshipId": "affection",
+            "valueFormat": "Mira \u00b7 affection: {value}",
+            "fontSize": 24,
+            "color": "#f1eee4"
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 990,
+            "y": 636,
+            "width": 250,
+            "height": 52,
+            "text": "Continue",
+            "action": "advance",
+            "fontSize": 22,
+            "color": "#ffffff",
+            "fill": "#3c6e64",
+            "radius": 10
+          }
+        ]
+      },
+      {
+        "id": "story",
+        "label": "Story and choices",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#172b2b"
+          },
+          {
+            "id": "save-controls",
+            "kind": "component",
+            "x": 880,
+            "y": 24,
+            "width": 360,
+            "height": 52,
+            "componentId": "save-controls"
+          },
+          {
+            "id": "speaker",
+            "kind": "text",
+            "x": 60,
+            "y": 125,
+            "width": 1130,
+            "height": 55,
+            "fontSize": 30,
+            "color": "#9fd6bd",
+            "binding": "speaker"
+          },
+          {
+            "id": "dialogue",
+            "kind": "dialogue",
+            "x": 60,
+            "y": 205,
+            "width": 1130,
+            "height": 205,
+            "fontSize": 27,
+            "color": "#f1eee4"
+          },
+          {
+            "id": "choices",
+            "kind": "choices",
+            "x": 60,
+            "y": 430,
+            "width": 1130,
+            "height": 160,
+            "visibleWhen": "choice",
+            "fontSize": 23
+          },
+          {
+            "id": "advance",
+            "kind": "button",
+            "x": 990,
+            "y": 636,
+            "width": 250,
+            "height": 52,
+            "text": "Continue",
+            "action": "advance",
+            "fontSize": 22,
+            "color": "#ffffff",
+            "fill": "#3c6e64",
+            "radius": 10
+          }
+        ]
+      },
+      {
+        "id": "ending",
+        "label": "Ending",
+        "elements": [
+          {
+            "id": "background",
+            "kind": "panel",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#172b2b"
+          },
+          {
+            "id": "save-controls",
+            "kind": "component",
+            "x": 880,
+            "y": 24,
+            "width": 360,
+            "height": 52,
+            "componentId": "save-controls"
+          },
+          {
+            "id": "season-end",
+            "kind": "text",
+            "x": 80,
+            "y": 140,
+            "width": 1100,
+            "height": 70,
+            "text": "THE END OF YOUR FIRST SEASON",
+            "fontSize": 25,
+            "color": "#f1eee4"
+          },
+          {
+            "id": "ending",
+            "kind": "text",
+            "x": 80,
+            "y": 260,
+            "width": 1100,
+            "height": 170,
+            "fontSize": 44,
+            "color": "#f1eee4",
+            "binding": "ending"
+          },
+          {
+            "id": "start",
+            "kind": "button",
+            "x": 440,
+            "y": 550,
+            "width": 400,
+            "height": 52,
+            "text": "Try another path",
+            "action": "start",
+            "fontSize": 22,
+            "color": "#ffffff",
+            "fill": "#3c6e64",
+            "radius": 10
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "id": "save-controls",
+        "label": "Save and load",
+        "width": 360,
+        "height": 52,
+        "elements": [
+          {
+            "id": "save",
+            "kind": "button",
+            "x": 0,
+            "y": 0,
+            "width": 165,
+            "height": 52,
+            "text": "Save",
+            "action": "save",
+            "fontSize": 22,
+            "color": "#ffffff",
+            "fill": "#3c6e64",
+            "radius": 10
+          },
+          {
+            "id": "load",
+            "kind": "button",
+            "x": 185,
+            "y": 0,
+            "width": 165,
+            "height": 52,
+            "text": "Load",
+            "action": "load",
+            "fontSize": 22,
+            "color": "#ffffff",
+            "fill": "#3c6e64",
+            "radius": 10
+          }
+        ]
+      }
+    ],
+    "defaultStyle": {
+      "color": "#f1eee4"
+    }
+  },
+  "localization": {
+    "defaultLocale": "en",
+    "fallbackLocale": "en",
+    "locales": [
+      {
+        "id": "en",
+        "label": "English"
+      }
+    ],
+    "entries": []
+  }
+}

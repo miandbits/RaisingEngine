@@ -474,7 +474,7 @@ public:
     }
     if (name=="description") return project.value("description","");
     if (name=="location") return gameplay().is_null()?"":gameplay().at("location").value("name","");
-    if (name=="calendar") { const auto time=display_projection.value("time",Json()); if(time.is_null())return ""; return std::to_string(time.at("year").get<int>())+"년 "+std::to_string(time.at("month").get<int>())+"월 · "+std::to_string(time.at("periodInMonth").get<int>()+1)+"번째 일정"; }
+    if (name=="calendar") { const auto time=display_projection.value("time",Json()); if(time.is_null())return ""; if(locale.rfind("en",0)==0)return "Year "+std::to_string(time.at("year").get<int>())+" · Month "+std::to_string(time.at("month").get<int>())+" · Period "+std::to_string(time.at("periodInMonth").get<int>()+1); return std::to_string(time.at("year").get<int>())+"년 "+std::to_string(time.at("month").get<int>())+"월 · "+std::to_string(time.at("periodInMonth").get<int>()+1)+"번째 일정"; }
     if (name=="ending" && !game.state.is_null() && !game.state.at("endingId").is_null()) for(const auto& e:display_content.at("endings"))if(e.at("id")==game.state.at("endingId"))return e.value("label","");
     if (name=="story") {const auto story=narrative();if(!story.is_null()){const auto& node=story.at("node");return node.value("type","")=="choice"?node.value("prompt",""):node.value("text","");}}
     if (name=="speaker") {const auto story=narrative();if(!story.is_null()&&story.at("node").contains("speakerId"))for(const auto& c:display_content.at("characters"))if(c.at("id")==story.at("node").at("speakerId"))return c.value("name","");}
@@ -795,7 +795,7 @@ public:
         if(filter=="kind:"+gallery_kind||filter=="status:"+gallery_status||(!gallery_category.empty()&&filter=="category:"+gallery_category))label="● "+label;
       }
       if(type=="advance") {
-        label=raw_phase=="planning"?"일정 확정":raw_phase=="ready"?"활동 시작":raw_phase=="activity-result"?"결과 확인 · 다음":raw_phase=="narrative"?"이야기 계속":"다음";
+        label=raw_phase=="planning"?settings_words("일정 확정","Confirm schedule","予定を確定"):raw_phase=="ready"?settings_words("활동 시작","Start activity","活動を開始"):raw_phase=="activity-result"?settings_words("결과 확인 · 다음","Continue","次へ"):raw_phase=="narrative"?settings_words("이야기 계속","Continue story","物語を続ける"):settings_words("다음","Next","次へ");
         enabled=raw_phase!="title"&&raw_phase!="finished"&&raw_phase!="battle"&&raw_phase!="expedition"&&phase()!="choice";
         if(!e.value("autoLabel",true)){label=e.value("text","");if(raw_phase=="planning"&&plan_month>=0&&plan_selected!=((1<<game.periods())-1))enabled=false;}
       }
@@ -848,11 +848,13 @@ public:
     if(kind=="schedule") {
       if(e.value("scheduleLayout","columns")=="board")return schedule_board(e);
       if(e.value("scheduleLayout","columns")!="columns")return calendar_schedule(e);
-      if(plan.size()!=size_t(game.periods())) {plan.clear();for(int i=0;i<game.periods();i++)plan.push_back(display_content.at("activities").at(0).value("id",""));}
+      ensure_plan();
+      for(auto& id:plan)if(id.empty())id=display_content.at("activities").at(0).value("id","");
+      plan_selected=(1<<game.periods())-1;
       const int period=game.state.is_null()?0:game.state.value("periodIndex",0)%game.periods();
       const bool editable=!progress_pending()&&!game.state.is_null()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
       const auto column_width=std::max(70.0,(e.value("width",888.0)-12)/game.periods());
-      for(int i=0;i<game.periods();i++) {out+="<div class=\"schedule-row\" style=\"width:"+number(column_width)+"px;\"><span>"+std::to_string(i+1)+"번째 일정</span><select style=\"width:"+number(column_width-16)+"px;\" id=\"plan-"+std::to_string(i)+"\""+(i<period||!editable?" disabled=\"disabled\"":"")+">";
+      for(int i=0;i<game.periods();i++) {out+="<div class=\"schedule-row\" style=\"width:"+number(column_width)+"px;\"><span>"+settings_words(std::to_string(i+1)+"번째 일정","Period "+std::to_string(i+1),std::to_string(i+1)+"番目の予定")+"</span><select style=\"width:"+number(column_width-16)+"px;\" id=\"plan-"+std::to_string(i)+"\""+(i<period||!editable?" disabled=\"disabled\"":"")+">";
         for(const auto& a:display_content.at("activities")){const auto summary=activity_preview(a);out+="<option style=\"width:"+number(column_width-32)+"px;"+(summary.empty()?std::string():"height:auto;min-height:40px;white-space:normal;")+"\" id=\"plan-"+std::to_string(i)+"-option-"+escape(a.value("id",""))+"\" value=\""+escape(a.value("id",""))+"\""+(plan[i]==a.at("id")?" selected=\"selected\"":"")+">"+escape(a.value("label","")+(summary.empty()?"":" · "+summary))+"</option>";}
         out+="</select><span class=\"dropdown-marker\">▼</span>";
         std::string selected_summary;for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])selected_summary=activity_preview(a);

@@ -870,6 +870,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
 #include "narrative-table.inc"
 #include "gameplay-table.inc"
 #include "layout-table.inc"
+  auto firstGameAction = contentMenu->addAction(tr("My first raising game · checklist"), this, &StudioWindow::showFirstGameChecklist);
+  firstGameAction->setObjectName("showFirstGameChecklist");
+  contentMenu->addAction(tr("Recover unsaved work..."), this, &StudioWindow::showDraftRecovery)->setObjectName("showDraftRecovery");
+  toolbar->addAction(firstGameAction);
   contentMenu->addAction(tr("처음 만드는 게임 · 제작 순서…"),this,&StudioWindow::showGettingStarted)->setObjectName("showGettingStarted");
   contentMenu->addAction(tr("기본 플레이 화면 생성…"),this,&StudioWindow::initializeStarterScreens)->setObjectName("initializeStarterScreens");
   contentMenu->addAction(tr("관계 표시 배치…"),this,&StudioWindow::addRelationshipDisplay)->setObjectName("addRelationshipDisplay");
@@ -1181,12 +1185,16 @@ void StudioWindow::request(QString method, QJsonObject params,
     if(reply.contains("localizationSources"))view["localizationSources"]=reply["localizationSources"];
     if (reply.contains("assets"))
       assets = reply["assets"].toArray();
+    if (reply.contains("firstGame")) firstGameState = reply.value("firstGame").toObject();
+    if (reply.contains("releaseCompatibility")) releaseCompatibility = reply.value("releaseCompatibility").toObject();
+    if (reply.contains("recovery")) recoveryState = reply.value("recovery").toObject();
     lastError = reply["error"].toString();
     // An old service sends views without `plugins`: treat that as "no plugins".
     // `plugins:null` (status itself failed) keeps the last known state.
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
+      firstGameObserved.clear();
       ProjectManager::remember(view.value("root").toString());
       if(recordingRoot!=view.value("root").toString()){lastRecording.clear();lastGoalReport={};lastGoalImpact={};recordingRoot=view.value("root").toString();if(auto dialog=findChild<QDialog*>("goalRoutesDialog"))dialog->close();}
       conditionPreview={};
@@ -1222,6 +1230,9 @@ void StudioWindow::request(QString method, QJsonObject params,
     if (pluginReply) applyPluginState(plugins->state());
     else plugins->notifyViewChanged();
     emit updated();
+    if (method == "open" && lastError.isEmpty()) QTimer::singleShot(0, this, [this]{ if(!busy())request("recoveryList", {}, [this](QJsonObject r){ for(const auto v:r["recoveries"].toArray())if(!v.toObject()["current"].toBool()){ statusBar()->showMessage(tr("Unsaved work is available. Use Authoring tools > Recover unsaved work."), 15000); break; } }); });
+    if ((method == "open" || method == "create") && lastError.isEmpty() && !firstGameState.isEmpty())
+      QTimer::singleShot(0, this, &StudioWindow::showFirstGameChecklist);
   });
 }
 void StudioWindow::openProject(const QString &root) {
@@ -1792,6 +1803,7 @@ void StudioWindow::receivePlayer() {
       continue;
     auto ui = event["view"].toObject();
     auto state = ui["state"].toObject();
+    observeFirstGamePlay(state);
     auto attrs = state["attributes"].toObject();
     auto inventory = state["gameplay"].toObject()["inventory"].toObject();
     QMap<QString, QString> names;
@@ -1874,7 +1886,7 @@ bool StudioWindow::mayDiscard() {
   QMessageBox dialog(QMessageBox::Warning,tr("저장되지 않은 변경"),tr("프로젝트에 저장하지 않은 변경이 있습니다. 저장하고 계속하시겠습니까?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,this);
   dialog.setObjectName("unsavedChangesDialog");dialog.setDefaultButton(QMessageBox::Save);dialog.setEscapeButton(QMessageBox::Cancel);
   dialog.button(QMessageBox::Save)->setText(tr("저장하고 계속"));dialog.button(QMessageBox::Discard)->setText(tr("저장하지 않고 계속"));dialog.button(QMessageBox::Cancel)->setText(tr("취소"));
-  const auto choice=dialog.exec();if(choice==QMessageBox::Cancel)return false;if(choice==QMessageBox::Discard)return true;
+  const auto choice=dialog.exec();if(choice==QMessageBox::Cancel)return false;if(choice==QMessageBox::Discard){request("discardDraftRecovery");return waitForPendingEdits()&&lastError.isEmpty();}
   request("save");
   return waitForPendingEdits()&&lastError.isEmpty()&&!view.value("dirty").toBool();
 }

@@ -4,11 +4,11 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const repository=fileURLToPath(new URL('..',import.meta.url));
-export async function prepareNativeDependencies(root=repository){
+export async function prepareNativeDependencies(root=repository, {ios=process.platform==='darwin'}={}){
   const lock=JSON.parse(await readFile(path.join(root,'config/native-dependencies.json'),'utf8'));
   const vendor=path.resolve(root,'native/player/vendor');await mkdir(vendor,{recursive:true});
   const git=(args,options={})=>execFileSync('git',args,{encoding:'utf8',windowsHide:true,...options});
-  for(const dependency of lock.dependencies){
+  for(const dependency of [...lock.dependencies,...(ios?lock.iosDependencies??[]:[])]){
     const target=path.resolve(vendor,dependency.path);
     if(!target.startsWith(vendor+path.sep)||!/^[a-f0-9]{40}$/.test(dependency.commit))throw Error('Invalid native dependency lock');
     // Never reset an existing dependency checkout or overwrite local source changes.

@@ -7,9 +7,10 @@ import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 
 const features=['renderer-preview-v1','scene-preview-v1','scene-portrait-transform-v1'];
 const scene={backgroundAssetId:'visual-library',portraits:[{characterId:'mentor',portraitId:'visual-neutral',position:'left',scale:.625123456,offsetX:-.2,offsetY:.1}]};
+// Draft recovery is intentional local metadata; authored files and other journals stay unchanged.
 async function hashes(root){
  const result={};
- async function scan(directory){for(const entry of await readdir(directory,{withFileTypes:true})){const file=path.join(directory,entry.name);if(entry.isDirectory())await scan(file);else result[path.relative(root,file)]=createHash('sha256').update(await readFile(file)).digest('hex');}}
+ async function scan(directory){for(const entry of await readdir(directory,{withFileTypes:true})){const file=path.join(directory,entry.name);if(path.relative(root,file).split(path.sep).join('/')==='.studio/recovery')continue;if(entry.isDirectory())await scan(file);else result[path.relative(root,file)]=createHash('sha256').update(await readFile(file)).digest('hex');}}
  await scan(root);return result;
 }
 async function fixture(capabilities=features){
@@ -18,7 +19,7 @@ async function fixture(capabilities=features){
  // Never launched: packaging/capability test stub only.
  await writeFile(path.join(runtime,'RaisingPlayer.exe'),'scene-preview service contract fixture');
  await writeFile(path.join(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:[],visualFeatures:capabilities}));
- const service=new QtStudioService({runtimes:{windows:runtime,web:runtime}});await service.handle({method:'open',params:{root}});
+ const service=new QtStudioService({nativeTarget:'windows',runtimes:{windows:runtime,web:runtime}});await service.handle({method:'open',params:{root}});
  const replaceTitle=title=>{const data=structuredClone(service.editor.documents.find(d=>d.kind==='project').data);data.title=title;service.editor.edit({type:'replace',file:'project.json',data},service.editor.revision);};
  return {root,runtime,service,replaceTitle};
 }

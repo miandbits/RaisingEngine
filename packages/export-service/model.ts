@@ -8,4 +8,4 @@ export interface PresentationRevision {
 }
 /** `extensions` exists only when a screen uses a plugin element (plugin-host CONTRACT §6). */
 export interface GameBundle { formatVersion: '1'; content: ContentSnapshot; assets: Record<string, string>; extensions?: GameExtensions; presentationRevision?: PresentationRevision }
-export type ExportTarget = 'web' | 'windows';
+export type ExportTarget = 'web' | 'windows' | 'macos' | 'ios';

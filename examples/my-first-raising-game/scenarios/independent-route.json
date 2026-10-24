@@ -1,0 +1,86 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "independent-route",
+  "description": "A complete starter route with save/replay coverage.",
+  "seed": 42,
+  "initialOverrides": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "commands": [
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "walk",
+        "rest",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": [
+        {
+          "eventId": "garden-invitation",
+          "nodeId": "invitation",
+          "choiceId": "decline"
+        }
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "rest",
+        "rest",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "ending",
+      "endingId": "own-path"
+    }
+  ],
+  "stepLimit": 500
+}

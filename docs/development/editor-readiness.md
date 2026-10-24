@@ -26,3 +26,17 @@
 5. **플랫폼 차이 축소와 배포**: 지원표의 차이부터 실제 런타임으로 해소하고 실기·입력·오디오·접근성 검증으로 이어간다. 지원 선언만으로 완료 처리하지 않는다.
 
 완성도를 하나의 백분율로 표시하지 않는다. 새 기능의 개수보다, 실제 제작자가 반복 작업을 얼마나 적게 하고 실수에서 얼마나 쉽게 회복하는지를 다음 개선의 기준으로 삼는다.
+
+## P0 → P1 creator workflow — 2026-10-23 implementation
+
+| Roadmap area | Implementation and repeatable check | Remaining gate |
+| --- | --- | --- |
+| Complete starter and optional checklist | Three-month starter; actual edit/play/export evidence; stable completion after adding documents and reopening | Observe unfamiliar designers; internal automation is not the acceptance study |
+| Safe authoring | Existing named forms, Connections, undo/redo and validation navigation; new per-session recovery with imported files, restored into a separate project | Unapplied form text is outside recovery; media-heavy long sessions need separate study |
+| Explain and repeat playtests | Named routes and first-divergence comparison retained; event/ending inspector displays actual values, selection priority and timing limits | Bounded search does not prove unreachability |
+| Release loop | Early target compatibility, release version, launch, local Web server, game/project ZIPs, hashed dependency manifest and save-update guidance | Public signing/notarization, clean machines, third-party license review and physical iOS devices |
+| P1 regression and performance | `test:creator-smoke`, actual Qt form journey, native and Web route checks, standalone Mac package gate, CI definitions and `benchmark:creator` | New workflow has to run on GitHub; Windows package regression must run on Windows |
+
+Measured locally on Apple M5 Pro / macOS arm64 / Node 22.23.4: the starter's median edit including recovery was 4.7 ms; the synthetic 517-document project's was 32.5 ms (first 73.2 ms), opening 138.8 ms median, validation 22.7 ms median, save 218.4 ms. Five edit/view samples and three open/validation samples are a small investigation baseline, not a universal performance guarantee. Timings include service compatibility/recovery work, but exclude Qt painting and large imported media. The benchmark emits the full repeatable report under `.cache/creator-benchmark/`.
+
+The independent acceptance gate remains **four of five unfamiliar designers customizing and exporting without intervention, plus another person playing the export**. No human study, App Store release, Developer ID notarization or Windows rerun is claimed by this macOS implementation session. Technical smoke completion and external release acceptance are tracked separately.

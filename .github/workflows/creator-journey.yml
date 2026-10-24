@@ -1,0 +1,189 @@
+name: Creator journey
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  creator-services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_NATIVE_TRANSPORT: process
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:headless
+      - run: npm run test:creator-smoke
+      - run: npm run benchmark:creator
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: creator-service-evidence
+          path: |
+            .cache/creator-smoke/
+            .cache/creator-benchmark/latest.json
+          include-hidden-files: true
+          retention-days: 14
+  windows-package:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_NATIVE_TRANSPORT: process
+      BUILD_JOBS: '3'
+      QT_ROOT: C:/Qt/6.10.1/mingw_64
+      QT_COMPILER: C:/Qt/Tools/mingw1310_64/bin
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test
+      QT_PACKAGE_OUT: release/qt-ci/RaisingStudio
+      QT_INSTALLER_OUT: release/qt-ci/RaisingStudio-P1-Windows.exe
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install matching Qt and MinGW toolchain
+        shell: pwsh
+        run: |
+          python -m pip install aqtinstall==3.3.0
+          python -m aqt install-qt windows desktop 6.10.1 win64_mingw --outputdir C:/Qt --modules qtimageformats
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --outputdir C:/Qt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          'C:/Qt/Tools/mingw1310_64/bin' >> $env:GITHUB_PATH
+          'C:/Qt/6.10.1/mingw_64/bin' >> $env:GITHUB_PATH
+          "NINJA=$((Get-Command ninja).Source.Replace('\','/'))" >> $env:GITHUB_ENV
+      - run: npm ci
+      - run: npm run build:headless
+      - run: npm run build:player
+      - run: npm run build:studio
+      - name: Install the pinned Web compiler
+        shell: pwsh
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git .cache/emsdk
+          git -C .cache/emsdk checkout 35ff8a6d150541276abbc6bae512ca90bcfbe220
+          python .cache/emsdk/emsdk.py install 6.0.12
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python .cache/emsdk/emsdk.py activate 6.0.12
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "EMSDK=$env:GITHUB_WORKSPACE/.cache/emsdk" >> $env:GITHUB_ENV
+      - run: npm run build:web
+      - run: npx playwright install chromium
+      - name: Test the creator journey on Windows
+        run: npm run test:creator-smoke -- --web --desktop
+      - name: Package the current source with verified Qt sources
+        run: |
+          node scripts/prepare-qt-sources.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm run package:qt-studio
+      - name: Test the packaged starter without developer tools on PATH
+        run: node scripts/test-windows-first-game-package.mjs "$env:QT_PACKAGE_OUT"
+      - name: Test portable installation and exports
+        run: npm run test:qt-package -- --portable
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          choco install nsis --version=3.11 -y --no-progress
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:NSIS_COMPILER = 'C:/Program Files (x86)/NSIS/makensis.exe'
+          node scripts/build-qt-installer.mjs
+      - name: Test install, exported game, save/load and safe uninstall
+        run: npm run test:qt-package
+      - name: Publish Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-creator-evidence
+          path: |
+            .cache/creator-smoke/
+            .cache/first-game-ui/latest.json
+            .cache/first-game-ui/run-*/ui.txt
+            .cache/first-game-ui/run-*/checklist.png
+            .cache/first-game-native/latest.json
+            .cache/first-game-web/latest.json
+            .cache/first-game-web/run-*/result.json
+            .cache/first-game-web/run-*/*.png
+            .cache/windows-first-game-package/result.json
+            .cache/qt-release/latest.json
+            .cache/qt-release/run-*/evidence/*.json
+            .cache/qt-release/run-*/evidence/*.txt
+            release/qt-ci/RaisingStudio/package-manifest.json
+            release/qt-ci/*.exe.json
+          include-hidden-files: true
+          retention-days: 14
+      - name: Upload tested installer for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-p1-installer
+          path: release/qt-ci/RaisingStudio-P1-Windows.exe
+          if-no-files-found: error
+          retention-days: 14
+  macos-package:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      BUILD_JOBS: '3'
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test
+      MACOS_STUDIO_OUT: dist/macos/RaisingStudio.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - run: brew install qt cmake ninja
+      - run: npm ci
+      - run: npm run build:headless
+      - run: npm run build:player
+      - run: npm run build:studio
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install the pinned Web compiler
+        shell: bash
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git .cache/emsdk
+          git -C .cache/emsdk checkout 35ff8a6d150541276abbc6bae512ca90bcfbe220
+          .cache/emsdk/emsdk install 6.0.12
+          .cache/emsdk/emsdk activate 6.0.12
+      - name: Build Web player
+        run: EMSDK="$PWD/.cache/emsdk" npm run build:web
+      - run: npx playwright install chromium
+      - name: Package and test the actual bundled services
+        shell: bash
+        run: |
+          export MACOS_NODE_ROOT="$(dirname "$(dirname "$(command -v node)")")"
+          npm run package:macos
+          npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
+          npm run benchmark:creator
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-creator-evidence
+          path: |
+            .cache/creator-smoke/
+            .cache/first-game-ui/latest.json
+            .cache/first-game-ui/run-*/ui.txt
+            .cache/first-game-ui/run-*/checklist.png
+            .cache/first-game-web/latest.json
+            .cache/first-game-web/run-*/result.json
+            .cache/first-game-web/run-*/*.png
+            .cache/first-game-native/latest.json
+            .cache/first-game-package/run-*/result.json
+            .cache/creator-benchmark/latest.json
+          include-hidden-files: true
+          retention-days: 14

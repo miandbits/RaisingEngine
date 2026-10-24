@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
   QApplication app(argc, argv);
   app.setOrganizationName("RaisingEngine");
   app.setApplicationName("Raising Studio Qt");
-  const auto bundledPlayer=QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("player-runtime");
+  const auto bundledPlayer=QDir(studioResourceRoot()).absoluteFilePath("player-runtime");
   if(qEnvironmentVariableIsEmpty("RAISING_NATIVE_PLAYER_RUNTIME")&&QFileInfo::exists(bundledPlayer+"/build.json"))
     qputenv("RAISING_NATIVE_PLAYER_RUNTIME",bundledPlayer.toUtf8());
   applyStudioTheme(app);

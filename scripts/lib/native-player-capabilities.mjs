@@ -1,0 +1,8 @@
+export function nativePlayerCapabilities(platform) {
+  const value = { formatVersion:'1',runtime:'cpp-sdl-rmlui',
+  toolFeatures:['goal-route-recording-v1'],
+  visualFeatures:['editor-live-preview-v1','activity-rules-summary-v1','narrative-actor-binding-v1','story-appointments-v1','actor-story-links-v1','choice-feedback-v1','schedule-board-icons-v1','authored-playback-controls-v1','data-meters-v1','dialogue-controls-v1','player-settings-v1','save-slots-v1','save-panel-v1','narrative-cards-v1','schedule-board-v1','authoring-preview-v1','gallery-branches-v1','recollection-playback-v1','authored-recollection-v1','authored-gallery-v1','media-gallery-v2','narrative-gallery-v1','unified-time-v2','party-tactics-v1','expedition-conditions-v1','direction-sequences-v1','ui-composition-v1','progression-sessions-v1','character-scoped-rules-v1','roster-activities-v1','components-v1','anchors-v1','responsive-v1','renderer-preview-v1','scene-preview-v1','facilities-v1','generic-rules-v1','action-flows-v1','data-ui-v1','activity-timeline-v1','battle-hud-v1','ui-hierarchy-v1','user-fields-v1','activity-summary-v1','scene-portrait-transform-v1','relationship-change-v1','free-screens-v1','presentation-variants-v1','custom-states-v1','conditional-routing-v1','component-context-v1','monthly-schedule-v1','inline-result-playback-v1','probabilistic-actions-v1','optional-confirmation-v1','plugin-elements-v1','plugin-mesh-v1','plugin-atlas-v1'],
+  fontExtensions:['.ttf','.otf'],imageExtensions:['.png','.jpg','.jpeg','.webp'],audioExtensions:['.wav','.mp3','.ogg','.flac'] };
+  if (platform !== "win32") value.visualFeatures = value.visualFeatures.filter(feature => !["plugin-elements-v1", "plugin-mesh-v1", "plugin-atlas-v1"].includes(feature));
+  return value;
+}

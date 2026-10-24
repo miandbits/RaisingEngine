@@ -5,7 +5,8 @@ import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 const stable=view=>Object.fromEntries(['revision','dirty','undo','redo','draftVersion','diskVersion','documents'].map(key=>[key,view[key]]));
-async function hashes(root){const result={};async function visit(dir){for(const e of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,e.name);if(e.isDirectory())await visit(file);else result[path.relative(root,file)]=createHash('sha256').update(await readFile(file)).digest('hex');}}await visit(root);return result;}
+// Draft recovery is intentional local metadata; authored files and other journals stay unchanged.
+async function hashes(root){const result={};async function visit(dir){for(const e of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,e.name);if(path.relative(root,file).split(path.sep).join('/')==='.studio/recovery')continue;if(e.isDirectory())await visit(file);else result[path.relative(root,file)]=createHash('sha256').update(await readFile(file)).digest('hex');}}await visit(root);return result;}
 async function fixture(){
  await mkdir('.cache/qt-export-tests',{recursive:true});const work=await mkdtemp(path.resolve('.cache/qt-export-tests/run-'));
  const root=path.join(work,'project'),runtime=path.join(work,'runtime');await cp('examples/academy-visual',root,{recursive:true});await mkdir(runtime);

@@ -6,13 +6,13 @@ import { decodeSave } from '../runtime-service/save.js';
 import { canonicalJson } from '../project-service/snapshot.js';
 
 type Row = Record<string, any>;
-export interface DebugSubject { kind: 'action' | 'event'; id: string; actorId?: string }
+export interface DebugSubject { kind: 'action' | 'event' | 'ending'; id: string; actorId?: string }
 export interface DebugDiff { path: string; before: unknown; after: unknown }
 export interface ConditionNode {
   path: string; op: string; value: unknown; children: ConditionNode[];
   kind?: 'condition' | 'expression';
   comparator?: string; leftValue?: unknown; rightValue?: unknown;
-  error?: unknown;
+  error?: unknown; label?: string; summary?: string;
 }
 const pointer = (value: string) => value.replace(/~/g, '~0').replace(/\//g, '~1');
 const object = (value: unknown): value is Row => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -121,11 +121,40 @@ export class RuleDebugSession {
         result.children.push(this.expressionTree(condition[side], `${path}/${side}`));
       }
     }
+    const target = condition.left?.op === 'read' ? condition.left.target : null;
+    if(target) {
+      result.label = target.kind === 'attribute' ? (this.content.attributes.find(a=>a.id===target.attributeId)?.label ?? target.attributeId)
+        : target.kind === 'relationship' ? this.content.characters.find(c=>c.id===target.characterId)?.name + ' / ' + (this.content.characters.find(c=>c.id===target.characterId)?.relationships.find(r=>r.id===target.relationshipId)?.label ?? target.relationshipId) : 'Value';
+      result.label ??= target.attributeId ?? 'Value';
+      const comparison: Record<string,string> = {gte:'at least',gt:'more than',lte:'at most',lt:'less than',eq:'equal to',ne:'different from'};
+      result.summary = `${result.label??'Value'} is ${String(result.leftValue)}; requires ${comparison[condition.comparator]??condition.comparator} ${String(result.rightValue)}.`;
+    }
+    if(condition.op==='flag')result.label=this.content.flags.find(f=>f.id===condition.flagId)?.label??condition.flagId;
+    if(condition.op==='eventCompleted')result.label='Completed: '+(this.content.events.find(e=>e.id===condition.eventId)?.label??condition.eventId);
     if (condition.op === 'flag') { result.leftValue = evaluated.ok ? (evaluated.value ? condition.equals : !condition.equals) : null; result.rightValue = condition.equals; }
     if (condition.op === 'eventCompleted') { result.leftValue = evaluated.ok?evaluated.value:null; result.rightValue = true; }
     if (Array.isArray(condition.conditions)) result.children = condition.conditions.map((child: Row, index: number) => this.tree(child, `${path}/conditions/${index}`));
     if (object(condition.condition)) result.children.push(this.tree(condition.condition, `${path}/condition`));
     return result;
+  }
+  private inspectEnding(subject: DebugSubject, definition: Row, path: string): Row {
+    const fallback = this.content.project.defaultEndingId;
+    const ordered = [...this.content.endings].filter(e => e.id !== fallback).sort((a,b) => b.priority-a.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const candidates = ordered.map(ending => {
+      const result = this.native({operation:'evaluate',state:this.inspectionState??this.current,condition:ending.requirements});
+      if(!result.ok)throw new Error(result.error?.message??'Ending requirements could not be checked.');
+      return {id:ending.id,label:ending.label,priority:ending.priority,matched:result.value===true};
+    });
+    const selectedId = candidates.find(e => e.matched)?.id ?? fallback;
+    const selected = this.content.endings.find(e => e.id === selectedId)!;
+    const condition = this.tree(definition.requirements ?? {op:'always'}, `${path}/requirements`);
+    const eligible = selectedId === subject.id;
+    const reason = eligible ? (subject.id===fallback ? 'The fallback ending is selected because no conditional ending matches.' : 'This ending has the highest priority among matching endings.')
+      : condition.value !== true && subject.id!==fallback ? 'The requirements are not met. Check the current values below.'
+      : `“${selected.label}” is selected first by ending priority (ties use the stable identifier).`;
+    return this.view({inspection:{subject,label:definition.label,path,source:{documentKind:'ending',documentId:subject.id,path:''},eligible,reason,condition,
+      selectedEndingId:selectedId,candidates,checks:[{kind:'Timing',reason:'This shows which ending would be selected if the season ended with these values. It is not a reachability search.'},
+        ...(subject.id===fallback?[{kind:'Fallback',reason:'The default ending does not require its condition to pass.'}]:[])],preview:{ok:true,diff:[]},trace:[]}});
   }
   /** Inspect an editor-owned snapshot without replacing the debug session or running commands. */
   inspectSnapshot(state: RunState, subject: DebugSubject): Row {
@@ -134,8 +163,8 @@ export class RuleDebugSession {
     finally { this.current = previous; }
   }
   inspect(subject: DebugSubject): Row {
-    if (!subject || !['action', 'event'].includes(subject.kind) || typeof subject.id !== 'string') throw new Error('검사할 행동 또는 사건을 선택하세요.');
-    const rows = subject.kind === 'action' ? this.content.project.gameplay?.actions ?? [] : this.content.events;
+    if (!subject || !['action', 'event', 'ending'].includes(subject.kind) || typeof subject.id !== 'string') throw new Error('검사할 행동 또는 사건을 선택하세요.');
+    const rows = subject.kind === 'action' ? this.content.project.gameplay?.actions ?? [] : subject.kind === 'ending' ? this.content.endings : this.content.events;
     const index = rows.findIndex(row => row.id === subject.id);
     if (index < 0) throw new Error(`검사 대상이 없습니다: ${subject.id}`);
     if(subject.actorId && (this.content.project.roster?.stateModel!=='character-v1'||!this.content.project.roster.members.some(m=>m.characterId===subject.actorId)))throw new Error('검사할 육성 대상이 없습니다.');
@@ -144,7 +173,8 @@ export class RuleDebugSession {
     this.inspectionState=inspectionState;
     try {
     const definition = rows[index] as unknown as Row;
-    const path = subject.kind === 'action' ? `/project/gameplay/actions/${index}` : `/events/${index}`;
+    const path = subject.kind === 'action' ? `/project/gameplay/actions/${index}` : `/${subject.kind === 'ending' ? 'endings' : 'events'}/${index}`;
+    if(subject.kind === 'ending')return this.inspectEnding(subject, definition, path);
     const result = subject.kind === 'action'
       ? this.native({ operation: 'inspect', state: this.current, command: { type: subject.actorId?'executeActorAction':'executeAction', actionId: subject.id, quantity: 1, ...(subject.actorId?{actorId:subject.actorId}:{}) }, expectedRevision: this.current.stateRevision })
       : this.native({ operation: 'inspect', state: inspectionState, subject });
