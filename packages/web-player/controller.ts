@@ -35,20 +35,20 @@ function canonical(value: unknown): string {
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`).join(',')}}`;
   return JSON.stringify(value);
 }
-function parseSave(text: string): unknown {
-  if (new TextEncoder().encode(text).length > MAX_BYTES) throw new Error('세이브는 16 MiB 이하여야 합니다.');
+function parseSave(text: string,locale:string): unknown {
+  if (new TextEncoder().encode(text).length > MAX_BYTES) throw new Error(slotWords(locale,'세이브는 16 MiB 이하여야 합니다.','Saves must be no larger than 16 MiB.','セーブは16MiB以下にしてください。'));
   const errors: ParseError[] = [];
   const tree = parseTree(text, errors, { disallowComments: true, allowTrailingComma: false, allowEmptyContent: false });
-  if (!tree || errors.length) throw new Error('올바른 JSON 세이브가 아닙니다.');
+  if (!tree || errors.length) throw new Error(slotWords(locale,'올바른 JSON 세이브가 아닙니다.','This is not a valid JSON save.','正しいJSONセーブではありません。'));
   const pending: { node: Node; depth: number }[] = [{ node: tree, depth: 0 }];
   while (pending.length) {
     const { node, depth } = pending.pop()!;
-    if (depth > 128) throw new Error('세이브 구조가 너무 깊습니다.');
+    if (depth > 128) throw new Error(slotWords(locale,'세이브 구조가 너무 깊습니다.','The save structure is too deeply nested.','セーブの構造が深すぎます。'));
     if (node.type === 'object') {
       const keys = new Set<string>();
       for (const p of node.children ?? []) {
         const key = p.children?.[0]?.value as string;
-        if (keys.has(key)) throw new Error(`세이브에 중복된 키가 있습니다: ${key}`);
+        if (keys.has(key)) throw new Error(slotWords(locale,'세이브에 중복된 키가 있습니다: ','The save contains a duplicate key: ','セーブに重複したキーがあります: ')+key);
         keys.add(key);
       }
     }
@@ -86,7 +86,7 @@ export class WebPlayerController implements PlayerBridge {
   private slotAutoPhase='';
   private slotLastCommand='start';
   private get hasSlots(){return slotsEnabled(this.content.project.visual);}
-  private words(ko:string,en:string,ja:string){return slotWords(this.locale,ko,en,ja);}
+  private words(ko:string,en:string,ja:string){return slotWords(localeId(this.content.project.localization,this.locale),ko,en,ja);}
   private projection(state = this.session?.state ?? null,content=this.content): Exclude<Projection, Failure> {
     const cached=this.projections.get(content);if(cached?.state===state)return cached.result;
     const result = this.runtime.request({ operation: 'view', content, state }) as Projection;
@@ -121,11 +121,11 @@ export class WebPlayerController implements PlayerBridge {
   }
   async view() { return this.reply(); }
   async setLocale(locale:string){if(!this.content.project.localization?.locales.some(l=>l.id===locale))return this.reply('등록되지 않은 언어입니다.');this.locale=locale;return this.reply();}
-  async openProject() { return this.reply(null, '이 플레이어는 내보낸 게임 전용입니다.'); }
+  async openProject() { return this.reply(null, this.words('이 플레이어는 내보낸 게임 전용입니다.','This player opens exported games only.','このプレイヤーは書き出されたゲーム専用です。')); }
   async openYearSample() { return this.openProject(); }
   async newRun(version: Version | null, userValues?: Record<string, string>): Promise<PlayerReply> {
     if (this.slotBusy||this.slotView.screenId) return this.reply('Close the records window before starting a new game.');
-    if (!this.current(version)) return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
+    if (!this.current(version)) return this.reply(this.words('화면이 갱신되었습니다. 다시 선택해 주세요.','The screen changed. Please select again.','画面が更新されました。もう一度選んでください。'));
     // Validate before the WASM JSON boundary can omit undefined values or reject lone surrogates.
     try { resolveUserValues(this.content.project.userFields, userValues); }
     catch (error) { if (error instanceof CoreFault) { const issue = error.diagnostic(); return this.reply(`${issue.message} (${issue.path})`); } throw error; }
@@ -163,11 +163,11 @@ export class WebPlayerController implements PlayerBridge {
     return '자동 진행 한도를 초과했습니다. 대본을 확인해 주세요.';
   }
   async act(action: PlayerAction, version: Version): Promise<PlayerReply> {
-    if (!this.current(version)) return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
+    if (!this.current(version)) return this.reply(this.words('화면이 갱신되었습니다. 다시 선택해 주세요.','The screen changed. Please select again.','画面が更新されました。もう一度選んでください。'));
     if (this.slotBusy||this.slotView.screenId) return this.reply();
-    if (!this.session) return this.reply('새 게임을 시작해 주세요.');
-    if (this.extensions?.restorationPending) return this.reply('화면 복원 후 다시 선택해 주세요.');
-    if (this.extensions?.presentationPending) return this.reply('화면 갱신 후 다시 선택해 주세요.');
+    if (!this.session) return this.reply(this.words('새 게임을 시작해 주세요.','Start a new game first.','先に新しいゲームを始めてください。'));
+    if (this.extensions?.restorationPending) return this.reply(this.words('화면 복원 후 다시 선택해 주세요.','Wait for the screen to restore, then select again.','画面の復元後にもう一度選んでください。'));
+    if (this.extensions?.presentationPending) return this.reply(this.words('화면 갱신 후 다시 선택해 주세요.','Wait for the screen to update, then select again.','画面の更新後にもう一度選んでください。'));
     if(action.type==='scheduleStep'){
       const completionFlag=this.content.project.periodFlow?.intermission?.completionFlagId;
       if(this.session.state.activityIntermission&&completionFlag&&!this.session.state.flags[completionFlag])return this.reply();
@@ -175,7 +175,7 @@ export class WebPlayerController implements PlayerBridge {
     }
     if(['timelineTick','timelinePause','timelineSpeed','timelineSkip'].includes(action.type))return this.reply(this.presentation.act(this.content,this.session.state,action as TimelineAction));
     const timeline=this.presentation.view(this.content,this.session.state);
-    if(timeline&&(action.type!=='continue'||!timeline.cursor.completed))return this.reply('활동 연출을 마치거나 건너뛴 뒤 다음으로 진행해 주세요.');
+    if(timeline&&(action.type!=='continue'||!timeline.cursor.completed))return this.reply(this.words('활동 연출을 마치거나 건너뛴 뒤 다음으로 진행해 주세요.','Finish or skip the activity presentation before continuing.','活動の演出を終了するかスキップしてから進んでください。'));
     let battleCommand:unknown;
     if(battleUiTypes.includes(action.type??'')){
       const selected=selectBattle(this.content,this.session.state,this.presentation.selectedBattle(this.content,this.session.state),action as BattleUiAction,input=>this.runtime.request(input));
@@ -205,7 +205,7 @@ export class WebPlayerController implements PlayerBridge {
   }
   private encode(record?:SaveRecord):string {
     if(!this.session)throw new Error('No game to save.');
-    if(this.extensions?.presentationPending)throw new Error('화면 갱신 후 다시 저장해 주세요.');
+    if(this.extensions?.presentationPending)throw new Error(this.words('화면 갱신 후 다시 저장해 주세요.','Wait for the screen to update, then save again.','画面の更新後にもう一度保存してください。'));
     const extensions=this.extensions?.save(true);
     const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions||record?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{}),...(record?{saveRecord:record}:{})}:undefined;
     const text=canonical({saveVersion:'1.0.0',coreVersion:CORE_VERSION,contentFingerprint:this.content.contentFingerprint,origin:this.session.origin,commands:this.session.commands,state:this.session.state,...(presentation?{playerPresentation:presentation}:{})});
@@ -214,30 +214,30 @@ export class WebPlayerController implements PlayerBridge {
   }
   async save(version:Version):Promise<PlayerReply>{
     if(this.hasSlots)return this.slots({type:'open',kind:'save'},version);
-    if(!this.session||!this.current(version))return this.reply('저장할 현재 게임이 없습니다.');
-    try{await this.files.write(this.encode());return this.reply(null,'게임을 저장했습니다.');}catch(error){return this.reply(String(error));}
+    if(!this.session||!this.current(version))return this.reply(this.words('저장할 현재 게임이 없습니다.','There is no current game to save.','保存するゲームがありません。'));
+    try{await this.files.write(this.encode());return this.reply(null,this.words('게임을 저장했습니다.','Game saved.','ゲームを保存しました。'));}catch(error){return this.reply(String(error));}
   }
   async load(version:Version|null):Promise<PlayerReply>{
     if(this.hasSlots)return this.slots({type:'open',kind:'load'},version);
-    if(!this.current(version))return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
+    if(!this.current(version))return this.reply(this.words('화면이 갱신되었습니다. 다시 선택해 주세요.','The screen changed. Please select again.','画面が更新されました。もう一度選んでください。'));
     try{const text=await this.files.read();if(text===null)return this.reply();if(!this.current(version))return this.reply('Game changed while importing.');return this.restore(text);}catch(error){return this.reply(String(error));}
   }
   private restore(text:string):PlayerReply {
     try {
-      const value = parseSave(text);
+      const value = parseSave(text,localeId(this.content.project.localization,this.locale));
       // Plugin states are opaque to the save schema; validate them separately as a plain object.
       const {extensions:savedExtensions,...presentationRest}=((value as {playerPresentation?:PresentationEnvelope}).playerPresentation??{}) as PresentationEnvelope;
-      if (savedExtensions !== undefined && (!savedExtensions || typeof savedExtensions !== 'object' || Array.isArray(savedExtensions))) throw new Error('세이브 데이터 구조가 올바르지 않습니다.');
+      if (savedExtensions !== undefined && (!savedExtensions || typeof savedExtensions !== 'object' || Array.isArray(savedExtensions))) throw new Error(this.words('세이브 데이터 구조가 올바르지 않습니다.','The save data has an invalid structure.','セーブデータの形式が正しくありません。'));
       const checked = savedExtensions === undefined ? value : { ...(value as object), playerPresentation: presentationRest };
-      if (!this.validateSave(checked)) throw new Error('세이브 데이터 구조가 올바르지 않습니다.');
+      if (!this.validateSave(checked)) throw new Error(this.words('세이브 데이터 구조가 올바르지 않습니다.','The save data has an invalid structure.','セーブデータの形式が正しくありません。'));
       const saved = checked as RunSession & { saveVersion: string; coreVersion: string; contentFingerprint: string;playerPresentation?:PlayerPresentationEnvelope };
-      if (saved.saveVersion !== '1.0.0' || saved.coreVersion !== CORE_VERSION) throw new Error('지원하지 않는 세이브 또는 코어 버전입니다.');
-      if (saved.contentFingerprint !== this.content.contentFingerprint) throw new Error('다른 콘텐츠로 만든 세이브입니다.');
-      if (saved.origin.mode !== 'full') throw new Error('활동 전용 세이브는 플레이어에서 열 수 없습니다.');
+      if (saved.saveVersion !== '1.0.0' || saved.coreVersion !== CORE_VERSION) throw new Error(this.words('지원하지 않는 세이브 또는 코어 버전입니다.','This save or rules version is not supported.','このセーブまたはルールのバージョンには対応していません。'));
+      if (saved.contentFingerprint !== this.content.contentFingerprint) throw new Error(this.words('다른 콘텐츠로 만든 세이브입니다.','This save belongs to different game content.','このセーブは異なるゲーム内容で作成されています。'));
+      if (saved.origin.mode !== 'full') throw new Error(this.words('활동 전용 세이브는 플레이어에서 열 수 없습니다.','Activity-only saves cannot be opened in this player.','活動専用のセーブはこのプレイヤーでは開けません。'));
       const replayed = this.runtime.request({ operation: 'replay', content: this.content, origin: saved.origin, commands: saved.commands, includeRelationshipChanges:true,includeChoiceFeedback:true }) as StateReply;
       if (!replayed.ok) throw new Error(`${replayed.error.message} (${replayed.error.path ?? '/'})`);
       const state = replayed.state;
-      if (canonical(state) !== canonical(saved.state)) throw new Error('저장 상태가 명령 기록의 재현 결과와 다릅니다.');
+      if (canonical(state) !== canonical(saved.state)) throw new Error(this.words('저장 상태가 명령 기록의 재현 결과와 다릅니다.','The saved state does not match its replayed command history.','保存された状態と操作履歴の再現結果が一致しません。'));
       const previous = this.session;
       const previousChoice=this.choiceFeedback;
       const previousPresentation=structuredClone(this.presentation.cursor);
@@ -252,7 +252,7 @@ export class WebPlayerController implements PlayerBridge {
         if (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
       } catch (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; throw error; }
       this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions, true, this.session.state);
-      this.generation++;this.slotView.screenId=null;this.slotView.confirmation=null;this.slotAutoGeneration=this.generation;this.slotAutoRevision=this.session.state.stateRevision;this.slotAutoPhase=this.session.state.phase; return this.reply(null, '저장한 게임을 불러왔습니다.');
+      this.generation++;this.slotView.screenId=null;this.slotView.confirmation=null;this.slotAutoGeneration=this.generation;this.slotAutoRevision=this.session.state.stateRevision;this.slotAutoPhase=this.session.state.phase; return this.reply(null, this.words('저장한 게임을 불러왔습니다.','Continued from your saved game.','保存したところから再開しました。'));
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }
   }
   private currentRecord():Pick<SaveRecord,'date'|'place'|'screenId'|'phase'>{
@@ -265,7 +265,7 @@ export class WebPlayerController implements PlayerBridge {
   private preview(row:StoredSlot):SlotRow {
     const key={automatic:row.automatic,index:row.index};
     try{
-      const value=parseSave(row.text) as {state?:RunState;contentFingerprint?:string;saveVersion?:string;coreVersion?:string;commands?:unknown;playerPresentation?:PresentationEnvelope};
+      const value=parseSave(row.text,localeId(this.content.project.localization,this.locale)) as {state?:RunState;contentFingerprint?:string;saveVersion?:string;coreVersion?:string;commands?:unknown;playerPresentation?:PresentationEnvelope};
       const state=value.state;
       if(!state||!Number.isInteger(state.periodIndex)||state.periodIndex<0||state.periodIndex>1000000||typeof state.phase!=='string'||!state.attributes||Object.values(state.attributes).some(n=>!Number.isInteger(n))||!Array.isArray(value.commands))throw new Error('Invalid record');
       const record=value.playerPresentation?.saveRecord;

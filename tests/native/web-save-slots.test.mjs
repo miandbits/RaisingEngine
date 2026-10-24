@@ -58,3 +58,24 @@ test('portable save keeps pending restored plugin state and rejects an uncommitt
  host.presentationPending=true;assert.match((await player.save(version())).error,/화면 갱신/);assert.equal(saved,original);host.presentationPending=false;
  assert.equal((await player.load(version())).error,null);assert.equal(host.restorationPending,true);assert.equal((await player.save(version())).error,null);assert.deepEqual(JSON.parse(saved).playerPresentation.extensions,{sample:{time:150}});
 });
+
+
+test('Web save/load notices follow the selected locale for portable files and authored slots',async()=>{
+ const expected={en:{saved:'Game saved.',loaded:'Continued from your saved game.',stale:'The screen changed. Please select again.'},ja:{saved:'ゲームを保存しました。',loaded:'保存したところから再開しました。',stale:'画面が更新されました。もう一度選んでください。'},ko:{saved:'게임을 저장했습니다.',loaded:'저장한 게임을 불러왔습니다.',stale:'화면이 갱신되었습니다. 다시 선택해 주세요.'}};
+ for(const locale of Object.keys(expected)){
+  const c=structuredClone(source);c.project.localization={defaultLocale:locale,fallbackLocale:locale,locales:Object.keys(expected).map(id=>({id,label:id})),entries:[]};
+  const portable=structuredClone(c);delete portable.project.visual;let saved;
+  const player=new WebPlayerController(portable,runtime,{read:async()=>saved,write:async text=>saved=text},validateSave);
+  await player.newRun(null);const version=()=>({generation:player.generation,revision:player.session.state.stateRevision});
+  assert.equal((await player.save(version())).notice,expected[locale].saved);const before=structuredClone(player.session.state);
+  assert.equal((await player.load(version())).notice,expected[locale].loaded);assert.deepEqual(player.session.state,before);
+  assert.equal((await player.load({generation:-1,revision:0})).error,expected[locale].stale);
+  const other=locale==='en'?'ja':'en';await player.setLocale(other);assert.equal((await player.load(version())).notice,expected[other].loaded,'locale changes affect the next restore notice');
+  const slots=new WebPlayerController(c,runtime,{read:async()=>saved,write:async()=>{}},validateSave,null,new MemoryStore());
+  await slots.newRun(null);const v=()=>({generation:slots.generation,revision:slots.session.state.stateRevision});const action=a=>slots.slots(a,v());
+  await action({type:'open',kind:'save'});await action({type:'save'});await action({type:'close'});await action({type:'open',kind:'load'});await action({type:'load'});
+  assert.equal((await action({type:'confirm'})).notice,expected[locale].loaded);
+  await action({type:'open',kind:'load'});await action({type:'import'});assert.equal((await action({type:'confirm'})).notice,expected[locale].loaded,'portable import and slot restore share the localized notice');
+  saved='{broken';assert.equal((await player.load(version())).error,{en:'This is not a valid JSON save.',ja:'正しいJSONセーブではありません。',ko:'올바른 JSON 세이브가 아닙니다.'}[other]);
+ }
+});
