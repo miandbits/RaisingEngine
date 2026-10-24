@@ -25,7 +25,15 @@ run(process.env.CMAKE ?? 'cmake', ['--build', output, '--parallel', process.env.
   ...(process.env.QT_BUILD_TARGETS ? ['--target', ...process.env.QT_BUILD_TARGETS.split(',')] : [])]);
 const executable = path.join(output, mac ? 'RaisingStudioQt.app/Contents/MacOS/RaisingStudioQt' : windows ? 'RaisingStudioQt.exe' : 'RaisingStudioQt');
 if (!existsSync(executable)) { console.log(`Qt test targets built: ${output}`); process.exit(0); }
-if (windows) run(`${qt}/bin/windeployqt.exe`, ['--release', '--no-translations', '--no-opengl-sw', '--no-system-d3d-compiler', '--no-system-dxc-compiler', executable]);
+if (windows) {
+  run(`${qt}/bin/windeployqt.exe`, ['--release', '--no-translations', '--no-opengl-sw', '--no-system-d3d-compiler', '--no-system-dxc-compiler', executable]);
+  // windeployqt scans the editor, which does not link QtTest. Deploy the
+  // harness dependencies explicitly so tests do not rely on a developer PATH
+  // or stall in a Windows missing-DLL dialog before QTest can write its log.
+  copyFileSync(`${qt}/bin/Qt6Test.dll`, path.join(output, 'Qt6Test.dll'));
+  mkdirSync(path.join(output, 'platforms'), {recursive:true});
+  copyFileSync(`${qt}/plugins/platforms/qoffscreen.dll`, path.join(output, 'platforms/qoffscreen.dll'));
+}
 const resources = mac ? path.join(output, 'RaisingStudioQt.app/Contents/Resources') : output;
 for (const directory of ['translations', 'fonts']) mkdirSync(path.join(resources, directory), { recursive: true });
 const translations = mac ? execFileSync(`${qt}/bin/qtpaths`, ['--query', 'QT_INSTALL_TRANSLATIONS'], {encoding:'utf8'}).trim() : `${qt}/translations`;

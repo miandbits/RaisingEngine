@@ -118,6 +118,7 @@ jobs:
             .cache/creator-smoke/
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt
+            .cache/first-game-ui/run-*/startup.txt
             .cache/first-game-ui/run-*/checklist.png
             .cache/first-game-native/latest.json
             .cache/first-game-web/latest.json
@@ -186,6 +187,7 @@ jobs:
             .cache/creator-smoke/
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt
+            .cache/first-game-ui/run-*/startup.txt
             .cache/first-game-ui/run-*/checklist.png
             .cache/first-game-web/latest.json
             .cache/first-game-web/run-*/result.json

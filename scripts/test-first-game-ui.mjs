@@ -11,7 +11,12 @@ if(!built.ok)throw Error(JSON.stringify(built.diagnostics));
 await writeFile(path.join(out,'route.json'),JSON.stringify(firstGameRoute(built.snapshot,true).steps));
 const executable=path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio','qt-first-game-test'+(process.platform==='win32'?'.exe':''));
 const log=path.join(out,'ui.txt');
-const run=spawnSync(executable,['-o',log+',txt'],{encoding:'utf8',timeout:180000,env:{...process.env,RAISING_NODE:process.env.RAISING_NODE??process.execPath,RAISING_FIRST_GAME_PROOF:out,RAISING_ENGINE_ROOT:process.env.RAISING_ENGINE_ROOT??path.resolve('.'),RAISING_PROJECT_HISTORY:path.join(out,'recent.ini'),RAISING_QT_TEST:'1'}});
+const env={...process.env,RAISING_NODE:process.env.RAISING_NODE??process.execPath,RAISING_FIRST_GAME_PROOF:out,RAISING_ENGINE_ROOT:process.env.RAISING_ENGINE_ROOT??path.resolve('.'),RAISING_PROJECT_HISTORY:path.join(out,'recent.ini'),RAISING_QT_TEST:'1'};
+// Detect loader/plugin problems before waiting for the interactive journey.
+const setup=spawnSync(executable,['-functions'],{encoding:'utf8',timeout:20000,env:{...env,QT_DEBUG_PLUGINS:'1'}});
+await writeFile(path.join(out,'startup.txt'),JSON.stringify({status:setup.status,error:setup.error?.message,stdout:setup.stdout,stderr:setup.stderr},null,2));
+if(setup.error||setup.status!==0)throw Error('Qt test startup failed; inspect '+path.join(out,'startup.txt'));
+const run=spawnSync(executable,['-o',log+',txt'],{encoding:'utf8',timeout:180000,env});
 console.log(await readFile(log,'utf8').catch(()=>run.stderr));
 await writeFile('.cache/first-game-ui/latest.json',JSON.stringify({out,status:run.status},null,2));
 if(run.error)throw run.error;process.exitCode=run.status??1;
