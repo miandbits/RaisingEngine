@@ -7,6 +7,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -16,6 +17,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -63,8 +65,15 @@ void StudioWindow::exportGameDialog() {
   connect(launch,&QPushButton::clicked,&dialog,[this,launch,status]{if(busy())return;request("releaseLaunch",{{"token",launch->property("token").toString()}},[guard=QPointer<QLabel>(status)](QJsonObject reply){if(!guard)return;if(!reply["error"].toString().isEmpty()){guard->setText(reply["error"].toString());return;}const auto info=reply["launch"].toObject();if(info["kind"]=="native"){if(!QProcess::startDetached(info["executable"].toString(),{},info["directory"].toString()))guard->setText(QObject::tr("The exported game could not be launched. Open its output folder to inspect it."));}else QDesktopServices::openUrl(info["kind"]=="web"?QUrl(info["url"].toString()):QUrl::fromLocalFile(info["directory"].toString()));});});
   auto start = new QPushButton(tr("내보내기")); start->setObjectName("exportStart"); row->addWidget(start); auto close = new QPushButton(tr("닫기")); row->addWidget(close); connect(close, &QPushButton::clicked, &dialog, &QDialog::reject);
   connect(open, &QPushButton::clicked, &dialog, [open] { QDesktopServices::openUrl(QUrl::fromLocalFile(open->property("directory").toString())); });
+  QTimer waitForEditor; waitForEditor.setInterval(50); QElapsedTimer waiting;
+  connect(&waitForEditor, &QTimer::timeout, &dialog, [&] {
+    if (!bridge.busy()) { waitForEditor.stop(); start->setEnabled(true); start->click(); }
+    else if (waiting.elapsed() >= 30000) { waitForEditor.stop(); start->setEnabled(true); status->setText(tr("The editor is still busy. Wait for it to finish, then try Export again.")); }
+  });
   connect(start, &QPushButton::clicked, &dialog, [&] {
-    if (bridge.busy()) { status->setText(tr("진행 중인 작업이 끝난 뒤 다시 내보내세요.")); return; }
+    // Deferred recovery/preview reads can start after the modal opens. Retain
+    // the explicit Export action and recheck the source revision when ready.
+    if (bridge.busy()) { start->setEnabled(false); status->setText(tr("Waiting for the current editor task before exporting...")); waiting.start(); waitForEditor.start(); return; }
     if (view.value("root") != sourceRoot || view.value("revision") != sourceRevision) { status->setText(tr("프로젝트가 변경되었습니다. 창을 다시 열어 최신 내용을 내보내세요.")); return; }
     const auto leaf = name->text();
     if (!QDir::isAbsolutePath(parent->text()) || !QDir(parent->text()).exists() || leaf.isEmpty() || leaf == "." || leaf == ".." || leaf.endsWith(' ') || leaf.endsWith('.') || leaf.contains(QRegularExpression(R"([<>:"/\\|?*])"))) { status->setText(tr("존재하는 상위 폴더와 올바른 새 폴더 이름을 입력하세요.")); return; }

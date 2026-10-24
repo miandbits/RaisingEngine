@@ -106,6 +106,9 @@ private slots:
       dialog->findChild<QLineEdit*>("exportFolderName")->setText("shipped-game");
       // Invalid version leaves the same form and destination available for correction.
       auto version=dialog->findChild<QLineEdit*>("exportVersion");version->setText("invalid");
+      // Simulate a background compatibility/recovery read already in flight.
+      auto preferred=window.findChild<QComboBox*>("firstGameTarget");
+      preferred->setCurrentIndex(preferred->findData("web"));QVERIFY(window.busy());
       dialog->findChild<QPushButton*>("exportStart")->click();
       QTRY_VERIFY_WITH_TIMEOUT(!window.busy()&&dialog->findChild<QPushButton*>("exportStart")->isEnabled(),20000);
       QVERIFY(dialog->findChild<QLabel*>("exportResult")->text().contains("release version"));

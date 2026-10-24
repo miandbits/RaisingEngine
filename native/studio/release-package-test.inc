@@ -23,7 +23,10 @@ void StudioTests::releasePackageWorkflow(){
       const auto closeDialog=qScopeGuard([d]{d->reject();});
       auto target=d->findChild<QComboBox*>("exportTarget");target->setCurrentIndex(target->findData(targetId));
       d->findChild<QLineEdit*>("exportParent")->setText(evidence);d->findChild<QLineEdit*>("exportFolderName")->setText(targetId);
-      d->findChild<QPushButton*>("exportStart")->click();QTRY_VERIFY_WITH_TIMEOUT(!window.busy(),60000);
+      d->findChild<QPushButton*>("exportStart")->click();QTRY_VERIFY_WITH_TIMEOUT(!window.busy()&&d->findChild<QPushButton*>("exportStart")->isEnabled(),60000);
+      QFile exportStatus(evidence+"/export-"+targetId+".json");
+      QVERIFY(exportStatus.open(QIODevice::WriteOnly));
+      exportStatus.write(QJsonDocument(QJsonObject{{"target",targetId},{"message",d->findChild<QLabel*>("exportResult")->text()},{"exported",d->findChild<QPushButton*>("exportOpenFolder")->isEnabled()}}).toJson());exportStatus.close();
       QVERIFY2(d->findChild<QPushButton*>("exportOpenFolder")->isEnabled(),qPrintable(d->findChild<QLabel*>("exportResult")->text()));
       d->grab().save(evidence+"/export-"+targetId+".png");exported=true;d->reject();
     });
