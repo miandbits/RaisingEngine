@@ -510,7 +510,7 @@ public:
       }
       else if(type=="save"){game.save(save_file);game.message=markup.settings_words("게임을 저장했습니다.","Game saved.","ゲームを保存しました。");refresh_save_preview();markup.saved_preview["justSaved"]=true;recording.checkpoint(game);}
       else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
-      else if(type=="sound") {muted=!muted;game.message=muted?"소리를 껐습니다.":"소리를 켰습니다.";}
+      else if(type=="sound") {muted=!muted;game.message=muted?markup.settings_words("소리를 껐습니다.","Sound muted.","音を消しました。"):markup.settings_words("소리를 켰습니다.","Sound on.","音を有効にしました。");}
       else if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction") {
         const auto command=game.battle_ui(action);if(!command.is_null()){game.send(command);game.settle();}
       }

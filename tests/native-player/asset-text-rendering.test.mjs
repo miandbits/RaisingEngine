@@ -71,6 +71,7 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
       ] },
       ...['home', 'schedule'].map(id => ({ id, label: id, elements: [
         { id: 'background', kind: 'panel', x: 0, y: 0, ...canvas, fill: '#0c0e12' },
+        { id: 'sound', kind: 'button', action: 'sound', x: 10, y: 280, width: 80, height: 50, text: 'Sound' },
         { id: 'plan', kind: 'schedule', scheduleLayout: 'columns', showActivityDescription: true, x: 10, y: 0, width: 540, height: 340, color: '#ffffff', fontSize: 20 },
       ] })),
       ...['story', 'ending'].map(id => ({ id, label: id, elements: [] })),
@@ -106,7 +107,7 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
     { checkpoint: `density-${index}`, screenshot: join(out, `density-${index}-${density}x.png`) },
   ]);
   steps.push({ click: 'start' }, { select: 'plan-0', value: 'rest' }, { select: 'plan-1', value: 'work' }, { waitFrames: 12 },
-    { checkpoint: 'word-wrap', screenshot: join(out, 'word-wrap.png') }, { key: 'F5' }, { checkpoint: 'saved' }, { key: 'F9' }, { checkpoint: 'loaded' });
+    { checkpoint: 'word-wrap', screenshot: join(out, 'word-wrap.png') }, { click: 'sound' }, { checkpoint: 'muted' }, { click: 'sound' }, { checkpoint: 'unmuted' }, { key: 'F5' }, { checkpoint: 'saved' }, { key: 'F9' }, { checkpoint: 'loaded' });
   const report = await play('densities', steps);
   const samples = [];
   for (const [index, density] of densities.entries()) {
@@ -133,6 +134,8 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
     assert.ok(cjk.length >= 3, 'An unspaced Korean token must wrap within the card');
     assert.equal(cjk.length, 3, `The thirty Korean glyphs must fit on three lines: ${JSON.stringify(cjk)}`);
     assert.ok(cjk.every(line => line.height >= 12), `CJK fallback must retain readable full-height glyphs: ${JSON.stringify(cjk)}`);
+    assert.equal(report.steps.find(step => step.command.checkpoint === 'muted').ui.message, 'Sound muted.');
+    assert.equal(report.steps.find(step => step.command.checkpoint === 'unmuted').ui.message, 'Sound on.');
     assert.equal(report.steps.find(step => step.command.checkpoint === 'saved').ui.message, 'Game saved.');
     assert.equal(report.steps.find(step => step.command.checkpoint === 'loaded').ui.message, 'Continued from your saved game.');
   });

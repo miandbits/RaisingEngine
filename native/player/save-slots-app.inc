@@ -1,6 +1,7 @@
   std::unique_ptr<SDL_Surface,decltype(&SDL_DestroySurface)> slot_frame{nullptr,SDL_DestroySurface};
   Json slot_frame_record=Json::object();
   int slot_auto_revision=-1;
+  size_t slot_auto_commands=0;
   std::string slot_auto_phase;
   std::string slot_expected_bytes;
   bool slots_enabled() const {return has_save_slots(game.content.at("project").at("visual"));}
@@ -89,6 +90,13 @@
   void after_slot_frame() {
     if(!slots_enabled()||preview()||recalling()||game.gallery.active||game.state.is_null()||!markup.ui_modal.empty()||!markup.pending_purchase.is_null())return;
     const int revision=game.state.value("stateRevision",0);if(revision==slot_auto_revision)return;
+    // settle() may append automatic effect/branch commands after a submitted
+    // choice. Preserve that choice checkpoint even when the last command is a
+    // narrative advance, while still avoiding saves on ordinary dialogue lines.
+    bool chose=false;
+    for(size_t i=std::min(slot_auto_commands,game.commands.size());i<game.commands.size();++i)
+      if(game.commands[i].value("type","")=="choose")chose=true;
+    slot_auto_commands=game.commands.size();
     const auto previous=slot_auto_revision;slot_auto_revision=revision;
     const auto previous_phase=slot_auto_phase;slot_auto_phase=game.state.value("phase","");
     const auto& visual=game.content.at("project").at("visual");const int count=slot_count(visual,true);if(!count)return;
@@ -97,7 +105,7 @@
     if(previous>=0&&(command=="navigate"||command=="visit"))return;
     // Preserve a choice checkpoint through subsequent dialogue lines. Save again
     // when the story finishes, rather than replacing the ring on every sentence.
-    if(previous>=0&&command=="advanceNarrative"&&slot_auto_phase==previous_phase)return;
+    if(previous>=0&&!chose&&command=="advanceNarrative"&&slot_auto_phase==previous_phase)return;
     try {
       capture_slot_frame(true);refresh_slot_catalog();int target=0;int64_t oldest=INT64_MAX;
       for(const auto& row:markup.save_slots)if(row.at("automatic").get<bool>()){const auto seq=row.value("record",Json::object()).value("sequence",int64_t(0));if(seq<oldest){oldest=seq;target=row.at("index");}}
@@ -137,7 +145,7 @@
     }
     if(saving)write_slot(false,markup.slot_selected);
     else {
-      game.load(file);game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;slot_auto_revision=game.state.value("stateRevision",0);slot_auto_phase=game.state.value("phase","");
+      game.load(file);game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;slot_auto_revision=game.state.value("stateRevision",0);slot_auto_commands=game.commands.size();slot_auto_phase=game.state.value("phase","");
       markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;
       markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;
       audio.sync_music(markup.asset(game.state.at("presentation").value("musicAssetId",Json())),muted);
