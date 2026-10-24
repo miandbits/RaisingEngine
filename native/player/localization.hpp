@@ -5,8 +5,9 @@
 inline std::string locale_segment(std::string text){std::string out;for(char c:text)out+=c=='~'?"~0":c=='/'?"~1":std::string(1,c);return out;}
 inline Json translate_tree(const Json& value,const std::string& path,const std::map<std::string,Json>& entries,const std::string& locale,const std::string& fallback){
  if(value.is_array()){Json out=Json::array();size_t i=0;for(const auto& v:value){auto part=v.is_object()&&v.contains("id")&&v.at("id").is_string()?"@"+v.at("id").get<std::string>():std::to_string(i);out.push_back(translate_tree(v,path+"/"+locale_segment(part),entries,locale,fallback));i++;}return out;}
+ if(value.is_string()&&path.find("/weekdayLabels/")!=std::string::npos){auto e=entries.find(path);if(e!=entries.end()&&e->second.at("source")==value){for(const auto& id:{locale,fallback}){auto t=e->second.at("translations").value(id,"");if(t.find_first_not_of(" \t\r\n")!=std::string::npos)return t;}}}
  if(!value.is_object())return value;
- static const std::set<std::string> fields={"title","description","label","name","text","prompt","valueFormat"};auto out=value;
+ static const std::set<std::string> fields={"title","description","label","name","text","prompt","valueFormat","yearLabel","monthLabel","periodLabel","dayLabel"};auto out=value;
  for(auto it=out.begin();it!=out.end();++it){if(it.key()=="localization"||it.key()=="assets"||it.key()=="initialState")continue;auto p=path+"/"+locale_segment(it.key());if(it.value().is_string()&&fields.count(it.key())){auto entry=entries.find(p);if(entry==entries.end()||entry->second.at("source")!=it.value())continue;const auto& t=entry->second.at("translations");for(const auto& id:{locale,fallback}){auto text=t.value(id,"");if(text.find_first_not_of(" \t\r\n")!=std::string::npos){it.value()=text;break;}}}else it.value()=translate_tree(it.value(),p,entries,locale,fallback);}return out;
 }
 inline Json localized_content(const Json& content,const std::string& locale){

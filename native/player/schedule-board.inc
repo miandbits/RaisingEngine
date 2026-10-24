@@ -98,14 +98,15 @@
     const double sw=(right-12*(std::min(4,game.periods())-1))/std::min(4,game.periods());
     out+="<div style=\""+at(left+gap,46,right,130)+"overflow-x:auto;overflow-y:hidden;pointer-events:auto;\"><div style=\"position:relative;width:"+number((sw+12)*game.periods()-12)+"px;height:116px;\">";
     for(int i=0;i<game.periods();++i){
-      std::string label=std::to_string(i+1)+"주\n";
+      const auto config=raising::dates::spec(display_content.at("project"),locale);const auto slotLabel=config.custom?config.period+" "+std::to_string(i+1):std::to_string(i+1)+"주";
+      std::string label=slotLabel+"\n";
       const bool assigned=plan_selected&(1<<i);std::string activity=assigned?plan[i]:"활동 선택";
       for(const auto& a:display_content.at("activities"))if(a.at("id")==activity)activity=a.value("label",activity);
       label+=activity;
       auto slot=card("board-slot-"+std::to_string(i),label,{{"type","boardSlot"},{"slot",i}},double(i)*(sw+12),0,sw,116,i==plan_slot,i>=first);
       if(e.contains("activityIcons")){
         const auto art=assigned?icon_id(plan[i]):std::string();
-        slot=body(slot,"<div style=\""+at(14,12,sw-28,24)+"font-size:16px;color:#70675D;\">"+std::to_string(i+1)+"주</div>"+icon_markup(art,sw-42,10,24)+"<div style=\""+at(14,46,sw-28,60)+"font-size:"+number(fs)+"px;line-height:27px;\">"+escape(activity)+"</div>");
+        slot=body(slot,"<div style=\""+at(14,12,sw-28,24)+"font-size:16px;color:#70675D;\">"+escape(slotLabel)+"</div>"+icon_markup(art,sw-42,10,24)+"<div style=\""+at(14,46,sw-28,60)+"font-size:"+number(fs)+"px;line-height:27px;\">"+escape(activity)+"</div>");
       }
       out+=slot;
     }

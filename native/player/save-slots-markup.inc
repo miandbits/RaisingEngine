@@ -7,6 +7,7 @@
   std::string slot_date(const Json& row) const {
     if(!row.contains("state"))return slot_words("빈 기록","Empty record","空の記録");
     const auto record=row.value("record",Json::object());
+    if(display_content.at("project").contains("calendar"))return raising::dates::text(display_content.at("project"),row.at("state").value("periodIndex",0),locale);
     if(record.contains("date"))return record.at("date").get<std::string>();
     const int p=row.at("state").value("periodIndex",0),m=display_content.at("project").value("startMonth",1)-1+p/game.periods();
     return std::to_string(display_content.at("project").value("startYear",1)+m/12)+" / "+std::to_string(m%12+1)+" · "+std::to_string(p%game.periods()+1);

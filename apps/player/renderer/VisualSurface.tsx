@@ -1,3 +1,4 @@
+import {calendarGrid,calendarLabels,type CalendarProject} from '../../../packages/core/calendar.js';
 import { resolvePresentation, presentationActivity } from '../../../packages/visual/variants.js';
 import React, { useEffect, useRef, useState } from 'react';
 import type { Element, ScreenId, ReadonlyDesign } from '../../../packages/visual/model.js';
@@ -36,6 +37,7 @@ export interface VisualContext {
   stats:{id:string;label:string;value:number;min:number;max:number}[];
   activities:readonly ScheduleActivity[]; plan:readonly string[]; period:number;
   periodsPerMonth?:number; schedulePlayback?:string;
+  calendarProject?:CalendarProject;locale?:string;
   calendarTime?:{year:number;month:number}; planningKey?:string; scheduleCommitted?:boolean;
   choices:readonly {id:string;text:string;enabled:boolean;hint?:string}[]; result:string;
 }
@@ -68,6 +70,9 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const planning=useSchedulePlanner(context);
   const calendarBinding=(binding:Element['binding']):string|null=>{
     if(!binding?.startsWith('calendar-'))return null;
+    if(context.calendarProject?.calendar){const p=context.calendarProject,c=p.calendar!,date={...(context.calendarTime??{year:p.startYear,month:p.startMonth}),periodInMonth:context.period,periodIndex:context.dataState?.periodIndex??0},grid=calendarGrid(p,date),labels=calendarLabels(c,context.locale);
+      if(binding==='calendar-year')return String(date.year);if(binding==='calendar-month')return `${labels.month} ${date.month}`;if(binding==='calendar-day')return String(grid.day);if(binding==='calendar-weekday')return labels.weekdays[(grid.offset+grid.day-1)%7]!;
+    }
     const {year,month}=context.calendarTime??{year:1,month:1},day=context.period*((context.periodsPerMonth??3)===3?10:Math.floor(new Date(year,month,0).getDate()/(context.periodsPerMonth??3)))+1;
     if(binding==='calendar-year')return String(year);
     if(binding==='calendar-month')return `${month}월`;
@@ -75,7 +80,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
     if(binding==='calendar-weekday'){const date=new Date(0);date.setUTCHours(0,0,0,0);date.setUTCFullYear(year,month-1,day);return `${['일','월','화','수','목','금','토'][date.getUTCDay()]}요일`;}
     return null;
   };
-  const schedulePrompt=planning.planner.mask!==((1<<(context.periodsPerMonth??3))-1)?`스케줄 결정.\n이번 달 딸의 예정은? 제 ${planning.planner.slot+1}회`:context.schedulePlayback==='continuous'?'이번 달 일정을 연속으로 진행합니다.':context.period===0?'예, 스케줄에 편성하겠습니다.\n첫 일정을 시작하시겠습니까?':`이번 달 ${context.period}번째 일정을 마쳤습니다.\n다음 일정을 진행하시겠습니까?`;
+  const schedulePrompt=context.calendarProject?.calendar?`${calendarLabels(context.calendarProject.calendar,context.locale).month} · ${calendarLabels(context.calendarProject.calendar,context.locale).period} ${planning.planner.slot+1}`:planning.planner.mask!==((1<<(context.periodsPerMonth??3))-1)?`스케줄 결정.\n이번 달 딸의 예정은? 제 ${planning.planner.slot+1}회`:context.schedulePlayback==='continuous'?'이번 달 일정을 연속으로 진행합니다.':context.period===0?'예, 스케줄에 편성하겠습니다.\n첫 일정을 시작하시겠습니까?':`이번 달 ${context.period}번째 일정을 마쳤습니다.\n다음 일정을 진행하시겠습니까?`;
   const scheduleGroups=elements.find(e=>e.kind==='schedule'&&e.scheduleLayout==='menu')?.scheduleGroups??design.screens.flatMap(s=>s.elements).find(e=>e.kind==='schedule'&&e.scheduleLayout==='menu')?.scheduleGroups??[];
   const fontIds=[...new Set([...elements,...(design.components??[]).flatMap(c=>c.elements)].map(e=>resolveElementStyle(design,e).fontAssetId).filter((id):id is string=>!!id))];
   const fontCss=fontIds.map(id=>`@font-face{font-family:"engine-${id}";src:url(${JSON.stringify(assetUrl(id))});font-display:block;}`).join('\n');

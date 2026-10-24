@@ -1,3 +1,4 @@
+import {calendarText,calendarLabels} from '../../../packages/core/calendar.js';
 import React, { useEffect, useRef, useState } from 'react';
 import type { PlayerAction, PlayerBridge, PlayerReply, PlayerView, Version } from '../../../packages/player-service/controller.js';
 import './style.css';
@@ -37,7 +38,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const sounds = useRef<HTMLAudioElement[]>([]);
   const state = view?.state;
   const count=view?.periodsPerMonth??3;
-  const periods=Array.from({length:count},(_,i)=>periodLabel(i,count));
+  const periods=Array.from({length:count},(_,i)=>periodLabel(i,count,view?.calendarProject?.calendar,view?.locale));
   const version: Version | null = state && view ? { generation: view.generation, revision: state.stateRevision } : null;
 
   function accept(reply: PlayerReply) {
@@ -138,13 +139,13 @@ export function Player({ preview = false }: { preview?: boolean }) {
       <p className="eyebrow">당신의 선택으로 채우는 시간</p>
       <h1>{view?.title ?? '이야기를 불러오세요'}</h1>
       <p className="intro">{view?.description || '일정을 계획하고, 만남을 이어가며 나만의 이야기를 완성하세요.'}</p>
-      {view && <div className="welcome-meta"><span>{view.durationMonths}개월의 여정</span><span>{view.activities.length}가지 활동</span><span>선택에 따라 달라지는 결말</span></div>}
+      {view && <div className="welcome-meta"><span>{view.calendarProject?.calendar?`${view.durationMonths} ${calendarLabels(view.calendarProject.calendar,view.locale).month}`:`${view.durationMonths}개월의 여정`}</span><span>{view.activities.length}가지 활동</span><span>선택에 따라 달라지는 결말</span></div>}
       <button className="primary large" disabled={busy || !view} onClick={() => void request(() => window.player.newRun(version))}>새 게임 시작 <span aria-hidden="true">→</span></button>
       <p className="muted small">한 달은 {periods.join(" · ")}, {count}번의 일정으로 흘러갑니다.</p>
     </main> : <main className="game-layout">
       <aside className="sidebar">
         <p className="eyebrow">성장의 기록</p><h1>{view!.title}</h1>
-        <div className="calendar"><span>{view!.time!.year}년</span><strong>{view!.time!.month}<small>월</small></strong><span>{periods[view!.time!.periodInMonth]}</span></div>
+        <div className="calendar"><span>{view!.calendarProject?.calendar?`${calendarLabels(view!.calendarProject.calendar,view!.locale).year} ${view!.time!.year}`:`${view!.time!.year}년`}</span><strong>{view!.time!.month}<small>{view!.calendarProject?.calendar?calendarLabels(view!.calendarProject.calendar,view!.locale).month:'월'}</small></strong><span>{periods[view!.time!.periodInMonth]}</span></div>
         <div className="journey"><span>여정</span><span>{Math.min(state.periodIndex + 1, view!.durationMonths * count)} / {view!.durationMonths * count}</span></div>
         <progress aria-label="여정 진행" value={state.phase === 'finished' ? view!.durationMonths * count : state.periodIndex} max={view!.durationMonths * count}/>
         <section className="stats" aria-label="능력과 자원">
@@ -159,7 +160,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
         <button className="restart" disabled={busy} onClick={() => void request(() => window.player.newRun(version))}>새 게임</button>
       </aside>
       <div className="main-content">
-        <div className="chapter-heading"><div><p className="eyebrow">{state.phase === 'finished' ? '여정의 끝' : '하루하루 쌓이는 변화'}</p><h2>{state.phase === 'finished' ? '우리의 여정을 기억하며' : `${view!.time!.month}월의 일지`}</h2></div><span className="chapter-badge">{state.phase === 'finished' ? '완료' : `${periods[view!.time!.periodInMonth]} 진행 중`}</span></div>
+        <div className="chapter-heading"><div><p className="eyebrow">{state.phase === 'finished' ? '여정의 끝' : '하루하루 쌓이는 변화'}</p><h2>{state.phase === 'finished' ? '우리의 여정을 기억하며' : (view!.calendarProject?.calendar?calendarText(view!.time!,view!.calendarProject.calendar,view!.locale,false):`${view!.time!.month}월의 일지`)}</h2></div><span className="chapter-badge">{state.phase === 'finished' ? '완료' : `${periods[view!.time!.periodInMonth]} 진행 중`}</span></div>
         <div className="schedule" aria-label="월간 일정">
           {periods.map((label, index) => {
             const passed = index < view!.time!.periodInMonth || state.phase === 'finished';
@@ -203,7 +204,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
               {node.type === 'choice' && <><h3>{node.prompt}</h3><div className="choices">{view!.narrative!.choices.map(choice => <button disabled={busy || !choice.enabled} key={choice.id} onClick={() => act({ type: 'choose', choiceId: choice.id })}><span>{choice.text}{!choice.enabled && <small>조건을 충족하지 못했습니다</small>}</span><span aria-hidden="true">→</span></button>)}</div></>}
               {node.type !== 'dialogue' && node.type !== 'choice' && <button className="primary" disabled={busy} onClick={() => act({ type: 'continue' })}>진행 다시 시도</button>}
             </>}
-            {state.phase === 'finished' && <><span className="story-symbol" aria-hidden="true">✦</span><p className="eyebrow">이야기를 완성했습니다</p><h3 data-testid="ending">{view!.endingLabel}</h3><p className="story-text">{view!.durationMonths}개월 동안의 선택이 만든 결말입니다.<br/>새로운 일정으로 또 다른 이야기를 만나 보세요.</p><button className="primary" disabled={busy} onClick={() => void request(() => window.player.newRun(version))}>새로운 이야기 시작 <span aria-hidden="true">→</span></button></>}
+            {state.phase === 'finished' && <><span className="story-symbol" aria-hidden="true">✦</span><p className="eyebrow">이야기를 완성했습니다</p><h3 data-testid="ending">{view!.endingLabel}</h3><p className="story-text">{view!.calendarProject?.calendar?`${view!.durationMonths} ${calendarLabels(view!.calendarProject.calendar,view!.locale).month}`:`${view!.durationMonths}개월`} 동안의 선택이 만든 결말입니다.<br/>새로운 일정으로 또 다른 이야기를 만나 보세요.</p><button className="primary" disabled={busy} onClick={() => void request(() => window.player.newRun(version))}>새로운 이야기 시작 <span aria-hidden="true">→</span></button></>}
           </div>
         </section>
         <footer className="game-footer"><span>선택은 당신의 몫, 성장은 우리의 이야기.</span><span>{busy ? '처리 중…' : '언제든 저장하고 이어갈 수 있습니다.'}</span></footer>

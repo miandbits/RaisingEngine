@@ -1,3 +1,4 @@
+#include "calendar.hpp"
 #include <QObject>
 #include "studio.hpp"
 #include "logic-editor.hpp"

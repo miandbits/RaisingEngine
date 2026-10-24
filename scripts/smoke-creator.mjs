@@ -11,6 +11,8 @@ async function run(name,argv,env={},command=process.execPath) {
 }
 await run('services',['--test','--test-concurrency=1',...['first-game','creator-release','unsaved-assets','rule-debug','authoring-workspace','workspace-links','integrated-authoring'].map(n=>'tests/qt-studio/'+n+'.test.mjs'),'tests/mobile/ios-package.test.mjs']);
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
+await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
+if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/journey/calendar-players.test.mjs']);
 if(args.includes('--web'))await run('web',['--test','tests/journey/first-game-web.test.mjs']);
 if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);

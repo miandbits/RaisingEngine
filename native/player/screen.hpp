@@ -363,10 +363,10 @@ public:
           if(!out.empty())out+="\n";out+=a.value("label",id)+"   "+std::to_string(saved.at("attributes").value(id,int64_t(0)));
         }return out;
       }
-      const int period=saved.value("periodIndex",0),months=period/game.periods(),month=project.value("startMonth",1)-1+months;
-      std::string chapter=std::to_string(project.value("startYear",1)+month/12)+"년 "+std::to_string(month%12+1)+"월";
+      const int period=saved.value("periodIndex",0);const auto date=raising::dates::date(project,period);
+      std::string chapter=project.contains("calendar")?raising::dates::text(project,period,locale,false):std::to_string(date.year)+"년 "+std::to_string(date.month)+"월";
       if(saved.value("phase","")=="finished")return chapter+" · 마무리 기록";
-      chapter+=" · "+std::to_string(period%game.periods()+1)+"번째 일정";
+      chapter+=project.contains("calendar")?" · "+raising::dates::spec(project,locale).period+" "+std::to_string(date.period+1):" · "+std::to_string(date.period+1)+"번째 일정";
       const auto gp=saved.value("gameplay",Json::object());
       const auto destination=gp.value("screenId",std::string());
       std::string place;
@@ -425,12 +425,17 @@ public:
     if(name=="gallery-filter"){const std::map<std::string,std::string> kinds={{"all","전체 종류"},{"cg","CG"},{"music","음악"},{"event","사건"},{"ending","엔딩"}},statuses={{"all","모든 기록"},{"locked","미해금"},{"unlocked","해금됨"}};return kinds.at(gallery_kind)+" · "+statuses.at(gallery_status)+(gallery_category.empty()?"":" · "+gallery_category);}
     if(name=="gallery-summary"){size_t unlocked=0,total=0;for(const auto& e:project.value("gallery",Json::object()).value("entries",Json::array())){++total;if(!game.gallery.records(e).empty())++unlocked;}return std::to_string(unlocked)+" / "+std::to_string(total)+" 해금";}
     if(name=="selected-field"){const auto values=selected_values(element.value("selectionKey",""));if(values.is_null())return "선택 없음";const auto value=values.value(element.value("selectionField",""),Json());std::string text=value.is_string()?value.get<std::string>():value.is_null()?"":value.dump(),format=element.value("valueFormat","{value}");size_t pos=0;while((pos=format.find("{value}",pos))!=std::string::npos){format.replace(pos,7,text);pos+=text.size();}return format;}
+    if(name=="schedule-prompt"&&project.contains("calendar")){const auto c=raising::dates::spec(project,locale);return c.month+" · "+c.period+" "+std::to_string(plan_slot+1);}
     if(name=="schedule-prompt") {
       if(plan_selected!=((1<<game.periods())-1))return "스케줄 결정.\n이번 달 딸의 예정은? 제 "+std::to_string(plan_slot+1)+"회";
       const int next=game.state.value("periodIndex",0)%game.periods();
       if(game.continuous())return "이번 달 일정을 연속으로 진행합니다.";
       return next==0?"예, 스케줄에 편성하겠습니다.\n첫 일정을 시작하시겠습니까?":
         "이번 달 "+std::to_string(next)+"번째 일정을 마쳤습니다.\n다음 일정을 진행하시겠습니까?";
+    }
+    if(name.rfind("calendar-",0)==0&&project.contains("calendar")){
+      const auto time=display_projection.value("time",Json());const auto d=raising::dates::date(project,time.is_null()?0:time.value("periodIndex",0));const auto c=raising::dates::spec(project,locale);const auto g=raising::dates::grid(project,d);
+      if(name=="calendar-year")return std::to_string(d.year);if(name=="calendar-month")return c.month+" "+std::to_string(d.month);if(name=="calendar-day")return std::to_string(g.day);if(name=="calendar-weekday")return c.weekdays[(g.offset+g.day-1)%7];
     }
     if(name.rfind("calendar-",0)==0) {
       const auto time=display_projection.value("time",Json());
@@ -474,7 +479,7 @@ public:
     }
     if (name=="description") return project.value("description","");
     if (name=="location") return gameplay().is_null()?"":gameplay().at("location").value("name","");
-    if (name=="calendar") { const auto time=display_projection.value("time",Json()); if(time.is_null())return ""; if(locale.rfind("en",0)==0)return "Year "+std::to_string(time.at("year").get<int>())+" · Month "+std::to_string(time.at("month").get<int>())+" · Period "+std::to_string(time.at("periodInMonth").get<int>()+1); return std::to_string(time.at("year").get<int>())+"년 "+std::to_string(time.at("month").get<int>())+"월 · "+std::to_string(time.at("periodInMonth").get<int>()+1)+"번째 일정"; }
+    if (name=="calendar") { const auto time=display_projection.value("time",Json()); if(time.is_null())return ""; if(project.contains("calendar"))return raising::dates::text(project,time.value("periodIndex",0),locale); if(locale.rfind("en",0)==0)return "Year "+std::to_string(time.at("year").get<int>())+" · Month "+std::to_string(time.at("month").get<int>())+" · Period "+std::to_string(time.at("periodInMonth").get<int>()+1); return std::to_string(time.at("year").get<int>())+"년 "+std::to_string(time.at("month").get<int>())+"월 · "+std::to_string(time.at("periodInMonth").get<int>()+1)+"번째 일정"; }
     if (name=="ending" && !game.state.is_null() && !game.state.at("endingId").is_null()) for(const auto& e:display_content.at("endings"))if(e.at("id")==game.state.at("endingId"))return e.value("label","");
     if (name=="story") {const auto story=narrative();if(!story.is_null()){const auto& node=story.at("node");return node.value("type","")=="choice"?node.value("prompt",""):node.value("text","");}}
     if (name=="speaker") {const auto story=narrative();if(!story.is_null()&&story.at("node").contains("speakerId"))for(const auto& c:display_content.at("characters"))if(c.at("id")==story.at("node").at("speakerId"))return c.value("name","");}
@@ -602,16 +607,15 @@ public:
     if(e.value("scheduleLayout","")=="calendar") {
       auto time=display_projection.value("time",Json::object());const auto& p=display_content.at("project");
       const int year=time.is_object()?time.value("year",p.value("startYear",1)):p.value("startYear",1),month=time.is_object()?time.value("month",p.value("startMonth",1)):p.value("startMonth",1);
-      int y=year,m=month;if(m<3){m+=12;--y;}const int offset=(1+13*(m+1)/5+y+y/4-y/100+y/400+6)%7;
-      const int lengths[]={31,28,31,30,31,30,31,31,30,31,30,31};const int days=lengths[std::clamp(month-1,0,11)]+(month==2&&year%4==0&&(year%100!=0||year%400==0)?1:0);
-      const double cw=e.value("width",480.0)/7,ch=(e.value("height",480.0)-80)/6;
-      out+="<div style=\"height:36px;text-align:center;font-size:26px;color:#e9a09e;\">"+std::to_string(year)+"년  "+std::to_string(month)+"월</div>";
+      const auto config=raising::dates::spec(p,locale);const raising::dates::Date date{year,month,period,game.state.is_null()?0:game.state.value("periodIndex",0)};const auto grid=raising::dates::grid(p,date);const int offset=grid.offset,days=grid.days;
+      const double cw=e.value("width",480.0)/7,ch=(e.value("height",480.0)-80)/grid.rows;
+      out+="<div style=\"height:36px;text-align:center;font-size:26px;color:#e9a09e;\">"+escape(config.custom?raising::dates::text(config,date,false):std::to_string(year)+"년  "+std::to_string(month)+"월")+"</div>";
       const char* weeks_en[]={"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
       const char* weeks_ko[]={"일","월","화","수","목","금","토"};
       const auto weeks=locale.rfind("ko",0)==0?weeks_ko:weeks_en;
-      for(int i=0;i<7;i++)out+="<div style=\"position:absolute;left:"+number(i*cw)+"px;top:40px;width:"+number(cw)+"px;text-align:center;font-size:20px;\">"+weeks[i]+"</div>";
-      for(int d=1;d<=days;d++){int cell=offset+d-1,slot=std::min(game.periods()-1,(d-1)/(game.periods()==3?10:days/game.periods()));std::string icon;if(plan_selected&(1<<slot))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[slot])icon=asset(a.value("iconAssetId",Json()));
-        const auto id="calendar-day-"+std::to_string(d);actions[id]={{"type","planSlot"},{"slot",slot}};labels[id]=std::to_string(d)+"일 · "+label(plan[slot]);
+      for(int i=0;i<7;i++)out+="<div style=\"position:absolute;left:"+number(i*cw)+"px;top:40px;width:"+number(cw)+"px;text-align:center;font-size:20px;\">"+escape(config.custom?config.weekdays[i]:weeks[i])+"</div>";
+      for(int d=1;d<=days;d++){int cell=offset+d-1,slot=raising::dates::day_slot(d,game.periods(),days,config.custom);std::string icon;if(plan_selected&(1<<slot))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[slot])icon=asset(a.value("iconAssetId",Json()));
+        const auto id="calendar-day-"+std::to_string(d);actions[id]={{"type","planSlot"},{"slot",slot}};labels[id]=(config.custom?config.day+" "+std::to_string(d):std::to_string(d)+"일")+" · "+label(plan[slot]);
         out+="<button class=\"calendar-cell\" id=\""+id+"\" style=\"position:absolute;left:"+number((cell%7)*cw)+"px;top:"+number(80+(cell/7)*ch)+"px;width:"+number(cw)+"px;height:"+number(ch)+"px;border-color:"+(slot==plan_slot?"#dfc579":"#967769")+";\""+(!editable||slot<period?" disabled=\"disabled\"":"")+"><div>"+std::to_string(d)+"</div>";
         if(!icon.empty())out+="<div style=\"width:28px;height:28px;margin-left:16px;decorator:image(&quot;"+escape(icon)+"&quot; contain);\"></div>";
         else if(plan_selected&(1<<slot))out+="<div class=\"calendar-activity-name\" style=\"font-size:12px;line-height:16px;height:32px;width:"+number(std::max(1.0,cw-4))+"px;text-align:center;white-space:normal;word-break:break-all;\">"+escape(calendar_short_label(label(plan[slot])))+"</div>";
@@ -854,7 +858,7 @@ public:
       const int period=game.state.is_null()?0:game.state.value("periodIndex",0)%game.periods();
       const bool editable=!progress_pending()&&!game.state.is_null()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
       const auto column_width=std::max(70.0,(e.value("width",888.0)-12)/game.periods());
-      for(int i=0;i<game.periods();i++) {out+="<div class=\"schedule-row\" style=\"width:"+number(column_width)+"px;\"><span>"+settings_words(std::to_string(i+1)+"번째 일정","Period "+std::to_string(i+1),std::to_string(i+1)+"番目の予定")+"</span><select style=\"width:"+number(column_width-16)+"px;\" id=\"plan-"+std::to_string(i)+"\""+(i<period||!editable?" disabled=\"disabled\"":"")+">";
+      for(int i=0;i<game.periods();i++) {out+="<div class=\"schedule-row\" style=\"width:"+number(column_width)+"px;\"><span>"+escape(display_content.at("project").contains("calendar")?raising::dates::spec(display_content.at("project"),locale).period+" "+std::to_string(i+1):settings_words(std::to_string(i+1)+"번째 일정","Period "+std::to_string(i+1),std::to_string(i+1)+"番目の予定"))+"</span><select style=\"width:"+number(column_width-16)+"px;\" id=\"plan-"+std::to_string(i)+"\""+(i<period||!editable?" disabled=\"disabled\"":"")+">";
         for(const auto& a:display_content.at("activities")){const auto summary=activity_preview(a);out+="<option style=\"width:"+number(column_width-32)+"px;"+(summary.empty()?std::string():"height:auto;min-height:40px;white-space:normal;")+"\" id=\"plan-"+std::to_string(i)+"-option-"+escape(a.value("id",""))+"\" value=\""+escape(a.value("id",""))+"\""+(plan[i]==a.at("id")?" selected=\"selected\"":"")+">"+escape(a.value("label","")+(summary.empty()?"":" · "+summary))+"</option>";}
         out+="</select><span class=\"dropdown-marker\">▼</span>";
         std::string selected_summary;for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])selected_summary=activity_preview(a);

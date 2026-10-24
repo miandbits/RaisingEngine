@@ -1,3 +1,4 @@
+import {calendarText,calendarGrid,calendarDaySlot,calendarLabels,type CalendarProject} from '../../../packages/core/calendar.js';
 import { periodLabel } from '../../../packages/player-service/schedule.js';
 import React, {useEffect, useState} from 'react';
 import type {Element} from '../../../packages/visual/model.js';
@@ -16,6 +17,7 @@ export interface ScheduleContext {
   activities:readonly ScheduleActivity[]; plan:readonly string[]; period:number; phase:string;
   stats:readonly {id:string;label:string;value:number}[];
   periodsPerMonth?:number; schedulePlayback?:string;
+  calendarProject?:CalendarProject;locale?:string;
   calendarTime?:{year:number;month:number}; planningKey?:string; scheduleCommitted?:boolean;
 }
 export function useSchedulePlanner(context:ScheduleContext){
@@ -36,7 +38,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
   onPlan?:((slot:number,id:string)=>void)|undefined;onCommit?:(()=>void)|undefined;
 }){
   const count=context.periodsPerMonth??3,full=(1<<count)-1;
-  const labels=Array.from({length:count},(_,i)=>periodLabel(i,count));
+  const labels=Array.from({length:count},(_,i)=>periodLabel(i,count,context.calendarProject?.calendar,context.locale));
   const {planner,set}=planning,editable=!disabled&&['planning','ready'].includes(context.phase);
   const chooseSlot=(slot:number)=>{if(!editable||slot<context.period)return;set({...planner,slot,mask:planner.mask&~(1<<slot),groupId:''});};
   const chooseActivity=(id:string,slot=planner.slot)=>{
@@ -47,16 +49,15 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
   };
   if(element.scheduleLayout==='calendar'){
     const {year,month}=context.calendarTime??{year:1,month:1};
-    const date=new Date(0);date.setUTCHours(0,0,0,0);date.setUTCFullYear(year,month-1,1);
-    const first=date.getUTCDay();date.setUTCMonth(month,0);const days=date.getUTCDate();
+    const project=context.calendarProject??{startYear:year,startMonth:month,periodsPerMonth:count};const grid=calendarGrid(project,{year,month,periodInMonth:context.period,periodIndex:0});const first=grid.offset,days=grid.days,custom=project.calendar,words=custom?calendarLabels(custom,context.locale):null;
     return <div className="schedule-calendar" data-testid="schedule-calendar">
-      <div className="schedule-calendar-title">{year}년 {month}월</div>
-      <div className="schedule-calendar-week">{['일','월','화','수','목','금','토'].map(day=><span key={day}>{day}</span>)}</div>
-      <div className="schedule-calendar-days">{Array.from({length:42},(_,index)=>{
+      <div className="schedule-calendar-title">{custom?calendarText({year,month,periodInMonth:context.period,periodIndex:0},custom,context.locale,false):`${year}년 ${month}월`}</div>
+      <div className="schedule-calendar-week">{(words?.weekdays??['일','월','화','수','목','금','토']).map(day=><span key={day}>{day}</span>)}</div>
+      <div className="schedule-calendar-days" style={{gridTemplateRows:`repeat(${grid.rows},minmax(0,1fr))`}}>{Array.from({length:grid.rows*7},(_,index)=>{
         const day=index-first+1;if(day<1||day>days)return <span key={index}/>;
-        const slot=Math.min(count-1,Math.floor((day-1)/(count===3?10:Math.floor(days/count)))),activity=context.activities.find(a=>a.id===context.plan[slot]);
+        const slot=calendarDaySlot(day,count,days,!!custom),activity=context.activities.find(a=>a.id===context.plan[slot]);
         const selected=!!(planner.mask&(1<<slot));const chars=Array.from(activity?.label??'');
-        return <button key={index} type="button" data-calendar-day={day} data-slot={slot} aria-label={`${day}일 · ${selected?activity?.label??'':'미선택'}`} title={activity?.label} className={slot===planner.slot?'selected-slot':''} disabled={!editable||slot<context.period} onClick={()=>chooseSlot(slot)}>
+        return <button key={index} type="button" data-calendar-day={day} data-slot={slot} aria-label={`${words?words.day+' '+day:day+'일'} · ${selected?activity?.label??'':'미선택'}`} title={activity?.label} className={slot===planner.slot?'selected-slot':''} disabled={!editable||slot<context.period} onClick={()=>chooseSlot(slot)}>
           <span>{day}</span>{selected&&activity&&(activity.iconAssetId?<img src={assetUrl(activity.iconAssetId)} alt=""/>:<small className="calendar-activity-name">{chars.slice(0,4).join('')}{chars.length>4?'…':''}</small>)}
         </button>;
       })}</div>

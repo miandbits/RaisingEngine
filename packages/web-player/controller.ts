@@ -76,6 +76,7 @@ export class WebPlayerController implements PlayerBridge {
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       ...(c.project.localization?{localization:c.project.localization,locale:this.locale}:{}),
       choiceFeedback:choiceFeedbackText(c,state,this.choiceFeedback,this.locale),choiceHints:choiceHints(c,state,this.locale),
+      ...(c.project.calendar?{calendarProject:{startYear:c.project.startYear,startMonth:c.project.startMonth,periodsPerMonth:c.project.periodsPerMonth,calendar:c.project.calendar}}:{}),
       durationMonths: c.project.durationMonths, periodsPerMonth: c.project.periodsPerMonth, schedulePlayback: c.project.schedulePlayback ?? 'manual', attributes: c.attributes, characters: c.characters,
       activities: c.activities, assets: c.assets, state, relationshipChanges:this.session?.relationshipChanges, visual: c.project.visual ?? null,
       timeline: this.presentation.view(c,state),

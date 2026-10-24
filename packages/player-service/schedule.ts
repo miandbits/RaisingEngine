@@ -1,3 +1,4 @@
+import { calendarLabels, type Calendar } from '../core/calendar.js';
 import type { RunState } from '../core/model.js';
 
 /** A presentation driver, never a shortcut around canonical simulation commands. */
@@ -9,6 +10,7 @@ export function scheduleStep(state: RunState | null, playback: string | undefine
   return null;
 }
 
-export function periodLabel(index: number, count: number): string {
+export function periodLabel(index: number, count: number, calendar?:Calendar,locale='en'): string {
+  if(calendar)return `${calendarLabels(calendar,locale).period} ${index+1}`;
   return count === 3 ? ['상순', '중순', '하순'][index] ?? '' : `${index + 1}주차`;
 }

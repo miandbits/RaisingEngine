@@ -1,3 +1,4 @@
+#include "calendar.hpp"
 #include <QObject>
 #include "save-migration.hpp"
 #include "studio.hpp"

@@ -1,4 +1,5 @@
 #include "raising/runtime.hpp"
+#include "raising/json-calendar.hpp"
 #include "json.hpp"
 #include "raising/relationship-history.hpp"
 #include "raising/choice-feedback.hpp"
@@ -67,6 +68,7 @@ void checkContent(const J &c) {
                         [](char v) { return (v >= '0' && v <= '9') || (v >= 'a' && v <= 'f'); });
   }
   need(valid, "INCOMPATIBLE_CONTENT", "지원하는 buildSnapshot 결과가 필요합니다.", "/content");
+  const auto calendarIssue=raising::dates::problem(c.at("project"));need(calendarIssue.empty(),"INCOMPATIBLE_CONTENT","Invalid calendar configuration.","/project"+calendarIssue);
   need(!c["project"].contains("periodFlow") || (!c["project"].contains("roster")&&!c["project"].contains("progression")),"PERIOD_FLOW_MODE","기간 단계는 현재 단일 대상의 월 일정에서 사용할 수 있습니다.","/project/periodFlow");
 }
 int periods(const J &c) {
@@ -78,11 +80,8 @@ J calendar(const J &c, const J &s) {
   auto p = s.at("periodIndex");
   need(integer(p) && number(p) >= 0 && number(p) < number(c.at("project").at("durationMonths")) * periods(c),
        "INVALID_TIME", "기간 인덱스가 프로젝트 범위를 벗어났습니다.", "/periodIndex");
-  int64_t n = number(p), month = number(c.at("project").at("startMonth")) - 1 + n / periods(c);
-  return {{"periodIndex", n},
-          {"year", number(c.at("project").at("startYear")) + month / 12},
-          {"month", month % 12 + 1},
-          {"periodInMonth", n % periods(c)}};
+  const auto d=raising::dates::date(c.at("project"),number(p));
+  return {{"periodIndex",d.index},{"year",d.year},{"month",d.month},{"periodInMonth",d.period}};
 }
 #include "character-state.inc"
 #include "custom-states.inc"

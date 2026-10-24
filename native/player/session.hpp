@@ -1,5 +1,6 @@
 #pragma once
 #include "raising/runtime.hpp"
+#include "raising/json-calendar.hpp"
 #include "raising/relationship-history.hpp"
 #include "json.hpp"
 #include <filesystem>

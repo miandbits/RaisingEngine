@@ -63,5 +63,7 @@ int main(int argc,char **argv) {
   check(reopened.findChild<QComboBox*>("storyFollowupTrigger")->currentData()=="period-end","legacy follow-up timing is unchanged");
   check(reopened.findChild<QComboBox*>("storyFollowupThrough")->currentData()==6,"legacy unbounded follow-up keeps project end");
   check(reopened.findChild<QComboBox*>("storyFrom")->itemText(3)=="5년 1월 · 1번째 일정","calendar wraps year");
+  auto customContext=context;auto customDocs=customContext.value("documents").toArray();auto customProject=customDocs[0].toObject();auto customData=customProject.value("data").toObject();customData["startYear"]=1;customData["startMonth"]=1;customData["durationMonths"]=104;customData["periodsPerMonth"]=4;customData["calendar"]=QJsonObject{{"monthsPerYear",13},{"daysPerMonth",28},{"monthLabel","Phase"},{"periodLabel","Week"}};customProject["data"]=customData;customDocs[0]=customProject;customContext["documents"]=customDocs;
+  StoryFlowDialog custom(customContext,nullptr,[]{return QString();},[](QJsonArray,std::function<void(QString)> done){done({});});auto picker=custom.findChild<QComboBox*>("storyFrom");check(picker->itemText(51)=="Year 1 · Phase 13 · Week 4","custom final phase of first year");check(picker->itemText(52)=="Year 2 · Phase 1 · Week 1","custom year rollover");check(picker->itemText(415)=="Year 8 · Phase 13 · Week 4","custom eight-year ending date");check(picker->itemData(415).toInt()==416,"custom calendar preserves one-based authoring ordinal");
   std::cout<<"PASS "<<checks<<" dialog checks\n";return 0;
 }

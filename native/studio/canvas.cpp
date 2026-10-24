@@ -1,3 +1,4 @@
+#include "calendar.hpp"
 #include <QObject>
 #include "canvas.hpp"
 #include "design.hpp"
@@ -103,12 +104,11 @@ public:
     } else if (kind == "schedule" && data["scheduleLayout"] == "calendar") {
       p->fillRect(box, QColor("#080706")); p->setPen(QColor("#cba99d"));
       QFont font(data["_fontFamily"].toString("Noto Sans KR"));font.setPixelSize(data["fontSize"].toInt(24));p->setFont(font);
-      QDate date(data["_year"].toInt(1209), data["_month"].toInt(4), 1);
-      p->drawText(QRectF(0,0,box.width(),36),Qt::AlignCenter,QObject::tr("%1년 %2월").arg(date.year()).arg(date.month()));
-      const QStringList days={"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
-      const qreal cw=box.width()/7,ch=(box.height()-80)/6;
-      for(int i=0;i<7;i++)p->drawText(QRectF(i*cw,40,cw,32),Qt::AlignCenter,days[i]);
-      for(int day=1;day<=date.daysInMonth();day++){int cell=date.dayOfWeek()%7+day-1;QRectF r((cell%7)*cw,80+(cell/7)*ch,cw,ch);p->drawRect(r);p->drawText(r.adjusted(3,2,-3,-2),Qt::AlignLeft|Qt::AlignTop,QString::number(day));}
+      const auto project=data.value("_calendarProject").toObject();const auto config=StudioCalendar::spec(project);const auto date=StudioCalendar::date(project,0);const auto grid=raising::dates::grid(config,date,project.value("startYear").toInt(1),project.value("startMonth").toInt(1),qMax(1,project.value("periodsPerMonth").toInt(3)));
+      p->drawText(QRectF(0,0,box.width(),36),Qt::AlignCenter,StudioCalendar::label(project,0,false));
+      const qreal cw=box.width()/7,ch=(box.height()-80)/grid.rows;
+      for(int i=0;i<7;i++)p->drawText(QRectF(i*cw,40,cw,32),Qt::AlignCenter,QString::fromStdString(config.weekdays[i]));
+      for(int day=1;day<=grid.days;day++){int cell=grid.offset+day-1;QRectF r((cell%7)*cw,80+(cell/7)*ch,cw,ch);p->drawRect(r);p->drawText(r.adjusted(3,2,-3,-2),Qt::AlignLeft|Qt::AlignTop,QString::number(day));}
     } else if (kind == "schedule" && data["scheduleLayout"] == "menu") {
       auto groups=data["scheduleGroups"].toArray();QRectF r(box.width()-320,210,320,qMax(90,groups.size()*42+32));
       p->fillRect(r,QColor("#46343e"));p->setPen(QColor("#e5c880"));p->drawRect(r);
@@ -341,7 +341,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     auto e = resolvedStyle(visual,v.toObject());
     const auto fontPath=paths.value(e["fontAssetId"].toString(),project["_defaultFontPath"].toString());
     const auto family=projectFontFamily(fontPath);if(!family.isEmpty())e["_fontFamily"]=family;
-    if(e["kind"]=="schedule"){e["_year"]=project["startYear"];e["_month"]=project["startMonth"];e["_rosterPreview"]=initialRosterPreview(project);}
+    if(e["kind"]=="schedule"){e["_calendarProject"]=QJsonObject{{"startYear",project["startYear"]},{"startMonth",project["startMonth"]},{"periodsPerMonth",project["periodsPerMonth"]},{"calendar",project["calendar"]}};e["_year"]=project["startYear"];e["_month"]=project["startMonth"];e["_rosterPreview"]=initialRosterPreview(project);}
     if(e["kind"]=="choices")e["_choicePreview"]=initialChoicePreview(project.value("_previewNarratives").toArray());
     if (e["hidden"].toBool() || project["_previewHiddenIds"].toArray().contains(e["id"]))
       continue;
@@ -352,17 +352,15 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     if (e["kind"] == "text") {
       const auto binding = e["binding"].toString();
       if (binding == "calendar")
-        e["text"] = QObject::tr("%1년 %2월 · 1번째 일정")
-                        .arg(project["startYear"].toInt(1))
-                        .arg(project["startMonth"].toInt(1));
+        e["text"] = StudioCalendar::label(project,0);
       else if (binding == "title")
         e["text"] = project["title"];
       else if (binding == "context-name") e["text"] = contextNameForPreview(project,e);
       else if (binding == "narrative-actor") e["text"] = tr("사건 대상 · 플레이 중 결정");
       else if (binding == "calendar-year") e["text"] = QString::number(project["startYear"].toInt(1));
-      else if (binding == "calendar-month") e["text"] = QString::number(project["startMonth"].toInt(1)) + QObject::tr("월");
+      else if (binding == "calendar-month") e["text"] = project.contains("calendar")?QString::fromStdString(StudioCalendar::spec(project).month)+" "+QString::number(project["startMonth"].toInt(1)):QString::number(project["startMonth"].toInt(1)) + QObject::tr("월");
       else if (binding == "calendar-day") e["text"] = "1";
-      else if (binding == "calendar-weekday") e["text"] = QObject::tr("요일");
+      else if (binding == "calendar-weekday") e["text"] = project.contains("calendar")?QString::fromStdString(StudioCalendar::spec(project).weekdays[StudioCalendar::spec(project).startWeekday]):QObject::tr("요일");
       else if (binding == "schedule-prompt") e["text"] = QObject::tr("첫 번째 일정을 결정해 주세요.");
       else if (binding == "description")
         e["text"] = project["description"];

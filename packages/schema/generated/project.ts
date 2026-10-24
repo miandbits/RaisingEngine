@@ -2772,6 +2772,20 @@ export type ProjectDefinition = Header & {
       }[]
     ];
   }[];
+  calendar?: {
+    monthsPerYear: number;
+    daysPerMonth: number;
+    startWeekday?: number;
+    yearLabel?: string;
+    monthLabel?: string;
+    periodLabel?: string;
+    dayLabel?: string;
+    /**
+     * @minItems 7
+     * @maxItems 7
+     */
+    weekdayLabels?: [string, string, string, string, string, string, string];
+  };
 };
 export type Condition =
   | {

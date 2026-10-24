@@ -10,7 +10,7 @@
     std::string place;
     for(const auto& s:project.at("visual").at("screens"))if(s.at("id")==markup.screen_id)place=s.value("label",markup.screen_id);
     if(place.empty())for(const auto& l:project.value("gameplay",Json::object()).value("locations",Json::array()))if(l.at("id")==game.state.value("gameplay",Json::object()).value("locationId",""))place=l.value("name","");
-    const auto date=std::to_string(project.value("startYear",1)+m/12)+markup.slot_words("년 "," / ","年 ")+std::to_string(m%12+1)+markup.slot_words("월 · "," · Week ","月 · 第")+std::to_string(p%game.periods()+1)+markup.slot_words("주","","週");
+    const auto date=project.contains("calendar")?raising::dates::text(markup.display_content.at("project"),p,markup.locale):std::to_string(project.value("startYear",1)+m/12)+markup.slot_words("년 "," / ","年 ")+std::to_string(m%12+1)+markup.slot_words("월 · "," · Week ","月 · 第")+std::to_string(p%game.periods()+1)+markup.slot_words("주","","週");
     return {{"date",date},{"place",place},{"screenId",markup.screen_id},{"phase",game.state.value("phase","")}};
   }
   void capture_slot_frame(bool rendered=false) {
