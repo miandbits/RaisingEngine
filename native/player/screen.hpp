@@ -1,5 +1,6 @@
 #pragma once
 #include "session.hpp"
+#include "save-slots.hpp"
 #include "styles.hpp"
 #include "localization.hpp"
 #include "layout.hpp"
@@ -805,7 +806,7 @@ public:
       }
       if(type=="advance"&&progress_pending()&&(raw_phase=="planning"||raw_phase=="ready")){if(game.state.at("progression").contains("sessions")){enabled=game.available({{"type","advanceSession"}});label="다음 시점까지 진행";}else {enabled=false;label="행동 진행 중";}}
       if(type=="save")enabled=!game.state.is_null()&&(ui_modal.empty()||!saved_preview.value("justSaved",false));
-      if(type=="load"&&!replay_controls)enabled=saved_preview.value("status","")=="ready";
+      if(type=="load"&&!replay_controls)enabled=has_save_slots(display_content.at("project").at("visual"))||saved_preview.value("status","")=="ready";
       if(type=="commitPlan"){
         ensure_plan();
         enabled=!game.state.is_null()&&(raw_phase=="planning"||raw_phase=="ready")&&!progress_pending()&&plan_selected==((1<<game.periods())-1);
