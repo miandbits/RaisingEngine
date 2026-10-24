@@ -60,7 +60,9 @@ if(ANDROID)
 else()
   add_executable(raising-player ${RAISING_PLAYER_SOURCES})
   set_target_properties(raising-player PROPERTIES OUTPUT_NAME RaisingPlayer)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  # SDL's Windows entry point converts the wide command line to UTF-8.
+  # A CRT main() uses the active code page and corrupts non-ASCII bundle/save paths.
+  if(NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_compile_definitions(raising-player PRIVATE SDL_MAIN_HANDLED)
   endif()
   if(APPLE)
