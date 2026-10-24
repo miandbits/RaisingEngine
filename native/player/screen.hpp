@@ -571,7 +571,7 @@ public:
       const auto trip=view.at("expedition");
       if(trip.is_null())return "<p>일정에서 탐험 활동을 선택해 출발하세요.</p>"+battle_result(view);
       out="<div class=\"heading\">"+escape(trip.value("name",""))+"</div><p>현재 위치: "+escape(trip.value("nodeName",""))+" · 체력 "+std::to_string(trip.value("heroHp",0))+" / "+std::to_string(trip.at("stats").value("maxHp",0))+"</p>";
-      if(!trip.value("nodeDescription","").empty())out+="<p class=\"expedition-description\" style=\"display:block;width:100%;white-space:pre-wrap;word-break:break-all;\">"+escape(trip.value("nodeDescription",""))+"</p>";
+      if(!trip.value("nodeDescription","").empty())out+="<p class=\"expedition-description\" style=\"display:block;width:100%;white-space:pre-wrap;word-break:break-word;\">"+escape(trip.value("nodeDescription",""))+"</p>";
       for(const auto& node:trip.at("connections")){
         const Json command={{"type","moveExpedition"},{"nodeId",node.at("id")}};
         std::string reason;const bool enabled=game.available(command,&reason);
@@ -618,7 +618,7 @@ public:
         const auto id="calendar-day-"+std::to_string(d);actions[id]={{"type","planSlot"},{"slot",slot}};labels[id]=(config.custom?config.day+" "+std::to_string(d):std::to_string(d)+"일")+" · "+label(plan[slot]);
         out+="<button class=\"calendar-cell\" id=\""+id+"\" style=\"position:absolute;left:"+number((cell%7)*cw)+"px;top:"+number(80+(cell/7)*ch)+"px;width:"+number(cw)+"px;height:"+number(ch)+"px;border-color:"+(slot==plan_slot?"#dfc579":"#967769")+";\""+(!editable||slot<period?" disabled=\"disabled\"":"")+"><div>"+std::to_string(d)+"</div>";
         if(!icon.empty())out+="<div style=\"width:28px;height:28px;margin-left:16px;decorator:image(&quot;"+escape(icon)+"&quot; contain);\"></div>";
-        else if(plan_selected&(1<<slot))out+="<div class=\"calendar-activity-name\" style=\"font-size:12px;line-height:16px;height:32px;width:"+number(std::max(1.0,cw-4))+"px;text-align:center;white-space:normal;word-break:break-all;\">"+escape(calendar_short_label(label(plan[slot])))+"</div>";
+        else if(plan_selected&(1<<slot))out+="<div class=\"calendar-activity-name\" style=\"font-size:12px;line-height:16px;height:32px;width:"+number(std::max(1.0,cw-4))+"px;text-align:center;white-space:normal;word-break:break-word;\">"+escape(calendar_short_label(label(plan[slot])))+"</div>";
         out+="</button>";
       }
       return out;
@@ -638,7 +638,7 @@ public:
       for(const auto& id:group->at("activityIds"))for(const auto& a:display_content.at("activities"))if(a.at("id")==id){std::string caption=a.value("label","");auto at=caption.find(" · ");if(at!=std::string::npos)caption=caption.substr(at+4);int cost=0;for(const auto& c:a.at("costs"))cost+=c.value("amount",0);if(cost)caption+="  "+std::to_string(cost)+"G";
         auto html=button("plan-activity-"+id.get<std::string>(),caption,{{"type","planActivity"},{"activityId",id}},editable);const auto summary=activity_preview(a);
         html.insert(html.find('>')," style=\"width:"+number(card_width)+"px;margin-right:"+std::string(++card_index%columns?"16":"0")+"px;"+(summary.empty()?"":"height:auto;min-height:78px;")+"\"");
-        if(!summary.empty())html.insert(html.rfind("</button>"),"<span class=\"activity-preview\" style=\"display:block;max-height:120px;overflow:auto;font-size:16px;line-height:20px;white-space:normal;word-break:break-all;\">"+escape(summary)+"</span>");auto icon=asset(a.value("iconAssetId",Json()));if(!icon.empty()){auto at=html.find('>')+1;html.insert(at,"<div class=\"plan-icon\" style=\"decorator:image(&quot;"+escape(icon)+"&quot; contain);\"></div>");}out+=html;
+        if(!summary.empty())html.insert(html.rfind("</button>"),"<span class=\"activity-preview\" style=\"display:block;max-height:120px;overflow:auto;font-size:16px;line-height:20px;white-space:normal;word-break:break-word;\">"+escape(summary)+"</span>");auto icon=asset(a.value("iconAssetId",Json()));if(!icon.empty()){auto at=html.find('>')+1;html.insert(at,"<div class=\"plan-icon\" style=\"decorator:image(&quot;"+escape(icon)+"&quot; contain);\"></div>");}out+=html;
       }
       out+="</div>";out+=button("plan-back","뒤로",{{"type","planGroup"},{"group",""}},editable);
     }
@@ -716,9 +716,9 @@ public:
       for(const auto& a:display_content.at("activities"))if(!a.contains("expeditionId"))out+="<option value=\""+escape(a.value("id",""))+"\""+(roster_draft.value(id,"")==a.value("id","")?" selected=\"selected\"":"")+">"+escape(a.value("label",""))+"</option>";
       out+="</select>";
       if(element.value("showActivityRules",false))for(const auto& a:display_content.at("activities"))if(a.value("id","")==roster_draft.value(id,""))
-        out+="<div id=\"roster-rules-"+escape(id)+"\" style=\"width:100%;box-sizing:border-box;font-size:17px;line-height:25px;white-space:normal;word-break:break-all;padding-top:10px;\">"+activity_rules(a,id)+"</div>";
+        out+="<div id=\"roster-rules-"+escape(id)+"\" style=\"width:100%;box-sizing:border-box;font-size:17px;line-height:25px;white-space:normal;word-break:break-word;padding-top:10px;\">"+activity_rules(a,id)+"</div>";
       if(element.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.value("id","")==roster_draft.value(id,""))
-        out+="<div id=\"roster-description-"+escape(id)+"\" style=\"width:100%;box-sizing:border-box;font-size:17px;line-height:25px;max-height:100px;overflow-x:hidden;overflow-y:auto;white-space:normal;word-break:break-all;padding:10px 4px 0 0;\">"+escape(a.value("description",""))+"</div>";
+        out+="<div id=\"roster-description-"+escape(id)+"\" style=\"width:100%;box-sizing:border-box;font-size:17px;line-height:25px;max-height:100px;overflow-x:hidden;overflow-y:auto;white-space:normal;word-break:break-word;padding:10px 4px 0 0;\">"+escape(a.value("description",""))+"</div>";
       out+="</div>";
     }
     out+="</div><div style=\"position:absolute;left:0;right:0;bottom:0;height:"+footer_height+"px;\">";
@@ -862,9 +862,9 @@ public:
         for(const auto& a:display_content.at("activities")){const auto summary=activity_preview(a);out+="<option style=\"width:"+number(column_width-32)+"px;"+(summary.empty()?std::string():"height:auto;min-height:40px;white-space:normal;")+"\" id=\"plan-"+std::to_string(i)+"-option-"+escape(a.value("id",""))+"\" value=\""+escape(a.value("id",""))+"\""+(plan[i]==a.at("id")?" selected=\"selected\"":"")+">"+escape(a.value("label","")+(summary.empty()?"":" · "+summary))+"</option>";}
         out+="</select><span class=\"dropdown-marker\">▼</span>";
         std::string selected_summary;for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])selected_summary=activity_preview(a);
-        out+="<div id=\"plan-summary-"+std::to_string(i)+"\" class=\"activity-preview\" style=\"font-size:16px;max-height:120px;overflow:auto;white-space:normal;word-break:break-all;\">"+escape(selected_summary)+"</div>";
+        out+="<div id=\"plan-summary-"+std::to_string(i)+"\" class=\"activity-preview\" style=\"font-size:16px;max-height:120px;overflow:auto;white-space:normal;word-break:break-word;\">"+escape(selected_summary)+"</div>";
         if(e.value("showActivityRules",false))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])out+="<div id=\"plan-rules-"+std::to_string(i)+"\" style=\"font-size:17px;line-height:25px;max-height:150px;overflow:auto;white-space:normal;padding-top:10px;\">"+activity_rules(a)+"</div>";
-        if(e.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])out+="<div id=\"plan-description-"+std::to_string(i)+"\" style=\"font-size:17px;line-height:25px;max-height:125px;overflow:auto;white-space:normal;word-break:break-all;padding-top:10px;\">"+escape(a.value("description",""))+"</div>";
+        if(e.value("showActivityDescription",false))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])out+="<div id=\"plan-description-"+std::to_string(i)+"\" style=\"font-size:17px;line-height:25px;max-height:125px;overflow:auto;white-space:normal;word-break:break-word;padding-top:10px;\">"+escape(a.value("description",""))+"</div>";
         out+="</div>";
       }
     }

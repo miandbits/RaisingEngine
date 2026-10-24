@@ -28,4 +28,12 @@ public:
     frozen=value;
   }
   double GetElapsedTime() override {return (frozen?stopped:SystemInterface_SDL::GetElapsedTime())-offset;}
+  void JoinPath(Rml::String& translated, const Rml::String& document, const Rml::String& path) override {
+#ifndef _WIN32
+    // Exported assets use absolute filesystem paths. RmlUi's default treats a
+    // leading slash as a virtual resource root and removes it on POSIX systems.
+    if(fs::u8path(path).is_absolute()){translated=path;return;}
+#endif
+    SystemInterface_SDL::JoinPath(translated,document,path);
+  }
 };

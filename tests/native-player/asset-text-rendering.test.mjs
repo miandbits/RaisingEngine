@@ -1,0 +1,155 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { loadProject } from '../../dist/packages/project-service/loader.js';
+import { buildSnapshot } from '../../dist/packages/project-service/snapshot.js';
+import { exportGame } from '../../dist/packages/export-service/export.js';
+import { desktopTarget, gameDirectory, playerExecutable } from '../../dist/packages/export-service/targets.js';
+import { decodePng, encodeRgbaPng } from '../../dist/packages/studio-service/png.js';
+
+const colour = [33, 207, 91, 255];
+const canvas = { width: 640, height: 360 };
+const textBox = { x: 120, y: 20, width: 480, height: 320 };
+
+function pixel(image, x, y) {
+  const start = (Math.floor(y) * image.width + Math.floor(x)) * 4;
+  return [...image.pixels.subarray(start, start + 3)];
+}
+
+// Repeated capitals give every naturally wrapped line the same glyph height.
+// Look at rasterized ink, not layout boxes: the original bug preserved boxes.
+function inkBands(image, scale, box = textBox, gap = 1) {
+  const rows = [];
+  for (let y = Math.ceil(box.y * scale); y < Math.floor((box.y + box.height) * scale); y++) {
+    let ink = 0;
+    for (let x = Math.ceil(box.x * scale); x < Math.floor((box.x + box.width) * scale); x++) {
+      const at = (y * image.width + x) * 4;
+      if (image.pixels[at] > 210 && image.pixels[at + 1] > 210 && image.pixels[at + 2] > 210) ink++;
+    }
+    if (ink >= Math.max(2, Math.floor(scale * 2))) rows.push({ y, ink });
+  }
+  const bands = [];
+  for (const { y, ink } of rows) {
+    const previous = bands.at(-1);
+    if (previous && y - previous.end <= Math.max(1, Math.ceil(gap * scale))) { previous.end = y; previous.ink += ink; }
+    else bands.push({ start: y, end: y, ink });
+  }
+  return bands.map(({ start, end, ink }) => ({ top: start / scale, height: (end - start + 1) / scale, ink: ink / (scale * scale) }));
+}
+
+test('exported native assets and naturally wrapped text survive Unicode paths and 1x/2x/3x density', { timeout: 180000 }, async t => {
+  const evidenceRoot = resolve('.cache/native-asset-text');
+  await mkdir(evidenceRoot, { recursive: true });
+  const out = await mkdtemp(join(evidenceRoot, '렌더 proof '));
+  const projectRoot = join(out, 'project with spaces 한글');
+  await cp(resolve('examples/my-first-raising-game'), projectRoot, { recursive: true });
+  const assetPath = 'assets/solid-image.png';
+  await writeFile(join(projectRoot, assetPath), encodeRgbaPng({ width: 4, height: 4, pixels: Buffer.from(Array(16).fill(colour).flat()) }));
+  const manifestPath = join(projectRoot, 'assets/manifest.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.assets.push({ id: 'render-fixture', kind: 'image', path: assetPath });
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  const projectPath = join(projectRoot, 'project.json');
+  const project = JSON.parse(await readFile(projectPath, 'utf8'));
+  const wrapped = Array(40).fill('MMMM').join(' '); // No explicit line breaks.
+  for (const [id, description] of [['rest', Array(6).fill('MMMM').join(' ')], ['work', '한'.repeat(30)]]) {
+    const file = join(projectRoot, `activities/${id}.json`);
+    const activity = JSON.parse(await readFile(file, 'utf8'));
+    activity.description = description;
+    await writeFile(file, JSON.stringify(activity));
+  }
+  project.visual = {
+    ...canvas, viewportMode: 'fit',
+    screens: [
+      { id: 'title', label: 'Rendering proof', elements: [
+        { id: 'background', kind: 'panel', x: 0, y: 0, ...canvas, fill: '#0c0e12' },
+        { id: 'start', kind: 'button', action: 'start', x: 16, y: 110, width: 80, height: 50, text: 'Start' },
+        { id: 'image', kind: 'image', x: 16, y: 16, width: 64, height: 64, imageAssetId: 'render-fixture', fit: 'contain' },
+        { id: 'wrapped', kind: 'text', ...textBox, fontSize: 24, color: '#ffffff', text: wrapped },
+      ] },
+      ...['home', 'schedule'].map(id => ({ id, label: id, elements: [
+        { id: 'background', kind: 'panel', x: 0, y: 0, ...canvas, fill: '#0c0e12' },
+        { id: 'plan', kind: 'schedule', scheduleLayout: 'columns', showActivityDescription: true, x: 10, y: 0, width: 540, height: 340, color: '#ffffff', fontSize: 20 },
+      ] })),
+      ...['story', 'ending'].map(id => ({ id, label: id, elements: [] })),
+    ],
+    routing: { defaultScreenId: 'home', useLocationScreens: false, phases: [{ phase: 'title', screenId: 'title' }, { phase: 'planning', screenId: 'home' }] },
+  };
+  await writeFile(projectPath, JSON.stringify(project));
+  const built = await buildSnapshot(await loadProject(projectRoot));
+  assert.equal(built.ok, true, JSON.stringify(built.diagnostics));
+  const target = desktopTarget();
+  const runtime = resolve(process.env.NATIVE_PLAYER_TEST_RUNTIME ?? process.env.RAISING_NATIVE_PLAYER_RUNTIME ?? 'dist/native-player-app');
+  const destination = join(out, 'export with spaces 여행');
+  await exportGame({ projectRoot, content: built.snapshot, target, destination, runtimes: { windows: runtime, macos: runtime, web: runtime } });
+  const executable = playerExecutable(target, destination), directory = gameDirectory(target, destination);
+  async function play(name, steps) {
+    const script = join(out, `${name}.json`), reportFile = join(out, `${name}-report.json`);
+    await writeFile(script, JSON.stringify(steps));
+    const run = spawnSync(executable, ['--bundle', directory, '--save', join(out, 'save.json'), '--automation', script, '--report', reportFile, '--hidden'], { encoding: 'utf8', windowsHide: true, timeout: 90000 });
+    await writeFile(join(out, `${name}-process.txt`), (run.stdout ?? '') + '\n' + (run.stderr ?? ''));
+    assert.equal(run.status, 0, run.error?.message ?? run.stderr);
+    const report = JSON.parse(await readFile(reportFile, 'utf8'));
+    assert.equal(report.ok, true, JSON.stringify(report));
+    return report;
+  }
+  // SDL window units differ from output pixels on Retina and Windows scaling.
+  const probe = await play('probe', [{ resize: canvas }, { waitFrames: 12 }, { checkpoint: 'probe' }]);
+  const pixelRatio = probe.final.presentation.pixelWidth / canvas.width;
+  assert.ok(pixelRatio > 0 && pixelRatio <= 4, `Unexpected display scale ${pixelRatio}`);
+  const densities = [1, 2, 3, 2, 1];
+  const steps = densities.flatMap((density, index) => [
+    { resize: { width: Math.round(canvas.width * density / pixelRatio), height: Math.round(canvas.height * density / pixelRatio) } },
+    { waitFrames: 12 },
+    { checkpoint: `density-${index}`, screenshot: join(out, `density-${index}-${density}x.png`) },
+  ]);
+  steps.push({ click: 'start' }, { select: 'plan-0', value: 'rest' }, { select: 'plan-1', value: 'work' }, { waitFrames: 12 },
+    { checkpoint: 'word-wrap', screenshot: join(out, 'word-wrap.png') }, { key: 'F5' }, { checkpoint: 'saved' }, { key: 'F9' }, { checkpoint: 'loaded' });
+  const report = await play('densities', steps);
+  const samples = [];
+  for (const [index, density] of densities.entries()) {
+    const ui = report.steps.find(step => step.command.checkpoint === `density-${index}`).ui;
+    assert.equal(ui.presentation.fontRasterDensity, density, `Requested ${density}x output must exercise that atlas density`);
+    const image = decodePng(await readFile(join(out, `density-${index}-${density}x.png`)));
+    const scale = image.width / canvas.width;
+    assert.ok(Math.abs(scale - density) < 0.02, `Screenshot must capture the ${density}x game viewport`);
+    samples.push({ density, scale, imagePixel: pixel(image, 40 * scale, 40 * scale), bands: inkBands(image, scale) });
+  }
+  await writeFile(join(out, 'measurements.json'), JSON.stringify({ pixelRatio, samples }, null, 2));
+  await writeFile(join(evidenceRoot, 'latest.json'), JSON.stringify({ out, destination, target, pixelRatio, samples }, null, 2));
+  await t.test('English activity words stay whole and long CJK text still wraps', async () => {
+    const ui = report.steps.find(step => step.command.checkpoint === 'word-wrap').ui;
+    const screenshot = decodePng(await readFile(join(out, 'word-wrap.png')));
+    const bandsFor = (id, gap = 1) => {
+      const control = ui.controls.find(control => control.id === id);
+      return inkBands(screenshot, screenshot.width / canvas.width, { x: control.x, y: control.y + control.height + 10, width: control.width, height: 115 }, gap);
+    };
+    // Hangul syllables contain separated components within one glyph.
+    const english = bandsFor('plan-0'), cjk = bandsFor('plan-1', 5);
+    assert.equal(english.length, 3, 'Six whole words must wrap onto three equal lines');
+    assert.ok(Math.max(...english.map(line => line.ink)) - Math.min(...english.map(line => line.ink)) < 8, `Every English line must have two complete words: ${JSON.stringify(english)}`);
+    assert.ok(cjk.length >= 3, 'An unspaced Korean token must wrap within the card');
+    assert.equal(cjk.length, 3, `The thirty Korean glyphs must fit on three lines: ${JSON.stringify(cjk)}`);
+    assert.ok(cjk.every(line => line.height >= 12), `CJK fallback must retain readable full-height glyphs: ${JSON.stringify(cjk)}`);
+    assert.equal(report.steps.find(step => step.command.checkpoint === 'saved').ui.message, 'Game saved.');
+    assert.equal(report.steps.find(step => step.command.checkpoint === 'loaded').ui.message, 'Continued from your saved game.');
+  });
+  await t.test('exported PNG reaches the renderer from an absolute path', () => {
+    for (const sample of samples) assert.deepEqual(sample.imagePixel, colour.slice(0, 3), `${sample.density}x fixture colour must be visible`);
+  });
+  await t.test('wrapped glyphs keep their height and baseline after later lines and density changes', () => {
+    const baseline = samples[0].bands;
+    assert.ok(baseline.length >= 6, `Expected multiple natural wraps, got ${baseline.length}`);
+    assert.ok(baseline.every(band => band.height >= 12), 'Every baseline line must contain full-height capital glyphs');
+    for (const sample of samples) {
+      assert.equal(sample.bands.length, baseline.length, `${sample.density}x must retain every wrapped line`);
+      for (const [line, band] of sample.bands.entries()) {
+        assert.ok(Math.abs(band.height - baseline[line].height) <= 2, `${sample.density}x line ${line}: height ${band.height} vs ${baseline[line].height}`);
+        assert.ok(Math.abs(band.top - baseline[line].top) <= 2, `${sample.density}x line ${line}: baseline drift ${band.top} vs ${baseline[line].top}`);
+      }
+      assert.ok(Math.max(...sample.bands.map(band => band.height)) - Math.min(...sample.bands.map(band => band.height)) <= 2, `${sample.density}x earlier lines must not shrink as later lines append glyphs`);
+    }
+  });
+});

@@ -137,7 +137,7 @@
     }
     if(saving)write_slot(false,markup.slot_selected);
     else {
-      game.load(file);dialogue_key.clear();markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;slot_auto_revision=game.state.value("stateRevision",0);slot_auto_phase=game.state.value("phase","");
+      game.load(file);game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;slot_auto_revision=game.state.value("stateRevision",0);slot_auto_phase=game.state.value("phase","");
       markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;
       markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;
       audio.sync_music(markup.asset(game.state.at("presentation").value("musicAssetId",Json())),muted);

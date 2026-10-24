@@ -217,14 +217,14 @@ public:
     if(!fs::exists(autosave_file())&&!fs::exists(backup))return;
     bool restored=false;std::string error;
     for(const auto& candidate:{autosave_file(),backup})if(fs::exists(candidate)) {
-      try {game.load(candidate);restored=true;break;}catch(const std::exception& failure){error=failure.what();}
+      try {game.load(candidate);game.message=markup.settings_words("자동 저장을 불러왔습니다.","Autosave restored.","自動保存を読み込みました。");restored=true;break;}catch(const std::exception& failure){error=failure.what();}
     }
     if(restored) {
       extensions.reset();extensions.pending_restore=game.loaded_extensions;
       markup.user_values_draft=Json::object();
       if(!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))markup.plan.push_back(id.get<std::string>());
       try{audio.sync_music(markup.asset(game.state.at("presentation").value("musicAssetId",Json())),muted);}catch(const std::exception& failure){game.message=failure.what();}
-    } else game.message=std::string("자동 저장을 불러오지 못했습니다: ")+error;
+    } else game.message=markup.settings_words("자동 저장을 불러오지 못했습니다: ","Could not restore autosave: ","自動保存を読み込めませんでした: ")+error;
     dirty=true;
   }
   void drain_actions(){while(!pending.empty()){const auto action=pending.front();pending.pop_front();execute(action);}}
@@ -234,7 +234,7 @@ public:
       drain_actions();
       if(context&&active_finger){context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
       active_finger.reset();pending.clear();
-      if(!preview()&&!game.state.is_null())try{game.save(autosave_file());lifecycle_saves++;}catch(const std::exception& error){game.message=error.what();}
+      if(!preview()&&!game.state.is_null())try{game.save(autosave_file());game.message=markup.settings_words("자동 저장했습니다.","Autosaved.","自動保存しました。");lifecycle_saves++;}catch(const std::exception& error){game.message=error.what();}
     }
     backgrounded=paused;audio.suspend(paused||game.gallery.active);gallery_audio.suspend(paused);dirty=true;
   }
@@ -508,8 +508,8 @@ public:
           if(target){const auto found=markup.actions.find(target->value("id",""));if(found!=markup.actions.end())game.send(found->second);}
         }
       }
-      else if(type=="save"){game.save(save_file);refresh_save_preview();markup.saved_preview["justSaved"]=true;recording.checkpoint(game);}
-      else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);dialogue_key.clear();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
+      else if(type=="save"){game.save(save_file);game.message=markup.settings_words("게임을 저장했습니다.","Game saved.","ゲームを保存しました。");refresh_save_preview();markup.saved_preview["justSaved"]=true;recording.checkpoint(game);}
+      else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
       else if(type=="sound") {muted=!muted;game.message=muted?"소리를 껐습니다.":"소리를 켰습니다.";}
       else if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction") {
         const auto command=game.battle_ui(action);if(!command.is_null()){game.send(command);game.settle();}
