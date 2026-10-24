@@ -234,7 +234,15 @@ public:
     GalleryCapture restored_capture;
     Json restored_changes=Json::object();
     Json restored_choice=nullptr;
-    for (const auto& command : saved.at("commands")) {
+    // Reuse the core's verified batch replay for ordinary saves. Sending the
+    // complete immutable content for every command made long campaigns spend
+    // most load time parsing the same story. Gallery capture still needs each
+    // intermediate view, and isolated previews retain their session baseline.
+    if(!isolated&&!content.at("project").contains("gallery")) {
+      const auto result=call({{"operation","replay"},{"origin",savedOrigin},{"commands",saved.at("commands")},
+                              {"includeRelationshipChanges",true},{"includeChoiceFeedback",true}});
+      replay=result.at("state");restored_changes=result.at("relationshipChanges");restored_choice=result.at("choiceFeedback");
+    } else for (const auto& command : saved.at("commands")) {
       const auto result=call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}});
       const auto next=result.at("state");
       track_choice_feedback(restored_choice,content,replay,command,result);

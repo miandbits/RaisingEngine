@@ -17,6 +17,8 @@ if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','test
 if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs']);
+  await run('native-rendering',['--test','tests/native-player/asset-text-rendering.test.mjs']);
+  await run('native-autosaves',['--test','--test-concurrency=1','tests/native-player/choice-autosave.test.mjs','tests/native-player/load-records-button.test.mjs']);
   const executable=name=>path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio',name+(process.platform==='win32'?'.exe':''));
   await run('story-form',[],{},executable('qt-story-flow-dialog-test'));
   const fixture=path.join(out,'diagnostic-game');
