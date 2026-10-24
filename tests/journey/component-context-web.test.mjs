@@ -48,7 +48,7 @@ test('exported component cards: browser/native parity, actual buttons, downloads
   }throw Error('Unbounded settle');};
   const checkpoint=async label=>{
     // Observe the rendered completion signal; an async predicate can finish the wait before file.text()/load completes.
-    await page.waitForFunction(()=>document.querySelector('.visual-status')?.textContent?.includes('플레이 중'));
+    await page.waitForFunction(()=>document.querySelector('.visual-player')?.getAttribute('aria-busy')==='false');
     const actual=await page.evaluate(async()=>(await window.player.view()).view);
     assert.equal(actual.runtimeBackend,'wasm');assert.deepEqual(actual.state,session.state,label);
     for(const card of cards){
@@ -105,7 +105,7 @@ test('exported component cards: browser/native parity, actual buttons, downloads
   assert.equal(session.state.phase,'finished');assert.equal(session.state.endingId,'certified');assert.ok(acted&&choices>0);
   const ending=structuredClone(session),endingFile=await download('ending');await click(button('start','finished'));
   // Restart is asynchronous. Wait for the new run before checking a load against the old ending revision.
-  await page.waitForFunction(()=>document.querySelector('.visual-status')?.textContent?.includes('플레이 중'));
+  await page.waitForFunction(()=>document.querySelector('.visual-player')?.getAttribute('aria-busy')==='false');
   assert.equal((await page.evaluate(async()=>(await window.player.view()).view.state)).stateRevision,0);
   await upload(endingFile,ending,'ending-restored');
   await page.reload();await page.locator('.visual-stage').waitFor();await upload(endingFile,ending,'reload-ending');assert.deepEqual(errors,[]);

@@ -21,7 +21,7 @@ test('exported Web starter: real WASM controls, both endings, download/upload an
     const route=firstGameRoute(content,accept),page=await browser.newPage({viewport:{width:1280,height:800},acceptDownloads:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
     await page.goto(url);await page.locator('.visual-stage').waitFor();
     let savedFile='',saves=0,checkpoints=0;
-    const check=async(state,label)=>{await page.waitForFunction(()=>document.querySelector('.visual-status')?.textContent?.includes('플레이 중'));const actual=await page.evaluate(async()=>(await window.player.view()).view);assert.equal(actual.runtimeBackend,'wasm');assert.deepEqual(actual.state,state,route.id+'/'+label);assert.equal(await page.locator('[role="alert"]').count(),0);++checkpoints;};
+    const check=async(state,label)=>{await page.waitForFunction(()=>document.querySelector('.visual-player')?.getAttribute('aria-busy')==='false');const actual=await page.evaluate(async()=>(await window.player.view()).view);assert.equal(actual.runtimeBackend,'wasm');assert.deepEqual(actual.state,state,route.id+'/'+label);assert.equal(await page.locator('[role="alert"]').count(),0);++checkpoints;};
     for(const step of route.steps) {
       if(step.select)await page.locator('[data-element-id="schedule"] select').nth(Number(step.select.slice(5))).selectOption(step.value);
       if(step.click) {

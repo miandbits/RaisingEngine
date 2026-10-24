@@ -6,7 +6,7 @@ import type {SlotStorage,StoredSlot} from './slot-storage.js';
 import { scheduleStep } from '../player-service/schedule.js';
 import {trackChoiceFeedback,choiceFeedbackText,choiceHints,type ChoiceFeedback} from '../visual/choice-feedback.js';
 import { resolveUserValues } from '../core/user-fields.js';
-import { CoreFault } from '../core/util.js';
+import { CoreFault, freeze } from '../core/util.js';
 import {battleUiTypes,selectBattle,type BattleSelection,type BattleUiAction} from '../player-service/battle.js';
 import type { ContentSnapshot, RunState, Transition, Command } from '../core/model.js';
 import { CORE_VERSION } from '../core/model.js';
@@ -65,7 +65,18 @@ export class WebPlayerController implements PlayerBridge {
   generation = 1;
   presentation = new PlayerPresentation();
   constructor(readonly content: ContentSnapshot, private readonly runtime: RuntimeRequest,
-    private readonly files: WebFiles, private readonly validateSave: SaveValidator, readonly extensions: ExtensionHost | null = null, private readonly slotStorage:SlotStorage|null=null) {}
+    private readonly files: WebFiles, private readonly validateSave: SaveValidator, readonly extensions: ExtensionHost | null = null, private readonly slotStorage:SlotStorage|null=null) {
+    // A running game owns a fixed snapshot; registration must never mask mutations.
+    this.content=freeze(structuredClone(content));
+  }
+  private localized:{locale:string;content:ContentSnapshot}|null=null;
+  private readonly projections=new WeakMap<ContentSnapshot,{state:RunState|null;result:Exclude<Projection,Failure>}>();
+  private localizedContent():ContentSnapshot {
+    const locale=localeId(this.content.project.localization,this.locale);
+    if(this.localized?.locale===locale)return this.localized.content;
+    const content=freeze(localizeContent(this.content,this.content.project.localization,locale));
+    this.localized={locale,content};return content;
+  }
 
   private slotView:SaveSlotsView={rows:[],screenId:null,automatic:false,selected:0,page:0,confirmation:null,available:false};
   private slotExpected:string|null=null;
@@ -77,13 +88,14 @@ export class WebPlayerController implements PlayerBridge {
   private get hasSlots(){return slotsEnabled(this.content.project.visual);}
   private words(ko:string,en:string,ja:string){return slotWords(this.locale,ko,en,ja);}
   private projection(state = this.session?.state ?? null,content=this.content): Exclude<Projection, Failure> {
+    const cached=this.projections.get(content);if(cached?.state===state)return cached.result;
     const result = this.runtime.request({ operation: 'view', content, state }) as Projection;
     if (!result.ok) throw new Error(`[${result.error.code}] ${result.error.message}`);
-    return result;
+    this.projections.set(content,{state,result});return result;
   }
   private playerView(): PlayerView {
     this.locale=localeId(this.content.project.localization,this.locale);
-    const c = localizeContent(this.content,this.content.project.localization,this.locale), state = this.session?.state ?? null, cursor = state?.activeNarrative;
+    const c = this.localizedContent(), state = this.session?.state ?? null, cursor = state?.activeNarrative;
     const projection = this.projection(state,c);
     return { ...(this.hasSlots?{saveSlots:{...this.slotView,rows:this.slotView.rows.map(row=>({...row,...(row.periodIndex!==undefined&&c.project.calendar?{date:calendarText(calendarDate(c.project,row.periodIndex),c.project.calendar,this.locale)}:{})})),...(state?{current:this.currentRecord()}:{}),checkpointPending:!!state&&(this.slotAutoGeneration!==this.generation||this.slotAutoRevision!==state.stateRevision)}}:{}), generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
@@ -244,7 +256,7 @@ export class WebPlayerController implements PlayerBridge {
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }
   }
   private currentRecord():Pick<SaveRecord,'date'|'place'|'screenId'|'phase'>{
-    const c=localizeContent(this.content,this.content.project.localization,this.locale),state=this.session?.state;
+    const c=this.localizedContent(),state=this.session?.state;
     if(!state)return {date:'',place:'',screenId:'',phase:''};
     const screenId=c.project.visual?resolveScreen(c.project.visual,state,this.projection(state,c).narrative?.node.type):'';
     const time=calendarDate(c.project,state.periodIndex);
