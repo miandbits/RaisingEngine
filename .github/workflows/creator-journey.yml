@@ -7,6 +7,9 @@ on:
     types: [published]
 permissions:
   contents: read
+concurrency:
+  group: creator-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   creator-services:
     runs-on: ubuntu-latest
@@ -83,16 +86,20 @@ jobs:
       - run: npm run build:web
       - run: npx playwright install chromium
       - name: Test the creator journey on Windows
-        run: npm run test:creator-smoke -- --web --desktop
+        # npm.ps1 can consume the argument separator in PowerShell. Invoke
+        # Node directly so desktop/Web/portable flags reach the test scripts.
+        run: node scripts/smoke-creator.mjs --web --desktop
       - name: Package the current source with verified Qt sources
         run: |
-          node scripts/prepare-qt-sources.mjs
+          npm run prepare:qt-source
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm run package:qt-studio
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node scripts/audit-preview-package.mjs
       - name: Test the packaged starter without developer tools on PATH
         run: node scripts/test-windows-first-game-package.mjs "$env:QT_PACKAGE_OUT"
       - name: Test portable installation and exports
-        run: npm run test:qt-package -- --portable
+        run: node scripts/test-qt-package.mjs --portable
       - name: Build the Windows installer
         shell: pwsh
         run: |
@@ -120,6 +127,7 @@ jobs:
             .cache/qt-release/latest.json
             .cache/qt-release/run-*/evidence/*.json
             .cache/qt-release/run-*/evidence/*.txt
+            .cache/preview-release/package-audit.json
             release/qt-ci/RaisingStudio/package-manifest.json
             release/qt-ci/*.exe.json
           include-hidden-files: true
