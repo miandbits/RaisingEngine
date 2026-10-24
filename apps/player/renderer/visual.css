@@ -105,3 +105,9 @@
 .visual-player{position:relative}
 
 .authored-slot-modal{flex-direction:column}.authored-slot-modal>.alert,.authored-slot-modal>.notice{flex-shrink:0}
+
+/* Keep the language toolbar inside the same viewport budget as the game. */
+.visual-shell{display:flex;flex-direction:column;height:100dvh;min-height:0;width:100%;}
+.visual-shell>.player-language{flex-shrink:0;}
+.visual-shell>.visual-player{flex:1;height:auto;min-height:0;}
+.preview>.visual-shell{flex:1;height:auto;min-height:0;}
