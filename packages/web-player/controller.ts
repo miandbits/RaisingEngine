@@ -1,3 +1,8 @@
+import {calendarDate,calendarText} from '../core/calendar.js';
+import {resolveScreen} from '../visual/routing.js';
+import {slotsEnabled,slotCount,slotScreens,slotWords,type SaveSlotAction,type SaveSlotsView,type SlotRow} from '../player-service/save-slots.js';
+import {validSaveRecord,type SaveRecord} from '../player-service/save-metadata.js';
+import type {SlotStorage,StoredSlot} from './slot-storage.js';
 import { scheduleStep } from '../player-service/schedule.js';
 import {trackChoiceFeedback,choiceFeedbackText,choiceHints,type ChoiceFeedback} from '../visual/choice-feedback.js';
 import { resolveUserValues } from '../core/user-fields.js';
@@ -60,8 +65,17 @@ export class WebPlayerController implements PlayerBridge {
   generation = 1;
   presentation = new PlayerPresentation();
   constructor(readonly content: ContentSnapshot, private readonly runtime: RuntimeRequest,
-    private readonly files: WebFiles, private readonly validateSave: SaveValidator, readonly extensions: ExtensionHost | null = null) {}
+    private readonly files: WebFiles, private readonly validateSave: SaveValidator, readonly extensions: ExtensionHost | null = null, private readonly slotStorage:SlotStorage|null=null) {}
 
+  private slotView:SaveSlotsView={rows:[],screenId:null,automatic:false,selected:0,page:0,confirmation:null,available:false};
+  private slotExpected:string|null=null;
+  private slotBusy=false;
+  private slotAutoGeneration=-1;
+  private slotAutoRevision=-1;
+  private slotAutoPhase='';
+  private slotLastCommand='start';
+  private get hasSlots(){return slotsEnabled(this.content.project.visual);}
+  private words(ko:string,en:string,ja:string){return slotWords(this.locale,ko,en,ja);}
   private projection(state = this.session?.state ?? null,content=this.content): Exclude<Projection, Failure> {
     const result = this.runtime.request({ operation: 'view', content, state }) as Projection;
     if (!result.ok) throw new Error(`[${result.error.code}] ${result.error.message}`);
@@ -71,7 +85,7 @@ export class WebPlayerController implements PlayerBridge {
     this.locale=localeId(this.content.project.localization,this.locale);
     const c = localizeContent(this.content,this.content.project.localization,this.locale), state = this.session?.state ?? null, cursor = state?.activeNarrative;
     const projection = this.projection(state,c);
-    return { generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
+    return { ...(this.hasSlots?{saveSlots:{...this.slotView,rows:this.slotView.rows.map(row=>({...row,...(row.periodIndex!==undefined&&c.project.calendar?{date:calendarText(calendarDate(c.project,row.periodIndex),c.project.calendar,this.locale)}:{})})),...(state?{current:this.currentRecord()}:{}),checkpointPending:!!state&&(this.slotAutoGeneration!==this.generation||this.slotAutoRevision!==state.stateRevision)}}:{}), generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       ...(c.project.localization?{localization:c.project.localization,locale:this.locale}:{}),
@@ -98,6 +112,7 @@ export class WebPlayerController implements PlayerBridge {
   async openProject() { return this.reply(null, '이 플레이어는 내보낸 게임 전용입니다.'); }
   async openYearSample() { return this.openProject(); }
   async newRun(version: Version | null, userValues?: Record<string, string>): Promise<PlayerReply> {
+    if (this.slotBusy||this.slotView.screenId) return this.reply('Close the records window before starting a new game.');
     if (!this.current(version)) return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
     // Validate before the WASM JSON boundary can omit undefined values or reject lone surrogates.
     try { resolveUserValues(this.content.project.userFields, userValues); }
@@ -106,7 +121,7 @@ export class WebPlayerController implements PlayerBridge {
     const r = this.runtime.request({ operation: 'create', content: this.content, seed: origin.seed, options: { ...origin, ...(userValues !== undefined ? { userValues } : {}) } }) as StateReply;
     if (!r.ok) return this.reply(`[${r.error.code}] ${r.error.message} (${r.error.path ?? '/userValues'})`);
     if (this.content.project.userFields?.length) origin.userValues = structuredClone(userValues ?? {});
-    this.session = { origin, commands: [], state: r.state }; this.choiceFeedback=null; this.presentation.clear(); this.extensions?.reset(); this.generation++;
+    this.session = { origin, commands: [], state: r.state }; this.choiceFeedback=null; this.presentation.clear(); this.extensions?.reset();this.slotLastCommand='start'; this.generation++;
     const cues:string[]=[];return this.reply(this.settle(cues),null,cues);
   }
   private dispatch(command: unknown, cues: string[]): string | null {
@@ -137,6 +152,7 @@ export class WebPlayerController implements PlayerBridge {
   }
   async act(action: PlayerAction, version: Version): Promise<PlayerReply> {
     if (!this.current(version)) return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
+    if (this.slotBusy||this.slotView.screenId) return this.reply();
     if (!this.session) return this.reply('새 게임을 시작해 주세요.');
     if (this.extensions?.restorationPending) return this.reply('화면 복원 후 다시 선택해 주세요.');
     if (this.extensions?.presentationPending) return this.reply('화면 갱신 후 다시 선택해 주세요.');
@@ -170,25 +186,32 @@ export class WebPlayerController implements PlayerBridge {
       default: return this.reply('알 수 없는 동작입니다.');
     }
     const cues: string[] = [];
+    const previousRevision=this.session.state.stateRevision;
     const error = this.dispatch(command, cues) ?? (action.type==='commitPlan'?this.dispatch({type:'executeActivity'},cues):null) ?? this.settle(cues);
+    if(this.session.state.stateRevision!==previousRevision)this.slotLastCommand=(command as {type:string}).type;
     return this.reply(error, null, cues);
   }
-  async save(version: Version): Promise<PlayerReply> {
-    if (!this.session || !this.current(version)) return this.reply('저장할 현재 게임이 없습니다.');
-    if (this.extensions?.presentationPending) return this.reply('화면 갱신 후 다시 저장해 주세요.');
+  private encode(record?:SaveRecord):string {
+    if(!this.session)throw new Error('No game to save.');
+    if(this.extensions?.presentationPending)throw new Error('화면 갱신 후 다시 저장해 주세요.');
     const extensions=this.extensions?.save(true);
-    const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{})}:undefined;
-    const text = canonical({ saveVersion: '1.0.0', coreVersion: CORE_VERSION,
-      contentFingerprint: this.content.contentFingerprint, origin:this.session.origin,commands:this.session.commands,state:this.session.state,...(presentation?{playerPresentation:presentation}:{}) });
-    if (new TextEncoder().encode(text).length > MAX_BYTES) return this.reply('세이브는 16 MiB 이하여야 합니다.');
-    try { await this.files.write(text); return this.reply(null, '게임을 저장했습니다.'); }
-    catch (e) { return this.reply(String(e)); }
+    const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions||record?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{}),...(record?{saveRecord:record}:{})}:undefined;
+    const text=canonical({saveVersion:'1.0.0',coreVersion:CORE_VERSION,contentFingerprint:this.content.contentFingerprint,origin:this.session.origin,commands:this.session.commands,state:this.session.state,...(presentation?{playerPresentation:presentation}:{})});
+    if(new TextEncoder().encode(text).length>MAX_BYTES)throw new Error('Save exceeds 16 MiB. Export an earlier checkpoint.');
+    return text;
   }
-  async load(version: Version | null): Promise<PlayerReply> {
-    if (!this.current(version)) return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
+  async save(version:Version):Promise<PlayerReply>{
+    if(this.hasSlots)return this.slots({type:'open',kind:'save'},version);
+    if(!this.session||!this.current(version))return this.reply('저장할 현재 게임이 없습니다.');
+    try{await this.files.write(this.encode());return this.reply(null,'게임을 저장했습니다.');}catch(error){return this.reply(String(error));}
+  }
+  async load(version:Version|null):Promise<PlayerReply>{
+    if(this.hasSlots)return this.slots({type:'open',kind:'load'},version);
+    if(!this.current(version))return this.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');
+    try{const text=await this.files.read();if(text===null)return this.reply();if(!this.current(version))return this.reply('Game changed while importing.');return this.restore(text);}catch(error){return this.reply(String(error));}
+  }
+  private restore(text:string):PlayerReply {
     try {
-      const text = await this.files.read(); if (text === null) return this.reply();
-      if (!this.current(version)) return this.reply('불러오는 동안 게임이 변경되었습니다. 다시 선택해 주세요.');
       const value = parseSave(text);
       // Plugin states are opaque to the save schema; validate them separately as a plain object.
       const {extensions:savedExtensions,...presentationRest}=((value as {playerPresentation?:PresentationEnvelope}).playerPresentation??{}) as PresentationEnvelope;
@@ -217,7 +240,102 @@ export class WebPlayerController implements PlayerBridge {
         if (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
       } catch (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; throw error; }
       this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions, true, this.session.state);
-      this.generation++; return this.reply(null, '저장한 게임을 불러왔습니다.');
+      this.generation++;this.slotView.screenId=null;this.slotView.confirmation=null;this.slotAutoGeneration=this.generation;this.slotAutoRevision=this.session.state.stateRevision;this.slotAutoPhase=this.session.state.phase; return this.reply(null, '저장한 게임을 불러왔습니다.');
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }
   }
+  private currentRecord():Pick<SaveRecord,'date'|'place'|'screenId'|'phase'>{
+    const c=localizeContent(this.content,this.content.project.localization,this.locale),state=this.session?.state;
+    if(!state)return {date:'',place:'',screenId:'',phase:''};
+    const screenId=c.project.visual?resolveScreen(c.project.visual,state,this.projection(state,c).narrative?.node.type):'';
+    const time=calendarDate(c.project,state.periodIndex);
+    return {date:c.project.calendar?calendarText(time,c.project.calendar,this.locale):`${time.year} / ${time.month} · ${time.periodInMonth+1}`,place:c.project.visual?.screens.find(s=>s.id===screenId)?.label??screenId,screenId,phase:state.phase};
+  }
+  private preview(row:StoredSlot):SlotRow {
+    const key={automatic:row.automatic,index:row.index};
+    try{
+      const value=parseSave(row.text) as {state?:RunState;contentFingerprint?:string;saveVersion?:string;coreVersion?:string;commands?:unknown;playerPresentation?:PresentationEnvelope};
+      const state=value.state;
+      if(!state||!Number.isInteger(state.periodIndex)||state.periodIndex<0||state.periodIndex>1000000||typeof state.phase!=='string'||!state.attributes||Object.values(state.attributes).some(n=>!Number.isInteger(n))||!Array.isArray(value.commands))throw new Error('Invalid record');
+      const record=value.playerPresentation?.saveRecord;
+      if(record!==undefined&&!validSaveRecord(record))throw new Error('Invalid record metadata');
+      const compatible=value.contentFingerprint===this.content.contentFingerprint&&value.saveVersion==='1.0.0'&&value.coreVersion===CORE_VERSION;
+      return {...key,status:compatible?'ready':'incompatible',periodIndex:state.periodIndex,...(record?{record}:{})};
+    }catch{return {...key,status:'invalid'};}
+  }
+  private async refreshSlots(){
+    if(!this.slotStorage)throw new Error('Browser save storage is unavailable. Export a backup file to keep your progress.');
+    try{const stored=await this.slotStorage.read(),rows:SlotRow[]=[];
+      for(const automatic of [false,true])for(let index=0;index<slotCount(this.content.project.visual!,automatic);index++){
+        const row=stored.find(r=>r.automatic===automatic&&r.index===index);rows.push(row?this.preview(row):{automatic,index,status:'empty'});
+      }
+      this.slotView.rows=rows;this.slotView.available=true;
+    }catch(error){this.slotView.available=false;throw error;}
+  }
+  private async writeSlot(automatic:boolean,index:number,expected:string|null){
+    if(!this.slotStorage)throw new Error('Browser save storage is unavailable.');
+    // Capture the presentation after React committed; the transaction itself stays synchronous.
+    const base=JSON.parse(this.encode()) as {playerPresentation?:PresentationEnvelope};
+    const detail=this.currentRecord(),savedAt=new Date().toISOString();
+    await this.slotStorage.update(rows=>{
+      const previews=rows.map(row=>this.preview(row));let sequence=1;
+      for(const row of previews)sequence=Math.max(sequence,(row.record?.sequence??0)+1);
+      if(!Number.isSafeInteger(sequence))throw new Error('Save sequence is too large. Export a backup.');
+      if(automatic){let oldest=Infinity;for(let i=0;i<slotCount(this.content.project.visual!,true);i++){const row=previews.find(r=>r.automatic&&r.index===i),seq=row?.record?.sequence??0;if(seq<oldest){oldest=seq;index=i;}}}
+      else if((rows.find(r=>!r.automatic&&r.index===index)?.text??null)!==expected)throw new Error(this.words('확인하는 동안 기록이 바뀌었습니다. 다시 선택해 주세요.','The record changed during confirmation. Select it again.','確認中に記録が変わりました。選び直してください。'));
+      const record:SaveRecord={version:1,...detail,thumbnail:'',savedAt,sequence,automatic};
+      const presentation={...this.presentation.envelope(this.content,this.session!.state),...base.playerPresentation,saveRecord:record};
+      const text=canonical({...base,playerPresentation:presentation});
+      if(new TextEncoder().encode(text).length>MAX_BYTES)throw new Error('Save exceeds 16 MiB.');
+      return {automatic,index,text};
+    });
+    await this.refreshSlots();
+  }
+  async checkpoint(version:Version):Promise<PlayerReply>{
+    if(!this.hasSlots||!this.session||!this.current(version)||this.slotBusy||this.slotView.screenId||this.extensions?.presentationPending||this.extensions?.restorationPending)return this.reply();
+    const state=this.session.state,previous=this.slotAutoGeneration===this.generation?this.slotAutoRevision:-1,previousPhase=this.slotAutoPhase;
+    if(previous===state.stateRevision)return this.reply();
+    this.slotAutoGeneration=this.generation;this.slotAutoRevision=state.stateRevision;this.slotAutoPhase=state.phase;
+    const command=this.slotLastCommand;
+    if(!slotCount(this.content.project.visual!,true)||previous>=0&&(command==='navigate'||command==='visit'||command==='advanceNarrative'&&previousPhase===state.phase))return this.reply();
+    this.slotBusy=true;
+    try{await this.writeSlot(true,0,null);return this.reply();}
+    catch(error){return this.reply(this.words('자동 저장 실패: ','Automatic save failed: ','自動保存に失敗: ')+String(error));}
+    finally{this.slotBusy=false;}
+  }
+  async slots(action:SaveSlotAction,version:Version|null):Promise<PlayerReply>{
+    if(!this.hasSlots||!this.current(version))return this.reply('Game changed. Select again.');
+    if(this.slotBusy)return this.reply();
+    const design=this.content.project.visual!;
+    if(action.type==='close'||action.type==='cancel'){this.slotView.confirmation=null;if(action.type==='close')this.slotView.screenId=null;return this.reply();}
+    this.slotBusy=true;
+    try{
+      if(action.type==='export'){if(!this.session)throw new Error('No game to export.');await this.files.write(this.encode());return this.reply(null,this.words('백업 파일을 내려받았습니다.','Backup file downloaded.','バックアップをダウンロードしました。'));}
+      if(action.type==='import'&&this.session){this.slotView.confirmation='import';return this.reply();}
+      if(action.type==='import'||action.type==='confirm'&&this.slotView.confirmation==='import'){const text=await this.files.read();if(text===null)return this.reply();if(!this.current(version))throw new Error('Game changed while importing.');return this.restore(text);}
+      if(action.type==='open'){
+        const ids=slotScreens(design,action.kind),screenId=action.screenId??ids[0];
+        if(!screenId||!ids.includes(screenId))throw new Error('Connect an authored save/load records modal to this project.');
+        this.slotView={...this.slotView,screenId,automatic:false,selected:0,page:0,confirmation:null};
+        await this.refreshSlots();return this.reply();
+      }
+      if(!this.slotView.screenId)throw new Error('Open the records window first.');
+      if(action.type==='group'){this.slotView.automatic=action.automatic;this.slotView.selected=0;this.slotView.page=0;this.slotView.confirmation=null;await this.refreshSlots();return this.reply();}
+      if(action.type==='page'){this.slotView.page=Math.max(0,Math.min(Math.ceil(slotCount(design,this.slotView.automatic)/6)-1,this.slotView.page+Math.sign(action.delta)));this.slotView.confirmation=null;return this.reply();}
+      if(action.type==='select'){if(!Number.isInteger(action.index)||action.index<0||action.index>=slotCount(design,this.slotView.automatic))throw new Error('Invalid save slot.');this.slotView.selected=action.index;this.slotView.confirmation=null;return this.reply();}
+      const saving=action.type==='save'||action.type==='confirm'&&this.slotView.confirmation==='save';
+      if(action.type==='confirm'&&!this.slotView.confirmation)return this.reply();
+      if(saving&&(!this.session||this.slotView.automatic))throw new Error('Automatic records are protected. Start a game to save a manual record.');
+      if(!this.slotStorage)throw new Error('Browser save storage unavailable. Export a backup file.');
+      let text:string|null=null;
+      await this.slotStorage.update(rows=>{text=rows.find(r=>r.automatic===this.slotView.automatic&&r.index===this.slotView.selected)?.text??null;
+        if(action.type==='confirm'&&text!==this.slotExpected)throw new Error('The record changed during confirmation. Select it again.');return null;});
+      if(!saving&&(!text||this.preview({automatic:this.slotView.automatic,index:this.slotView.selected,text}).status!=='ready'))throw new Error('This record cannot be loaded.');
+      if(action.type!=='confirm'&&(!saving||text!==null)){this.slotExpected=text;this.slotView.confirmation=saving?'save':'load';return this.reply();}
+      this.slotView.confirmation=null;
+      if(saving){await this.writeSlot(false,this.slotView.selected,action.type==='confirm'?this.slotExpected:null);return this.reply(null,this.words('이야기를 기록했습니다.','Record saved.','物語を保存しました。'));}
+      return this.restore(text!);
+    }catch(error){this.slotView.confirmation=null;return this.reply(error instanceof Error?error.message:String(error));}
+    finally{this.slotBusy=false;}
+  }
+
 }

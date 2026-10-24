@@ -1,3 +1,4 @@
+import {IndexedSlotStorage} from '../../packages/web-player/slot-storage.js';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Player } from '../player/renderer/main.js';
@@ -43,7 +44,7 @@ async function start() {
       const link = document.createElement('a'); link.href = url; link.download = 'raising-save.json';
       document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
-  }, validateSave, extensions.active ? extensions : null);
+  }, validateSave, extensions.active ? extensions : null, new IndexedSlotStorage(JSON.stringify([bundle.content.project.gameId,new URL('.',document.baseURI).pathname])));
   document.title = bundle.content.project.title;
   createRoot(container).render(<Player />);
 }

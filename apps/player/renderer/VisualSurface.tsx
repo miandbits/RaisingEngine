@@ -1,3 +1,5 @@
+import {SaveSlotsWidget} from './SaveSlotsWidget.js';
+import type {SaveSlotsView,SaveSlotAction} from '../../../packages/player-service/save-slots.js';
 import {calendarGrid,calendarLabels,type CalendarProject} from '../../../packages/core/calendar.js';
 import { resolvePresentation, presentationActivity } from '../../../packages/visual/variants.js';
 import React, { useEffect, useRef, useState } from 'react';
@@ -18,6 +20,8 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  saveSlots?:SaveSlotsView;
+  onSlotAction?:(action:SaveSlotAction)=>void;
   rosterCharacterIds?: readonly string[];
   'choice-result'?:string;
   characters?: readonly {id:string;name:string}[];
@@ -120,6 +124,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='image')body=source?<TransitionImage src={assetUrl(source)} element={element}/>:editing?<div className="visual-placeholder">{element.imageSource??'이미지'} · 에셋 선택</div>:null;
       if(element.kind==='text')body=<span>{text}</span>;
       if((element.kind as string)==='plugin'){style.overflow='visible';body=<ExtensionView instance={`${screenId}/${element.id}`} extension={(element as unknown as {extension?:ExtensionSpec}).extension} width={element.width} height={element.height} assetUrl={assetUrl} editing={editing}/>;}
+      if(element.kind==='saveSlots'||element.kind==='loadSlots')body=<SaveSlotsWidget element={element} {...(context.saveSlots?{view:context.saveSlots}:{})} {...(context.locale?{locale:context.locale}:{})} busy={busy||!enabled||editing} {...(context.onSlotAction?{onAction:context.onSlotAction}:{})}/>;
       if(element.kind==='input'){
         const field=context.userFields?.find(f=>f.id===element.userFieldId);
         body=<input className="visual-input" type="text" aria-label={field?.label??element.label??element.id} value={context.userValues?.[element.userFieldId??'']??field?.initial??''} disabled={busy||!enabled||!field||editing||!context.userFieldsEditable} autoComplete="off" spellCheck={false} onChange={event=>field&&onUserValue?.(field.id,event.target.value)}/>;

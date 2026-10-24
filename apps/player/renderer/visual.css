@@ -94,3 +94,14 @@
 .roster-schedule .roster-schedule-actors label { padding: 0; background: transparent; border-radius: 0; }
 .roster-schedule select { padding: 4px 8px; margin-top: 0; }
 .roster-schedule-actions button { padding: 4px 8px; line-height: 1.2; }
+
+.slot-gameplay{flex:1;min-height:0;display:flex;position:relative}.slot-gameplay>.visual-viewport{flex:1}
+.authored-slot-modal{position:absolute;inset:34px 0 0;z-index:40;background:#13231caa;display:flex}.authored-slot-modal>.visual-viewport{flex:1}
+.web-save-slots{width:100%;height:100%;display:flex;flex-direction:column;gap:12px;font-size:18px;white-space:normal;box-sizing:border-box}
+.web-save-slots button{font:inherit;color:inherit;background:var(--slot-paper,#f5efdf);border:1px solid var(--slot-border,#c7b99a);border-radius:3px;padding:8px 12px;cursor:pointer}
+.web-save-slots button:disabled{opacity:.55;cursor:default}.web-save-slots button[aria-pressed=true]{outline:3px solid var(--slot-accent,#345c50);outline-offset:-3px}.web-save-slots button:focus-visible{outline:3px solid #bd7436;outline-offset:2px}
+.slot-toolbar,.slot-footer,.slot-footer>div,.slot-backups{display:flex;gap:12px;align-items:center}.slot-backups{margin-left:auto}.slot-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,minmax(0,1fr));gap:12px;flex:1;min-height:0}.slot-card{display:flex;gap:14px;text-align:left;min-width:0;overflow:hidden}.slot-thumbnail{display:flex;align-items:center;justify-content:center;background:#e8e2d4;width:27%;min-width:90px;font-size:15px;text-align:center}.slot-details{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}.slot-details>span,.slot-details>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.slot-details strong{color:var(--slot-accent,#345c50)}.slot-details small{font-size:14px}.slot-footer{justify-content:space-between}.slot-confirmation{justify-content:center;align-items:center;background:#f5efdf;color:#263c36;text-align:center}.slot-confirmation h2{font-size:28px}.slot-confirmation p{margin:4px}.slot-confirmation button{margin:10px}.visual-saveSlots,.visual-loadSlots{padding:0!important}
+
+.visual-player{position:relative}
+
+.authored-slot-modal{flex-direction:column}.authored-slot-modal>.alert,.authored-slot-modal>.notice{flex-shrink:0}

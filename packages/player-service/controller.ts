@@ -1,3 +1,4 @@
+import type {SaveSlotsView,SaveSlotAction} from './save-slots.js';
 import type { CalendarProject } from '../core/calendar.js';
 import { scheduleStep } from '../player-service/schedule.js';
 import {battleUiTypes,selectBattle,type BattleSelection,type BattleUiAction} from '../player-service/battle.js';
@@ -16,6 +17,7 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  saveSlots?:SaveSlotsView;
   rosterCharacterIds?: readonly string[];
   choiceFeedback?:string;
   choiceHints?:Readonly<Record<string,string>>;
@@ -63,6 +65,8 @@ export type PlayerAction = GameplayCommand | SystemsCommand | TimelineAction | B
   | { type: 'commitPlan'; activityIds: string[] }
   | { type: 'scheduleStep' } | { type: 'execute' } | { type: 'continue' } | { type: 'choose'; choiceId: string };
 export interface PlayerBridge {
+  slots?(action:SaveSlotAction,version:Version|null):Promise<PlayerReply>;
+  checkpoint?(version:Version):Promise<PlayerReply>;
   setLocale?(locale:string):Promise<PlayerReply>;
   view(): Promise<PlayerReply>;
   newRun(version: Version | null, userValues?: Record<string, string>): Promise<PlayerReply>;

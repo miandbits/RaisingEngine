@@ -1,8 +1,9 @@
+import {slotScreens,type SaveSlotAction} from '../../../packages/player-service/save-slots.js';
 import {calendarText} from '../../../packages/core/calendar.js';
 import { periodLabel } from '../../../packages/player-service/schedule.js';
 import { assetUrl } from './assets.js';
 import { widgetCommand, type WidgetCommand } from './JourneyWidgets.js';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Confirmation } from '../../../packages/gameplay/model.js';
 import type { PlayerAction, PlayerView } from '../../../packages/player-service/controller.js';
 import type { ReadonlyDesign, Element, ScreenId } from '../../../packages/visual/model.js';
@@ -14,10 +15,20 @@ import {resultPlaybackText} from '../../../packages/visual/timeline.js';
 
 import { resolveScreen } from '../../../packages/visual/routing.js';
 
-export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,sound,muted,preview,error,notice}: {
+export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,sound,muted,preview,error,notice,slots}: {
+  slots?:(action:SaveSlotAction)=>void;
   view:PlayerView;design:ReadonlyDesign;busy:boolean;plan:string[];onPlan:(value:string[])=>void;
   act:(action:PlayerAction)=>void;newRun:(userValues?:Record<string,string>)=>void;save:()=>void;load:()=>void;sound:()=>void;muted:boolean;preview:boolean;error:string|null;notice:string|null;
 }) {
+  const modalRef=useRef<HTMLDivElement>(null),modalId=view.saveSlots?.screenId;
+  useEffect(()=>{
+    if(!modalId)return;const previous=document.activeElement as HTMLElement|null,root=modalRef.current;
+    const focusable=()=>Array.from(root?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex="0"]')??[]);
+    (root?.querySelector<HTMLElement>('[autofocus]')??focusable()[0])?.focus();
+    const handler=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();slots?.({type:view.saveSlots?.confirmation?'cancel':'close'});}else if(event.key==='Tab'){const list=focusable(),first=list[0],last=list.at(-1);if(!list.includes(document.activeElement as HTMLElement)){event.preventDefault();first?.focus();}else if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};
+    window.addEventListener('keydown',handler,true);return()=>{window.removeEventListener('keydown',handler,true);previous?.focus();};
+  },[modalId,view.saveSlots?.confirmation]);
+  useLayoutEffect(()=>{if(!slots||!view.saveSlots)return;const handler=(event:KeyboardEvent)=>{if(event.key==='F5'||event.key==='F9'){event.preventDefault();if(!busy&&!modalId)slots({type:'open',kind:event.key==='F5'?'save':'load'});}};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);},[slots,busy,modalId]);
   const defaults=()=>Object.fromEntries((view.userFields??[]).map(field=>[field.id,field.initial]));
   const [draft,setDraft]=useState<Record<string,string>>(defaults);
   const fieldsKey=JSON.stringify(view.userFields??[]);
@@ -108,20 +119,26 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   context.portraitTransforms=portraitTransforms;
   context.speakerPortrait=node?.type==='dialogue'&&node.speakerId
     ?view.characters.find(character=>character.id===node.speakerId)?.portraits.face??null:null;
+  if(view.saveSlots)context.saveSlots=view.saveSlots;if(slots)context.onSlotAction=slots;
   if(view.calendarProject)context.calendarProject=view.calendarProject;if(view.locale)context.locale=view.locale;
   if(view.time)context.calendarTime={year:view.time.year,month:view.time.month};
   context.planningKey=`${view.generation}:${Math.floor((s?.periodIndex??0)/(view.periodsPerMonth??3))}`;context.scheduleCommitted=!!s?.schedule;context.periodsPerMonth=view.periodsPerMonth??3;context.schedulePlayback=view.schedulePlayback??'manual';
   const action=(action:NonNullable<Element['action']>,element:Element)=>{
     if(pendingRef.current)return;
+    if(action==='closeModal'&&slots){slots({type:'close'});return;}
+    if(action==='openModal'&&slots&&element.screenId){const kind=slotScreens(design,'save').includes(element.screenId)?'save':'load';slots({type:'open',kind,screenId:element.screenId});return;}
+    if(modalId&&action==='save'){save();return;}if(modalId&&action==='load'){load();return;}
+    if(modalId&&action!=='sound')return;
     if(action==='navigate'&&!s&&design.routing&&element.screenId){setTitleScreen(element.screenId);return;}
     const command=widgetCommand(element,s);if(command){run(command);return;}
     if(action==='start'){if(!busy)newRun(view.userFields?.length?{...(s?.userValues??draft)}:undefined);}else if(action==='save')save();else if(action==='load')load();else if(action==='sound')sound();
     else if(action==='advance'&&s){if(['planning','ready'].includes(s.phase)){if(s.roster)act(s.phase==='planning'?{type:'assignActivities',assignments:{...s.roster.assignments}}:{type:'execute'});else if(!s.schedule||plan.some((id,i)=>id!==s.schedule?.[i]))act({type:'schedule',activityIds:plan});else act({type:'execute'});}else act({type:'continue'});}
   };
-  return <ExtensionPlaybackRate.Provider value={view.timeline?.plan.resultPlayback?(view.timeline.cursor.paused?0:view.timeline.cursor.speed):1}><div className="visual-player" data-runtime-backend={view.runtimeBackend}><div className="visual-status"><span>{view.title} · {busy?'처리 중…':preview?'초안 미리보기':'플레이 중'}</span><span>{muted?'소리 꺼짐':'소리 켜짐'}</span></div>{error&&<div role="alert" className="alert">{error}</div>}{notice&&<p role="status" className="notice">{notice}</p>}
-    <VisualSurface design={effectiveDesign} screenId={screen} context={{...context,userFields:view.userFields??[],userValues:s?.userValues??draft,userFieldsEditable:!s,...(view.dataUi?{dataUi:view.dataUi}:{})}} assetUrl={id=>assetUrl(id,view.generation)} busy={busy||!!pending} fitViewport onUserValue={(id,value)=>setDraft(previous=>({...previous,[id]:value}))} onAction={action} onCommitPlan={()=>act({type:'commitPlan',activityIds:plan})} onCommand={run} onChoice={choiceId=>act({type:'choose',choiceId})} onPlan={(index,id)=>{const next:string[]=[...plan];next[index]=id;onPlan(next);}}>
+  return <ExtensionPlaybackRate.Provider value={view.timeline?.plan.resultPlayback?(view.timeline.cursor.paused?0:view.timeline.cursor.speed):1}><div className="visual-player" data-runtime-backend={view.runtimeBackend}><div className="visual-status"><span>{view.title} · {busy?'처리 중…':preview?'초안 미리보기':'플레이 중'}</span><span>{muted?'소리 꺼짐':'소리 켜짐'}</span></div>{error&&!modalId&&<div role="alert" className="alert">{error}</div>}{notice&&!modalId&&<p role="status" className="notice">{notice}</p>}
+    <div className="slot-gameplay" inert={!!modalId}><VisualSurface design={effectiveDesign} screenId={screen} context={{...context,userFields:view.userFields??[],userValues:s?.userValues??draft,userFieldsEditable:!s,...(view.dataUi?{dataUi:view.dataUi}:{})}} assetUrl={id=>assetUrl(id,view.generation)} busy={busy||!!pending} fitViewport onUserValue={(id,value)=>setDraft(previous=>({...previous,[id]:value}))} onAction={action} onCommitPlan={()=>act({type:'commitPlan',activityIds:plan})} onCommand={run} onChoice={choiceId=>act({type:'choose',choiceId})} onPlan={(index,id)=>{const next:string[]=[...plan];next[index]=id;onPlan(next);}}>
       {pending&&<div className="transaction-overlay"><div className="transaction-dialog" role="dialog" aria-modal="true" aria-labelledby="transaction-title"><h3 id="transaction-title">{pending.confirmation.title??'거래 확인'}</h3><p>{pending.confirmation.message??'계속하시겠습니까?'}</p><p className="transaction-summary">{pending.summary}</p><small>효과는 능력치 범위에 따라 제한됩니다.</small><div><button autoFocus disabled={busy} onClick={confirm}>{pending.confirmation.confirmLabel??'확인'}</button><button disabled={busy} onClick={cancel}>{pending.confirmation.cancelLabel??'취소'}</button></div></div></div>}
-    </VisualSurface>
-    <TimelineOverlay timeline={view.timeline??null} generation={view.generation} busy={busy} act={act} save={save} load={load}/>
+    </VisualSurface></div>
+    {modalId&&<div className="authored-slot-modal" role="dialog" aria-modal="true" aria-label={design.screens.find(s=>s.id===modalId)?.label??"Records"} ref={modalRef}>{error&&<div role="alert" className="alert">{error}</div>}{notice&&<p role="status" className="notice">{notice}</p>}<VisualSurface design={effectiveDesign} screenId={modalId} context={context} assetUrl={id=>assetUrl(id,view.generation)} busy={busy} fitViewport onAction={action}/></div>}
+    {!modalId&&<TimelineOverlay timeline={view.timeline??null} generation={view.generation} busy={busy} act={act} save={save} load={load}/>}
   </div></ExtensionPlaybackRate.Provider>;
 }

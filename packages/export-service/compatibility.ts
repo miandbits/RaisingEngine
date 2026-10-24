@@ -1,3 +1,5 @@
+import {slotScreens} from '../player-service/save-slots.js';
+import {resolveScreenElements} from '../visual/components.js';
 import type { ContentSnapshot } from '../core/model.js';
 import { usesPresentationVariants } from '../visual/variants.js';
 import { usesUiContext } from '../visual/context.js';
@@ -61,7 +63,11 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   if(content.project.progression)requiredFeatures.push('progression-sessions-v1');
   if(content.project.progression?.model==='unified-v2')requiredFeatures.push('unified-time-v2');
   const ui=content.project.visual;
-  if(ui&&(ui.screens.some(s=>s.modal)||[...ui.screens.flatMap(s=>s.elements),...(ui.components??[]).flatMap(c=>c.elements)].some(e=>e.flowLayout||e.overflow||e.sort||e.selectionKey||e.tooltip||['selectRow','openModal','closeModal'].includes(e.action??''))||(ui.components??[]).some(c=>c.elements.some(e=>e.kind==='component'))))requiredFeatures.push('ui-composition-v1');
+  // save-slots-v1 includes its record modals. Keep the broader composition gate
+  // for ordinary modals, scrolling, sorting, selection, tooltips and nested components.
+  if(ui){const recordModals=new Set(slotScreens(ui));
+    if(ui.screens.some(s=>s.modal&&!recordModals.has(s.id)||resolveScreenElements(ui,s.id).some(e=>recordModals.has(s.id)&&(!['panel','text','image','stats','meter','group','component','button','saveSlots','loadSlots'].includes(e.kind)||!!e.action&&!['openModal','closeModal','save','load','sound'].includes(e.action))||e.action==='openModal'&&!recordModals.has(e.screenId??'')||e.action==='closeModal'&&!recordModals.has(s.id)))||[...ui.screens.flatMap(s=>s.elements),...(ui.components??[]).flatMap(c=>c.elements)].some(e=>e.flowLayout||e.overflow||e.sort||e.selectionKey||e.tooltip||e.action==='selectRow')||(ui.components??[]).some(c=>c.elements.some(e=>e.kind==='component')))requiredFeatures.push('ui-composition-v1');
+  }
   if(content.project.roster?.stateModel==='character-v1')requiredFeatures.push('character-scoped-rules-v1');
   const personalStory=(v:unknown):boolean=>!!v&&typeof v==='object'&&(Array.isArray(v)?v.some(personalStory):((v as any).trigger==='after-event'||(['flag','setFlag'].includes((v as any).op)&&!!(v as any).owner)||Object.values(v).some(personalStory)));
   if(personalStory(content))requiredFeatures.push('actor-story-links-v1');

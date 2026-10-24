@@ -1,3 +1,4 @@
+import type {SaveSlotAction} from '../../../packages/player-service/save-slots.js';
 import {calendarText,calendarLabels} from '../../../packages/core/calendar.js';
 import React, { useEffect, useRef, useState } from 'react';
 import type { PlayerAction, PlayerBridge, PlayerReply, PlayerView, Version } from '../../../packages/player-service/controller.js';
@@ -107,9 +108,11 @@ export function Player({ preview = false }: { preview?: boolean }) {
     else if (!muted) void music.current?.play().catch(() => {});
   }, [hidden, muted]);
 
+  const slots=window.player.slots?(action:SaveSlotAction)=>void request(()=>window.player.slots!(action,version)):undefined;
+  useEffect(()=>{if(!window.player.checkpoint||!version||!view?.saveSlots?.checkpointPending||view.saveSlots.screenId||busy||hidden||settingsOpen)return;const timer=setTimeout(()=>void request(()=>window.player.checkpoint!(version)),40);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,view?.saveSlots?.checkpointPending,view?.saveSlots?.screenId,busy,hidden,settingsOpen]);
   const act = (action: PlayerAction) => { if ((document.hidden || settingsOpen) && (action.type === 'scheduleStep' || action.type === 'timelineTick')) return; if (version) void request(() => window.player.act(action, version)); };
   const autoStep=scheduleStep(state??null,view?.schedulePlayback,view?.timeline);
-  useEffect(()=>{if(settingsOpen||hidden||busy||error||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error,hidden,settingsOpen]);
+  useEffect(()=>{if(settingsOpen||hidden||busy||error||view?.saveSlots?.screenId||view?.saveSlots?.checkpointPending||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error,hidden,settingsOpen,view?.saveSlots?.screenId,view?.saveSlots?.checkpointPending]);
   const canPlan = state?.phase === 'planning' || state?.phase === 'ready';
   const dirty = !state?.schedule || plan.some((id, index) => id !== state.schedule?.[index]);
   const attributeLabel = (id: string) => view?.attributes.find(x => x.id === id)?.label ?? id;
@@ -120,7 +123,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const node = view?.narrative?.node;
 
   const settings = <PlayerSettings value={preferences} onChange={setPreferences} locale={view?.locale} onOpenChange={setSettingsOpen} muted={muted} onMuted={setMuted}/>;
-  if (view?.visual) return <>{settings}{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}<VisualPlayer view={view} design={view.visual} busy={busy} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></>;
+  if (view?.visual) return <>{settings}{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}<VisualPlayer {...(slots?{slots}:{})} view={view} design={view.visual} busy={busy||!!view.saveSlots?.checkpointPending&&!view.saveSlots.screenId} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></>;
   return <div className="app-shell">{settings}
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">✦</span><div><strong>육성 일지</strong><span>RAISING PLAYER</span></div></div>
