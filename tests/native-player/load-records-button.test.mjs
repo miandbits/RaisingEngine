@@ -10,7 +10,7 @@ import { desktopTarget, gameDirectory, playerExecutable } from '../../dist/packa
 
 test('touch Load opens empty records and restores autosaves without any manual save; legacy Load stays disabled', { timeout: 120000 }, async () => {
   await mkdir('.cache/load-records-button', { recursive: true });
-  const out = await mkdtemp(resolve('.cache/load-records-button/run-')), projectRoot = join(out, 'project');
+  const out = await mkdtemp(resolve('.cache/load-records-button/한글 run-')), projectRoot = join(out, 'project');
   await cp(resolve('examples/my-first-raising-game'), projectRoot, { recursive: true });
   const projectFile = join(projectRoot, 'project.json'), project = JSON.parse(await readFile(projectFile, 'utf8'));
   const target = desktopTarget(), runtime = resolve(process.env.NATIVE_PLAYER_TEST_RUNTIME ?? process.env.RAISING_NATIVE_PLAYER_RUNTIME ?? 'dist/native-player-app');
@@ -40,7 +40,7 @@ test('touch Load opens empty records and restores autosaves without any manual s
     { id: 'close', kind: 'button', action: 'closeModal', text: 'Close', x: 30, y: 650, width: 270, height: 45 },
   ] });
   await writeFile(projectFile, JSON.stringify(project));
-  const slotted = await publish('slots'), save = join(out, 'save.json');
+  const slotted = await publish('slots'), save = join(out, '기록 save.json');
   // First inspect the affordance so failures identify disabled touch UI directly.
   const title = await run(slotted, 'slot-title', [{ checkpoint: 'title' }], save);
   assert.equal(title.final.elements.find(e => e.id === 'load').enabled, true, 'Record browser must open before any manual save exists');
@@ -57,6 +57,9 @@ test('touch Load opens empty records and restores autosaves without any manual s
   assert.equal(at('automatic').elements.find(e => e.id === 'load-records__slots-request').enabled, true);
   assert.deepEqual(at('restored').state, at('initial').state);
   await assert.rejects(access(save), { code: 'ENOENT' });
+  const automaticFile = join(out, '기록 save.slots', 'auto-1.json');
+  const automaticRecord = JSON.parse(await readFile(automaticFile, 'utf8'));
+  assert.deepEqual(automaticRecord.state, at('initial').state, 'The rotating slot keeps the Unicode save filename stem');
   const fresh = await run(slotted, 'fresh-auto', [{ clickWindow: 'load' }, { waitFrames: 2 }, { clickWindow: 'load-records__slots-auto' }, { waitFrames: 2 }, { clickWindow: 'load-records__slots-request' }, { waitFrames: 2 }, { clickWindow: 'load-records__slots-confirm' }, { waitFrames: 2 }], save);
   assert.deepEqual(fresh.final.state, at('initial').state, 'A fresh process restores an automatic record using only pointer controls');
   await writeFile(resolve('.cache/load-records-button/latest.json'), JSON.stringify({ out, target, ok: true }, null, 2));

@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <stdexcept>
+#include <filesystem>
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #endif
@@ -48,7 +49,13 @@ class GameAudio {
     const auto key=std::string(background?"music:":"effect:")+file;
     auto it=sounds.find(key);if(it!=sounds.end())return it->second.get();
     auto value=std::make_unique<ma_sound>();
-    if(ma_sound_init_from_file(&engine,file.c_str(),MA_SOUND_FLAG_DECODE,nullptr,nullptr,value.get())!=MA_SUCCESS)
+#ifdef _WIN32
+    const auto native_file=std::filesystem::u8path(file);
+    const auto loaded=ma_sound_init_from_file_w(&engine,native_file.c_str(),MA_SOUND_FLAG_DECODE,nullptr,nullptr,value.get());
+#else
+    const auto loaded=ma_sound_init_from_file(&engine,file.c_str(),MA_SOUND_FLAG_DECODE,nullptr,nullptr,value.get());
+#endif
+    if(loaded!=MA_SUCCESS)
       throw std::runtime_error("오디오 파일을 재생할 수 없습니다: "+file);
     auto* result=value.get();sounds[key]=std::move(value);return result;
   }

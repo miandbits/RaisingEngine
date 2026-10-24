@@ -14,7 +14,7 @@ inline bool has_save_slots(const Json& visual) {
 inline int slot_count(const Json& visual,bool automatic) {
   return std::clamp(visual.value("saveSystem",Json::object()).value(automatic?"autoSlots":"manualSlots",automatic?3:6),automatic?0:1,automatic?9:30);
 }
-inline fs::path slot_directory(const fs::path& legacy) {return legacy.parent_path()/(legacy.stem().u8string()+".slots");}
+inline fs::path slot_directory(const fs::path& legacy) {auto name=legacy.stem();name+=".slots";return legacy.parent_path()/name;}
 inline fs::path slot_path(const fs::path& legacy,bool automatic,int index) {
   if(!automatic&&index==0)return legacy;
   return slot_directory(legacy)/((automatic?"auto-":"manual-")+std::to_string(index+1)+".json");

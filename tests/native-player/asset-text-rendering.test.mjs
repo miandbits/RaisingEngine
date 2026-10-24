@@ -50,6 +50,9 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
   const manifestPath = join(projectRoot, 'assets/manifest.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   manifest.assets.push({ id: 'render-fixture', kind: 'image', path: assetPath });
+  const musicPath = 'assets/render-music.wav'; // The exported directory supplies the Unicode path.
+  await cp(resolve('tests/native-player/fixtures/tone.wav'), join(projectRoot, musicPath));
+  manifest.assets.push({ id: 'render-music', kind: 'audio', path: musicPath });
   await writeFile(manifestPath, JSON.stringify(manifest));
   const projectPath = join(projectRoot, 'project.json');
   const project = JSON.parse(await readFile(projectPath, 'utf8'));
@@ -61,7 +64,7 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
     await writeFile(file, JSON.stringify(activity));
   }
   project.visual = {
-    ...canvas, viewportMode: 'fit',
+    ...canvas, viewportMode: 'fit', defaultScene: { musicAssetId: 'render-music' },
     screens: [
       { id: 'title', label: 'Rendering proof', elements: [
         { id: 'background', kind: 'panel', x: 0, y: 0, ...canvas, fill: '#0c0e12' },
@@ -89,7 +92,7 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
   async function play(name, steps) {
     const script = join(out, `${name}.json`), reportFile = join(out, `${name}-report.json`);
     await writeFile(script, JSON.stringify(steps));
-    const run = spawnSync(executable, ['--bundle', directory, '--save', join(out, 'save.json'), '--automation', script, '--report', reportFile, '--hidden'], { encoding: 'utf8', windowsHide: true, timeout: 90000 });
+    const run = spawnSync(executable, ['--bundle', directory, '--save', join(out, '기록 save.json'), '--automation', script, '--report', reportFile, '--hidden'], { encoding: 'utf8', windowsHide: true, timeout: 90000 });
     await writeFile(join(out, `${name}-process.txt`), (run.stdout ?? '') + '\n' + (run.stderr ?? ''));
     assert.equal(run.status, 0, run.error?.message ?? run.stderr);
     const report = JSON.parse(await readFile(reportFile, 'utf8'));
@@ -122,6 +125,7 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
   await writeFile(join(evidenceRoot, 'latest.json'), JSON.stringify({ out, destination, target, pixelRatio, samples }, null, 2));
   await t.test('English activity words stay whole and long CJK text still wraps', async () => {
     const ui = report.steps.find(step => step.command.checkpoint === 'word-wrap').ui;
+    assert.ok(ui.audio.initialized && ui.audio.musicPlaying && ui.audio.loadedSounds === 1, 'Unicode music paths must reach the live decoder and audio engine');
     const screenshot = decodePng(await readFile(join(out, 'word-wrap.png')));
     const bandsFor = (id, gap = 1) => {
       const control = ui.controls.find(control => control.id === id);

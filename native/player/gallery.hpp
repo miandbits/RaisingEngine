@@ -51,7 +51,7 @@ class GalleryProfile {
   std::string game_id;
   Json empty() const {return {{"version",1},{"gameId",game_id},{"entries",Json::object()}};}
   Json read() const {
-    const auto backup=fs::path(path.u8string()+".bak");
+    auto backup=path;backup+=".bak";
     if(!fs::exists(path)&&!fs::exists(backup))return empty();
     const auto value=read_json(fs::exists(path)?path:backup,64*1024*1024);
     if(!value.is_object()||value.value("version",0)!=1||value.value("gameId","")!=game_id||!value.contains("entries")||!value.at("entries").is_object())throw std::runtime_error("컬렉션 기록 형식이 올바르지 않습니다. 원본 파일을 보존했습니다.");
@@ -83,7 +83,7 @@ public:
     if(record.is_null()||config.is_null())return;
     const auto entryIds=record.value("_entryIds",Json());record.erase("_entryIds");
     // Read-merge-write under a cross-process lock. Failed/corrupt files are never reset.
-    fs::create_directories(path.parent_path());const auto lock=fs::path(path.u8string()+".lock");bool locked=false;
+    fs::create_directories(path.parent_path());auto lock=path;lock+=".lock";bool locked=false;
     for(int i=0;i<20&&!locked;i++){locked=fs::create_directory(lock);if(!locked)std::this_thread::sleep_for(std::chrono::milliseconds(10));}
     if(!locked)throw std::runtime_error("다른 실행에서 컬렉션을 저장 중입니다. 도감을 다시 열어 저장을 재시도하세요.");
     struct Unlock {fs::path path;~Unlock(){std::error_code ec;fs::remove(path,ec);}} unlock{lock};
@@ -94,7 +94,7 @@ public:
       if(!duplicate){if(item["records"].size()>=32)throw std::runtime_error("한 항목의 회상 기록 한도(32개)에 도달했습니다. 기존 기록을 보존했습니다.");record["title"]=entry.at("title");record["unlockedAt"]=gallery_timestamp();item["records"].push_back(record);changed=true;}
     }
     if(changed){
-      const auto temp=fs::path(path.u8string()+".tmp"),backup=fs::path(path.u8string()+".bak");
+      auto temp=path;temp+=".tmp";auto backup=path;backup+=".bak";
       const auto serialized=merged.dump(2);if(serialized.size()>64*1024*1024)throw std::runtime_error("컬렉션 기록 용량 한도를 초과했습니다. 기존 파일을 보존했습니다.");
       {std::ofstream out(temp,std::ios::binary|std::ios::trunc);if(!out)throw std::runtime_error("컬렉션 기록을 쓸 수 없습니다.");out<<serialized;out.flush();if(!out)throw std::runtime_error("컬렉션 기록 저장에 실패했습니다.");}
       if(fs::exists(path)){std::error_code ec;fs::remove(backup,ec);fs::rename(path,backup);}

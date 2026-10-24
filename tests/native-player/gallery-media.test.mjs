@@ -43,7 +43,7 @@ test('media gallery: Qt-authored unlocks, CG, music, original presentation and i
   const snapshot=await buildSnapshot(loaded);assert.equal(snapshot.ok,true,JSON.stringify(snapshot.diagnostics));const content=snapshot.snapshot;
   assert.equal(content.project.gallery.entries.length,5);
   assert.equal(content.project.gallery.entries.find(e=>e.id==='courtyard-cg').unlockCondition.op,'compare');
-  const root=await mkdtemp(resolve('.cache/gallery-media-native-')),game=resolve(root,'game'),evidence=resolve('.cache/gallery-media');await mkdir(evidence,{recursive:true});
+  const root=await mkdtemp(resolve('.cache/gallery-media-native-한글-')),game=resolve(root,'game'),evidence=resolve('.cache/gallery-media');await mkdir(evidence,{recursive:true});
   const capabilities=JSON.parse(await readFile(resolve(runtime,'capabilities.json'),'utf8'));
   const extensions=await exportBundle({lock:loaded.documents.find(d=>d.kind==='pluginLock')?.data,documents:loaded.documents,visual:content.project.visual,target:'windows',assets:{root:project,assets:content.assets,hashes:content.assetHashes},hostFeatures:capabilities.visualFeatures});
   await exportGame({extensions,content,projectRoot:project,destination:game,target:'windows',runtimes:{windows:runtime,web:resolve('dist/web')}});await writeFile(resolve(evidence,'game-path.txt'),game);

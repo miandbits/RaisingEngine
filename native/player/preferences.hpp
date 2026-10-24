@@ -25,7 +25,7 @@ inline Json checked_player_preferences(const Json& raw) {
   return result;
 }
 inline void write_player_preferences(const std::filesystem::path& file,const Json& value) {
-  const auto temp=std::filesystem::path(file.u8string()+".tmp"),backup=std::filesystem::path(file.u8string()+".bak");
+  auto temp=file;temp+=".tmp";auto backup=file;backup+=".bak";
   std::filesystem::create_directories(file.parent_path());
   {std::ofstream out(temp,std::ios::binary|std::ios::trunc);out<<checked_player_preferences(value).dump(2);out.flush();if(!out)throw std::runtime_error("Cannot write player settings");}
   if(std::filesystem::exists(file)){std::error_code ec;std::filesystem::remove(backup,ec);std::filesystem::rename(file,backup);}
