@@ -13,7 +13,7 @@ await run('services',['--test','--test-concurrency=1',...['first-game','creator-
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
 if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/journey/calendar-players.test.mjs']);
-if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','tests/journey/first-game-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs']);
+if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs']);
 if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs']);
