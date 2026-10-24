@@ -20,9 +20,11 @@ test('starter desktop app: both routes, midgame save/load, and fresh-process end
     const route=firstGameRoute(built.snapshot,accept),steps=path.join(out,route.id+'.json');
     const report=path.join(out,route.id+'-report.json'),save=path.join(out,route.id+'-save.json');
     await writeFile(steps,JSON.stringify([...route.steps,{screenshot:path.join(out,route.id+'.png')}]));
-    const run=spawnSync(executable,['--bundle',directory,'--automation',steps,'--report',report,'--save',save,'--hidden'],{encoding:'utf8',timeout:90000});
+    const run=spawnSync(executable,['--bundle',directory,'--automation',steps,'--report',report,'--save',save,'--hidden',...(accept?['--report-checkpoints-only']:[])],{encoding:'utf8',timeout:90000});
     assert.equal(run.status,0,run.error?.message??run.stderr);
     const proof=JSON.parse(await readFile(report,'utf8'));assert.equal(proof.ok,true,JSON.stringify(proof));
+    assert.equal(proof.steps.every(s=>s.command.checkpoint!==undefined),accept,'Checkpoint mode omits diagnostic-only steps; default mode retains them');
+    if(accept)assert.deepEqual(proof.steps.map(s=>s.command.checkpoint),route.steps.filter(s=>s.checkpoint!==undefined).map(s=>s.checkpoint),'Every requested checkpoint remains present in order');
     for(const [label,state] of Object.entries(route.expected))assert.deepEqual(proof.steps.find(s=>s.command.checkpoint===label)?.ui.state,state,route.id+'/'+label);
     const restoredReport=path.join(out,route.id+'-restored.json');
     await writeFile(steps,JSON.stringify([{key:'F9'},{checkpoint:'restored'}]));

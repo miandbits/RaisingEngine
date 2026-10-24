@@ -735,7 +735,7 @@ int main(int argc,char** argv) {
   bundle_root/="game";
 #endif
 #endif
-  int max_frames=0;bool hidden=false,editor_events=false;uint32_t requested_seed=42;
+  int max_frames=0;bool hidden=false,editor_events=false,report_checkpoints_only=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
   fs::path preview_scene_file,preview_inspection_file,recording_file,editor_directory;Json preview_scene=nullptr;
   try {
@@ -756,8 +756,9 @@ int main(int argc,char** argv) {
     else if(arg=="--seed"&&i+1<argc){const std::string value=argv[++i];size_t used=0;const auto parsed=std::stoull(value,&used);if(used!=value.size()||parsed>UINT32_MAX)throw std::runtime_error("Seed must be an unsigned 32-bit integer");requested_seed=static_cast<uint32_t>(parsed);}
     else if(arg=="--frames"&&i+1<argc)max_frames=std::stoi(argv[++i]);
     else if(arg=="--hidden")hidden=true;
+    else if(arg=="--report-checkpoints-only")report_checkpoints_only=true;
     else if(arg=="--editor-events")editor_events=true;
-    else if(arg=="--help"){std::cout<<"Raising Player --bundle FOLDER [--save FILE] [--seed UINT32] [--automation FILE --report FILE] [--frames N] [--hidden] [--preview-screen ID --preview-element ID --preview-state normal|hover|pressed|focus|disabled]\n";return 0;}
+    else if(arg=="--help"){std::cout<<"Raising Player --bundle FOLDER [--save FILE] [--seed UINT32] [--automation FILE --report FILE [--report-checkpoints-only]] [--frames N] [--hidden] [--preview-screen ID --preview-element ID --preview-state normal|hover|pressed|focus|disabled]\n";return 0;}
   }
     const auto bundle=read_json(bundle_root/"game.json");
     validate_bundle(bundle,bundle_root);
@@ -897,7 +898,8 @@ int main(int argc,char** argv) {
           }
           if(command.contains("screenshot"))app.screenshot(fs::u8path(command.at("screenshot").get<std::string>()));
           if(command.contains("expectScreen")&&app.markup.screen_id!=command.at("expectScreen"))throw std::runtime_error("Unexpected screen: "+app.markup.screen_id);
-          report["steps"].push_back({{"command",command},{"ui",app.ui_state()}});
+          // Long routes can retain exact checkpoints without duplicating full history every frame.
+          if(!report_checkpoints_only||command.contains("checkpoint"))report["steps"].push_back({{"command",command},{"ui",app.ui_state()}});
         }
         SDL_RenderPresent(renderer);
         if(!control.is_null())std::cout<<Json({{"editorPreview",{{"serial",editor.serial},{"paused",editor.paused},{"elapsedMs",editor.elapsed},{"ui",app.ui_state()}}}}).dump()<<std::endl;
