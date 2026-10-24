@@ -9,7 +9,7 @@ class FirstGameTest : public QObject {
   Q_OBJECT
 private slots:
   void createCustomizePlayAndExport() {
-    const auto out=qEnvironmentVariable("RAISING_FIRST_GAME_PROOF");
+    const auto out=QDir::fromNativeSeparators(qEnvironmentVariable("RAISING_FIRST_GAME_PROOF"));
     if(out.isEmpty())QSKIP("Run scripts/test-first-game-ui.mjs with a built editor and player");
     installEditorLanguage(*qApp,"en");applyStudioTheme(*qApp);
     const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
