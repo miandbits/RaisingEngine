@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,writeFile,readFile,readdir,symlink} from 'node:fs/promises';
 import path from 'node:path';
-import {prepareIOSProject} from '../../scripts/lib/ios-project.mjs';
+import {createHash} from 'node:crypto';
+import {prepareIOSProject,configureIOSProject} from '../../scripts/lib/ios-project.mjs';
 
 async function fixture() {
   await mkdir('.cache/ios-package-tests',{recursive:true});
@@ -42,4 +43,29 @@ test('iOS app manifest permits portrait and landscape reading layouts on phone a
     assert.ok(array, key);
     for(const orientation of ['Portrait','LandscapeLeft','LandscapeRight'])assert.ok(array.includes(`UIInterfaceOrientation${orientation}</string>`),`${key}: ${orientation}`);
   }
+});
+
+
+test('post-publish Xcode configuration preserves hashed metadata; standalone configuration records status',{skip:process.platform!=='darwin'},async t=>{
+  const {root,out}=await fixture();await prepareIOSProject(out,{root,applicationId:'org.example.garden'});
+  const metadataFile=path.join(out,'ios-build.json');
+  // Include formatting in the sealed bytes: JSON-equivalent rewriting is still a release mutation.
+  await writeFile(metadataFile,(await readFile(metadataFile,'utf8'))+'\n');
+  const sealed=await readFile(metadataFile),digest=bytes=>createHash('sha256').update(bytes).digest('hex');
+  const manifest={files:[{file:'ios-build.json',sha256:digest(sealed)}]};
+  await writeFile(path.join(out,'RELEASE.json'),JSON.stringify(manifest));
+  const cmake=path.join(root,'fake cmake.command');
+  await writeFile(cmake,'#!/bin/sh\nset -eu\n[ "$1" = "--preset" ]\n[ "$2" = "iphonesimulator" ]\nmkdir -p "build-$2/RaisingGame.xcodeproj"\necho "Generated Xcode fixture"\n',{mode:0o755});
+  const previous=process.env.CMAKE;process.env.CMAKE=cmake;
+  t.after(()=>{if(previous===undefined)delete process.env.CMAKE;else process.env.CMAKE=previous;});
+  const generated=await configureIOSProject(out,{recordStatus:false});
+  assert.equal(generated,path.join(out,'build-iphonesimulator','RaisingGame.xcodeproj'));
+  assert.ok((await readdir(path.dirname(generated))).includes('RaisingGame.xcodeproj'));
+  assert.deepEqual(await readFile(metadataFile),sealed,'post-publish configuration preserves the exact released bytes');
+  const published=JSON.parse(await readFile(path.join(out,'RELEASE.json'),'utf8'));
+  for(const file of published.files)assert.equal(digest(await readFile(path.join(out,file.file))),file.sha256,'untouched exported release still verifies');
+  const standalone=path.join(root,'standalone');await mkdir(standalone);await writeFile(path.join(standalone,'ios-build.json'),sealed);
+  assert.equal(await configureIOSProject(standalone),path.join(standalone,'build-iphonesimulator','RaisingGame.xcodeproj'));
+  assert.deepEqual(JSON.parse(await readFile(path.join(standalone,'ios-build.json'),'utf8')),{...JSON.parse(sealed.toString()),status:'xcode-project-generated',sdk:'iphonesimulator',signed:false},'standalone callers retain normal status recording');
+  assert.deepEqual(await readFile(metadataFile),sealed);
 });

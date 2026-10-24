@@ -48,14 +48,18 @@ export async function prepareIOSProject(directory, {root=repository, application
   await writeFile(path.join(directory,'IOS-README.txt'), 'Open build-iphonesimulator/RaisingGame.xcodeproj and choose raising-player plus an iPhone or iPad simulator. If you move this folder, double-click Generate Xcode project.command to regenerate it.\n\nDevice: configure the iphoneos preset, select your Apple development team, and enable code signing. A simulator or unsigned device build cannot be uploaded to the App Store. Icons, signing, provisioning, device testing and store review are release work. No credentials are stored in this project.\n\nGames with reading layouts support portrait and landscape, physical-size controls and text enlargement. Other games retain their authored orientation. The player supports touch input and application-private saves. Original engine and dependency licenses are included.\n');
   await writeFile(path.join(directory,'ios-build.json'),JSON.stringify({version:1,status:'source-prepared',applicationId,contentFingerprint:bundle.content.contentFingerprint,minimumIOS:'16.0'},null,2));
 }
-export async function configureIOSProject(directory, {sdk='iphonesimulator',team} = {}) {
+// Published releases keep their hashed source metadata immutable; standalone builds
+// record their local configure status by default. Generated Xcode files remain local.
+export async function configureIOSProject(directory, {sdk='iphonesimulator',team,recordStatus=true} = {}) {
   if (process.platform !== 'darwin') throw new Error('Generating an iOS Xcode project requires macOS and Xcode.');
   if (!['iphonesimulator','iphoneos'].includes(sdk)) throw new Error('iOS SDK must be iphonesimulator or iphoneos.');
   if (team && !/^[A-Z0-9]{10}$/.test(team)) throw new Error('Apple development team must contain 10 uppercase letters or digits.');
   const args = ['--preset',sdk];
   if (team) args.push('-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM='+team,'-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=YES');
   await runAppleTool(process.env.CMAKE ?? 'cmake',args,directory,{logFile:path.join(directory,'xcode-configure.log')});
-  const file=path.join(directory,'ios-build.json'), metadata=JSON.parse(await readFile(file,'utf8'));
-  await writeFile(file,JSON.stringify({...metadata,status:'xcode-project-generated',sdk,signed:!!team},null,2));
+  if (recordStatus) {
+    const file=path.join(directory,'ios-build.json'), metadata=JSON.parse(await readFile(file,'utf8'));
+    await writeFile(file,JSON.stringify({...metadata,status:'xcode-project-generated',sdk,signed:!!team},null,2));
+  }
   return path.join(directory,'build-'+sdk,'RaisingGame.xcodeproj');
 }

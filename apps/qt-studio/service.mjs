@@ -359,7 +359,7 @@ export class QtStudioService {
           } });
         extra = { exported: {...exported, launchToken:this.releases.register(exported), ...(params.releaseVersion ? {releaseVersion:params.releaseVersion,gameArchive:path.join(exported.directory,'Game.zip'),projectArchive:path.join(exported.directory,'Project-backup.zip')} : {})} };
         if (params.target === 'ios') {
-          try { extra.exported.xcodeProject = await configureIOSProject(exported.directory); }
+          try { extra.exported.xcodeProject = await configureIOSProject(exported.directory,{recordStatus:false}); }
           catch (error) { extra.exported.warning = 'Game and iOS sources exported. Xcode generation needs attention: ' + error.message + '\nUse Generate Xcode project.command after installing Xcode and CMake.'; }
         }
         try { await this.firstGame.exported(this.editor, exported); }
