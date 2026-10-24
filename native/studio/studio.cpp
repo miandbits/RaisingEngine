@@ -1230,7 +1230,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     if (pluginReply) applyPluginState(plugins->state());
     else plugins->notifyViewChanged();
     emit updated();
-    if (method == "open" && lastError.isEmpty()) QTimer::singleShot(0, this, [this]{ if(!busy())request("recoveryList", {}, [this](QJsonObject r){ for(const auto v:r["recoveries"].toArray())if(!v.toObject()["current"].toBool()){ statusBar()->showMessage(tr("Unsaved work is available. Use Authoring tools > Recover unsaved work."), 15000); break; } }); });
+    if (method == "open" && lastError.isEmpty()) for(const auto v:reply["recoveries"].toArray())if(!v.toObject()["current"].toBool()){ statusBar()->showMessage(tr("Unsaved work is available. Use Authoring tools > Recover unsaved work."), 15000); break; }
     if ((method == "open" || method == "create") && lastError.isEmpty() && !firstGameState.isEmpty())
       QTimer::singleShot(0, this, &StudioWindow::showFirstGameChecklist);
   });

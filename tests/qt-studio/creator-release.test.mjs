@@ -33,7 +33,8 @@ test('recovery survives lost session/import cleanup, preserves original and chec
   await call(s,'importImage',{file});const asset=s.editor.documents.find(d=>d.kind==='assets').data.assets[0];
   const assets=structuredClone(s.editor.documents.find(d=>d.kind==='assets').data);assets.assets.push({...asset,id:'shared-portrait'});await call(s,'edit',{edit:{type:'replace',file:s.editor.documents.find(d=>d.kind==='assets').file,data:assets}});
   const [recovery]=await s.recovery.list(root);assert.ok(recovery.revision);await s.editor.close();assert.equal(existsSync(path.join(root,asset.path)),false);
-  const reopened=new QtStudioService();await call(reopened,'open',{root});
+  const reopened=new QtStudioService();const opened=await call(reopened,'open',{root});
+  assert.ok(opened.recoveries.some(r=>r.id===recovery.id&&!r.current),'Open includes recovery discovery before editor controls become available');
   await assert.rejects(call(reopened,'recoveryRestore',{...recovery,revision:reopened.editor.revision,recoveryRevision:'stale',destination:path.join(work,'stale')}));
   // Recovery revision is separate from the live editor's revision.
   const params={id:recovery.id,recoveryRevision:recovery.revision,destination:path.join(work,'restored')};

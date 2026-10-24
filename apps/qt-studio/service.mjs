@@ -227,6 +227,9 @@ export class QtStudioService {
         }
         try { await this.editor.open(params.root); }
         catch (error) { this.editor.pluginStore = previousStore; this.pluginStore = previousStore; this.editor.diagnostics = previousDiagnostics; throw error; }
+        // Include discovery in open: a deferred RPC can race the first editor click.
+        try { extra.recoveries = await this.recovery.list(this.editor.root); }
+        catch (error) { extra.environmentWarning = [extra.environmentWarning, `Recovery discovery failed: ${error.message}`].filter(Boolean).join('\n'); }
         this.debugSession = null; break;
       }
       case 'create': {
