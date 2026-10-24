@@ -2,6 +2,7 @@
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_SDL.h"
 #include "density-font.hpp"
+#include "utf8-file-interface.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
@@ -792,8 +793,8 @@ int main(int argc,char** argv) {
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);
     {
-      EditorClockSystem system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;
-      Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
+      EditorClockSystem system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;Utf8FileInterface files;
+      Rml::SetSystemInterface(&system);Rml::SetFileInterface(&files);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
       static Rml::ElementInstancerGeneric<ExtensionElement> extension_instancer;Rml::Factory::RegisterElementInstancer("raising-extension",&extension_instancer);
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
       const auto font=bundle_root/"fonts/NotoSansKR.ttf";
