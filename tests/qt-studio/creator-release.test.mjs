@@ -60,9 +60,13 @@ test('saving/discarding only removes the current session recovery; symlinks neve
 test('versioned release preserves exact draft and player bytes, rejects invalid versions, launches loopback preview',async t=>{
   const {service:s,work}=await fixture();t.after(()=>s.releases.close());await rename(s,'Unsaved release');
   let r=await call(s,'releaseTarget',{target:'web'});assert.equal(r.releaseCompatibility.target,'web');assert.equal(r.releaseCompatibility.rows.find(r=>r.target==='web').compatible,true);assert.equal(r.releaseCompatibility.rows.find(r=>r.target==='macos').available,false);
+  assert.equal(r.releaseCompatibility.rows.find(r=>r.target==='web').summary,r.releaseCompatibility.summary);
+  assert.match(r.releaseCompatibility.rows.find(r=>r.target==='macos').summary,/macOS: Runtime is not included/);
+  await call(s,'releaseTarget',{target:'windows'});
   await assert.rejects(call(s,'export',{target:'web',releaseVersion:'invalid',destination:path.join(work,'failed')}),/release version/);assert.equal(existsSync(path.join(work,'failed')),false);
   assert.ok(!(await readdir(work)).some(f=>f.startsWith('.raising-export-')));
   r=await call(s,'export',{target:'web',releaseVersion:'0.2.0',destination:path.join(work,'release')});const exported=r.exported;
+  assert.equal(r.releaseCompatibility.target,'web');
   const manifest=JSON.parse(await readFile(path.join(exported.directory,'RELEASE.json')));assert.equal(manifest.version,'0.2.0');assert.ok(Object.keys(manifest.dependencies).length);
   for(const archive of Object.values(manifest.archives))assert.equal(digest(await readFile(path.join(exported.directory,archive.file))),archive.sha256);
   const game=await unzip(exported.gameArchive),project=await unzip(exported.projectArchive);

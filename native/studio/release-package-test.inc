@@ -20,6 +20,7 @@ void StudioTests::releasePackageWorkflow(){
     bool exported=false;
     QTimer::singleShot(0,&window,[&]{
       auto d=window.findChild<QDialog*>("exportGameDialog");QVERIFY(d);
+      const auto closeDialog=qScopeGuard([d]{d->reject();});
       auto target=d->findChild<QComboBox*>("exportTarget");target->setCurrentIndex(target->findData(targetId));
       d->findChild<QLineEdit*>("exportParent")->setText(evidence);d->findChild<QLineEdit*>("exportFolderName")->setText(targetId);
       d->findChild<QPushButton*>("exportStart")->click();QTRY_VERIFY_WITH_TIMEOUT(!window.busy(),60000);

@@ -97,6 +97,11 @@ private slots:
       QCOMPARE(target->currentData().toString(),"macos");
       QVERIFY(target->findData("ios")>=0);
 #endif
+      const auto desktopIndex=target->currentIndex();
+      target->setCurrentIndex(target->findData("web"));
+      QVERIFY(dialog->findChild<QLabel*>("exportCompatibility")->text().startsWith("Web:"));
+      target->setCurrentIndex(desktopIndex);
+      QVERIFY(!window.busy()); // A rapid platform change must not swallow Export.
       dialog->findChild<QLineEdit*>("exportParent")->setText(out);
       dialog->findChild<QLineEdit*>("exportFolderName")->setText("shipped-game");
       // Invalid version leaves the same form and destination available for correction.

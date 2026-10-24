@@ -336,6 +336,7 @@ export class QtStudioService {
         this.editor.current(revision);
         if (!['windows', 'web', 'macos', 'ios'].includes(params.target)) throw new Error('지원하지 않는 내보내기 대상입니다.');
         if (typeof params.destination !== 'string' || !path.isAbsolute(params.destination)) throw new Error('새 출력 폴더의 절대 경로를 지정하세요.');
+        await this.releases.preference(this.editor, params.target);
         await this.editor.validate(revision);
         if (this.editor.diagnostics.some(d => d.severity === 'error')) throw new Error('내보내기 전에 문제 패널의 오류를 수정하세요.');
         await this.editor.assertDiskUnchanged();

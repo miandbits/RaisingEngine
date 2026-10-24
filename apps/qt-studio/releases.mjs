@@ -57,10 +57,12 @@ export class GameReleases {
           if(!allowed?.includes(path.extname(asset.path??'').toLowerCase()))issues.push({code:'UNSUPPORTED_ASSET',message:`Unsupported ${asset.kind}: ${asset.name??asset.label??asset.id} (${path.extname(asset.path??'')})`});
         }
       }catch(error){issues.push({code:'RUNTIME_UNAVAILABLE',message:error.code==='ENOENT'?'Runtime is not included in this editor build.':error.message});}
-      rows.push({target,label:names[target],available,compatible:available&&!issues.length,issues});
+      const compatible=available&&!issues.length;
+      const summary=compatible?`${names[target]}: current core features are supported. ${used.length?'Plugin-specific requirements are checked during export. ':''}Validate and playtest before sharing.`:`${names[target]}: ${issues.map(i=>i.message).join(' · ')}`;
+      rows.push({target,label:names[target],available,compatible,issues,summary});
     }
     const selected=rows.find(r=>r.target===target);
-    return {target,rows,summary:selected.compatible?`${names[target]}: current core features are supported. ${used.length?'Plugin-specific requirements are checked during export. ':''}Validate and playtest before sharing.`:`${names[target]}: ${selected.issues.map(i=>i.message).join(' · ')}`};
+    return {target,rows,summary:selected.summary};
   }
   async prepare(directory,{editor,target,version,content,contentFingerprint,engineRoot}) {
     if(typeof version!=='string'||!/^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[a-zA-Z0-9.-]{1,40})?$/.test(version))throw Error('Use a release version such as 0.1.0.');

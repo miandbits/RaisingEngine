@@ -42,7 +42,20 @@ void StudioWindow::exportGameDialog() {
   auto name = new QLineEdit; name->setObjectName("exportFolderName"); form->addRow(tr("새 폴더 이름"), name);
   QString automaticName;
   auto suggest = [&] { const auto suggested = QFileInfo(sourceRoot.toString()).fileName() + "-" + target->currentData().toString() + "-" + QDateTime::currentDateTime().toString("yyyyMMdd-hhmmss"); if (name->text().isEmpty() || name->text() == automaticName) name->setText(suggested); automaticName = suggested; };
-  suggest(); connect(target, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, [&](int) { suggest();if(!busy())request("releaseTarget",{{"target",target->currentData().toString()}},[guard=QPointer<QLabel>(compatibility)](QJsonObject reply){if(guard)guard->setText(reply["releaseCompatibility"].toObject()["summary"].toString());}); });
+  // Compatibility for every platform is already in the view. Selecting a
+  // platform must not start an RPC that races the designer's Export click.
+  auto showCompatibility = [&] {
+    compatibility->setText(releaseCompatibility["summary"].toString());
+    for (const auto &value : releaseCompatibility["rows"].toArray()) {
+      const auto platform = value.toObject();
+      if (platform["target"].toString() == target->currentData().toString()) {
+        compatibility->setText(platform["summary"].toString());
+        break;
+      }
+    }
+  };
+  suggest(); showCompatibility();
+  connect(target, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, [&](int) { suggest(); showCompatibility(); });
   connect(browse, &QPushButton::clicked, &dialog, [&] { const auto path = QFileDialog::getExistingDirectory(&dialog, tr("출력 폴더를 만들 상위 폴더"), parent->text()); if (!path.isEmpty()) parent->setText(path); });
   auto status = new QLabel; status->setObjectName("exportResult"); status->setWordWrap(true); status->setTextInteractionFlags(Qt::TextSelectableByMouse); layout->addWidget(status);
   auto row = new QHBoxLayout; layout->addLayout(row); auto open = new QPushButton(tr("출력 폴더 열기")); open->setObjectName("exportOpenFolder"); open->setEnabled(false); row->addWidget(open);
