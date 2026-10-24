@@ -95,7 +95,7 @@ public:
   double auto_elapsed=0;
   #include "settings-app.inc"
   void advance_schedule_clock(double delta) {
-    if(preview()||backgrounded||game.gallery.active||!markup.ui_modal.empty()||game.state.is_null())return;
+    if(preview()||backgrounded||game.gallery.active||markup.reading_options||!markup.ui_modal.empty()||game.state.is_null())return;
     const int revision=game.state.value("stateRevision",-1);
     if(auto_revision!=revision){auto_revision=revision;auto_elapsed=0;}
     const auto command=game.schedule_step();
@@ -105,7 +105,7 @@ public:
     auto_attempted=revision;execute({{"type","scheduleStep"}});
   }
   void advance_timeline_clock(double delta) {
-    if(game.gallery.active||!markup.ui_modal.empty())return;
+    if(game.gallery.active||markup.reading_options||!markup.ui_modal.empty())return;
     if(!preview()&&!game.direction_cursor.is_null()){auto next=direction_advance(direction_config(game.content),game.direction_cursor,int(std::round(delta)));if(next!=game.direction_cursor){game.direction_cursor=next;dirty=true;}}
     if(preview()||!game.timeline_active())return;
     const auto before=game.timeline_cursor;game.tick_timeline(delta);
@@ -172,6 +172,12 @@ public:
   }
   Json editor_command=Json::object();
   std::optional<SDL_FingerID> active_finger;
+  Rml::Element* touch_scroll=nullptr;
+  float touch_start_x=0,touch_start_y=0,touch_scroll_start=0;
+  bool touch_dragged=false;
+  Json test_safe_area;
+  std::string reading_scroll_key;
+  float reading_scroll=0,reading_actions_scroll=0;
   int lifecycle_saves=0;
   std::map<std::string,std::string> entrance_keys;
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
@@ -315,12 +321,17 @@ public:
     const std::string previous_screen=markup.screen_id;
     const std::string previous_focus=context&&context->GetFocusElement()?context->GetFocusElement()->GetId():"";
     ExtensionElement::host=recalling()?&recollection->extensions:&extensions;
+    if(document&&markup.readable_active){if(auto* e=document->GetElementById("reading-main"))reading_scroll=e->GetScrollTop();if(auto* e=document->GetElementById("reading-actions"))reading_actions_scroll=e->GetScrollTop();}
+    touch_scroll=nullptr;
     ++document_generation;
     if(document)for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll"))
       if(auto* element=document->GetElementById("node-"+entry.value("id","")))collection_scroll[markup.screen_id+"/"+entry.value("id","")]=element->GetScrollTop();
     if(document)for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")
       if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))collection_scroll[markup.screen_id+"/roster-"+entry.value("id","")]=element->GetScrollTop();
     SDL_GetWindowSizeInPixels(window,&markup.viewport_width,&markup.viewport_height);
+    SDL_GetWindowSize(window,&markup.window_width,&markup.window_height);
+    SDL_Rect safe{};if(!SDL_GetWindowSafeArea(window,&safe))safe={0,0,markup.window_width,markup.window_height};
+    markup.safe_area=test_safe_area.is_object()?test_safe_area:Json{{"x",safe.x},{"y",safe.y},{"width",safe.w},{"height",safe.h}};
     const auto source=recalling()?recollection->document():markup.document();
     if(!context)context=Rml::CreateContext("game",{markup.width,markup.height});
     if(!context)throw std::runtime_error("렌더링 컨텍스트를 만들지 못했습니다.");
@@ -341,6 +352,13 @@ public:
     if(!active_modal.empty()){Rml::ElementList all;document->QuerySelectorAll(all,"button,select,input");for(auto* e:all){bool inside=false;for(auto* p=e;p;p=p->GetParentNode())if(p->GetId()==active_modal)inside=true;if(!inside)e->SetAttribute("disabled","disabled");}}
     if(recalling()){Rml::ElementList controls;document->QuerySelectorAll(controls,"button,select,input");for(auto* control:controls)if(!markup.actions.count(control->GetId()))control->SetAttribute("disabled","disabled");}
     apply_preview();context->Update();
+    if(markup.readable_active){
+      const auto key=markup.readable_screen_id+":"+(markup.reading_options?"options":"game")+":"+(game.state.is_object()?game.state.value("activeNarrative",Json()):Json()).dump()+":"+markup.bind("story");
+      if(key!=reading_scroll_key)reading_scroll=reading_actions_scroll=0;reading_scroll_key=key;
+      if(auto* e=document->GetElementById("reading-main"))e->SetScrollTop(reading_scroll);
+      if(auto* e=document->GetElementById("reading-actions"))e->SetScrollTop(reading_actions_scroll);
+      context->Update();
+    }
     if(!active_modal.empty())if(auto* modal=document->GetElementById(active_modal)){
       Rml::Element* focus=nullptr;
       if(!markup.slot_confirmation.empty())for(const auto& [id,action]:markup.actions)if(action.value("type","")=="cancelSlot")focus=document->GetElementById(id);
@@ -388,6 +406,12 @@ public:
     if(editor_live)markup.preview_screen.clear();
     editor_command=incoming;
     try {
+      if(incoming.value("type","")=="readingOptions"){markup.reading_options=incoming.value("open",false);dirty=true;return;}
+      if(incoming.value("type","")=="readingRosterActivity"){
+        const auto actor=incoming.value("actorId","");if(!markup.roster_draft.contains(actor))throw std::runtime_error("Unknown roster actor");
+        bool found=false;for(const auto& a:game.content.at("activities"))if(a.at("id")==incoming.at("activityId")&&!a.contains("expeditionId"))found=true;
+        if(!found)throw std::runtime_error("Unknown roster activity");markup.roster_draft[actor]=incoming.at("activityId");dirty=true;return;
+      }
       if(setting_action(incoming))return;
       if(recalling()){recollection_action(incoming.value("type",""));return;}
       const auto action=markup.selection_action(incoming);
@@ -570,18 +594,25 @@ public:
       if(!SDL_RenderCoordinatesFromWindow(renderer,finger.x*width,finger.y*height,&x,&y))return;
       if(event.type==SDL_EVENT_FINGER_DOWN) {
         if(active_finger||x<0||y<0||x>=markup.width||y>=markup.height)return;
-        active_finger=finger.fingerID;context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);context->ProcessMouseButtonDown(0,0);
+        active_finger=finger.fingerID;touch_start_x=x;touch_start_y=y;touch_dragged=false;touch_scroll=nullptr;
+        if(active_markup().readable_active)for(auto* e=context->GetElementAtPoint({x,y});e;e=e->GetParentNode())if(e->GetProperty("overflow-y")->ToString()=="auto"&&e->GetScrollHeight()>e->GetClientHeight()+1){touch_scroll=e;touch_scroll_start=e->GetScrollTop();break;}
+        context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);context->ProcessMouseButtonDown(0,0);
       } else if(active_finger&&*active_finger==finger.fingerID) {
-        if(event.type==SDL_EVENT_FINGER_CANCELED)context->ProcessMouseMove(-1,-1,0);
-        else context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);
-        if(event.type!=SDL_EVENT_FINGER_MOTION){context->ProcessMouseButtonUp(0,0);active_finger.reset();}
+        if(active_markup().readable_active&&!touch_dragged&&std::hypot(x-touch_start_x,y-touch_start_y)>8){touch_dragged=true;context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
+        if(touch_dragged&&touch_scroll)touch_scroll->SetScrollTop(touch_scroll_start+touch_start_y-y);
+        else {
+          if(event.type==SDL_EVENT_FINGER_CANCELED)context->ProcessMouseMove(-1,-1,0);
+          else context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);
+          if(event.type!=SDL_EVENT_FINGER_MOTION)context->ProcessMouseButtonUp(0,0);
+        }
+        if(event.type!=SDL_EVENT_FINGER_MOTION){active_finger.reset();touch_scroll=nullptr;}
       }
       return;
     }
     // Keep physical dimensions out of the simulation. Responsive layouts rebuild
     // the logical canvas; legacy fit layouts retain their authored dimensions.
-    if(event.type==SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED||event.type==SDL_EVENT_WINDOW_RESIZED||event.type==SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
-      if(game.content.at("project").at("visual").value("viewportMode","fit")=="responsive")dirty=true;
+    if(event.type==SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED||event.type==SDL_EVENT_WINDOW_RESIZED||event.type==SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED||event.type==SDL_EVENT_WINDOW_SAFE_AREA_CHANGED) {
+      if(game.content.at("project").at("visual").value("viewportMode","fit")=="responsive"||game.content.at("project").at("visual").contains("readableLayout"))dirty=true;
       if(context){context->SetDimensions({markup.width,markup.height});context->SetDensityIndependentPixelRatio(1.f);}return;
     }
     if(event.type==SDL_EVENT_GAMEPAD_ADDED){auto* pad=SDL_OpenGamepad(event.gdevice.which);if(pad)gamepads[event.gdevice.which]=pad;return;}
@@ -595,6 +626,7 @@ public:
       return;
     }
     if(event.type==SDL_EVENT_KEY_DOWN) {
+      if(event.key.key==SDLK_ESCAPE&&markup.reading_options){markup.reading_options=false;dirty=true;return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
       if(event.key.key==SDLK_F5){pending.push_back({{"type","save"}});return;}
@@ -661,6 +693,10 @@ public:
         }
       }
     }
+    Json point_controls=Json::array();Rml::ElementList all_controls;document->QuerySelectorAll(all_controls,"button,input,select");
+    for(auto* e:all_controls){const auto at=e->GetAbsoluteOffset(Rml::BoxArea::Border),size=e->GetBox().GetSize(Rml::BoxArea::Border);float x1,y1,x2,y2;SDL_RenderCoordinatesToWindow(renderer,at.x,at.y,&x1,&y1);SDL_RenderCoordinatesToWindow(renderer,at.x+size.x,at.y+size.y,&x2,&y2);point_controls.push_back({{"id",e->GetId()},{"x",x1},{"y",y1},{"width",x2-x1},{"height",y2-y1},{"fontSize",e->GetProperty("font-size")->ToString()},{"enabled",!e->HasAttribute("disabled")}});}
+    Json reading={{"active",markup.readable_active},{"screenId",markup.readable_screen_id},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"safeArea",markup.safe_area},{"pixelDensity",SDL_GetWindowPixelDensity(window)},{"displayScale",SDL_GetWindowDisplayScale(window)},{"textScale",markup.player_preferences.value("textScale",1.0)},{"minTargetSize",markup.readable_target},{"controls",point_controls}};
+    for(const auto* id:{"reading-main","reading-actions"})if(auto* e=document->GetElementById(id)){const auto at=e->GetAbsoluteOffset(),size=e->GetBox().GetSize();reading[id]={{"x",at.x},{"y",at.y},{"width",size.x},{"height",size.y},{"scrollTop",e->GetScrollTop()},{"scrollHeight",e->GetScrollHeight()},{"scrollWidth",e->GetScrollWidth()},{"clientWidth",e->GetClientWidth()}};}
     Json timelineStage=nullptr;
     if(auto* stage=document->GetElementById("timeline-stage")) {
       const auto point=stage->GetAbsoluteOffset(),size=stage->GetBox().GetSize();Json layers=Json::array();
@@ -674,7 +710,7 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
       {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
@@ -736,6 +772,7 @@ int main(int argc,char** argv) {
   bundle_root/="game";
 #endif
 #endif
+  std::string reading_override;double text_override=0;
   int max_frames=0;bool hidden=false,editor_events=false,report_checkpoints_only=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
   fs::path preview_scene_file,preview_inspection_file,recording_file,editor_directory;Json preview_scene=nullptr;
@@ -757,9 +794,11 @@ int main(int argc,char** argv) {
     else if(arg=="--seed"&&i+1<argc){const std::string value=argv[++i];size_t used=0;const auto parsed=std::stoull(value,&used);if(used!=value.size()||parsed>UINT32_MAX)throw std::runtime_error("Seed must be an unsigned 32-bit integer");requested_seed=static_cast<uint32_t>(parsed);}
     else if(arg=="--frames"&&i+1<argc)max_frames=std::stoi(argv[++i]);
     else if(arg=="--hidden")hidden=true;
+    else if(arg=="--preview-reading-layout"||arg=="--reading-layout"){if(i+1>=argc){std::cerr<<"Missing reading layout override\n";return 2;}reading_override=argv[++i];if(reading_override!="auto"&&reading_override!="on"){std::cerr<<"Invalid reading layout override\n";return 2;}}
+    else if(arg=="--preview-text-scale"||arg=="--text-scale"){if(i+1>=argc){std::cerr<<"Missing text scale override\n";return 2;}const std::string scale=argv[++i];if(scale!="1"&&scale!="1.25"&&scale!="1.5"&&scale!="2"){std::cerr<<"Invalid text scale override\n";return 2;}text_override=std::stod(scale);}
     else if(arg=="--report-checkpoints-only")report_checkpoints_only=true;
     else if(arg=="--editor-events")editor_events=true;
-    else if(arg=="--help"){std::cout<<"Raising Player --bundle FOLDER [--save FILE] [--seed UINT32] [--automation FILE --report FILE [--report-checkpoints-only]] [--frames N] [--hidden] [--preview-screen ID --preview-element ID --preview-state normal|hover|pressed|focus|disabled]\n";return 0;}
+    else if(arg=="--help"){std::cout<<"Raising Player --bundle FOLDER [--save FILE] [--seed UINT32] [--automation FILE --report FILE [--report-checkpoints-only]] [--frames N] [--hidden] [--reading-layout auto|on --text-scale 1|1.25|1.5|2] [--preview-screen ID --preview-element ID --preview-state normal|hover|pressed|focus|disabled]\n";return 0;}
   }
     const auto bundle=read_json(bundle_root/"game.json");
     validate_bundle(bundle,bundle_root);
@@ -783,7 +822,7 @@ int main(int argc,char** argv) {
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     const auto& visual=bundle.at("content").at("project").at("visual");
-    SDL_SetHint(SDL_HINT_ORIENTATIONS,visual.at("width").get<int>()>=visual.at("height").get<int>()?"LandscapeLeft LandscapeRight":"Portrait PortraitUpsideDown");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS,visual.contains("readableLayout")?"Portrait LandscapeLeft LandscapeRight":visual.at("width").get<int>()>=visual.at("height").get<int>()?"LandscapeLeft LandscapeRight":"Portrait PortraitUpsideDown");
 #endif
     if(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD))throw std::runtime_error(SDL_GetError());
     if(save_file.empty()) {auto* pref=SDL_GetPrefPath("RaisingEngine",bundle.at("content").at("project").value("gameId","game").c_str());if(!pref)throw std::runtime_error(SDL_GetError());save_file=fs::u8path(pref)/"slot-1.json";SDL_free(pref);}
@@ -823,6 +862,8 @@ int main(int argc,char** argv) {
       if(!requested_locale.empty()){app.markup.locale=requested_locale;app.dirty=true;}
       app.editor_events=editor_events;
       if(!app.preview())app.initialize_player_preferences();
+    if(!reading_override.empty())app.markup.player_preferences["readingLayout"]=reading_override;
+    if(text_override>0)app.markup.player_preferences["textScale"]=text_override;
       if(app.editor_live){
         system.pause(true);app.audio.suspend(true);app.gallery_audio.suspend(true);
 #ifdef _WIN32
@@ -869,6 +910,9 @@ int main(int argc,char** argv) {
             const auto wheel=command.at("wheelWindow");SDL_Event input{};input.type=SDL_EVENT_MOUSE_MOTION;input.motion.windowID=SDL_GetWindowID(window);input.motion.x=wheel.at("x");input.motion.y=wheel.at("y");app.event(input);
             input={};input.type=SDL_EVENT_MOUSE_WHEEL;input.wheel.windowID=SDL_GetWindowID(window);input.wheel.y=wheel.at("deltaY");input.wheel.mouse_x=wheel.at("x");input.wheel.mouse_y=wheel.at("y");input.wheel.direction=SDL_MOUSEWHEEL_NORMAL;app.event(input);
           }
+          if(command.contains("safeArea")){app.test_safe_area=command.at("safeArea");app.dirty=true;}
+          if(command.contains("scrollIntoView")){auto* element=app.find_element(command.at("scrollIntoView").get<std::string>());if(!element)throw std::runtime_error("Scroll target missing");element->ScrollIntoView(true);app.context->Update();}
+          if(command.contains("touchDrag")){const auto drag=command.at("touchDrag");int ww,wh;SDL_GetWindowSize(window,&ww,&wh);const int count=8;for(int i=0;i<=count+1;i++){const float t=std::min(1.f,float(i)/count);SDL_Event input{};input.type=i==0?SDL_EVENT_FINGER_DOWN:i==count+1?SDL_EVENT_FINGER_UP:SDL_EVENT_FINGER_MOTION;input.tfinger.windowID=SDL_GetWindowID(window);input.tfinger.touchID=1;input.tfinger.fingerID=1;input.tfinger.x=(drag.at("fromX").get<float>()+(drag.at("toX").get<float>()-drag.at("fromX").get<float>())*t)/ww;input.tfinger.y=(drag.at("fromY").get<float>()+(drag.at("toY").get<float>()-drag.at("fromY").get<float>())*t)/wh;app.event(input);}}
           if(command.contains("touchWindow"))app.window_click(command.at("touchWindow"),true,command.value("cancelTouch",false));
           if(command.contains("lifecycle"))for(const auto& transition:command.at("lifecycle")) {
             SDL_Event lifecycle{};const auto phase=transition.get<std::string>();

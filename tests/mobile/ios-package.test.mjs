@@ -33,3 +33,13 @@ test('iOS preparation rejects invalid identifiers and source symlinks',async()=>
   await symlink(path.join(root,'LICENSE'),path.join(root,'native/include/external'));
   await assert.rejects(prepareIOSProject(out,{root}),/symbolic link/);
 });
+
+// The runtime retains legacy orientation hints; the app manifest permits reading-layout rotation.
+test('iOS app manifest permits portrait and landscape reading layouts on phone and tablet',async()=>{
+  const plist=await readFile('native/mobile/ios/Info.plist.in','utf8');
+  for(const key of ['UISupportedInterfaceOrientations','UISupportedInterfaceOrientations~ipad']){
+    const array=plist.split(`<key>${key}</key>`)[1]?.split('</array>')[0];
+    assert.ok(array, key);
+    for(const orientation of ['Portrait','LandscapeLeft','LandscapeRight'])assert.ok(array.includes(`UIInterfaceOrientation${orientation}</string>`),`${key}: ${orientation}`);
+  }
+});

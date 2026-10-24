@@ -1,10 +1,10 @@
-import type {SaveSlotAction} from '../../../packages/player-service/save-slots.js';
+import {slotWords,type SaveSlotAction} from '../../../packages/player-service/save-slots.js';
 import {calendarText,calendarLabels} from '../../../packages/core/calendar.js';
 import React, { useEffect, useRef, useState } from 'react';
 import type { PlayerAction, PlayerBridge, PlayerReply, PlayerView, Version } from '../../../packages/player-service/controller.js';
 import './style.css';
 import './player-quality.css';
-import { PlayerSettings, readPreferences, preferencesKey } from './PlayerSettings.js';
+import { PlayerSettings, PlayerPreferencesContext, readPreferences, preferencesKey } from './PlayerSettings.js';
 import { VisualPlayer } from './VisualPlayer.js';
 import {TimelineOverlay} from './TimelineOverlay.js';
 import { activityPreview } from '../../../packages/visual/activity-summary.js';
@@ -122,8 +122,10 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const result = state?.lastActivityResult;
   const node = view?.narrative?.node;
 
-  const settings = <PlayerSettings value={preferences} onChange={setPreferences} locale={view?.locale} onOpenChange={setSettingsOpen} muted={muted} onMuted={setMuted}/>;
-  if (view?.visual) return <div className="visual-shell">{settings}{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}<VisualPlayer {...(slots?{slots}:{})} view={view} design={view.visual} busy={busy||!!view.saveSlots?.checkpointPending&&!view.saveSlots.screenId} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></div>;
+  const preferenceState={value:preferences,onChange:setPreferences,muted,onMuted:setMuted,readableEnabled:!!view?.visual?.readableLayout};
+  const changeLocale=window.player.setLocale?(locale:string)=>void request(()=>window.player.setLocale!(locale)):undefined;
+  const settings = <PlayerSettings locales={view?.localization?.locales} onLocale={changeLocale} localeBusy={busy} readableEnabled={preferenceState.readableEnabled} value={preferences} onChange={setPreferences} locale={view?.locale} onOpenChange={setSettingsOpen} muted={muted} onMuted={setMuted}/>;
+  if (view?.visual) return <PlayerPreferencesContext.Provider value={preferenceState}><div className="visual-shell" data-readable-enabled={preferenceState.readableEnabled}><div className={preferenceState.readableEnabled?"player-readable-toolbar":"player-legacy-toolbar"}>{settings}<span className="player-compact-status" aria-hidden="true">{busy?slotWords(view.locale,'처리 중…','Working…','処理中…'):preview?slotWords(view.locale,'초안 미리보기','Draft preview','下書きプレビュー'):slotWords(view.locale,'플레이 중','Playing','プレイ中')} · {muted?slotWords(view.locale,'소리 꺼짐','Sound off','消音'):slotWords(view.locale,'소리 켜짐','Sound on','音声あり')}</span>{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}</div><VisualPlayer {...(slots?{slots}:{})} view={view} design={view.visual} busy={busy||!!view.saveSlots?.checkpointPending&&!view.saveSlots.screenId} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></div></PlayerPreferencesContext.Provider>;
   return <div className="app-shell">{settings}
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">✦</span><div><strong>육성 일지</strong><span>RAISING PLAYER</span></div></div>

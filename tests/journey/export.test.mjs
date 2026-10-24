@@ -95,7 +95,8 @@ test('UI feature capabilities reject old runtimes before packaging, while legacy
     const variations=[
       ['components-v1',visual=>{visual.components=[{id:'card',label:'Card',width:100,height:40,elements:[]}];}],
       ['anchors-v1',visual=>{visual.screens[0].elements[0].anchorX='right';}],
-      ['responsive-v1',visual=>{visual.viewportMode='responsive';}]
+      ['responsive-v1',visual=>{visual.viewportMode='responsive';}],
+      ['readable-layout-v1',visual=>{visual.readableLayout={};visual.screens[0].readableLayout={items:[]};}]
     ];
     for(const [feature,change] of variations){
       const content=structuredClone(built.snapshot);change(content.project.visual);

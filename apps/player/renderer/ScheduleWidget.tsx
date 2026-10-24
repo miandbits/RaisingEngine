@@ -31,7 +31,8 @@ export function useSchedulePlanner(context:ScheduleContext){
   return {planner,set};
 }
 export type SchedulePlanner=ReturnType<typeof useSchedulePlanner>;
-export function ScheduleWidget({element,context,planning,groups,assetUrl,disabled,onPlan,onCommit}: {
+export function ScheduleWidget({element,context,planning,groups,assetUrl,disabled,onPlan,onCommit,readable=false}: {
+  readable?:boolean;
   element:Element;context:ScheduleContext;planning:SchedulePlanner;
   groups:readonly {id:string;label:string;activityIds:readonly string[]}[];
   assetUrl:(id:string)=>string;disabled:boolean;
@@ -47,7 +48,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
     let next=slot;for(let n=1;n<=count;n++){const candidate=(slot+n)%count;if(candidate>=context.period&&!(mask&(1<<candidate))){next=candidate;break;}}
     set({...planner,mask,slot:next,groupId:''});
   };
-  if(element.scheduleLayout==='calendar'){
+  if(!readable&&element.scheduleLayout==='calendar'){
     const {year,month}=context.calendarTime??{year:1,month:1};
     const project=context.calendarProject??{startYear:year,startMonth:month,periodsPerMonth:count};const grid=calendarGrid(project,{year,month,periodInMonth:context.period,periodIndex:0});const first=grid.offset,days=grid.days,custom=project.calendar,words=custom?calendarLabels(custom,context.locale):null;
     return <div className="schedule-calendar" data-testid="schedule-calendar">
@@ -63,7 +64,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
       })}</div>
     </div>;
   }
-  if(element.scheduleLayout==='menu'){
+  if(!readable&&element.scheduleLayout==='menu'){
     const group=groups.find(g=>g.id===planner.groupId);
     const available=Math.max(1,element.width-2*(element.padding??0)-2*(element.borderWidth??0)-16);
     const columns=Math.max(1,Math.floor((available+16)/236));
@@ -86,10 +87,10 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
       </div>}
     </div>;
   }
-  return <div className="schedule-columns">{labels.map((period,index)=>{
+  return <><div className="schedule-columns">{labels.map((period,index)=>{
     const activity=context.activities.find(a=>a.id===context.plan[index]);const summary=activity?activityPreview(activity,context.stats):'';
-    return <label key={period}>{period}<select aria-label={`${period} 활동`} value={context.plan[index]??''} disabled={!editable||index<context.period} onChange={event=>chooseActivity(event.target.value,index)}>
+    return <label key={period}>{period}{readable&&activity&&<div className="readable-selected-activity">{activity.label}</div>}<select aria-label={`${period} 활동`} value={context.plan[index]??''} disabled={!editable||index<context.period} onChange={event=>chooseActivity(event.target.value,index)}>
       {context.activities.map(value=><option key={value.id} value={value.id}>{value.label}{value.previewAttributes?.length?` · ${activityPreview(value,context.stats)}`:''}</option>)}
     </select>{element.showActivityRules&&activity&&<small className="activity-preview activity-rules">{activityRuleLines(activity,{attributes:context.stats}).map((line,index)=><div key={index}>{line}</div>)}</small>}{summary&&<small className="activity-preview">{summary}</small>}{element.showActivityDescription&&activity?.description&&<small className="activity-preview activity-description">{activity.description}</small>}</label>;
-  })}</div>;
+  })}</div>{readable&&element.scheduleLayout==='menu'&&<button className="readable-schedule-commit" disabled={!editable} onClick={onCommit}>{context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정'}</button>}</>;
 }

@@ -111,3 +111,63 @@
 .visual-shell>.player-language{flex-shrink:0;}
 .visual-shell>.visual-player{flex:1;height:auto;min-height:0;}
 .preview>.visual-shell{flex:1;height:auto;min-height:0;}
+
+/* The opt-in reading surface uses CSS pixels, never a scaled design canvas. */
+.player-legacy-toolbar{display:contents}
+.visual-shell[data-readable-enabled=true]{box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.player-readable-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;background:#eff2e7;color:#304d46;padding:4px 8px}
+.player-readable-toolbar .player-quality{position:static;order:2}
+.player-readable-toolbar .player-language{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0}
+.player-readable-toolbar button,.player-readable-toolbar select{min-width:44px;min-height:44px;box-sizing:border-box}
+/* Share one utility row while a reading surface is active. Full status stays available
+   to assistive technology; notices and errors keep their own visible space. */
+.player-compact-status{display:none}
+.visual-shell:has(.visual-readable) .player-readable-toolbar .player-language{display:none}
+.visual-shell:has(.visual-readable) .player-compact-status{display:block;flex:1;min-width:0;font:14px/1.4 sans-serif;overflow-wrap:anywhere}
+.visual-shell:has(.visual-readable)>.visual-player>.visual-status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;padding:0;border:0}
+.visual-readable{display:flex;flex-direction:column;isolation:isolate;min-width:0;color:#f5efdf;line-height:1.5}
+.readable-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y;scroll-padding:16px}
+.readable-items{display:flex;flex-direction:column;gap:var(--readable-gap);box-sizing:border-box;width:100%;max-width:var(--readable-width);padding:var(--readable-padding);margin:0 auto}
+.visual-readable .visual-element{position:relative;flex-shrink:0;box-sizing:border-box;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;max-width:100%;min-width:0}
+.visual-readable .visual-image{width:100%;height:100%}
+.visual-readable .visual-element button,.visual-readable .visual-element select,.visual-readable .visual-element input{box-sizing:border-box;min-width:var(--readable-target);min-height:var(--readable-target);max-width:100%;height:auto;font:inherit;line-height:1.5;white-space:normal;overflow-wrap:anywhere;touch-action:pan-y}
+.visual-readable .visual-element .visual-action{height:auto;min-height:var(--readable-target);padding:10px 12px}
+.visual-readable .visual-input{width:100%}
+.visual-readable .visual-choices{padding:0}
+.visual-readable .visual-choices button{flex-shrink:0;padding:12px}
+.visual-readable .visual-choices small{font-size:1em}
+.visual-readable .choice-cards .choice-number{min-width:1.5em}
+.visual-readable .visual-dialogue,.visual-readable .visual-result{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.visual-readable .visual-stat-list>div>div{flex-wrap:wrap}
+.visual-readable .visual-meter{height:auto;min-height:44px}
+.readable-actions{display:flex;flex-wrap:wrap;flex:0 1 auto;gap:var(--readable-gap);padding:var(--readable-padding);width:100%;max-width:var(--readable-width);margin:0 auto;box-sizing:border-box;max-height:45%;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y;background:var(--readable-background,#172c29);border-top:1px solid #718c84}
+.readable-actions>.visual-element{flex:1 1 160px;min-width:0}
+.readable-actions:empty{display:none}
+.visual-readable .schedule-columns{display:flex;flex-direction:column;height:auto}
+.visual-readable .schedule-columns label{display:block;flex:auto;min-width:0}
+.visual-readable .schedule-columns select{width:100%}
+.visual-readable .activity-preview{max-height:none;overflow:visible;font-size:1em;line-height:1.5;white-space:normal}
+.visual-readable .readable-selected-activity{white-space:normal;overflow-wrap:anywhere}
+.visual-readable .roster-schedule{height:auto;container-type:normal}
+.visual-readable .roster-schedule-actors{display:flex;flex-direction:column;overflow:visible;flex:none}
+.visual-readable .roster-schedule-actors>label{width:auto}
+.visual-readable .roster-schedule-actors small{max-height:none!important;overflow:visible!important;font-size:1em;line-height:1.5!important}
+.visual-readable .roster-schedule-actions{flex-wrap:wrap}
+.visual-readable .roster-schedule-actions>button{flex:1 1 180px}
+.visual-readable .web-save-slots{height:auto;font-size:inherit;min-width:0}
+.visual-readable .slot-grid{display:flex;flex-direction:column;flex:none;min-width:0}
+.visual-readable .slot-card{flex-direction:column;overflow:visible;flex-shrink:0;width:100%;min-width:0}
+.visual-readable .slot-thumbnail{width:auto;min-width:0;font-size:1em}
+.visual-readable .slot-details{width:100%;min-width:0}
+.visual-readable .slot-details>span,.visual-readable .slot-details>small{overflow:visible;white-space:normal;overflow-wrap:anywhere;text-overflow:clip;font-size:1em}
+.visual-readable .slot-toolbar,.visual-readable .slot-footer,.visual-readable .slot-footer>div,.visual-readable .slot-backups{flex-wrap:wrap;min-width:0}
+.visual-readable .slot-toolbar>button,.visual-readable .slot-footer>button,.visual-readable .slot-backups>button{flex:1 1 180px}
+.visual-readable .slot-backups{margin:0;width:100%}
+.visual-readable .slot-confirmation h2{font-size:1.2em;overflow-wrap:anywhere}
+.visual-readable .slot-confirmation button{margin:4px 0;width:100%}
+.visual-readable .player-settings-controls{font-size:inherit}
+
+/* Missing-color fallbacks distinguish the reading surface from built-in light controls. */
+.visual-readable .visual-choices:not(.choice-cards) button,.visual-readable .schedule-columns label,.visual-readable .roster-schedule select,.visual-readable .roster-schedule button,.visual-readable .player-settings-controls select,.visual-readable .slot-thumbnail{color:var(--readable-control-ink,inherit)}
+.visual-readable .web-save-slots button{color:var(--readable-slot-ink,inherit)}
+.visual-settings-fields{border:0;padding:0;margin:0;min-width:0;font:inherit;color:inherit}

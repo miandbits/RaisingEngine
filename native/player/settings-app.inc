@@ -32,7 +32,7 @@
     dirty=true;return true;
   }
   bool dialogue_active() const {
-    const auto n=game.projection.value("narrative",Json());return preferences_enabled&&!preview()&&!recalling()&&!game.gallery.active&&!game.state.is_null()&&game.state.value("phase","")=="narrative"&&n.is_object()&&n.at("node").value("type","")=="dialogue";
+    const auto n=game.projection.value("narrative",Json());return preferences_enabled&&has_player_settings(game.content.at("project").at("visual"),false)&&!preview()&&!recalling()&&!game.gallery.active&&!game.state.is_null()&&game.state.value("phase","")=="narrative"&&n.is_object()&&n.at("node").value("type","")=="dialogue";
   }
   void sync_dialogue() {
     if(!dialogue_active()){dialogue_key.clear();dialogue_text.clear();dialogue_characters=dialogue_wait=0;return;}
@@ -62,7 +62,7 @@
   }
   void advance_dialogue_clock(double delta) {
     if(!std::isfinite(delta)||delta<0||delta>60000)throw std::runtime_error("Invalid dialogue clock delta");
-    sync_dialogue();if(!dialogue_active()||backgrounded||!markup.ui_modal.empty()||!markup.pending_purchase.is_null()||game.timeline_active()||!game.direction_cursor.is_null())return;
+    sync_dialogue();if(!dialogue_active()||backgrounded||markup.reading_options||!markup.ui_modal.empty()||!markup.pending_purchase.is_null()||game.timeline_active()||!game.direction_cursor.is_null())return;
     const bool complete=dialogue_complete();if(!complete)dialogue_characters+=delta*preferences.at("textSpeed").get<int>()/1000.0;
     if(complete&&preferences.at("autoAdvance").get<bool>()){
       dialogue_wait+=delta;if(dialogue_wait>=preferences.at("autoDelay").get<int>()*1000){dialogue_wait=0;execute({{"type","advance"}});}

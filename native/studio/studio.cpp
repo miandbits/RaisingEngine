@@ -168,6 +168,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto routingAction=screensMenu->addAction(tr("화면 전환 연결…"),this,&StudioWindow::editScreenRouting);
   routingAction->setObjectName("screenRouting");
   screensMenu->addAction(tr("화면 설정…"),this,&StudioWindow::editScreenSettings)->setObjectName("screenSettings");
+  screensMenu->addAction(tr("읽기 편한 배치…"),this,&StudioWindow::editReadableLayout)->setObjectName("readableLayout");
   newScreenAction = screensMenu->addAction(tr("＋ 새 화면…"), this,
                                            [this] { createScreen(); });
   newScreenAction->setObjectName("newScreen");

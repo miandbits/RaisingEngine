@@ -48,10 +48,12 @@ RendererPreviewDock::RendererPreviewDock(QWidget* parent):QDockWidget(tr("실제
   setObjectName("rendererPreviewDock");auto body=new QWidget;setWidget(body);auto layout=new QVBoxLayout(body);
   auto controls=new QHBoxLayout;resolution=new QComboBox;resolution->setObjectName("rendererResolution");
   resolution->addItem(tr("설계 크기"),QSize());resolution->addItem("1280 × 720",QSize(1280,720));resolution->addItem("1600 × 900",QSize(1600,900));resolution->addItem("720 × 1280",QSize(720,1280));controls->addWidget(resolution);
+  resolution->addItem(tr("320 × 568 · 휴대전화"),QSize(320,568));resolution->addItem(tr("390 × 844 · 휴대전화"),QSize(390,844));resolution->addItem(tr("844 × 390 · 가로 화면"),QSize(844,390));
   width=new QSpinBox;height=new QSpinBox;width->setObjectName("rendererWidth");height->setObjectName("rendererHeight");width->setRange(320,3840);height->setRange(240,2160);width->setValue(1280);height->setValue(720);controls->addWidget(width);controls->addWidget(new QLabel("×"));controls->addWidget(height);
   locale=new QComboBox;locale->setObjectName("rendererLocale");controls->addWidget(locale);
   interaction=new QComboBox;interaction->setObjectName("rendererInteraction");for(auto p:QList<QPair<QString,QString>>{{QObject::tr("기본 상태"),"normal"},{QObject::tr("마우스 올림"),"hover"},{QObject::tr("누르는 중"),"pressed"},{QObject::tr("키보드 초점"),"focus"},{QObject::tr("비활성 모양"),"disabled"}})interaction->addItem(p.first,p.second);controls->addWidget(interaction);
   render=new QPushButton(tr("현재 화면 렌더링"));render->setObjectName("renderPreview");controls->addWidget(render);cancel=new QPushButton(tr("취소"));cancel->setEnabled(false);controls->addWidget(cancel);layout->addLayout(controls);
+  auto readingRow=new QHBoxLayout;readingMode=new QComboBox;readingMode->setObjectName("rendererReadingLayout");readingMode->addItem(tr("읽기 배치: 자동"),"auto");readingMode->addItem(tr("읽기 배치: 항상 켜기"),"on");readingRow->addWidget(readingMode);textScale=new QComboBox;textScale->setObjectName("rendererTextScale");for(double scale:{1.,1.25,1.5,2.})textScale->addItem(QString::number(scale*100)+"%",scale);readingRow->addWidget(new QLabel(tr("글자 크기")));readingRow->addWidget(textScale);readingStatus=new QLabel;readingStatus->setObjectName("rendererReadingStatus");readingStatus->setWordWrap(true);readingRow->addWidget(readingStatus,1);layout->addLayout(readingRow);
   auto detail=new QHBoxLayout;element=new QComboBox;element->setObjectName("rendererElement");detail->addWidget(new QLabel(tr("검사 대상")));detail->addWidget(element,1);auto boxes=new QCheckBox(tr("버튼 영역 표시"));boxes->setChecked(true);detail->addWidget(boxes);pin=new QPushButton(tr("비교 기준으로 보관"));pin->setObjectName("pinRendererPreview");pin->setEnabled(false);detail->addWidget(pin);layout->addLayout(detail);
   auto configure=new QPushButton(tr("제작 상태 설정"));configure->setObjectName("configureAuthoringPreview");detail->addWidget(configure);connect(configure,&QPushButton::clicked,this,&RendererPreviewDock::editScenario);
   reasons=new QTreeWidget;reasons->setObjectName("previewReasons");reasons->setHeaderLabels({tr("대상·상태·조건"),tr("실제 값·검사 결과")});reasons->setColumnWidth(0,440);reasons->setMinimumHeight(120);reasons->setMaximumHeight(280);layout->addWidget(reasons);
@@ -64,7 +66,7 @@ RendererPreviewDock::RendererPreviewDock(QWidget* parent):QDockWidget(tr("실제
   connect(boxes,&QCheckBox::toggled,this,[this](bool checked){image->boxes=reference->boxes=checked;image->update();reference->update();});
   connect(resolution,qOverload<int>(&QComboBox::activated),this,[this]{auto size=resolution->currentData().toSize();if(size.isEmpty()){auto v=project["visual"].toObject();size={v["width"].toInt(1280),v["height"].toInt(720)};}width->setValue(size.width());height->setValue(size.height());});
   for(auto field:{width,height})connect(field,qOverload<int>(&QSpinBox::valueChanged),this,[this]{changed();});
-  for(auto field:{locale,interaction,element})connect(field,qOverload<int>(&QComboBox::currentIndexChanged),this,[this]{changed();});
+  for(auto field:{locale,interaction,element,readingMode,textScale})connect(field,qOverload<int>(&QComboBox::currentIndexChanged),this,[this]{changed();});
   auto pick=[this](QString id){image->selected=id;image->update();if(root!=renderedRoot||screen!=renderedScreen||pending)return;const int index=element->findData(id);if(index>=0)element->setCurrentIndex(index);QString owner=id;for(auto n:renderedUi["nodes"].toArray())if(n.toObject()["id"]==id)owner=n.toObject()["ownerId"].toString(id);emit elementPicked(owner);};image->picked=pick;
   connect(reasons,&QTreeWidget::itemClicked,this,[pick](QTreeWidgetItem* row,int){const auto id=row->data(0,Qt::UserRole).toString();if(!id.isEmpty())pick(id);});
   connect(nodes,&QTreeWidget::itemClicked,this,[pick](QTreeWidgetItem* row,int){pick(row->data(0,Qt::UserRole).toString());});
@@ -74,8 +76,8 @@ RendererPreviewDock::RendererPreviewDock(QWidget* parent):QDockWidget(tr("실제
   timeout.setSingleShot(true);connect(&timeout,&QTimer::timeout,this,[this]{process.kill();fail(tr("렌더러 응답 시간이 초과되었습니다."));});
 }
 RendererPreviewDock::~RendererPreviewDock(){process.disconnect(this);if(process.state()!=QProcess::NotRunning){process.kill();process.waitForFinished(1000);}}
-QString RendererPreviewDock::contextKey() const {return root+"|"+QString::number(revision)+"|"+screen+"|"+QString::number(width->value())+"x"+QString::number(height->value())+"|"+locale->currentData().toString()+"|"+element->currentData().toString()+"|"+interaction->currentData().toString()+QString::fromUtf8(QJsonDocument(scenario).toJson(QJsonDocument::Compact));}
-void RendererPreviewDock::changed(){if(filling)return;if(!pending&&!renderedContext.isEmpty()&&contextKey()!=renderedContext)status->setText(tr("설정 또는 프로젝트가 변경되었습니다. 표시된 결과는 이전 스냅샷입니다. 다시 렌더링하세요."));image->selected=element->currentData().toString();image->update();emit contextChanged();}
+QString RendererPreviewDock::contextKey() const {return root+"|"+QString::number(revision)+"|"+screen+"|"+QString::number(width->value())+"x"+QString::number(height->value())+"|"+locale->currentData().toString()+"|"+element->currentData().toString()+"|"+interaction->currentData().toString()+"|"+readingMode->currentData().toString()+"|"+QString::number(textScale->currentData().toDouble())+QString::fromUtf8(QJsonDocument(scenario).toJson(QJsonDocument::Compact));}
+void RendererPreviewDock::changed(){if(filling)return;auto v=project.value("visual").toObject();bool opted=false;for(auto s:v.value("screens").toArray())if(s.toObject().value("id")==screen)opted=s.toObject().contains("readableLayout");const bool active=v.contains("readableLayout")&&opted&&(readingMode->currentData()=="on"||qMin(width->value(),height->value())<=v.value("readableLayout").toObject().value("maxShortEdge").toInt(600));readingStatus->setProperty("readableActive",active);readingStatus->setText(active?tr("%1 × %2 포인트에서 읽기 배치 적용").arg(width->value()).arg(height->value()):tr("기존 캔버스 적용 · 이 화면 또는 화면 크기는 읽기 배치 대상이 아닙니다"));if(!pending&&!renderedContext.isEmpty()&&contextKey()!=renderedContext)status->setText(tr("설정 또는 프로젝트가 변경되었습니다. 표시된 결과는 이전 스냅샷입니다. 다시 렌더링하세요."));image->selected=element->currentData().toString();image->update();emit contextChanged();}
 QImage RendererPreviewDock::snapshotImage() const {return image->pixels;}
 void RendererPreviewDock::setCanvasViewport(QSize size){const QSignalBlocker w(width),h(height);width->setValue(size.width());height->setValue(size.height());changed();}
 void RendererPreviewDock::setContext(const QJsonObject& p,QString sid,QString selected,int rev,QString projectRoot,QString preferredLocale){
@@ -94,6 +96,7 @@ void RendererPreviewDock::begin(){
   if(pending||process.state()!=QProcess::NotRunning||screen.isEmpty()||project.isEmpty())return;
   if(interaction->currentData()!="normal"&&element->currentData().toString().isEmpty()){fail(tr("버튼 상태를 검사하려면 검사 대상을 선택하세요."));return;}
   requestedScreen=screen;requestedLocale=locale->currentData().toString();requestedElement=element->currentData().toString();requestedState=interaction->currentData().toString();requestedRevision=revision;requestedWidth=width->value();requestedHeight=height->value();requestContext=contextKey();
+  requestedReadingMode=readingMode->currentData().toString();requestedTextScale=textScale->currentData().toDouble();
   requestedRoot=root;
   requestedScenario={};if(scenario.value("enabled").toBool()){auto value=scenario;value["screenId"]=requestedScreen;value["elementId"]=requestedElement;requestedScenario["authoringContext"]=value;}
   if(canvasMode){auto value=requestedScenario.value("authoringContext").toObject();value["screenId"]=requestedScreen;value["elementId"]="";value["followRouting"]=false;value["canvasContext"]=true;requestedScenario["authoringContext"]=value;}
@@ -109,6 +112,7 @@ void RendererPreviewDock::launch(QJsonObject descriptor){
   QJsonArray steps{QJsonObject{{"resize",QJsonObject{{"width",requestedWidth},{"height",requestedHeight}}}},QJsonObject{{"waitFrames",8}},QJsonObject{{"checkpoint","preview"}},QJsonObject{{"screenshot",imageFile}}};
   QFile file(stepsFile);if(!file.open(QIODevice::WriteOnly)){fail(file.errorString());return;}file.write(QJsonDocument(steps).toJson());file.close();
   QStringList args{"--bundle",descriptor["directory"].toString(),"--save",descriptor["save"].toString(),"--hidden","--preview-screen",requestedScreen,"--preview-state",requestedState,"--automation",stepsFile,"--report",reportFile};
+  args<<"--preview-reading-layout"<<requestedReadingMode<<"--preview-text-scale"<<QString::number(requestedTextScale);
   if(descriptor.contains("inspection"))args<<"--preview-inspection"<<descriptor.value("inspection").toString();
   if(!descriptor.value("scene").toString().isEmpty())args<<"--preview-scene"<<descriptor.value("scene").toString();
   if(!requestedElement.isEmpty())args<<"--preview-element"<<requestedElement;if(!requestedLocale.isEmpty())args<<"--locale"<<requestedLocale;
@@ -116,13 +120,14 @@ void RendererPreviewDock::launch(QJsonObject descriptor){
 }
 void RendererPreviewDock::complete(int code){
   timeout.stop();QFile file(reportFile);QJsonObject report;if(file.open(QIODevice::ReadOnly))report=QJsonDocument::fromJson(file.readAll()).object();
-  if(code!=0||!report["ok"].toBool()){fail(tr("렌더링 실패: ")+report["error"].toString(QString::fromUtf8(process.readAllStandardError())));return;}
+  if(code!=0||!report["ok"].toBool()){const auto stderrText=QString::fromUtf8(process.readAllStandardError());fail(tr("렌더링 실패: ")+report["error"].toString(stderrText)+tr(" (종료 코드 %1)").arg(code));return;}
   renderedUi={};for(auto step:report["steps"].toArray())if(step.toObject()["command"].toObject()["checkpoint"]=="preview")renderedUi=step.toObject()["ui"].toObject();
   QImage pixels(imageFile);if(pixels.isNull()||renderedUi.isEmpty()){fail(tr("렌더링 결과 이미지 또는 검사 정보가 없습니다."));return;}
   image->pixels=pixels;image->ui=renderedUi;image->selected=requestedElement;image->update();renderedContext=requestContext;
   renderedRoot=requestedRoot;renderedScreen=requestedScreen;
   setContext(project,screen,contextSelection,revision,root,locale->currentData().toString());
   caption->setText(tr("%1 · r%2 · %3×%4 · %5 · %6").arg(requestedScreen).arg(requestedRevision).arg(pixels.width()).arg(pixels.height()).arg(requestedLocale.isEmpty()?tr("원문"):requestedLocale,requestedState));
+  caption->setText(caption->text()+QString(" · %1 · %2%").arg(requestedReadingMode).arg(requestedTextScale*100));
   nodes->clear();int warnings=0;for(auto value:renderedUi["nodes"].toArray()){
     auto node=value.toObject();QStringList issues;
     if(node["overflowX"].toBool())issues<<tr("가로 넘침");

@@ -165,6 +165,7 @@ private:
   void importFont();
   void editDesignSystem();
   void editScreenSettings();
+  void editReadableLayout();
   void editUserFields();
   void applyTextBindingBatch();
   void editLocalization();

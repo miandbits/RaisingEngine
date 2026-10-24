@@ -16297,6 +16297,39 @@ export interface VisualDesign {
           ];
     }[];
   };
+  /**
+   * Opt-in physical-size reading layouts for phones and enlarged text. Missing fields use engine defaults.
+   */
+  readableLayout?: {
+    /**
+     * Auto mode activates at or below this safe viewport short edge. Default 600 CSS pixels/native points.
+     */
+    maxShortEdge?: number;
+    /**
+     * Minimum reading text size before the player text preference. Default 18.
+     */
+    fontSize?: number;
+    /**
+     * Minimum actual interactive width and height. Default 44.
+     */
+    minTargetSize?: number;
+    /**
+     * Reading surface padding. Default 16.
+     */
+    padding?: number;
+    /**
+     * Space between reading items and actions. Default 12.
+     */
+    gap?: number;
+    /**
+     * Maximum centered reading column width. Default 760.
+     */
+    maxWidth?: number;
+    /**
+     * Opaque reading surface color. Default #172c29.
+     */
+    background?: string;
+  };
 }
 export interface Scene {
   backgroundAssetId?: string | null;
@@ -16370,6 +16403,41 @@ export interface Screen {
    */
   elements: Element[];
   modal?: boolean;
+  readableLayout?: {
+    /**
+     * @maxItems 1000
+     */
+    items: {
+      elementId: string;
+      /**
+       * Text size before player scaling; never below the global minimum.
+       */
+      fontSize?: number;
+      /**
+       * Image height in CSS pixels/native points. Default 160.
+       */
+      imageHeight?: number;
+    }[];
+    /**
+     * Existing button IDs in the persistent bottom action region.
+     *
+     * @maxItems 12
+     */
+    actions?:
+      | []
+      | [string]
+      | [string, string]
+      | [string, string, string]
+      | [string, string, string, string]
+      | [string, string, string, string, string]
+      | [string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string];
+  };
 }
 export interface PresentationVariant {
   label: string;

@@ -698,6 +698,54 @@
           }
         }
       }
+    },
+    "readableLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in physical-size reading layouts for phones and enlarged text. Missing fields use engine defaults.",
+      "properties": {
+        "maxShortEdge": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 1200,
+          "description": "Auto mode activates at or below this safe viewport short edge. Default 600 CSS pixels/native points."
+        },
+        "fontSize": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 32,
+          "description": "Minimum reading text size before the player text preference. Default 18."
+        },
+        "minTargetSize": {
+          "type": "integer",
+          "minimum": 44,
+          "maximum": 96,
+          "description": "Minimum actual interactive width and height. Default 44."
+        },
+        "padding": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64,
+          "description": "Reading surface padding. Default 16."
+        },
+        "gap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 48,
+          "description": "Space between reading items and actions. Default 12."
+        },
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 1600,
+          "description": "Maximum centered reading column width. Default 760."
+        },
+        "background": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "Opaque reading surface color. Default #172c29."
+        }
+      }
     }
   },
   "required": [
@@ -727,6 +775,58 @@
         },
         "modal": {
           "type": "boolean"
+        },
+        "readableLayout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "elementId"
+                ],
+                "properties": {
+                  "elementId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^[a-z][a-z0-9_-]*$"
+                  },
+                  "fontSize": {
+                    "type": "integer",
+                    "minimum": 16,
+                    "maximum": 64,
+                    "description": "Text size before player scaling; never below the global minimum."
+                  },
+                  "imageHeight": {
+                    "type": "integer",
+                    "minimum": 48,
+                    "maximum": 320,
+                    "description": "Image height in CSS pixels/native points. Default 160."
+                  }
+                }
+              }
+            },
+            "actions": {
+              "type": "array",
+              "maxItems": 12,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              "description": "Existing button IDs in the persistent bottom action region."
+            }
+          }
         }
       },
       "required": [

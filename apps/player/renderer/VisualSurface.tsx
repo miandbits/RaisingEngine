@@ -1,3 +1,5 @@
+import {readableLayoutForScreen,type ResolvedReadableItem} from '../../../packages/visual/readable-layout.js';
+import {usePlayerPreferences,PlayerSettingsControls} from './PlayerSettings.js';
 import {SaveSlotsWidget} from './SaveSlotsWidget.js';
 import type {SaveSlotsView,SaveSlotAction} from '../../../packages/player-service/save-slots.js';
 import {calendarGrid,calendarLabels,type CalendarProject} from '../../../packages/core/calendar.js';
@@ -60,16 +62,26 @@ function TransitionImage({src,element}:{src:string;element:Element}) {
   useEffect(()=>{if(previous.current!==src){setOld(previous.current);previous.current=src;}const timer=setTimeout(()=>setOld(null),element.durationMs??400);return()=>clearTimeout(timer);},[src,element.durationMs]);
   return <>{old&&element.motion==='fade'&&<img className="visual-old-image" src={old} alt="" aria-hidden="true" style={{objectFit:element.fit??'contain'}}/>}<img key={src} className={`visual-image motion-${element.motion??'none'}`} src={src} alt={element.label??element.id} draggable={false} style={{objectFit:element.fit??'contain',animationDuration:`${element.durationMs??400}ms`}}/></>;
 }
+function readableInk(background:string):string {
+  const rgb=parseInt(background.slice(1),16);
+  return .2126*((rgb>>16)&255)+.7152*((rgb>>8)&255)+.0722*(rgb&255)>145?'#263c36':'#f5efdf';
+}
 export function VisualSurface({design,screenId,context,assetUrl,busy=false,editing=false,fitViewport=false,onAction,onPlan,onCommitPlan,onChoice,onCommand,onUserValue,children}: {
   design:ReadonlyDesign;screenId:ScreenId;context:VisualContext;assetUrl:(id:string)=>string;busy?:boolean;editing?:boolean;fitViewport?:boolean;
   onAction?:(action:NonNullable<Element['action']>,element:Element)=>void;onCommand?:(command:WidgetCommand)=>void;onPlan?:(index:number,id:string)=>void;onCommitPlan?:()=>void;onChoice?:(id:string)=>void;onUserValue?:(id:string,value:string)=>void;children?:React.ReactNode;
 }) {
-  const host=useRef<HTMLDivElement>(null);const [viewport,setViewport]=useState({width:design.width,height:design.height});
-  useEffect(()=>{if(!host.current)return;const observer=new ResizeObserver(([entry])=>{if(entry&&entry.contentRect.width>0&&entry.contentRect.height>0){setViewport({width:entry.contentRect.width,height:entry.contentRect.height});}});observer.observe(host.current);return()=>observer.disconnect();},[]);
+  const preferences=usePlayerPreferences();
+  const readingScroll=useRef<HTMLDivElement>(null),readingActions=useRef<HTMLDivElement>(null);
+  const gesture=useRef({x:0,y:0,dragged:false});
+  const host=useRef<HTMLDivElement>(null);const [viewport,setViewport]=useState({width:design.width,height:design.height,safeWidth:design.width,safeHeight:design.height});
+  useEffect(()=>{if(!host.current)return;const observer=new ResizeObserver(([entry])=>{if(entry&&entry.contentRect.width>0&&entry.contentRect.height>0){const shell=host.current?.closest<HTMLElement>('.visual-shell'),style=shell?getComputedStyle(shell):null;
+      setViewport({width:entry.contentRect.width,height:entry.contentRect.height,safeWidth:shell&&style?shell.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight):entry.contentRect.width,safeHeight:shell&&style?shell.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom):entry.contentRect.height});}});observer.observe(host.current);return()=>observer.disconnect();},[]);
   const size=fitViewport?logicalViewport(design,viewport.width,viewport.height):{width:design.width,height:design.height};
   const scale=fitViewport?Math.min(viewport.width/size.width,viewport.height/size.height):viewport.width/design.width;
   const offset=fitViewport?{x:(viewport.width-size.width*scale)/2,y:(viewport.height-size.height*scale)/2}:{x:0,y:0};
-  const elements=resolveScreenElements(design,screenId,size);
+  const readable=fitViewport&&!editing?readableLayoutForScreen(design,screenId,{width:viewport.safeWidth,height:viewport.safeHeight},preferences?.value):null;
+  const elements=readable?[...readable.items,...readable.actions].map(item=>item.element):resolveScreenElements(design,screenId,size);
+  useEffect(()=>{readingScroll.current?.scrollTo(0,0);readingActions.current?.scrollTo(0,0);},[screenId,context.story,context.phase,context.saveSlots?.confirmation]);
   useEffect(()=>{window.raisingExtensions?.commitPresentation(context.dataState);},[context.dataState,screenId]);
   const planning=useSchedulePlanner(context);
   const calendarBinding=(binding:Element['binding']):string|null=>{
@@ -89,22 +101,24 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const fontIds=[...new Set([...elements,...(design.components??[]).flatMap(c=>c.elements)].map(e=>resolveElementStyle(design,e).fontAssetId).filter((id):id is string=>!!id))];
   const fontCss=fontIds.map(id=>`@font-face{font-family:"engine-${id}";src:url(${JSON.stringify(assetUrl(id))});font-display:block;}`).join('\n');
   const conditionPasses=(condition:Element['visibleCondition'])=>!condition||context.dataUi?.conditions[JSON.stringify(condition)]===true;
-  const renderElement=(raw:BoundElement):React.ReactNode=>{
+  const renderElement=(raw:BoundElement,readingItem?:ResolvedReadableItem):React.ReactNode=>{
       let element=resolveElementStyle(design,editing?raw:resolvePresentation(raw,presentationActivity(context.dataState,raw),conditionPasses));
-      const portrait=element.kind==='image'&&element.imageSource?.startsWith('portrait-')?context.portraitTransforms?.[element.imageSource.slice(9)]:undefined;
+      if(readingItem&&readable)element={...element,fontSize:readingItem.fontSize,width:Math.max(44,Math.min(viewport.width,readable.config.maxWidth)-2*readable.config.padding),height:readingItem.imageHeight};
+      const portrait=!readingItem&&element.kind==='image'&&element.imageSource?.startsWith('portrait-')?context.portraitTransforms?.[element.imageSource.slice(9)]:undefined;
       if(portrait){const scale=portrait.scale??1,w=element.width,h=element.height;element={...element,x:element.x+(w-w*scale)/2+w*(portrait.offsetX??0),y:element.y+h-h*scale+h*(portrait.offsetY??0),width:w*scale,height:h*scale};}
       if(!editing&&(!isVisible(element,context)||!conditionPasses(element.visibleCondition)))return null;
       const availability=context.dataUi?.availability[screenId]?.[raw.id];
       const enabled=editing||conditionPasses(element.enabledCondition)&&raw.dataEnabled!==false&&availability?.enabled!==false;
       const reason=raw.dataReason||availability?.reason||(!conditionPasses(element.enabledCondition)||raw.dataEnabled===false?'사용 조건을 충족하지 못했습니다.':'');
-      const style:React.CSSProperties={left:element.x,top:element.y,width:element.width,height:element.height,background:element.fill??'transparent',color:element.color??'#304d46',fontSize:element.fontSize??22,borderRadius:element.radius??0,opacity:editing&&!isVisible(element,context)?0.3:element.opacity??1,textAlign:element.align??'left'};
-      if(raw._clipRect){const clip=raw._clipRect,left=Math.max(0,clip.x-element.x),top=Math.max(0,clip.y-element.y),right=Math.max(0,element.x+element.width-clip.x-clip.width),bottom=Math.max(0,element.y+element.height-clip.y-clip.height);if(left+right>=element.width||top+bottom>=element.height)return null;style.clipPath=`inset(${top}px ${right}px ${bottom}px ${left}px)`;}
+      const style:React.CSSProperties={left:element.x,top:element.y,width:element.width,height:element.height,background:element.fill??'transparent',color:element.color??(readingItem&&readable?readableInk(element.fill??readable.config.background):'#304d46'),fontSize:element.fontSize??22,borderRadius:element.radius??0,opacity:editing&&!isVisible(element,context)?0.3:element.opacity??1,textAlign:element.align??'left'};
+      if(readingItem&&readable&&element.color===undefined)Object.assign(style,{'--readable-control-ink':'#263c36','--readable-slot-ink':readableInk(element.fill??'#f5efdf')});
+      if(!readingItem&&raw._clipRect){const clip=raw._clipRect,left=Math.max(0,clip.x-element.x),top=Math.max(0,clip.y-element.y),right=Math.max(0,element.x+element.width-clip.x-clip.width),bottom=Math.max(0,element.y+element.height-clip.y-clip.height);if(left+right>=element.width||top+bottom>=element.height)return null;style.clipPath=`inset(${top}px ${right}px ${bottom}px ${left}px)`;}
       if(element.kind==='group')style.pointerEvents='none';
       if(element.fontAssetId)style.fontFamily=`"engine-${element.fontAssetId}", sans-serif`;
       if(element.padding!==undefined)style.padding=element.padding;
       else if(element.kind==='text'&&element.uiContext)style.padding=0;
       if(element.borderWidth!==undefined){style.borderWidth=element.borderWidth;style.borderStyle='solid';style.borderColor=element.borderColor??'#57806c';}
-      if(element.kind==='text'){
+      if(element.kind==='text'&&!readingItem){
         // Compact authored labels should not scroll just because the default
         // paragraph leading exceeds their box. Keep normal leading in taller
         // boxes, and retain scrolling when the text itself really overflows.
@@ -114,16 +128,22 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       }
       Object.assign(style,{'--style-hover':element.hoverFill,'--style-pressed':element.pressedFill,'--style-disabled':element.disabledColor});
       if(element.kind==='choices'&&element.choiceLayout==='cards'){
-        Object.assign(style,{'--choice-fill':element.fill??'#f5efdf','--choice-color':element.color??'#263c36','--choice-border':element.borderColor??'#c7b99a','--choice-border-width':`${element.borderWidth??1}px`,'--choice-radius':`${element.radius??2}px`});
+        Object.assign(style,{'--choice-fill':element.fill??'#f5efdf','--choice-color':element.color??(readingItem?readableInk(element.fill??'#f5efdf'):'#263c36'),'--choice-border':element.borderColor??'#c7b99a','--choice-border-width':`${element.borderWidth??1}px`,'--choice-radius':`${element.radius??2}px`});
         style.background='transparent';style.borderWidth=0;
       }
       const source=imageFor(element,context);
       const contextText=element.binding==='narrative-actor'?(context.characters?.find(c=>c.id===context.dataState?.activeNarrative?.actorId)?.name??''):element.binding==='context-name'?(context.dataUi?.contextNames?.[`${element.contextField}:${element.uiContext?.[element.contextField??'actorId']}`]??'—'):null;
       const text=contextText??userFieldBinding(element,context.userValues)??dataBindingText(element,context)??numericBinding(element,context)??calendarBinding(element.binding)??(element.binding==='schedule-prompt'?schedulePrompt:null)??(element.binding&&element.binding!=='none'&&element.binding in context?String(context[element.binding as keyof VisualContext]??''):element.text??'텍스트');
+      if(readingItem){
+        if((['text','button'].includes(element.kind)&&!text.trim())||(element.kind==='dialogue'&&!context.story.trim())||(element.kind==='result'&&!context.result.trim()&&!context.actorResults?.length)||(element.kind==='choices'&&!context.choices.length)||(element.kind==='image'&&!source))return null;
+        Object.assign(style,{position:'relative',left:undefined,top:undefined,width:undefined,height:element.kind==='image'?readingItem.imageHeight:undefined,minWidth:0,lineHeight:1.5,overflow:element.kind==='image'?'hidden':'visible'});
+        if(element.kind==='text')style.padding=element.padding??0;
+      }
       let body:React.ReactNode=null;
       if(element.kind==='image')body=source?<TransitionImage src={assetUrl(source)} element={element}/>:editing?<div className="visual-placeholder">{element.imageSource??'이미지'} · 에셋 선택</div>:null;
       if(element.kind==='text')body=<span>{text}</span>;
       if((element.kind as string)==='plugin'){style.overflow='visible';body=<ExtensionView instance={`${screenId}/${element.id}`} extension={(element as unknown as {extension?:ExtensionSpec}).extension} width={element.width} height={element.height} assetUrl={assetUrl} editing={editing}/>;}
+      if(element.kind==='playerSettings'&&preferences)body=<fieldset className="visual-settings-fields" disabled={busy||!enabled||editing}><PlayerSettingsControls {...preferences} locale={context.locale}/></fieldset>;
       if(element.kind==='saveSlots'||element.kind==='loadSlots')body=<SaveSlotsWidget element={element} {...(context.saveSlots?{view:context.saveSlots}:{})} {...(context.locale?{locale:context.locale}:{})} busy={busy||!enabled||editing} {...(context.onSlotAction?{onAction:context.onSlotAction}:{})}/>;
       if(element.kind==='input'){
         const field=context.userFields?.find(f=>f.id===element.userFieldId);
@@ -135,12 +155,12 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
       if(element.kind==='schedule')body=context.dataState?.roster
         ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/>
-        :<ScheduleWidget element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
+        :<ScheduleWidget readable={!!readingItem} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
       if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue">{context.story}</p>;
       if(element.kind==='result')body=context.actorResults?.length
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
-      if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
+      if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
       if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||element.action==='advance'&&['choice','finished','title'].includes(context.phase)} onClick={()=>element.action&&onAction?.(element.action,element)}>{element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼'}</button>;
       if(element.kind==='collection'){
         style.padding=0;
@@ -166,9 +186,21 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       }
       return <div className={`visual-element visual-${element.kind} ${raw.styleId||design.defaultStyle?'visual-styled':''}`} style={style} key={element.id} data-element-id={element.id}>{body}</div>;
   };
+  if(readable){
+    const {config}=readable,vars={'--readable-target':`${config.minTargetSize}px`,'--readable-gap':`${config.gap}px`,'--readable-padding':`${config.padding}px`,'--readable-width':`${config.maxWidth}px`,fontSize:config.fontSize*readable.textScale,background:config.background,'--readable-background':config.background} as React.CSSProperties;
+    return <div className="visual-viewport visual-fit visual-readable" data-screen={screenId} data-readable-layout="true" ref={host} style={vars}
+      onPointerDownCapture={event=>{gesture.current={x:event.clientX,y:event.clientY,dragged:false};}}
+      onPointerMoveCapture={event=>{if(Math.hypot(event.clientX-gesture.current.x,event.clientY-gesture.current.y)>8)gesture.current.dragged=true;}}
+      onPointerCancelCapture={()=>{gesture.current.dragged=true;}}
+      onClickCapture={event=>{if(event.detail>0&&gesture.current.dragged){event.preventDefault();event.stopPropagation();gesture.current.dragged=false;}}}>
+      <style>{fontCss}</style><div className="readable-scroll" ref={readingScroll} tabIndex={0} role="region" aria-label={design.screens.find(s=>s.id===screenId)?.label??screenId}><div className="readable-items">{readable.items.map(item=>renderElement(item.element,item))}</div></div>
+      {readable.actions.length>0&&<div className="readable-actions" ref={readingActions}>{readable.actions.map(item=>renderElement(item.element,item))}</div>}
+      {children}
+    </div>;
+  }
   return <div className={`visual-viewport ${fitViewport?'visual-fit':''}`} ref={host} style={fitViewport?{}:{aspectRatio:`${design.width}/${design.height}`}}><div className="visual-stage" data-screen={screenId} style={{width:size.width,height:size.height,left:offset.x,top:offset.y,transform:`scale(${scale})`}}>
     <style>{fontCss}</style>
-    {elements.map(renderElement)}{children}
+    {elements.map(element=>renderElement(element))}{children}
   </div></div>;
 }
 

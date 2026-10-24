@@ -48,10 +48,10 @@ signals:
 private:
   QProcess process;
   QTimer timeout;
-  QComboBox *resolution,*locale,*interaction,*element;
+  QComboBox *resolution,*locale,*interaction,*element,*readingMode,*textScale;
   QSpinBox *width,*height;
   QPushButton *render,*cancel,*pin;
-  QLabel *status,*caption,*referenceCaption;
+  QLabel *status,*caption,*referenceCaption,*readingStatus;
   QTreeWidget *nodes;
   QTreeWidget *reasons;
   QJsonArray documents;
@@ -66,6 +66,8 @@ private:
   QString requestedRoot,renderedRoot,renderedScreen;
   QString contextSelection;
   int revision=0,requestedRevision=0,requestedWidth=0,requestedHeight=0;
+  QString requestedReadingMode="auto";
+  double requestedTextScale=1;
   bool pending=false,filling=false;
   bool canvasMode=false;
   QString contextKey() const;

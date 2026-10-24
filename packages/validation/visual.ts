@@ -5,6 +5,7 @@ import { checkHierarchy } from './hierarchy.js';
 import { resolveScreenElements } from '../visual/components.js';
 import type { ReadonlyDesign } from '../visual/model.js';
 import { checkUiComposition } from './ui-composition.js';
+import { checkReadableLayout } from './readable-layout.js';
 import { checkDirection } from './direction.js';
 import { checkScreenBinding } from './screen-binding.js';
 import { checkTimelines } from './timeline.js';
@@ -14,6 +15,7 @@ import type { Element } from '../visual/model.js';
 import {resolveCollectionRow} from '../visual/data-ui.js';
 export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonObject):void {
   checkDirection(ctx,doc,visual);
+  checkReadableLayout(ctx,doc,visual);
   checkUiComposition(ctx,doc,visual);
   checkDataUi(ctx,doc,visual);
   checkTimelines(ctx,doc,visual);

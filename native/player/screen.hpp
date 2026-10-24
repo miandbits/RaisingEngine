@@ -121,6 +121,11 @@ public:
   std::map<std::string,std::string> labels;
   int width=1280, height=720;
   int viewport_width=0,viewport_height=0;
+  int window_width=0,window_height=0;
+  Json safe_area=Json::object();
+  bool readable_active=false,reading_options=false;
+  std::string readable_screen_id;
+  double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;
   ExtensionHost* extensions=nullptr;
   explicit ScreenMarkup(GameSession& game, Json assets, fs::path bundle):game(game),assets(std::move(assets)),bundle(std::move(bundle)){}
@@ -663,6 +668,7 @@ public:
     if(e.contains("borderWidth")&&!choice_cards)style+="border-width:"+number(e.at("borderWidth"))+"px;border-color:"+css_color(e.value("borderColor","#ffffff"))+";";
     style+="font-size:"+number(e.value("fontSize",20.0))+"px;border-radius:"+number(e.value("radius",0.0))+"px;opacity:"+number(e.value("opacity",1.0))+";text-align:"+e.value("align","left")+";";
     if(kind=="group"&&e.value("overflow","")=="scroll")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
+    if(kind=="playerSettings"&&display_content.at("project").at("visual").contains("readableLayout"))style+="overflow-x:hidden;overflow-y:auto;";
     if(kind=="collection")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
     if(kind=="plugin")style+="overflow:visible;";
     // Schedule popups need an elevated stacking layer, but their transparent
@@ -744,7 +750,7 @@ public:
       return "<div style=\"position:absolute;left:0;top:"+number((height-thickness)/2)+"px;width:100%;height:"+number(thickness)+"px;background-color:"+css_color(e.value("fill",Json("#00000000")))+";\"><div style=\"width:"+number(e.value("width",200.0)*ratio)+"px;height:100%;background-color:"+css_color(e.value("color",Json("#70b887")))+";\"></div></div>";
     }
     if(kind=="saveSlots"||kind=="loadSlots")return slots_body(e);
-    if(kind=="playerSettings")return settings_body(e);
+    if(kind=="playerSettings")return display_content.at("project").at("visual").contains("readableLayout")?readable_settings(e):settings_body(e);
     if(kind=="image")return image(e);
     if(kind=="plugin")return plugin_body(e);
     if(kind=="text")return escape(e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
@@ -960,9 +966,11 @@ public:
   }
 #include "gallery-screen.inc"
 #include "gallery-data.inc"
+  #include "readable-markup.inc"
   std::string title_screen;
   std::string document() {
     refreshDisplay();
+    readable_active=false;readable_screen_id.clear();
     if(extensions&&!authored_gallery())extensions->begin_sync();
     actions.clear(); labels.clear(); authored_timeline_controls=0;
     const auto& visual=display_content.at("project").at("visual");
@@ -1026,12 +1034,15 @@ public:
     if(visual.value("widgetTheme","default")=="ornate")extra_css+="body{color:#fff0d0;} .list{padding:0;} .list button{background-color:transparent;color:#fff0d0;border-width:0;border-radius:0;padding:4px 8px;margin-bottom:4px;text-align:left;min-height:30px;} .list button:hover{color:#ffe673;background-color:#733e42;} .list button:focus{border-color:#ffd979;border-width:1px;} .list .muted,.list .reason{color:#c8a999;} .list .heading{font-size:22px;} .list .row{border-bottom-width:0;padding:3px;} .list .offer{padding:2px;} .list .offer button{margin-top:2px;} .node.schedule{z-index:20;} .button>button{padding:0;min-height:0;text-align:center;} .status{background-color:#46262d;color:#ffdf9b;}";
     extra_css+=".plan-categories{position:absolute;right:0;top:210px;width:310px;padding:10px 4px;background-color:#46343e;border-width:2px;border-color:#e5c880;}.plan-options>button{display:inline-block;vertical-align:top;width:244px;height:78px;margin:0 16px 16px 0;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;white-space:normal;}.plan-icon{float:left;width:60px;height:60px;margin-right:6px;} .compact-stat{position:relative;height:32px;font-size:28px;line-height:32px;} .stat-name{display:inline-block;width:126px;background-color:#733c44;} .stat-number{display:inline-block;width:58px;text-align:right;} .stat-meter{position:absolute;left:184px;top:5px;height:22px;width:168px;border-width:1px;border-color:#ba8c84;background-color:#34151d;} .stat-meter>div{height:100%;background-color:#df5454;} .node.schedule .calendar-cell{border-width:1px;padding:0;margin:0;min-height:0;font-size:26px;background-color:transparent;}";
     extra_css+=".shop-card{display:inline-block;vertical-align:top;width:292px;height:112px;margin:0 12px 8px 0;}.shop-card>button{height:112px;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;line-height:26px;}.shop-card .item-icon{float:left;width:56px;height:56px;margin-right:8px;}.card-description{clear:both;font-size:21px;padding-top:4px;}.purchase-dialog{position:absolute;z-index:100;right:8px;top:430px;width:304px;padding:12px;background-color:#46343e;color:#fff0d0;border-width:2px;border-color:#e5c880;}";
+    const Json* reading_screen=screen;
     Json modal_elements=Json::array();
     if(!authored_gallery()&&!ui_modal.empty())for(const auto& modal:visual.at("screens"))if(modal.at("id")==ui_modal&&modal.value("modal",false)){
+      reading_screen=&modal;
       modal_elements=expanded_collections(expanded_elements(visual,modal,width,height,phase()));
       const auto prefix=ui_modal+"__";
       for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();e["_authoredModal"]=true;for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}break;
     }
+    if(readable_requested(visual,*reading_screen))return readable_document(visual,*reading_screen);
     for(const auto& raw:render_elements) {
       const auto e=resolved_style(visual,raw);
       const auto selector="#node-"+e.value("id","");
@@ -1080,6 +1091,16 @@ public:
     if(!authored_gallery()){out+=timeline_overlay();out+=direction_overlay();}
     out+=gallery_overlay();
     if(extensions&&!authored_gallery())extensions->end_sync();
+    if(visual.contains("readableLayout")&&reading_screen->contains("readableLayout")) {
+      // The launcher owns a strip outside the authored canvas. Overlaying a
+      // corner can intercept a designer's controls, even when visually compact.
+      const int canvas_height=height;
+      const double units=std::max(double(width)/std::max(1,window_width),double(height)/std::max(1,window_height-52));
+      const int strip=int(std::ceil(52*units));height+=strip;
+      out.insert(out.find("</style>"),"body{height:"+std::to_string(height)+"px;} #engine-reading-toolbar button{height:"+number(44*units)+"px;min-height:"+number(44*units)+"px;margin:0;padding:0 12px;font-size:"+number(18*units)+"px;}");
+      out.insert(out.find("<body>")+6,"<div id=\"authored-canvas\" style=\"position:relative;width:"+std::to_string(width)+"px;height:"+std::to_string(canvas_height)+"px;\">");
+      out+="</div><div id=\"engine-reading-toolbar\" style=\"position:absolute;left:0;top:"+std::to_string(canvas_height)+"px;width:100%;height:"+std::to_string(strip)+"px;box-sizing:border-box;padding:"+number(4*units)+"px "+number(12*units)+"px;background-color:#172c29;\"><div style=\"width:"+number(240*units)+"px;\">"+button("engine-reading-options",settings_words("읽기 설정","Reading options","読み方の設定"),{{"type","readingOptions"},{"open",true}})+"</div></div>";
+    }
     return out+"</body></rml>";
   }
 };
