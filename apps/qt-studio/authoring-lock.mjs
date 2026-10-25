@@ -6,6 +6,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 const busy=()=>Error('Another editor is saving player priorities. Refresh and try again.');
 const alive=pid=>{try{process.kill(pid,0);return true;}catch(error){return error.code!=='ESRCH';}};
 const absent=error=>{if(error.code!=='ENOENT')throw error;};
+const transientLeaseRead=error=>['ENOENT','EPERM','EACCES','EBUSY'].includes(error.code);
 async function removeLease(directory){
  for(const name of ['ticket.json','ticket.tmp'])await unlink(path.join(directory,name)).catch(absent);
  await rmdir(directory).catch(error=>{if(!['ENOENT','ENOTEMPTY'].includes(error.code))throw error;});
@@ -37,7 +38,15 @@ export async function acquireAuthoringLock(directory){
     const value=JSON.parse(await readFile(file,'utf8'));
     if(value?.version!==1||!Number.isSafeInteger(value.number)||value.number<1)throw Error('Invalid authoring lock ticket.');
     ticket=value.number;
-   }catch(error){if(error.code!=='ENOENT')throw error;if(!await lstat(folder).catch(error=>{absent(error);return null;}))continue;}
+   }catch(error){
+    if(!transientLeaseRead(error))throw error;
+    // Windows may deny opening a ticket while its owner deletes it. Treat an
+    // unreadable live lease as preparing (blocking), never as permission to enter.
+    // A directory confirmed gone can be retired; the next scan retries the rest.
+    const current=await lstat(folder).catch(error=>{if(error.code==='ENOENT')return null;if(transientLeaseRead(error))return 'unreadable';throw error;});
+    if(!current)continue;
+    if(current!=='unreadable'&&(!current.isDirectory()||current.isSymbolicLink()))throw Error('Invalid authoring lock owner directory.');
+   }
    result.push({id:entry.name,ticket});
   }
   if(entries.length>4096)throw Error('Old authoring locks were cleaned up. Refresh and try again.');

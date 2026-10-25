@@ -1,3 +1,4 @@
+import {waitForResponse} from './response-wait.js';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { createRequire } from 'node:module';
@@ -114,8 +115,7 @@ function rawRequest(c:WorkerConnection,request:unknown,executable:string):unknow
   const control=c.control!,worker=c.worker!,bytes=c.bytes!;
   Atomics.store(control,0,0);
   worker.postMessage(JSON.stringify(request));
-  const status=Atomics.wait(control,0,0,30_000);
-  if(status==='timed-out'){connections.delete(executable);void worker.terminate();throw new Error('Native runtime request timed out.');}
+  if(!waitForResponse(control,30_000)){connections.delete(executable);void worker.terminate();throw new Error('Native runtime request timed out.');}
   const text=new TextDecoder().decode(bytes.subarray(0,Atomics.load(control,1)));
   const response=JSON.parse(text) as unknown;
   if(Atomics.load(control,0)===2)throw new Error((response as {message:string}).message);
