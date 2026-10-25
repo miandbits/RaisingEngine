@@ -1,5 +1,6 @@
 import {GoalRouteBatches} from './goal-route-batches.mjs';
 import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePriorityProfile} from './analysis-priorities.mjs';
+import {packagedStudioPluginStore} from './storage-paths.mjs';
 import { DraftRecovery } from './recovery.mjs';
 import { GameReleases } from './releases.mjs';
 import { randomUUID } from 'node:crypto';
@@ -68,7 +69,7 @@ export class QtStudioService {
     this.nativeTarget = nativeTarget;
     this.runtimes = runtimes;
     this.shareViews = shareViews;
-    this.pluginStore = pluginStorePath(pluginStore);
+    this.pluginStore = pluginStorePath(pluginStore || process.env.RAISING_PLUGIN_STORE || packagedStudioPluginStore(engineRoot));
     this.defaultPluginStore = this.pluginStore;
     this.editor = new StudioEditor({ pluginStore: this.pluginStore });
   }
