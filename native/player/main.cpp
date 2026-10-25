@@ -29,6 +29,9 @@
 #include "route-recording.hpp"
 #include "recollection.hpp"
 #include "editor-preview.hpp"
+#ifdef SDL_PLATFORM_MACOS
+void configure_macos_player();
+#endif
 
 class PlayerApplication : public Rml::EventListener {
 public:
@@ -90,7 +93,7 @@ public:
   bool editor_events=false,editor_live=false,editor_paused=false;
   double extension_dt=0;
   uint64_t document_generation=0;
-  bool syncing_user_inputs=false;
+  bool syncing_user_inputs=false,editor_input_dirty=false;
   std::string preview_element,preview_state="normal",preview_source="initial";
   bool preview() const {return !editor_live&&!markup.preview_screen.empty();}
   int auto_revision=-1,auto_attempted=-1;
@@ -281,6 +284,7 @@ public:
           syncing_user_inputs=true;
           for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input"&&entry.value("userFieldId","")==field)if(auto* other=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))if(other!=input&&other->GetValue()!=input->GetValue())other->SetValue(input->GetValue());
           syncing_user_inputs=false;
+          editor_input_dirty=true;
           for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="text"&&entry.value("binding","")=="user-field")if(auto* text=document->GetElementById("node-"+entry.value("id","")))text->SetInnerRML(escape(markup.bind("user-field",entry)));
         }
         return;
@@ -326,6 +330,7 @@ public:
     } catch(...) {markup.saved_preview={{"status","invalid"}};}
   }
   void rebuild() {
+    EditorKeyboardRebuildGuard input_rebuild;
     auto& markup=active_markup();auto& game=recalling()?recollection->game:this->game;
     const std::string previous_screen=markup.screen_id;
     const std::string previous_focus=context&&context->GetFocusElement()?context->GetFocusElement()->GetId():"";
@@ -404,6 +409,7 @@ public:
     restore_portable_focus();
     entrance_keys=std::move(next_entrance_keys);dirty=false;
     try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
+    input_rebuild.finish();
     if(editor_events){std::cout<<Json({{"event","editor-view"},{"command",editor_command},{"view",ui_state()}}).dump()<<std::endl;editor_command=Json::object();}
   }
   void execute(const Json& incoming) {
@@ -598,6 +604,10 @@ public:
       return;
     }
     if(backgrounded)return;
+    // UIKit already owns character edits and selection while its field is active.
+    // Do not apply a second copy of hardware key or SDL text events to RmlUi.
+    if(static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->OwnsKeyboard()&&
+       (event.type==SDL_EVENT_KEY_DOWN||event.type==SDL_EVENT_KEY_UP||event.type==SDL_EVENT_TEXT_INPUT||event.type==SDL_EVENT_TEXT_EDITING))return;
     if(editor_paused&&((event.type>=SDL_EVENT_KEY_DOWN&&event.type<=SDL_EVENT_KEYMAP_CHANGED)||(event.type>=SDL_EVENT_MOUSE_MOTION&&event.type<=SDL_EVENT_MOUSE_WHEEL)||(event.type>=SDL_EVENT_GAMEPAD_AXIS_MOTION&&event.type<=SDL_EVENT_GAMEPAD_TOUCHPAD_UP)))return;
     if(event.type==SDL_EVENT_FINGER_DOWN||event.type==SDL_EVENT_FINGER_MOTION||event.type==SDL_EVENT_FINGER_UP||event.type==SDL_EVENT_FINGER_CANCELED) {
       if(!context)return;
@@ -731,7 +741,7 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"resumeContext",{{"enabled",markup.resume_context_enabled()},{"open",markup.resume_context_open},{"projection",markup.resume_context_open?markup.resume_context_projection():Json()}}},{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"nativeTextInput",static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->KeyboardReport()},{"resumeContext",{{"enabled",markup.resume_context_enabled()},{"open",markup.resume_context_open},{"projection",markup.resume_context_open?markup.resume_context_projection():Json()}}},{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
       {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
@@ -784,6 +794,9 @@ public:
 };
 
 int main(int argc,char** argv) {
+#ifdef SDL_PLATFORM_MACOS
+  configure_macos_player();
+#endif
 #ifdef SDL_PLATFORM_ANDROID
   const auto* internal=SDL_GetAndroidInternalStoragePath();
   fs::path bundle_root=internal?fs::u8path(internal)/"game":fs::path("game"),save_file,automation_file,report_file;
@@ -853,7 +866,7 @@ int main(int argc,char** argv) {
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);
     {
-      EditorClockSystem system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;Utf8FileInterface files;
+      Json last_keyboard_report;EditorClockSystem system;system.SetWindow(window);system.SetRenderer(renderer);RenderInterface_SDL render(renderer);DensityFontEngine fonts;Utf8FileInterface files;
       Rml::SetSystemInterface(&system);Rml::SetFileInterface(&files);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
       static Rml::ElementInstancerGeneric<ExtensionElement> extension_instancer;Rml::Factory::RegisterElementInstancer("raising-extension",&extension_instancer);
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
@@ -872,6 +885,7 @@ int main(int argc,char** argv) {
         const auto id=asset.at("id").get<std::string>();const auto file=bundle_root/fs::u8path(bundle.at("assets").at(id).get<std::string>());
         std::ifstream input(file,std::ios::binary);auto& bytes=font_buffers[id];bytes.assign(std::istreambuf_iterator<char>(input),{});
         if(bytes.empty()||!Rml::LoadFontFace(Rml::Span<const Rml::byte>(bytes.data(),bytes.size()),"engine-"+id,Rml::Style::FontStyle::Normal))throw std::runtime_error("Cannot load project font: "+id);
+        system.RegisterKeyboardFont("engine-"+id,file.generic_u8string());
       }
       PlayerApplication app(bundle,bundle_root,window,renderer,save_file);
       EditorPreviewControl editor;editor.directory=editor_directory;app.editor_live=!editor_directory.empty();app.editor_paused=app.editor_live;
@@ -927,7 +941,9 @@ int main(int argc,char** argv) {
         if(app.dirty)app.rebuild();
         SDL_FRect display_rect{};SDL_GetRenderLogicalPresentationRect(renderer,&display_rect);
         fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
-        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();app.capture_reading_frame();
+        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();system.UpdateKeyboard();
+        if(app.editor_events){const auto keyboard_report=system.KeyboardReport();if(app.editor_input_dirty||keyboard_report!=last_keyboard_report){app.editor_input_dirty=false;last_keyboard_report=keyboard_report;std::cout<<Json({{"event","editor-view"},{"command",Json::object()},{"view",app.ui_state()}}).dump()<<std::endl;}}
+        SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();app.capture_reading_frame();
         if(wait_frames>0)--wait_frames;
         else if(SDL_GetTicks()>=wait_until&&!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];
@@ -991,7 +1007,7 @@ int main(int argc,char** argv) {
       }
       report["final"]=app.ui_state();report["elapsedMs"]=SDL_GetTicks()-automation_started;report["ok"]=true;
       if(!report_file.empty()){fs::create_directories(report_file.parent_path());std::ofstream out(report_file);out<<report.dump(2);}
-      if(app.document)app.document->Close();Rml::Shutdown();
+      system.CloseKeyboard();if(app.document)app.document->Close();Rml::Shutdown();
     }
     SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
   } catch(const std::exception& error) {

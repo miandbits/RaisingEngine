@@ -763,7 +763,7 @@ public:
       return "<div style=\"position:relative;width:100%;height:"+number(extent)+"px;\">"+out+"</div>";
     }
     if(kind=="panel"||kind=="group")return "";
-    if(kind=="input"){const auto id=e.value("userFieldId","");return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
+    if(kind=="input"){const auto id=e.value("userFieldId","");std::string label=id;for(const auto& field:display_content.at("project").value("userFields",Json::array()))if(field.at("id")==id)label=field.value("label",id);return "<input id=\"user-input-"+escape(e.value("id",""))+"\" type=\"text\" data-user-field=\""+escape(id)+"\" aria-label=\""+escape(label)+"\" value=\""+escape(user_field_value(id))+"\" style=\"width:100%;height:100%;box-sizing:border-box;background-color:transparent;\""+(game.state.is_null()?"":" disabled=\"disabled\"")+"/>";}
     if(kind=="meter"){
       double value=e.value("value",0.0);
       if(e.contains("dataBinding")){auto numeric=e;numeric["valueFormat"]="{value}";try{value=std::stod(data_binding(numeric));}catch(...){value=0;}}

@@ -10,6 +10,10 @@ The renderer reads the authored visual screens and elements, including custom sc
 
 Mouse and keyboard are supported. Tab changes focus, Enter activates controls, F5 saves and F9 loads. Gamepad directional buttons change focus and the south button activates the focused control; physical controller coverage is still required. The window resizes with a letterboxed logical canvas. Saving uses the existing versioned command journal; loading replays it through C++ and rejects fingerprint, version and state mismatches.
 
+On iOS, focused authored text fields use UIKit for selection, composing keyboards, clipboard editing and keyboard dismissal/refocus. They use authored fonts, labels and styles; a field covered by its own keyboard is temporarily lifted above it. Other platforms retain SDL/RmlUi input. See the [system UI regressions](../../docs/development/ios-system-ui-regressions.md), including the separately recorded Korean mid-syllable simulator limitation.
+
+On macOS, the player registers SDL's existing `ApplePersistenceIgnoreState` process default before SDL activation, so Cocoa's crash-restoration prompt cannot block startup. This does not write a persistent system preference; game recovery continues through the validated save system.
+
 Default saves are under SDL's per-user `RaisingEngine/<gameId>` preferences directory, in `slot-1.json`. `--save FILE` overrides this for portable playtests. A previous slot is kept as `.bak`. No network service or account is required.
 
 ## Reproducible dependencies
@@ -26,7 +30,7 @@ Source checkouts are in `native/player/vendor`, using these upstream versions:
 - [libwebp](https://chromium.googlesource.com/webm/libwebp/+/refs/tags/v1.6.0): 1.6.0, `4fa21912338357f89e4fd51cf2368325b59e9bd9`, statically linked with its license and patent grant.
 - [Noto Sans KR](https://github.com/google/fonts/tree/main/ofl/notosanskr): bundled variable font with SIL Open Font License.
 
-Requires CMake 3.20+ and a C++17 compiler. The build script discovers the installed Windows MinGW compiler, or uses CMake's default compiler on other hosts. Only Windows has been built and exercised here. Android, iOS, macOS, Linux and console graphical builds are **not** certified by this implementation. Console SDKs and platform-specific packaging remain separate work.
+Requires CMake 3.20+ and a C++17 compiler. The build script discovers the installed Windows MinGW compiler, or uses CMake's default compiler on other hosts. Windows and macOS have dedicated creator and package CI. iOS has source exports, simulator checks and unsigned device compilation; physical-device acceptance and signed distribution remain separate. Android, Linux and console certification require their own platform checks.
 
 ## Renderer test hooks
 

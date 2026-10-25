@@ -30,6 +30,7 @@ if(args.includes('--web')){
 if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs','tests/native-player/automation-wait.test.mjs']);
+  await run('native-user-fields',['--test','tests/native-player/user-fields.test.mjs']);
   await run('native-rendering',['--test','tests/native-player/asset-text-rendering.test.mjs']);
   await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs','tests/native-player/planning-guidance.test.mjs','tests/native-player/reading-history.test.mjs']);
   await run('native-resume-context',['--test','tests/native-player/resume-context.test.mjs']);

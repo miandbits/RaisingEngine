@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { loadProject } from '../../dist/packages/project-service/loader.js';
 import { buildSnapshot } from '../../dist/packages/project-service/snapshot.js';
 import { exportGame } from '../../dist/packages/export-service/export.js';
+import {desktopTarget,gameDirectory,playerExecutable} from '../../dist/packages/export-service/targets.js';
 
 test('native text input retains Unicode drafts without rebuilding, creates once and restores exact names', {timeout:120000},async t=>{
   await mkdir('.cache/native-user-fields-tests',{recursive:true});const root=await mkdtemp(resolve('.cache/native-user-fields-tests/run-'));
@@ -19,9 +20,9 @@ test('native text input retains Unicode drafts without rebuilding, creates once 
   project.visual.screens.find(s=>s.id==='title').elements=[...structuredClone(fields),{id:'start-user-game',kind:'button',action:'start',text:'시작',x:80,y:430,width:200,height:60}];
   project.visual.screens.find(s=>s.id==='home').elements=structuredClone(fields);await writeFile(file,JSON.stringify(project,null,2));
   const built=await buildSnapshot(await loadProject(projectRoot));assert.equal(built.ok,true,JSON.stringify(built.diagnostics));
-  const destination=resolve(root,'game');await exportGame({content:built.snapshot,projectRoot,destination,target:'windows',runtimes:{windows:resolve(process.env.NATIVE_USER_FIELDS_RUNTIME??'dist/native-player-user-fields'),web:resolve('dist/web')}});
+  const destination=resolve(root,'game'),target=desktopTarget(),runtime=resolve(process.env.NATIVE_USER_FIELDS_RUNTIME??'dist/native-player-app');await exportGame({content:built.snapshot,projectRoot,destination,target,runtimes:{windows:runtime,macos:runtime,web:resolve('dist/web')}});
   const save=resolve(root,'save.json');
-  async function run(name,steps){const input=resolve(root,`${name}-steps.json`),report=resolve(root,`${name}-report.json`);await writeFile(input,JSON.stringify(steps));const result=spawnSync(resolve(destination,'RaisingPlayer.exe'),['--bundle',destination,'--save',save,'--hidden','--automation',input,'--report',report],{encoding:'utf8',timeout:60000,windowsHide:true});assert.equal(result.status,0,result.error?.message??result.stderr);const data=JSON.parse(await readFile(report,'utf8'));assert.equal(data.ok,true);return data;}
+  async function run(name,steps){const input=resolve(root,`${name}-steps.json`),report=resolve(root,`${name}-report.json`);await writeFile(input,JSON.stringify(steps));const result=spawnSync(playerExecutable(target,destination),['--bundle',gameDirectory(target,destination),'--save',save,'--hidden','--automation',input,'--report',report],{encoding:'utf8',timeout:60000,windowsHide:true,killSignal:'SIGKILL'});assert.equal(result.status,0,result.error?.message??result.stderr);const data=JSON.parse(await readFile(report,'utf8'));assert.equal(data.ok,true);return data;}
   const report=await run('create',[
     {waitFrames:8},{clickWindow:'user-input-name-input'},{key:'CtrlA'},{key:'Backspace'},{checkpoint:'empty'},
     {textInput:'미'},{checkpoint:'one'},{textInput:'😀'},{checkpoint:'two'},
