@@ -11,6 +11,8 @@ Historical experiment reports are not the current support contract.
 | Phone layouts and enlarged text | [No-code reading layouts](manual/phone-reading-layout.md) |
 | Designer-chosen current-state reminders | [Current reminders](manual/current-reminders.md) |
 | Sample player strategies and inspect resource balance | [Player priorities](manual/player-priorities.md) |
+| Check long campaigns and saved routes | [Readiness and remaining work](development/long-campaign-readiness.md), [route regression](manual/goal-route-regression.md) |
+| Test real iOS system interactions | [Files and keyboard regressions](development/ios-system-ui-regressions.md) |
 | Deploy a game | [Platform support](development/platform-support.md), [export](manual/qt-game-export.md) |
 | Previous experiments and acceptance evidence | [Historical archive](archive/README.md) |
 

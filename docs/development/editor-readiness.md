@@ -46,3 +46,16 @@ The independent acceptance gate remains **four of five unfamiliar designers cust
 The Windows run exposed path normalization, PowerShell argument forwarding and missing QtTest runtime deployment problems. It also exposed a timing defect: the editor published a newly opened project before recovery discovery finished, allowing that background request to swallow the first project-settings or export click. Opening now returns recovery information together with the project, and an explicit export request waits for an in-flight bridge request.
 
 The accepted run is [Creator journey 40079987580](https://github.com/miandbits/RaisingEngine/actions/runs/40079987580), source `bc70377a8fd7e2d5ca9facb15c2bb75ffbc9e124`. Its evidence artifacts are `windows-creator-evidence`, `macos-creator-evidence` and `creator-service-evidence`; the tested installer is `windows-p1-installer` (artifact SHA-256 `2e01d1f69a6aab1786d14edea10d9922834c87bc25cd89f972c2eb7adeac81a7`). Later engine changes require their own CI run; this evidence is not automatically transferred to a newer revision.
+
+
+## Long-campaign authoring and phone play — 2026-10-25 contracts
+
+The newer source adds optional phone reading order and text scaling, grouped actions, session reading-position restoration, compact phase planning, reviewed last-plan reuse, session reading history, and designer-selected current-state reminders after accepted loads. These controls are reusable project settings; see [long-campaign readiness](long-campaign-readiness.md) for their boundaries and the remaining roadmap.
+
+Designers can save immediate-result priority profiles, inspect sampled resource trajectories and replay limit witnesses. Manual named-route batches now run in a supervised background process with progress, cancellation, immutable captured inputs, stale-result detection and explicit deadlines. Existing save-time and CLI checks retain their original aggregate deadline. Neither a sample nor a recorded route certifies all possible histories or whether a game is enjoyable.
+
+macOS editor packaging and game exports, iOS source export, simulator execution and unsigned device compilation have dedicated verification paths. The [real iOS system UI runner](ios-system-ui-regressions.md) separately covers Files and keyboard interactions. A review package, simulator pass or source build does not establish signed distribution, physical-device support or accessibility acceptance.
+
+Each delivered candidate must retain its exact editor source, game runtime source, content fingerprint, package hashes and matching CI results. A later editor fix does not transfer an earlier game's endurance result to a newly exported runtime. The Windows acceptance cited above remains evidence for its historical source only.
+
+The next product acceptance step is still an independent designer completing the starter, making an intentional change, diagnosing a failed playtest and handing an export to another person without coaching. The checklist and internal Qt journeys are preparation for that study. Full checklist localization, workflow discoverability, long-session authoring, final game presentation and sustained human playtesting remain open work.
