@@ -31,7 +31,7 @@ export async function acquireAuthoringLock(directory){
    const pid=Number(match[1]),folder=path.join(directory,entry.name);
    if(!Number.isSafeInteger(pid))throw Error('Invalid authoring lock owner.');
    if(!alive(pid)){await removeLease(folder);continue;}
-   let ticket=null;
+   let ticket=null,unreadable=false;
    try {
     const file=path.join(folder,'ticket.json'),info=await lstat(file);
     if(!info.isFile()||info.isSymbolicLink()||info.size>1024)throw Error('Invalid authoring lock ticket.');
@@ -45,16 +45,21 @@ export async function acquireAuthoringLock(directory){
     // A directory confirmed gone can be retired; the next scan retries the rest.
     const current=await lstat(folder).catch(error=>{if(error.code==='ENOENT')return null;if(transientLeaseRead(error))return 'unreadable';throw error;});
     if(!current)continue;
+    unreadable=error.code!=='ENOENT'||current==='unreadable';
     if(current!=='unreadable'&&(!current.isDirectory()||current.isSymbolicLink()))throw Error('Invalid authoring lock owner directory.');
    }
-   result.push({id:entry.name,ticket});
+   result.push({id:entry.name,ticket,unreadable});
   }
   if(entries.length>4096)throw Error('Old authoring locks were cleaned up. Refresh and try again.');
   if(result.length>128)throw Error('Too many active authoring writers. Close other editors and try again.');
   return result;
  }
  try {
-  const before=await participants(),ticket=Math.max(0,...before.map(p=>p.ticket??0))+1;
+  const before=await participants();
+  // An unreadable published ticket may belong to an owner already inside its
+  // critical section. Never choose a lower number by treating that ticket as 0.
+  if(before.some(p=>p.unreadable))throw busy();
+  const ticket=Math.max(0,...before.map(p=>p.ticket??0))+1;
   if(!Number.isSafeInteger(ticket))throw Error('Authoring lock ticket range exhausted.');
   await writeFile(path.join(own,'ticket.tmp'),JSON.stringify({version:1,number:ticket}),{flag:'wx'});
   await rename(path.join(own,'ticket.tmp'),path.join(own,'ticket.json'));

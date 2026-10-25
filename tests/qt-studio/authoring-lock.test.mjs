@@ -38,11 +38,11 @@ test('a backlog of more than128 dead writer leases is reclaimed before the live-
  const release=await acquireAuthoringLock(dir);await release();assert.deepEqual(await readdir(dir),[]);
 });
 
-test('transient Windows ticket read denial never admits a contender past a live owner',async()=>{
+test('transient Windows ticket read denial after choosing a ticket still blocks a live owner',async()=>{
  const {default:fs}=await import('node:fs/promises'),{syncBuiltinESMExports}=await import('node:module');
  const root=await fixture(),dir=path.join(root,'writers'),release=await acquireAuthoringLock(dir),[owner]=await readdir(dir),ticket=path.join(dir,owner,'ticket.json');
- const original=fs.readFile;let denied=0;
- fs.readFile=async(file,...args)=>{if(String(file)===ticket){denied++;throw Object.assign(Error('delete pending'),{code:'EPERM'});}return original(file,...args);};syncBuiltinESMExports();
+ const original=fs.readFile;let denied=0,reads=0;
+ fs.readFile=async(file,...args)=>{if(String(file)===ticket&&++reads>1){denied++;throw Object.assign(Error('delete pending'),{code:'EPERM'});}return original(file,...args);};syncBuiltinESMExports();
  try{await assert.rejects(acquireAuthoringLock(dir),/Another editor/);assert.ok(denied>1);assert.deepEqual(await readdir(dir),[owner]);}
  finally{fs.readFile=original;syncBuiltinESMExports();await release();}
  const next=await acquireAuthoringLock(dir);await next();assert.deepEqual(await readdir(dir),[]);
@@ -55,4 +55,17 @@ test('a participant removed between ticket stat and read is retired after transi
  fs.readFile=async(file,...args)=>{if(String(file)===ticket&&!retired){retired=true;await release();throw Object.assign(Error('delete pending'),{code:'EPERM'});}return original(file,...args);};syncBuiltinESMExports();
  try{const next=await acquireAuthoringLock(dir);assert.ok(retired);await next();assert.deepEqual(await readdir(dir),[]);}
  finally{fs.readFile=original;syncBuiltinESMExports();if(!retired)await release();}
+});
+
+test('a recovering unreadable high ticket cannot create a lower-priority concurrent writer',async()=>{
+ const {default:fs}=await import('node:fs/promises'),{syncBuiltinESMExports}=await import('node:module');
+ const root=await fixture(),dir=path.join(root,'writers'),release=await acquireAuthoringLock(dir),[owner]=await readdir(dir),ticket=path.join(dir,owner,'ticket.json');
+ // Represents an existing owner that acquired its ticket after prior participants.
+ await writeFile(ticket,JSON.stringify({version:1,number:40}));
+ const original=fs.readFile;let denied=false;
+ fs.readFile=async(file,...args)=>{if(String(file)===ticket&&!denied){denied=true;throw Object.assign(Error('temporarily unreadable'),{code:'EPERM'});}return original(file,...args);};syncBuiltinESMExports();
+ let unexpectedRelease;
+ try{await assert.rejects(async()=>{unexpectedRelease=await acquireAuthoringLock(dir);},/Another editor/);assert.ok(denied);assert.deepEqual(await readdir(dir),[owner]);}
+ finally{fs.readFile=original;syncBuiltinESMExports();if(unexpectedRelease)await unexpectedRelease();await release();}
+ const next=await acquireAuthoringLock(dir);await next();assert.deepEqual(await readdir(dir),[]);
 });
