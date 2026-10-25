@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn, execFileSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {cp, mkdir, mkdtemp, open, readFile, writeFile} from 'node:fs/promises';
@@ -92,7 +93,11 @@ try {
     const sample=()=>{
       try {
         const [rssKiB,cpuPercent]=execFileSync('/bin/ps',['-o','rss=,%cpu=','-p',String(pid)],{encoding:'utf8',timeout:2000}).trim().split(/\s+/).map(Number);
-        memory.push({at:Date.now(),rssKiB,cpuPercent});
+        const footprintFile=path.join(out,'input-footprint-latest.json');
+        execFileSync('/usr/bin/footprint',['-p',String(pid),'--noCategories','-f','bytes','--json',footprintFile],{encoding:'utf8',timeout:10000});
+        const report=JSON.parse(readFileSync(footprintFile,'utf8')),process=report.processes?.find(value=>value.pid===pid);
+        assert.ok(process?.footprint>0,'The app physical footprint must be available');
+        memory.push({at:Date.now(),rssKiB,cpuPercent,footprintKiB:process.footprint/1024});
       } catch(error) {memory.push({at:Date.now(),error:String(error)});}
     };
     if(idleProbe){assert.ok(Number.isInteger(pid)&&pid>0,'Simulator launch must report its app PID');sample();memoryTimer=setInterval(sample,15000);}
@@ -108,7 +113,7 @@ try {
       const start=Number(/INPUT_IDLE_START ([0-9.]+)/.exec(transcript)?.[1])*1000,end=Number(/INPUT_IDLE_END ([0-9.]+)/.exec(transcript)?.[1])*1000;
       receipt.inputIdleMemory=analyzeInputIdleMemory(memory,start,end);
       await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
-      assert.ok(receipt.inputIdleMemory.diagnosticPass,'Focused idle memory exceeded 8 MiB overall or a median 1 MiB/minute growth rate; inspect input-memory-samples.json');
+      assert.ok(receipt.inputIdleMemory.diagnosticPass,'Focused idle physical footprint exceeded 8 MiB overall or a median 1 MiB/minute growth rate; inspect input-memory-samples.json');
     }
     results.push({name,ok:true,actualUI:true,xcresult:path.join(out,name+'.xcresult')});receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel');await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));sim('terminate',device,appId);
   }

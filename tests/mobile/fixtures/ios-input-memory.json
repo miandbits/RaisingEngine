@@ -1,5 +1,5 @@
 {
-  "source": "Observed iPad A16 / iPadOS 27 Simulator app RSS samples at 200% text. Times normalized to the idle interval; no game content.",
+  "source": "Observed iPad A16 / iPadOS 27 Simulator app RSS and physical footprint at 200% text. Times normalized to the idle interval; no game content.",
   "cases": [
     {
       "name": "steady-growth",
@@ -151,7 +151,8 @@
           "at": 505729.1591796875,
           "rssKiB": 444016
         }
-      ]
+      ],
+      "metric": "rssKiB"
     },
     {
       "name": "growth-with-page-reclamation",
@@ -303,7 +304,8 @@
           "at": 505723.0380859375,
           "rssKiB": 403952
         }
-      ]
+      ],
+      "metric": "rssKiB"
     },
     {
       "name": "scoped-temporaries",
@@ -459,7 +461,8 @@
           "at": 508372.3068847656,
           "rssKiB": 360512
         }
-      ]
+      ],
+      "metric": "rssKiB"
     },
     {
       "name": "unfocused-control",
@@ -614,6 +617,397 @@
         {
           "at": 516694.67578125,
           "rssKiB": 376672
+        }
+      ],
+      "metric": "rssKiB"
+    },
+    {
+      "name": "physical-footprint-before-cleanup",
+      "expectedPass": false,
+      "metric": "footprintKiB",
+      "start": 0,
+      "end": 480911.7099609375,
+      "executableSha256": "45f86c2d80492e5e5d6bef94fe4564b0b93d06e3a6930ff4a9514fc0167f71d0",
+      "samples": [
+        {
+          "at": -31760.162109375,
+          "rssKiB": 3920,
+          "footprintKiB": 1441.3359375
+        },
+        {
+          "at": -16690.162109375,
+          "rssKiB": 335152,
+          "footprintKiB": 66802.5078125
+        },
+        {
+          "at": -1655.162109375,
+          "rssKiB": 354704,
+          "footprintKiB": 101778.6015625
+        },
+        {
+          "at": 13359.837890625,
+          "rssKiB": 351920,
+          "footprintKiB": 100866.6015625
+        },
+        {
+          "at": 28371.837890625,
+          "rssKiB": 352400,
+          "footprintKiB": 101618.6015625
+        },
+        {
+          "at": 43428.837890625,
+          "rssKiB": 353344,
+          "footprintKiB": 102338.6015625
+        },
+        {
+          "at": 58372.837890625,
+          "rssKiB": 352912,
+          "footprintKiB": 103074.6015625
+        },
+        {
+          "at": 73356.837890625,
+          "rssKiB": 355120,
+          "footprintKiB": 103778.6015625
+        },
+        {
+          "at": 88354.837890625,
+          "rssKiB": 355280,
+          "footprintKiB": 104546.6015625
+        },
+        {
+          "at": 103356.837890625,
+          "rssKiB": 356336,
+          "footprintKiB": 105218.6015625
+        },
+        {
+          "at": 118343.837890625,
+          "rssKiB": 356640,
+          "footprintKiB": 105874.6015625
+        },
+        {
+          "at": 133342.837890625,
+          "rssKiB": 357968,
+          "footprintKiB": 106722.6015625
+        },
+        {
+          "at": 148342.837890625,
+          "rssKiB": 358816,
+          "footprintKiB": 107394.6015625
+        },
+        {
+          "at": 163344.837890625,
+          "rssKiB": 359616,
+          "footprintKiB": 108098.6015625
+        },
+        {
+          "at": 178332.837890625,
+          "rssKiB": 360464,
+          "footprintKiB": 108882.625
+        },
+        {
+          "at": 193336.837890625,
+          "rssKiB": 361328,
+          "footprintKiB": 109650.625
+        },
+        {
+          "at": 208371.837890625,
+          "rssKiB": 361952,
+          "footprintKiB": 110514.625
+        },
+        {
+          "at": 223340.837890625,
+          "rssKiB": 362496,
+          "footprintKiB": 111122.625
+        },
+        {
+          "at": 238338.837890625,
+          "rssKiB": 363296,
+          "footprintKiB": 111906.625
+        },
+        {
+          "at": 253346.837890625,
+          "rssKiB": 364144,
+          "footprintKiB": 112658.625
+        },
+        {
+          "at": 268367.837890625,
+          "rssKiB": 364464,
+          "footprintKiB": 113506.625
+        },
+        {
+          "at": 283348.837890625,
+          "rssKiB": 364288,
+          "footprintKiB": 114434.625
+        },
+        {
+          "at": 298347.837890625,
+          "rssKiB": 365088,
+          "footprintKiB": 115122.625
+        },
+        {
+          "at": 313344.837890625,
+          "rssKiB": 364496,
+          "footprintKiB": 116050.625
+        },
+        {
+          "at": 328365.837890625,
+          "rssKiB": 364832,
+          "footprintKiB": 116770.625
+        },
+        {
+          "at": 343365.837890625,
+          "rssKiB": 364640,
+          "footprintKiB": 117634.625
+        },
+        {
+          "at": 358369.837890625,
+          "rssKiB": 364560,
+          "footprintKiB": 118386.625
+        },
+        {
+          "at": 373408.837890625,
+          "rssKiB": 362416,
+          "footprintKiB": 119474.625
+        },
+        {
+          "at": 388365.837890625,
+          "rssKiB": 363184,
+          "footprintKiB": 120162.625
+        },
+        {
+          "at": 403369.837890625,
+          "rssKiB": 361632,
+          "footprintKiB": 121234.625
+        },
+        {
+          "at": 418376.837890625,
+          "rssKiB": 361424,
+          "footprintKiB": 122162.625
+        },
+        {
+          "at": 433377.837890625,
+          "rssKiB": 362224,
+          "footprintKiB": 122754.625
+        },
+        {
+          "at": 448371.837890625,
+          "rssKiB": 362896,
+          "footprintKiB": 123554.625
+        },
+        {
+          "at": 463377.837890625,
+          "rssKiB": 363136,
+          "footprintKiB": 124274.625
+        },
+        {
+          "at": 478378.837890625,
+          "rssKiB": 363920,
+          "footprintKiB": 124898.625
+        },
+        {
+          "at": 493383.837890625,
+          "rssKiB": 384992,
+          "footprintKiB": 125314.671875
+        },
+        {
+          "at": 508288.837890625,
+          "rssKiB": 422560,
+          "footprintKiB": 124546.6953125
+        }
+      ]
+    },
+    {
+      "name": "physical-footprint-with-cleanup",
+      "expectedPass": true,
+      "metric": "footprintKiB",
+      "start": 0,
+      "end": 480735.6589355469,
+      "executableSha256": "9e6fa883dc6316bdd7b3d4a7f0304ab1a38610e065dfb1efdb2c9d0e04bafe39",
+      "samples": [
+        {
+          "at": -30302.89208984375,
+          "rssKiB": 4992,
+          "footprintKiB": 1473.3359375
+        },
+        {
+          "at": -15218.89208984375,
+          "rssKiB": 318832,
+          "footprintKiB": 63266.390625
+        },
+        {
+          "at": -191.89208984375,
+          "rssKiB": 353872,
+          "footprintKiB": 96498.6015625
+        },
+        {
+          "at": 14812.10791015625,
+          "rssKiB": 352528,
+          "footprintKiB": 95362.6015625
+        },
+        {
+          "at": 29843.10791015625,
+          "rssKiB": 352448,
+          "footprintKiB": 95394.6015625
+        },
+        {
+          "at": 44888.10791015625,
+          "rssKiB": 353536,
+          "footprintKiB": 95362.6015625
+        },
+        {
+          "at": 59905.10791015625,
+          "rssKiB": 352032,
+          "footprintKiB": 95330.6015625
+        },
+        {
+          "at": 74812.10791015625,
+          "rssKiB": 352720,
+          "footprintKiB": 95330.6015625
+        },
+        {
+          "at": 89821.10791015625,
+          "rssKiB": 352656,
+          "footprintKiB": 95298.6015625
+        },
+        {
+          "at": 104821.10791015625,
+          "rssKiB": 353184,
+          "footprintKiB": 95378.6015625
+        },
+        {
+          "at": 119810.10791015625,
+          "rssKiB": 352608,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 134806.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 149810.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 164807.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 179799.10791015625,
+          "rssKiB": 353024,
+          "footprintKiB": 95346.6015625
+        },
+        {
+          "at": 194803.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 209836.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 224805.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 239807.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 254820.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95330.6015625
+        },
+        {
+          "at": 269833.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 284817.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 299816.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95394.6015625
+        },
+        {
+          "at": 314816.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95330.6015625
+        },
+        {
+          "at": 329833.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 344829.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 359835.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 374862.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 389829.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95330.6015625
+        },
+        {
+          "at": 404828.10791015625,
+          "rssKiB": 352976,
+          "footprintKiB": 95314.6015625
+        },
+        {
+          "at": 419842.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95298.6015625
+        },
+        {
+          "at": 434844.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95298.6015625
+        },
+        {
+          "at": 449833.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95298.6015625
+        },
+        {
+          "at": 464840.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95378.6015625
+        },
+        {
+          "at": 479843.10791015625,
+          "rssKiB": 352992,
+          "footprintKiB": 95298.6015625
+        },
+        {
+          "at": 494848.10791015625,
+          "rssKiB": 366976,
+          "footprintKiB": 94802.625
+        },
+        {
+          "at": 506783.10791015625,
+          "rssKiB": 410208,
+          "footprintKiB": 91922.6484375
         }
       ]
     }
