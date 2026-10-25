@@ -1,3 +1,4 @@
+import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePriorityProfile} from './analysis-priorities.mjs';
 import { DraftRecovery } from './recovery.mjs';
 import { GameReleases } from './releases.mjs';
 import { randomUUID } from 'node:crypto';
@@ -213,9 +214,33 @@ export class QtStudioService {
         const file=path.join(folder,'report-'+Date.now()+'.json');await writeFile(file,JSON.stringify(report,null,2));
         extra={assurance:{...report,file}};break;
       }
+      case 'analysisPriorityProfiles':
+      case 'analysisPriorityProfileSave':
+      case 'analysisPriorityProfileDelete': {
+        this.editor.current(params.revision);
+        const project=this.editor.documents.find(d=>d.kind==='project')?.data;
+        const attributes=this.editor.documents.find(d=>d.kind==='attributes')?.data?.attributes;
+        if(!project||!Array.isArray(attributes))throw Error('Open a project with valid attribute definitions first.');
+        const content={project:structuredClone(project),attributes:structuredClone(attributes)},root=this.editor.root;
+        const guard=async()=>{this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed. Reopen player priorities.');await this.editor.assertDiskUnchanged();this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed. Reopen player priorities.');};
+        if(method!=='analysisPriorityProfiles'&&this.editor.readOnly)throw Error('Copy this read-only sample to an editable project before saving player priorities.');
+        let priorityProfiles;
+        if(method==='analysisPriorityProfiles')priorityProfiles=await listPriorityProfiles(root,content);
+        else if(method==='analysisPriorityProfileSave')priorityProfiles=await savePriorityProfile(root,content,params,guard);
+        else priorityProfiles=await deletePriorityProfile(root,content,params,guard);
+        if(method!=='analysisPriorityProfiles')this.recovery.last=null;
+        this.editor.current(params.revision);extra={analysis:{priorityProfiles}};break;
+      }
       case 'analysisStart': {
-        const content=await this.debugSnapshot(params.revision);
-        const job=await this.analysisJobs.start(this.editor.root,content,this.editor.draftVersion(),params.revision,{runs:5000,seed:42,strategy:'random',maxCommands:1000,timeoutMs:3600000,...params.options});
+        const content=await this.debugSnapshot(params.revision),root=this.editor.root;
+        const options={runs:5000,seed:42,strategy:'random',maxCommands:1000,timeoutMs:3600000,...params.options};
+        if(params.priorityProfileId!==undefined){
+          if(options.priorityProfile!==undefined)throw Error('Choose either a saved profile or explicit priorities, not both.');
+          options.priorityProfile=await resolvePriorityProfile(root,content,params);
+          this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before analysis.');
+          await this.editor.assertDiskUnchanged();this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before analysis.');
+        }
+        const job=await this.analysisJobs.start(root,content,this.editor.draftVersion(),params.revision,options);
         extra={analysis:{job}};break;
       }
       case 'open': {

@@ -19,6 +19,7 @@ Start with [your first game](../getting-started/first-game.md). Templates are st
 | Presentation and animation | [Direction](direction-sequences.md), [timelines](activity-timelines.md), [narrative choice cards](narrative-choice-cards.md) |
 | Combat | [Battle HUD](battle-hud-authoring.md), [party tactics](party-tactics.md) |
 | Collections and replay | [Gallery](gallery-and-recollection.md), [choice branches](gallery-choice-branches.md) |
+| No-code player preferences and resource observations | [Player priorities and sampled balance](player-priorities.md) |
 | Automated play and regressions | [Route search](goal-route-search.md), [regression](goal-route-regression.md), [CI review](goal-ci-editor.md) |
 | Deliver a game | [Export](qt-game-export.md), [platform limits](../development/platform-support.md) |
 
