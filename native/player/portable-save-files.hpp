@@ -43,8 +43,12 @@ class PortableSaveStagedFile final {
       if(name.rfind("request-",0)!=0||name.size()<=8||name.size()>88||name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")!=std::string::npos)continue;
       auto status=std::filesystem::symlink_status(directory,ec);if(ec||!std::filesystem::is_directory(status)||std::filesystem::is_symlink(status))continue;
       auto markerPath=directory/marker;status=std::filesystem::symlink_status(markerPath,ec);if(ec){ec.clear();continue;}if(!std::filesystem::is_regular_file(status)||std::filesystem::is_symlink(status))continue;
-      std::ifstream input(markerPath,std::ios::binary);char bytes[64]{};input.read(bytes,sizeof(bytes));
-      if(input.bad()||std::string(bytes,static_cast<std::size_t>(input.gcount()))!=signature)continue;
+      bool owned=false;
+      { // Windows cannot remove the marker while its read handle is open.
+        std::ifstream input(markerPath,std::ios::binary);char bytes[64]{};input.read(bytes,sizeof(bytes));
+        owned=!input.bad()&&std::string(bytes,static_cast<std::size_t>(input.gcount()))==signature;
+      }
+      if(!owned)continue;
       std::filesystem::remove(directory/"raising-save.json",ec);ec.clear();std::filesystem::remove(directory/"raising-save.json.tmp",ec);ec.clear();std::filesystem::remove(directory/"raising-save.json.bak",ec);ec.clear();std::filesystem::remove(markerPath,ec);ec.clear();std::filesystem::remove(directory,ec);ec.clear();
     }
   }
