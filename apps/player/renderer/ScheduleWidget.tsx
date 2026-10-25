@@ -95,6 +95,32 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
       </div>}
     </div>;
   }
+  // Detailed canvas schedules keep every period editable while presenting prose
+  // only once, at full width. Readable/roster planners retain their own contract.
+  if(!readable&&(element.showActivityRules||element.showActivityDescription)){
+    const slot=Math.max(0,Math.min(count-1,planner.slot));
+    const activity=context.activities.find(a=>a.id===context.plan[slot]);
+    const summary=activity?activityPreview(activity,context.stats):'';
+    const words=(ko:string,en:string,ja:string)=>context.locale?.startsWith('en')?en:context.locale?.startsWith('ja')?ja:ko;
+    const detailLabels=context.calendarProject?.calendar?labels:labels.map((_,index)=>words(`일정 ${index+1}`,`Period ${index+1}`,`予定 ${index+1}`));
+    const inspect=(index:number)=>set({...planner,slot:index});
+    const edit=(index:number,id:string)=>{if(!editable||index<context.period)return;onPlan?.(index,id);set({...planner,slot:index,mask:planner.mask|(1<<index),groupId:''});};
+    return <div className="schedule-detail-planner">
+      <div className="schedule-detail-periods">{detailLabels.map((label,index)=><div className="schedule-detail-period" key={index}>
+        <button type="button" className="schedule-period-review" aria-pressed={slot===index} aria-controls={`plan-details-${element.id}`} onClick={()=>inspect(index)}>{label}{words(' · 자세히',' · Details',' · 詳細')}</button>
+        <select aria-label={`${label} ${words('활동','activity','活動')}`} value={context.plan[index]??''} disabled={!editable||index<context.period} onChange={event=>edit(index,event.target.value)}>
+          {context.activities.map(value=><option key={value.id} value={value.id}>{value.label}</option>)}
+        </select>
+      </div>)}</div>
+      <p className="schedule-draft-note">{words('활동을 바꾸면 계획만 수정됩니다. 진행 버튼을 눌러 확정하세요.',"Changes edit your draft only. Use the game's progression control to confirm.",'活動の変更は下書きだけに反映されます。進行ボタンで確定してください。')}</p>
+      <section key={`${slot}:${activity?.id}`} id={`plan-details-${element.id}`} className="schedule-detail-pane" tabIndex={0} aria-label={words('선택한 일정 상세','Selected period details','選択した予定の詳細')}>
+        <strong className="schedule-detail-title">{detailLabels[slot]} · {activity?.label}</strong>
+        {element.showActivityDescription&&activity?.description&&<div className="schedule-detail-text activity-description">{activity.description}</div>}
+        {element.showActivityRules&&activity&&<div className="schedule-detail-text activity-rules">{activityRuleLines(activity,{attributes:context.stats,...(context.locale?{locale:context.locale}:{})}).map((line,index)=><div key={index}>{line}</div>)}</div>}
+        {summary&&<div className="schedule-detail-text activity-preview">{summary}</div>}
+      </section>
+    </div>;
+  }
   return <><div className="schedule-columns">{labels.map((period,index)=>{
     const activity=context.activities.find(a=>a.id===context.plan[index]);const summary=activity?activityPreview(activity,context.stats):'';
     return <label key={period}>{period}{readable&&activity&&<div className="readable-selected-activity">{activity.label}</div>}<select aria-label={`${period} 활동`} value={context.plan[index]??''} disabled={!editable||index<context.period} onChange={event=>chooseActivity(event.target.value,index)}>

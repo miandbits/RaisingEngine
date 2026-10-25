@@ -274,6 +274,13 @@ public:
     if(eventType=="click"&&!portable_active()&&!markup.resume_context_open)ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.slot_confirmation.empty())markup.slot_confirmation.clear();else if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
+    if(eventType=="keydown"&&event.GetTargetElement()->IsClassSet("schedule-detail-pane")) {
+      auto* pane=event.GetTargetElement();const auto key=event.GetParameter<int>("key_identifier",0);float y=pane->GetScrollTop();
+      if(key==Rml::Input::KI_DOWN)y+=48;else if(key==Rml::Input::KI_UP)y-=48;
+      else if(key==Rml::Input::KI_PRIOR)y-=pane->GetClientHeight()*.85f;else if(key==Rml::Input::KI_NEXT)y+=pane->GetClientHeight()*.85f;
+      else if(key==Rml::Input::KI_HOME)y=0;else if(key==Rml::Input::KI_END)y=pane->GetScrollHeight();else return;
+      pane->SetScrollTop(y);event.StopPropagation();return;
+    }
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
     if(event.GetType()=="change"||event.GetType()=="input") {
       auto* element=event.GetTargetElement();const auto field=element->GetAttribute<Rml::String>("data-user-field","");
@@ -296,6 +303,16 @@ public:
       if(id.rfind("plan-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)) {
         const int index=std::stoi(id.substr(5));if(index>=0&&index<game.periods()&&markup.plan.size()==size_t(game.periods())){
           markup.plan[index]=select->GetValue();
+          // Preserve the live dropdown and keyboard focus while updating the
+          // shared detail pane; replacing the document would close the list.
+          for(const auto& entry:markup.render_elements)if(auto* detail=document->GetElementById("plan-details-"+entry.value("id",""))){
+            markup.plan_slot=index;detail->SetInnerRML(markup.schedule_detail(entry,index));detail->SetScrollTop(0);
+            for(int i=0;i<game.periods();++i)if(auto* review=document->GetElementById("plan-review-"+std::to_string(i)))review->SetClass("selected",i==index);
+          }
+
+          if(!markup.progress_pending())for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="button"&&entry.value("action","")=="advance"&&entry.value("autoLabel",true)) {
+            const auto id=entry.value("id","");if(auto* control=document->GetElementById(id)){const auto label=markup.advance_label();control->SetInnerRML(escape(label));markup.labels[id]=label;}
+          }
           if(auto* summary=document->GetElementById("plan-summary-"+std::to_string(index))) {
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=markup.activity_preview(activity);
             summary->SetInnerRML(escape(value));
@@ -330,6 +347,7 @@ public:
     } catch(...) {markup.saved_preview={{"status","invalid"}};}
   }
   void rebuild() {
+    finish_resume_context_restore();
     EditorKeyboardRebuildGuard input_rebuild;
     auto& markup=active_markup();auto& game=recalling()?recollection->game:this->game;
     const std::string previous_screen=markup.screen_id;
@@ -343,6 +361,8 @@ public:
       if(auto* element=document->GetElementById("node-"+entry.value("id","")))collection_scroll[markup.screen_id+"/"+entry.value("id","")]=element->GetScrollTop();
     if(document)for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")
       if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))collection_scroll[markup.screen_id+"/roster-"+entry.value("id","")]=element->GetScrollTop();
+    if(document)for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")
+      if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id","")))collection_scroll[markup.screen_id+"/plan-periods-"+entry.value("id","")]=strip->GetScrollLeft();
     SDL_GetWindowSizeInPixels(window,&markup.viewport_width,&markup.viewport_height);
     SDL_GetWindowSize(window,&markup.window_width,&markup.window_height);
     SDL_Rect safe{};if(!SDL_GetWindowSafeArea(window,&safe))safe={0,0,markup.window_width,markup.window_height};
@@ -382,6 +402,10 @@ public:
     for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule") {
       const auto found=collection_scroll.find(markup.screen_id+"/roster-"+entry.value("id",""));
       if(found!=collection_scroll.end())if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))element->SetScrollTop(found->second);
+    }
+    for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule") {
+      const auto found=collection_scroll.find(markup.screen_id+"/plan-periods-"+entry.value("id",""));
+      if(found!=collection_scroll.end())if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id","")))strip->SetScrollLeft(found->second);
     }
     std::map<std::string,std::string> next_entrance_keys;
     if(!preview())for(const auto& entry:markup.render_elements) {
@@ -528,6 +552,7 @@ public:
           markup.plan[markup.plan_slot]=id;markup.plan_selected|=1<<markup.plan_slot;
         }
       }
+      else if(type=="planInspect") {markup.plan_slot=std::clamp(action.value("slot",0),0,game.periods()-1);}
       else if(type=="planSlot") {markup.plan_slot=std::clamp(action.value("slot",0),0,game.periods()-1);markup.plan_selected&=~(1<<markup.plan_slot);markup.plan_group.clear();}
       else if(type=="planGroup") {markup.plan_group=action.value("group","");}
       else if(type=="planActivity") {
@@ -714,6 +739,10 @@ public:
       if(entry.value("kind","")=="schedule")if(auto* actors=document->GetElementById("roster-actors-"+entry.value("id",""))) {
         nodes.push_back(rendered_node_report({{"id",actors->GetId()},{"kind","roster-actors"}},actors,markup.width,markup.height,context));
         nodes.back()["scrollTop"]=actors->GetScrollTop();
+      }
+      if(entry.value("kind","")=="schedule")if(auto* detail=document->GetElementById("plan-details-"+entry.value("id",""))) {
+        nodes.push_back(rendered_node_report({{"id",detail->GetId()},{"kind","schedule-details"}},detail,markup.width,markup.height,context));
+        nodes.back()["scrollTop"]=detail->GetScrollTop();nodes.back()["scrollHeight"]=detail->GetScrollHeight();nodes.back()["clientHeight"]=detail->GetClientHeight();nodes.back()["scrollWidth"]=detail->GetScrollWidth();nodes.back()["clientWidth"]=detail->GetClientWidth();
       }
       if(element&&entry.value("kind","")!="button"){
         Rml::ElementList buttons;element->QuerySelectorAll(buttons,"button");

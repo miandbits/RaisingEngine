@@ -226,3 +226,16 @@
 .resume-context-host{line-height:1.5}
 .resume-context-body p{margin:.5em 0;white-space:pre-wrap}
 .resume-context-notice{border-top:1px solid #718c84;padding-top:12px}
+
+/* Detailed ordinary schedules share one prose viewport across all periods. */
+.schedule-detail-planner{display:flex;flex-direction:column;height:100%;min-height:0;white-space:normal}
+.schedule-detail-periods{display:flex;flex-shrink:0;overflow-x:auto;gap:12px;padding-bottom:8px}
+.schedule-detail-period{flex:1 0 168px;min-width:0}
+.visual-schedule .schedule-period-review{display:block;box-sizing:border-box;width:100%;min-height:44px;padding:7px 10px;margin:0;font:inherit;font-size:17px;line-height:1.5;white-space:normal;text-align:left;color:inherit;background:transparent;border:1px solid #8b9e92;border-radius:6px}
+.visual-schedule .schedule-period-review[aria-pressed=true]{border-left:5px solid #b38b49}
+.schedule-detail-period select{box-sizing:border-box;min-height:44px}
+.schedule-draft-note{flex-shrink:0;margin:8px 0 12px;font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+.schedule-detail-pane{flex:1;min-height:0;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;padding:12px 14px;border-top:1px solid #8b9e92;white-space:pre-wrap;overflow-wrap:anywhere;scrollbar-gutter:stable}
+.schedule-detail-title{font-size:20px;line-height:1.5}
+.schedule-detail-text{font-size:17px;line-height:1.5;margin-top:12px}
+.schedule-detail-pane:focus-visible,.schedule-period-review:focus-visible{outline:3px solid #b38b49;outline-offset:-3px}

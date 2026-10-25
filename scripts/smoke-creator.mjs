@@ -25,6 +25,7 @@ if(args.includes('--web')){
   await run('web-runtime',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs']);
   await run('web-reading',['--test','--test-concurrency=1','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/reading-history-web.test.mjs']);
   await run('web-planning',['--test','--test-concurrency=1','tests/journey/first-game-phone-web.test.mjs','tests/journey/planning-guidance-web.test.mjs','tests/journey/plan-reuse-web.test.mjs']);
+  await run('web-schedule-details',['--test','tests/visual/schedule-details.test.mjs','tests/visual/progression-labels.test.mjs']);
   await run('web-resume-context',['--test','--test-concurrency=1','tests/journey/resume-context-web.test.mjs']);
 }
 if(args.includes('--desktop')){
@@ -33,13 +34,17 @@ if(args.includes('--desktop')){
   await run('native-user-fields',['--test','tests/native-player/user-fields.test.mjs']);
   await run('native-rendering',['--test','tests/native-player/asset-text-rendering.test.mjs']);
   await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs','tests/native-player/planning-guidance.test.mjs','tests/native-player/reading-history.test.mjs']);
-  await run('native-resume-context',['--test','tests/native-player/resume-context.test.mjs']);
+  await run('native-resume-context',['--test','tests/native-player/resume-context.test.mjs','tests/native-player/resume-context-settlement.test.mjs']);
+  await run('native-schedule-details',['--test','tests/native-player/schedule-details.test.mjs']);
   await run('native-plan-reuse',['--test','tests/native-player/plan-reuse.test.mjs']);
   await run('native-portable-input',['--test','tests/native-player/portable-save-input.test.mjs','tests/native-player/portable-save-files.test.mjs']);
   if(process.platform==='darwin')await run('ios-keyboard-patch',['--test','tests/mobile/ios-keyboard-patch.test.mjs']);
   await run('native-portable-host',['--test','tests/native-player/portable-save-host.test.mjs']);
   await run('native-autosaves',['--test','--test-concurrency=1','tests/native-player/choice-autosave.test.mjs','tests/native-player/load-records-button.test.mjs','tests/native-player/restore-transaction.test.mjs']);
   const executable=name=>path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio',name+(process.platform==='win32'?'.exe':''));
+  const commandFixture=path.join(out,'editor-command-project');
+  await run('editor-command-fixture',['tests/qt-studio/editor-basics-fixture.mjs',commandFixture]);
+  await run('editor-commands',[],{RAISING_INTERACTION_PROJECT:commandFixture,QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'editor-commands-history.ini')},executable('qt-editor-interaction-test'));
   await run('readable-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'readable-history.ini')},executable('qt-readable-layout-test'));
   await run('update-compatibility-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'update-compatibility-history.ini')},executable('qt-update-compatibility-test'));
   await run('analysis-priorities-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'analysis-priorities-history.ini')},executable('qt-analysis-priorities-test'));

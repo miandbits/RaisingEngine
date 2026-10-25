@@ -1,12 +1,25 @@
   std::string resume_context_return_view,resume_context_return_focus;
+  bool resume_context_restore_pending=false;
   void reset_resume_context(const std::string& reason) {
-    markup.resume_context_open=false;resume_context_return_view.clear();resume_context_return_focus.clear();
+    markup.resume_context_open=false;resume_context_restore_pending=false;resume_context_return_view.clear();resume_context_return_focus.clear();
     if(reason!="restored"||preview()||editor_live||recalling()||game.gallery.active)return;
     const auto config=game.content.at("project").at("visual").value("resumeContext",Json::object());
     if(!config.value("showAfterLoad",false))return;
+    // Pause immediately; decide visibility after the accepted restore has settled.
+    resume_context_restore_pending=true;
     markup.reading_options=markup.reading_menu=markup.compact_picker=markup.planning_guide=false;
     markup.resume_context_open=true;reading_focus="engine-resume-context-current";reading_jump="engine-resume-context-panel";
     pending.clear();
+  }
+  void finish_resume_context_restore() {
+    if(!resume_context_restore_pending)return;
+    resume_context_restore_pending=false;
+    // A save can resume at an automatic branch/effect. Use the final accepted
+    // state, including that settlement, rather than the previous rendered view.
+    markup.refreshDisplay();
+    if(markup.resume_context_projection().at("entries").empty()){
+      markup.resume_context_open=false;reading_focus.clear();reading_jump.clear();
+    }
   }
   bool resume_context_action(const Json& action) {
     const auto type=action.value("type","");

@@ -59,3 +59,7 @@ macOS editor packaging and game exports, iOS source export, simulator execution 
 Each delivered candidate must retain its exact editor source, game runtime source, content fingerprint, package hashes and matching CI results. A later editor fix does not transfer an earlier game's endurance result to a newly exported runtime. The Windows acceptance cited above remains evidence for its historical source only.
 
 The next product acceptance step is still an independent designer completing the starter, making an intentional change, diagnosing a failed playtest and handing an export to another person without coaching. The checklist and internal Qt journeys are preparation for that study. Full checklist localization, workflow discoverability, long-session authoring, final game presentation and sustained human playtesting remain open work.
+
+## Command access refinement — 2026-10-25
+
+The existing command search now indexes the live File, View, authoring and toolbar actions, including Save, Export, Play and Validate. Results include their menu context and native keyboard shortcut; overflow screen/zoom/palette choices use the same controls and handlers as the toolbar. Hidden contexts and disabled commands retain their availability checks. Escape returns focus to the previous field. The Qt regression covers an unapplied Unicode inspector edit followed by command-search Save and reopen on a disposable project. It does not establish unaided discovery by new designers. See [command and tool navigation](../authoring-tool-navigation.md).

@@ -92,6 +92,19 @@ int main(int argc, char **argv) {
   if(!exportAction || exportAction->text()!=exportLabel) return 8;
   auto output=qEnvironmentVariable("RAISING_LANGUAGE_EVIDENCE");
   if(!output.isEmpty()) { QDir().mkpath(output); manager.grab().save(output+"/launcher-"+locale+".png"); window.grab().save(output+"/editor-"+locale+".png"); }
+  const auto commandSearch=window.findChild<QAction*>("findAuthoringTool");
+  const QString searchLabel=locale=="ja"?"コマンドとツールを検索…":locale=="en"?"Find commands and tools…":"명령 · 도구 찾기…";
+  if(!commandSearch||commandSearch->text()!=searchLabel)return 32;
+  bool searchTranslated=false;
+  QTimer::singleShot(30,&window,[&]{
+    auto dialog=window.findChild<QDialog*>("authoringToolSearch");if(!dialog)return;
+    auto query=dialog->findChild<QLineEdit*>("authoringToolQuery");
+    const QString hint=locale=="ja"?"保存、書き出し、プレイ、人物などの作業名で検索":locale=="en"?"Search by task: save, export, play, characters":"저장, 내보내기, 플레이, 인물처럼 작업 이름으로 찾으세요";
+    searchTranslated=query&&query->placeholderText()==hint;
+    if(!output.isEmpty())dialog->grab().save(output+"/command-search-"+locale+".png");
+    dialog->reject();
+  });
+  commandSearch->trigger();if(!searchTranslated)return 33;
   window.openProject(QDir::currentPath()+"/examples/academy-adventure");
   QElapsedTimer waiting;waiting.start();
   while((window.busy()||window.currentView().value("root").toString().isEmpty())&&waiting.elapsed()<20000)QTest::qWait(50);

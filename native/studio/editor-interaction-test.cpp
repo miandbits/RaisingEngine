@@ -9,6 +9,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTest>
+#include <QSignalSpy>
 #include <QTimer>
 #include <QTreeWidgetItemIterator>
 
@@ -184,6 +185,88 @@ private slots:
       QCOMPARE(list->count(), 1); QTest::keyClick(search, Qt::Key_Return);
     });
     showAuthoringToolSearch(&owner, &menu); QVERIFY(invoked);
+  }
+  void commandSearchMenusAndOverflow() {
+    QMainWindow owner; owner.resize(1000,680);
+    QTimer watchdog;watchdog.setInterval(5000);connect(&watchdog,&QTimer::timeout,&owner,[&]{if(auto d=owner.findChild<QDialog*>("authoringToolSearch"))d->reject();});watchdog.start();
+    auto source=new QLineEdit("Unapplied draft",&owner);owner.setCentralWidget(source);
+    auto design=owner.menuBar()->addMenu("Design");design->addAction("Characters");
+    auto file=owner.menuBar()->addMenu("&File");
+    auto save=file->addAction("&Save project");save->setObjectName("testSave");save->setShortcut(QKeySequence::Save);
+    auto locked=file->addMenu("Locked");locked->setEnabled(false);auto blocked=locked->addAction("Export unavailable");blocked->setObjectName("testBlocked");
+    auto hidden=file->addAction("Hidden command");hidden->setObjectName("testHidden");hidden->setVisible(false);
+    auto hiddenPage=new QWidget(&owner);hiddenPage->hide();auto hiddenToolbar=new QToolBar("Other workspace",hiddenPage);hiddenToolbar->addAction("Inactive workspace command")->setObjectName("testHiddenWorkspace");
+    auto toolbar=owner.addToolBar("Main tools");toolbar->addAction(save);
+    auto play=toolbar->addAction("Play project");play->setObjectName("testPlay");
+    auto modes=new QComboBox;modes->setObjectName("testMode");modes->setAccessibleName("Preview language");modes->addItems({"English","Japanese"});toolbar->addWidget(modes);
+    auto palette=new QToolButton;palette->setText("Elements");auto paletteMenu=new QMenu(palette);auto text=paletteMenu->addAction("Add text");text->setObjectName("testText");palette->setMenu(paletteMenu);toolbar->addWidget(palette);
+    auto mirrored=owner.menuBar()->addMenu("Tools");mirrored->setObjectName("toolbarAccessMenu");mirrored->addAction(save);
+    QSignalSpy saved(save,&QAction::triggered),opened(blocked,&QAction::triggered),changed(modes,qOverload<int>(&QComboBox::activated));
+    bool savedWithContext=false;connect(save,&QAction::triggered,&owner,[&]{savedWithContext=QApplication::focusWidget()==source;});
+    owner.show();owner.activateWindow();source->setFocus();QCoreApplication::processEvents();
+    QTimer::singleShot(30,&owner,[&]{
+      auto dialog=owner.findChild<QDialog*>("authoringToolSearch");QVERIFY(dialog);QVERIFY(dialog->width()<=owner.width());
+      auto list=dialog->findChild<QListWidget*>("authoringToolResults");auto query=dialog->findChild<QLineEdit*>("authoringToolQuery");
+      QMap<QString,int> counts;for(int row=0;row<list->count();++row)counts[list->item(row)->data(Qt::UserRole+1).toString()]++;
+      QCOMPARE(counts["testSave"],1);QCOMPARE(counts["testPlay"],1);QCOMPARE(counts["testText"],1);QCOMPARE(counts["testHidden"],0);QCOMPARE(counts["testHiddenWorkspace"],0);
+      query->setText("File Save");QCOMPARE(list->count(),1);QVERIFY(list->currentItem()->text().contains(save->shortcut().toString(QKeySequence::NativeText)));QVERIFY(!list->currentItem()->text().contains('&'));
+      save->setEnabled(false);QVERIFY(!dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Open)->isEnabled());
+      save->setEnabled(true);QVERIFY(dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Open)->isEnabled());
+      QTest::keyClick(query,Qt::Key_Return);
+    });
+    showAuthoringToolSearch(&owner,design);QCOMPARE(saved.count(),1);QVERIFY(savedWithContext);QCOMPARE(source->text(),QString("Unapplied draft"));
+    QTimer::singleShot(30,&owner,[&]{
+      auto dialog=owner.findChild<QDialog*>("authoringToolSearch");auto query=dialog->findChild<QLineEdit*>("authoringToolQuery");auto list=dialog->findChild<QListWidget*>("authoringToolResults");
+      query->setText("unavailable");QCOMPARE(list->count(),1);QVERIFY(!(list->item(0)->flags()&Qt::ItemIsEnabled));QVERIFY(!dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Open)->isEnabled());
+      QTest::keyClick(query,Qt::Key_Return);QVERIFY(dialog->isVisible());QTest::keyClick(query,Qt::Key_Escape);
+    });
+    owner.activateWindow();source->setFocus();QCoreApplication::processEvents();QVERIFY(source->hasFocus());showAuthoringToolSearch(&owner,design);QCOMPARE(opened.count(),0);QTRY_VERIFY(source->hasFocus());QCOMPARE(source->text(),QString("Unapplied draft"));
+    QTimer::singleShot(30,&owner,[&]{
+      auto dialog=owner.findChild<QDialog*>("authoringToolSearch");auto query=dialog->findChild<QLineEdit*>("authoringToolQuery");auto list=dialog->findChild<QListWidget*>("authoringToolResults");
+      query->setText("Preview language Japanese");QCOMPARE(list->count(),1);QTest::keyClick(query,Qt::Key_Return);
+    });
+    showAuthoringToolSearch(&owner,design);QCOMPARE(modes->currentIndex(),1);QCOMPARE(changed.count(),1);
+    modes->setEnabled(false);
+    QTimer::singleShot(30,&owner,[&]{
+      auto dialog=owner.findChild<QDialog*>("authoringToolSearch");dialog->findChild<QLineEdit*>("authoringToolQuery")->setText("Preview language English");
+      QVERIFY(!dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Open)->isEnabled());dialog->reject();
+    });
+    showAuthoringToolSearch(&owner,design);QCOMPARE(modes->currentIndex(),1);QCOMPARE(changed.count(),1);
+  }
+  void studioCommandSearchInventory() {
+    StudioWindow owner(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath()));owner.resize(1000,680);owner.show();
+    QTimer::singleShot(5000,&owner,[&]{if(auto d=owner.findChild<QDialog*>("authoringToolSearch"))d->reject();});
+    QTimer::singleShot(30,&owner,[&]{
+      auto dialog=owner.findChild<QDialog*>("authoringToolSearch");QVERIFY(dialog);auto list=dialog->findChild<QListWidget*>("authoringToolResults");QVERIFY(list);
+      QMap<QString,int> counts;for(int row=0;row<list->count();++row)counts[list->item(row)->data(Qt::UserRole+1).toString()]++;
+      for(auto id:{"saveProject","exportGame","playProject","validateProject","showHierarchy","newScreen","inspectRenderer","add-element-text","conditionPreviewAction"})QCOMPARE(counts[id],1);
+      dialog->reject();
+    });
+    owner.findChild<QAction*>("findAuthoringTool")->trigger();
+  }
+  void commandSearchSavesFocusedInspector() {
+    const auto root=qEnvironmentVariable("RAISING_INTERACTION_PROJECT");if(root.isEmpty())QSKIP("Set RAISING_INTERACTION_PROJECT to an isolated project copy");
+    const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
+    StudioWindow owner(engine);owner.resize(1000,680);owner.show();owner.openProject(root);
+    QTRY_VERIFY_WITH_TIMEOUT(!owner.busy()&&!owner.projectData().isEmpty(),20000);
+    auto tree=owner.findChild<QTreeWidget*>("hierarchy");QVERIFY(tree);QString id;
+    for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->childCount()==0&&!(*it)->data(0,Qt::UserRole).toString().isEmpty()){id=(*it)->data(0,Qt::UserRole).toString();tree->setCurrentItem(*it);break;}
+    QVERIFY(!id.isEmpty());auto field=owner.findChild<QLineEdit*>("elementName");QVERIFY(field&&field->isEnabled());
+    owner.activateWindow();field->setFocus();QCoreApplication::processEvents();field->setText("Saved through command search 한글");
+    QTimer::singleShot(10000,&owner,[&]{if(auto d=owner.findChild<QDialog*>("authoringToolSearch"))d->reject();});
+    bool choseSave=false;
+    QTimer::singleShot(50,&owner,[&]{
+      auto dialog=owner.findChild<QDialog*>("authoringToolSearch");QVERIFY(dialog);auto list=dialog->findChild<QListWidget*>("authoringToolResults");QVERIFY(list);
+      QTRY_VERIFY_WITH_TIMEOUT(!owner.busy(),5000);
+      for(int row=0;row<list->count();++row)if(list->item(row)->data(Qt::UserRole+1)=="saveProject"){QVERIFY(list->item(row)->flags()&Qt::ItemIsEnabled);list->setCurrentRow(row);choseSave=true;break;}
+      QVERIFY(choseSave);QTest::keyClick(dialog->findChild<QLineEdit*>("authoringToolQuery"),Qt::Key_Return);
+    });
+    owner.findChild<QAction*>("findAuthoringTool")->trigger();QVERIFY(choseSave);
+    QTRY_VERIFY_WITH_TIMEOUT(!owner.busy()&&!owner.currentView()["dirty"].toBool(),15000);
+    const auto saved=owner.projectData();bool found=false;
+    for(auto screen:saved["visual"].toObject()["screens"].toArray())for(auto element:screen.toObject()["elements"].toArray())if(element.toObject()["id"]==id)found=element.toObject()["label"]=="Saved through command search 한글";
+    QVERIFY(found);QVERIFY(owner.close());
+    StudioWindow reopened(engine);reopened.show();reopened.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!reopened.busy()&&!reopened.projectData().isEmpty(),20000);QCOMPARE(reopened.projectData(),saved);QVERIFY(reopened.close());
   }
   void panelNavigationWithoutProject() {
     QMainWindow w; w.resize(1000, 680);

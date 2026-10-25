@@ -56,7 +56,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
     const previous=acceptedView.current,next=reply.view;
     if(next&&(next.generation!==previous?.generation||next.gameId!==previous?.gameId)){
       closeResume();
-      if(previous&&next.gameId===previous.gameId&&reason==='restored'&&!reply.error&&next.state&&next.visual?.resumeContext?.showAfterLoad&&!preview){resumeOpenRef.current=true;setResumeOpen(true);setSettingsOpen(false);}
+      if(previous&&next.gameId===previous.gameId&&reason==='restored'&&!reply.error&&next.state&&next.visual?.resumeContext?.showAfterLoad&&!preview&&resumeContextForView(next).entries.length>0){resumeOpenRef.current=true;setResumeOpen(true);setSettingsOpen(false);}
       historyEpoch.current=JSON.stringify([next.gameId??'',next.generation]);history.current.reset(historyEpoch.current,!previous||next.gameId!==previous.gameId?'new-session':reason??'restored');setHistoryOpen(false);
     }
     if(next)acceptedView.current=next;

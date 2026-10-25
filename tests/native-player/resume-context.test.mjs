@@ -35,14 +35,14 @@ int main(){Json cases;std::cin>>cases;Json out=Json::array();for(const auto& c:c
  const run=spawnSync(exe,[],{input:JSON.stringify(cases),encoding:'utf8',timeout:30000});assert.equal(run.status,0,run.stderr);assert.deepEqual(JSON.parse(run.stdout),expected);assert.equal(expected[0].entries.at(-1).text,'約束 한글 🌅 & <visible>');assert.ok(expected[5].omittedEntries>0);
  await writeFile(join(out,'result.json'),JSON.stringify({ok:true,cases:cases.length},null,2));
 });
-async function fixture(out,{automatic=true,reading=true,slots=false,opted=true,continuous=false}={}){
+async function fixture(out,{automatic=true,reading=true,slots=false,opted=true,continuous=false,empty=false}={}){
  const root=join(out,'project');await cp(resolve('examples/my-first-raising-game'),root,{recursive:true});await rm(join(root,'events'),{recursive:true,force:true});await mkdir(join(root,'events'));await rm(join(root,'scenarios'),{recursive:true,force:true});
  const file=join(root,'project.json'),p=JSON.parse(await readFile(file,'utf8'));for(const [id,label] of [['ja','日本語'],['ko','한국어']])if(!p.localization.locales.some(l=>l.id===id))p.localization.locales.push({id,label});
  if(continuous)p.schedulePlayback='continuous';
  p.userFields=[{id:'name',type:'text',label:'Name',initial:'Rowan',minLength:1,maxLength:64}];
  const utilities=[button('reminders','resumeContext'),button('save','save'),button('load','load'),button('restart','start')];
  const texts=[leaf('date',{binding:'calendar'}),leaf('month',{binding:'calendar-month'}),leaf('weekday',{binding:'calendar-weekday'}),leaf('identity',{binding:'user-field',userFieldId:'name',valueFormat:'Name: {value}'}),leaf('money',{binding:'attribute-value',attributeId:'money',valueFormat:'Money: {value}'}),leaf('before',{text:'No garden commitment yet.',visibleCondition:{op:'not',condition:{op:'flag',flagId:'garden-visited',equals:true}}}),leaf('chosen',{text:'You promised to tend the garden. 約束を守る。',visibleCondition:{op:'flag',flagId:'garden-visited',equals:true}}),leaf('note',{text:'Current responsibilities & <plain text>. '+('A careful reminder remains readable at your preferred size. '.repeat(18))})];
- p.visual={width:1280,height:720,readingHistory:{},...(opted?{resumeContext:{screenId:'recap',elementIds:texts.map(e=>e.id),...(automatic?{showAfterLoad:true}:{})}}:{}),...(reading?{readableLayout:{background:'#f5efdf'}}:{}),...(slots?{saveSystem:{manualSlots:3,autoSlots:2}}:{}),screens:[
+ p.visual={width:1280,height:720,readingHistory:{},...(opted?{resumeContext:{screenId:'recap',elementIds:empty?['chosen']:texts.map(e=>e.id),...(automatic?{showAfterLoad:true}:{})}}:{}),...(reading?{readableLayout:{background:'#f5efdf'}}:{}),...(slots?{saveSystem:{manualSlots:3,autoSlots:2}}:{}),screens:[
  {id:'title',label:'Title',elements:[leaf('intro',{text:'Current reminders fixture'}),button('start','start'),button('load','load')],readableLayout:layout(['intro'],['start','load'])},
  {id:'schedule',label:'Plan',elements:[leaf('schedule',{kind:'schedule'}),button('advance','advance'),...utilities],readableLayout:layout(['schedule'],['advance',...utilities.map(e=>e.id)])},
  {id:'story',label:'Story',elements:[leaf('story',{kind:'dialogue'}),leaf('choices',{kind:'choices'}),button('advance','advance'),...utilities],readableLayout:layout(['story','choices'],['advance',...utilities.map(e=>e.id)])},
@@ -98,4 +98,18 @@ test('manual opt-in, fixed-canvas fallback and opt-out keep their advertised beh
   if(options.reading===false){fit(at(r,'loaded'));assert.equal(at(r,'closed').readingLayout.active,false);assert.deepEqual(at(r,'loaded').state,at(r,'closed').state);assert.deepEqual(at(r,'loaded').commands,at(r,'closed').commands);assert.equal(at(r,'loaded').scheduleDraft,null);assert.deepEqual(at(r,'closed').scheduleDraft.activities,['rest','rest','rest']);}
   assert.equal(await readFile(f.save('profile'),'utf8'),saved.text);
  }
+});
+
+test('empty conditional reminders skip automatic display but remain available manually',{timeout:120000},async()=>{
+ const out=await outdir('empty'),f=await fixture(out,{empty:true});
+ const seeded=await f.run('seed',[...begin,...menu('save'),{checkpoint:'saved'}]);
+ const bytes=await readFile(f.save('profile'));
+ const r=await f.run('restore',[{resize:{width:390,height:844}},{waitFrames:3},...menu('load'),{checkpoint:'loaded'}]);
+ assert.equal(at(r,'loaded').resumeContext.open,false,'no empty automatic interstitial');
+ const manual=await f.run('manual',[{resize:{width:390,height:844}},{waitFrames:3},...menu('load'),...menu('engine-resume-context'),{checkpoint:'manual'},touch('engine-resume-context-close'),{checkpoint:'closed'}]);
+ assert.equal(at(r,'loaded').resumeContext.enabled,true);assert.equal(at(r,'loaded').resumeContext.open,false,'no empty automatic interstitial');
+ assert.deepEqual(at(r,'loaded').state,at(seeded,'saved').state);assert.deepEqual(at(r,'loaded').commands,at(seeded,'saved').commands);
+ assert.equal(at(manual,'manual').resumeContext.open,true);assert.deepEqual(at(manual,'manual').resumeContext.projection.entries,[]);assert.match(at(manual,'manual').texts['engine-resume-context-panel'],/no reminders/);
+ same(at(r,'loaded'),at(manual,'manual'));same(at(r,'loaded'),at(manual,'closed'));fit(at(manual,'manual'));assert.equal(at(manual,'closed').focusId,'engine-resume-context');
+ assert.deepEqual(await readFile(f.save('profile')),bytes);
 });

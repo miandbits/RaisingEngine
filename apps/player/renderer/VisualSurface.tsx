@@ -1,3 +1,4 @@
+import {progressionButtonLabel} from './progression-label.js';
 import {useResumeContext} from './ResumeContext.js';
 import {PresentedHistoryText,useReadingHistory,historyTextVisible} from './ReadingHistory.js';
 import type {ReadingHistoryReceipt} from '../../../packages/visual/reading-history.js';
@@ -114,7 +115,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const fontIds=[...new Set([...elements,...(design.components??[]).flatMap(c=>c.elements)].map(e=>resolveElementStyle(design,e).fontAssetId).filter((id):id is string=>!!id))];
   const fontCss=fontIds.map(id=>`@font-face{font-family:"engine-${id}";src:url(${JSON.stringify(assetUrl(id))});font-display:block;}`).join('\n');
   const conditionPasses=(condition:Element['visibleCondition'])=>!condition||context.dataUi?.conditions[JSON.stringify(condition)]===true;
-  const buttonLabel=(element:Element)=>element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼';
+  const buttonLabel=(element:Element)=>progressionButtonLabel(element,context);
   const progressionUnavailable=(element:Element)=>element.action==='advance'&&['choice','finished','title'].includes(context.phase)||element.action==='commitPlan'&&!['planning','ready'].includes(context.phase);
   const planningButton=readable?[...elements].sort((a,b)=>Number(b.id===readable.primaryAction)-Number(a.id===readable.primaryAction)).map(e=>resolveElementStyle(design,resolvePresentation(e,presentationActivity(context.dataState,e),conditionPasses))).find(e=>e.kind==='button'&&['advance','commitPlan'].includes(e.action??'')&&!progressionUnavailable(e)&&(e.opacity??1)>0&&isVisible(e,context)&&conditionPasses(e.visibleCondition)&&conditionPasses(e.enabledCondition)&&e.dataEnabled!==false&&context.dataUi?.availability[screenId]?.[e.id]?.enabled!==false):undefined;
   const planningControl=planningButton?{label:buttonLabel(planningButton),effect:planningButton.action==='commitPlan'?'confirm-and-execute' as const:context.dataState?.schedule&&context.plan.every((id,i)=>context.dataState!.schedule![i]===id)?(context.dataState.phase==='ready'&&context.dataState.activityIntermission?'acknowledge' as const:'execute' as const):'confirm' as const}:undefined;

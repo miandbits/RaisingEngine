@@ -46,7 +46,7 @@
       }if(proceed)break;}
       if(proceed){
         const auto type=proceed->value("action","");std::string label=proceed->value("text","");
-        if(type=="advance"&&proceed->value("autoLabel",true))label=game.state.value("phase","")=="planning"?settings_words("일정 확정","Confirm schedule","予定を確定"):settings_words("활동 시작","Start activity","活動を開始");
+        if(type=="advance"&&proceed->value("autoLabel",true))label=advance_label();
         body="“"+label+"”"+(type=="commitPlan"?settings_words("은 계획을 확정하고 다음 활동을 바로 실행합니다. 먼저 계획을 완성하세요."," confirms your plan and immediately runs the next activity. Complete your plan first.","は計画を確定して次の活動をすぐ実行します。先に計画を完成させてください。"):settings_words("은 계획 중에는 일정만 확정합니다. 준비가 끝난 뒤 다시 진행하면 다음 활동이 실행됩니다. 계획을 바꾸었다면 먼저 변경된 일정을 확정합니다."," confirms the schedule while planning. Once ready, continuing again runs the next activity. If you edit the draft, continuing confirms that change first.","は計画中なら予定だけを確定します。準備完了後、もう一度進むと次の活動を実行します。下書きを変更した場合は、その変更を先に確定します。"));
         if(type=="advance"&&game.state.value("activityIntermission",false))body="“"+label+"”"+settings_words("은 현재 활동 결과를 확인하고 이어갑니다. ‘이 활동 적용’은 계획만 바꿉니다."," continues after the current activity result. Apply activity still only edits your draft.","は現在の活動結果を確認して続けます。「この活動を適用」は下書きだけを変更します。");
       }else body=settings_words("계획을 마치면 게임의 진행 버튼을 확인하세요. ‘이 활동 적용’은 계획만 바꿉니다. 계획 확정과 활동 시작 방식은 게임의 진행 버튼에 따라 달라집니다.","When your draft is ready, check this game's progression controls. Apply activity only edits the draft. The game's controls determine whether confirming the plan also starts an activity.","下書きができたら、このゲームの進行ボタンを確認してください。「この活動を適用」は下書きだけを変更します。確定時に活動も始まるかはゲームの進行ボタンによります。");
