@@ -10,6 +10,7 @@ async function run(name,argv,env={},command=process.execPath) {
   await writeFile(path.join(out,name+'.log'),Buffer.concat(chunks));results.push({name,...status,elapsedMs:Date.now()-start});await writeFile(path.join(out,'result.json'),JSON.stringify({ok:results.every(r=>r.code===0),results},null,2));if(status.code!==0)throw Error(name+' failed; inspect '+out);
 }
 await run('services',['--test','--test-concurrency=1',...['first-game','creator-release','analysis-priorities','authoring-lock','unsaved-assets','rule-debug','authoring-workspace','workspace-links','integrated-authoring','update-compatibility'].map(n=>'tests/qt-studio/'+n+'.test.mjs'),'tests/mobile/ios-package.test.mjs']);
+await run('response-wait',['--test','tests/native/response-wait.test.mjs']);
 await run('balance-priorities',['--test','--test-concurrency=1','tests/analysis/priorities.test.mjs']);
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
 await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs']);
