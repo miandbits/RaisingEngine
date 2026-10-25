@@ -63,7 +63,7 @@ test('packaged service installs outside read-only resources and retains remember
   const bytes=Buffer.from('{"type":"object"}'),archive=path.join(p,'probe.raiseplugin');
   const plugin={manifestVersion:1,id:'storage-probe',name:'Storage probe',version:'1.0.0',engineApi:{min:1,max:1},documentTypes:[{type:'thing',label:'Thing',schema:'schema/thing.json'}],elementTypes:[],modules:[],files:{'schema/thing.json':createHash('sha256').update(bytes).digest('hex')}};
   await writeFile(archive,writeZip([{name:'plugin.json',data:Buffer.from(JSON.stringify(plugin))},{name:'schema/thing.json',data:bytes}]));
-  const environment=Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith('RAISING_')&&!['NODE_OPTIONS','NODE_PATH'].includes(k)));
+  const environment=Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.toUpperCase().startsWith('RAISING_')&&!['NODE_OPTIONS','NODE_PATH','HOME','USERPROFILE','LOCALAPPDATA'].includes(k.toUpperCase())));
   Object.assign(environment,{HOME:home,USERPROFILE:home,LOCALAPPDATA:path.join(home,'Local')});
   const expected=packagedStudioPluginStore(engine,{home,environment}),project=path.join(p,'game'),alternate=path.join(p,'remembered');
   await mkdir(alternate);await writeFile(path.join(alternate,'registry.json'),'{"version":1,"installed":[]}');
