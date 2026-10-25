@@ -9,7 +9,7 @@ async function run(name,argv,env={},command=process.execPath) {
   const status=await new Promise(resolve=>{const child=spawn(command,argv,{timeout:300000,env:{...process.env,...env},stdio:['ignore','pipe','pipe']});for(const stream of [child.stdout,child.stderr])stream.on('data',b=>{chunks.push(b);process.stdout.write(b);});child.on('error',error=>resolve({code:null,signal:null,error:error.message}));child.on('exit',(code,signal)=>resolve({code,signal}));});
   await writeFile(path.join(out,name+'.log'),Buffer.concat(chunks));results.push({name,...status,elapsedMs:Date.now()-start});await writeFile(path.join(out,'result.json'),JSON.stringify({ok:results.every(r=>r.code===0),results},null,2));if(status.code!==0)throw Error(name+' failed; inspect '+out);
 }
-await run('services',['--test','--test-concurrency=1',...['first-game','creator-release','analysis-priorities','storage-paths','authoring-lock','unsaved-assets','rule-debug','authoring-workspace','workspace-links','integrated-authoring','update-compatibility'].map(n=>'tests/qt-studio/'+n+'.test.mjs'),'tests/mobile/ios-package.test.mjs']);
+await run('services',['--test','--test-concurrency=1',...['first-game','creator-release','analysis-priorities','storage-paths','authoring-lock','unsaved-assets','rule-debug','authoring-workspace','workspace-links','integrated-authoring','update-compatibility'].map(n=>'tests/qt-studio/'+n+'.test.mjs'),'tests/mobile/ios-package.test.mjs','tests/mobile/ios-input-memory.test.mjs']);
 await run('verified-download',['--test','tests/release/verified-download.test.mjs']);
 await run('response-wait',['--test','tests/native/response-wait.test.mjs']);
 await run('balance-priorities',['--test','--test-concurrency=1','tests/analysis/priorities.test.mjs']);

@@ -106,13 +106,26 @@ final class SystemUITests: XCTestCase {
     try geometry(false);try record(app,"files-cancelled-portrait")
     for key in ["state","commands","scheduleDraft"] {XCTAssertEqual(try canonical(before[key] ?? NSNull()),try canonical(view()[key] ?? NSNull()),key+" must be unchanged")}
   }
-  func testOwnedTextInputRotation() throws {
+  func testOwnedTextInputRotation() throws {try exerciseOwnedTextInput()}
+  func testOwnedTextInputIdle() throws {try exerciseOwnedTextInput(idleSeconds:480)}
+  private func exerciseOwnedTextInput(idleSeconds:TimeInterval=0) throws {
     let app=XCUIApplication(bundleIdentifier:appID);app.activate()
     XCTAssertTrue(app.wait(for:.runningForeground,timeout:15));XCUIDevice.shared.orientation = .portrait
     RunLoop.current.run(until:Date().addingTimeInterval(1));try tap(app,"user-input-name-input")
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:10))
     for key in ["A","d","a"] {app.keys[key].tap()}
     try record(app,"owned-keyboard-portrait")
+    if idleSeconds>0 {
+      let before=try XCTUnwrap(view()["nativeTextInput"] as? [String:Any])
+      print("INPUT_IDLE_START \(Date().timeIntervalSince1970)")
+      let deadline=Date().addingTimeInterval(idleSeconds)
+      while Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(1))}
+      print("INPUT_IDLE_END \(Date().timeIntervalSince1970)")
+      let after=try XCTUnwrap(view()["nativeTextInput"] as? [String:Any])
+      for key in ["sessions","fontUpdates","textWrites"] {XCTAssertEqual(after[key] as? Int,before[key] as? Int,key+" must remain unchanged during idle")}
+      XCTAssertEqual(after["value"] as? String,"Ada");XCTAssertEqual(after["firstResponder"] as? Bool,true)
+      try record(app,"owned-keyboard-after-eight-minute-idle")
+    }
     let sessionBeforeRotation=(try view()["nativeTextInput"] as? [String:Any])?["sessions"] as? Int
     XCUIDevice.shared.orientation = .landscapeLeft;RunLoop.current.run(until:Date().addingTimeInterval(2))
     try geometry(true);try record(app,"owned-keyboard-landscape")

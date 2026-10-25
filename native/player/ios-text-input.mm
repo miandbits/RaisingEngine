@@ -238,14 +238,20 @@ void IOSTextInput::end_rebuild(){
   if(!impl->input)impl->stop();else {impl->update();impl->selection();}
 }
 void IOSTextInput::update(){
-  if(impl->rebuilding)return;
-  auto* context=Rml::GetContext("game");
-  auto* focused=context?dynamic_cast<Rml::ElementFormControlInput*>(context->GetFocusElement()):nullptr;
-  if(focused&&focused->IsDisabled())focused=nullptr;
-  if(focused!=impl->input){if(focused)impl->activate(focused);else impl->stop();}
-  impl->update();
+  // These UIKit calls run from the C++ frame loop, outside UIKit's event
+  // callbacks. Drain their autoreleased temporaries on every frame.
+  @autoreleasepool {
+    if(impl->rebuilding)return;
+    auto* context=Rml::GetContext("game");
+    auto* focused=context?dynamic_cast<Rml::ElementFormControlInput*>(context->GetFocusElement()):nullptr;
+    if(focused&&focused->IsDisabled())focused=nullptr;
+    if(focused!=impl->input){if(focused)impl->activate(focused);else impl->stop();}
+    impl->update();
+  }
 }
-nlohmann::json IOSTextInput::report() const{return impl->report();}
+nlohmann::json IOSTextInput::report() const{
+  @autoreleasepool {return impl->report();}
+}
 
 bool IOSTextInput::owns_keyboard() const{return impl->input&&impl->field.isFirstResponder;}
 void IOSTextInput::register_font(const std::string& family,const std::string& path){

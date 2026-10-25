@@ -7,14 +7,15 @@ import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
+import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
 
 const args=process.argv.slice(2), root=process.cwd();
 const option=name=>{const i=args.indexOf(name);return i<0?undefined:args[i+1];};
 if(process.platform!=='darwin'||!args[0]||!option('--project')) {
-  throw Error('Usage: node scripts/test-ios-system-ui.mjs IOS_EXPORT --project PROJECT [--family iphone|ipad] [--test all|files|input|selection|composition|japanese|composition-probe] [--text-scale 1|2] [--keep-failed-device]');
+  throw Error('Usage: node scripts/test-ios-system-ui.mjs IOS_EXPORT --project PROJECT [--family iphone|ipad] [--test all|files|input|input-idle|selection|composition|japanese|composition-probe] [--text-scale 1|2] [--keep-failed-device]');
 }
-const selection=option('--test')??'all';assert.ok(['all','files','input','selection','composition','composition-probe','japanese'].includes(selection),'Use --test all, files, input, selection, composition, japanese or composition-probe');
-const cases=selection==='japanese'?['testJapaneseMarkedComposition']:selection==='composition-probe'?['testKoreanMidSyllableRotation']:selection==='selection'?['testNativeSelectionAndFieldSwitching']:selection==='composition'?['testKoreanCompositionRotation']:selection==='input'?['testOwnedTextInputRotation']:selection==='files'?['testFilesKeyboardBackgroundRotationCancel']:['testFilesKeyboardBackgroundRotationCancel','testOwnedTextInputRotation','testNativeSelectionAndFieldSwitching','testKoreanCompositionRotation','testJapaneseMarkedComposition'];
+const selection=option('--test')??'all';assert.ok(['all','files','input','input-idle','selection','composition','composition-probe','japanese'].includes(selection),'Use --test all, files, input, input-idle, selection, composition, japanese or composition-probe');
+const cases=selection==='input-idle'?['testOwnedTextInputIdle']:selection==='japanese'?['testJapaneseMarkedComposition']:selection==='composition-probe'?['testKoreanMidSyllableRotation']:selection==='selection'?['testNativeSelectionAndFieldSwitching']:selection==='composition'?['testKoreanCompositionRotation']:selection==='input'?['testOwnedTextInputRotation']:selection==='files'?['testFilesKeyboardBackgroundRotationCancel']:['testFilesKeyboardBackgroundRotationCancel','testOwnedTextInputRotation','testNativeSelectionAndFieldSwitching','testKoreanCompositionRotation','testJapaneseMarkedComposition'];
 const textScale=option('--text-scale')??'1';assert.ok(['1','2'].includes(textScale),'Use --text-scale 1 or 2');
 const family=option('--family')??'iphone';assert.ok(['iphone','ipad'].includes(family));
 const keepFailed=args.includes('--keep-failed-device'), source=path.resolve(args[0]), project=path.resolve(option('--project'));
@@ -85,9 +86,30 @@ try {
   await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs],'build.log');
   for(const name of cases) {
     currentLog=path.join(out,name+'.stdout');
-    sim('launch','--stdout='+currentLog,'--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en','--reading-layout','on','--text-scale',textScale);
-    await delay(1000);
-    await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-parallel-testing-enabled','NO','-resultBundlePath',path.join(out,name+'.xcresult'),'-only-testing:SystemUITests/SystemUITests/'+name],name+'.log');
+    const launched=sim('launch','--stdout='+currentLog,'--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en','--reading-layout','on','--text-scale',textScale);
+    const memory=[],pid=Number(/:\s*(\d+)\s*$/.exec(launched)?.[1]);
+    const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
+    const sample=()=>{
+      try {
+        const [rssKiB,cpuPercent]=execFileSync('/bin/ps',['-o','rss=,%cpu=','-p',String(pid)],{encoding:'utf8',timeout:2000}).trim().split(/\s+/).map(Number);
+        memory.push({at:Date.now(),rssKiB,cpuPercent});
+      } catch(error) {memory.push({at:Date.now(),error:String(error)});}
+    };
+    if(idleProbe){assert.ok(Number.isInteger(pid)&&pid>0,'Simulator launch must report its app PID');sample();memoryTimer=setInterval(sample,15000);}
+    try {
+      await delay(1000);
+      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-parallel-testing-enabled','NO','-resultBundlePath',path.join(out,name+'.xcresult'),'-only-testing:SystemUITests/SystemUITests/'+name],name+'.log');
+    } finally {
+      clearInterval(memoryTimer);
+      if(idleProbe){sample();await writeFile(path.join(out,'input-memory-samples.json'),JSON.stringify(memory,null,2));}
+    }
+    if(idleProbe) {
+      const transcript=await readFile(path.join(out,name+'.log'),'utf8');
+      const start=Number(/INPUT_IDLE_START ([0-9.]+)/.exec(transcript)?.[1])*1000,end=Number(/INPUT_IDLE_END ([0-9.]+)/.exec(transcript)?.[1])*1000;
+      receipt.inputIdleMemory=analyzeInputIdleMemory(memory,start,end);
+      await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
+      assert.ok(receipt.inputIdleMemory.diagnosticPass,'Focused idle memory exceeded 8 MiB overall or a median 1 MiB/minute growth rate; inspect input-memory-samples.json');
+    }
     results.push({name,ok:true,actualUI:true,xcresult:path.join(out,name+'.xcresult')});receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel');await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));sim('terminate',device,appId);
   }
   passed=true;receipt.ok=true;receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel');
