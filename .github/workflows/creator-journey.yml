@@ -66,6 +66,11 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --outputdir C:/Qt
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          # Preserve toolchain diagnostics without marking the source tree dirty.
+          if (Test-Path aqtinstall.log) {
+            New-Item -ItemType Directory -Force .cache/build-provenance | Out-Null
+            Move-Item aqtinstall.log .cache/build-provenance/aqtinstall.log
+          }
           'C:/Qt/Tools/mingw1310_64/bin' >> $env:GITHUB_PATH
           'C:/Qt/6.10.1/mingw_64/bin' >> $env:GITHUB_PATH
           "NINJA=$((Get-Command ninja).Source.Replace('\','/'))" >> $env:GITHUB_ENV
