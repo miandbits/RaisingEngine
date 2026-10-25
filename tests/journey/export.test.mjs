@@ -100,6 +100,7 @@ test('UI feature capabilities reject old runtimes before packaging, while legacy
       ['readable-layout-v1',visual=>{visual.readableLayout={};visual.screens[0].readableLayout={items:[]};}],
       ['readable-actions-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'mobile-next',kind:'button',text:'Continue',action:'advance',x:0,y:0,width:100,height:44});Object.assign(s.readableLayout,{actionLayout:'grouped',primaryAction:'mobile-next',actions:['mobile-next']});}],
       ['compact-planning-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'mobile-planner',kind:'schedule',x:0,y:0,width:300,height:400});s.readableLayout.items.push({elementId:'mobile-planner',schedulePresentation:'compact'});}],
+      ['plan-reuse-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'reuse-planner',kind:'schedule',x:0,y:0,width:300,height:400});s.readableLayout.items.push({elementId:'reuse-planner',schedulePresentation:'compact',planReuse:'last-committed'});}],
       ['planning-guidance-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'guided-planner',kind:'schedule',x:0,y:0,width:300,height:400});s.readableLayout.items.push({elementId:'guided-planner',schedulePresentation:'compact',planningGuidance:'first-use'});}]
     ];
     for(const [feature,change] of variations){

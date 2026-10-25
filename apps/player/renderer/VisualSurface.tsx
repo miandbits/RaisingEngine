@@ -28,7 +28,7 @@ import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-play
 
 export interface VisualContext {
   historyReceipt?:Omit<ReadingHistoryReceipt,'text'|'speaker'>;
-  gameId?:string;
+  gameId?:string;generation?:number;lastCommittedPlan?:import('../../../packages/player-service/plan-reuse.js').LastCommittedPlan;
   readingKey?:string;
   saveSlots?:SaveSlotsView;
   onSlotAction?:(action:SaveSlotAction)=>void;
@@ -74,9 +74,9 @@ function readableInk(background:string):string {
   const rgb=parseInt(background.slice(1),16);
   return .2126*((rgb>>16)&255)+.7152*((rgb>>8)&255)+.0722*(rgb&255)>145?'#263c36':'#f5efdf';
 }
-export function VisualSurface({design,screenId,context,assetUrl,busy=false,editing=false,fitViewport=false,onAction,onPlan,onCommitPlan,onChoice,onCommand,onUserValue,children}: {
+export function VisualSurface({design,screenId,context,assetUrl,busy=false,editing=false,fitViewport=false,onAction,onPlan,onPlanReplace,onCommitPlan,onChoice,onCommand,onUserValue,children}: {
   design:ReadonlyDesign;screenId:ScreenId;context:VisualContext;assetUrl:(id:string)=>string;busy?:boolean;editing?:boolean;fitViewport?:boolean;
-  onAction?:(action:NonNullable<Element['action']>,element:Element)=>void;onCommand?:(command:WidgetCommand)=>void;onPlan?:(index:number,id:string)=>void;onCommitPlan?:()=>void;onChoice?:(id:string,text?:string)=>void;onUserValue?:(id:string,value:string)=>void;children?:React.ReactNode;
+  onAction?:(action:NonNullable<Element['action']>,element:Element)=>void;onCommand?:(command:WidgetCommand)=>void;onPlan?:(index:number,id:string)=>void;onPlanReplace?:(ids:string[])=>void;onCommitPlan?:()=>void;onChoice?:(id:string,text?:string)=>void;onUserValue?:(id:string,value:string)=>void;children?:React.ReactNode;
 }) {
   const preferences=usePlayerPreferences(),history=useReadingHistory();
   const [menuOpen,setMenuOpen]=useState(false);
@@ -171,7 +171,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
       if(element.kind==='schedule')body=context.dataState?.roster
         ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/>
-        :<ScheduleWidget readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} guidance={readingItem?.planningGuidance==='first-use'} planningControl={planningControl} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
+        :<ScheduleWidget ownerKey={screenId} readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} guidance={readingItem?.planningGuidance==='first-use'} planReuse={readingItem?.planReuse==='last-committed'} planningControl={planningControl} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onPlanReplace={onPlanReplace} onCommit={onCommitPlan}/>;
       if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue"><PresentedHistoryText text={context.story} receipt={!editing?context.historyReceipt:undefined}/></p>;
       if(element.kind==='result')body=context.actorResults?.length
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>

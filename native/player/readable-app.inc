@@ -1,13 +1,27 @@
   struct ReadingPosition {
     std::string anchor,focus,text;
+    Json geometry=nullptr,anchor_geometry=nullptr;
     float fraction=0,scroll=0,actions_scroll=0;
   };
   std::map<std::string,ReadingPosition> reading_positions;
   std::string reading_position_key,reading_jump,reading_focus;
+  Json reading_geometry() const {
+    const auto& m=recalling()?recollection->markup:markup;
+    return {{"width",m.window_width},{"height",m.window_height},{"safeArea",m.safe_area},{"font",m.readable_font},{"locale",m.locale}};
+  }
+  Json reading_anchor_geometry(Rml::Element* main,Rml::Element* anchor) const {
+    const auto size=anchor->GetBox().GetSize();
+    return Json::array({main->GetScrollTop()+anchor->GetAbsoluteOffset().y-main->GetAbsoluteOffset().y,size.x,size.y,main->GetClientWidth(),main->GetClientHeight(),main->GetScrollHeight()});
+  }
+  bool reading_same_anchor_geometry(const Json& before,const Json& after) const {
+    if(!before.is_array()||before.size()!=after.size())return false;
+    for(size_t i=0;i<before.size();++i)if(std::abs(before[i].get<float>()-after[i].get<float>())>.5f)return false;
+    return true;
+  }
   ReadingPosition current_reading_position() const {
     ReadingPosition value;if(!document)return value;
     auto* main=document->GetElementById("reading-main");if(!main)return value;
-    value.scroll=main->GetScrollTop();
+    value.geometry=reading_geometry();value.scroll=main->GetScrollTop();
     if(auto* actions=document->GetElementById("reading-actions"))value.actions_scroll=actions->GetScrollTop();
     if(context&&context->GetFocusElement())value.focus=context->GetFocusElement()->GetId();
     const float top=main->GetAbsoluteOffset().y;
@@ -20,7 +34,7 @@
       const float y=e->GetAbsoluteOffset().y,h=e->GetBox().GetSize().y;
       if(h<=0||y+h<=top)continue;
       const float score=y<=top+.5f?h:1000000.f+y-top;
-      if(score<best){best=score;value.anchor=e->GetId();value.text=e->GetInnerRML();value.fraction=(top-y)/h;}
+      if(score<best){best=score;value.anchor=e->GetId();value.text=e->GetInnerRML();value.fraction=(top-y)/h;value.anchor_geometry=reading_anchor_geometry(main,e);}
     }
     return value;
   }
@@ -39,9 +53,11 @@
     if(found!=reading_positions.end()){
       const auto& value=found->second;
       if(!value.focus.empty())if(auto* focus=document->GetElementById(value.focus);focus&&!focus->HasAttribute("disabled"))focus->Focus();
-      float scroll=value.scroll;
+      // Focus borders can reflow before measurement. Exact offsets require the
+      // same anchor bounds and preceding layout, not merely the same viewport.
+      context->Update();float scroll=value.scroll;
       if(main&&!value.anchor.empty())if(auto* anchor=document->GetElementById(value.anchor))
-        scroll=main->GetScrollTop()+anchor->GetAbsoluteOffset().y-main->GetAbsoluteOffset().y+value.fraction*anchor->GetBox().GetSize().y;
+        if(value.geometry!=reading_geometry()||value.text!=anchor->GetInnerRML()||!reading_same_anchor_geometry(value.anchor_geometry,reading_anchor_geometry(main,anchor)))scroll=main->GetScrollTop()+anchor->GetAbsoluteOffset().y-main->GetAbsoluteOffset().y+value.fraction*anchor->GetBox().GetSize().y;
       if(main)main->SetScrollTop(scroll);
       if(auto* footer=document->GetElementById("reading-actions"))footer->SetScrollTop(value.actions_scroll);
     }else if(main)main->SetScrollTop(0);
@@ -54,6 +70,30 @@
   }
   bool readable_action(const Json& action) {
     const auto type=action.value("type","");
+    if(markup.plan_reuse_open){
+      if(type=="readingReuseCancel"||type=="uiBack"){markup.plan_reuse_open=false;reading_focus="board-reuse";dirty=true;return true;}
+      if(type=="readingReuseApply"){
+        if(markup.reuse_review_valid()){
+          markup.plan=markup.reuse_candidate.at("activityIds").get<std::vector<std::string>>();
+          markup.plan_selected=(1<<game.periods())-1;markup.plan_slot=markup.reuse_candidate.at("firstEditableSlot");markup.plan_group.clear();
+        }
+        markup.plan_reuse_open=false;reading_focus="board-reuse";dirty=true;return true;
+      }
+      // A visible review is a presentation modal. Background actions, shortcuts
+      // and delayed authored controls cannot confirm, load or alter its draft.
+      return true;
+    }
+    if(type=="readingReuseOpen"){
+      const auto id=action.value("elementId","");
+      if(!markup.reading_overlay()&&!preview()&&!recalling()&&!game.gallery.active&&markup.reuse_element_eligible(id)){
+        markup.ensure_plan();const auto candidate=markup.reuse_draft();
+        if(candidate.value("status","")=="ready"){
+          markup.reuse_candidate=candidate;markup.reuse_element=id;markup.reuse_owner=markup.screen_id;markup.reuse_snapshot=markup.reuse_token();markup.plan_reuse_open=true;
+          reading_focus="board-reuse-cancel";reading_jump="board-reuse-review";
+        }
+      }dirty=true;return true;
+    }
+    if(type=="readingReuseApply"||type=="readingReuseCancel")return true;
     if(type=="readingHistory") {
       if(!markup.history_enabled()||preview()||editor_live||recalling()||game.gallery.active)return true;
       history_return_view=markup.reading_options?"options":markup.reading_menu?"menu":"game";

@@ -20,6 +20,7 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   if(visual?.readingHistory)requiredFeatures.push('reading-history-v1');
   if(visual?.screens.some(s=>s.readableLayout?.actionLayout==='grouped'))requiredFeatures.push('readable-actions-v1');
   if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.schedulePresentation==='compact')))requiredFeatures.push('compact-planning-v1');
+  if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.planReuse==='last-committed')))requiredFeatures.push('plan-reuse-v1');
   if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.planningGuidance==='first-use')))requiredFeatures.push('planning-guidance-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.binding==='narrative-actor'))requiredFeatures.push('narrative-actor-binding-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.showActivityRules))requiredFeatures.push('activity-rules-summary-v1');

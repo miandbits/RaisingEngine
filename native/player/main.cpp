@@ -187,7 +187,7 @@ public:
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
     markup.extensions=&extensions;markup.reading_history=&reading_history;
-    game.accepted_replacement=[this](const std::string& reason){reset_reading_history(reason);};
+    game.accepted_replacement=[this](const std::string& reason){++markup.reuse_generation;markup.plan_reuse_open=false;reset_reading_history(reason);};
     game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){
       // Conditions/routing may reveal a plugin only as a result of this command.
       // Synchronize logical mounts before its single observation, without displaying a window.
@@ -629,7 +629,7 @@ public:
       if(event.key.key==SDLK_ESCAPE&&markup.reading_overlay()){readable_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
-      if((markup.planning_guide||markup.reading_history_open)&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
+      if((markup.planning_guide||markup.reading_history_open||markup.plan_reuse_open)&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
       if(event.key.key==SDLK_F5){pending.push_back({{"type","save"}});return;}
       if(event.key.key==SDLK_F2){pending.push_back({{"type","nextLocale"}});return;}
       if(event.key.key==SDLK_F9){pending.push_back({{"type","load"}});return;}
@@ -699,7 +699,7 @@ public:
     }
     Json point_controls=Json::array();Rml::ElementList all_controls;document->QuerySelectorAll(all_controls,"button,input,select");
     for(auto* e:all_controls){const auto at=e->GetAbsoluteOffset(Rml::BoxArea::Border),size=e->GetBox().GetSize(Rml::BoxArea::Border);float x1,y1,x2,y2;SDL_RenderCoordinatesToWindow(renderer,at.x,at.y,&x1,&y1);SDL_RenderCoordinatesToWindow(renderer,at.x+size.x,at.y+size.y,&x2,&y2);point_controls.push_back({{"id",e->GetId()},{"x",x1},{"y",y1},{"width",x2-x1},{"height",y2-y1},{"fontSize",e->GetProperty("font-size")->ToString()},{"enabled",!e->HasAttribute("disabled")}});}
-    Json reading={{"view",markup.readable_view},{"guidanceOpen",markup.planning_guide},{"guidanceStep",markup.planning_guide_step},{"guidanceAcknowledged",markup.player_preferences.value("guidance",Json::object()).value("compact-planning-v1",false)},{"menuOpen",markup.reading_menu},{"pickerOpen",markup.compact_picker},{"pendingActivity",markup.compact_activity},{"pendingSlot",markup.compact_slot},{"active",markup.readable_active},{"screenId",markup.readable_screen_id},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"safeArea",markup.safe_area},{"pixelDensity",SDL_GetWindowPixelDensity(window)},{"displayScale",SDL_GetWindowDisplayScale(window)},{"textScale",markup.player_preferences.value("textScale",1.0)},{"minTargetSize",markup.readable_target},{"controls",point_controls}};
+    Json reading={{"view",markup.readable_view},{"guidanceOpen",markup.planning_guide},{"guidanceStep",markup.planning_guide_step},{"guidanceAcknowledged",markup.player_preferences.value("guidance",Json::object()).value("compact-planning-v1",false)},{"menuOpen",markup.reading_menu},{"pickerOpen",markup.compact_picker},{"planReuse",{{"open",markup.plan_reuse_open},{"source",markup.reuse_projection},{"candidate",markup.plan_reuse_open?markup.reuse_candidate:Json()}}},{"pendingActivity",markup.compact_activity},{"pendingSlot",markup.compact_slot},{"active",markup.readable_active},{"screenId",markup.readable_screen_id},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"safeArea",markup.safe_area},{"pixelDensity",SDL_GetWindowPixelDensity(window)},{"displayScale",SDL_GetWindowDisplayScale(window)},{"textScale",markup.player_preferences.value("textScale",1.0)},{"minTargetSize",markup.readable_target},{"controls",point_controls}};
     for(const auto* id:{"reading-main","reading-actions"})if(auto* e=document->GetElementById(id)){const auto at=e->GetAbsoluteOffset(),size=e->GetBox().GetSize();reading[id]={{"x",at.x},{"y",at.y},{"width",size.x},{"height",size.y},{"scrollTop",e->GetScrollTop()},{"scrollHeight",e->GetScrollHeight()},{"scrollWidth",e->GetScrollWidth()},{"clientWidth",e->GetClientWidth()},{"clientHeight",e->GetClientHeight()},{"overflowY",e->GetProperty("overflow-y")->ToString()}};}
     if(markup.readable_active){const auto at=current_reading_position();reading["position"]={{"anchor",at.anchor},{"text",at.text},{"fraction",at.fraction},{"focus",at.focus}};}
     Json timelineStage=nullptr;

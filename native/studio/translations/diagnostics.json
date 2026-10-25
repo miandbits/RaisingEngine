@@ -549,5 +549,6 @@
   ["주요 동작은 이 화면의 하단 버튼 목록에 있는 버튼이어야 합니다.","The primary action must be a button listed in this screen’s bottom actions.","主要操作はこの画面の下部ボタン一覧にあるボタンである必要があります。"],
   ["간결한 일정 표시는 현재 단일 인물 일정만 지원합니다. 명단 일정은 기본 표시를 사용하세요.","Compact planning currently supports single-character schedules. Use the standard presentation for roster schedules.","コンパクトな予定表示は現在、単一人物の予定のみに対応しています。名簿の予定には標準表示を使ってください。"],
 ["계획 안내에는 간결한 단일 인물 일정이 필요합니다.","Planning guidance requires a compact single-character schedule.","計画ガイドには単一人物のコンパクトな予定が必要です。"],
-["이 행동을 연결하기 전에 프로젝트 설정에서 최근 읽은 내용을 켜세요.", "Enable recent reading in project settings before connecting this action.", "この動作を接続する前に、プロジェクト設定で最近読んだ内容を有効にしてください。"]
+["이 행동을 연결하기 전에 프로젝트 설정에서 최근 읽은 내용을 켜세요.", "Enable recent reading in project settings before connecting this action.", "この動作を接続する前に、プロジェクト設定で最近読んだ内容を有効にしてください。"],
+["계획 재사용에는 간결한 단일 인물 일정이 필요합니다.","Plan reuse requires a compact single-character schedule.","計画の再利用には単一人物のコンパクトな予定が必要です。"]
 ]

@@ -3492,5 +3492,10 @@
 ["iOS 빌드 번호","iOS build number","iOSビルド番号"],
 ["배포할 새 빌드마다 번호를 올리세요.","Increase for each new build you distribute.","新しいビルドを配布するたびに番号を増やしてください。"],
 ["iOS 빌드 번호는 점으로 구분한 1~3개의 정수이며, 각 부분은 1~9자리여야 합니다.","Use one to three dot-separated integers for the iOS build number, with one to nine digits per part.","iOSビルド番号は、ドットで区切った1～3個の整数で指定してください。各部分は1～9桁です。"],
-["선택한 경로가 바뀌었습니다. 기존 저장을 다시 확인하세요.","The selected paths changed. Check existing saves again.","選択したパスが変更されました。既存のセーブをもう一度確認してください。"]
+["선택한 경로가 바뀌었습니다. 기존 저장을 다시 확인하세요.","The selected paths changed. Check existing saves again.","選択したパスが変更されました。既存のセーブをもう一度確認してください。"],
+["마지막으로 확정한 계획 재사용 허용","Offer reuse of last confirmed plan","最後に確定した計画の再利用を許可"],
+["계획 재사용 제거","Remove plan reuse","計画の再利用を削除"],
+["마지막으로 확정한 일정을 검토한 뒤 초안에 적용합니다. 시간이나 자원은 사용하지 않습니다.","Review the last confirmed assignments and apply them to the draft. This does not advance time or spend resources.","最後に確定した予定を確認して下書きに適用します。時間は進まず、資源も消費しません。"],
+["간결한 단일 인물 일정에서만 계획을 재사용할 수 있습니다.","Plan reuse is available only for compact single-character schedules.","計画の再利用は単一人物のコンパクトな予定でのみ利用できます。"],
+["화면 %1의 계획 재사용을 해제하거나 명단 없는 간결한 일정에 적용하세요: %2","Remove plan reuse on screen %1 or use a compact schedule without a roster: %2","画面%1の計画再利用を削除するか、名簿のないコンパクトな予定に適用してください：%2"]
 ]

@@ -217,3 +217,8 @@
 .reading-history-body p{margin:.5em 0}
 .reading-history-text{white-space:pre-wrap}
 .reading-history-meta{font-weight:600}
+
+.plan-reuse{margin-bottom:var(--readable-gap,12px)}
+.plan-reuse p,.plan-reuse-body p{margin:.5em 0}
+.plan-reuse-body section{border-top:1px solid #718c84;padding-top:var(--readable-gap,12px);margin-top:var(--readable-gap,12px)}
+.visual-readable .visual-element .plan-reuse-actions>button{flex:1 0 min-content;overflow-wrap:break-word;word-break:normal}

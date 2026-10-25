@@ -53,7 +53,8 @@
     }
     return "<div id=\"engine-planning-guide\" class=\"reading-item\"><p><b>"+escape(title)+"</b></p><p>"+escape(body)+"</p>"+(planning_guide_step==0?std::string():button("engine-planning-guide-skip",settings_words("안내 건너뛰기","Skip guide","案内をスキップ"),{{"type","planningGuideDismiss"}}))+"</div>";
   }
-  std::string compact_schedule(const Json& e,bool guidance=false) {
+  #include "plan-reuse.inc"
+  std::string compact_schedule(const Json& e,bool guidance=false,bool reuse=false) {
     ensure_plan();if(game.state.is_null())return "";
     const auto phase=game.state.value("phase","");
     const bool editable=!progress_pending()&&(phase=="planning"||phase=="ready");
@@ -63,6 +64,7 @@
       if(plan_selected&(1<<i))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[i])label=a.value("label",plan[i]);
       out+=button("board-slot-"+std::to_string(i),compact_period(i)+" · "+label,{{"type","readingPlanSlot"},{"slot",i},{"elementId",e.at("id")}},editable&&i>=first);
     }
+    if(reuse)out+=reuse_launcher(e);
     if(guidance)out+=button("board-help",settings_words("계획 방법 보기","How planning works","計画の立て方"),{{"type","planningGuideOpen"},{"elementId",e.at("id")}});
     return out;
   }

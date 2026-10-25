@@ -50,6 +50,20 @@ The first eligible editable compact planner offers the guide once. **Skip**, Esc
 
 Save/load reading layouts put date, place and phase before secondary timestamp and record number, show the selected checkpoint beside the confirmation controls, and identify current progress separately. Empty slots stay compact. Existing six/manual and three/automatic configurations, compatibility checks and explicit overwrite/load confirmation are retained. Save records keep their existing schema. Web may localize explicitly zoned timestamps; historical native timestamps without a zone must not be interpreted as UTC. No narrative excerpt or unvisited content is synthesized.
 
+## Reusing a confirmed plan
+
+An ordinary compact schedule can opt into `"planReuse":"last-committed"` on its reading item. It requires the narrow `plan-reuse-v1` capability in addition to compact planning and reading layout. Other item kinds, noncompact schedules and roster projects are rejected. Omission preserves existing behavior and adds no history projection. In the editor, select **Offer reuse of last confirmed plan** for a compact schedule.
+
+The source is the newest accepted `setSchedule` command in the current session. It may have been confirmed in the current phase; it is not necessarily the previous completed phase. Invalid length or unknown activities make that source unavailable. The player never silently substitutes an older command, another save slot, actor assignments or an unconfirmed draft. Player views expose only a small defensive projection, never the entire command history. A successful load selects the loaded branch's history even when two branches contain the same number of commands; a failed load keeps the live session.
+
+**Use last confirmed plan** opens a review of every localized period and activity. **Apply to draft** replaces the remaining assignments atomically. Completed assignments, including the current activity during an intermission, retain their canonical values. Missing locked-prefix data or no remaining editable periods disables reuse. Cancel and Escape preserve the exact draft and selection state. Neither opening nor applying the review spends time or resources, dispatches simulation commands, or changes a save.
+
+The review explains that normal requirements and costs apply when activities execute. `setSchedule` does not reserve future resources or validate future affordability, so reuse must not pretend to forecast a whole phase. Replacing an edited remaining draft is disclosed. Named routines, multi-actor schedules and cost forecasts are separate features.
+
+An open review is tied to its session generation, current revision, source command and assignments, period count/index, owning screen/element, canonical locked prefix, draft and selection state. Changes invalidate it before Apply. Hidden or disabled owners cannot be applied. The review isolates background shortcuts, pauses automatic playback and restores focus/reading position. A resize cannot revive a stale review. Reuse state is presentation-only; no new canonical command, save field or persistent preference is introduced.
+
+Acceptance covers shared/native structural parity; actual exported Web and native UI; branch restore, rejected load and execution-failure cases; intermission prefixes; atomic multi-slot application; 1, 3, 5 and 12 periods; English, Korean and Japanese labels; phone widths and 200% text. `scripts/smoke-creator.mjs` runs the projection, Web, native and existing Qt authoring checks in desktop CI. Human usability and physical-device acceptance remain separate.
+
 ## Presentation and input
 
 Auto activates when the safe viewport's shorter edge is at most `maxShortEdge`. A device preference can force reading layout on supported screens. Preferences are `readingLayout: "auto" | "on"`, and `textScale: 1 | 1.25 | 1.5 | 2`, persisted outside campaign saves; missing/invalid values default to auto and 1.

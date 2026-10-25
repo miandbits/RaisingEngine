@@ -825,6 +825,10 @@
                     "enum": ["compact"],
                     "description": "For schedule elements only: a compact period summary with an activity picker and explicit apply/cancel. Only changes the reading presentation."
                   },
+                  "planReuse": {
+                    "enum": ["last-committed"],
+                    "description": "Offer review and reuse of the newest accepted schedule in the compact planner. Applying changes only the draft, never time or game state."
+                  },
                   "planningGuidance": {
                     "enum": ["first-use"],
                     "description": "Optional first-use help for compact single-character planning. Players may skip or reopen it; acknowledgment is a presentation preference, never game progress."

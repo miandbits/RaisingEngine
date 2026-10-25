@@ -1,4 +1,6 @@
 import type {PlanningControl} from './PlanningGuide.js';
+import type {LastCommittedPlan} from '../../../packages/player-service/plan-reuse.js';
+import type {RunState} from '../../../packages/core/model.js';
 import {CompactSchedule} from './CompactSchedule.js';
 import {calendarText,calendarGrid,calendarDaySlot,calendarLabels,type CalendarProject} from '../../../packages/core/calendar.js';
 import { periodLabel } from '../../../packages/player-service/schedule.js';
@@ -16,7 +18,8 @@ export interface ScheduleActivity {
   previewAttributes?:readonly {attributeId:string;label?:string;valueFormat?:string}[];
 }
 export interface ScheduleContext {
-  gameId?:string;
+  gameId?:string;generation?:number;lastCommittedPlan?:LastCommittedPlan;
+  dataState?:Pick<RunState,'phase'|'periodIndex'|'schedule'|'activityIntermission'|'stateRevision'>|null;
   activities:readonly ScheduleActivity[]; plan:readonly string[]; period:number; phase:string;
   stats:readonly {id:string;label:string;value:number}[];
   periodsPerMonth?:number; schedulePlayback?:string;
@@ -34,13 +37,13 @@ export function useSchedulePlanner(context:ScheduleContext){
   return {planner,set};
 }
 export type SchedulePlanner=ReturnType<typeof useSchedulePlanner>;
-export function ScheduleWidget({element,context,planning,groups,assetUrl,disabled,onPlan,onCommit,readable=false,compact=false,guidance=false,planningControl}: {
-  guidance?:boolean;planningControl?:PlanningControl|undefined;
+export function ScheduleWidget({element,context,planning,groups,assetUrl,disabled,onPlan,onPlanReplace,onCommit,readable=false,compact=false,guidance=false,planReuse=false,ownerKey,planningControl}: {
+  ownerKey?:string;planReuse?:boolean;guidance?:boolean;planningControl?:PlanningControl|undefined;
   readable?:boolean;compact?:boolean;
   element:Element;context:ScheduleContext;planning:SchedulePlanner;
   groups:readonly {id:string;label:string;activityIds:readonly string[]}[];
   assetUrl:(id:string)=>string;disabled:boolean;
-  onPlan?:((slot:number,id:string)=>void)|undefined;onCommit?:(()=>void)|undefined;
+  onPlanReplace?:((ids:string[])=>void)|undefined;onPlan?:((slot:number,id:string)=>void)|undefined;onCommit?:(()=>void)|undefined;
 }){
   const count=context.periodsPerMonth??3,full=(1<<count)-1;
   const labels=Array.from({length:count},(_,i)=>periodLabel(i,count,context.calendarProject?.calendar,context.locale));
@@ -52,7 +55,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
     let next=slot;for(let n=1;n<=count;n++){const candidate=(slot+n)%count;if(candidate>=context.period&&!(mask&(1<<candidate))){next=candidate;break;}}
     set({...planner,mask,slot:next,groupId:''});
   };
-  if(readable&&compact)return <><CompactSchedule id={element.id} context={context} labels={labels} groups={groups} disabled={disabled} chooseActivity={chooseActivity} guidance={guidance} control={planningControl??(element.scheduleLayout==='menu'&&onCommit?{label:context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정',effect:'confirm-and-execute'}:undefined)}/>{element.scheduleLayout==='menu'&&<button className="readable-schedule-commit" disabled={!editable} onClick={onCommit}>{context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정'}</button>}</>;
+  if(readable&&compact)return <><CompactSchedule id={element.id} context={context} labels={labels} groups={groups} disabled={disabled} chooseActivity={chooseActivity} guidance={guidance} planReuse={planReuse} selectionKey={JSON.stringify([ownerKey,planner])} applyPlan={onPlanReplace?ids=>{if(editable){onPlanReplace(ids);set({...planner,mask:full,slot:context.period,groupId:''});}}:undefined} control={planningControl??(element.scheduleLayout==='menu'&&onCommit?{label:context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정',effect:'confirm-and-execute'}:undefined)}/>{element.scheduleLayout==='menu'&&<button className="readable-schedule-commit" disabled={!editable} onClick={onCommit}>{context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정'}</button>}</>;
   if(!readable&&element.scheduleLayout==='calendar'){
     const {year,month}=context.calendarTime??{year:1,month:1};
     const project=context.calendarProject??{startYear:year,startMonth:month,periodsPerMonth:count};const grid=calendarGrid(project,{year,month,periodInMonth:context.period,periodIndex:0});const first=grid.offset,days=grid.days,custom=project.calendar,words=custom?calendarLabels(custom,context.locale):null;

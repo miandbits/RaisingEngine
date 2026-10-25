@@ -46,6 +46,7 @@ QString editorDiagnostic(const QString &sourceMessage) {
   static const QHash<QString,QString> readableMessages{
     {"Enable recent reading in project settings before connecting this action.","이 행동을 연결하기 전에 프로젝트 설정에서 최근 읽은 내용을 켜세요."},
     {"Planning guidance requires a compact single-character schedule.","계획 안내에는 간결한 단일 인물 일정이 필요합니다."},
+    {"Plan reuse requires a compact single-character schedule.","계획 재사용에는 간결한 단일 인물 일정이 필요합니다."},
     {"Compact planning applies only to schedule elements.","간결한 일정 표시는 일정 요소에만 적용할 수 있습니다."},
     {"A primary action requires grouped bottom actions.","주요 동작을 지정하려면 하단 버튼 묶기가 필요합니다."},
     {"The primary action must be a button listed in this screen’s bottom actions.","주요 동작은 이 화면의 하단 버튼 목록에 있는 버튼이어야 합니다."},

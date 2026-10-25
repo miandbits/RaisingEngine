@@ -125,7 +125,7 @@
     const std::string kind=e.value("kind","");const double font=std::max(visual.at("readableLayout").value("fontSize",18.0),item.value("fontSize",visual.at("readableLayout").value("fontSize",18.0)))*player_preferences.value("textScale",1.0);
     e["fontSize"]=font;e["width"]=std::max(44.0,std::min(double(safe_area.value("width",window_width)),visual.at("readableLayout").value("maxWidth",760.0))-2*visual.at("readableLayout").value("padding",16.0));
     e["statsLayout"]="bars";e["x"]=0;e["y"]=0;e["height"]=item.value("imageHeight",160.0);
-    std::string body=kind=="saveSlots"||kind=="loadSlots"?readable_slots(e):kind=="playerSettings"?readable_settings(e):kind=="schedule"?(item.value("schedulePresentation","")=="compact"?compact_schedule(e,item.value("planningGuidance","")=="first-use"):readable_schedule(e)):element_body(e);
+    std::string body=kind=="saveSlots"||kind=="loadSlots"?readable_slots(e):kind=="playerSettings"?readable_settings(e):kind=="schedule"?(item.value("schedulePresentation","")=="compact"?compact_schedule(e,item.value("planningGuidance","")=="first-use",item.value("planReuse","")=="last-committed"):readable_schedule(e)):element_body(e);
     if(kind=="text"||kind=="dialogue")body=readable_text(e.value("id",""),kind=="dialogue"?bind("story"):e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
     if(body.empty())return "";
     // Legacy result/choice fragments contain fixed line metrics. Reading mode
@@ -156,6 +156,8 @@
     const bool grouped=layout.value("actionLayout","")=="grouped";
     if(!grouped)reading_menu=false;
     if(compact_picker&&!compact_picker_valid())compact_picker=false;
+    reuse_projection=nullptr;
+    if(plan_reuse_open&&!reuse_review_valid())plan_reuse_open=false;
 
     Json selected=Json::array();std::string main,footer;
     const auto wrap=[&](const std::string& body){return "<div class=\"reading-item reading-action\">"+body+"</div>";};
@@ -172,8 +174,13 @@
     if(!guided.is_null()&&!reading_overlay()&&!planning_guide_seen&&!player_preferences.value("guidance",Json::object()).value("compact-planning-v1",false)&&!planning_guide_suppressed){
       planning_guide=true;planning_guide_seen=true;planning_guide_step=0;planning_guide_element=guided.at("id");planning_guide_owner=screen_id;
     }
-    readable_view=reading_history_open?"history":planning_guide?"guide:"+std::to_string(planning_guide_step):reading_options?"options":reading_menu?"menu":compact_picker?"picker:"+std::to_string(compact_slot):"game";
-    if(reading_history_open){
+    readable_view=plan_reuse_open?"reuse":reading_history_open?"history":planning_guide?"guide:"+std::to_string(planning_guide_step):reading_options?"options":reading_menu?"menu":compact_picker?"picker:"+std::to_string(compact_slot):"game";
+    if(plan_reuse_open){
+      reuse_projection=reuse_snapshot.at("source");main=reuse_review_body();
+      footer=wrap(button("board-reuse-apply",settings_words("초안에 적용","Apply to draft","下書きに適用"),{{"type","readingReuseApply"}}));
+      footer+=wrap(button("board-reuse-cancel",settings_words("취소","Cancel","キャンセル"),{{"type","readingReuseCancel"}}));
+      for(const auto& e:render_elements)if(e.at("id")==reuse_element){selected.push_back(e);break;}
+    }else if(reading_history_open){
       main=reading_history_body();footer=wrap(button("engine-reading-history-close",settings_words("닫기","Close","閉じる"),{{"type","readingHistoryClose"}}));
     }else if(planning_guide){
       main=planning_guide_body(layout,prefix);
@@ -207,7 +214,7 @@
     render_elements=selected;
     std::string css="body{font-family:Noto Sans KR;font-size:"+number(readable_font)+"px;color:"+ink+";background-color:"+css_color(background)+";margin:0;width:"+std::to_string(width)+"px;height:"+std::to_string(height)+"px;} div,p{display:block;box-sizing:border-box;} p{margin:0 0 "+number(gap)+"px;} span,b{display:inline;} .reading-root{position:absolute;left:"+number(left)+"px;top:"+number(top)+"px;width:"+number(cw)+"px;height:"+number(sh)+"px;display:flex;flex-direction:column;padding:"+number(pad)+"px;} .reading-main{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;} .reading-item{position:relative;width:100%;height:auto;margin-bottom:"+number(gap)+"px;white-space:normal;word-break:break-word;} .reading-item button,.reading-item input,.reading-item select,.reading-item option{box-sizing:border-box;display:block;width:100%;min-width:"+number(readable_target)+"px;min-height:"+number(readable_target)+"px;height:auto;padding:10px 12px;margin:0 0 "+number(gap)+"px;line-height:1.45;white-space:normal;word-break:break-word;background-color:#e3e8df;color:#263c36;border-width:1px;border-color:#91a196;border-radius:4px;tab-index:auto;} button:focus{border-width:3px;border-color:#b38b49;} button:disabled{opacity:0.5;} .reading-actions{display:flex;flex-wrap:wrap;align-items:flex-start;flex-shrink:0;max-height:45%;overflow-y:auto;overflow-x:hidden;padding-top:"+number(gap)+"px;} .reading-action{flex-grow:1;flex-basis:"+number(140*player_preferences.value("textScale",1.0))+"px;min-width:"+number(readable_target)+"px;margin-right:8px;} .reading-action>button{margin-bottom:0;} .choices button>span{margin-right:0.5em;} .stat{height:auto;padding:8px 0;} .value{float:right;} .bar{height:5px;background-color:#d8e3d8;} .bar>div{height:5px;background-color:#608c69;} .reading-item .heading,.reading-item .row{height:auto;} .reading-item .reason{display:block;} scrollbarvertical{width:12px;} scrollbarvertical slidertrack{background-color:#e1e0d6;} scrollbarvertical sliderbar{min-height:44px;background-color:#718879;} scrollbarvertical sliderarrowdec,scrollbarvertical sliderarrowinc{height:0;}";
     css+=".record-groups{display:flex;flex-wrap:wrap;} .reading-item .record-group{flex-grow:1;flex-basis:auto;width:auto;word-break:normal;margin-right:8px;padding-left:8px;padding-right:8px;} .reading-item .record-group:last-child{margin-right:0;} .reading-item .record-slot,.reading-item .record-group{border-width:3px;} .reading-item .record-selected{border-color:#345c50;background-color:#d6e2d8;}.reading-item .record-slot:focus,.reading-item .record-group:focus{border-color:#b38b49;} .record-identity{display:block;} .record-saved{display:block;font-size:0.85em;margin-top:6px;} .record-thumbnail{display:block;width:144px;height:81px;margin-top:8px;} .reading-paragraph{margin-bottom:"+number(gap)+"px;}";
-    if(grouped||compact_picker||planning_guide||reading_history_open)css+=".reading-actions{max-height:none;overflow-y:visible;} .reading-action{flex-basis:"+number(120*player_preferences.value("textScale",1.0))+"px;}";
+    if(grouped||compact_picker||planning_guide||reading_history_open||plan_reuse_open)css+=".reading-actions{max-height:none;overflow-y:visible;} .reading-action{flex-basis:"+number(120*player_preferences.value("textScale",1.0))+"px;}";
     for(const auto& raw:render_elements){const auto e=resolved_style(visual,raw);const auto id=e.value("id","");const auto selector="#node-"+id+" button";css+=selector+"{color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#e3e8df"))+";}";}
     // Put notices into flow so they cannot cover the final action on short phones.
     if(!game.message.empty())main+="<p class=\"reading-notice\">"+escape(game.message)+"</p>";

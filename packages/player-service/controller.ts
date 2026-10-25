@@ -1,3 +1,4 @@
+import {deriveLastCommittedPlan,hasPlanReuse,type LastCommittedPlan} from '../player-service/plan-reuse.js';
 import type {SaveSlotsView,SaveSlotAction} from './save-slots.js';
 import type { CalendarProject } from '../core/calendar.js';
 import { scheduleStep } from '../player-service/schedule.js';
@@ -17,6 +18,7 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  lastCommittedPlan?:LastCommittedPlan;
   /** Stable identity for game-local presentation preferences; omitted in detached previews. */
   gameId?: string;
   saveSlots?:SaveSlotsView;
@@ -96,6 +98,7 @@ export class PlayerController {
     return {
       ...(c.project.localization?{localization:c.project.localization,locale:localeId(c.project.localization)}:{}),
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
+      ...(hasPlanReuse(c)?{lastCommittedPlan:deriveLastCommittedPlan(this.session?.commands??[],c.project.periodsPerMonth,c.activities.map(a=>a.id))}:{}),
       gameId: c.project.gameId,
       generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],

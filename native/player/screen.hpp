@@ -8,6 +8,7 @@
 #include "presentation-variants.hpp"
 #include "preferences.hpp"
 #include "reading-history.hpp"
+#include "plan-reuse.hpp"
 #include <algorithm>
 #include <map>
 #include <iomanip>
@@ -129,14 +130,17 @@ public:
   bool history_enabled() const {return !replay_controls&&!game.gallery.active&&display_content.at("project").at("visual").contains("readingHistory");}
   std::string history_text(const std::string& text) const {return history_enabled()?"<span class=\"reading-receipt-text\" style=\"margin:0;\">"+escape(text)+"</span>":escape(text);}
   std::string history_label() const {return settings_words("최근 읽은 내용","Recent reading","最近読んだ内容");}
-  bool compact_picker=false;
+  bool compact_picker=false,plan_reuse_open=false;
+  uint64_t reuse_generation=0;
+  std::string reuse_owner,reuse_element;
+  Json reuse_snapshot=nullptr,reuse_candidate=nullptr,reuse_projection=nullptr;
   bool planning_guide=false,planning_guide_seen=false,planning_guide_suppressed=false;
   int planning_guide_step=0;
   std::string planning_guide_element,planning_guide_owner;
   int compact_slot=0,compact_revision=-1;
   std::string compact_activity,compact_group,compact_element,compact_owner;
   std::string readable_view="game";
-  bool reading_overlay() const {return reading_options||reading_menu||compact_picker||planning_guide||reading_history_open;}
+  bool reading_overlay() const {return reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;

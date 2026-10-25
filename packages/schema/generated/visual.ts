@@ -13012,6 +13012,10 @@ export interface Screen {
        */
       schedulePresentation?: "compact";
       /**
+       * Offer review and reuse of the newest accepted schedule in the compact planner. Applying changes only the draft, never time or game state.
+       */
+      planReuse?: "last-committed";
+      /**
        * Optional first-use help for compact single-character planning. Players may skip or reopen it; acknowledgment is a presentation preference, never game progress.
        */
       planningGuidance?: "first-use";

@@ -1,3 +1,4 @@
+import {deriveLastCommittedPlan,hasPlanReuse} from '../player-service/plan-reuse.js';
 import {calendarDate,calendarText} from '../core/calendar.js';
 import {resolveScreen} from '../visual/routing.js';
 import {slotsEnabled,slotCount,slotScreens,slotWords,type SaveSlotAction,type SaveSlotsView,type SlotRow} from '../player-service/save-slots.js';
@@ -97,7 +98,7 @@ export class WebPlayerController implements PlayerBridge {
     this.locale=localeId(this.content.project.localization,this.locale);
     const c = this.localizedContent(), state = this.session?.state ?? null, cursor = state?.activeNarrative;
     const projection = this.projection(state,c);
-    return { gameId:c.project.gameId, ...(this.hasSlots?{saveSlots:{...this.slotView,rows:this.slotView.rows.map(row=>({...row,...(row.periodIndex!==undefined&&c.project.calendar?{date:calendarText(calendarDate(c.project,row.periodIndex),c.project.calendar,this.locale)}:{})})),...(state?{current:this.currentRecord()}:{}),checkpointPending:!!state&&(this.slotAutoGeneration!==this.generation||this.slotAutoRevision!==state.stateRevision)}}:{}), generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
+    return { ...(hasPlanReuse(c)?{lastCommittedPlan:deriveLastCommittedPlan(this.session?.commands??[],c.project.periodsPerMonth,c.activities.map(a=>a.id))}:{}),gameId:c.project.gameId, ...(this.hasSlots?{saveSlots:{...this.slotView,rows:this.slotView.rows.map(row=>({...row,...(row.periodIndex!==undefined&&c.project.calendar?{date:calendarText(calendarDate(c.project,row.periodIndex),c.project.calendar,this.locale)}:{})})),...(state?{current:this.currentRecord()}:{}),checkpointPending:!!state&&(this.slotAutoGeneration!==this.generation||this.slotAutoRevision!==state.stateRevision)}}:{}), generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       ...(c.project.localization?{localization:c.project.localization,locale:this.locale}:{}),
