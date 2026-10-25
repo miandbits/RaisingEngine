@@ -1,10 +1,11 @@
 import { DraftRecovery } from './recovery.mjs';
 import { GameReleases } from './releases.mjs';
 import { randomUUID } from 'node:crypto';
-import { prepareIOSProject, configureIOSProject, runAppleTool } from '../../scripts/lib/ios-project.mjs';
+import { prepareIOSProject, configureIOSProject, runAppleTool, validateIOSVersions } from '../../scripts/lib/ios-project.mjs';
 import { FirstGameProgress } from './first-game.mjs';
 import { desktopTarget, gameDirectory, playerExecutable } from '../../dist/packages/export-service/targets.js';
 import { saveMigration } from './save-migration.mjs';
+import { UpdateCompatibility } from './update-compatibility.mjs';
 import {GoalCiReports} from './goal-ci.mjs';
 import {GitHubGoalReports} from './goal-github.mjs';
 import {runGoalRegression} from './goal-regression.mjs';
@@ -46,6 +47,7 @@ import { authoringPreview } from './authoring-preview.mjs';
 const engineRoot = fileURLToPath(new URL('../..', import.meta.url));
 const LOCK_FILE = 'plugins/lock.json';
 export class QtStudioService {
+  updateCompatibility = new UpdateCompatibility();
   recovery = new DraftRecovery();
   releases = new GameReleases();
   firstGame = new FirstGameProgress();
@@ -99,6 +101,7 @@ export class QtStudioService {
   async dispatch(request) {
     const { method, params = {} } = request;
     if (method === 'saveMigrationPreview' || method === 'saveMigrationPublish') return saveMigration(method, params);
+    if (method === 'updateCompatibility') return {error:null,updateCompatibility:await this.updateCompatibility.check(this.editor,params)};
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
     if(method==='goalSearchStatus'||method==='goalSearchStop')return {error:null,goalSearch:method==='goalSearchStop'?this.goalSearchJobs.cancel(params.root,params.jobId):this.goalSearchJobs.public(this.goalSearchJobs.get(params.root,params.jobId))};
     if(['analysisList','analysisStatus','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
@@ -336,6 +339,8 @@ export class QtStudioService {
       case 'validate': await this.editor.validate(params.revision); break;
       case 'export': {
         const revision = params.revision;
+        const iosVersions = params.target === 'ios' ? validateIOSVersions({version:params.iosVersion ?? params.releaseVersion,buildNumber:params.iosBuildNumber}) : null;
+        if (iosVersions && params.releaseVersion && iosVersions.version !== params.releaseVersion) throw new Error('The iOS app version must match the release archive version.');
         this.editor.current(revision);
         if (!['windows', 'web', 'macos', 'ios'].includes(params.target)) throw new Error('지원하지 않는 내보내기 대상입니다.');
         if (typeof params.destination !== 'string' || !path.isAbsolute(params.destination)) throw new Error('새 출력 폴더의 절대 경로를 지정하세요.');
@@ -346,16 +351,18 @@ export class QtStudioService {
         this.editor.current(revision);
         const built = await this.editor.snapshot(revision);
         if (!built.ok) throw new Error('내보내기 스냅샷을 만들 수 없습니다.');
+        if(params.updateCheck)await this.updateCompatibility.verify(this.editor,params.updateCheck);
         const extensions = await this.editor.exportExtensions(revision, built.snapshot, params.target, await this.playerFeatures(params.target));
         const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root,
           destination: params.destination, target: params.target, runtimes: this.runtimes, extensions,
           prepareBundle: async directory => {
-            if(params.target==='ios') await prepareIOSProject(directory, {root:engineRoot, applicationId:'org.raisingengine.'+built.snapshot.project.gameId});
+            if(params.target==='ios') await prepareIOSProject(directory, {root:engineRoot, applicationId:'org.raisingengine.'+built.snapshot.project.gameId, ...iosVersions});
             if(params.target==='macos' && process.platform==='darwin') await runAppleTool('/usr/bin/codesign', ['--force','--deep','--sign','-',path.join(directory,'RaisingPlayer.app')], directory);
             if(params.releaseVersion) await this.releases.prepare(directory, {editor:this.editor, target:params.target, version:params.releaseVersion, content:built.snapshot, contentFingerprint:built.snapshot.contentFingerprint, engineRoot});
           },
           beforePublish: async () => {
             await this.editor.assertDiskUnchanged(); this.editor.current(revision);
+            if(params.updateCheck)await this.updateCompatibility.verify(this.editor,params.updateCheck);
           } });
         extra = { exported: {...exported, launchToken:this.releases.register(exported), ...(params.releaseVersion ? {releaseVersion:params.releaseVersion,gameArchive:path.join(exported.directory,'Game.zip'),projectArchive:path.join(exported.directory,'Project-backup.zip')} : {})} };
         if (params.target === 'ios') {

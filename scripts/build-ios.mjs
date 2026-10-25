@@ -2,14 +2,16 @@ import { mkdir, cp, readFile, writeFile, lstat, realpath } from 'node:fs/promise
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { prepareNativeDependencies } from './prepare-native-dependencies.mjs';
-import { prepareIOSProject, configureIOSProject, runAppleTool } from './lib/ios-project.mjs';
+import { prepareIOSProject, configureIOSProject, runAppleTool, validateIOSVersions, verifyIOSBundleMetadata } from './lib/ios-project.mjs';
 const args=process.argv.slice(2);
 const option=(name,fallback)=>{const i=args.indexOf(name);if(i<0)return fallback;if(!args[i+1]||args[i+1].startsWith('--'))throw Error(`Missing ${name}`);return args[i+1];};
 if(process.platform!=='darwin')throw Error('iOS builds require macOS with Xcode.');
 const projectArg=option('--project');
 const output=path.resolve(projectArg??option('--out','dist/ios-game'));
 const sdk=option('--sdk','iphonesimulator'),team=option('--team');
+if(projectArg && (args.includes('--version') || args.includes('--build-number')))throw Error('An existing iOS project owns its version metadata. Export a new project to change its release version or build number.');
 if(!projectArg){
+ const versions=validateIOSVersions({version:option('--version','0.1.0'),buildNumber:option('--build-number','1')});
  const input=option('--bundle');if(!input)throw Error('Use --bundle with an exported game, or --project with a previously exported iOS project.');
  if(existsSync(output))throw Error('Output already exists; choose a new --out directory.');
  let source=await realpath(input);if(existsSync(path.join(source,'RaisingPlayer.app/Contents/Resources/game.json')))source=path.join(source,'RaisingPlayer.app/Contents/Resources');
@@ -24,12 +26,13 @@ if(!projectArg){
   if(!existsSync(path.join(source,file))) { if(file==='licenses')continue; throw Error(`Missing game resource: ${file}`); }
   await mkdir(path.dirname(path.join(output,file)),{recursive:true});await cp(path.join(source,file),path.join(output,file),{recursive:true,filter});
  }
- await prepareIOSProject(output,{applicationId:option('--application-id','org.raisingengine.'+game.content.project.gameId)});
+ await prepareIOSProject(output,{applicationId:option('--application-id','org.raisingengine.'+game.content.project.gameId),...versions});
 }
 const xcode=await configureIOSProject(output,{sdk,team});console.log(`Xcode project: ${xcode}`);
 if(!args.includes('--prepare-only')){
  await runAppleTool(process.env.CMAKE??'cmake',['--build','build-'+sdk,'--config','Release','--target','raising-player','--parallel',process.env.BUILD_JOBS??'2'],output,{logFile:path.join(output,'xcode-build.log')});
+ const verifiedMetadata=await verifyIOSBundleMetadata(output,{sdk});
  const file=path.join(output,'ios-build.json'),metadata=JSON.parse(await readFile(file,'utf8'));
- await writeFile(file,JSON.stringify({...metadata,status:sdk==='iphonesimulator'?'simulator-built':'device-built-not-device-verified'},null,2));
+ await writeFile(file,JSON.stringify({...metadata,verifiedMetadata,status:sdk==='iphonesimulator'?'simulator-built':'device-built-not-device-verified'},null,2));
  console.log(`iOS ${sdk} build completed: ${path.join(output,'build-'+sdk)}`);
 }

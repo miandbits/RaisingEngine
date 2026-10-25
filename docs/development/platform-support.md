@@ -55,3 +55,12 @@ These are development targets, not certified public binaries. Apple native plugi
 `readable-layout-v1` adds optional phone reading order, natural text reflow through 200%, controls of at least 44 logical points, safe areas, scrolling and persistent reading preferences to the native and Web players. The Qt editor exposes this without JSON editing and previews phone viewports with the real native renderer. Existing canvas layouts retain their behavior. See [the authoring guide](../manual/phone-reading-layout.md) and [implementation contract](readable-layout-contract.md).
 
 The creator CI includes shared validation, native/Web phone regressions and Qt authoring checks. Device orientation, physical ergonomics and assistive technologies still need platform acceptance; a layout capability is not a screen-reader support claim. Unsupported specialised widgets remain explicitly gated.
+
+
+### iOS release metadata
+
+Export uses **Release version** as the app's `CFBundleShortVersionString` and offers an independent **iOS build number** for `CFBundleVersion`, including when ZIP archives are disabled. Increase the build number for each new build you distribute. The release version must be three numeric components (for example `1.2.0`); the build number accepts one to three (for example `42` or `42.1`). Each component is bounded to nine digits. Preview suffixes such as `-beta` are rejected for iOS, and an app version cannot differ from its release archive version. Defaults for callers that omit metadata remain `0.1.0` and `1`.
+
+These formats follow Apple's current [release version](https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleshortversionstring) and [build version](https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleversion) definitions. The exporter records both values in `ios-build.json` and passes them through the generated CMake project into both SDK app bundles. Existing immutable exports retain their original metadata; regenerate an export to pick up this fix.
+
+Standalone creation accepts `--version 1.2.0 --build-number 42`. A previously generated `--project` retains its exported version metadata. Export a new project to change those values; CLI version overrides are rejected to avoid disagreeing with the exported release receipt. The editor does not contact App Store Connect to check previously uploaded build numbers. This metadata support does not imply signing, provisioning, physical-device or store acceptance.

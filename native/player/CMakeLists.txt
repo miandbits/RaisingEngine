@@ -90,8 +90,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set_source_files_properties(audio.c PROPERTIES LANGUAGE OBJC)
   target_link_libraries(raising-player PRIVATE "-framework AVFoundation")
   set(RAISING_APP_ID "org.raisingengine.player" CACHE STRING "iOS application identifier")
+  set(RAISING_IOS_VERSION "0.1.0" CACHE STRING "iOS release version")
+  set(RAISING_IOS_BUILD_NUMBER "1" CACHE STRING "iOS build number")
+  if(NOT RAISING_IOS_VERSION MATCHES "^[0-9]+[.][0-9]+[.][0-9]+$")
+    message(FATAL_ERROR "RAISING_IOS_VERSION requires three numeric components, for example 1.2.0")
+  endif()
+  if(NOT RAISING_IOS_BUILD_NUMBER MATCHES "^[0-9]+([.][0-9]+)?([.][0-9]+)?$")
+    message(FATAL_ERROR "RAISING_IOS_BUILD_NUMBER requires one to three numeric components")
+  endif()
   set_target_properties(raising-player PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER "${RAISING_APP_ID}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${RAISING_IOS_VERSION}"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${RAISING_IOS_BUILD_NUMBER}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/../mobile/ios/Info.plist.in"
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${RAISING_APP_ID}"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"

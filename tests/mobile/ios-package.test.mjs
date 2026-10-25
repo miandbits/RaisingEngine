@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,writeFile,readFile,readdir,symlink} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {prepareIOSProject,configureIOSProject} from '../../scripts/lib/ios-project.mjs';
+import {prepareIOSProject,configureIOSProject,validateIOSVersions,verifyIOSBundleMetadata} from '../../scripts/lib/ios-project.mjs';
 
 async function fixture() {
   await mkdir('.cache/ios-package-tests',{recursive:true});
@@ -25,7 +25,8 @@ test('iOS export is relocatable, preserves resources and licenses, and defaults 
   const presets=JSON.parse(await readFile(path.join(out,'CMakePresets.json'),'utf8')).configurePresets;
   assert.deepEqual(presets.map(p=>p.name),['iphonesimulator','iphoneos']);
   assert.ok(presets.every(p=>p.cacheVariables.CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED==='NO'));
-  assert.equal(JSON.parse(await readFile(path.join(out,'ios-build.json'),'utf8')).applicationId,'org.example.garden');
+  const metadata=JSON.parse(await readFile(path.join(out,'ios-build.json'),'utf8'));
+  assert.equal(metadata.applicationId,'org.example.garden');assert.equal(metadata.releaseVersion,'0.1.0');assert.equal(metadata.buildNumber,'1');
 });
 
 test('iOS preparation rejects invalid identifiers and source symlinks',async()=>{
@@ -68,4 +69,40 @@ test('post-publish Xcode configuration preserves hashed metadata; standalone con
   assert.equal(await configureIOSProject(standalone),path.join(standalone,'build-iphonesimulator','RaisingGame.xcodeproj'));
   assert.deepEqual(JSON.parse(await readFile(path.join(standalone,'ios-build.json'),'utf8')),{...JSON.parse(sealed.toString()),status:'xcode-project-generated',sdk:'iphonesimulator',signed:false},'standalone callers retain normal status recording');
   assert.deepEqual(await readFile(metadataFile),sealed);
+});
+
+
+test('iOS export preserves the selected release version and independent build number',async()=>{
+  const {root,out}=await fixture();await prepareIOSProject(out,{root,version:'2.7.3',buildNumber:'42.1'});
+  const metadata=JSON.parse(await readFile(path.join(out,'ios-build.json'),'utf8'));
+  assert.equal(metadata.releaseVersion,'2.7.3');assert.equal(metadata.buildNumber,'42.1');
+  const cmake=await readFile(path.join(out,'CMakeLists.txt'),'utf8');
+  assert.ok(cmake.includes('set(RAISING_IOS_VERSION "2.7.3" CACHE STRING'));assert.ok(cmake.includes('set(RAISING_IOS_BUILD_NUMBER "42.1" CACHE STRING'));
+  const help=await readFile(path.join(out,'IOS-README.txt'),'utf8');assert.match(help,/Release version: 2\.7\.3/);assert.match(help,/Build number: 42\.1/);
+});
+
+test('iOS version validation rejects malformed and unsafe metadata before changing export resources',async()=>{
+  const {root,out}=await fixture(),before=await readdir(out),game=await readFile(path.join(out,'game.json'));
+  assert.deepEqual(validateIOSVersions(),{version:'0.1.0',buildNumber:'1'});
+  for(const version of ['0.1','1.2.3-beta','1.2.3.4','1.2.-1','1.2.3\n','1.2.3"','1000000000.0.0',null,1]){
+    await assert.rejects(prepareIOSProject(out,{root,version}),/iOS release version/);assert.deepEqual(await readdir(out),before);assert.deepEqual(await readFile(path.join(out,'game.json')),game);
+  }
+  for(const buildNumber of ['', '1.2.3.4', '-1', '1b1', '1\n', '$(touch x)', '1000000000', null, 2]){
+    await assert.rejects(prepareIOSProject(out,{root,buildNumber}),/iOS build number/);assert.deepEqual(await readdir(out),before);assert.deepEqual(await readFile(path.join(out,'game.json')),game);
+  }
+  for(const buildNumber of ['0','2','2.0','2.3.4','999999999.999999999.999999999'])assert.equal(validateIOSVersions({buildNumber}).buildNumber,buildNumber);
+});
+
+
+test('built iOS app metadata is verified independently for each SDK',{skip:process.platform!=='darwin'},async()=>{
+  const {root,out}=await fixture();await prepareIOSProject(out,{root,version:'2.7.3',buildNumber:'42.1'});
+  for(const sdk of ['iphonesimulator','iphoneos']){
+    const app=path.join(out,'build-'+sdk,'native-player','Release-'+sdk,'RaisingPlayer.app');await mkdir(app,{recursive:true});
+    const plist=path.join(app,'Info.plist');
+    const content=build=>`<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>org.raisingengine.firstgame</string><key>CFBundleShortVersionString</key><string>2.7.3</string><key>CFBundleVersion</key><string>${build}</string></dict></plist>`;
+    await writeFile(plist,content('42.1'));const sealed=await readFile(path.join(out,'ios-build.json'));
+    assert.deepEqual(await verifyIOSBundleMetadata(out,{sdk}),{sdk,plist,applicationId:'org.raisingengine.firstgame',releaseVersion:'2.7.3',buildNumber:'42.1'});
+    await writeFile(plist,content('1'));await assert.rejects(verifyIOSBundleMetadata(out,{sdk}),/CFBundleVersion differs/);
+    assert.deepEqual(await readFile(path.join(out,'ios-build.json')),sealed,'inspection never rewrites release metadata');
+  }
 });

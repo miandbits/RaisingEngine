@@ -45,7 +45,7 @@ jobs:
       BUILD_JOBS: '3'
       QT_ROOT: C:/Qt/6.10.1/mingw_64
       QT_COMPILER: C:/Qt/Tools/mingw1310_64/bin
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test
       QT_PACKAGE_OUT: release/qt-ci/RaisingStudio
       QT_INSTALLER_OUT: release/qt-ci/RaisingStudio-P1-Windows.exe
       QT_QPA_PLATFORM: offscreen
@@ -93,6 +93,8 @@ jobs:
         run: |
           npm run prepare:qt-source
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node scripts/capture-build-provenance.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm run package:qt-studio
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node scripts/audit-preview-package.mjs
@@ -115,6 +117,7 @@ jobs:
         with:
           name: windows-creator-evidence
           path: |
+            .cache/build-provenance/
             .cache/creator-smoke/
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt
@@ -146,7 +149,7 @@ jobs:
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       BUILD_JOBS: '3'
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test
       MACOS_STUDIO_OUT: dist/macos/RaisingStudio.app
     steps:
       - uses: actions/checkout@v4
@@ -176,6 +179,7 @@ jobs:
         shell: bash
         run: |
           export MACOS_NODE_ROOT="$(dirname "$(dirname "$(command -v node)")")"
+          node scripts/capture-build-provenance.mjs
           npm run package:macos
           npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
           npm run benchmark:creator
@@ -184,6 +188,7 @@ jobs:
         with:
           name: macos-creator-evidence
           path: |
+            .cache/build-provenance/
             .cache/creator-smoke/
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt

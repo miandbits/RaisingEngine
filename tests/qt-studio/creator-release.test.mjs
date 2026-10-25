@@ -117,3 +117,17 @@ test('project snapshots retain named routes and approved baseline bytes',async()
     assert.deepEqual((await projectFiles(s.editor)).get('playtests/'+group+'/'+name),bytes);
   }
 });
+
+test('iOS export rejects unsupported or conflicting version metadata before publishing output',async t=>{
+  const {service:s,work}=await fixture();t.after(async()=>{await s.releases.close();await s.editor.close();});
+  const before=s.editor.view(),destination=path.join(work,'ios-invalid');
+  for(const [params,error] of [
+    [{releaseVersion:'1.2.3-beta'},/iOS release version/],
+    [{iosVersion:'1.2.3',iosBuildNumber:'bad'},/iOS build number/],
+    [{releaseVersion:'1.2.3',iosVersion:'1.2.4'},/must match/]
+  ]){
+    await assert.rejects(call(s,'export',{target:'ios',destination,...params}),error);
+    assert.equal(existsSync(destination),false);assert.deepEqual(s.editor.view(),before);
+    assert.ok(!(await readdir(work)).some(file=>file.startsWith('.raising-export-')));
+  }
+});

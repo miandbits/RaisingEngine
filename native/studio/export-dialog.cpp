@@ -1,4 +1,9 @@
 #include "studio.hpp"
+#include "save-migration.hpp"
+#include <QToolButton>
+#include <QScrollArea>
+#include <QPlainTextEdit>
+#include <memory>
 #include <QComboBox>
 #include <QCheckBox>
 #include <QProcess>
@@ -37,6 +42,7 @@ void StudioWindow::exportGameDialog() {
   const auto preferred=target->findData(releaseCompatibility["target"].toString());if(preferred>=0)target->setCurrentIndex(preferred);
   auto compatibility=new QLabel(releaseCompatibility["summary"].toString());compatibility->setObjectName("exportCompatibility");compatibility->setWordWrap(true);layout->addWidget(compatibility);
   auto version=new QLineEdit("0.1.0");version->setObjectName("exportVersion");form->addRow(tr("Release version"),version);
+  auto iosBuildLabel=new QLabel(tr("iOS 빌드 번호"));auto iosBuildBox=new QWidget;auto iosBuildLayout=new QVBoxLayout(iosBuildBox);iosBuildLayout->setContentsMargins(0,0,0,0);auto iosBuildNumber=new QLineEdit("1");iosBuildNumber->setObjectName("exportIosBuildNumber");iosBuildLabel->setObjectName("exportIosBuildNumberLabel");iosBuildLayout->addWidget(iosBuildNumber);auto iosBuildHelp=new QLabel(tr("배포할 새 빌드마다 번호를 올리세요."));iosBuildHelp->setObjectName("exportIosBuildHelp");iosBuildHelp->setWordWrap(true);iosBuildLayout->addWidget(iosBuildHelp);form->addRow(iosBuildLabel,iosBuildBox);
   auto archives=new QCheckBox(tr("Create a game ZIP and an editable project backup"));archives->setObjectName("exportArchives");archives->setChecked(true);form->addRow(archives);
   auto saves=new QLabel(tr("Keep the project backup with this release. Later rule or story edits may require explicit player-save migration."));saves->setWordWrap(true);layout->addWidget(saves);
   auto folderRow = new QHBoxLayout; auto parent = new QLineEdit(QFileInfo(sourceRoot.toString()).dir().absolutePath()); parent->setObjectName("exportParent"); folderRow->addWidget(parent);
@@ -47,6 +53,7 @@ void StudioWindow::exportGameDialog() {
   // Compatibility for every platform is already in the view. Selecting a
   // platform must not start an RPC that races the designer's Export click.
   auto showCompatibility = [&] {
+    const bool ios=target->currentData()=="ios";iosBuildLabel->setVisible(ios);iosBuildBox->setVisible(ios);
     compatibility->setText(releaseCompatibility["summary"].toString());
     for (const auto &value : releaseCompatibility["rows"].toArray()) {
       const auto platform = value.toObject();
@@ -65,6 +72,7 @@ void StudioWindow::exportGameDialog() {
   connect(launch,&QPushButton::clicked,&dialog,[this,launch,status]{if(busy())return;request("releaseLaunch",{{"token",launch->property("token").toString()}},[guard=QPointer<QLabel>(status)](QJsonObject reply){if(!guard)return;if(!reply["error"].toString().isEmpty()){guard->setText(reply["error"].toString());return;}const auto info=reply["launch"].toObject();if(info["kind"]=="native"){if(!QProcess::startDetached(info["executable"].toString(),{},info["directory"].toString()))guard->setText(QObject::tr("The exported game could not be launched. Open its output folder to inspect it."));}else QDesktopServices::openUrl(info["kind"]=="web"?QUrl(info["url"].toString()):QUrl::fromLocalFile(info["directory"].toString()));});});
   auto start = new QPushButton(tr("내보내기")); start->setObjectName("exportStart"); row->addWidget(start); auto close = new QPushButton(tr("닫기")); row->addWidget(close); connect(close, &QPushButton::clicked, &dialog, &QDialog::reject);
   connect(open, &QPushButton::clicked, &dialog, [open] { QDesktopServices::openUrl(QUrl::fromLocalFile(open->property("directory").toString())); });
+#include "update-compatibility.inc"
   QTimer waitForEditor; waitForEditor.setInterval(50); QElapsedTimer waiting;
   connect(&waitForEditor, &QTimer::timeout, &dialog, [&] {
     if (!bridge.busy()) { waitForEditor.stop(); start->setEnabled(true); start->click(); }
@@ -75,6 +83,7 @@ void StudioWindow::exportGameDialog() {
     // the explicit Export action and recheck the source revision when ready.
     if (bridge.busy()) { start->setEnabled(false); status->setText(tr("Waiting for the current editor task before exporting...")); waiting.start(); waitForEditor.start(); return; }
     if (view.value("root") != sourceRoot || view.value("revision") != sourceRevision) { status->setText(tr("프로젝트가 변경되었습니다. 창을 다시 열어 최신 내용을 내보내세요.")); return; }
+    if(target->currentData()=="ios"&&!QRegularExpression("^[0-9]{1,9}(?:\\.[0-9]{1,9}){0,2}$").match(iosBuildNumber->text()).hasMatch()){status->setText(tr("iOS 빌드 번호는 점으로 구분한 1~3개의 정수이며, 각 부분은 1~9자리여야 합니다."));return;}
     const auto leaf = name->text();
     if (!QDir::isAbsolutePath(parent->text()) || !QDir(parent->text()).exists() || leaf.isEmpty() || leaf == "." || leaf == ".." || leaf.endsWith(' ') || leaf.endsWith('.') || leaf.contains(QRegularExpression(R"([<>:"/\\|?*])"))) { status->setText(tr("존재하는 상위 폴더와 올바른 새 폴더 이름을 입력하세요.")); return; }
     const auto destination = QDir(parent->text()).filePath(leaf);
@@ -82,10 +91,13 @@ void StudioWindow::exportGameDialog() {
     start->setEnabled(false); close->setEnabled(false); open->setEnabled(false); launch->setEnabled(false); status->setText(target->currentData()=="ios" ? tr("Preparing iOS export and Xcode project. The first export may take several minutes...") : tr("검증 및 내보내기 중…"));
     QPointer<QDialog> guard = &dialog; QPointer<QPushButton> startGuard = start, closeGuard = close, openGuard = open, launchGuard = launch; QPointer<QLabel> statusGuard = status;
     QJsonObject params{{"target",target->currentData().toString()},{"destination",destination}};if(archives->isChecked())params["releaseVersion"]=version->text();
-    request("export", params, [guard, startGuard, closeGuard, openGuard, launchGuard, statusGuard](QJsonObject reply) {
+    if(target->currentData()=="ios"){params["iosVersion"]=version->text();params["iosBuildNumber"]=iosBuildNumber->text();}
+    if(!updateCheck->isEmpty())params["updateCheck"]=*updateCheck;
+    request("export", params, [guard, startGuard, closeGuard, openGuard, launchGuard, statusGuard, updateCheck, updateSummary, migrateUpdate](QJsonObject reply) {
       if (!guard || !startGuard || !closeGuard || !openGuard || !launchGuard || !statusGuard) return;
       startGuard->setEnabled(true); closeGuard->setEnabled(true);
       if (!reply.value("error").toString().isEmpty() || !reply.contains("exported")) {
+        updateCheck->clear();migrateUpdate->setEnabled(false);updateSummary->setProperty("classification",QVariant());updateSummary->setText(QObject::tr("아직 확인하지 않았습니다. 기존 릴리스와 저장 파일을 보관하세요."));
         statusGuard->setText(reply.value("error").toString(QObject::tr("내보내기 결과를 받지 못했습니다.")) + "\n" + QObject::tr("문제를 해결한 뒤 다시 내보내세요. 실패한 작업의 임시 파일은 정리되며, 기존 출력 폴더는 보존합니다. 프로젝트를 변경했다면 이 창을 다시 열어 주세요."));
         return;
       }
