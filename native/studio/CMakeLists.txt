@@ -116,3 +116,8 @@ add_executable(qt-resume-context-test resume-context-test.cpp)
 target_link_libraries(qt-resume-context-test PRIVATE studio-ui Qt6::Test)
 add_test(NAME qt-resume-context COMMAND qt-resume-context-test)
 set_tests_properties(qt-resume-context PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(qt-route-batches-test route-batches-test.cpp)
+target_link_libraries(qt-route-batches-test PRIVATE studio-ui Qt6::Test)
+add_test(NAME qt-route-batches COMMAND qt-route-batches-test)
+set_tests_properties(qt-route-batches PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

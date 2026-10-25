@@ -23,7 +23,7 @@
 - 실제 저장 지점, 지정한 명령 간격, 시작과 끝에서 공통 저장 형식으로 직렬화·복원한다. 저장 없이 진행한 세션과 복원 세션을 다음 명령마다 비교하므로 명령 이력·난수·최종 상태의 차이를 검출한다.
 - 목표 엔딩 삭제, 명령 대상 삭제, 조건·비용 변경으로 인한 거부, 다른 엔딩 도달, 저장/재생 불일치를 구분한다.
 - 경로 저장은 파일 해시 기반 버전 확인과 전용 쓰기 잠금으로 다른 편집기 창의 변경을 조용히 덮어쓰지 않는다. 프로젝트 초안/디스크 버전 검사도 기존 서비스를 사용한다.
-- 기존 콘텐츠와 저장 스키마를 변경하지 않았다. 프로젝트당 128경로, 경로당 10,000명령/4 MiB, 전체 검사 60초 제한이며 제한 도달은 통과로 표시하지 않는다.
+- 기존 콘텐츠와 저장 스키마를 변경하지 않았다. 프로젝트당 128경로, 경로당 10,000명령/4 MiB, 저장 시 자동 검사와 기존 CLI/API는 전체 60초 제한이다. 수동 배치는 아래의 별도 제한을 사용하며 제한 도달은 통과로 표시하지 않는다.
 
 자동화 환경에서는 같은 검사기를 실행할 수 있다.
 
@@ -66,3 +66,15 @@ node scripts/check-goal-routes.mjs examples/starlight-three-months success
 
 
 경로의 시각적 비교와 단계 재생은 [목표 경로 그래프와 단계 비교](goal-route-comparison.md)를 참고하세요.
+
+## Manual background batches
+
+**Check selected route / Check all** captures the current draft and route files, then replays them in a supervised background process. Once preparation finishes, you can keep editing. The table shows command progress for the active route. **Cancel checks**, closing the route tool, reopening a project, or quitting the editor cancels the owned batch.
+
+- Defaults are 120 seconds per route and 900 seconds for the whole batch. Before starting, choose 1–300 seconds per route and 1–3,600 seconds overall. A native call that does not yield is terminated after a bounded two-second grace period. Remaining routes stay **Not run**.
+- **Passed**, **Failed**, **Timed out**, **Cancelled**, and **Not run** are distinct. A batch succeeds only when every selected route passes. Earlier completed results survive cancellation.
+- Editing the draft or selected route files marks the captured result as stale. It never means the new edit has already passed.
+- Reports and their exact captured inputs are stored under `.studio/route-batches/`. The latest eight batches are retained. This retention policy does not remove existing automatic-check reports. Each editor service runs one batch at a time; selected captured inputs are limited to 64 MiB and the worker JavaScript heap to 512 MiB. The heap limit is not a total-process RSS guarantee. Normal cancellation, worker failures, and hard deadlines retire the owned native process tree. On Windows, an external force-kill of the supervisor itself cannot guarantee descendant cleanup without an OS job object; it is not treated as a successful check.
+- Automatic checks on **Save**, the existing `goalRoutesRun` service API, and the CLI retain their aggregate 60-second limit. Raising a manual batch limit does not change that behavior. When an automatic check runs out of time, use a manual batch with appropriate limits.
+
+These checks compare actual commands and save restoration. They do not certify screen input, accessibility, physical-device performance, or human enjoyment.

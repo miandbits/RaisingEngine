@@ -19,12 +19,9 @@ StudioBridge::StudioBridge(const QString &engineRoot, QObject *parent)
         continue;
       }
       auto reply = localizeEditorReply(doc.object());
-      if (reply.value("id").toInt() != serial)
-        continue;
-      auto done = std::move(callback);
-      callback = nullptr;
-      if (done)
-        done(reply);
+      const auto id=reply.value("id").toInt();
+      if(backgroundCallback&&id==backgroundSerial){auto done=std::move(backgroundCallback);backgroundCallback=nullptr;done(reply);}
+      else if(callback&&id==foregroundSerial){auto done=std::move(callback);callback=nullptr;done(reply);}
     }
   });
   connect(&process, &QProcess::errorOccurred, this,
@@ -55,10 +52,10 @@ StudioBridge::~StudioBridge() {
   }
 }
 void StudioBridge::fail(const QString &message) {
-  auto done = std::move(callback);
-  callback = nullptr;
-  if (done)
-    done({{"error", message}});
+  auto done = std::move(callback), backgroundDone=std::move(backgroundCallback);
+  callback = nullptr;backgroundCallback=nullptr;
+  if (done)done({{"error", message}});
+  if (backgroundDone)backgroundDone({{"error", message}});
   emit failed(message);
 }
 void StudioBridge::request(const QString &method, QJsonObject params,
@@ -72,10 +69,17 @@ void StudioBridge::request(const QString &method, QJsonObject params,
     return;
   }
   callback = std::move(done);
-  ++serial;
+  foregroundSerial=++serial;
   process.write(
       QJsonDocument(
-          QJsonObject{{"id", serial}, {"method", method}, {"params", params}})
+          QJsonObject{{"id", foregroundSerial}, {"method", method}, {"params", params}})
           .toJson(QJsonDocument::Compact) +
       '\n');
+}
+
+void StudioBridge::requestBackground(const QString &method,QJsonObject params,std::function<void(QJsonObject)> done){
+  if(backgroundBusy()){done({{"error",tr("이전 작업이 끝난 뒤 다시 시도해 주세요.")}});return;}
+  if(process.state()==QProcess::NotRunning){done({{"error",tr("프로젝트 서비스가 실행되지 않았습니다.")}});return;}
+  backgroundCallback=std::move(done);backgroundSerial=++serial;
+  process.write(QJsonDocument(QJsonObject{{"id",backgroundSerial},{"method",method},{"params",params}}).toJson(QJsonDocument::Compact)+'\n');
 }

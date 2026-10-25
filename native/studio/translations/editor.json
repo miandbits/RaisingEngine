@@ -3582,5 +3582,18 @@
 ["%1 · 텍스트 %2개%3", "%1 · %2 text elements%3", "%1・テキスト%2個%3"],
 [" · 불러온 뒤 표시", " · shown after load", "・読み込み後に表示"],
 ["현재 알림을 끄기 전에 연결된 버튼의 행동을 변경하세요. 화면과 재사용 요소의 버튼을 확인하세요.", "Change connected button actions before disabling current reminders. Check screen and reusable-component buttons.", "現在のリマインダーを無効にする前に、接続したボタンの動作を変更してください。画面と再利用部品のボタンを確認してください。"],
-["현재 알림 열기", "Open current reminders", "現在のリマインダーを開く"]
+["현재 알림 열기", "Open current reminders", "現在のリマインダーを開く"],
+["경로당 제한 (초)", "Per route (seconds)", "経路ごとの上限（秒）"],
+["전체 제한 (초)", "Whole batch (seconds)", "全体の上限（秒）"],
+["검사 취소", "Cancel checks", "検査を中止"],
+["수동 검사는 현재 초안과 경로의 고정 사본을 사용합니다. 편집은 계속할 수 있습니다. 취소·시간 초과·미실행은 통과가 아닙니다. 최근 8개 배치를 보관합니다. 저장 시 자동 검사의 전체 60초 제한은 유지됩니다.", "Manual checks use a fixed copy of the current draft and routes. You can keep editing. Cancelled, timed-out and not-run routes are not passes. The latest 8 batches are retained. Automatic checks on Save keep their 60-second total limit.", "手動検査は現在の下書きと経路の固定コピーを使用します。編集は続けられます。中止・時間切れ・未実行は合格ではありません。直近8件のバッチを保持します。保存時の自動検査は全体60秒の上限を維持します。"],
+["완료", "Completed", "完了"],
+["시간 초과", "Timed out", "時間切れ"],
+["취소됨", "Cancelled", "中止済み"],
+["취소 중…", "Cancelling…", "中止中…"],
+["검사 중…", "Checking…", "検査中…"],
+["%1 · 처리 %2/%3 · 통과 %4 · 검사한 초안 r%5", "%1 · checked %2/%3 · passed %4 · tested draft r%5", "%1・処理 %2/%3・合格 %4・検査した下書き r%5"],
+["검사 후 초안 또는 경로가 변경되었습니다. 이 결과는 이전 사본의 결과입니다.", "The draft or routes changed after capture. These results describe the earlier copy.", "取得後に下書きまたは経路が変更されました。この結果は以前のコピーのものです。"],
+["검사 중 · 명령 %1/%2", "Checking · command %1/%2", "検査中・コマンド %1/%2"],
+["통과","Passed","合格"]
 ]

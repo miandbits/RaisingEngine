@@ -1,3 +1,4 @@
+import {GoalRouteBatches} from './goal-route-batches.mjs';
 import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePriorityProfile} from './analysis-priorities.mjs';
 import { DraftRecovery } from './recovery.mjs';
 import { GameReleases } from './releases.mjs';
@@ -55,6 +56,7 @@ export class QtStudioService {
   nativeTarget = desktopTarget();
   debugSession = null;
   analysisJobs = new AnalysisJobs();
+  goalRouteBatches = new GoalRouteBatches();
   goalSearchJobs = new GoalSearchJobs();
   goalComparisons = new GoalComparisons();
   goalCiReports = new GoalCiReports();
@@ -104,6 +106,11 @@ export class QtStudioService {
     if (method === 'saveMigrationPreview' || method === 'saveMigrationPublish') return saveMigration(method, params);
     if (method === 'updateCompatibility') return {error:null,updateCompatibility:await this.updateCompatibility.check(this.editor,params)};
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
+    if(method==='goalRouteBatchStatus'||method==='goalRouteBatchStop'){
+      if(params.root!==this.editor.root)throw Error('This route batch does not belong to the current project.');
+      const goalRouteBatch=method==='goalRouteBatchStop'?this.goalRouteBatches.stop(params.root,params.jobId):await this.goalRouteBatches.status(params.root,params.jobId,this.editor.draftVersion());
+      return {error:null,goalRouteBatch};
+    }
     if(method==='goalSearchStatus'||method==='goalSearchStop')return {error:null,goalSearch:method==='goalSearchStop'?this.goalSearchJobs.cancel(params.root,params.jobId):this.goalSearchJobs.public(this.goalSearchJobs.get(params.root,params.jobId))};
     if(['analysisList','analysisStatus','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
       const jobs=this.analysisJobs;let analysis;
@@ -188,6 +195,11 @@ export class QtStudioService {
         if(params.route?.gameId!==this.editor.documents.find(d=>d.kind==='project')?.data.gameId)throw new Error('현재 게임의 목표 경로만 저장할 수 있습니다.');
         extra={goalRouteSaved:await saveGoalRoute(this.editor.root,params.route,params.expectedRevision??null)};break;
       }
+      case 'goalRouteBatchStart': {
+        const root=this.editor.root,content=await this.debugSnapshot(params.revision),version=this.editor.draftVersion();
+        const guard=async()=>{this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before the batch started.');await this.editor.assertDiskUnchanged();this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before the batch started.');};
+        extra={goalRouteBatch:await this.goalRouteBatches.start(root,content,version,params.revision,params,guard)};break;
+      }
       case 'goalRoutesRun': {
         const content=await this.debugSnapshot(params.revision);
         const report=await checkGoalRoutes(this.editor.root,content,params.ids);await this.editor.assertDiskUnchanged();
@@ -206,7 +218,7 @@ export class QtStudioService {
         extra={conditionPreview:{revision:params.revision,attributes:created.state.attributes,phase,hidden}};
         break;
       }
-      case 'createBenchmark': if(this.editor.root&&this.editor.view().dirty)throw new Error('현재 프로젝트의 변경을 먼저 저장하거나 되돌린 뒤 새 샘플을 만드세요.');await createBenchmarkProject(params.root,params);await this.editor.open(params.root);this.debugSession=null;break;
+      case 'createBenchmark': if(this.editor.root&&this.editor.view().dirty)throw new Error('현재 프로젝트의 변경을 먼저 저장하거나 되돌린 뒤 새 샘플을 만드세요.');await createBenchmarkProject(params.root,params);await this.goalRouteBatches.close();await this.editor.open(params.root);this.debugSession=null;break;
       case 'assuranceRun': {
         const content=await this.debugSnapshot(params.revision);
         const report=await runAssurance(content,{runs:params.runs??32,seed:params.seed??42,maxCommands:150,timeoutMs:60000});
@@ -253,7 +265,7 @@ export class QtStudioService {
           try { await this.editor.configurePluginStore(params.pluginStore, this.editor.revision); this.pluginStore = this.editor.pluginStore; }
           catch (error) { extra.environmentWarning = `저장된 플러그인 저장소를 사용할 수 없습니다: ${error.message}`; }
         }
-        try { await this.editor.open(params.root); }
+        try { await this.goalRouteBatches.close();await this.editor.open(params.root); }
         catch (error) { this.editor.pluginStore = previousStore; this.pluginStore = previousStore; this.editor.diagnostics = previousDiagnostics; throw error; }
         // Include discovery in open: a deferred RPC can race the first editor click.
         try { extra.recoveries = await this.recovery.list(this.editor.root); }
@@ -272,7 +284,7 @@ export class QtStudioService {
         const previousStore = this.pluginStore;
         this.editor.pluginStore = this.defaultPluginStore;
         this.pluginStore = this.defaultPluginStore;
-        try { await this.editor.open(params.root); }
+        try { await this.goalRouteBatches.close();await this.editor.open(params.root); }
         catch (error) { this.editor.pluginStore = previousStore; this.pluginStore = previousStore; throw error; }
         if (params.template === 'my-first-raising-game') await this.firstGame.initialize(this.editor);
         this.debugSession = null; break;
@@ -586,6 +598,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     }
   }
   // The editor closed its end (quit, also after 「저장 안 함」): files imported for the unsaved draft go.
+  await service.goalRouteBatches.close();
   await service.releases.close();
   await service.editor.close();
 }
