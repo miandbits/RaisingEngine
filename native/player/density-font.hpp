@@ -70,6 +70,10 @@ public:
     const int logical_width = Base::GetStringWidth(handle, text, shaping, Rml::Character::Null);
     auto high_shaping = shaping;
     high_shaping.letter_spacing *= density;
+    // Populate the raster face before GenerateString rebuilds its atlas. A
+    // previously unseen CJK glyph appended during generation otherwise has no
+    // geometry until another string happens to dirty this face.
+    Base::GetStringWidth(face.high, text, high_shaping, Rml::Character::Null);
     // Wrapped lines append to the same atlas meshes. Earlier glyphs are already
     // in logical coordinates and must not be translated/scaled a second time.
     std::vector<size_t> previous_vertices;
