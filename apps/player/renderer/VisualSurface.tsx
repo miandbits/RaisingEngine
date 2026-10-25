@@ -25,6 +25,7 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  gameId?:string;
   readingKey?:string;
   saveSlots?:SaveSlotsView;
   onSlotAction?:(action:SaveSlotAction)=>void;
@@ -108,6 +109,10 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const fontIds=[...new Set([...elements,...(design.components??[]).flatMap(c=>c.elements)].map(e=>resolveElementStyle(design,e).fontAssetId).filter((id):id is string=>!!id))];
   const fontCss=fontIds.map(id=>`@font-face{font-family:"engine-${id}";src:url(${JSON.stringify(assetUrl(id))});font-display:block;}`).join('\n');
   const conditionPasses=(condition:Element['visibleCondition'])=>!condition||context.dataUi?.conditions[JSON.stringify(condition)]===true;
+  const buttonLabel=(element:Element)=>element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼';
+  const progressionUnavailable=(element:Element)=>element.action==='advance'&&['choice','finished','title'].includes(context.phase)||element.action==='commitPlan'&&!['planning','ready'].includes(context.phase);
+  const planningButton=readable?[...elements].sort((a,b)=>Number(b.id===readable.primaryAction)-Number(a.id===readable.primaryAction)).map(e=>resolveElementStyle(design,resolvePresentation(e,presentationActivity(context.dataState,e),conditionPasses))).find(e=>e.kind==='button'&&['advance','commitPlan'].includes(e.action??'')&&!progressionUnavailable(e)&&(e.opacity??1)>0&&isVisible(e,context)&&conditionPasses(e.visibleCondition)&&conditionPasses(e.enabledCondition)&&e.dataEnabled!==false&&context.dataUi?.availability[screenId]?.[e.id]?.enabled!==false):undefined;
+  const planningControl=planningButton?{label:buttonLabel(planningButton),effect:planningButton.action==='commitPlan'?'confirm-and-execute' as const:context.dataState?.schedule&&context.plan.every((id,i)=>context.dataState!.schedule![i]===id)?(context.dataState.phase==='ready'&&context.dataState.activityIntermission?'acknowledge' as const:'execute' as const):'confirm' as const}:undefined;
   const renderElement=(raw:BoundElement,readingItem?:ResolvedReadableItem):React.ReactNode=>{
       let element=resolveElementStyle(design,editing?raw:resolvePresentation(raw,presentationActivity(context.dataState,raw),conditionPasses));
       if(readingItem&&readable)element={...element,fontSize:readingItem.fontSize,width:Math.max(44,Math.min(viewport.width,readable.config.maxWidth)-2*readable.config.padding),height:readingItem.imageHeight};
@@ -162,13 +167,13 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
       if(element.kind==='schedule')body=context.dataState?.roster
         ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/>
-        :<ScheduleWidget readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
+        :<ScheduleWidget readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} guidance={readingItem?.planningGuidance==='first-use'} planningControl={planningControl} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
       if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue">{context.story}</p>;
       if(element.kind==='result')body=context.actorResults?.length
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
       if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
-      if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||element.action==='advance'&&['choice','finished','title'].includes(context.phase)} onClick={()=>{if(element.action){setMenuOpen(false);onAction?.(element.action,element);}}}>{element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼'}</button>;
+      if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||progressionUnavailable(element)} onClick={()=>{if(element.action){setMenuOpen(false);onAction?.(element.action,element);}}}>{buttonLabel(element)}</button>;
       if(element.kind==='collection'){
         style.padding=0;
         const rows=context.dataUi?.collections[screenId]?.[element.id]??[];
@@ -196,7 +201,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   if(readable){
     const {config}=readable,vars={'--readable-target':`${config.minTargetSize}px`,'--readable-gap':`${config.gap}px`,'--readable-padding':`${config.padding}px`,'--readable-width':`${config.maxWidth}px`,fontSize:config.fontSize*readable.textScale,background:config.background,'--readable-background':config.background,'--readable-ink':readableInk(config.background)} as React.CSSProperties;
     const grouped=readable.actionLayout==='grouped',words=(ko:string,en:string,ja:string)=>slotWords(context.locale,ko,en,ja);
-    const primary=grouped?readable.actions.find(item=>item.element.id===readable.primaryAction&&isVisible(item.element,context)&&conditionPasses(item.element.visibleCondition)&&conditionPasses(item.element.enabledCondition)&&context.dataUi?.availability[screenId]?.[item.element.id]?.enabled!==false&&!(item.element.action==='advance'&&['choice','finished','title'].includes(context.phase))):undefined;
+    const primary=grouped?readable.actions.find(item=>item.element.id===readable.primaryAction&&isVisible(item.element,context)&&conditionPasses(item.element.visibleCondition)&&conditionPasses(item.element.enabledCondition)&&context.dataUi?.availability[screenId]?.[item.element.id]?.enabled!==false&&!progressionUnavailable(item.element)):undefined;
     const secondary=readable.actions.filter(item=>item!==primary);
     return <div className={`visual-viewport visual-fit visual-readable${grouped?' readable-grouped':''}`} data-screen={screenId} data-readable-layout="true" ref={host} style={vars}
       onPointerDownCapture={event=>{gesture.current={x:event.clientX,y:event.clientY,dragged:false};}}

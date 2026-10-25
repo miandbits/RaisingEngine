@@ -16426,6 +16426,10 @@ export interface Screen {
        */
       schedulePresentation?: "compact";
       /**
+       * Optional first-use help for compact single-character planning. Players may skip or reopen it; acknowledgment is a presentation preference, never game progress.
+       */
+      planningGuidance?: "first-use";
+      /**
        * Image height in CSS pixels/native points. Default 160.
        */
       imageHeight?: number;

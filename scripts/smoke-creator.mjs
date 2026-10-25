@@ -14,12 +14,12 @@ await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goa
 await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs']);
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
 if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/journey/calendar-players.test.mjs']);
-if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs']);
+if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/journey/first-game-phone-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/planning-guidance-web.test.mjs']);
 if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs']);
   await run('native-rendering',['--test','tests/native-player/asset-text-rendering.test.mjs']);
-  await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs']);
+  await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs','tests/native-player/planning-guidance.test.mjs']);
   await run('native-autosaves',['--test','--test-concurrency=1','tests/native-player/choice-autosave.test.mjs','tests/native-player/load-records-button.test.mjs']);
   const executable=name=>path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio',name+(process.platform==='win32'?'.exe':''));
   await run('readable-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'readable-history.ini')},executable('qt-readable-layout-test'));

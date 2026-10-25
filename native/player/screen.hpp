@@ -125,10 +125,13 @@ public:
   Json safe_area=Json::object();
   bool readable_active=false,reading_options=false,reading_menu=false;
   bool compact_picker=false;
+  bool planning_guide=false,planning_guide_seen=false,planning_guide_suppressed=false;
+  int planning_guide_step=0;
+  std::string planning_guide_element,planning_guide_owner;
   int compact_slot=0,compact_revision=-1;
   std::string compact_activity,compact_group,compact_element,compact_owner;
   std::string readable_view="game";
-  bool reading_overlay() const {return reading_options||reading_menu||compact_picker;}
+  bool reading_overlay() const {return reading_options||reading_menu||compact_picker||planning_guide;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;

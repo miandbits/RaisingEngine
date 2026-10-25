@@ -4,6 +4,8 @@ Choose **My first raising game · recommended** in the project picker, choose a 
 
 The starter is a complete three-month game: nine activity periods, four activities, a relationship choice, a conditional follow-up, two endings, and editable title/schedule/story/ending screens. Its text and geometric layout are original engine sample content under MIT. It requires no plugins or imported artwork.
 
+The starter also includes phone reading layouts. On a narrow screen, **Menu** holds Save, Load and reading options; text can grow to 200%. Select a period to inspect an activity, then **Apply** or **Cancel**. The optional first-use guide explains when the schedule is confirmed and when an activity runs. Reopen it with **How planning works**. On larger screens the existing canvas remains available. Edit these choices through **Screens → Readable layout…**.
+
 ## Follow the checklist
 
 The **My first raising game** dock opens automatically. Reopen it from the authoring tools menu if closed. The starter is playable immediately; customization steps are optional. Choose **Where will people play?** early. The checklist shows missing runtimes and unsupported features for that target as you edit.

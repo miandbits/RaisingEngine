@@ -30,6 +30,7 @@ for (const [source, destination] of [
   ['SDL/LICENSE.txt','SDL.txt'], ['SDL_image/LICENSE.txt','SDL_image.txt'], ['RmlUi/LICENSE.txt','RmlUi.txt'], ['freetype/docs/FTL.TXT','Freetype.txt'], ['miniaudio/LICENSE','miniaudio.txt'], ['SDL_image/external/libwebp/COPYING','libwebp.txt'], ['SDL_image/external/libwebp/PATENTS','libwebp-PATENTS.txt'],
 ]) await copyFile(path.join(root, 'native/player/vendor', source), path.join(artifact, 'licenses', destination));
 await copyFile(path.join(root, 'native/vendor/LICENSE.MIT'), path.join(artifact, 'licenses/nlohmann-json.txt'));
+await copyFile(path.join(root,'native/player/assets/OFL-NotoSansJP.txt'),path.join(artifact,'licenses/NotoSansJP-OFL.txt'));
 await copyFile(path.join(root,'native/player/vendor/RmlUi/Include/RmlUi/Core/Containers/LICENSE.txt'),path.join(artifact,'licenses/RmlUi-containers.txt'));
 const stbSource=await readFile(path.join(root,'native/player/vendor/SDL_image/src/stb_image.h'),'utf8');
 const stbLicense=stbSource.slice(stbSource.lastIndexOf('This software is available under 2 licenses'));

@@ -3,7 +3,7 @@
     float fraction=0,scroll=0,actions_scroll=0;
   };
   std::map<std::string,ReadingPosition> reading_positions;
-  std::string reading_position_key,reading_jump;
+  std::string reading_position_key,reading_jump,reading_focus;
   ReadingPosition current_reading_position() const {
     ReadingPosition value;if(!document)return value;
     auto* main=document->GetElementById("reading-main");if(!main)return value;
@@ -49,15 +49,25 @@
       if(auto* target=document->GetElementById(reading_jump))target->ScrollIntoView(true);
       reading_jump.clear();
     }
+    if(!reading_focus.empty()){if(auto* e=document->GetElementById(reading_focus))e->Focus();reading_focus.clear();}
     context->Update();
   }
   bool readable_action(const Json& action) {
     const auto type=action.value("type","");
-    if(type=="readingMenu") {markup.reading_menu=action.value("open",false);dirty=true;return true;}
-    if(type=="readingOptions") {markup.reading_menu=false;markup.reading_options=action.value("open",false);dirty=true;return true;}
+    if(type=="planningGuideOpen") {
+      for(const auto& e:markup.render_elements)if(e.value("id","")==action.value("elementId","")&&markup.planning_guide_eligible(e)){
+        markup.reading_menu=markup.reading_options=markup.compact_picker=false;markup.planning_guide=true;markup.planning_guide_seen=true;markup.planning_guide_step=0;markup.planning_guide_element=e.at("id");markup.planning_guide_owner=markup.screen_id;break;
+      }
+      dirty=true;return true;
+    }
+    if(type=="planningGuideStep") {if(markup.planning_guide)markup.planning_guide_step=std::clamp(markup.planning_guide_step+action.value("delta",0),0,2);dirty=true;return true;}
+    if(type=="planningGuideDismiss") {if(markup.planning_guide)acknowledge_planning_guidance();dirty=true;return true;}
+    if(type=="readingMenu") {markup.planning_guide=false;markup.compact_picker=false;markup.reading_options=false;markup.reading_menu=action.value("open",false);dirty=true;return true;}
+    if(type=="readingOptions") {markup.planning_guide=false;markup.compact_picker=false;markup.reading_menu=false;markup.reading_options=action.value("open",false);dirty=true;return true;}
     if(type=="readingPlanCancel") {markup.compact_picker=false;dirty=true;return true;}
     if(type=="uiBack"&&markup.reading_overlay()) {
-      if(markup.reading_options)markup.reading_options=false;
+      if(markup.planning_guide)acknowledge_planning_guidance();
+      else if(markup.reading_options)markup.reading_options=false;
       else if(markup.compact_picker)markup.compact_picker=false;
       else markup.reading_menu=false;
       dirty=true;return true;
@@ -66,6 +76,7 @@
     if(game.state.is_null()||(game.state.value("phase","")!="planning"&&game.state.value("phase","")!="ready")||markup.progress_pending())return true;
     markup.ensure_plan();
     if(type=="readingPlanSlot"){
+      markup.planning_guide=markup.reading_menu=markup.reading_options=false;
       markup.compact_slot=std::clamp(action.value("slot",0),game.state.value("periodIndex",0)%game.periods(),game.periods()-1);
       markup.compact_activity=(markup.plan_selected&(1<<markup.compact_slot))?markup.plan[markup.compact_slot]:"";
       markup.compact_group.clear();markup.compact_element=action.at("elementId");markup.compact_owner=markup.screen_id;markup.compact_revision=game.state.value("stateRevision",0);markup.compact_picker=true;

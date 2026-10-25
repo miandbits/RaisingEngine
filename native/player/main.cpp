@@ -623,6 +623,7 @@ public:
       if(event.key.key==SDLK_ESCAPE&&markup.reading_overlay()){readable_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
+      if(markup.planning_guide&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
       if(event.key.key==SDLK_F5){pending.push_back({{"type","save"}});return;}
       if(event.key.key==SDLK_F2){pending.push_back({{"type","nextLocale"}});return;}
       if(event.key.key==SDLK_F9){pending.push_back({{"type","load"}});return;}
@@ -661,6 +662,8 @@ public:
     Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages"||entry.value("kind","")=="plugin") {
       const auto id=entry.value("id","");if(auto* element=document->GetElementById("node-"+id))texts[id]=element->GetInnerRML();
     }
+    if(auto* guide=document->GetElementById("engine-planning-guide"))texts["engine-planning-guide"]=guide->GetInnerRML();
+    for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="saveSlots"||entry.value("kind","")=="loadSlots")if(auto* e=document->GetElementById("node-"+entry.value("id","")))texts[entry.value("id","")]=e->GetInnerRML();
     if(auto* fallback=document->GetElementById("node-system-widget"))texts["system-widget"]=fallback->GetInnerRML();
     Json result_layout=Json::array();
     for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="result")if(auto* element=document->GetElementById("node-"+entry.value("id",""))){
@@ -689,7 +692,7 @@ public:
     }
     Json point_controls=Json::array();Rml::ElementList all_controls;document->QuerySelectorAll(all_controls,"button,input,select");
     for(auto* e:all_controls){const auto at=e->GetAbsoluteOffset(Rml::BoxArea::Border),size=e->GetBox().GetSize(Rml::BoxArea::Border);float x1,y1,x2,y2;SDL_RenderCoordinatesToWindow(renderer,at.x,at.y,&x1,&y1);SDL_RenderCoordinatesToWindow(renderer,at.x+size.x,at.y+size.y,&x2,&y2);point_controls.push_back({{"id",e->GetId()},{"x",x1},{"y",y1},{"width",x2-x1},{"height",y2-y1},{"fontSize",e->GetProperty("font-size")->ToString()},{"enabled",!e->HasAttribute("disabled")}});}
-    Json reading={{"view",markup.readable_view},{"menuOpen",markup.reading_menu},{"pickerOpen",markup.compact_picker},{"pendingActivity",markup.compact_activity},{"pendingSlot",markup.compact_slot},{"active",markup.readable_active},{"screenId",markup.readable_screen_id},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"safeArea",markup.safe_area},{"pixelDensity",SDL_GetWindowPixelDensity(window)},{"displayScale",SDL_GetWindowDisplayScale(window)},{"textScale",markup.player_preferences.value("textScale",1.0)},{"minTargetSize",markup.readable_target},{"controls",point_controls}};
+    Json reading={{"view",markup.readable_view},{"guidanceOpen",markup.planning_guide},{"guidanceStep",markup.planning_guide_step},{"guidanceAcknowledged",markup.player_preferences.value("guidance",Json::object()).value("compact-planning-v1",false)},{"menuOpen",markup.reading_menu},{"pickerOpen",markup.compact_picker},{"pendingActivity",markup.compact_activity},{"pendingSlot",markup.compact_slot},{"active",markup.readable_active},{"screenId",markup.readable_screen_id},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"safeArea",markup.safe_area},{"pixelDensity",SDL_GetWindowPixelDensity(window)},{"displayScale",SDL_GetWindowDisplayScale(window)},{"textScale",markup.player_preferences.value("textScale",1.0)},{"minTargetSize",markup.readable_target},{"controls",point_controls}};
     for(const auto* id:{"reading-main","reading-actions"})if(auto* e=document->GetElementById(id)){const auto at=e->GetAbsoluteOffset(),size=e->GetBox().GetSize();reading[id]={{"x",at.x},{"y",at.y},{"width",size.x},{"height",size.y},{"scrollTop",e->GetScrollTop()},{"scrollHeight",e->GetScrollHeight()},{"scrollWidth",e->GetScrollWidth()},{"clientWidth",e->GetClientWidth()},{"clientHeight",e->GetClientHeight()},{"overflowY",e->GetProperty("overflow-y")->ToString()}};}
     if(markup.readable_active){const auto at=current_reading_position();reading["position"]={{"anchor",at.anchor},{"text",at.text},{"fraction",at.fraction},{"focus",at.focus}};}
     Json timelineStage=nullptr;
@@ -836,6 +839,11 @@ int main(int argc,char** argv) {
       const auto font=fs::u8path(SDL_GetBasePath())/"fonts/NotoSansKR.ttf";
 #endif
       if(!Rml::LoadFontFace(font.generic_u8string(),true))throw std::runtime_error("Cannot load bundled Korean font");
+      // The Korean family omits common Japanese variants (for example 説/込/戻).
+      // RmlUi tries fallback faces in registration order, not weight order. Register
+      // regular explicitly so a variable font does not fall back to its 100 weight.
+      const auto japanese_font=font.parent_path()/"NotoSansJP.ttf";
+      if(!Rml::LoadFontFace(japanese_font.generic_u8string(),true,Rml::Style::FontWeight::Normal))throw std::runtime_error("Cannot load bundled Japanese fallback font");
       std::map<std::string,std::vector<Rml::byte>> font_buffers;
       for(const auto& asset:bundle.at("content").at("assets"))if(asset.value("kind","")=="font") {
         const auto id=asset.at("id").get<std::string>();const auto file=bundle_root/fs::u8path(bundle.at("assets").at(id).get<std::string>());
@@ -844,6 +852,9 @@ int main(int argc,char** argv) {
       }
       PlayerApplication app(bundle,bundle_root,window,renderer,save_file);
       EditorPreviewControl editor;editor.directory=editor_directory;app.editor_live=!editor_directory.empty();app.editor_paused=app.editor_live;
+      // Live preview clears its screen override once play starts. Keep onboarding
+      // suppression independent of that mutable routing state.
+      app.markup.planning_guide_suppressed=app.editor_live||!preview_screen.empty();
       ExtensionElement::host=&app.extensions;
       app.game.seed=requested_seed;app.recording.file=recording_file;
       if(!preview_screen.empty()){app.markup.preview_screen=preview_screen;app.markup.preview_scene=preview_scene;app.preview_element=preview_element;app.preview_state=preview_state;if(preview_screen!="title"||!preview_scene.is_null())app.game.start();}

@@ -1,6 +1,6 @@
   Json preferences=default_player_preferences();
   fs::path preferences_file;
-  bool preferences_enabled=false;
+  bool preferences_enabled=false,preferences_read_failed=false;
   std::string dialogue_key,dialogue_text;
   double dialogue_characters=0,dialogue_wait=0;
   std::string dialogue_rendered;
@@ -16,15 +16,25 @@
     preferences_enabled=has_player_settings(game.content.at("project").at("visual"));if(!preferences_enabled)return;
     preferences_file=save_file.parent_path()/("settings-"+game.content.at("project").value("gameId","game")+".json");
     try{if(fs::exists(preferences_file))preferences=checked_player_preferences(read_json(preferences_file));}
-    catch(...){markup.settings_notice=markup.settings_words("설정 기록을 읽지 못해 기본값으로 열었습니다. 원본은 보존됩니다.","Settings could not be read. Defaults are active; the original file is preserved.","設定を読み込めなかったため初期値を使用します。元のファイルは保持されます。");}
+    catch(...){preferences_read_failed=true;markup.settings_notice=markup.settings_words("설정 기록을 읽지 못해 기본값으로 열었습니다. 원본은 보존됩니다.","Settings could not be read. Defaults are active; the original file is preserved.","設定を読み込めなかったため初期値を使用します。元のファイルは保持されます。");}
     try{apply_player_preferences(preferences);}catch(...){preferences["fullscreen"]=false;apply_player_preferences(preferences);markup.settings_notice="전체화면을 적용하지 못해 창 화면으로 열었습니다.";}
     audio.sync_music(markup.asset(game.content.at("project").at("visual").value("defaultScene",Json::object()).value("musicAssetId",Json())),muted);
+  }
+  void acknowledge_planning_guidance() {
+    // Session acknowledgement works even with read-only or corrupt preferences.
+    markup.planning_guide_seen=true;markup.planning_guide=false;reading_focus="board-help";
+    auto next=preferences;next["guidance"]["compact-planning-v1"]=true;
+    preferences=next;markup.player_preferences["guidance"]=next.at("guidance");
+    if(preview()||editor_live||!preferences_enabled||preferences_read_failed)return;
+    try{write_player_preferences(preferences_file,next);}catch(...){
+      markup.settings_notice=markup.settings_words("안내는 이번 실행 동안 닫힙니다. 기기에 저장하지 못했습니다.","The guide is dismissed for this session. Device preferences could not be saved.","この起動中は案内を閉じます。端末の設定を保存できませんでした。");
+    }
   }
   bool setting_action(const Json& action) {
     const bool toggle=action.value("type","")=="dialogueAuto";
     if(!toggle&&action.value("type","")!="setPlayerSetting")return false;
     if(!preferences_enabled||preview())return true;
-    const auto key=toggle?std::string("autoAdvance"):action.value("key","");if(!preferences.contains(key)||key=="version")throw std::runtime_error("Unknown player setting");
+    const auto key=toggle?std::string("autoAdvance"):action.value("key","");if(!preferences.contains(key)||key=="version"||key=="guidance")throw std::runtime_error("Unknown player setting");
     if(editor_live&&key=="fullscreen")return true; // The editor controls the embedded viewport.
     auto next=preferences;next[key]=toggle?Json(!preferences.value("autoAdvance",false)):action.at("value");next=checked_player_preferences(next);
     try{apply_player_preferences(next);write_player_preferences(preferences_file,next);preferences=next;dialogue_wait=0;markup.settings_notice.clear();}

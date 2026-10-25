@@ -16,7 +16,7 @@ const call=(s,method,params={})=>s.handle({method,params:{revision:s.editor.revi
 async function fixture() {
   await mkdir('.cache/creator-tests',{recursive:true});const work=await mkdtemp(path.resolve('.cache/creator-tests/run-'));
   const runtime=path.join(work,'runtime');await mkdir(runtime);await writeFile(path.join(runtime,'index.html'),'<h1>Game</h1>');
-  await writeFile(path.join(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],fontExtensions:['.ttf'],audioExtensions:[],visualFeatures:['narrative-actor-binding-v1','component-context-v1','save-panel-v1','components-v1']}));
+  await writeFile(path.join(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],fontExtensions:['.ttf'],audioExtensions:[],visualFeatures:['readable-layout-v1','readable-actions-v1','compact-planning-v1','planning-guidance-v1','narrative-actor-binding-v1','component-context-v1','save-panel-v1','components-v1']}));
   const service=new QtStudioService({runtimes:{web:runtime}});await call(service,'create',{root:path.join(work,'game'),template:'my-first-raising-game'});return {service,work,runtime};
 }
 async function rename(s,title) {const data=structuredClone(s.editor.documents.find(d=>d.kind==='project').data);data.title=title;return call(s,'edit',{edit:{type:'replace',file:'project.json',data}});}

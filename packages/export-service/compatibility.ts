@@ -19,6 +19,7 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   if(visual?.readableLayout||visual?.screens.some(s=>s.readableLayout))requiredFeatures.push('readable-layout-v1');
   if(visual?.screens.some(s=>s.readableLayout?.actionLayout==='grouped'))requiredFeatures.push('readable-actions-v1');
   if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.schedulePresentation==='compact')))requiredFeatures.push('compact-planning-v1');
+  if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.planningGuidance==='first-use')))requiredFeatures.push('planning-guidance-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.binding==='narrative-actor'))requiredFeatures.push('narrative-actor-binding-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.showActivityRules))requiredFeatures.push('activity-rules-summary-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.activityIcons?.length))requiredFeatures.push("schedule-board-icons-v1");
@@ -30,7 +31,8 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   if(visual&&(visual.saveSystem||[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='saveSlots'||e.kind==='loadSlots')))requiredFeatures.push('save-slots-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.choiceLayout==='cards'))requiredFeatures.push('narrative-cards-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.showChoiceEffects||e.binding==='choice-result'))requiredFeatures.push('choice-feedback-v1');
-  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.scheduleLayout==='board'||e.resultLayout==='changes'||e.action==='commitPlan'||e.binding==='schedule-summary'||e.binding==='activity-progress'))requiredFeatures.push('schedule-board-v1');
+  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.scheduleLayout==='board'||e.resultLayout==='changes'||e.binding==='schedule-summary'||e.binding==='activity-progress'))requiredFeatures.push('schedule-board-v1');
+  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.action==='commitPlan'))requiredFeatures.push('commit-plan-action-v1');
   if(usesUiContext(visual))requiredFeatures.push('component-context-v1');
   if(visual?.routing?.conditions?.length)requiredFeatures.push('conditional-routing-v1');
   if(content.project.stateGroups?.length)requiredFeatures.push('custom-states-v1');
@@ -107,5 +109,5 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
 }
 
 export function missingPlayerFeatures(required: readonly string[], supported: readonly string[]): string[] {
-  return required.filter(feature => !supported.includes(feature) && !(feature === 'expedition-conditions-v1' && supported.includes('party-tactics-v1')));
+  return required.filter(feature => !supported.includes(feature) && !(feature === 'expedition-conditions-v1' && supported.includes('party-tactics-v1')) && !(feature === 'commit-plan-action-v1' && supported.includes('schedule-board-v1')));
 }

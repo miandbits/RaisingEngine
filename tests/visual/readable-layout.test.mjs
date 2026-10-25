@@ -84,3 +84,20 @@ test('primary action roles and compact planning validate real references and sco
  const ctx=new SemanticContext();checkReadableLayout(ctx,{file:'project.json',kind:'project',data:{visual:design,roster:{}},version:'test',locations:new Map()},design);
  assert.ok(ctx.diagnostics.some(x=>x.code==='READABLE_COMPACT_ROSTER'));
 });
+
+
+test('first-use planning guidance is optional, compact-only and presentation-only',()=>{
+ const design=fixture(),screen=design.screens[0];
+ screen.elements.push(element('planner','schedule'));
+ const item={elementId:'planner',schedulePresentation:'compact'};screen.readableLayout.items.push(item);
+ const resolve=()=>readableLayoutForScreen(design,'story',{width:390,height:844}).items.find(x=>x.element.id==='planner');
+ assert.equal(resolve().planningGuidance,undefined);
+ item.planningGuidance='first-use';const before=structuredClone(design);
+ assert.equal(resolve().planningGuidance,'first-use');assert.deepEqual(design,before);
+ assert.equal(diagnostics(design).filter(x=>x.severity==='error').length,0);
+ delete item.schedulePresentation;
+ assert.equal(resolve().planningGuidance,undefined,'Invalid guide settings never create an unexpected overlay');
+ assert.ok(diagnostics(design).some(x=>x.code==='READABLE_GUIDANCE_COMPACT'&&x.severity==='error'));
+ item.schedulePresentation='compact';item.elementId='dialogue';
+ assert.ok(diagnostics(design).some(x=>x.code==='READABLE_GUIDANCE_COMPACT'));
+});

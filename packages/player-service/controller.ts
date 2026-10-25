@@ -17,6 +17,8 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  /** Stable identity for game-local presentation preferences; omitted in detached previews. */
+  gameId?: string;
   saveSlots?:SaveSlotsView;
   rosterCharacterIds?: readonly string[];
   choiceFeedback?:string;
@@ -94,6 +96,7 @@ export class PlayerController {
     return {
       ...(c.project.localization?{localization:c.project.localization,locale:localeId(c.project.localization)}:{}),
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
+      gameId: c.project.gameId,
       generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
       ...(c.project.calendar?{calendarProject:{startYear:c.project.startYear,startMonth:c.project.startMonth,periodsPerMonth:c.project.periodsPerMonth,calendar:c.project.calendar}}:{}),

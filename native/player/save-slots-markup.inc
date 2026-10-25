@@ -12,6 +12,44 @@
     const int p=row.at("state").value("periodIndex",0),m=display_content.at("project").value("startMonth",1)-1+p/game.periods();
     return std::to_string(display_content.at("project").value("startYear",1)+m/12)+" / "+std::to_string(m%12+1)+" · "+std::to_string(p%game.periods()+1);
   }
+  std::string slot_label(const Json& row) const {
+    return (row.value("automatic",false)?slot_words("자동 ","Auto ","自動 "):slot_words("기록 ","Record ","記録 "))+std::to_string(row.value("displayNumber",row.value("index",0)+1));
+  }
+  std::string slot_phase(const std::string& phase) const {
+    if(phase=="planning")return slot_words("계획 중","Planning","計画中");
+    if(phase=="ready")return slot_words("활동 준비","Ready","準備完了");
+    if(phase=="activity-result")return slot_words("활동 결과","Activity result","活動結果");
+    if(phase=="narrative")return slot_words("이야기","Story","物語");
+    if(phase=="finished")return slot_words("결말","Ending","エンディング");
+    if(phase=="battle")return slot_words("전투","Battle","戦闘");
+    if(phase=="expedition")return slot_words("탐험","Expedition","探索");
+    return phase;
+  }
+  std::string slot_identity(const Json& row) const {
+    const auto status=row.value("status","empty");std::string out=slot_label(row);
+    if(status=="empty")return out+" · "+slot_words("비어 있음","Empty","空き");
+    if(status=="invalid")return out+" · "+slot_words("읽을 수 없음 · 원본 보존","Unreadable · original kept","読めません · 原本を保持");
+    if(status=="incompatible")return out+" · "+slot_words("다른 버전 · 불러오기 불가","Different version · cannot load","異なる版 · 読み込み不可");
+    const auto meta=row.value("record",Json::object());out+="\n"+slot_date(row);
+    for(const auto& detail:{meta.value("place",""),slot_phase(meta.value("phase",""))})if(!detail.empty())out+=" · "+detail;
+    return out;
+  }
+  std::string slot_saved_at(const Json& row) const {
+    const auto meta=row.value("record",Json::object());const auto raw=meta.value("savedAt","");
+    if(raw.empty())return "";
+    std::string value=raw;
+    // Never reinterpret an old timezone-less wall clock using today's zone.
+    // ISO Z is explicitly UTC; other offsets/formats remain exactly as recorded.
+    const bool shape=raw.size()>=19&&raw[4]=='-'&&raw[7]=='-'&&(raw[10]=='T'||raw[10]==' ')&&raw[13]==':'&&raw[16]==':';
+    bool digits=shape;for(size_t i=0;digits&&i<19;++i)if(i!=4&&i!=7&&i!=10&&i!=13&&i!=16)digits=raw[i]>='0'&&raw[i]<='9';
+    if(digits&&(raw.size()==19||(raw[10]=='T'&&raw.back()=='Z'))){
+      value=raw.substr(0,10)+" · "+raw.substr(11,8);
+      value+=raw.back()=='Z'?" UTC":slot_words(" (기록 당시 현지 시각)"," (local time as recorded)","（記録時の現地時刻）");
+    }
+    auto out=slot_words("저장 · ","Saved · ","保存 · ")+value;
+    if(meta.contains("sequence")&&meta.at("sequence").is_number_integer())out+=" · #"+meta.at("sequence").dump();
+    return out;
+  }
   std::string slots_body(const Json& e) {
     const bool saving=e.value("kind","")=="saveSlots";
     const std::string id=e.at("id"),ink=e.value("color","#263C36"),paper=e.value("fill","#F5EFDF"),line=e.value("borderColor","#C7B99A"),accent=e.value("hoverFill","#345C50");

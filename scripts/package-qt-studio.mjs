@@ -63,6 +63,7 @@ await copy('docs/getting-started/first-game.md','FIRST-GAME.md');
 for(const doc of ['getting-started/first-game.md','development/platform-support.md','development/platform-capabilities.json','development/public-assets.md','development/qt-preview-release.md'])await copy('docs/'+doc,'engine/docs/'+doc);
 await copy('LICENSE','engine/LICENSE');await copy('THIRD_PARTY_NOTICES.md','engine/THIRD_PARTY_NOTICES.md');
 await copy(join(windows,'licenses'),'licenses/player');await copy(join(windows,'fonts/OFL.txt'),'licenses/NotoSansKR-OFL.txt');
+await copy(join(windows,'fonts/OFL-NotoSansJP.txt'),'licenses/NotoSansJP-OFL.txt');
 await copy('native/vendor/LICENSE.MIT','licenses/nlohmann-json.txt');
 await copy('native/player/assets/OFL.txt','engine/dist/web/licenses/NotoSansKR-OFL.txt');
 await copy('native/vendor/LICENSE.MIT','engine/dist/web/licenses/nlohmann-json.txt');

@@ -92,7 +92,27 @@
             "fill": "#3c6e64",
             "radius": 10
           }
-        ]
+        ],
+        "readableLayout": {
+          "items": [
+            {
+              "elementId": "eyebrow"
+            },
+            {
+              "elementId": "title",
+              "fontSize": 28
+            },
+            {
+              "elementId": "description"
+            }
+          ],
+          "actions": [
+            "start",
+            "load"
+          ],
+          "primaryAction": "start",
+          "actionLayout": "grouped"
+        }
       },
       {
         "id": "schedule",
@@ -176,7 +196,7 @@
             "binding": "relationship-value",
             "characterId": "mira",
             "relationshipId": "affection",
-            "valueFormat": "Mira \u00b7 affection: {value}",
+            "valueFormat": "Mira · affection: {value}",
             "fontSize": 24,
             "color": "#f1eee4"
           },
@@ -194,7 +214,38 @@
             "fill": "#3c6e64",
             "radius": 10
           }
-        ]
+        ],
+        "readableLayout": {
+          "items": [
+            {
+              "elementId": "calendar"
+            },
+            {
+              "elementId": "schedule",
+              "schedulePresentation": "compact",
+              "planningGuidance": "first-use"
+            },
+            {
+              "elementId": "result"
+            },
+            {
+              "elementId": "hint"
+            },
+            {
+              "elementId": "stats"
+            },
+            {
+              "elementId": "bond"
+            }
+          ],
+          "actions": [
+            "advance",
+            "save-controls__save",
+            "save-controls__load"
+          ],
+          "primaryAction": "advance",
+          "actionLayout": "grouped"
+        }
       },
       {
         "id": "story",
@@ -263,7 +314,28 @@
             "fill": "#3c6e64",
             "radius": 10
           }
-        ]
+        ],
+        "readableLayout": {
+          "items": [
+            {
+              "elementId": "speaker",
+              "fontSize": 22
+            },
+            {
+              "elementId": "dialogue"
+            },
+            {
+              "elementId": "choices"
+            }
+          ],
+          "actions": [
+            "advance",
+            "save-controls__save",
+            "save-controls__load"
+          ],
+          "actionLayout": "grouped",
+          "primaryAction": "advance"
+        }
       },
       {
         "id": "ending",
@@ -323,7 +395,25 @@
             "fill": "#3c6e64",
             "radius": 10
           }
-        ]
+        ],
+        "readableLayout": {
+          "items": [
+            {
+              "elementId": "season-end"
+            },
+            {
+              "elementId": "ending",
+              "fontSize": 26
+            }
+          ],
+          "actions": [
+            "save-controls__save",
+            "save-controls__load",
+            "start"
+          ],
+          "primaryAction": "save-controls__save",
+          "actionLayout": "grouped"
+        }
       }
     ],
     "components": [
@@ -366,6 +456,14 @@
     ],
     "defaultStyle": {
       "color": "#f1eee4"
+    },
+    "readableLayout": {
+      "background": "#172b2b",
+      "fontSize": 18,
+      "minTargetSize": 44,
+      "padding": 16,
+      "gap": 12,
+      "maxWidth": 760
     }
   },
   "localization": {

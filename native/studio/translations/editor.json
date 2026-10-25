@@ -3458,5 +3458,10 @@
   ["주요 동작 버튼을 제거하여 지정을 해제했습니다. 다른 주요 동작을 선택하거나 모든 버튼을 도구 메뉴에 둘 수 있습니다.","Removing that button cleared the primary action. Choose another primary action or keep all buttons in the tools menu.","ボタンを削除したため主要操作の指定を解除しました。別の主要操作を選ぶか、すべてのボタンをツールメニューに入れられます。"],
   ["주요 동작을 사용하려면 하단 버튼 묶기를 켜거나 주요 동작 지정을 해제하세요.","Enable grouped bottom actions or clear the primary action.","下部ボタンをまとめる設定をオンにするか、主要操作の指定を解除してください。"],
   ["화면 %1의 간결한 일정 표시를 해제하세요. 이 기능은 명단이 없는 프로젝트의 일정 요소만 지원합니다: %2","Turn off compact planning on screen %1. It requires a schedule element in a project without a roster: %2","画面 %1 のコンパクトな予定表示を解除してください。名簿のないプロジェクトの予定要素のみ対応しています：%2"],
-  ["화면 %1의 주요 동작을 현재 하단 버튼 중에서 다시 선택하거나 지정을 해제하세요: %2","Choose a current bottom button as the primary action on screen %1, or clear it: %2","画面 %1 の現在の下部ボタンから主要操作を選び直すか、指定を解除してください：%2"]
+  ["화면 %1의 주요 동작을 현재 하단 버튼 중에서 다시 선택하거나 지정을 해제하세요: %2","Choose a current bottom button as the primary action on screen %1, or clear it: %2","画面 %1 の現在の下部ボタンから主要操作を選び直すか、指定を解除してください：%2"],
+["처음 계획할 때 안내 표시","Show planning guidance on first use","初めて計画するときにガイドを表示"],
+["계획 안내 제거","Remove planning guidance","計画ガイドを削除"],
+["일정 칸 선택, 활동 살펴보기, 계획 적용을 설명합니다. 플레이어는 계획 방법에서 다시 열 수 있습니다.","Explain selecting a period, inspecting activities and applying a draft. Players can reopen How planning works.","期間の選択、活動の確認、計画案の適用を説明します。プレイヤーは「計画の立て方」から再び開けます。"],
+["간결한 단일 인물 일정에만 안내를 표시할 수 있습니다.","Guidance requires a compact single-character schedule.","ガイドは単一人物のコンパクトな予定にのみ表示できます。"],
+["화면 %1의 계획 안내를 해제하거나 명단 없는 간결한 일정에 적용하세요: %2","Remove planning guidance on screen %1 or use a compact schedule without a roster: %2","画面%1の計画ガイドを削除するか、名簿のないコンパクトな予定に適用してください：%2"]
 ]

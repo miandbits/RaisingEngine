@@ -29,6 +29,7 @@ export function checkReadableLayout(ctx:SemanticContext,doc:ProjectDocument,visu
       const element=reference(String(item.elementId),`${pointer}/items/${i}/elementId`);
       if(item.schedulePresentation!==undefined&&element&&element.kind!=='schedule')ctx.report(doc,`${pointer}/items/${i}/schedulePresentation`,'READABLE_SCHEDULE_KIND','Compact planning applies only to schedule elements.');
       if(item.schedulePresentation==='compact'&&isObject(doc.data)&&doc.data.roster)ctx.report(doc,`${pointer}/items/${i}/schedulePresentation`,'READABLE_COMPACT_ROSTER','Compact planning currently supports single-character schedules. Use the standard presentation for roster schedules.');
+      if(item.planningGuidance!==undefined&&(item.schedulePresentation!=='compact'||element?.kind!=='schedule'))ctx.report(doc,`${pointer}/items/${i}/planningGuidance`,'READABLE_GUIDANCE_COMPACT','Planning guidance requires a compact single-character schedule.');
       if(item.imageHeight!==undefined&&element&&element.kind!=='image')ctx.report(doc,`${pointer}/items/${i}/imageHeight`,'READABLE_IMAGE_HEIGHT','Image height applies only to image elements.');
     }
     for(const [i,id] of ((layout.actions??[]) as string[]).entries())reference(id,`${pointer}/actions/${i}`,true);

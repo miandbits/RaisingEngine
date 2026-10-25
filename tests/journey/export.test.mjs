@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, writeFile, readdir, access, symlink, cp } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fixture as gameplayFixture } from '../gameplay/fixture.mjs';
+import {requiredPlayerFeatures,missingPlayerFeatures} from '../../dist/packages/export-service/compatibility.js';
 import { exportGame } from '../../dist/packages/export-service/export.js';
 import { loadProject } from '../../dist/packages/project-service/loader.js';
 import { buildSnapshot } from '../../dist/packages/project-service/snapshot.js';
@@ -98,7 +99,8 @@ test('UI feature capabilities reject old runtimes before packaging, while legacy
       ['responsive-v1',visual=>{visual.viewportMode='responsive';}],
       ['readable-layout-v1',visual=>{visual.readableLayout={};visual.screens[0].readableLayout={items:[]};}],
       ['readable-actions-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'mobile-next',kind:'button',text:'Continue',action:'advance',x:0,y:0,width:100,height:44});Object.assign(s.readableLayout,{actionLayout:'grouped',primaryAction:'mobile-next',actions:['mobile-next']});}],
-      ['compact-planning-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'mobile-planner',kind:'schedule',x:0,y:0,width:300,height:400});s.readableLayout.items.push({elementId:'mobile-planner',schedulePresentation:'compact'});}]
+      ['compact-planning-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'mobile-planner',kind:'schedule',x:0,y:0,width:300,height:400});s.readableLayout.items.push({elementId:'mobile-planner',schedulePresentation:'compact'});}],
+      ['planning-guidance-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'guided-planner',kind:'schedule',x:0,y:0,width:300,height:400});s.readableLayout.items.push({elementId:'guided-planner',schedulePresentation:'compact',planningGuidance:'first-use'});}]
     ];
     for(const [feature,change] of variations){
       const content=structuredClone(built.snapshot);change(content.project.visual);
@@ -113,4 +115,16 @@ test('UI feature capabilities reject old runtimes before packaging, while legacy
     const destination=resolve(workspace,`${target}-supported`);await exportGame({...options,content,destination});
     assert.deepEqual(JSON.parse(await readFile(resolve(destination,'game.json'),'utf8')).content.project.visual,content.project.visual);
   }
+});
+
+
+test('authored commit action exports independently of board widgets and honors older native capability',async t=>{
+ const {built}=await fixture(t),content=structuredClone(built.snapshot);
+ content.project.visual={width:1280,height:720,screens:[{id:'schedule',label:'Schedule',elements:[{id:'commit',kind:'button',action:'commitPlan',text:'Begin',x:0,y:0,width:100,height:44}]}]};
+ const required=requiredPlayerFeatures(content);assert.ok(required.includes('commit-plan-action-v1'));assert.ok(!required.includes('schedule-board-v1'));
+ assert.deepEqual(missingPlayerFeatures(['commit-plan-action-v1'],['schedule-board-v1']),[]);
+ assert.deepEqual(missingPlayerFeatures(['commit-plan-action-v1'],['commit-plan-action-v1']),[]);
+ assert.deepEqual(missingPlayerFeatures(['schedule-board-v1'],['commit-plan-action-v1']),['schedule-board-v1']);
+ content.project.visual.screens[0].elements.push({id:'board',kind:'schedule',scheduleLayout:'board',x:0,y:0,width:300,height:400});
+ assert.ok(requiredPlayerFeatures(content).includes('schedule-board-v1'),'Board widget still needs the broad capability');
 });

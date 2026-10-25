@@ -820,6 +820,10 @@
                     "enum": ["compact"],
                     "description": "For schedule elements only: a compact period summary with an activity picker and explicit apply/cancel. Only changes the reading presentation."
                   },
+                  "planningGuidance": {
+                    "enum": ["first-use"],
+                    "description": "Optional first-use help for compact single-character planning. Players may skip or reopen it; acknowledgment is a presentation preference, never game progress."
+                  },
                   "imageHeight": {
                     "type": "integer",
                     "minimum": 48,
