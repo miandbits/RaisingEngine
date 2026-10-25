@@ -32,7 +32,7 @@ async function finishStory(page) {
     const view = await page.evaluate(async () => (await window.player.view()).view);
     if (view.state.phase !== 'narrative') return;
     if (view.narrative.node.type === 'choice') await page.locator('.visual-choices button:enabled').first().click();
-    else await click(page, '계속');
+    else await click(page, '이야기 계속');
   }
   assert.fail('Story did not reach a visible boundary');
 }
@@ -55,7 +55,13 @@ test('designer authors free screens, shop, gift and relationship event using GUI
   await select(page, '장소 화면 템플릿', 'shop');
   await click(page, '장소 화면 만들기');
   await select(page, '장소 배경', 'visual-library');
-  await page.getByLabel('도시 광장 연결', { exact: true }).check();
+  // This controlled checkbox updates after the studio-service reply.
+  const cityConnection = page.getByLabel('도시 광장 연결', { exact: true });
+  if (!await cityConnection.isChecked()) await cityConnection.click();
+  await page.waitForFunction(() => document.querySelector('input[aria-label="도시 광장 연결"]')?.checked === true);
+  const locations = (await page.evaluate(() => window.studio.view())).view.documents.find(doc => doc.kind === 'project').data.gameplay.locations;
+  assert.ok(locations.find(location => location.id === 'market').connections.includes('city'));
+  assert.ok(locations.find(location => location.id === 'city').connections.includes('market'));
   await addContent(page, '아이템', 'flower', '감사의 꽃');
   await fill(page, '아이템 설명', '유나에게 마음을 전하는 작은 꽃다발.');
   await fill(page, '최대 소지 개수', 5);
@@ -123,9 +129,9 @@ test('designer authors free screens, shop, gift and relationship event using GUI
   await page.screenshot({ path: `${output}/home.png` });
   await click(page, '일정');
   for (const period of ['상순', '중순', '하순']) await select(page, `${period} 활동`, 'rest');
-  await click(page, '일정 확정 / 활동 시작');
-  await click(page, '일정 확정 / 활동 시작');
-  await click(page, '다음으로');
+  await click(page, '일정 확정');
+  await click(page, '활동 시작');
+  await click(page, '결과 확인 · 다음');
   await finishStory(page);
   assert.equal((await state(page)).periodIndex, 1);
   await click(page, '도시로 외출');
