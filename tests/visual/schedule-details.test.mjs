@@ -22,7 +22,16 @@ test('detailed canvas schedules share complete prose and only explicit progressi
   assert.match(await details.textContent(),/FINAL REQUIREMENT CLAUSE/);assert.match(await details.textContent(),/Cost · Money 12/);assert.match(await details.textContent(),/Base effects · Skill \+5/);
   const metrics=await details.evaluate(e=>({w:e.clientWidth,h:e.clientHeight,scroll:e.scrollHeight,x:e.scrollWidth,children:[...e.children].map(c=>({h:c.clientHeight,s:c.scrollHeight}))}));
   assert.ok(metrics.w>800&&metrics.h>250);assert.ok(metrics.scroll>metrics.h);assert.ok(metrics.x<=metrics.w+1);assert.ok(metrics.children.every(c=>c.s<=c.h+1),'Prose children do not create hidden nested scrolling');
-  await details.focus();await page.keyboard.press('End');await page.waitForTimeout(100);assert.ok(await details.evaluate(e=>e.scrollTop)>0,'Keyboard can reach later requirements');
+  await details.focus();assert.equal(await details.evaluate(e=>e===document.activeElement),true,'Details receive keyboard focus');
+  await page.keyboard.press('End');
+  // Browser keyboard scrolling animates; wait for its outcome instead of a frame budget.
+  await page.waitForFunction(()=>{const e=document.querySelector('.schedule-detail-pane');return e&&e.scrollTop>0&&Math.abs(e.scrollHeight-e.clientHeight-e.scrollTop)<=1;},null,{timeout:5000});
+  assert.equal(await details.evaluate(e=>{
+    const text=e.querySelector('.activity-description').firstChild,clause='FINAL REQUIREMENT CLAUSE.',start=text.textContent.indexOf(clause);
+    if(start<0)return false;const range=document.createRange();range.setStart(text,start);range.setEnd(text,start+clause.length);
+    const box=e.getBoundingClientRect(),top=box.top+e.clientTop,left=box.left+e.clientLeft,rects=[...range.getClientRects()];
+    return rects.length>0&&rects.every(r=>r.width>0&&r.height>0&&r.top>=top-1&&r.bottom<=top+e.clientHeight+1&&r.left>=left-1&&r.right<=left+e.clientWidth+1);
+  }),true,'Real End-key scrolling makes the final requirement visible inside the details pane');
   const before=await page.evaluate(()=>window.plans);
   await page.locator('.schedule-period-review').nth(1).focus();await page.keyboard.press('Enter');assert.match(await details.textContent(),/Rest restores energy/);assert.deepEqual(await page.evaluate(()=>window.plans),before);assert.deepEqual(await page.evaluate(()=>window.commands),[]);
   await page.getByRole('combobox').nth(1).selectOption('study');assert.match(await details.textContent(),/FINAL REQUIREMENT CLAUSE/);assert.equal(await details.evaluate(e=>e.scrollTop),0);assert.deepEqual(await page.evaluate(()=>window.plans),['study','study','study','rest']);assert.deepEqual(await page.evaluate(()=>window.commands),[]);

@@ -57,8 +57,13 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
   const projectPath = join(projectRoot, 'project.json');
   const project = JSON.parse(await readFile(projectPath, 'utf8'));
   const wrapped = Array(40).fill('MMMM').join(' '); // No explicit line breaks.
-  for (const [id, description] of [['rest', Array(6).fill('MMMM').join(' ')], ['work', '한'.repeat(30)]]) {
-    const file = join(projectRoot, `activities/${id}.json`);
+  // Activity descriptions share one pane. Capture each selected activity in
+  // that pane, rather than assuming descriptions still sit below both selects.
+  // Its 500px text width leaves room around eight 56px English words (plus
+  // spaces), but not nine; 90 unspaced Hangul glyphs also need three lines.
+  const englishWords = 24, cjkGlyphs = 90;
+  for (const [id, description] of [['rest', Array(englishWords).fill('MMMM').join(' ')], ['work', '한'.repeat(cjkGlyphs)]]) {
+    const file = join(projectRoot, 'activities', `${id}.json`);
     const activity = JSON.parse(await readFile(file, 'utf8'));
     activity.description = description;
     await writeFile(file, JSON.stringify(activity));
@@ -74,8 +79,8 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
       ] },
       ...['home', 'schedule'].map(id => ({ id, label: id, elements: [
         { id: 'background', kind: 'panel', x: 0, y: 0, ...canvas, fill: '#0c0e12' },
-        { id: 'sound', kind: 'button', action: 'sound', x: 10, y: 280, width: 80, height: 50, text: 'Sound' },
-        { id: 'plan', kind: 'schedule', scheduleLayout: 'columns', showActivityDescription: true, x: 10, y: 0, width: 540, height: 340, color: '#ffffff', fontSize: 20 },
+        { id: 'sound', kind: 'button', action: 'sound', x: 550, y: 280, width: 80, height: 50, text: 'Sound' },
+        { id: 'plan', kind: 'schedule', scheduleLayout: 'columns', showActivityDescription: true, x: 10, y: 0, width: 540, height: 340, padding: 6, color: '#ffffff', fontSize: 20 },
       ] })),
       ...['story', 'ending'].map(id => ({ id, label: id, elements: [] })),
     ],
@@ -109,8 +114,10 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
     { waitFrames: 12 },
     { checkpoint: `density-${index}`, screenshot: join(out, `density-${index}-${density}x.png`) },
   ]);
-  steps.push({ click: 'start' }, { select: 'plan-0', value: 'rest' }, { select: 'plan-1', value: 'work' }, { waitFrames: 12 },
-    { checkpoint: 'word-wrap', screenshot: join(out, 'word-wrap.png') }, { click: 'sound' }, { checkpoint: 'muted' }, { click: 'sound' }, { checkpoint: 'unmuted' }, { key: 'F5' }, { checkpoint: 'saved' }, { key: 'F9' }, { checkpoint: 'loaded' });
+  steps.push({ click: 'start' }, { select: 'plan-0', value: 'rest' }, { waitFrames: 12 },
+    { checkpoint: 'english-wrap', screenshot: join(out, 'english-wrap.png') },
+    { select: 'plan-1', value: 'work' }, { waitFrames: 12 },
+    { checkpoint: 'cjk-wrap', screenshot: join(out, 'cjk-wrap.png') }, { click: 'sound' }, { checkpoint: 'muted' }, { click: 'sound' }, { checkpoint: 'unmuted' }, { key: 'F5' }, { checkpoint: 'saved' }, { key: 'F9' }, { checkpoint: 'loaded' });
   const report = await play('densities', steps);
   const samples = [];
   for (const [index, density] of densities.entries()) {
@@ -124,19 +131,26 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
   await writeFile(join(out, 'measurements.json'), JSON.stringify({ pixelRatio, samples }, null, 2));
   await writeFile(join(evidenceRoot, 'latest.json'), JSON.stringify({ out, destination, target, pixelRatio, samples }, null, 2));
   await t.test('English activity words stay whole and long CJK text still wraps', async () => {
-    const ui = report.steps.find(step => step.command.checkpoint === 'word-wrap').ui;
-    assert.ok(ui.audio.initialized && ui.audio.musicPlaying && ui.audio.loadedSounds === 1, 'Unicode music paths must reach the live decoder and audio engine');
-    const screenshot = decodePng(await readFile(join(out, 'word-wrap.png')));
-    const bandsFor = (id, gap = 1) => {
-      const control = ui.controls.find(control => control.id === id);
-      return inkBands(screenshot, screenshot.width / canvas.width, { x: control.x, y: control.y + control.height + 10, width: control.width, height: 115 }, gap);
+    const measurements = [];
+    const bandsFor = async (checkpoint, gap = 1) => {
+      const ui = report.steps.find(step => step.command.checkpoint === checkpoint).ui;
+      assert.ok(ui.audio.initialized && ui.audio.musicPlaying && ui.audio.loadedSounds === 1, 'Unicode music paths must reach the live decoder and audio engine');
+      const pane = ui.nodes.find(node => node.id === 'plan-details-plan');
+      assert.ok(pane?.rendered && !pane.clipped && !pane.outsideViewport, `${checkpoint} detail pane must be fully rendered: ${JSON.stringify(pane)}`);
+      const screenshot = decodePng(await readFile(join(out, `${checkpoint}.png`)));
+      const bands = inkBands(screenshot, screenshot.width / canvas.width, pane, gap);
+      measurements.push({ checkpoint, pane, bands });
+      await writeFile(join(out, 'word-wrap-measurements.json'), JSON.stringify(measurements, null, 2));
+      // The measured pane contains one short title followed by the description.
+      // Verify that complete structure before excluding the title's ink.
+      assert.equal(bands.length, 4, `${checkpoint} must show its title and three complete description lines: ${JSON.stringify(bands)}`);
+      return bands.slice(1);
     };
     // Hangul syllables contain separated components within one glyph.
-    const english = bandsFor('plan-0'), cjk = bandsFor('plan-1', 5);
-    assert.equal(english.length, 3, 'Six whole words must wrap onto three equal lines');
-    assert.ok(Math.max(...english.map(line => line.ink)) - Math.min(...english.map(line => line.ink)) < 8, `Every English line must have two complete words: ${JSON.stringify(english)}`);
-    assert.ok(cjk.length >= 3, 'An unspaced Korean token must wrap within the card');
-    assert.equal(cjk.length, 3, `The thirty Korean glyphs must fit on three lines: ${JSON.stringify(cjk)}`);
+    const english = await bandsFor('english-wrap'), cjk = await bandsFor('cjk-wrap', 5);
+    assert.equal(english.length, 3, `${englishWords} whole words must wrap onto three equal lines: ${JSON.stringify(english)}`);
+    assert.ok(Math.max(...english.map(line => line.ink)) - Math.min(...english.map(line => line.ink)) < 8, `Every English line must have eight complete words: ${JSON.stringify(english)}`);
+    assert.equal(cjk.length, 3, `${cjkGlyphs} unspaced Korean glyphs must wrap onto three lines: ${JSON.stringify(cjk)}`);
     assert.ok(cjk.every(line => line.height >= 12), `CJK fallback must retain readable full-height glyphs: ${JSON.stringify(cjk)}`);
     assert.equal(report.steps.find(step => step.command.checkpoint === 'muted').ui.message, 'Sound muted.');
     assert.equal(report.steps.find(step => step.command.checkpoint === 'unmuted').ui.message, 'Sound on.');
