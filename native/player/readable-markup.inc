@@ -69,7 +69,8 @@
     }
     const bool enabled=selected!=save_slots.end()&&(saving?(!slot_auto&&!game.state.is_null()):selected->value("status","")=="ready");
     out+=selected_identity();
-    out+=control("request",saving?slot_words("선택한 곳에 저장","Save selected record","選んだ記録に保存"):slot_words("선택한 기록 이어 읽기","Continue selected record","選んだ記録から続ける"),{{"type",saving?"requestSlotSave":"requestSlotLoad"}},enabled);return out;
+    out+=control("request",saving?slot_words("선택한 곳에 저장","Save selected record","選んだ記録に保存"):slot_words("선택한 기록 이어 읽기","Continue selected record","選んだ記録から続ける"),{{"type",saving?"requestSlotSave":"requestSlotLoad"}},enabled);
+    if(portable_available)out+="<div class=\"reading-item\">"+portable_tools(e)+"</div>";return out;
   }
   std::string readable_schedule(const Json& e) {
     if(display_content.at("project").contains("roster")){
@@ -174,8 +175,12 @@
     if(!guided.is_null()&&!reading_overlay()&&!planning_guide_seen&&!player_preferences.value("guidance",Json::object()).value("compact-planning-v1",false)&&!planning_guide_suppressed){
       planning_guide=true;planning_guide_seen=true;planning_guide_step=0;planning_guide_element=guided.at("id");planning_guide_owner=screen_id;
     }
-    readable_view=plan_reuse_open?"reuse":reading_history_open?"history":planning_guide?"guide:"+std::to_string(planning_guide_step):reading_options?"options":reading_menu?"menu":compact_picker?"picker:"+std::to_string(compact_slot):"game";
-    if(plan_reuse_open){
+    readable_view=portable_open()?"portable:"+portable_status:plan_reuse_open?"reuse":reading_history_open?"history":planning_guide?"guide:"+std::to_string(planning_guide_step):reading_options?"options":reading_menu?"menu":compact_picker?"picker:"+std::to_string(compact_slot):"game";
+    if(portable_open()){
+      main=portable_review_body();
+      footer=wrap(button("engine-portable-cancel",settings_words("취소","Cancel","キャンセル"),{{"type","portableCancel"}}));
+      if(portable_status=="review")footer+=wrap(button("engine-portable-confirm",settings_words("백업 이어 하기","Continue backup","バックアップを続ける"),{{"type","portableConfirm"}}));
+    }else if(plan_reuse_open){
       reuse_projection=reuse_snapshot.at("source");main=reuse_review_body();
       footer=wrap(button("board-reuse-apply",settings_words("초안에 적용","Apply to draft","下書きに適用"),{{"type","readingReuseApply"}}));
       footer+=wrap(button("board-reuse-cancel",settings_words("취소","Cancel","キャンセル"),{{"type","readingReuseCancel"}}));
@@ -213,10 +218,10 @@
     }
     render_elements=selected;
     std::string css="body{font-family:Noto Sans KR;font-size:"+number(readable_font)+"px;color:"+ink+";background-color:"+css_color(background)+";margin:0;width:"+std::to_string(width)+"px;height:"+std::to_string(height)+"px;} div,p{display:block;box-sizing:border-box;} p{margin:0 0 "+number(gap)+"px;} span,b{display:inline;} .reading-root{position:absolute;left:"+number(left)+"px;top:"+number(top)+"px;width:"+number(cw)+"px;height:"+number(sh)+"px;display:flex;flex-direction:column;padding:"+number(pad)+"px;} .reading-main{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;} .reading-item{position:relative;width:100%;height:auto;margin-bottom:"+number(gap)+"px;white-space:normal;word-break:break-word;} .reading-item button,.reading-item input,.reading-item select,.reading-item option{box-sizing:border-box;display:block;width:100%;min-width:"+number(readable_target)+"px;min-height:"+number(readable_target)+"px;height:auto;padding:10px 12px;margin:0 0 "+number(gap)+"px;line-height:1.45;white-space:normal;word-break:break-word;background-color:#e3e8df;color:#263c36;border-width:1px;border-color:#91a196;border-radius:4px;tab-index:auto;} button:focus{border-width:3px;border-color:#b38b49;} button:disabled{opacity:0.5;} .reading-actions{display:flex;flex-wrap:wrap;align-items:flex-start;flex-shrink:0;max-height:45%;overflow-y:auto;overflow-x:hidden;padding-top:"+number(gap)+"px;} .reading-action{flex-grow:1;flex-basis:"+number(140*player_preferences.value("textScale",1.0))+"px;min-width:"+number(readable_target)+"px;margin-right:8px;} .reading-action>button{margin-bottom:0;} .choices button>span{margin-right:0.5em;} .stat{height:auto;padding:8px 0;} .value{float:right;} .bar{height:5px;background-color:#d8e3d8;} .bar>div{height:5px;background-color:#608c69;} .reading-item .heading,.reading-item .row{height:auto;} .reading-item .reason{display:block;} scrollbarvertical{width:12px;} scrollbarvertical slidertrack{background-color:#e1e0d6;} scrollbarvertical sliderbar{min-height:44px;background-color:#718879;} scrollbarvertical sliderarrowdec,scrollbarvertical sliderarrowinc{height:0;}";
-    css+=".record-groups{display:flex;flex-wrap:wrap;} .reading-item .record-group{flex-grow:1;flex-basis:auto;width:auto;word-break:normal;margin-right:8px;padding-left:8px;padding-right:8px;} .reading-item .record-group:last-child{margin-right:0;} .reading-item .record-slot,.reading-item .record-group{border-width:3px;} .reading-item .record-selected{border-color:#345c50;background-color:#d6e2d8;}.reading-item .record-slot:focus,.reading-item .record-group:focus{border-color:#b38b49;} .record-identity{display:block;} .record-saved{display:block;font-size:0.85em;margin-top:6px;} .record-thumbnail{display:block;width:144px;height:81px;margin-top:8px;} .reading-paragraph{margin-bottom:"+number(gap)+"px;}";
-    if(grouped||compact_picker||planning_guide||reading_history_open||plan_reuse_open)css+=".reading-actions{max-height:none;overflow-y:visible;} .reading-action{flex-basis:"+number(120*player_preferences.value("textScale",1.0))+"px;}";
+    css+=".record-groups{display:flex;flex-wrap:wrap;} .reading-item .record-group{flex-grow:1;flex-basis:auto;width:auto;word-break:normal;margin-right:8px;padding-left:8px;padding-right:8px;} .reading-item .record-group:last-child{margin-right:0;} .reading-item .record-slot,.reading-item .record-group{border-width:3px;} .reading-item .record-selected{border-color:#345c50;background-color:#d6e2d8;}.reading-item .record-slot:focus,.reading-item .record-group:focus{border-color:#b38b49;} .record-identity{display:block;} .record-saved{display:block;font-size:0.85em;margin-top:6px;} .record-thumbnail{display:block;width:144px;height:81px;margin-top:8px;} .reading-notice{white-space:normal;word-break:break-word;} .reading-paragraph{margin-bottom:"+number(gap)+"px;}";
+    if(portable_open()||grouped||compact_picker||planning_guide||reading_history_open||plan_reuse_open)css+=".reading-actions{max-height:none;overflow-y:visible;} .reading-action{flex-basis:"+number(120*player_preferences.value("textScale",1.0))+"px;}";
     for(const auto& raw:render_elements){const auto e=resolved_style(visual,raw);const auto id=e.value("id","");const auto selector="#node-"+id+" button";css+=selector+"{color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#e3e8df"))+";}";}
     // Put notices into flow so they cannot cover the final action on short phones.
-    if(!game.message.empty())main+="<p class=\"reading-notice\">"+escape(game.message)+"</p>";
+    if(!game.message.empty()&&!portable_open())main+="<p class=\"reading-notice\">"+escape(game.message)+"</p>";
     const auto modal=screen.value("modal",false);return "<rml><head><style>"+css+"</style></head><body><div "+std::string(modal?"id=\"ui-modal\" ":"")+"class=\"reading-root\"><div id=\"reading-main\" class=\"reading-main\">"+main+"</div><div id=\"reading-actions\" class=\"reading-actions\">"+footer+"</div></div></body></rml>";
   }

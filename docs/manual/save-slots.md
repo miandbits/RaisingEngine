@@ -68,6 +68,11 @@ manual record to retain the imported position in this browser. Screenshots are
 not included in portable JSON files. Records without screenshots remain valid
 on native players. No cloud sync or cross-device storage is implied.
 
+On iOS runtimes with documented Files-backup support, record widgets also provide
+**Import backup** and **Export current progress** through the system Files picker.
+See [Portable save backups](portable-save-backups.md) for player steps and the
+distinction between a portable copy and an in-app record.
+
 Requires `save-slots-v1`. Export rejects incompatible native and Web runtimes.
 This capability includes authored save/load modals, their open/close controls,
 paging, keyboard focus, decorative images/text/statistics, and backup controls.

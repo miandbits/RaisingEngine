@@ -130,6 +130,10 @@ public:
   bool history_enabled() const {return !replay_controls&&!game.gallery.active&&display_content.at("project").at("visual").contains("readingHistory");}
   std::string history_text(const std::string& text) const {return history_enabled()?"<span class=\"reading-receipt-text\" style=\"margin:0;\">"+escape(text)+"</span>":escape(text);}
   std::string history_label() const {return settings_words("최근 읽은 내용","Recent reading","最近読んだ内容");}
+  bool portable_available=false;
+  std::string portable_status="idle",portable_notice,portable_filename;
+  Json portable_incoming=Json::object(),portable_current=Json::object();
+  bool portable_open() const {return portable_status!="idle";}
   bool compact_picker=false,plan_reuse_open=false;
   uint64_t reuse_generation=0;
   std::string reuse_owner,reuse_element;
@@ -140,7 +144,7 @@ public:
   int compact_slot=0,compact_revision=-1;
   std::string compact_activity,compact_group,compact_element,compact_owner;
   std::string readable_view="game";
-  bool reading_overlay() const {return reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
+  bool reading_overlay() const {return portable_open()||reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;
@@ -1060,7 +1064,7 @@ public:
       const auto prefix=ui_modal+"__";
       for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();e["_authoredModal"]=true;for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}break;
     }
-    if((reading_history_open||reading_options)&&history_enabled()&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout"))){
+    if(portable_open()||((reading_history_open||reading_options)&&history_enabled()&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout")))){
       auto overlay_visual=visual;overlay_visual["readableLayout"]=visual.value("readableLayout",Json::object());auto overlay_screen=*reading_screen;overlay_screen["readableLayout"]={{"items",Json::array()},{"actions",Json::array()}};return readable_document(overlay_visual,overlay_screen);
     }
     if(readable_requested(visual,*reading_screen))return readable_document(visual,*reading_screen);

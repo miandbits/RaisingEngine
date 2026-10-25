@@ -33,6 +33,7 @@ jobs:
           name: creator-service-evidence
           path: |
             .cache/creator-smoke/
+            .cache/native-portable-host/
             .cache/creator-benchmark/latest.json
           include-hidden-files: true
           retention-days: 14
@@ -124,6 +125,7 @@ jobs:
           path: |
             .cache/build-provenance/
             .cache/creator-smoke/
+            .cache/native-portable-host/
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt
             .cache/first-game-ui/run-*/startup.txt
@@ -195,6 +197,7 @@ jobs:
           path: |
             .cache/build-provenance/
             .cache/creator-smoke/
+            .cache/native-portable-host/
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt
             .cache/first-game-ui/run-*/startup.txt

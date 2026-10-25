@@ -50,6 +50,24 @@
     if(meta.contains("sequence")&&meta.at("sequence").is_number_integer())out+=" · #"+meta.at("sequence").dump();
     return out;
   }
+  std::string portable_tools(const Json& e) {
+    const std::string id=e.at("id");
+    std::string out="<p><b>"+slot_words("파일 백업","File backups","ファイルのバックアップ")+"</b></p>";
+    out+=button(id+"-portable-import",slot_words("백업 가져오기","Import backup","バックアップを読み込む"),{{"type","portableImport"},{"ownerId",id}});
+    out+=button(id+"-portable-export",slot_words("현재 진행 내보내기","Export current progress","現在の進行を書き出す"),{{"type","portableExport"},{"ownerId",id}},!game.state.is_null());
+    if(!portable_notice.empty())out+="<p>"+escape(portable_notice)+"</p>";return out;
+  }
+  std::string portable_review_body() const {
+    const bool review=portable_status=="review",exporting=portable_status=="picking-export";
+    std::string out="<div id=\"engine-portable-panel\" class=\"reading-item\"><p><b>"+slot_words("백업 검토","Review backup","バックアップの確認")+"</b></p>";
+    auto identity=[&](const Json& record){std::string text=record.value("date","");for(const auto* key:{"place","phase"})if(!record.value(key,"").empty()){if(!text.empty())text+=" · ";text+=record.at(key).get<std::string>();}return escape(text);};
+    if(review){
+      out+="<p>"+escape(portable_filename)+"</p><p><b>"+identity(portable_incoming)+"</b></p>";
+      if(!portable_current.empty())out+="<p>"+slot_words("현재 진행 · ","Current progress · ","現在の進行 · ")+identity(portable_current)+"</p>";
+      out+="<p>"+slot_words("이어 하면 저장하지 않은 현재 진행이 바뀝니다. 수동 기록은 그대로 남습니다.","Continuing replaces unsaved current progress. Your manual records stay unchanged.","続けると未保存の現在の進行が置き換わります。手動の記録は変わりません。")+"</p>";
+    }else out+="<p>"+std::string(exporting?slot_words("파일 앱에서 현재 진행의 백업을 저장할 위치를 선택하세요.","Choose where to save a backup of current progress in Files.","ファイルで現在の進行のバックアップの保存先を選んでください。"):slot_words("파일 앱에서 백업 하나를 선택하세요. 이어 하기 전에 검증하고 검토합니다.","Choose one backup in Files. It will be validated and reviewed before continuing.","ファイルでバックアップを1つ選んでください。再開前に検証して確認します。"))+"</p>";
+    return out+"</div>";
+  }
   std::string slots_body(const Json& e) {
     const bool saving=e.value("kind","")=="saveSlots";
     const std::string id=e.at("id"),ink=e.value("color","#263C36"),paper=e.value("fill","#F5EFDF"),line=e.value("borderColor","#C7B99A"),accent=e.value("hoverFill","#345C50");
@@ -87,7 +105,11 @@
     out+=control("manual",slot_words("내가 남긴 기록","Manual records","手動の記録"),{{"type","slotGroup"},{"automatic",false}},0,0,210,true,!slot_auto);
     out+=control("auto",slot_words("자동으로 남긴 기록","Automatic records","自動の記録"),{{"type","slotGroup"},{"automatic",true}},222,0,228,true,slot_auto);
     const auto hint=slot_auto?slot_words("이야기의 갈림길과 일정 진행 뒤 · 최근 기록부터","After choices and schedule progress · newest first","選択や予定の進行後 · 新しい順"):saving?slot_words("마음에 남은 순간을 따로 간직하세요","Keep the moments you want to return to","戻りたい瞬間を残しましょう"):slot_words("이야기를 이어 갈 기록을 골라 주세요","Choose a record to continue your story","物語を続ける記録を選んでください");
-    out+=box(470,8,w-470,34,escape(hint),"font-size:19px;color:"+ink+";");
+    if(portable_available){
+      const double toolw=(w-484)/2;
+      out+=control("portable-import",slot_words("백업 가져오기","Import backup","バックアップを読み込む"),{{"type","portableImport"},{"ownerId",id}},470,0,toolw);
+      out+=control("portable-export",slot_words("현재 진행 내보내기","Export current progress","現在の進行を書き出す"),{{"type","portableExport"},{"ownerId",id}},484+toolw,0,toolw,!game.state.is_null());
+    }else out+=box(470,8,w-470,34,escape(hint),"font-size:19px;color:"+ink+";");
     std::vector<Json> rows;for(const auto& r:save_slots)if(r.at("automatic")==slot_auto)rows.push_back(r);
     if(slot_auto)std::stable_sort(rows.begin(),rows.end(),[](const Json& a,const Json& b){return a.value("record",Json::object()).value("sequence",int64_t(0))>b.value("record",Json::object()).value("sequence",int64_t(0));});
     const int pages=std::max(1,int((rows.size()+5)/6));slot_page=std::clamp(slot_page,0,pages-1);

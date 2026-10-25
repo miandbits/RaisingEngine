@@ -88,7 +88,7 @@
     }catch(...){/* Best-effort pruning must not turn a committed save into a failure. */}
   }
   void after_slot_frame() {
-    if(!slots_enabled()||preview()||recalling()||game.gallery.active||game.state.is_null()||!markup.ui_modal.empty()||!markup.pending_purchase.is_null())return;
+    if(portable_active()||!slots_enabled()||preview()||recalling()||game.gallery.active||game.state.is_null()||!markup.ui_modal.empty()||!markup.pending_purchase.is_null())return;
     const int revision=game.state.value("stateRevision",0);if(revision==slot_auto_revision)return;
     // settle() may append automatic effect/branch commands after a submitted
     // choice. Preserve that choice checkpoint even when the last command is a
@@ -111,6 +111,12 @@
       for(const auto& row:markup.save_slots)if(row.at("automatic").get<bool>()){const auto seq=row.value("record",Json::object()).value("sequence",int64_t(0));if(seq<oldest){oldest=seq;target=row.at("index");}}
       write_slot(true,target);
     }catch(const std::exception& error){game.message=std::string("자동 저장 실패: ")+error.what();}
+  }
+  void finish_loaded_slot() {
+      game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;slot_auto_revision=game.state.value("stateRevision",0);slot_auto_commands=game.commands.size();slot_auto_phase=game.state.value("phase","");
+      markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;
+      markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;
+      audio.sync_music(markup.asset(game.state.at("presentation").value("musicAssetId",Json())),muted);
   }
   bool slot_action(const Json& action) {
     if(!slots_enabled())return false;
@@ -145,10 +151,7 @@
     }
     if(saving)write_slot(false,markup.slot_selected);
     else {
-      game.load(file);game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;slot_auto_revision=game.state.value("stateRevision",0);slot_auto_commands=game.commands.size();slot_auto_phase=game.state.value("phase","");
-      markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;
-      markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;
-      audio.sync_music(markup.asset(game.state.at("presentation").value("musicAssetId",Json())),muted);
+      game.load(file);finish_loaded_slot();
     }
     markup.slot_confirmation.clear();dirty=true;return true;
   }

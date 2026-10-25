@@ -2,6 +2,7 @@ import {execFileSync} from 'node:child_process';
 import {readFile,mkdir,access,readdir,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {inspectIOSKeyboardPatch,applyIOSKeyboardPatch} from './lib/ios-sdl-keyboard-patch.mjs';
 
 const repository=fileURLToPath(new URL('..',import.meta.url));
 export async function prepareNativeDependencies(root=repository, {ios=process.platform==='darwin'}={}){
@@ -24,7 +25,10 @@ export async function prepareNativeDependencies(root=repository, {ios=process.pl
     const head=git(['-C',target,'rev-parse','HEAD']).trim();
     if(head!==dependency.commit)throw Error(`Dependency version mismatch: ${dependency.path}. Expected ${dependency.commit}, found ${head}; existing files were preserved.`);
     const dirty=git(['-C',target,'status','--porcelain','--untracked-files=no','--ignore-submodules=all']).trim();
-    if(dirty)throw Error(`Dependency has local changes: ${dependency.path}; existing files were preserved.`);
+    const keyboardPatch=dependency.path==='SDL-ios'?await inspectIOSKeyboardPatch(target):null;
+    const reviewedPatch=keyboardPatch&&!git(['-C',target,'diff','HEAD','--summary']).trim()&&dirty.split('\n').every(line=>keyboardPatch.files.some(file=>file.patched&&line.trim()===`M ${file.source}`));
+    if(dirty&&!reviewedPatch)throw Error(`Dependency has local changes: ${dependency.path}; existing files were preserved.`);
+    if(keyboardPatch)console.log(`SDL-ios keyboard isolation patch: ${JSON.stringify(await applyIOSKeyboardPatch(target))}`);
     console.log(`${dependency.path}: ${head}`);
   }
 }

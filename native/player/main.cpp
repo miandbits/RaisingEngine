@@ -23,6 +23,8 @@
 #include <ctime>
 #include <set>
 #include "save-slots.hpp"
+#include "portable-save-files.hpp"
+#include "portable-save-input.hpp"
 
 #include "route-recording.hpp"
 #include "recollection.hpp"
@@ -67,7 +69,7 @@ public:
   }
   void advance_recollection_clock(double delta){
     if(!std::isfinite(delta)||delta<0||delta>60000)throw std::runtime_error("Invalid recollection clock delta");
-    if(!recalling()||!recollection->autoplay)return;
+    if(portable_active()||!recalling()||!recollection->autoplay)return;
     auto& r=*recollection;double remaining=r.elapsed_ms+delta*r.speed;
     while(remaining>=GalleryRecollection::frame_ms&&recalling()){
       remaining-=GalleryRecollection::frame_ms;
@@ -145,7 +147,7 @@ public:
     const double dt=preview()?0:extension_dt*extension_playback_rate();extension_dt=0;
     extensions.update(dt);play_extension_sounds();extensions.frame();
   }
-  double extension_playback_rate() const {if(game.gallery.active||!markup.ui_modal.empty())return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
+  double extension_playback_rate() const {if(portable_active()||game.gallery.active||!markup.ui_modal.empty())return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
   void advance_extensions(double delta){if(recalling()){recollection->extensions.update(delta*recollection->speed);recollection->extensions.frame();return;}if(!extensions.active())return;extensions.update(delta*extension_playback_rate());play_extension_sounds();extensions.frame();}
   /** Event sounds of plugin notifications (presentation only): a missing file never stops the game. */
   uint64_t extension_sounds_played=0,extension_sound_errors=0,extension_sound_missing=0;
@@ -178,11 +180,14 @@ public:
   bool touch_dragged=false;
   Json test_safe_area;
   #include "readable-app.inc"
+  #include "portable-save-app.inc"
   int lifecycle_saves=0;
   std::map<std::string,std::string> entrance_keys;
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
   PlayerApplication(Json bundle, fs::path root, SDL_Window* window, SDL_Renderer* renderer, fs::path save_file)
     :markup(game,bundle.at("assets"),std::move(root)),window(window),renderer(renderer),save_file(std::move(save_file)) {
+    portable_files=std::make_unique<raising_player::PortableSaveFiles>(window,portable_staging_root());
+    markup.portable_available=portable_files->available();
     gallery_bundle=bundle;game.gallery_manifest=bundle.value("extensions",Json());
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
@@ -207,6 +212,7 @@ public:
 #endif
   }
   ~PlayerApplication(){
+    if(portable_files)portable_files->shutdown();
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     SDL_RemoveEventWatch(watch_lifecycle,this);
 #endif
@@ -220,7 +226,7 @@ public:
   }
   fs::path autosave_file() const {return save_file.parent_path()/"autosave.json";}
   void restore_autosave() {
-    if(preview())return;
+    if(preview()||portable_active())return;
     auto backup=autosave_file();backup+=".bak";
     if(!fs::exists(autosave_file())&&!fs::exists(backup))return;
     bool restored=false;std::string error;
@@ -239,7 +245,7 @@ public:
   void lifecycle(bool paused) {
     if(backgrounded==paused)return;
     if(paused) {
-      drain_actions();
+      if(portable_active())pending.clear();else drain_actions();
       if(context&&active_finger){context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
       active_finger.reset();pending.clear();
       if(!preview()&&!game.state.is_null())try{game.save(autosave_file());game.message=markup.settings_words("자동 저장했습니다.","Autosaved.","自動保存しました。");lifecycle_saves++;}catch(const std::exception& error){game.message=error.what();}
@@ -260,7 +266,8 @@ public:
     auto& markup=active_markup();
     const auto eventType=event.GetType();
     // Plugin hit tests (CONTRACT.md §7): observed for the animation, never consumed; the click goes on below.
-    if(eventType=="click")ExtensionElement::observe_click(document,event);
+    if(portable_active()&&eventType!="click")return;
+    if(eventType=="click"&&!portable_active())ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.slot_confirmation.empty())markup.slot_confirmation.clear();else if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
@@ -322,6 +329,7 @@ public:
     const std::string previous_screen=markup.screen_id;
     const std::string previous_focus=context&&context->GetFocusElement()?context->GetFocusElement()->GetId():"";
     ExtensionElement::host=recalling()?&recollection->extensions:&extensions;
+    this->markup.portable_available=portable_files&&portable_files->available()&&!preview()&&!editor_live&&!recalling()&&!this->game.gallery.active;
     remember_reading_position();
     touch_scroll=nullptr;
     ++document_generation;
@@ -392,6 +400,7 @@ public:
     if(previous_screen==markup.screen_id&&!previous_focus.empty()&&active_modal.empty())
       if(auto* focus=document->GetElementById(previous_focus);focus&&!focus->HasAttribute("disabled"))focus->Focus();
     restore_reading_position();
+    restore_portable_focus();
     entrance_keys=std::move(next_entrance_keys);dirty=false;
     try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
     if(editor_events){std::cout<<Json({{"event","editor-view"},{"command",editor_command},{"view",ui_state()}}).dump()<<std::endl;editor_command=Json::object();}
@@ -401,6 +410,7 @@ public:
     if(editor_live)markup.preview_screen.clear();
     editor_command=incoming;
     try {
+      if(portable_action(incoming))return;
       if(readable_action(incoming))return;
       if(incoming.value("type","")=="readingRosterActivity"){
         const auto actor=incoming.value("actorId","");if(!markup.roster_draft.contains(actor))throw std::runtime_error("Unknown roster actor");
@@ -626,6 +636,8 @@ public:
       return;
     }
     if(event.type==SDL_EVENT_KEY_DOWN) {
+      if(portable_active()&&(event.key.key==SDLK_ESCAPE||event.key.key==SDLK_AC_BACK)){portable_action({{"type","portableCancel"}});return;}
+      if(portable_active()&&(event.key.key==SDLK_F2||event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
       if(event.key.key==SDLK_ESCAPE&&markup.reading_overlay()){readable_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
@@ -715,7 +727,7 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
       {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
@@ -905,6 +917,7 @@ int main(int argc,char** argv) {
         }
         SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
         if(app.backgrounded){SDL_Delay(50);continue;}
+        app.poll_portable();
         app.drain_actions();
         if(!app.timeline_manual_clock&&!app.editor_paused){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.advance_dialogue_clock(std::min(250.0,timeline_delta));app.extension_dt+=timeline_delta;if(app.editor_live)editor.elapsed+=timeline_delta;}
         if(app.dirty)app.rebuild();
