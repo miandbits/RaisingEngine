@@ -17,7 +17,14 @@ await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs',
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
 if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/native-player/receipt-text.test.mjs','tests/journey/calendar-players.test.mjs']);
 if(args.includes('--web'))await run('plan-reuse-projection',['--test','tests/player/plan-reuse.test.mjs']);
-if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/journey/first-game-phone-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/planning-guidance-web.test.mjs','tests/journey/reading-history-web.test.mjs','tests/journey/plan-reuse-web.test.mjs','tests/journey/resume-context-web.test.mjs']);
+if(args.includes('--web')){
+  // Each thematic group keeps the same bounded deadline. The combined suite
+  // outgrew five minutes on CI even when every completed assertion passed.
+  await run('web-runtime',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs']);
+  await run('web-reading',['--test','--test-concurrency=1','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/reading-history-web.test.mjs']);
+  await run('web-planning',['--test','--test-concurrency=1','tests/journey/first-game-phone-web.test.mjs','tests/journey/planning-guidance-web.test.mjs','tests/journey/plan-reuse-web.test.mjs']);
+  await run('web-resume-context',['--test','--test-concurrency=1','tests/journey/resume-context-web.test.mjs']);
+}
 if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs']);
