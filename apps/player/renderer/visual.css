@@ -174,9 +174,11 @@
 
 /* Opt-in action hierarchy: one current task, one stable utility destination. */
 .visual-shell:has(.readable-grouped) .player-settings-open{display:none}
-.readable-grouped-actions{flex-wrap:nowrap;align-items:flex-start;max-height:40%}
-.readable-grouped-actions>.visual-element{flex:1 1 0}
-.reading-menu-launcher{flex:0 1 auto;font:inherit;line-height:1.5;padding:10px 12px;min-height:var(--readable-target);min-width:var(--readable-target);white-space:normal;overflow-wrap:anywhere}
+/* Wrap actions before squeezing ordinary words; oversized tokens may still break. */
+.readable-grouped-actions{flex-wrap:wrap;align-items:flex-start;max-height:40%}
+.readable-grouped-actions>.visual-element{flex:1 0 min-content}
+.visual-readable .readable-grouped-actions .visual-action{overflow-wrap:break-word}
+.reading-menu-launcher{flex:0 0 auto;font:inherit;line-height:1.5;padding:10px 12px;min-height:var(--readable-target);min-width:var(--readable-target);max-width:100%;white-space:normal;overflow-wrap:break-word}
 .reading-dialog{box-sizing:border-box;border:2px solid #718c84;border-radius:12px;padding:var(--readable-padding,16px);color:var(--readable-ink,#263c36);background:var(--readable-background,#f5efdf);font:inherit;line-height:1.5;width:min(760px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);overflow:hidden;white-space:normal;overflow-wrap:anywhere}
 .reading-dialog[open]{display:flex;flex-direction:column;gap:var(--readable-gap,12px)}
 .reading-dialog::backdrop{background:#0009}
