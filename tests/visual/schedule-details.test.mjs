@@ -29,6 +29,17 @@ test('detailed canvas schedules share complete prose and only explicit progressi
   await page.getByRole('combobox').nth(1).focus();await page.keyboard.press('r');await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>window.plans[1]),'rest','Native keyboard selection changes draft');
   await page.getByRole('button',{name:'Confirm schedule'}).click();assert.deepEqual(await page.evaluate(()=>window.commands),[{type:'setSchedule',activityIds:['study','rest','study','rest']}]);
   await page.evaluate(()=>window.updatePeriod(2));await page.waitForFunction(()=>document.querySelector('select').disabled);assert.equal(await page.getByRole('combobox').nth(0).isDisabled(),true);await page.locator('.schedule-period-review').nth(0).click();assert.match(await details.textContent(),/FINAL REQUIREMENT CLAUSE/,'Completed periods remain inspectable');
+  // A normal authored surface can be light or dark; generated review controls
+  // must inherit its ink without introducing a conflicting default button fill.
+  for(const dark of [false,true]){
+    await page.locator('.visual-schedule').evaluate((e,dark)=>{Object.assign(e.style,{width:'864px',height:'300px',padding:'14px',border:'2px solid #8b9e92',color:dark?'#f3ead4':'#203a3b',background:dark?'#203a3b':'#f3ead4'});},dark);
+    await page.locator('.schedule-period-review').first().hover();
+    const geometry=await page.locator('.schedule-detail-periods').evaluate(e=>({client:e.clientWidth,scroll:e.scrollWidth}));assert.ok(geometry.scroll<=geometry.client+1,'Content-box layout has no unnecessary horizontal bar');
+    const style=await page.locator('.schedule-period-review').first().evaluate(e=>({ink:getComputedStyle(e).color,fill:getComputedStyle(e).backgroundColor}));assert.equal(style.ink,dark?'rgb(243, 234, 212)':'rgb(32, 58, 59)');assert.equal(style.fill,'rgba(0, 0, 0, 0)');
+    const selectStyle=await page.getByRole('combobox').nth(2).evaluate(e=>({ink:getComputedStyle(e).color,fill:getComputedStyle(e).backgroundColor}));assert.equal(selectStyle.ink,'rgb(32, 58, 52)');assert.equal(selectStyle.fill,'rgb(255, 253, 246)','Light dropdown surface retains dark ink on dark authored panels');
+    assert.ok(await details.evaluate(e=>e.clientHeight)>=90,'300px planner shows description after its title');
+    await mkdir('.cache/schedule-details-web',{recursive:true});await page.screenshot({path:'.cache/schedule-details-web/schedule-details-'+(dark?'dark':'light')+'.png'});
+  }
   await mkdir('.cache/schedule-details-web',{recursive:true});await page.screenshot({path:'.cache/schedule-details-web/schedule-details.png'});
   await page.evaluate(()=>window.setFlags(false));await page.locator('.schedule-detail-pane').waitFor({state:'detached'});assert.equal(await page.locator('.schedule-detail-pane').count(),0);assert.equal(await page.locator('.schedule-columns').count(),1,'Unopted schedules retain ordinary columns');
 });

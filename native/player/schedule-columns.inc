@@ -31,7 +31,11 @@
     const int period=game.state.value("periodIndex",0)%game.periods();
     const bool editable=!progress_pending()&&(game.state.value("phase","")=="planning"||game.state.value("phase","")=="ready");
     plan_slot=std::clamp(plan_slot,0,game.periods()-1);
-    const double width=e.value("width",888.0),height=e.value("height",400.0),cw=std::max(180.0,(width-4)/game.periods());
+    // The authored rectangle includes padding and borders. Using its outer
+    // width made otherwise fitting periods overflow the scroll viewport.
+    const double padding=e.value("padding",display_content.at("project").at("visual").value("widgetTheme","")=="ornate"?0.0:6.0);
+    const double width=std::max(1.0,e.value("width",888.0)-2*padding-2*e.value("borderWidth",0.0));
+    const double height=e.value("height",400.0),cw=std::max(180.0,(width-4)/game.periods());
     std::string out="<div class=\"schedule-detail-planner\"><div id=\"plan-periods-"+escape(e.value("id",""))+"\" class=\"schedule-detail-periods\" style=\"width:100%;height:128px;overflow-x:auto;overflow-y:visible;\"><div style=\"width:"+number(cw*game.periods())+"px;\">";
     for(int i=0;i<game.periods();++i){
       const auto label=display_content.at("project").contains("calendar")?raising::dates::spec(display_content.at("project"),locale).period+" "+std::to_string(i+1):settings_words("일정 "+std::to_string(i+1),"Period "+std::to_string(i+1),"予定 "+std::to_string(i+1));

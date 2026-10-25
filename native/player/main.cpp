@@ -740,6 +740,10 @@ public:
         nodes.push_back(rendered_node_report({{"id",actors->GetId()},{"kind","roster-actors"}},actors,markup.width,markup.height,context));
         nodes.back()["scrollTop"]=actors->GetScrollTop();
       }
+      if(entry.value("kind","")=="schedule")if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id",""))) {
+        nodes.push_back(rendered_node_report({{"id",strip->GetId()},{"kind","schedule-periods"}},strip,markup.width,markup.height,context));
+        nodes.back()["scrollLeft"]=strip->GetScrollLeft();
+      }
       if(entry.value("kind","")=="schedule")if(auto* detail=document->GetElementById("plan-details-"+entry.value("id",""))) {
         nodes.push_back(rendered_node_report({{"id",detail->GetId()},{"kind","schedule-details"}},detail,markup.width,markup.height,context));
         nodes.back()["scrollTop"]=detail->GetScrollTop();nodes.back()["scrollHeight"]=detail->GetScrollHeight();nodes.back()["clientHeight"]=detail->GetClientHeight();nodes.back()["scrollWidth"]=detail->GetScrollWidth();nodes.back()["clientWidth"]=detail->GetClientWidth();

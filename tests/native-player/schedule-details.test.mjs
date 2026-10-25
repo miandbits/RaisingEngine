@@ -44,17 +44,19 @@ test('native detail planner keeps complete authored clauses in one region and pr
   await writeFile(resolve('.cache/native-schedule-details/latest.json'),JSON.stringify({ok:true,out},null,2));console.log('Schedule details evidence: '+out);
 });
 
-test('native detail planner supports one and twelve periods, horizontal review and disabled execution state',{timeout:120000},async()=>{
+test('native detail planner fits light/dark surfaces and supports one to twelve periods without false scrollbars',{timeout:120000},async()=>{
   await mkdir('.cache/native-schedule-details',{recursive:true});
-  for(const count of [1,12]){
+  for(const layout of [{count:1,width:540,height:490},{count:4,width:864,height:300},{count:4,width:864,height:300,dark:true,padding:14,borderWidth:2},{count:12,width:540,height:490}]){
+    const {count,width,height,dark=false,padding=6,borderWidth=0}=layout;
+    const ink=dark?'#f3ead4':'#203a3b',surface=dark?'#203a3b':'#f3ead4';
     const project=resolve('examples/my-first-raising-game'),built=await buildSnapshot(await loadProject(project));assert.equal(built.ok,true);
     const content=structuredClone(built.snapshot);content.project.periodsPerMonth=count;
     const screen=content.project.visual.screens.find(s=>s.id==='schedule'),planner=screen.elements.find(e=>e.kind==='schedule');
-    Object.assign(planner,{x:40,y:100,width:540,height:490,showActivityDescription:true,showActivityRules:true,color:'#273f3b'});delete planner.visibleWhen;
+    Object.assign(planner,{x:40,y:100,width,height,padding,borderWidth,borderColor:'#8b9e92',fill:surface,showActivityDescription:true,showActivityRules:true,color:ink,fontSize:20});delete planner.visibleWhen;
     screen.elements=screen.elements.filter(e=>e.kind==='schedule'||e.id==='advance');
     const out=await mkdtemp(resolve('.cache/native-schedule-details/run-'+count+'-')),runtime=resolve(process.env.NATIVE_PLAYER_TEST_RUNTIME??process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-app'),target=desktopTarget(),destination=join(out,'game');
     await exportGame({content,projectRoot:project,destination,target,runtimes:{windows:runtime,macos:runtime,web:runtime}});
-    const last=count-1,steps=[{clickWindow:'start'},{checkpoint:'initial'},
+    const last=count-1,steps=[{clickWindow:'start'},{checkpoint:'initial',screenshot:join(out,'initial.png')},{hover:'plan-review-0'},{checkpoint:'hovered'},
       {scrollIntoView:'plan-review-'+last},{clickWindow:'plan-review-'+last},{checkpoint:'last'},
       {clickWindow:'plan-'+last},{checkpoint:'dropdown'},{clickWindow:'plan-'+last+'-option-rest'},{checkpoint:'edited'},
       {clickWindow:'advance'},{checkpoint:'confirmed'},{clickWindow:'advance'},{checkpoint:'result'},
@@ -63,6 +65,15 @@ test('native detail planner supports one and twelve periods, horizontal review a
     const child=spawnSync(playerExecutable(target,destination),['--bundle',gameDirectory(target,destination),'--save',join(out,'save.json'),'--automation',input,'--report',report,'--report-checkpoints-only','--hidden'],{encoding:'utf8',timeout:60000});
     assert.equal(child.status,0,child.stderr||child.error?.message);const result=JSON.parse(await readFile(report,'utf8'));assert.equal(result.ok,true,result.error);
     const initial=at(result,'initial'),lastView=at(result,'last'),review=lastView.nodes.find(n=>n.id==='plan-review-'+last);
+    const strip=initial.nodes.find(n=>n.kind==='schedule-periods');
+    if(count<12)assert.ok(strip.scrollWidth<=strip.clientWidth+1,'Fitting periods have no horizontal scrollbar, including authored padding/borders');
+    else assert.ok(strip.scrollWidth>strip.clientWidth,'Long calendars retain necessary horizontal scrolling');
+    for(const checkpoint of ['initial','hovered']){
+      const control=at(result,checkpoint).nodes.find(n=>n.id==='plan-review-0');
+      assert.equal(control.color.toLowerCase(),ink,'Review text inherits authored ink');
+      assert.match(control.backgroundColor,/^(transparent|#00000000)$/i,'Review button keeps the authored light or dark surface, including hover');
+    }
+    if(count===4){const detail=initial.nodes.find(n=>n.kind==='schedule-details');assert.ok(detail.clientHeight>=90,'300px planner exposes description beneath its title');}
     assert.equal(review.clipped,false);assert.equal(review.clickableAtCenter,true);assert.equal(lastView.scheduleDraft.slot,last);assert.deepEqual(lastView.commands,initial.commands);assert.deepEqual(lastView.scheduleDraft.activities,initial.scheduleDraft.activities);
     assert.ok(at(result,'dropdown').options.filter(o=>o.id.startsWith('plan-'+last+'-option-')).every(o=>o.visible),'All dropdown options remain reachable after horizontal scrolling');
     assert.deepEqual(at(result,'confirmed').state.schedule,Array(count).fill('rest'));

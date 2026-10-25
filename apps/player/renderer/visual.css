@@ -233,7 +233,7 @@
 .schedule-detail-period{flex:1 0 168px;min-width:0}
 .visual-schedule .schedule-period-review{display:block;box-sizing:border-box;width:100%;min-height:44px;padding:7px 10px;margin:0;font:inherit;font-size:17px;line-height:1.5;white-space:normal;text-align:left;color:inherit;background:transparent;border:1px solid #8b9e92;border-radius:6px}
 .visual-schedule .schedule-period-review[aria-pressed=true]{border-left:5px solid #b38b49}
-.schedule-detail-period select{box-sizing:border-box;min-height:44px}
+.schedule-detail-period select{box-sizing:border-box;min-height:44px;color:#203a34;background:#fffdf6}
 .schedule-draft-note{flex-shrink:0;margin:8px 0 12px;font-size:16px;line-height:1.4;overflow-wrap:anywhere}
 .schedule-detail-pane{flex:1;min-height:0;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;padding:12px 14px;border-top:1px solid #8b9e92;white-space:pre-wrap;overflow-wrap:anywhere;scrollbar-gutter:stable}
 .schedule-detail-title{font-size:20px;line-height:1.5}
