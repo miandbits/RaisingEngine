@@ -123,7 +123,12 @@ public:
   int viewport_width=0,viewport_height=0;
   int window_width=0,window_height=0;
   Json safe_area=Json::object();
-  bool readable_active=false,reading_options=false;
+  bool readable_active=false,reading_options=false,reading_menu=false;
+  bool compact_picker=false;
+  int compact_slot=0,compact_revision=-1;
+  std::string compact_activity,compact_group,compact_element,compact_owner;
+  std::string readable_view="game";
+  bool reading_overlay() const {return reading_options||reading_menu||compact_picker;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;

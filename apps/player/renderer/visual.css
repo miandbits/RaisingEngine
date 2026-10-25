@@ -171,3 +171,26 @@
 .visual-readable .visual-choices:not(.choice-cards) button,.visual-readable .schedule-columns label,.visual-readable .roster-schedule select,.visual-readable .roster-schedule button,.visual-readable .player-settings-controls select,.visual-readable .slot-thumbnail{color:var(--readable-control-ink,inherit)}
 .visual-readable .web-save-slots button{color:var(--readable-slot-ink,inherit)}
 .visual-settings-fields{border:0;padding:0;margin:0;min-width:0;font:inherit;color:inherit}
+
+/* Opt-in action hierarchy: one current task, one stable utility destination. */
+.visual-shell:has(.readable-grouped) .player-settings-open{display:none}
+.readable-grouped-actions{flex-wrap:nowrap;align-items:flex-start;max-height:40%}
+.readable-grouped-actions>.visual-element{flex:1 1 0}
+.reading-menu-launcher{flex:0 1 auto;font:inherit;line-height:1.5;padding:10px 12px;min-height:var(--readable-target);min-width:var(--readable-target);white-space:normal;overflow-wrap:anywhere}
+.reading-dialog{box-sizing:border-box;border:2px solid #718c84;border-radius:12px;padding:var(--readable-padding,16px);color:var(--readable-ink,#263c36);background:var(--readable-background,#f5efdf);font:inherit;line-height:1.5;width:min(760px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);overflow:hidden;white-space:normal;overflow-wrap:anywhere}
+.reading-dialog[open]{display:flex;flex-direction:column;gap:var(--readable-gap,12px)}
+.reading-dialog::backdrop{background:#0009}
+.reading-dialog h2,.reading-dialog h3{font-size:1em;line-height:1.5;margin:0}
+.reading-dialog-body{overflow-y:auto;min-height:0;overscroll-behavior:contain;touch-action:pan-y}
+.reading-dialog-actions{display:flex;gap:var(--readable-gap,12px);flex-wrap:wrap;flex-shrink:0}
+.reading-dialog-actions>button{flex:1 1 120px}
+.reading-dialog button,.compact-schedule button{box-sizing:border-box;font:inherit;line-height:1.5;min-width:var(--readable-target,44px);min-height:var(--readable-target,44px);max-width:100%;padding:10px 12px;white-space:normal;overflow-wrap:anywhere;color:#263c36;background:#fffdf6;border:1px solid #718c84;border-radius:8px}
+.reading-dialog button[aria-pressed=true]{background:#263c36;color:#fffdf6;border:2px solid #263c36}
+.reading-menu-items,.compact-schedule-slots,.compact-schedule-activities{display:flex;flex-direction:column;gap:var(--readable-gap,12px)}
+.compact-schedule-slots>button{text-align:left;display:flex;flex-wrap:wrap;gap:0 12px}
+.compact-schedule-slots>button>span{flex:1 1 12em}
+.compact-schedule-groups{display:flex;flex-wrap:wrap;gap:var(--readable-gap,12px);margin-bottom:var(--readable-gap,12px)}
+.compact-schedule-detail{margin-top:var(--readable-gap,12px);border-top:1px solid #718c84;padding-top:var(--readable-gap,12px)}
+.compact-schedule-detail p{margin:.5em 0}
+
+.reading-menu-launcher{color:#263c36;background:#fffdf6;border:1px solid #718c84}

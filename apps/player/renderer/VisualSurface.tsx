@@ -1,3 +1,6 @@
+import {ReadingDialog} from './ReadingDialog.js';
+import {useReadingPosition} from './reading-position.js';
+import {slotWords} from '../../../packages/player-service/save-slots.js';
 import {readableLayoutForScreen,type ResolvedReadableItem} from '../../../packages/visual/readable-layout.js';
 import {usePlayerPreferences,PlayerSettingsControls} from './PlayerSettings.js';
 import {SaveSlotsWidget} from './SaveSlotsWidget.js';
@@ -22,6 +25,7 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  readingKey?:string;
   saveSlots?:SaveSlotsView;
   onSlotAction?:(action:SaveSlotAction)=>void;
   rosterCharacterIds?: readonly string[];
@@ -71,6 +75,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   onAction?:(action:NonNullable<Element['action']>,element:Element)=>void;onCommand?:(command:WidgetCommand)=>void;onPlan?:(index:number,id:string)=>void;onCommitPlan?:()=>void;onChoice?:(id:string)=>void;onUserValue?:(id:string,value:string)=>void;children?:React.ReactNode;
 }) {
   const preferences=usePlayerPreferences();
+  const [menuOpen,setMenuOpen]=useState(false);
   const readingScroll=useRef<HTMLDivElement>(null),readingActions=useRef<HTMLDivElement>(null);
   const gesture=useRef({x:0,y:0,dragged:false});
   const host=useRef<HTMLDivElement>(null);const [viewport,setViewport]=useState({width:design.width,height:design.height,safeWidth:design.width,safeHeight:design.height});
@@ -79,9 +84,11 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const size=fitViewport?logicalViewport(design,viewport.width,viewport.height):{width:design.width,height:design.height};
   const scale=fitViewport?Math.min(viewport.width/size.width,viewport.height/size.height):viewport.width/design.width;
   const offset=fitViewport?{x:(viewport.width-size.width*scale)/2,y:(viewport.height-size.height*scale)/2}:{x:0,y:0};
-  const readable=fitViewport&&!editing?readableLayoutForScreen(design,screenId,{width:viewport.safeWidth,height:viewport.safeHeight},preferences?.value):null;
+  const readable=fitViewport&&!editing?readableLayoutForScreen(design,screenId,{width:viewport.safeWidth,height:viewport.safeHeight},menuOpen||preferences?.readingOverlayActive?{...preferences?.value,readingLayout:'on'}:preferences?.value):null;
   const elements=readable?[...readable.items,...readable.actions].map(item=>item.element):resolveScreenElements(design,screenId,size);
-  useEffect(()=>{readingScroll.current?.scrollTo(0,0);readingActions.current?.scrollTo(0,0);},[screenId,context.story,context.phase,context.saveSlots?.confirmation]);
+  const positionKey=JSON.stringify([screenId,context.readingKey??[context.dataState?.periodIndex,context.dataState?.activeNarrative,context.story,context.phase],screenId===context.saveSlots?.screenId?context.saveSlots?.confirmation??null:null]);
+  const readingPosition=useReadingPosition(readingScroll,positionKey,JSON.stringify([viewport.width,viewport.height,readable?.textScale]),!!readable);
+  useEffect(()=>{setMenuOpen(false);readingActions.current?.scrollTo(0,0);},[positionKey]);
   useEffect(()=>{window.raisingExtensions?.commitPresentation(context.dataState);},[context.dataState,screenId]);
   const planning=useSchedulePlanner(context);
   const calendarBinding=(binding:Element['binding']):string|null=>{
@@ -155,13 +162,13 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
       if(element.kind==='schedule')body=context.dataState?.roster
         ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/>
-        :<ScheduleWidget readable={!!readingItem} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
+        :<ScheduleWidget readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
       if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue">{context.story}</p>;
       if(element.kind==='result')body=context.actorResults?.length
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
       if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
-      if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||element.action==='advance'&&['choice','finished','title'].includes(context.phase)} onClick={()=>element.action&&onAction?.(element.action,element)}>{element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼'}</button>;
+      if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||element.action==='advance'&&['choice','finished','title'].includes(context.phase)} onClick={()=>{if(element.action){setMenuOpen(false);onAction?.(element.action,element);}}}>{element.action==='advance'&&context.phase==='activity-result'?'다음으로':element.text??'버튼'}</button>;
       if(element.kind==='collection'){
         style.padding=0;
         const rows=context.dataUi?.collections[screenId]?.[element.id]??[];
@@ -187,14 +194,25 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       return <div className={`visual-element visual-${element.kind} ${raw.styleId||design.defaultStyle?'visual-styled':''}`} style={style} key={element.id} data-element-id={element.id}>{body}</div>;
   };
   if(readable){
-    const {config}=readable,vars={'--readable-target':`${config.minTargetSize}px`,'--readable-gap':`${config.gap}px`,'--readable-padding':`${config.padding}px`,'--readable-width':`${config.maxWidth}px`,fontSize:config.fontSize*readable.textScale,background:config.background,'--readable-background':config.background} as React.CSSProperties;
-    return <div className="visual-viewport visual-fit visual-readable" data-screen={screenId} data-readable-layout="true" ref={host} style={vars}
+    const {config}=readable,vars={'--readable-target':`${config.minTargetSize}px`,'--readable-gap':`${config.gap}px`,'--readable-padding':`${config.padding}px`,'--readable-width':`${config.maxWidth}px`,fontSize:config.fontSize*readable.textScale,background:config.background,'--readable-background':config.background,'--readable-ink':readableInk(config.background)} as React.CSSProperties;
+    const grouped=readable.actionLayout==='grouped',words=(ko:string,en:string,ja:string)=>slotWords(context.locale,ko,en,ja);
+    const primary=grouped?readable.actions.find(item=>item.element.id===readable.primaryAction&&isVisible(item.element,context)&&conditionPasses(item.element.visibleCondition)&&conditionPasses(item.element.enabledCondition)&&context.dataUi?.availability[screenId]?.[item.element.id]?.enabled!==false&&!(item.element.action==='advance'&&['choice','finished','title'].includes(context.phase))):undefined;
+    const secondary=readable.actions.filter(item=>item!==primary);
+    return <div className={`visual-viewport visual-fit visual-readable${grouped?' readable-grouped':''}`} data-screen={screenId} data-readable-layout="true" ref={host} style={vars}
       onPointerDownCapture={event=>{gesture.current={x:event.clientX,y:event.clientY,dragged:false};}}
       onPointerMoveCapture={event=>{if(Math.hypot(event.clientX-gesture.current.x,event.clientY-gesture.current.y)>8)gesture.current.dragged=true;}}
       onPointerCancelCapture={()=>{gesture.current.dragged=true;}}
       onClickCapture={event=>{if(event.detail>0&&gesture.current.dragged){event.preventDefault();event.stopPropagation();gesture.current.dragged=false;}}}>
-      <style>{fontCss}</style><div className="readable-scroll" ref={readingScroll} tabIndex={0} role="region" aria-label={design.screens.find(s=>s.id===screenId)?.label??screenId}><div className="readable-items">{readable.items.map(item=>renderElement(item.element,item))}</div></div>
-      {readable.actions.length>0&&<div className="readable-actions" ref={readingActions}>{readable.actions.map(item=>renderElement(item.element,item))}</div>}
+      <style>{fontCss}</style><div className="readable-scroll" ref={readingScroll} {...readingPosition} tabIndex={0} role="region" aria-label={design.screens.find(s=>s.id===screenId)?.label??screenId}><div className="readable-items">{readable.items.map(item=>renderElement(item.element,item))}</div></div>
+      {grouped?<div className="readable-actions readable-grouped-actions" ref={readingActions}>
+        {primary&&renderElement(primary.element,primary)}
+        <button className="reading-menu-launcher" data-reading-id="engine-reading-menu" aria-haspopup="dialog" onClick={()=>setMenuOpen(true)}>{words('메뉴','Menu','メニュー')}</button>
+      </div>:readable.actions.length>0&&<div className="readable-actions" ref={readingActions}>{readable.actions.map(item=>renderElement(item.element,item))}</div>}
+      {grouped&&menuOpen&&<ReadingDialog id="engine-reading-menu" title={words('게임 메뉴','Game menu','ゲームメニュー')} onClose={()=>setMenuOpen(false)}>
+        <div className="reading-dialog-body reading-menu-items">{secondary.map(item=>renderElement(item.element,item))}
+          {preferences&&<button data-reading-id="engine-reading-options" onClick={()=>window.dispatchEvent(new Event('raising-open-reading-settings'))}>{words('소리·읽기 설정','Sound & reading settings','音声と読み方の設定')}</button>}
+        </div><div className="reading-dialog-actions"><button data-reading-id="engine-reading-menu-close" onClick={()=>setMenuOpen(false)}>{words('닫기','Close','閉じる')}</button></div>
+      </ReadingDialog>}
       {children}
     </div>;
   }

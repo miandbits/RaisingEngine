@@ -96,7 +96,9 @@ test('UI feature capabilities reject old runtimes before packaging, while legacy
       ['components-v1',visual=>{visual.components=[{id:'card',label:'Card',width:100,height:40,elements:[]}];}],
       ['anchors-v1',visual=>{visual.screens[0].elements[0].anchorX='right';}],
       ['responsive-v1',visual=>{visual.viewportMode='responsive';}],
-      ['readable-layout-v1',visual=>{visual.readableLayout={};visual.screens[0].readableLayout={items:[]};}]
+      ['readable-layout-v1',visual=>{visual.readableLayout={};visual.screens[0].readableLayout={items:[]};}],
+      ['readable-actions-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'mobile-next',kind:'button',text:'Continue',action:'advance',x:0,y:0,width:100,height:44});Object.assign(s.readableLayout,{actionLayout:'grouped',primaryAction:'mobile-next',actions:['mobile-next']});}],
+      ['compact-planning-v1',visual=>{visual.readableLayout={};const s=visual.screens[0];s.readableLayout??={items:[]};s.elements.push({id:'mobile-planner',kind:'schedule',x:0,y:0,width:300,height:400});s.readableLayout.items.push({elementId:'mobile-planner',schedulePresentation:'compact'});}]
     ];
     for(const [feature,change] of variations){
       const content=structuredClone(built.snapshot);change(content.project.visual);

@@ -3446,5 +3446,17 @@
 ["390 × 844 · 휴대전화","390 × 844 · Phone","390 × 844 · スマートフォン"],
 ["844 × 390 · 가로 화면","844 × 390 · Landscape","844 × 390 · 横向き"],
 [" (종료 코드 %1)"," (exit %1)"," (終了コード %1)"],
-  ["이 기능을 끄고 저장하면 모든 화면의 읽기 순서가 제거됩니다. 실행 취소로 복원할 수 있습니다.", "Turning this off and saving removes all screen reading orders. Undo restores them.", "この機能をオフにして保存すると、すべての画面の読み順が削除されます。「元に戻す」で復元できます。"]
+  ["이 기능을 끄고 저장하면 모든 화면의 읽기 순서가 제거됩니다. 실행 취소로 복원할 수 있습니다.", "Turning this off and saving removes all screen reading orders. Undo restores them.", "この機能をオフにして保存すると、すべての画面の読み順が削除されます。「元に戻す」で復元できます。"],
+  ["하단 버튼을 주요 동작과 도구 메뉴로 묶기","Group bottom actions into primary action and tools","下部ボタンを主要操作とツールメニューにまとめる"],
+  ["주요 동작","Primary action","主要操作"],
+  ["주요 동작은 바로 표시하고 나머지 버튼은 도구 메뉴에 넣습니다. 주요 동작이 없으면 모든 버튼이 메뉴에 들어갑니다. 묶기를 끄면 주요 동작 지정도 제거됩니다.","Show the primary action directly and put other buttons in the tools menu. With no primary action, all buttons go in the menu. Turning grouping off also clears the primary action.","主要操作を直接表示し、その他のボタンはツールメニューに入れます。主要操作がなければ、すべてメニューに入ります。まとめる設定をオフにすると主要操作の指定も解除されます。"],
+  ["없음 · 모두 도구 메뉴에 표시","None · all actions in tools menu","なし・すべてツールメニューに表示"],
+  ["선택한 일정을 간결하게 표시","Use compact planning for this schedule","選択した予定をコンパクトに表示"],
+  ["주간 요약에서 활동을 골라 자세한 정보를 엽니다.","Choose an activity from the weekly summary to open its details.","週間の概要から活動を選ぶと詳細が開きます。"],
+  ["기본 일정 표시로 되돌리기","Restore standard schedule presentation","標準の予定表示に戻す"],
+  ["명단이 있는 프로젝트는 기본 일정 표시를 사용합니다. 간결한 표시는 현재 단일 인물 일정만 지원합니다.","Projects with a roster use standard schedules. Compact planning currently supports single-character schedules only.","名簿のあるプロジェクトでは標準の予定表示を使います。コンパクト表示は現在、単一人物の予定のみに対応しています。"],
+  ["주요 동작 버튼을 제거하여 지정을 해제했습니다. 다른 주요 동작을 선택하거나 모든 버튼을 도구 메뉴에 둘 수 있습니다.","Removing that button cleared the primary action. Choose another primary action or keep all buttons in the tools menu.","ボタンを削除したため主要操作の指定を解除しました。別の主要操作を選ぶか、すべてのボタンをツールメニューに入れられます。"],
+  ["주요 동작을 사용하려면 하단 버튼 묶기를 켜거나 주요 동작 지정을 해제하세요.","Enable grouped bottom actions or clear the primary action.","下部ボタンをまとめる設定をオンにするか、主要操作の指定を解除してください。"],
+  ["화면 %1의 간결한 일정 표시를 해제하세요. 이 기능은 명단이 없는 프로젝트의 일정 요소만 지원합니다: %2","Turn off compact planning on screen %1. It requires a schedule element in a project without a roster: %2","画面 %1 のコンパクトな予定表示を解除してください。名簿のないプロジェクトの予定要素のみ対応しています：%2"],
+  ["화면 %1의 주요 동작을 현재 하단 버튼 중에서 다시 선택하거나 지정을 해제하세요: %2","Choose a current bottom button as the primary action on screen %1, or clear it: %2","画面 %1 の現在の下部ボタンから主要操作を選び直すか、指定を解除してください：%2"]
 ]

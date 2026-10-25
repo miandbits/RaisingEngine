@@ -1,5 +1,5 @@
 import {normalizeReadablePreferences} from '../../../packages/visual/readable-layout.js';
-import React, { createContext, useContext, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useRef } from 'react';
 import {slotWords} from '../../../packages/player-service/save-slots.js';
 export interface PlayerPreferences { music: number; effects: number; reducedMotion: boolean; highContrast: boolean; readingLayout: 'auto'|'on'; textScale: 1|1.25|1.5|2 }
 export const preferencesKey = 'raising-player-preferences-v1';
@@ -15,7 +15,7 @@ export function readPreferences(): PlayerPreferences {
       ...normalizeReadablePreferences(saved) };
   } catch { return defaults; }
 }
-export interface PlayerSettingsState { value:PlayerPreferences; onChange:(value:PlayerPreferences)=>void; muted:boolean; onMuted:(value:boolean)=>void; readableEnabled?:boolean }
+export interface PlayerSettingsState { value:PlayerPreferences; onChange:(value:PlayerPreferences)=>void; muted:boolean; onMuted:(value:boolean)=>void; readableEnabled?:boolean;readingOverlayActive?:boolean; onReadingOverlay?:(id:string,open:boolean)=>void }
 export const PlayerPreferencesContext=createContext<PlayerSettingsState|null>(null);
 export const usePlayerPreferences=()=>useContext(PlayerPreferencesContext);
 export function PlayerSettingsControls({value,onChange,muted,onMuted,readableEnabled,locale}:{locale?:string|undefined}&PlayerSettingsState) {
@@ -32,6 +32,7 @@ export function PlayerSettingsControls({value,onChange,muted,onMuted,readableEna
 }
 export function PlayerSettings({locale,locales,onLocale,localeBusy,onOpenChange,...settings}:{locale:string|undefined;locales?:readonly {id:string;label:string}[]|undefined;onLocale?:((locale:string)=>void)|undefined;localeBusy?:boolean;onOpenChange:(open:boolean)=>void}&PlayerSettingsState) {
   const dialog=useRef<HTMLDialogElement>(null),words=(ko:string,en:string,ja:string)=>slotWords(locale,ko,en,ja);
+  useEffect(()=>{const open=()=>{dialog.current?.showModal();onOpenChange(true);};window.addEventListener('raising-open-reading-settings',open);return()=>window.removeEventListener('raising-open-reading-settings',open);},[onOpenChange]);
   return <div className="player-quality">
     <button className="player-settings-open" onClick={()=>{dialog.current?.showModal();onOpenChange(true);}} aria-haspopup="dialog">{words('환경 설정','Settings','設定')}</button>
     <dialog ref={dialog} onClose={()=>onOpenChange(false)} aria-labelledby="player-settings-title" style={settings.readableEnabled?{fontSize:18*settings.value.textScale}:undefined}>
@@ -39,7 +40,7 @@ export function PlayerSettings({locale,locales,onLocale,localeBusy,onOpenChange,
       {settings.readableEnabled&&onLocale&&locales&&locales.length>1&&<div className="player-settings-controls"><label>{words('언어','Language','言語')}<select aria-label={words('언어','Language','言語')} value={locale} disabled={localeBusy} onChange={e=>onLocale(e.target.value)}>{locales.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>}
       <PlayerSettingsControls {...settings} locale={locale}/>
       <p>{words('설정은 이 기기에 보관됩니다. 이야기의 시간과 결과는 바뀌지 않습니다.','Settings stay on this device. Story timing and results are unchanged.','設定はこの端末に保存されます。物語の時間と結果は変わりません。')}</p>
-      <button onClick={()=>dialog.current?.close()}>{words('닫기','Close','閉じる')}</button>
+      <button data-reading-id="engine-reading-close" onClick={()=>dialog.current?.close()}>{words('닫기','Close','閉じる')}</button>
     </dialog>
   </div>;
 }

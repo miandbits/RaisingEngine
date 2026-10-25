@@ -53,7 +53,7 @@
     if(value==dialogue_rendered&&dialogue_render_generation==document_generation)return;
     dialogue_rendered=value;dialogue_render_generation=document_generation;
     for(const auto& e:markup.render_elements)if(e.value("kind","")=="dialogue"||(e.value("kind","")=="text"&&e.value("binding","")=="story"))
-      if(auto* element=document->GetElementById("node-"+e.value("id",""));element&&element->IsVisible(true))element->SetInnerRML(value);
+      if(auto* element=document->GetElementById("node-"+e.value("id",""));element&&element->IsVisible(true))element->SetInnerRML(markup.readable_active?markup.readable_text(e.value("id",""),dialogue_text,bytes):value);
     for(const auto& e:markup.render_elements)if(e.value("kind","")=="button"&&e.value("action","")=="advance"&&e.value("autoLabel",true)) {
       const auto id=e.value("id","");
       const auto label=dialogue_complete()?markup.settings_words("다음 문장","Next line","次の台詞"):markup.settings_words("끝까지 보기","Show full line","全文表示");
@@ -62,7 +62,7 @@
   }
   void advance_dialogue_clock(double delta) {
     if(!std::isfinite(delta)||delta<0||delta>60000)throw std::runtime_error("Invalid dialogue clock delta");
-    sync_dialogue();if(!dialogue_active()||backgrounded||markup.reading_options||!markup.ui_modal.empty()||!markup.pending_purchase.is_null()||game.timeline_active()||!game.direction_cursor.is_null())return;
+    sync_dialogue();if(!dialogue_active()||backgrounded||markup.reading_overlay()||!markup.ui_modal.empty()||!markup.pending_purchase.is_null()||game.timeline_active()||!game.direction_cursor.is_null())return;
     const bool complete=dialogue_complete();if(!complete)dialogue_characters+=delta*preferences.at("textSpeed").get<int>()/1000.0;
     if(complete&&preferences.at("autoAdvance").get<bool>()){
       dialogue_wait+=delta;if(dialogue_wait>=preferences.at("autoDelay").get<int>()*1000){dialogue_wait=0;execute({{"type","advance"}});}

@@ -60,3 +60,27 @@ test('invalid references, duplicate IDs, unsupported kinds and non-button action
  delete valid.readableLayout;assert.ok(diagnostics(valid).some(i=>i.code==='READABLE_CONFIG_REQUIRED'));
  delete valid.screens[0].readableLayout;valid.readableLayout={};assert.ok(diagnostics(valid).some(i=>i.code==='READABLE_SCREEN_MISSING'&&i.severity==='warning'));
 });
+
+test('grouped actions and compact schedules retain canonical element identity and never mutate authored actions',()=>{
+ const design=fixture(),screen=design.screens[0];
+ screen.elements.push(element('save','button',{text:'Save',action:'save'}),element('planner','schedule',{scheduleLayout:'board'}));
+ screen.readableLayout.actions.push('save');Object.assign(screen.readableLayout,{actionLayout:'grouped',primaryAction:'advance'});
+ screen.readableLayout.items.unshift({elementId:'planner',schedulePresentation:'compact'});
+ const before=structuredClone(design),view=readableLayoutForScreen(design,'story',{width:390,height:844},{textScale:2});
+ assert.equal(view.actionLayout,'grouped');assert.equal(view.primaryAction,'advance');
+ assert.deepEqual(view.actions.map(x=>[x.element.id,x.element.action]),[['advance','advance'],['save','save']]);
+ assert.equal(view.items[0].schedulePresentation,'compact');assert.equal(view.items[0].element.scheduleLayout,'board');
+ assert.deepEqual(design,before);assert.equal(diagnostics(design).filter(x=>x.severity==='error').length,0);
+ delete screen.readableLayout.primaryAction;assert.equal(readableLayoutForScreen(design,'story',{width:390,height:844}).primaryAction,undefined);
+});
+
+test('primary action roles and compact planning validate real references and scope',()=>{
+ const design=fixture(),layout=design.screens[0].readableLayout;
+ layout.primaryAction='missing';layout.items[0].schedulePresentation='compact';
+ let issues=diagnostics(design);
+ for(const code of ['READABLE_PRIMARY_GROUP','READABLE_PRIMARY_REFERENCE','READABLE_SCHEDULE_KIND'])assert.ok(issues.some(x=>x.code===code&&x.severity==='error'),code);
+ layout.actionLayout='grouped';layout.primaryAction='advance';delete layout.items[0].schedulePresentation;
+ design.screens[0].elements.push(element('planner','schedule'));layout.items.push({elementId:'planner',schedulePresentation:'compact'});
+ const ctx=new SemanticContext();checkReadableLayout(ctx,{file:'project.json',kind:'project',data:{visual:design,roster:{}},version:'test',locations:new Map()},design);
+ assert.ok(ctx.diagnostics.some(x=>x.code==='READABLE_COMPACT_ROSTER'));
+});

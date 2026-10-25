@@ -783,6 +783,17 @@
             "items"
           ],
           "properties": {
+            "actionLayout": {
+              "enum": ["grouped"],
+              "description": "Keep one primary action and group the other bottom actions in a labeled utility menu. Omit for the existing wrapping action region."
+            },
+            "primaryAction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "description": "Optional existing bottom-action button ID for grouped mode. Omit when the reading content is the primary task."
+            },
             "items": {
               "type": "array",
               "maxItems": 1000,
@@ -804,6 +815,10 @@
                     "minimum": 16,
                     "maximum": 64,
                     "description": "Text size before player scaling; never below the global minimum."
+                  },
+                  "schedulePresentation": {
+                    "enum": ["compact"],
+                    "description": "For schedule elements only: a compact period summary with an activity picker and explicit apply/cancel. Only changes the reading presentation."
                   },
                   "imageHeight": {
                     "type": "integer",

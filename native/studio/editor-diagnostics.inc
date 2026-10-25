@@ -40,7 +40,16 @@ void translateDiagnosticField(QJsonObject &object,const QString &key) {
 }
 }
 
-QString editorDiagnostic(const QString &message) {
+QString editorDiagnostic(const QString &sourceMessage) {
+  // These new shared validation messages originate in English. Normalize only exact
+  // engine-owned messages; third-party diagnostics and opaque parameters stay intact.
+  static const QHash<QString,QString> readableMessages{
+    {"Compact planning applies only to schedule elements.","간결한 일정 표시는 일정 요소에만 적용할 수 있습니다."},
+    {"A primary action requires grouped bottom actions.","주요 동작을 지정하려면 하단 버튼 묶기가 필요합니다."},
+    {"The primary action must be a button listed in this screen’s bottom actions.","주요 동작은 이 화면의 하단 버튼 목록에 있는 버튼이어야 합니다."},
+    {"Compact planning currently supports single-character schedules. Use the standard presentation for roster schedules.","간결한 일정 표시는 현재 단일 인물 일정만 지원합니다. 명단 일정은 기본 표시를 사용하세요."}
+  };
+  const auto message=readableMessages.value(sourceMessage,sourceMessage);
   if(editorLanguage()=="ko" || message.size()>16384) return message;
   static QString loaded;
   static QList<DiagnosticTranslation> catalog;

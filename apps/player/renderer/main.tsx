@@ -24,6 +24,8 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const [muted, setMuted] = useState(true);
   const [preferences, setPreferences] = useState(readPreferences);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [readingOverlays,setReadingOverlays]=useState<string[]>([]);
+  const readingPaused=readingOverlays.length>0;
   const [hidden, setHidden] = useState(document.hidden);
   useEffect(() => {
     const changed = () => setHidden(document.hidden);
@@ -110,9 +112,9 @@ export function Player({ preview = false }: { preview?: boolean }) {
 
   const slots=window.player.slots?(action:SaveSlotAction)=>void request(()=>window.player.slots!(action,version)):undefined;
   useEffect(()=>{if(!window.player.checkpoint||!version||!view?.saveSlots?.checkpointPending||view.saveSlots.screenId||busy||hidden||settingsOpen)return;const timer=setTimeout(()=>void request(()=>window.player.checkpoint!(version)),40);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,view?.saveSlots?.checkpointPending,view?.saveSlots?.screenId,busy,hidden,settingsOpen]);
-  const act = (action: PlayerAction) => { if ((document.hidden || settingsOpen) && (action.type === 'scheduleStep' || action.type === 'timelineTick')) return; if (version) void request(() => window.player.act(action, version)); };
+  const act = (action: PlayerAction) => { if ((document.hidden || settingsOpen || readingPaused) && (action.type === 'scheduleStep' || action.type === 'timelineTick')) return; if (version) void request(() => window.player.act(action, version)); };
   const autoStep=scheduleStep(state??null,view?.schedulePlayback,view?.timeline);
-  useEffect(()=>{if(settingsOpen||hidden||busy||error||view?.saveSlots?.screenId||view?.saveSlots?.checkpointPending||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error,hidden,settingsOpen,view?.saveSlots?.screenId,view?.saveSlots?.checkpointPending]);
+  useEffect(()=>{if(settingsOpen||readingPaused||hidden||busy||error||view?.saveSlots?.screenId||view?.saveSlots?.checkpointPending||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error,hidden,settingsOpen,readingPaused,view?.saveSlots?.screenId,view?.saveSlots?.checkpointPending]);
   const canPlan = state?.phase === 'planning' || state?.phase === 'ready';
   const dirty = !state?.schedule || plan.some((id, index) => id !== state.schedule?.[index]);
   const attributeLabel = (id: string) => view?.attributes.find(x => x.id === id)?.label ?? id;
@@ -122,7 +124,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const result = state?.lastActivityResult;
   const node = view?.narrative?.node;
 
-  const preferenceState={value:preferences,onChange:setPreferences,muted,onMuted:setMuted,readableEnabled:!!view?.visual?.readableLayout};
+  const preferenceState={value:preferences,onChange:setPreferences,muted,onMuted:setMuted,readableEnabled:!!view?.visual?.readableLayout,readingOverlayActive:readingPaused,onReadingOverlay:(id:string,open:boolean)=>setReadingOverlays(previous=>open?[...new Set([...previous,id])]:previous.filter(value=>value!==id))};
   const changeLocale=window.player.setLocale?(locale:string)=>void request(()=>window.player.setLocale!(locale)):undefined;
   const settings = <PlayerSettings locales={view?.localization?.locales} onLocale={changeLocale} localeBusy={busy} readableEnabled={preferenceState.readableEnabled} value={preferences} onChange={setPreferences} locale={view?.locale} onOpenChange={setSettingsOpen} muted={muted} onMuted={setMuted}/>;
   if (view?.visual) return <PlayerPreferencesContext.Provider value={preferenceState}><div className="visual-shell" data-readable-enabled={preferenceState.readableEnabled}><div className={preferenceState.readableEnabled?"player-readable-toolbar":"player-legacy-toolbar"}>{settings}<span className="player-compact-status" aria-hidden="true">{busy?slotWords(view.locale,'처리 중…','Working…','処理中…'):preview?slotWords(view.locale,'초안 미리보기','Draft preview','下書きプレビュー'):slotWords(view.locale,'플레이 중','Playing','プレイ中')} · {muted?slotWords(view.locale,'소리 꺼짐','Sound off','消音'):slotWords(view.locale,'소리 켜짐','Sound on','音声あり')}</span>{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}</div><VisualPlayer {...(slots?{slots}:{})} view={view} design={view.visual} busy={busy||!!view.saveSlots?.checkpointPending&&!view.saveSlots.screenId} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></div></PlayerPreferencesContext.Provider>;

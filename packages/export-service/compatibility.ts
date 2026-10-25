@@ -17,6 +17,8 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   const visual=content.project.visual,requiredFeatures:string[]=[];
   if(content.project.calendar)requiredFeatures.push('calendar-v1');
   if(visual?.readableLayout||visual?.screens.some(s=>s.readableLayout))requiredFeatures.push('readable-layout-v1');
+  if(visual?.screens.some(s=>s.readableLayout?.actionLayout==='grouped'))requiredFeatures.push('readable-actions-v1');
+  if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.schedulePresentation==='compact')))requiredFeatures.push('compact-planning-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.binding==='narrative-actor'))requiredFeatures.push('narrative-actor-binding-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.showActivityRules))requiredFeatures.push('activity-rules-summary-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.activityIcons?.length))requiredFeatures.push("schedule-board-icons-v1");

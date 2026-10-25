@@ -1,8 +1,9 @@
+  #include "compact-planning.inc"
   // Reading order is a presentation of the same resolved leaves and commands.
   // RmlUi measures natural text height; no character-count estimates are used.
   bool readable_requested(const Json& visual,const Json& screen) const {
     if(!visual.contains("readableLayout")||!screen.contains("readableLayout")||window_width<=0||window_height<=0)return false;
-    return reading_options||player_preferences.value("readingLayout","auto")=="on"||std::min(safe_area.value("width",window_width),safe_area.value("height",window_height))<=visual.at("readableLayout").value("maxShortEdge",600);
+    return reading_overlay()||player_preferences.value("readingLayout","auto")=="on"||std::min(safe_area.value("width",window_width),safe_area.value("height",window_height))<=visual.at("readableLayout").value("maxShortEdge",600);
   }
   std::string readable_settings(const Json& e) {
     const std::string id=e.value("id","settings");std::string out;
@@ -94,13 +95,26 @@
     if(plan_selected&(1<<plan_slot))out+=button("board-clear",settings_words("이 일정 비우기","Clear this period","この予定を空ける"),{{"type","boardClear"}},editable);
     return out;
   }
+  std::string readable_text(const std::string& id,const std::string& text,size_t visible_bytes=std::string::npos) const {
+    if(text.empty())return "";
+    std::string out;size_t start=0,index=0;
+    while(start<text.size()){
+      const auto end=text.find("\n\n",start),length=(end==std::string::npos?text.size():end)-start;
+      const auto shown=visible_bytes<=start?0:std::min(length,visible_bytes-start);
+      out+="<div class=\"reading-paragraph\" id=\"reading-text-"+escape(id)+"-"+std::to_string(index++)+"\">"+escape(text.substr(start,shown));
+      if(shown<length)out+="<span style=\"visibility:hidden;\">"+escape(text.substr(start+shown,length-shown))+"</span>";
+      out+="</div>";if(end==std::string::npos)break;start=end+2;
+    }
+    return out;
+  }
   std::string readable_node(Json e,const Json& item,bool action=false) {
     if(!visible(e)||e.value("opacity",1.0)<=0)return "";
     const auto& visual=display_content.at("project").at("visual");e=resolved_style(visual,e);
     const std::string kind=e.value("kind","");const double font=std::max(visual.at("readableLayout").value("fontSize",18.0),item.value("fontSize",visual.at("readableLayout").value("fontSize",18.0)))*player_preferences.value("textScale",1.0);
     e["fontSize"]=font;e["width"]=std::max(44.0,std::min(double(safe_area.value("width",window_width)),visual.at("readableLayout").value("maxWidth",760.0))-2*visual.at("readableLayout").value("padding",16.0));
     e["statsLayout"]="bars";e["x"]=0;e["y"]=0;e["height"]=item.value("imageHeight",160.0);
-    std::string body=kind=="saveSlots"||kind=="loadSlots"?readable_slots(e):kind=="playerSettings"?readable_settings(e):kind=="schedule"?readable_schedule(e):element_body(e);
+    std::string body=kind=="saveSlots"||kind=="loadSlots"?readable_slots(e):kind=="playerSettings"?readable_settings(e):kind=="schedule"?(item.value("schedulePresentation","")=="compact"?compact_schedule(e):readable_schedule(e)):element_body(e);
+    if(kind=="text"||kind=="dialogue")body=readable_text(e.value("id",""),kind=="dialogue"?bind("story"):e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
     if(body.empty())return "";
     // Legacy result/choice fragments contain fixed line metrics. Reading mode
     // lets them inherit the selected size and use their measured content height.
@@ -127,16 +141,44 @@
     const double pad=config.value("padding",16.0),gap=config.value("gap",12.0),sw=safe_area.value("width",width),sh=safe_area.value("height",height),cw=std::min(sw,config.value("maxWidth",760.0));
     const double left=safe_area.value("x",0)+(sw-cw)/2,top=safe_area.value("y",0);
     const auto layout=screen.at("readableLayout");const std::string prefix=screen.value("modal",false)?screen.at("id").get<std::string>()+"__":"";
+    const bool grouped=layout.value("actionLayout","")=="grouped";
+    if(!grouped)reading_menu=false;
+    if(compact_picker&&!compact_picker_valid())compact_picker=false;
+    readable_view=reading_options?"options":reading_menu?"menu":compact_picker?"picker:"+std::to_string(compact_slot):"game";
     Json selected=Json::array();std::string main,footer;
-    const auto append=[&](const Json& item,bool action){const auto id=prefix+item.at("elementId").get<std::string>();for(auto e:render_elements)if(e.at("id")==id){
-      for(const auto* key:{"_clipRect","_scrollParent","_collectionParent","parentId"})e.erase(key);
-      auto html=readable_node(e,item,action);if(!html.empty()){selected.push_back(e);(action?footer:main)+=html;}break;}};
-    for(const auto& item:layout.at("items"))append(item,false);
-    for(const auto& id:layout.value("actions",Json::array()))append({{"elementId",id}},true);
+    const auto wrap=[&](const std::string& body){return "<div class=\"reading-item reading-action\">"+body+"</div>";};
+    const auto resolved=[&](const Json& item)->Json{const auto id=prefix+item.at("elementId").get<std::string>();for(auto e:render_elements)if(e.at("id")==id){
+      for(const auto* key:{"_clipRect","_scrollParent","_collectionParent","parentId"})e.erase(key);return e;}return nullptr;};
+    const auto append=[&](const Json& item,bool action){const auto e=resolved(item);if(e.is_null())return;
+      auto html=readable_node(e,item,action);if(!html.empty()){selected.push_back(e);(action?footer:main)+=html;}};
+    if(reading_options){
+      selected=Json::array({{{"id","engine-reading-settings"},{"kind","playerSettings"}}});
+      main="<div id=\"node-engine-reading-settings\" class=\"reading-item\">"+readable_settings({{"id","engine-reading-settings"},{"_readingOnly",true}})+"</div>";
+      footer=wrap(button("engine-reading-close",settings_words("게임으로 돌아가기","Back to game","ゲームへ戻る"),{{"type","readingOptions"},{"open",false}}));
+    }else if(compact_picker){
+      for(const auto& e:render_elements)if(e.at("id")==compact_element){selected.push_back(e);main="<div id=\"node-"+escape(compact_element)+"\" class=\"reading-item schedule\">"+compact_activity_picker(e)+"</div>";break;}
+      footer=wrap(button("board-apply",settings_words("이 활동 적용","Apply activity","この活動を適用"),{{"type","readingPlanApply"}},!compact_activity.empty()));
+      footer+=wrap(button("board-cancel",settings_words("취소","Cancel","キャンセル"),{{"type","readingPlanCancel"}}));
+    }else{
+      if(!reading_menu)for(const auto& item:layout.at("items"))append(item,false);
+      for(const auto& id:layout.value("actions",Json::array())){
+        const Json item={{"elementId",id}};const auto e=resolved(item);if(e.is_null())continue;
+        const auto html=readable_node(e,item,!reading_menu);if(html.empty())continue;
+        const bool primary=grouped&&layout.value("primaryAction","")==id&&html.find("disabled=\"disabled\"")==std::string::npos;
+        if(!grouped||(!reading_menu&&primary)){selected.push_back(e);footer+=html;}
+        else if(reading_menu&&!primary){selected.push_back(e);main+=html;}
+      }
+      if(reading_menu){
+        main="<p><b>"+settings_words("메뉴","Menu","メニュー")+"</b></p>"+main;
+        main+="<div class=\"reading-item\">"+button("engine-reading-options",settings_words("읽기 설정","Reading options","読み方の設定"),{{"type","readingOptions"},{"open",true}})+"</div>";
+        footer=wrap(button("engine-reading-menu-close",settings_words("게임으로 돌아가기","Back to game","ゲームへ戻る"),{{"type","readingMenu"},{"open",false}}));
+      }else if(grouped)footer+=wrap(button("engine-reading-menu",settings_words("메뉴","Menu","メニュー"),{{"type","readingMenu"},{"open",true}}));
+      else footer+=wrap(button("engine-reading-options",settings_words("읽기 설정","Reading options","読み方の設定"),{{"type","readingOptions"},{"open",true}}));
+    }
     render_elements=selected;
-    if(reading_options){actions.clear();labels.clear();render_elements=Json::array({{{"id","engine-reading-settings"},{"kind","playerSettings"}}});main="<div id=\"node-engine-reading-settings\" class=\"reading-item\">"+readable_settings({{"id","engine-reading-settings"},{"_readingOnly",true}})+"</div>";footer="<div class=\"reading-item reading-action\">"+button("engine-reading-close",settings_words("게임으로 돌아가기","Back to game","ゲームへ戻る"),{{"type","readingOptions"},{"open",false}})+"</div>";}
-    else footer+="<div class=\"reading-item reading-action\">"+button("engine-reading-options",settings_words("읽기 설정","Reading options","読み方の設定"),{{"type","readingOptions"},{"open",true}})+"</div>";
-    std::string css="body{font-family:Noto Sans KR;font-size:"+number(readable_font)+"px;color:"+ink+";background-color:"+css_color(background)+";margin:0;width:"+std::to_string(width)+"px;height:"+std::to_string(height)+"px;} div,p{display:block;box-sizing:border-box;} p{margin:0 0 "+number(gap)+"px;} span,b{display:inline;} .reading-root{position:absolute;left:"+number(left)+"px;top:"+number(top)+"px;width:"+number(cw)+"px;height:"+number(sh)+"px;display:flex;flex-direction:column;padding:"+number(pad)+"px;} .reading-main{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;} .reading-item{position:relative;width:100%;height:auto;margin-bottom:"+number(gap)+"px;white-space:normal;word-break:break-word;} .reading-item button,.reading-item input,.reading-item select,.reading-item option{box-sizing:border-box;display:block;width:100%;min-width:"+number(readable_target)+"px;min-height:"+number(readable_target)+"px;height:auto;padding:10px 12px;margin:0 0 "+number(gap)+"px;line-height:1.45;white-space:normal;word-break:break-word;background-color:#e3e8df;border-width:1px;border-color:#91a196;border-radius:4px;tab-index:auto;} button:focus{border-width:3px;border-color:#b38b49;} button:disabled{opacity:0.5;} .reading-actions{display:flex;flex-wrap:wrap;align-items:flex-start;flex-shrink:0;max-height:45%;overflow-y:auto;overflow-x:hidden;padding-top:"+number(gap)+"px;} .reading-action{flex-grow:1;flex-basis:"+number(140*player_preferences.value("textScale",1.0))+"px;min-width:"+number(readable_target)+"px;margin-right:8px;} .reading-action>button{margin-bottom:0;} .choices button>span{margin-right:0.5em;} .stat{height:auto;padding:8px 0;} .value{float:right;} .bar{height:5px;background-color:#d8e3d8;} .bar>div{height:5px;background-color:#608c69;} .reading-item .heading,.reading-item .row{height:auto;} .reading-item .reason{display:block;} scrollbarvertical{width:12px;} scrollbarvertical slidertrack{background-color:#e1e0d6;} scrollbarvertical sliderbar{min-height:44px;background-color:#718879;} scrollbarvertical sliderarrowdec,scrollbarvertical sliderarrowinc{height:0;}";
+    std::string css="body{font-family:Noto Sans KR;font-size:"+number(readable_font)+"px;color:"+ink+";background-color:"+css_color(background)+";margin:0;width:"+std::to_string(width)+"px;height:"+std::to_string(height)+"px;} div,p{display:block;box-sizing:border-box;} p{margin:0 0 "+number(gap)+"px;} span,b{display:inline;} .reading-root{position:absolute;left:"+number(left)+"px;top:"+number(top)+"px;width:"+number(cw)+"px;height:"+number(sh)+"px;display:flex;flex-direction:column;padding:"+number(pad)+"px;} .reading-main{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;} .reading-item{position:relative;width:100%;height:auto;margin-bottom:"+number(gap)+"px;white-space:normal;word-break:break-word;} .reading-item button,.reading-item input,.reading-item select,.reading-item option{box-sizing:border-box;display:block;width:100%;min-width:"+number(readable_target)+"px;min-height:"+number(readable_target)+"px;height:auto;padding:10px 12px;margin:0 0 "+number(gap)+"px;line-height:1.45;white-space:normal;word-break:break-word;background-color:#e3e8df;color:#263c36;border-width:1px;border-color:#91a196;border-radius:4px;tab-index:auto;} button:focus{border-width:3px;border-color:#b38b49;} button:disabled{opacity:0.5;} .reading-actions{display:flex;flex-wrap:wrap;align-items:flex-start;flex-shrink:0;max-height:45%;overflow-y:auto;overflow-x:hidden;padding-top:"+number(gap)+"px;} .reading-action{flex-grow:1;flex-basis:"+number(140*player_preferences.value("textScale",1.0))+"px;min-width:"+number(readable_target)+"px;margin-right:8px;} .reading-action>button{margin-bottom:0;} .choices button>span{margin-right:0.5em;} .stat{height:auto;padding:8px 0;} .value{float:right;} .bar{height:5px;background-color:#d8e3d8;} .bar>div{height:5px;background-color:#608c69;} .reading-item .heading,.reading-item .row{height:auto;} .reading-item .reason{display:block;} scrollbarvertical{width:12px;} scrollbarvertical slidertrack{background-color:#e1e0d6;} scrollbarvertical sliderbar{min-height:44px;background-color:#718879;} scrollbarvertical sliderarrowdec,scrollbarvertical sliderarrowinc{height:0;}";
+    css+=".reading-paragraph{margin-bottom:"+number(gap)+"px;}";
+    if(grouped||compact_picker)css+=".reading-actions{max-height:none;overflow-y:visible;} .reading-action{flex-basis:"+number(120*player_preferences.value("textScale",1.0))+"px;}";
     for(const auto& raw:render_elements){const auto e=resolved_style(visual,raw);const auto id=e.value("id","");const auto selector="#node-"+id+" button";css+=selector+"{color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#e3e8df"))+";}";}
     // Put notices into flow so they cannot cover the final action on short phones.
     if(!game.message.empty())main+="<p class=\"reading-notice\">"+escape(game.message)+"</p>";

@@ -1,4 +1,4 @@
-import type { ProjectDocument, JsonObject } from './model.js';
+import {isObject, type ProjectDocument, type JsonObject} from './model.js';
 import { objectItems, type SemanticContext } from './context.js';
 import { resolveScreenElements } from '../visual/components.js';
 import { readableKinds } from '../visual/readable-layout.js';
@@ -27,9 +27,16 @@ export function checkReadableLayout(ctx:SemanticContext,doc:ProjectDocument,visu
     };
     for(const [i,item] of objectItems(layout.items).entries()) {
       const element=reference(String(item.elementId),`${pointer}/items/${i}/elementId`);
+      if(item.schedulePresentation!==undefined&&element&&element.kind!=='schedule')ctx.report(doc,`${pointer}/items/${i}/schedulePresentation`,'READABLE_SCHEDULE_KIND','Compact planning applies only to schedule elements.');
+      if(item.schedulePresentation==='compact'&&isObject(doc.data)&&doc.data.roster)ctx.report(doc,`${pointer}/items/${i}/schedulePresentation`,'READABLE_COMPACT_ROSTER','Compact planning currently supports single-character schedules. Use the standard presentation for roster schedules.');
       if(item.imageHeight!==undefined&&element&&element.kind!=='image')ctx.report(doc,`${pointer}/items/${i}/imageHeight`,'READABLE_IMAGE_HEIGHT','Image height applies only to image elements.');
     }
     for(const [i,id] of ((layout.actions??[]) as string[]).entries())reference(id,`${pointer}/actions/${i}`,true);
+    if(layout.primaryAction!==undefined) {
+      const id=String(layout.primaryAction);
+      if(layout.actionLayout!=='grouped')ctx.report(doc,`${pointer}/primaryAction`,'READABLE_PRIMARY_GROUP','A primary action requires grouped bottom actions.');
+      if(!((layout.actions??[]) as string[]).includes(id))ctx.report(doc,`${pointer}/primaryAction`,'READABLE_PRIMARY_REFERENCE','The primary action must be a button listed in this screen’s bottom actions.',[id]);
+    }
     const interactive=new Set(['button','input','schedule','choices','saveSlots','loadSlots','playerSettings','collection','shop','inventory','interactions','locations','actions','policies','services','diets','sell','equipment','quests','expedition','battle','relationship-stages','plugin']);
     for(const element of elements)if(!element.hidden&&interactive.has(element.kind)&&!seen.has(element.id))ctx.report(doc,pointer,'READABLE_CONTROL_OMITTED',`Interactive element '${element.id}' is absent from this screen's reading layout.`,[element.id],'warning');
   }

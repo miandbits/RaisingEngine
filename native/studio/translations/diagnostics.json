@@ -543,5 +543,9 @@
   ["같은 활동의 아이콘은 한 번만 연결하세요.","Assign only one icon per activity.","同じ活動に割り当てるアイコンは一つにしてください。"],
   ["플러그인 저장소의 절대 경로를 선택하세요.","Select an absolute path to a plugin store.","プラグイン保管先の絶対パスを選んでください。"],
   ["플러그인 저장소의 registry.json 형식이 올바르지 않습니다.","The plugin store registry.json has an invalid format.","プラグイン保管先のregistry.jsonの形式が不正です。"],
-  ["저장된 플러그인 저장소를 사용할 수 없습니다: %1","The saved plugin store is unavailable: %1","保存したプラグイン保管先を使用できません：%1"]
+  ["저장된 플러그인 저장소를 사용할 수 없습니다: %1","The saved plugin store is unavailable: %1","保存したプラグイン保管先を使用できません：%1"],
+  ["간결한 일정 표시는 일정 요소에만 적용할 수 있습니다.","Compact planning applies only to schedule elements.","コンパクトな予定表示は予定要素にのみ適用できます。"],
+  ["주요 동작을 지정하려면 하단 버튼 묶기가 필요합니다.","A primary action requires grouped bottom actions.","主要操作を指定するには下部ボタンをまとめる設定が必要です。"],
+  ["주요 동작은 이 화면의 하단 버튼 목록에 있는 버튼이어야 합니다.","The primary action must be a button listed in this screen’s bottom actions.","主要操作はこの画面の下部ボタン一覧にあるボタンである必要があります。"],
+  ["간결한 일정 표시는 현재 단일 인물 일정만 지원합니다. 명단 일정은 기본 표시를 사용하세요.","Compact planning currently supports single-character schedules. Use the standard presentation for roster schedules.","コンパクトな予定表示は現在、単一人物の予定のみに対応しています。名簿の予定には標準表示を使ってください。"]
 ]

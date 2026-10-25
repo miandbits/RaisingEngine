@@ -64,6 +64,13 @@ int main(int argc, char **argv) {
   const auto diagnosticSource=QString::fromUtf8("읽는 동안 변경되었습니다: ")+opaque;
   const auto expectedDiagnostic=(locale=="ja"?QString::fromUtf8("読み込み中に変更されました："):locale=="en"?QString("Changed while reading: "):QString::fromUtf8("읽는 동안 변경되었습니다: "))+opaque;
   if(editorDiagnostic(diagnosticSource)!=expectedDiagnostic)return 22;
+  const QList<QStringList> readableDiagnostics{
+    {"READABLE_SCHEDULE_KIND","간결한 일정 표시는 일정 요소에만 적용할 수 있습니다.","Compact planning applies only to schedule elements.","コンパクトな予定表示は予定要素にのみ適用できます。"},
+    {"READABLE_PRIMARY_GROUP","주요 동작을 지정하려면 하단 버튼 묶기가 필요합니다.","A primary action requires grouped bottom actions.","主要操作を指定するには下部ボタンをまとめる設定が必要です。"},
+    {"READABLE_PRIMARY_REFERENCE","주요 동작은 이 화면의 하단 버튼 목록에 있는 버튼이어야 합니다.","The primary action must be a button listed in this screen’s bottom actions.","主要操作はこの画面の下部ボタン一覧にあるボタンである必要があります。"},
+    {"READABLE_COMPACT_ROSTER","간결한 일정 표시는 현재 단일 인물 일정만 지원합니다. 명단 일정은 기본 표시를 사용하세요.","Compact planning currently supports single-character schedules. Use the standard presentation for roster schedules.","コンパクトな予定表示は現在、単一人物の予定のみに対応しています。名簿の予定には標準表示を使ってください。"}
+  };
+  for(const auto &row:readableDiagnostics){const auto reply=localizeEditorReply(QJsonObject{{"view",QJsonObject{{"diagnostics",QJsonArray{QJsonObject{{"code",row[0]},{"message",row[2]},{"pointer","/visual/screens/0/readableLayout"}}}}}}});const auto diagnostic=reply.value("view").toObject().value("diagnostics").toArray().first().toObject();if(diagnostic.value("message")!=row[locale=="ko"?1:locale=="en"?2:3]||diagnostic.value("code")!=row[0]||diagnostic.value("pointer")!="/visual/screens/0/readableLayout")return 31;}
   if(TableLogic::keyword("Dialogue")!="대사"||TableLogic::keyword("活動前")!="활동 전")return 18;
   if(TableLogic::keyword("結末")!="결말")return 23;
   ProjectManager manager(QDir::currentPath()); manager.show(); app.processEvents();

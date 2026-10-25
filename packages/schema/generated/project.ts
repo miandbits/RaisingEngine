@@ -16405,6 +16405,14 @@ export interface Screen {
   modal?: boolean;
   readableLayout?: {
     /**
+     * Keep one primary action and group the other bottom actions in a labeled utility menu. Omit for the existing wrapping action region.
+     */
+    actionLayout?: "grouped";
+    /**
+     * Optional existing bottom-action button ID for grouped mode. Omit when the reading content is the primary task.
+     */
+    primaryAction?: string;
+    /**
      * @maxItems 1000
      */
     items: {
@@ -16413,6 +16421,10 @@ export interface Screen {
        * Text size before player scaling; never below the global minimum.
        */
       fontSize?: number;
+      /**
+       * For schedule elements only: a compact period summary with an activity picker and explicit apply/cancel. Only changes the reading presentation.
+       */
+      schedulePresentation?: "compact";
       /**
        * Image height in CSS pixels/native points. Default 160.
        */
