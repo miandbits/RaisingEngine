@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {cp,mkdir,mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {loadProject} from '../../dist/packages/project-service/loader.js';
@@ -8,7 +9,13 @@ import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 import {exportGame} from '../../dist/packages/export-service/export.js';
 import {desktopTarget,gameDirectory,playerExecutable} from '../../dist/packages/export-service/targets.js';
 import {decodePng,encodeRgbaPng} from '../../dist/packages/studio-service/png.js';
-const run=(command,args,options={})=>{const result=spawnSync(command,args,{encoding:'utf8',timeout:240000,windowsHide:true,maxBuffer:8*1024*1024,...options});assert.equal(result.status,0,result.error?.message??result.stderr??result.stdout);return result;};
+const run=(command,args,options={})=>{
+ const {evidenceFile,...spawnOptions}=options,started=Date.now();
+ const result=spawnSync(command,args,{encoding:'utf8',timeout:240000,windowsHide:true,maxBuffer:8*1024*1024,...spawnOptions});
+ const diagnostic={command,args,status:result.status,signal:result.signal,error:result.error?{code:result.error.code,message:result.error.message}:null,elapsedMs:Date.now()-started,stdout:result.stdout,stderr:result.stderr};
+ if(evidenceFile)writeFileSync(evidenceFile,JSON.stringify(diagnostic,null,2)+'\n');
+ assert.equal(result.status,0,JSON.stringify({status:result.status,signal:result.signal,error:diagnostic.error,elapsedMs:diagnostic.elapsedMs})+'\n'+(result.stderr??'')+(result.stdout??''));return result;
+};
 
 test('portable backup host uses isolated review, strict acceptance and real queue/lifecycle/touch guards',{timeout:360000},async()=>{
  await mkdir('.cache/native-portable-host',{recursive:true});const out=await mkdtemp(resolve('.cache/native-portable-host/run-')),project=join(out,'project');await cp(resolve('examples/my-first-raising-game'),project,{recursive:true});
@@ -34,7 +41,7 @@ test('portable backup host uses isolated review, strict acceptance and real queu
  const cmake=process.env.CMAKE??'cmake',build=resolve(process.env.NATIVE_PLAYER_TEST_BUILD??'dist/native-player');
  const configured=run(cmake,['-S','native/player','-B',build,'-DRAISING_PORTABLE_SAVE_TESTING=ON']);await writeFile(join(out,'configure.log'),configured.stdout+configured.stderr);
  const compiled=run(cmake,['--build',build,'--target','raising-portable-host-test','--parallel',process.env.BUILD_JOBS??'3']);await writeFile(join(out,'build.log'),compiled.stdout+compiled.stderr);
- const exe=join(build,process.platform==='win32'?'raising-portable-host-test.exe':'raising-portable-host-test');for(const locale of ['en','ko','ja']){const folder=locale==='en'?'host':'host-'+locale;const result=run(exe,[gameDirectory(target,destination),join(out,folder),resolve('native/player/assets'),locale],{timeout:120000});await writeFile(join(out,folder+'-process.log'),result.stdout+result.stderr);const local=JSON.parse(await readFile(join(out,folder,'host-report.json')));assert.equal(local.ok,true);assert.ok(local.checks.length>=16);} const report=JSON.parse(await readFile(join(out,'host/host-report.json')));assert.equal(report.ok,true);assert.ok(report.checks.length>=16);
+ const exe=join(build,process.platform==='win32'?'raising-portable-host-test.exe':'raising-portable-host-test');for(const locale of ['en','ko','ja']){const folder=locale==='en'?'host':'host-'+locale;const result=run(exe,[gameDirectory(target,destination),join(out,folder),resolve('native/player/assets'),locale],{timeout:120000,evidenceFile:join(out,folder+'-process.json')});await writeFile(join(out,folder+'-process.log'),result.stdout+result.stderr);const local=JSON.parse(await readFile(join(out,folder,'host-report.json')));assert.equal(local.ok,true);assert.ok(local.checks.length>=16);} const report=JSON.parse(await readFile(join(out,'host/host-report.json')));assert.equal(report.ok,true);assert.ok(report.checks.length>=16);
  for(const width of [320,390,844]){const png=decodePng(await readFile(join(out,`host/review-${width}.png`)));let light=0;for(let i=0;i<png.pixels.length;i+=4)if(png.pixels[i]>150&&png.pixels[i+1]>150&&png.pixels[i+2]>150)light++;assert.ok(light>png.width*png.height*.3,`Review ${width} screenshot must contain the rendered reading surface`);}
  // A new, uninjected shipping player loads the resulting ordinary canonical save.
  const restoredPath=join(out,'fresh/save.json');await mkdir(join(out,'fresh'));await cp(join(out,'host/accepted.json'),restoredPath);const freshScript=join(out,'fresh.json'),freshReport=join(out,'fresh-report.json');await writeFile(freshScript,JSON.stringify([{resize:{width:390,height:844}},{waitFrames:3},{key:'F9'},{waitFrames:3},{scrollIntoView:'load-records__slots-request',touchWindow:'load-records__slots-request'},{waitFrames:3},{scrollIntoView:'load-records__slots-confirm',touchWindow:'load-records__slots-confirm'},{waitFrames:3},{checkpoint:'restored'}]));run(playerExecutable(target,destination),['--bundle',gameDirectory(target,destination),'--save',restoredPath,'--locale','en','--hidden','--automation',freshScript,'--report',freshReport,'--report-checkpoints-only']);const fresh=JSON.parse(await readFile(freshReport)),accepted=JSON.parse(await readFile(join(out,'host/accepted.json')));assert.deepEqual(fresh.final.state,accepted.state);assert.deepEqual(fresh.final.commands,accepted.commands);assert.equal(fresh.final.readingHistory.snapshot.reason,'restored');assert.deepEqual(await readFile(restoredPath),await readFile(join(out,'host/accepted.json')));
