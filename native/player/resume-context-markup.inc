@@ -34,7 +34,8 @@
     std::string out="<div id=\"engine-resume-context-panel\" class=\"reading-item\"><p><b>"+escape(resume_context_label())+"</b></p>";
     std::string current=bind("calendar"),place=bind("location");if(!place.empty())current+=(current.empty()?"":" · ")+place;
     const auto p=resume_context_phase();const auto phaseLabel=p=="choice"?words("선택 대기","Waiting for your choice","選択待ち"):p=="dialogue"?words("이야기","Story","物語"):p=="planning"?words("계획","Planning","計画"):p=="ready"||p=="auto-ready"?words("활동 준비","Ready to continue","続行の準備完了"):p=="activity-result"||p=="period-end"?words("활동 결과","Activity result","活動の結果"):p=="finished"?words("끝맺음","Ending","結末"):words("현재 지점","Current point","現在の地点");
-    current+=(current.empty()?"":" · ")+phaseLabel;out+="<p id=\"engine-resume-context-current\" style=\"tab-index:0;\">"+escape(current)+"</p>";
+    // Focus the current position when opening; only Continue participates in Tab navigation.
+    current+=(current.empty()?"":" · ")+phaseLabel;out+="<p id=\"engine-resume-context-current\" style=\"tab-index:none;\">"+escape(current)+"</p>";
     if(projection.at("entries").empty())out+="<p id=\"engine-resume-context-empty\">"+escape(words("이 지점에 표시할 안내가 없습니다.","There are no reminders to show at this point.","この地点で表示するメモはありません。"))+"</p>";
     std::size_t index=0;for(const auto& entry:projection.at("entries"))out+="<div class=\"reading-paragraph\" id=\"engine-resume-context-entry-"+std::to_string(index++)+"\">"+escape(entry.at("text").get<std::string>())+"</div>";
     if(projection.value("truncated",false))out+="<p id=\"engine-resume-context-truncated\">"+escape(words("일부 안내를 줄이거나 생략했습니다.","Some reminders were shortened or omitted.","一部のメモを短縮または省略しました。"))+"</p>";

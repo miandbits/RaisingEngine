@@ -905,7 +905,7 @@ int main(int argc,char** argv) {
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
       app.restore_autosave();
 #endif
-      auto automation=automation_file.empty()?Json::array():read_json(automation_file);size_t step=0;int frames=0,wait_frames=0;Json report={{"steps",Json::array()}};uint64_t timeline_clock=SDL_GetTicks();
+      auto automation=automation_file.empty()?Json::array():read_json(automation_file);size_t step=0;int frames=0,wait_frames=0;uint64_t wait_until=0;const uint64_t automation_started=SDL_GetTicks();Json report={{"steps",Json::array()}};uint64_t timeline_clock=SDL_GetTicks();
       app.timeline_manual_clock=!automation.empty();
       while(app.running) {
         const auto timeline_now=SDL_GetTicks();const double timeline_delta=double(timeline_now-timeline_clock);timeline_clock=timeline_now;
@@ -929,7 +929,7 @@ int main(int argc,char** argv) {
         fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
         app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();app.capture_reading_frame();
         if(wait_frames>0)--wait_frames;
-        else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
+        else if(SDL_GetTicks()>=wait_until&&!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];
           if(command.contains("click"))app.click(command.at("click"));
           if(command.contains("hover")){auto* e=app.document->GetElementById(command.at("hover").get<std::string>());if(!e)throw std::runtime_error("Hover target missing");const auto p=e->GetAbsoluteOffset(),size=e->GetBox().GetSize();app.context->ProcessMouseMove(int(p.x+size.x/2),int(p.y+size.y/2),0);}
@@ -959,6 +959,13 @@ int main(int argc,char** argv) {
             app.drain_actions(); // Report this key's effects, not the previous frame.
           }
           if(command.contains("waitFrames"))wait_frames=command.at("waitFrames").get<int>();
+          // Wall-clock holds keep endurance duration independent of rendering cost.
+          // The event/render loop remains active throughout the hold.
+          if(command.contains("waitMs")){
+            const double delay=command.at("waitMs").get<double>();
+            if(!std::isfinite(delay)||delay<0||delay>3600000)throw std::runtime_error("Automation waitMs must be between 0 and 3600000");
+            wait_until=SDL_GetTicks()+static_cast<uint64_t>(std::ceil(delay));
+          }
           if(command.contains("recollectionAdvanceMs"))app.advance_recollection_clock(command.at("recollectionAdvanceMs").get<double>());
           if(command.contains("timelineRealtime")){app.timeline_manual_clock=!command.at("timelineRealtime").get<bool>();app.extension_dt=0;}
           if(command.contains("timelineAdvanceMs")){app.advance_timeline_clock(command.at("timelineAdvanceMs").get<double>());app.advance_extensions(command.at("timelineAdvanceMs").get<double>());}
@@ -974,15 +981,15 @@ int main(int argc,char** argv) {
           if(command.contains("screenshot"))app.screenshot(fs::u8path(command.at("screenshot").get<std::string>()));
           if(command.contains("expectScreen")&&app.markup.screen_id!=command.at("expectScreen"))throw std::runtime_error("Unexpected screen: "+app.markup.screen_id);
           // Long routes can retain exact checkpoints without duplicating full history every frame.
-          if(!report_checkpoints_only||command.contains("checkpoint"))report["steps"].push_back({{"command",command},{"ui",app.ui_state()}});
+          if(!report_checkpoints_only||command.contains("checkpoint"))report["steps"].push_back({{"command",command},{"elapsedMs",SDL_GetTicks()-automation_started},{"ui",app.ui_state()}});
         }
         SDL_RenderPresent(renderer);
         if(!control.is_null())std::cout<<Json({{"editorPreview",{{"serial",editor.serial},{"paused",editor.paused},{"elapsedMs",editor.elapsed},{"ui",app.ui_state()}}}}).dump()<<std::endl;
         frames++;SDL_Delay(8);
         if(max_frames&&frames>=max_frames)break;
-        if(!automation.empty()&&step==automation.size()&&frames%3==0&&app.pending.empty()&&wait_frames==0)break;
+        if(!automation.empty()&&step==automation.size()&&frames%3==0&&app.pending.empty()&&wait_frames==0&&SDL_GetTicks()>=wait_until)break;
       }
-      report["final"]=app.ui_state();report["ok"]=true;
+      report["final"]=app.ui_state();report["elapsedMs"]=SDL_GetTicks()-automation_started;report["ok"]=true;
       if(!report_file.empty()){fs::create_directories(report_file.parent_path());std::ofstream out(report_file);out<<report.dump(2);}
       if(app.document)app.document->Close();Rml::Shutdown();
     }
