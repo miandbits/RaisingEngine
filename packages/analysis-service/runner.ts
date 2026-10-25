@@ -1,3 +1,5 @@
+import {priorityScore} from './priorities.js';
+import {initialBalance,observeBalance,mergeBalance} from './balance.js';
 import {transitionRoute,addRoute} from './routes.js';
 import { createRun, dispatchCommand } from '../native-bridge/backend.js';
 import { evaluateCondition, evaluateNumber } from '../core/evaluation.js';
@@ -5,7 +7,7 @@ import type { Command, ContentSnapshot, RunState, Transition } from '../core/mod
 import { emptyResult, validateOptions, type AnalysisOptions, type AnalysisResult, type Trace } from './model.js';
 import { object } from './catalog.js';
 
-type Candidate = { state: RunState; commands: Command[]; transitions: Readonly<Transition>[] };
+type Candidate = { states?:RunState[]; state: RunState; commands: Command[]; transitions: Readonly<Transition>[] };
 const add = (map: Record<string, number>, key: string) => { map[key] = (map[key] ?? 0) + 1; };
 export function applyCommands(content: ContentSnapshot, state: RunState, commands: Command[]): Candidate | null {
   const transitions: Readonly<Transition>[] = [];
@@ -100,22 +102,22 @@ export function commandAttempts(content: ContentSnapshot,state: RunState,random?
   else if (state.phase === 'period-end') attempt([{ type: 'resolvePeriodEnd' }]);
   return pending;
 }
-function candidates(content: ContentSnapshot, state: RunState, reasons: Record<string, number>,random?:()=>number,budget=Infinity): Candidate[] {
+function candidates(content: ContentSnapshot, state: RunState, reasons: Record<string, number>,random?:()=>number,budget=Infinity,captureStates=false,budgetStatus?:{excluded:boolean}): Candidate[] {
   const result:Candidate[]=[];const pending=commandAttempts(content,state,random);
   const execute = (commands: Command[]) => {
-    let next = state; const transitions: Readonly<Transition>[] = [];
+    let next = state; const transitions: Readonly<Transition>[] = []; const states:RunState[]=[];
     for (const command of commands) {
       const r = dispatchCommand(content, next, command, next.stateRevision);
       if (!r.ok) { add(reasons, r.error.code); return; }
-      next = r.state; transitions.push(r.transition as Readonly<Transition>);
+      next = r.state; transitions.push(r.transition as Readonly<Transition>); if(captureStates)states.push(next);
     }
-    result.push({ state: next, commands, transitions });
+    result.push({ state: next, commands, transitions,...(captureStates?{states}:{}) });
   };
   if(random)for(let i=pending.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pending[i],pending[j]]=[pending[j]!,pending[i]!];}
-  for(const commands of pending){if(commands.length>budget)continue;execute(commands);if(random&&result.length)break;}
+  for(const commands of pending){if(commands.length>budget){if(budgetStatus)budgetStatus.excluded=true;continue;}execute(commands);if(random&&result.length)break;}
   return result;
 }
-function advance(content: ContentSnapshot, trace: Trace, candidate: Candidate): Trace {
+function advance(content: ContentSnapshot, trace: Trace, candidate: Candidate,captureBalance=true): Trace {
   const events = new Set(trace.events), choices = new Set(trace.choices), nodes = new Set(trace.nodes); const eventOrder = [...trace.eventOrder];
   for (const t of candidate.transitions) {
     for (const e of t.eventDecisions) if (e.reason === 'selected') { events.add(e.eventId); eventOrder.push(e.eventId); }
@@ -129,12 +131,14 @@ function advance(content: ContentSnapshot, trace: Trace, candidate: Candidate): 
     nodes.add(`${cursor.kind}:${cursor.id}/${cursor.nodeId}`);
     if (cursor.kind === 'event') { if (!events.has(cursor.id)) eventOrder.push(cursor.id); events.add(cursor.id); }
   }
-  return { ...trace, route:[...(trace.route??[]),...candidate.transitions.flatMap((t,i)=>transitionRoute(t,trace.commands.length+i+1,content))], state: candidate.state, commands: [...trace.commands, ...candidate.commands], events: [...events], choices: [...choices], nodes: [...nodes], eventOrder };
+  const balance=trace.balance&&captureBalance?structuredClone(trace.balance):undefined;
+  if(balance)for(const [index,state]of(candidate.states??[]).entries())observeBalance(balance,state,trace.commands.length+index+1);
+  return { ...trace,...(balance?{balance}:{}), route:[...(trace.route??[]),...candidate.transitions.flatMap((t,i)=>transitionRoute(t,trace.commands.length+i+1,content))], state: candidate.state, commands: [...trace.commands, ...candidate.commands], events: [...events], choices: [...choices], nodes: [...nodes], eventOrder };
 }
-function initial(content: ContentSnapshot, seed: number, run: number): Trace {
+function initial(content: ContentSnapshot, seed: number, run: number,options?:AnalysisOptions): Trace {
   const r = createRun(content, seed, { mode: 'full' });
   if (!r.ok) throw new Error(r.error.message);
-  return { route:[{nodeId:'start',label:'시작',kind:'start',step:0,periodIndex:0,chance:null,roll:null,passed:null}], run, seed, commands: [], state: r.state, outcome: 'limit', reason: '', events: [], choices: [], nodes: [], eventOrder: [] };
+  return { ...(options?.balance==='sampled-v1'?{balance:initialBalance(content,r.state,options.priorityProfile)}:{}),route:[{nodeId:'start',label:'시작',kind:'start',step:0,periodIndex:0,chance:null,roll:null,passed:null}], run, seed, commands: [], state: r.state, outcome: 'limit', reason: '', events: [], choices: [], nodes: [], eventOrder: [] };
 }
 function reached(trace: Trace, target: AnalysisOptions['target']): boolean {
   if (!target) return false;
@@ -251,6 +255,7 @@ export function impossibilityProof(content: ContentSnapshot, target: NonNullable
   return null;
 }
 export function record(result: AnalysisResult, trace: Trace, target: AnalysisOptions['target']) {
+  if(trace.balance)result.balance=mergeBalance(result.balance,trace.balance,trace.run);
   result.completed++; add(result.outcomes, trace.outcome);if(result.routeGraph)addRoute(result.routeGraph,trace);
   const novel = trace.events.some(e => !result.events[e]) || trace.choices.some(c => !result.choices[c]) || !!trace.state.endingId && !result.endings[trace.state.endingId];
   trace.events.forEach(e => add(result.events, e)); trace.choices.forEach(c => add(result.choices, c)); trace.nodes.forEach(n => add(result.nodes, n));
@@ -265,13 +270,16 @@ export interface RunHooks { trace?:(trace:Trace)=>void|Promise<void>; cancelled?
 export async function runAnalysis(content: ContentSnapshot, input: AnalysisOptions, hooks: RunHooks = {}): Promise<AnalysisResult> {
   const options = validateOptions(input, content); const result = emptyResult(options.runs); const now = hooks.now ?? Date.now; const started = now();
   const stopped = () => { if (hooks.cancelled?.()) { result.stopReason = 'cancelled'; return true; } if (now() - started >= options.timeoutMs) { result.stopReason = 'time-limit'; return true; } return false; };
-  const finish=async(trace:Trace)=>{await hooks.trace?.(trace);record(result,trace,options.target);};
+  const finish=async(trace:Trace)=>{
+    if(trace.balance&&!trace.balance.termination)trace.balance.termination=trace.outcome!=='limit'?trace.outcome:result.stopReason==='cancelled'?'cancelled':result.stopReason==='time-limit'?'time-limit':result.stopReason==='state-limit'?'state-limit':trace.commands.length>=options.maxCommands?'command-limit':'incomplete';
+    await hooks.trace?.(trace);record(result,trace,options.target);
+  };
   const pulse = async () => { await hooks.progress?.(result); await new Promise<void>(r => setImmediate(r)); };
   if (options.target) { result.targetStatus = 'not-found'; result.proof = impossibilityProof(content, options.target); if (result.proof) { result.targetStatus = 'impossible'; return result; } }
   for (let run = 0; run < options.runs && !stopped(); run++) {
     const seed = (options.seed + run) >>> 0; let rng = (seed ^ 0x9e3779b9) >>> 0;
     const random = () => { rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0; return rng / 4294967296; };
-    let beam = [initial(content, seed, run)]; let last = beam[0]!;
+    let beam = [initial(content, seed, run,options)]; let last = beam[0]!;
     const seen = new Set<string>(); let iterations = 0;
     while (beam.length && !stopped()) {
       const expanded: Trace[] = [];
@@ -282,8 +290,9 @@ export async function runAnalysis(content: ContentSnapshot, input: AnalysisOptio
         if (trace.commands.length >= options.maxCommands) { trace.reason = '명령 수 제한'; continue; }
         if (options.target && result.exploredStates >= (options.maxStates ?? 5000)) { result.stopReason = 'state-limit'; await finish(trace); return result; }
         result.exploredStates++;
-        const next = candidates(content, trace.state, result.blocked,!options.target&&options.strategy==='random'?random:undefined,options.maxCommands-trace.commands.length).filter(c => trace.commands.length + c.commands.length <= options.maxCommands);
-        if (!next.length) { trace.outcome = 'blocked'; trace.reason = '실행 가능한 활동/선택 없음 또는 명령 예산 부족'; if (!options.target) { await finish(trace); beam = []; break; } continue; }
+        const budgetStatus={excluded:false};
+        const next = candidates(content, trace.state, result.blocked,!options.target&&options.strategy==='random'?random:undefined,options.maxCommands-trace.commands.length,options.balance==='sampled-v1',budgetStatus).filter(c => trace.commands.length + c.commands.length <= options.maxCommands);
+        if (!next.length) { if(trace.balance)trace.balance.termination=budgetStatus.excluded?'command-limit':'blocked';trace.outcome = 'blocked'; trace.reason = '실행 가능한 활동/선택 없음 또는 명령 예산 부족'; if (!options.target) { await finish(trace); beam = []; break; } continue; }
         if (options.target) {
           for (const candidate of next) {
             const t = advance(content, trace, candidate);
@@ -291,13 +300,17 @@ export async function runAnalysis(content: ContentSnapshot, input: AnalysisOptio
             const key = JSON.stringify({ ...t.state, stateRevision: 0 });
             if (!seen.has(key)) { seen.add(key); expanded.push(t); }
           }
+        } else if(options.strategy==='priorities'){
+          const scored=next.map(c=>({c,...priorityScore(content,trace.state,c.state,options.priorityProfile!),tie:random()}));
+          scored.sort((a,b)=>a.deficit-b.deficit||b.gain-a.gain||b.tie-a.tie);
+          expanded.push(advance(content,trace,scored[0]!.c));
         } else {
           const scored = next.map(c => {
             let score = random();
             if (options.strategy === 'focus') score += (c.state.attributes[options.attributeId!]! - trace.state.attributes[options.attributeId!]!) * 100;
             if (options.strategy === 'conserve') score += content.attributes.filter(a => a.kind === 'resource').reduce((s, a) => s + (c.state.attributes[a.id]! - trace.state.attributes[a.id]!) / Math.max(1, a.max - a.min), 0) * 100;
             if (options.strategy === 'explore') {
-              const t = advance(content, trace, c);
+              const t = advance(content, trace, c,false);
               score += t.choices.filter(k => !result.choices[k]).length * 100 + t.events.filter(k => !result.events[k]).length * 20;
               score += (c.state.gameplay?.visited.filter(id => !trace.state.gameplay?.visited.includes(id)).length ?? 0) * 10;
               if (c.commands.some(command => command.type === 'interact')) score += 2;

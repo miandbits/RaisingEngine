@@ -33,6 +33,8 @@ jobs:
           name: creator-service-evidence
           path: |
             .cache/creator-smoke/
+            .cache/analysis-priorities-qt.png
+            .cache/analysis-priority-editor-*.png
             .cache/creator-benchmark/latest.json
           include-hidden-files: true
           retention-days: 14
@@ -45,7 +47,7 @@ jobs:
       BUILD_JOBS: '3'
       QT_ROOT: C:/Qt/6.10.1/mingw_64
       QT_COMPILER: C:/Qt/Tools/mingw1310_64/bin
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test
       QT_PACKAGE_OUT: release/qt-ci/RaisingStudio
       QT_INSTALLER_OUT: release/qt-ci/RaisingStudio-P1-Windows.exe
       QT_QPA_PLATFORM: offscreen
@@ -124,6 +126,8 @@ jobs:
           path: |
             .cache/build-provenance/
             .cache/creator-smoke/
+            .cache/analysis-priorities-qt.png
+            .cache/analysis-priority-editor-*.png
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt
             .cache/first-game-ui/run-*/startup.txt
@@ -154,7 +158,7 @@ jobs:
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       BUILD_JOBS: '3'
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test
       MACOS_STUDIO_OUT: dist/macos/RaisingStudio.app
     steps:
       - uses: actions/checkout@v4
@@ -195,6 +199,8 @@ jobs:
           path: |
             .cache/build-provenance/
             .cache/creator-smoke/
+            .cache/analysis-priorities-qt.png
+            .cache/analysis-priority-editor-*.png
             .cache/first-game-ui/latest.json
             .cache/first-game-ui/run-*/ui.txt
             .cache/first-game-ui/run-*/startup.txt

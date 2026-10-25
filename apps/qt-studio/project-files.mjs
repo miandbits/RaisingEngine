@@ -1,5 +1,5 @@
 import {createHash,randomUUID} from 'node:crypto';
-import {readFile,writeFile,mkdir,lstat,realpath,readdir,rename,rm} from 'node:fs/promises';
+import {readFile,writeFile,open,mkdir,lstat,realpath,readdir,rename,rm} from 'node:fs/promises';
 import path from 'node:path';
 
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -48,6 +48,18 @@ export async function projectFiles(editor) {
       const name='playtests/'+group+'/'+entry.name;files.set(name,await readFile(await regularFile(root,name)));
     }
   }
+  // Player priorities are authoring source too; local analysis runs stay private.
+  const priorities='playtests/player-priorities.json';
+  try {
+    const full=await regularFile(root,priorities),handle=await open(full,'r');
+    try {
+      const limit=1024*1024,bytes=Buffer.alloc(limit+1);let used=0;
+      if((await handle.stat()).size>limit)throw Error('Player-priority storage exceeds 1 MiB.');
+      while(used<bytes.length){const n=(await handle.read(bytes,used,bytes.length-used,null)).bytesRead;if(!n)break;used+=n;}
+      if(used>limit)throw Error('Player-priority storage exceeds 1 MiB.');
+      files.set(priorities,bytes.subarray(0,used));
+    } finally {await handle.close();}
+  } catch(error) {if(error.code!=='ENOENT')throw error;}
   return files;
 }
 export async function materializeProject(files,destination,{firstGame}={}) {

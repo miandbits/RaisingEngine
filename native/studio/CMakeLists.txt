@@ -106,3 +106,8 @@ foreach(locale ko en ja)
   add_test(NAME qt-editor-language-${locale} COMMAND qt-editor-language-test ${locale})
   set_tests_properties(qt-editor-language-${locale} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endforeach()
+
+add_executable(qt-analysis-priorities-test analysis-priorities-test.cpp)
+target_link_libraries(qt-analysis-priorities-test PRIVATE studio-ui Qt6::Test)
+add_test(NAME qt-analysis-priorities COMMAND qt-analysis-priorities-test)
+set_tests_properties(qt-analysis-priorities PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -94,7 +94,7 @@ export class GameReleases {
     const manifest={formatVersion:1,version,target,contentFingerprint,createdAt:new Date().toISOString(),engineVersion:'0.1.0',node:process.version,host:process.platform,architecture:process.arch,dependencies,pluginDependencies,files:hashes,
       sourceFiles:[...sourceFiles].map(([file,bytes])=>({file,sha256:digest(bytes)})),
       saveCompatibility:'Keep this exact release and project backup. Changed game rules/content can invalidate player saves; use explicit save migration and replay verification before promising compatibility.',
-      reproduction:'The game ZIP preserves the exact exported player and content bytes. The project ZIP preserves editable draft documents, referenced assets and named test routes. Rebuilding engine binaries requires the matching toolchain; byte-identical recompilation is not claimed.'};
+      reproduction:'The game ZIP preserves the exact exported player and content bytes. The project ZIP preserves editable draft documents, referenced assets, named test routes and saved player-priority profiles. Rebuilding engine binaries requires the matching toolchain; byte-identical recompilation is not claimed.'};
     await writeFile(path.join(source,'RELEASE.json'),JSON.stringify(manifest,null,2));
     await writeZip(source,await treeFiles(source),path.join(directory,'Project-backup.zip'));await rm(source,{recursive:true});
     await writeZip(directory,files,path.join(directory,'Game.zip'));

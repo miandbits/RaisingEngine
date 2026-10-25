@@ -9,7 +9,8 @@ async function run(name,argv,env={},command=process.execPath) {
   const status=await new Promise(resolve=>{const child=spawn(command,argv,{timeout:300000,env:{...process.env,...env},stdio:['ignore','pipe','pipe']});for(const stream of [child.stdout,child.stderr])stream.on('data',b=>{chunks.push(b);process.stdout.write(b);});child.on('error',error=>resolve({code:null,signal:null,error:error.message}));child.on('exit',(code,signal)=>resolve({code,signal}));});
   await writeFile(path.join(out,name+'.log'),Buffer.concat(chunks));results.push({name,...status,elapsedMs:Date.now()-start});await writeFile(path.join(out,'result.json'),JSON.stringify({ok:results.every(r=>r.code===0),results},null,2));if(status.code!==0)throw Error(name+' failed; inspect '+out);
 }
-await run('services',['--test','--test-concurrency=1',...['first-game','creator-release','unsaved-assets','rule-debug','authoring-workspace','workspace-links','integrated-authoring','update-compatibility'].map(n=>'tests/qt-studio/'+n+'.test.mjs'),'tests/mobile/ios-package.test.mjs']);
+await run('services',['--test','--test-concurrency=1',...['first-game','creator-release','analysis-priorities','authoring-lock','unsaved-assets','rule-debug','authoring-workspace','workspace-links','integrated-authoring','update-compatibility'].map(n=>'tests/qt-studio/'+n+'.test.mjs'),'tests/mobile/ios-package.test.mjs']);
+await run('balance-priorities',['--test','--test-concurrency=1','tests/analysis/priorities.test.mjs']);
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
 await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs']);
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
@@ -26,6 +27,7 @@ if(args.includes('--desktop')){
   const executable=name=>path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio',name+(process.platform==='win32'?'.exe':''));
   await run('readable-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'readable-history.ini')},executable('qt-readable-layout-test'));
   await run('update-compatibility-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'update-compatibility-history.ini')},executable('qt-update-compatibility-test'));
+  await run('analysis-priorities-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'analysis-priorities-history.ini')},executable('qt-analysis-priorities-test'));
   await run('story-form',[],{},executable('qt-story-flow-dialog-test'));
   const fixture=path.join(out,'diagnostic-game');
   await run('diagnostic-fixture',['tests/qt-studio/validation-location-fixture.mjs',fixture]);
