@@ -7,6 +7,9 @@ import './player-quality.css';
 import { PlayerSettings, PlayerPreferencesContext, readPreferences, preferencesKey } from './PlayerSettings.js';
 import { VisualPlayer } from './VisualPlayer.js';
 import {TimelineOverlay} from './TimelineOverlay.js';
+import {ReadingHistory,type ReadingHistoryReset} from '../../../packages/visual/reading-history.js';
+import {ReadingHistoryContext,RecentReading,readingHistoryDate} from './ReadingHistory.js';
+import {savedPhase} from './save-display.js';
 import { activityPreview } from '../../../packages/visual/activity-summary.js';
 
 declare global { interface Window { player: PlayerBridge } }
@@ -24,6 +27,8 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const [muted, setMuted] = useState(true);
   const [preferences, setPreferences] = useState(readPreferences);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const history=useRef(new ReadingHistory('initial')),acceptedView=useRef<PlayerView|null>(null),historyEpoch=useRef('initial');
+  const [historyOpen,setHistoryOpen]=useState(false);
   const [readingOverlays,setReadingOverlays]=useState<string[]>([]);
   const readingPaused=readingOverlays.length>0;
   const [hidden, setHidden] = useState(document.hidden);
@@ -44,8 +49,13 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const periods=Array.from({length:count},(_,i)=>periodLabel(i,count,view?.calendarProject?.calendar,view?.locale));
   const version: Version | null = state && view ? { generation: view.generation, revision: state.stateRevision } : null;
 
-  function accept(reply: PlayerReply) {
-    setView(reply.view); setError(reply.error); setNotice(reply.notice);
+  function accept(reply: PlayerReply,reason?:ReadingHistoryReset) {
+    const previous=acceptedView.current,next=reply.view;
+    if(next&&(next.generation!==previous?.generation||next.gameId!==previous?.gameId)){
+      historyEpoch.current=JSON.stringify([next.gameId??'',next.generation]);history.current.reset(historyEpoch.current,!previous||next.gameId!==previous.gameId?'new-session':reason??'restored');setHistoryOpen(false);
+    }
+    if(next)acceptedView.current=next;
+    setView(next??previous); setError(reply.error); setNotice(reply.notice);
     if (!muted && !document.hidden && reply.view) for (const id of reply.soundCues) {
       const audio = new Audio(assetUrl(id, reply.view.generation));
       audio.dataset.baseVolume ??= "1"; audio.volume = Number(audio.dataset.baseVolume) * preferences.effects;
@@ -54,10 +64,10 @@ export function Player({ preview = false }: { preview?: boolean }) {
       audio.play().catch(() => setNotice('소리를 재생하지 못했습니다. 에셋 파일을 확인해 주세요.'));
     }
   }
-  async function request(operation: () => Promise<PlayerReply>) {
+  async function request(operation: () => Promise<PlayerReply>,options?:{reason?:ReadingHistoryReset;accepted?:(reply:PlayerReply)=>void}) {
     if (locked.current) return;
     locked.current = true; setBusy(true);
-    try { accept(await operation()); }
+    try { const reply=await operation();if(!reply.error)options?.accepted?.(reply);accept(reply,options?.reason); }
     catch { setError('요청을 처리하지 못했습니다. 다시 시도해 주세요.'); }
     finally { locked.current = false; setBusy(false); }
   }
@@ -112,7 +122,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
 
   const slots=window.player.slots?(action:SaveSlotAction)=>void request(()=>window.player.slots!(action,version)):undefined;
   useEffect(()=>{if(!window.player.checkpoint||!version||!view?.saveSlots?.checkpointPending||view.saveSlots.screenId||busy||hidden||settingsOpen)return;const timer=setTimeout(()=>void request(()=>window.player.checkpoint!(version)),40);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,view?.saveSlots?.checkpointPending,view?.saveSlots?.screenId,busy,hidden,settingsOpen]);
-  const act = (action: PlayerAction) => { if ((document.hidden || settingsOpen || readingPaused) && (action.type === 'scheduleStep' || action.type === 'timelineTick')) return; if (version) void request(() => window.player.act(action, version)); };
+  const act = (action: PlayerAction,onAccepted?:()=>void) => { if ((document.hidden || settingsOpen || readingPaused) && (action.type === 'scheduleStep' || action.type === 'timelineTick')) return; if (version) void request(() => window.player.act(action, version),{accepted:reply=>{if(reply.view?.generation===version.generation&&(reply.view.state?.stateRevision??-1)>version.revision)onAccepted?.();}}); };
   const autoStep=scheduleStep(state??null,view?.schedulePlayback,view?.timeline);
   useEffect(()=>{if(settingsOpen||readingPaused||hidden||busy||error||view?.saveSlots?.screenId||view?.saveSlots?.checkpointPending||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error,hidden,settingsOpen,readingPaused,view?.saveSlots?.screenId,view?.saveSlots?.checkpointPending]);
   const canPlan = state?.phase === 'planning' || state?.phase === 'ready';
@@ -124,10 +134,15 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const result = state?.lastActivityResult;
   const node = view?.narrative?.node;
 
+  const historyEnabled=!!view?.visual?.readingHistory&&!preview;
+  const openHistory=()=>{if(!historyEnabled||locked.current||document.hidden)return;window.dispatchEvent(new Event('raising-open-reading-history'));requestAnimationFrame(()=>{if(!locked.current&&!document.querySelector('dialog[open],.authored-slot-modal,.transaction-dialog'))setHistoryOpen(true);});};
+  const historyHost={enabled:historyEnabled,epoch:historyEpoch.current,blocked:busy||hidden||settingsOpen||readingPaused||!!view?.saveSlots?.screenId||!!view?.timeline,record:(receipt:import('../../../packages/visual/reading-history.js').ReadingHistoryReceipt)=>{if(historyEnabled)history.current.record(receipt);},open:openHistory};
+  const historyDate=readingHistoryDate(view?.time,view?.calendarProject?.calendar,view?.locale);
+  const historyPhase=view?.narrative?.node?.type==='choice'?slotWords(view.locale,'선택 대기 중','Awaiting a choice','選択待ち'):savedPhase(state?.phase,view?.locale);
   const preferenceState={value:preferences,onChange:setPreferences,muted,onMuted:setMuted,readableEnabled:!!view?.visual?.readableLayout,readingOverlayActive:readingPaused,onReadingOverlay:(id:string,open:boolean)=>setReadingOverlays(previous=>open?[...new Set([...previous,id])]:previous.filter(value=>value!==id))};
   const changeLocale=window.player.setLocale?(locale:string)=>void request(()=>window.player.setLocale!(locale)):undefined;
-  const settings = <PlayerSettings locales={view?.localization?.locales} onLocale={changeLocale} localeBusy={busy} readableEnabled={preferenceState.readableEnabled} value={preferences} onChange={setPreferences} locale={view?.locale} onOpenChange={setSettingsOpen} muted={muted} onMuted={setMuted}/>;
-  if (view?.visual) return <PlayerPreferencesContext.Provider value={preferenceState}><div className="visual-shell" data-readable-enabled={preferenceState.readableEnabled}><div className={preferenceState.readableEnabled?"player-readable-toolbar":"player-legacy-toolbar"}>{settings}<span className="player-compact-status" aria-hidden="true">{busy?slotWords(view.locale,'처리 중…','Working…','処理中…'):preview?slotWords(view.locale,'초안 미리보기','Draft preview','下書きプレビュー'):slotWords(view.locale,'플레이 중','Playing','プレイ中')} · {muted?slotWords(view.locale,'소리 꺼짐','Sound off','消音'):slotWords(view.locale,'소리 켜짐','Sound on','音声あり')}</span>{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}</div><VisualPlayer {...(slots?{slots}:{})} view={view} design={view.visual} busy={busy||!!view.saveSlots?.checkpointPending&&!view.saveSlots.screenId} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues))} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/></div></PlayerPreferencesContext.Provider>;
+  const settings = <PlayerSettings onReadingHistory={historyEnabled?openHistory:undefined} locales={view?.localization?.locales} onLocale={changeLocale} localeBusy={busy} readableEnabled={preferenceState.readableEnabled} value={preferences} onChange={setPreferences} locale={view?.locale} onOpenChange={setSettingsOpen} muted={muted} onMuted={setMuted}/>;
+  if (view?.visual) return <ReadingHistoryContext.Provider value={historyHost}><PlayerPreferencesContext.Provider value={preferenceState}><div className="visual-shell" data-readable-enabled={preferenceState.readableEnabled}><div className={preferenceState.readableEnabled?"player-readable-toolbar":"player-legacy-toolbar"}>{settings}<span className="player-compact-status" aria-hidden="true">{busy?slotWords(view.locale,'처리 중…','Working…','処理中…'):preview?slotWords(view.locale,'초안 미리보기','Draft preview','下書きプレビュー'):slotWords(view.locale,'플레이 중','Playing','プレイ中')} · {muted?slotWords(view.locale,'소리 꺼짐','Sound off','消音'):slotWords(view.locale,'소리 켜짐','Sound on','音声あり')}</span>{window.player.setLocale&&view.localization&&<label className="player-language">Language <select aria-label="Language" disabled={busy} value={view.locale} onChange={e=>void request(()=>window.player.setLocale!(e.target.value))}>{view.localization.locales.map(l=><option key={l.id} value={l.id}>{l.label}</option>)}</select></label>}</div><VisualPlayer {...(slots?{slots}:{})} view={view} design={view.visual} busy={busy||!!view.saveSlots?.checkpointPending&&!view.saveSlots.screenId} plan={plan} onPlan={setPlan} act={act} newRun={userValues => void request(() => window.player.newRun(version, userValues),{reason:'new-run'})} save={() => version && void request(() => window.player.save(version))} load={() => void request(() => window.player.load(version))} sound={() => setMuted(x=>!x)} muted={muted} preview={preview} error={error} notice={notice}/>{historyOpen&&historyEnabled&&<RecentReading snapshot={history.current.snapshot()} onClose={()=>setHistoryOpen(false)} locale={view.locale} date={historyDate} phase={historyPhase} textScale={preferences.textScale} background={view.visual.readableLayout?.background}/>}</div></PlayerPreferencesContext.Provider></ReadingHistoryContext.Provider>;
   return <div className="app-shell">{settings}
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">✦</span><div><strong>육성 일지</strong><span>RAISING PLAYER</span></div></div>
@@ -147,7 +162,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
       <h1>{view?.title ?? '이야기를 불러오세요'}</h1>
       <p className="intro">{view?.description || '일정을 계획하고, 만남을 이어가며 나만의 이야기를 완성하세요.'}</p>
       {view && <div className="welcome-meta"><span>{view.calendarProject?.calendar?`${view.durationMonths} ${calendarLabels(view.calendarProject.calendar,view.locale).month}`:`${view.durationMonths}개월의 여정`}</span><span>{view.activities.length}가지 활동</span><span>선택에 따라 달라지는 결말</span></div>}
-      <button className="primary large" disabled={busy || !view} onClick={() => void request(() => window.player.newRun(version))}>새 게임 시작 <span aria-hidden="true">→</span></button>
+      <button className="primary large" disabled={busy || !view} onClick={() => void request(() => window.player.newRun(version),{reason:'new-run'})}>새 게임 시작 <span aria-hidden="true">→</span></button>
       <p className="muted small">한 달은 {periods.join(" · ")}, {count}번의 일정으로 흘러갑니다.</p>
     </main> : <main className="game-layout">
       <aside className="sidebar">
@@ -164,7 +179,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
         {view!.characters.some(c => c.relationships.length) && <section className="relationships"><h2>함께하는 사람들</h2>
           {view!.characters.flatMap(c => c.relationships.map(r => <div key={`${c.id}.${r.id}`}><span>{c.name} · {r.label}</span><strong>{state.relationships[c.id]?.[r.id]}</strong></div>))}
         </section>}
-        <button className="restart" disabled={busy} onClick={() => void request(() => window.player.newRun(version))}>새 게임</button>
+        <button className="restart" disabled={busy} onClick={() => void request(() => window.player.newRun(version),{reason:'new-run'})}>새 게임</button>
       </aside>
       <div className="main-content">
         <div className="chapter-heading"><div><p className="eyebrow">{state.phase === 'finished' ? '여정의 끝' : '하루하루 쌓이는 변화'}</p><h2>{state.phase === 'finished' ? '우리의 여정을 기억하며' : (view!.calendarProject?.calendar?calendarText(view!.time!,view!.calendarProject.calendar,view!.locale,false):`${view!.time!.month}월의 일지`)}</h2></div><span className="chapter-badge">{state.phase === 'finished' ? '완료' : `${periods[view!.time!.periodInMonth]} 진행 중`}</span></div>
@@ -211,7 +226,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
               {node.type === 'choice' && <><h3>{node.prompt}</h3><div className="choices">{view!.narrative!.choices.map(choice => <button disabled={busy || !choice.enabled} key={choice.id} onClick={() => act({ type: 'choose', choiceId: choice.id })}><span>{choice.text}{!choice.enabled && <small>조건을 충족하지 못했습니다</small>}</span><span aria-hidden="true">→</span></button>)}</div></>}
               {node.type !== 'dialogue' && node.type !== 'choice' && <button className="primary" disabled={busy} onClick={() => act({ type: 'continue' })}>진행 다시 시도</button>}
             </>}
-            {state.phase === 'finished' && <><span className="story-symbol" aria-hidden="true">✦</span><p className="eyebrow">이야기를 완성했습니다</p><h3 data-testid="ending">{view!.endingLabel}</h3><p className="story-text">{view!.calendarProject?.calendar?`${view!.durationMonths} ${calendarLabels(view!.calendarProject.calendar,view!.locale).month}`:`${view!.durationMonths}개월`} 동안의 선택이 만든 결말입니다.<br/>새로운 일정으로 또 다른 이야기를 만나 보세요.</p><button className="primary" disabled={busy} onClick={() => void request(() => window.player.newRun(version))}>새로운 이야기 시작 <span aria-hidden="true">→</span></button></>}
+            {state.phase === 'finished' && <><span className="story-symbol" aria-hidden="true">✦</span><p className="eyebrow">이야기를 완성했습니다</p><h3 data-testid="ending">{view!.endingLabel}</h3><p className="story-text">{view!.calendarProject?.calendar?`${view!.durationMonths} ${calendarLabels(view!.calendarProject.calendar,view!.locale).month}`:`${view!.durationMonths}개월`} 동안의 선택이 만든 결말입니다.<br/>새로운 일정으로 또 다른 이야기를 만나 보세요.</p><button className="primary" disabled={busy} onClick={() => void request(() => window.player.newRun(version),{reason:'new-run'})}>새로운 이야기 시작 <span aria-hidden="true">→</span></button></>}
           </div>
         </section>
         <footer className="game-footer"><span>선택은 당신의 몫, 성장은 우리의 이야기.</span><span>{busy ? '처리 중…' : '언제든 저장하고 이어갈 수 있습니다.'}</span></footer>

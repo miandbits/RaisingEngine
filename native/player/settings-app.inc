@@ -59,7 +59,7 @@
   void update_dialogue_visual() {
     sync_dialogue();if(!document||!dialogue_active())return;
     const size_t bytes=dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters));
-    const auto value=escape(dialogue_text.substr(0,bytes))+"<span style=\"visibility:hidden;\">"+escape(dialogue_text.substr(bytes))+"</span>";
+    const auto value=markup.history_text(dialogue_text.substr(0,bytes))+"<span style=\"visibility:hidden;\">"+escape(dialogue_text.substr(bytes))+"</span>";
     if(value==dialogue_rendered&&dialogue_render_generation==document_generation)return;
     dialogue_rendered=value;dialogue_render_generation=document_generation;
     for(const auto& e:markup.render_elements)if(e.value("kind","")=="dialogue"||(e.value("kind","")=="text"&&e.value("binding","")=="story"))

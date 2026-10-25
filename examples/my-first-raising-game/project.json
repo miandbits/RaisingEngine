@@ -15,6 +15,7 @@
   },
   "defaultEndingId": "own-path",
   "visual": {
+    "readingHistory": {},
     "width": 1280,
     "height": 720,
     "screens": [

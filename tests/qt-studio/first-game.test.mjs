@@ -13,7 +13,7 @@ async function fixture() {
   const work=await mkdtemp(path.resolve('.cache/first-game-tests/run-'));
   const runtime=path.join(work,'runtime');await mkdir(runtime);
   await writeFile(path.join(runtime,'index.html'),'export fixture');
-  await writeFile(path.join(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:[],visualFeatures:['readable-layout-v1','readable-actions-v1','compact-planning-v1','planning-guidance-v1','narrative-actor-binding-v1','component-context-v1','save-panel-v1','components-v1']}));
+  await writeFile(path.join(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:[],visualFeatures:['readable-layout-v1','readable-actions-v1','compact-planning-v1','planning-guidance-v1','reading-history-v1','narrative-actor-binding-v1','component-context-v1','save-panel-v1','components-v1']}));
   const service=new QtStudioService({runtimes:{web:runtime,windows:runtime}});
   const reply=await service.handle({method:'create',params:{root:path.join(work,'game'),template:'my-first-raising-game'}});
   return {service,work,reply,runtime};
@@ -25,6 +25,7 @@ test('starter has two reachable endings, save restoration, and valid controls fo
   const {service,reply}=await fixture();
   assert.equal(reply.view.diagnostics.length,0);
   const built=await service.editor.snapshot(service.editor.revision);assert.equal(built.ok,true);
+  assert.deepEqual(built.snapshot.project.visual.readingHistory,{},'New designers receive the session reading utility by default');
   for(const doc of service.editor.documents.filter(d=>d.kind==='scenario')) {
     let checkpoints=0;
     const result=await runScenario(built.snapshot,doc.data,{checkpoint:async session=>{

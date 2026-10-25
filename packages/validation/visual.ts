@@ -37,6 +37,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      if(e.action==='readingHistory'&&!visual.readingHistory)ctx.report(doc,ep+'/action','UI_READING_HISTORY_REQUIRED','Enable recent reading in project settings before connecting this action.');
       if(e.activityIcons!==undefined){
         if(e.kind!=='schedule')ctx.report(doc,ep+'/activityIcons','UI_SCHEDULE_ICONS_KIND','활동 아이콘은 일정 요소에 연결하세요.');
         const assigned=new Set<string>();

@@ -35,6 +35,11 @@ test('touch Load opens empty records and restores autosaves without any manual s
   const schedule = project.visual.screens.find(screen => screen.id === 'schedule');
   schedule.elements = schedule.elements.filter(element => element.id !== 'save-controls');
   schedule.elements.push({ id: 'load', kind: 'button', action: 'load', text: 'Load', x: 880, y: 24, width: 270, height: 45 });
+  // Keep the inherited phone layout aligned with this fixture's replacement controls.
+  if (schedule.readableLayout) {
+    schedule.readableLayout.actions = schedule.readableLayout.actions.filter(id => !id.startsWith('save-controls__'));
+    schedule.readableLayout.actions.push('load');
+  }
   project.visual.screens.push({ id: 'load-records', label: 'Load records', modal: true, elements: [
     { id: 'slots', kind: 'loadSlots', x: 40, y: 30, width: 1200, height: 590 },
     { id: 'close', kind: 'button', action: 'closeModal', text: 'Close', x: 30, y: 650, width: 270, height: 45 },

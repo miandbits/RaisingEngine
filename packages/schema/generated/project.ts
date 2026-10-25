@@ -3866,6 +3866,7 @@ export type Element = {
     | "recollectionSave"
     | "recollectionLoad"
     | "recollectionAuto"
+    | "readingHistory"
     | "dialogueAuto"
     | "recollectionSpeed"
     | "recollectionSkip"
@@ -3972,6 +3973,7 @@ export type Element = {
         | "recollectionSave"
         | "recollectionLoad"
         | "recollectionAuto"
+        | "readingHistory"
         | "dialogueAuto"
         | "recollectionSpeed"
         | "recollectionSkip"
@@ -9292,6 +9294,7 @@ export type ComponentChild = {
     | "recollectionSave"
     | "recollectionLoad"
     | "recollectionAuto"
+    | "readingHistory"
     | "dialogueAuto"
     | "recollectionSpeed"
     | "recollectionSkip"
@@ -11511,6 +11514,7 @@ export type ComponentChild = {
         | "recollectionSave"
         | "recollectionLoad"
         | "recollectionAuto"
+        | "readingHistory"
         | "dialogueAuto"
         | "recollectionSpeed"
         | "recollectionSkip"
@@ -14358,6 +14362,7 @@ export interface Overrides {
   };
 }
 export interface VisualDesign {
+  readingHistory?: {};
   saveSystem?: {
     manualSlots?: number;
     autoSlots?: number;

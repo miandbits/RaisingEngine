@@ -3463,5 +3463,11 @@
 ["계획 안내 제거","Remove planning guidance","計画ガイドを削除"],
 ["일정 칸 선택, 활동 살펴보기, 계획 적용을 설명합니다. 플레이어는 계획 방법에서 다시 열 수 있습니다.","Explain selecting a period, inspecting activities and applying a draft. Players can reopen How planning works.","期間の選択、活動の確認、計画案の適用を説明します。プレイヤーは「計画の立て方」から再び開けます。"],
 ["간결한 단일 인물 일정에만 안내를 표시할 수 있습니다.","Guidance requires a compact single-character schedule.","ガイドは単一人物のコンパクトな予定にのみ表示できます。"],
-["화면 %1의 계획 안내를 해제하거나 명단 없는 간결한 일정에 적용하세요: %2","Remove planning guidance on screen %1 or use a compact schedule without a roster: %2","画面%1の計画ガイドを削除するか、名簿のないコンパクトな予定に適用してください：%2"]
+["화면 %1의 계획 안내를 해제하거나 명단 없는 간결한 일정에 적용하세요: %2","Remove planning guidance on screen %1 or use a compact schedule without a roster: %2","画面%1の計画ガイドを削除するか、名簿のないコンパクトな予定に適用してください：%2"],
+["읽기", "Reading", "読書"],
+["최근 읽은 내용 사용", "Enable recent reading", "最近読んだ内容を有効にする"],
+["최근 읽은 내용 열기", "Open recent reading", "最近読んだ内容を開く"],
+["플레이어가 이번 실행에서 화면에 표시한 대사와 실제로 고른 응답을 다시 읽을 수 있습니다. 저장 파일에 포함되지 않으며 게임을 새로 시작하거나 저장을 불러오면 지워집니다. 미리보기는 기록하지 않습니다.\n플레이어의 읽기 메뉴에서 열거나 버튼의 행동을 ‘최근 읽은 내용 열기’로 설정하세요.", "Players can reread dialogue shown on screen and responses they actually chose during this run of the player. This history is not saved and clears when starting a new game or loading a save. Previews do not record it.\nOpen it from the player’s reading menu, or set a button’s action to “Open recent reading”.", "プレイヤーは今回の起動中に画面に表示された台詞と実際に選んだ返答を読み返せます。セーブには含まれず、ニューゲームやロードで消去されます。プレビューでは記録しません。\nプレイヤーの読書メニューから開くか、ボタンの動作を「最近読んだ内容を開く」に設定してください。"],
+["최근 읽은 내용을 사용하려면 비주얼 화면이 필요합니다.", "Recent reading requires visual screens.", "最近読んだ内容を使うにはビジュアル画面が必要です。"],
+["최근 읽은 내용을 끄기 전에 연결된 버튼의 행동을 변경하세요. 화면과 재사용 요소의 버튼을 확인하세요.", "Change connected button actions before disabling recent reading. Check buttons in screens and reusable components.", "最近読んだ内容を無効にする前に、接続されたボタンの動作を変更してください。画面と再利用コンポーネントのボタンを確認してください。"]
 ]

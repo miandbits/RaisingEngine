@@ -5,6 +5,11 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "readingHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
     "saveSystem": {
       "type": "object",
       "additionalProperties": false,
@@ -1104,6 +1109,7 @@
             "recollectionSave",
             "recollectionLoad",
             "recollectionAuto",
+            "readingHistory",
             "dialogueAuto",
             "recollectionSpeed",
             "recollectionSkip",
@@ -1372,6 +1378,7 @@
                       "recollectionSave",
                       "recollectionLoad",
                       "recollectionAuto",
+                      "readingHistory",
                       "dialogueAuto",
                       "recollectionSpeed",
                       "recollectionSkip",
@@ -3195,6 +3202,7 @@
             "recollectionSave",
             "recollectionLoad",
             "recollectionAuto",
+            "readingHistory",
             "dialogueAuto",
             "recollectionSpeed",
             "recollectionSkip",
@@ -3637,6 +3645,7 @@
                       "recollectionSave",
                       "recollectionLoad",
                       "recollectionAuto",
+                      "readingHistory",
                       "dialogueAuto",
                       "recollectionSpeed",
                       "recollectionSkip",

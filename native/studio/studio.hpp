@@ -248,7 +248,7 @@ private:
   void editPresentationVariants();
   void editElementPresentationVariants(QJsonObject original,QWidget* parent,std::function<bool(QJsonArray,QString&)> apply);
   void editCustomStates();
-  void editProjectSettings();
+  void editProjectSettings(bool focusReadingHistory=false);
   void receivePlayer();
   bool mayDiscard();
   bool waitForPendingEdits();

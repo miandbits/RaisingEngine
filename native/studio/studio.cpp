@@ -660,6 +660,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField->addItem(tr("장소 이동"), "visit");
   actionField->addItem(tr("게임 저장"), "save");
   actionField->addItem(tr("게임 불러오기"), "load");
+  actionField->addItem(tr("최근 읽은 내용 열기"), "readingHistory");
   actionField->addItem(tr("새 게임 시작"), "start");
   actionField->addItem(tr("진행 · 대화 / 결과 확인"), "advance");
   actionField->addItem(tr("월 계획 확정 · 자동 진행 시작"), "commitPlan");

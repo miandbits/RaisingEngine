@@ -94,6 +94,7 @@ public:
   int auto_revision=-1,auto_attempted=-1;
   double auto_elapsed=0;
   #include "settings-app.inc"
+  #include "reading-history-app.inc"
   void advance_schedule_clock(double delta) {
     if(preview()||backgrounded||game.gallery.active||markup.reading_overlay()||!markup.ui_modal.empty()||game.state.is_null())return;
     const int revision=game.state.value("stateRevision",-1);
@@ -185,7 +186,8 @@ public:
     gallery_bundle=bundle;game.gallery_manifest=bundle.value("extensions",Json());
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
-    markup.extensions=&extensions;
+    markup.extensions=&extensions;markup.reading_history=&reading_history;
+    game.accepted_replacement=[this](const std::string& reason){reset_reading_history(reason);};
     game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){
       // Conditions/routing may reveal a plugin only as a result of this command.
       // Synchronize logical mounts before its single observation, without displaying a window.
@@ -405,6 +407,7 @@ public:
         bool found=false;for(const auto& a:game.content.at("activities"))if(a.at("id")==incoming.at("activityId")&&!a.contains("expeditionId"))found=true;
         if(!found)throw std::runtime_error("Unknown roster activity");markup.roster_draft[actor]=incoming.at("activityId");dirty=true;return;
       }
+      if(markup.reading_history_open)return;
       if(setting_action(incoming))return;
       if(recalling()){recollection_action(incoming.value("type",""));return;}
       markup.reading_menu=false;
@@ -552,7 +555,10 @@ public:
         else game.send({{"type","advanceNarrative"}});
         game.settle();
       } else {
-        const auto before=game.state;game.send(action);game.settle();
+        const auto before=game.state;const auto receipt=type=="choose"?choice_reading_receipt(action):Json();
+        game.send(action);
+        if(!receipt.is_null()&&game.state.value("stateRevision",0)>before.value("stateRevision",0))reading_history.record(receipt);
+        game.settle();
         if(type=="buy"){
           std::string name=action.value("itemId","");for(const auto& item:game.content.at("project").value("gameplay",Json::object()).value("items",Json::array()))if(item.at("id")==name){name=item.value("name",name);break;}
           game.message=name+" "+std::to_string(action.value("quantity",1))+"개를 받았습니다.";
@@ -623,7 +629,7 @@ public:
       if(event.key.key==SDLK_ESCAPE&&markup.reading_overlay()){readable_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
-      if(markup.planning_guide&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
+      if((markup.planning_guide||markup.reading_history_open)&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
       if(event.key.key==SDLK_F5){pending.push_back({{"type","save"}});return;}
       if(event.key.key==SDLK_F2){pending.push_back({{"type","nextLocale"}});return;}
       if(event.key.key==SDLK_F9){pending.push_back({{"type","load"}});return;}
@@ -662,6 +668,7 @@ public:
     Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages"||entry.value("kind","")=="plugin") {
       const auto id=entry.value("id","");if(auto* element=document->GetElementById("node-"+id))texts[id]=element->GetInnerRML();
     }
+    if(auto* history=document->GetElementById("engine-reading-history-panel"))texts["engine-reading-history-panel"]=history->GetInnerRML();
     if(auto* guide=document->GetElementById("engine-planning-guide"))texts["engine-planning-guide"]=guide->GetInnerRML();
     for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="saveSlots"||entry.value("kind","")=="loadSlots")if(auto* e=document->GetElementById("node-"+entry.value("id","")))texts[entry.value("id","")]=e->GetInnerRML();
     if(auto* fallback=document->GetElementById("node-system-widget"))texts["system-widget"]=fallback->GetInnerRML();
@@ -708,7 +715,7 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
       {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
@@ -903,7 +910,7 @@ int main(int argc,char** argv) {
         if(app.dirty)app.rebuild();
         SDL_FRect display_rect{};SDL_GetRenderLogicalPresentationRect(renderer,&display_rect);
         fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
-        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();
+        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();app.capture_reading_frame();
         if(wait_frames>0)--wait_frames;
         else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];

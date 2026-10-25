@@ -7,6 +7,7 @@
 #include "extension-host.hpp"
 #include "presentation-variants.hpp"
 #include "preferences.hpp"
+#include "reading-history.hpp"
 #include <algorithm>
 #include <map>
 #include <iomanip>
@@ -123,7 +124,11 @@ public:
   int viewport_width=0,viewport_height=0;
   int window_width=0,window_height=0;
   Json safe_area=Json::object();
-  bool readable_active=false,reading_options=false,reading_menu=false;
+  bool readable_active=false,reading_options=false,reading_menu=false,reading_history_open=false;
+  const raising_player::ReadingHistory* reading_history=nullptr;
+  bool history_enabled() const {return !replay_controls&&!game.gallery.active&&display_content.at("project").at("visual").contains("readingHistory");}
+  std::string history_text(const std::string& text) const {return history_enabled()?"<span class=\"reading-receipt-text\" style=\"margin:0;\">"+escape(text)+"</span>":escape(text);}
+  std::string history_label() const {return settings_words("최근 읽은 내용","Recent reading","最近読んだ内容");}
   bool compact_picker=false;
   bool planning_guide=false,planning_guide_seen=false,planning_guide_suppressed=false;
   int planning_guide_step=0;
@@ -131,7 +136,7 @@ public:
   int compact_slot=0,compact_revision=-1;
   std::string compact_activity,compact_group,compact_element,compact_owner;
   std::string readable_view="game";
-  bool reading_overlay() const {return reading_options||reading_menu||compact_picker||planning_guide;}
+  bool reading_overlay() const {return reading_options||reading_menu||compact_picker||planning_guide||reading_history_open;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;
@@ -493,7 +498,7 @@ public:
     }
     if (name=="description") return project.value("description","");
     if (name=="location") return gameplay().is_null()?"":gameplay().at("location").value("name","");
-    if (name=="calendar") { const auto time=display_projection.value("time",Json()); if(time.is_null())return ""; if(project.contains("calendar"))return raising::dates::text(project,time.value("periodIndex",0),locale); if(locale.rfind("en",0)==0)return "Year "+std::to_string(time.at("year").get<int>())+" · Month "+std::to_string(time.at("month").get<int>())+" · Period "+std::to_string(time.at("periodInMonth").get<int>()+1); return std::to_string(time.at("year").get<int>())+"년 "+std::to_string(time.at("month").get<int>())+"월 · "+std::to_string(time.at("periodInMonth").get<int>()+1)+"번째 일정"; }
+    if (name=="calendar") { const auto time=display_projection.value("time",Json()); if(time.is_null())return ""; if(project.contains("calendar"))return raising::dates::text(project,time.value("periodIndex",0),locale); if(locale.rfind("en",0)==0)return "Year "+std::to_string(time.at("year").get<int>())+" · Month "+std::to_string(time.at("month").get<int>())+" · Period "+std::to_string(time.at("periodInMonth").get<int>()+1); if(locale.rfind("ja",0)==0)return std::to_string(time.at("year").get<int>())+"年 · "+std::to_string(time.at("month").get<int>())+"月 · 予定 "+std::to_string(time.at("periodInMonth").get<int>()+1); return std::to_string(time.at("year").get<int>())+"년 "+std::to_string(time.at("month").get<int>())+"월 · "+std::to_string(time.at("periodInMonth").get<int>()+1)+"번째 일정"; }
     if (name=="ending" && !game.state.is_null() && !game.state.at("endingId").is_null()) for(const auto& e:display_content.at("endings"))if(e.at("id")==game.state.at("endingId"))return e.value("label","");
     if (name=="story") {const auto story=narrative();if(!story.is_null()){const auto& node=story.at("node");return node.value("type","")=="choice"?node.value("prompt",""):node.value("text","");}}
     if (name=="speaker") {const auto story=narrative();if(!story.is_null()&&story.at("node").contains("speakerId"))for(const auto& c:display_content.at("characters"))if(c.at("id")==story.at("node").at("speakerId"))return c.value("name","");}
@@ -502,8 +507,8 @@ public:
   std::string button(std::string id, const std::string& label, Json action, bool enabled=true, std::string reason="") {
     // Prefixing makes authored IDs collision-free with the screen root and list container IDs.
     std::string base=id; for(int i=2;actions.count(id);i++)id=base+"-"+std::to_string(i);
-    actions[id]=std::move(action); labels[id]=label;
-    return "<button id=\""+escape(id)+"\""+(enabled?"":" disabled=\"disabled\"")+">"+escape(label)+"</button>"+(reason.empty()?"":"<div class=\"reason\">"+escape(player_reason(reason))+"</div>");
+    const bool receipt=action.value("type","")=="choose";actions[id]=std::move(action); labels[id]=label;
+    return "<button id=\""+escape(id)+"\""+(enabled?"":" disabled=\"disabled\"")+">"+(receipt?history_text(label):escape(label))+"</button>"+(reason.empty()?"":"<div class=\"reason\">"+escape(player_reason(reason))+"</div>");
   }
   std::string image(const Json& element) const {
     std::string source=element.value("imageSource","asset"); Json id=nullptr;
@@ -761,8 +766,8 @@ public:
     if(kind=="playerSettings")return display_content.at("project").at("visual").contains("readableLayout")?readable_settings(e):settings_body(e);
     if(kind=="image")return image(e);
     if(kind=="plugin")return plugin_body(e);
-    if(kind=="text")return escape(e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
-    if(kind=="dialogue")return "<div class=\"dialogue\">"+escape(bind("story"))+"</div>";
+    if(kind=="text")return history_text(e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
+    if(kind=="dialogue")return "<div class=\"dialogue\">"+history_text(bind("story"))+"</div>";
     if(kind=="services"||kind=="diets"||kind=="sell"||kind=="policies"||kind=="actions")return facility_body(e);
     if(kind=="equipment"||kind=="quests"||kind=="expedition"||kind=="battle"||kind=="relationship-stages")return systems_body(kind,e.value("tacticsPanel","all"));
     if(kind=="button") {
@@ -813,6 +818,7 @@ public:
         const auto filter=e.value("galleryFilter","");
         if(filter=="kind:"+gallery_kind||filter=="status:"+gallery_status||(!gallery_category.empty()&&filter=="category:"+gallery_category))label="● "+label;
       }
+      if(type=="readingHistory")enabled=history_enabled();
       if(type=="advance") {
         label=raw_phase=="planning"?settings_words("일정 확정","Confirm schedule","予定を確定"):raw_phase=="ready"?settings_words("활동 시작","Start activity","活動を開始"):raw_phase=="activity-result"?settings_words("결과 확인 · 다음","Continue","次へ"):raw_phase=="narrative"?settings_words("이야기 계속","Continue story","物語を続ける"):settings_words("다음","Next","次へ");
         enabled=raw_phase!="title"&&raw_phase!="finished"&&raw_phase!="battle"&&raw_phase!="expedition"&&phase()!="choice";
@@ -1050,6 +1056,9 @@ public:
       const auto prefix=ui_modal+"__";
       for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();e["_authoredModal"]=true;for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}break;
     }
+    if((reading_history_open||reading_options)&&history_enabled()&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout"))){
+      auto overlay_visual=visual;overlay_visual["readableLayout"]=visual.value("readableLayout",Json::object());auto overlay_screen=*reading_screen;overlay_screen["readableLayout"]={{"items",Json::array()},{"actions",Json::array()}};return readable_document(overlay_visual,overlay_screen);
+    }
     if(readable_requested(visual,*reading_screen))return readable_document(visual,*reading_screen);
     for(const auto& raw:render_elements) {
       const auto e=resolved_style(visual,raw);
@@ -1099,7 +1108,7 @@ public:
     if(!authored_gallery()){out+=timeline_overlay();out+=direction_overlay();}
     out+=gallery_overlay();
     if(extensions&&!authored_gallery())extensions->end_sync();
-    if(visual.contains("readableLayout")&&reading_screen->contains("readableLayout")) {
+    if((visual.contains("readableLayout")&&reading_screen->contains("readableLayout"))||history_enabled()) {
       // The launcher owns a strip outside the authored canvas. Overlaying a
       // corner can intercept a designer's controls, even when visually compact.
       const int canvas_height=height;

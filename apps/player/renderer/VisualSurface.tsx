@@ -1,3 +1,5 @@
+import {PresentedHistoryText,useReadingHistory,historyTextVisible} from './ReadingHistory.js';
+import type {ReadingHistoryReceipt} from '../../../packages/visual/reading-history.js';
 import {ReadingDialog} from './ReadingDialog.js';
 import {useReadingPosition} from './reading-position.js';
 import {slotWords} from '../../../packages/player-service/save-slots.js';
@@ -25,6 +27,7 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  historyReceipt?:Omit<ReadingHistoryReceipt,'text'|'speaker'>;
   gameId?:string;
   readingKey?:string;
   saveSlots?:SaveSlotsView;
@@ -73,10 +76,11 @@ function readableInk(background:string):string {
 }
 export function VisualSurface({design,screenId,context,assetUrl,busy=false,editing=false,fitViewport=false,onAction,onPlan,onCommitPlan,onChoice,onCommand,onUserValue,children}: {
   design:ReadonlyDesign;screenId:ScreenId;context:VisualContext;assetUrl:(id:string)=>string;busy?:boolean;editing?:boolean;fitViewport?:boolean;
-  onAction?:(action:NonNullable<Element['action']>,element:Element)=>void;onCommand?:(command:WidgetCommand)=>void;onPlan?:(index:number,id:string)=>void;onCommitPlan?:()=>void;onChoice?:(id:string)=>void;onUserValue?:(id:string,value:string)=>void;children?:React.ReactNode;
+  onAction?:(action:NonNullable<Element['action']>,element:Element)=>void;onCommand?:(command:WidgetCommand)=>void;onPlan?:(index:number,id:string)=>void;onCommitPlan?:()=>void;onChoice?:(id:string,text?:string)=>void;onUserValue?:(id:string,value:string)=>void;children?:React.ReactNode;
 }) {
-  const preferences=usePlayerPreferences();
+  const preferences=usePlayerPreferences(),history=useReadingHistory();
   const [menuOpen,setMenuOpen]=useState(false);
+  useEffect(()=>{const close=()=>setMenuOpen(false);window.addEventListener('raising-open-reading-history',close);return()=>window.removeEventListener('raising-open-reading-history',close);},[]);
   const readingScroll=useRef<HTMLDivElement>(null),readingActions=useRef<HTMLDivElement>(null);
   const gesture=useRef({x:0,y:0,dragged:false});
   const host=useRef<HTMLDivElement>(null);const [viewport,setViewport]=useState({width:design.width,height:design.height,safeWidth:design.width,safeHeight:design.height});
@@ -153,7 +157,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       }
       let body:React.ReactNode=null;
       if(element.kind==='image')body=source?<TransitionImage src={assetUrl(source)} element={element}/>:editing?<div className="visual-placeholder">{element.imageSource??'이미지'} · 에셋 선택</div>:null;
-      if(element.kind==='text')body=<span>{text}</span>;
+      if(element.kind==='text')body=element.binding==='story'&&!editing?<PresentedHistoryText text={text} receipt={context.historyReceipt}/>:<span {...(element.binding==='speaker'?{'data-history-speaker':true}:{})}>{text}</span>;
       if((element.kind as string)==='plugin'){style.overflow='visible';body=<ExtensionView instance={`${screenId}/${element.id}`} extension={(element as unknown as {extension?:ExtensionSpec}).extension} width={element.width} height={element.height} assetUrl={assetUrl} editing={editing}/>;}
       if(element.kind==='playerSettings'&&preferences)body=<fieldset className="visual-settings-fields" disabled={busy||!enabled||editing}><PlayerSettingsControls {...preferences} locale={context.locale}/></fieldset>;
       if(element.kind==='saveSlots'||element.kind==='loadSlots')body=<SaveSlotsWidget element={element} {...(context.saveSlots?{view:context.saveSlots}:{})} {...(context.locale?{locale:context.locale}:{})} busy={busy||!enabled||editing} {...(context.onSlotAction?{onAction:context.onSlotAction}:{})}/>;
@@ -168,11 +172,11 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='schedule')body=context.dataState?.roster
         ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/>
         :<ScheduleWidget readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} guidance={readingItem?.planningGuidance==='first-use'} planningControl={planningControl} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onCommit={onCommitPlan}/>;
-      if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue">{context.story}</p>;
+      if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue"><PresentedHistoryText text={context.story} receipt={!editing?context.historyReceipt:undefined}/></p>;
       if(element.kind==='result')body=context.actorResults?.length
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
-      if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={()=>onChoice?.(c.id)}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
+      if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={event=>{const label=event.currentTarget.querySelector('[data-history-choice-label]');onChoice?.(c.id,label&&historyTextVisible(label)?label.textContent??undefined:undefined);}}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span data-history-choice-label>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
       if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||progressionUnavailable(element)} onClick={()=>{if(element.action){setMenuOpen(false);onAction?.(element.action,element);}}}>{buttonLabel(element)}</button>;
       if(element.kind==='collection'){
         style.padding=0;
@@ -215,6 +219,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       </div>:readable.actions.length>0&&<div className="readable-actions" ref={readingActions}>{readable.actions.map(item=>renderElement(item.element,item))}</div>}
       {grouped&&menuOpen&&<ReadingDialog id="engine-reading-menu" title={words('게임 메뉴','Game menu','ゲームメニュー')} onClose={()=>setMenuOpen(false)}>
         <div className="reading-dialog-body reading-menu-items">{secondary.map(item=>renderElement(item.element,item))}
+          {history?.enabled&&<button data-reading-id="engine-reading-history" onClick={history.open}>{words('최근 읽은 내용','Recent reading','最近の文章')}</button>}
           {preferences&&<button data-reading-id="engine-reading-options" onClick={()=>window.dispatchEvent(new Event('raising-open-reading-settings'))}>{words('소리·읽기 설정','Sound & reading settings','音声と読み方の設定')}</button>}
         </div><div className="reading-dialog-actions"><button data-reading-id="engine-reading-menu-close" onClick={()=>setMenuOpen(false)}>{words('닫기','Close','閉じる')}</button></div>
       </ReadingDialog>}

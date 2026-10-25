@@ -161,7 +161,8 @@
 .visual-readable .slot-details{width:100%;min-width:0}
 .visual-readable .slot-details>span,.visual-readable .slot-details>small{overflow:visible;white-space:normal;overflow-wrap:anywhere;text-overflow:clip;font-size:1em}
 .visual-readable .slot-toolbar,.visual-readable .slot-footer,.visual-readable .slot-footer>div,.visual-readable .slot-backups{flex-wrap:wrap;min-width:0}
-.visual-readable .slot-toolbar>button,.visual-readable .slot-footer>button,.visual-readable .slot-backups>button{flex:1 1 180px}
+.visual-readable .slot-footer>button,.visual-readable .slot-backups>button{flex:1 1 180px}
+.visual-readable .slot-toolbar>button{flex:1 0 min-content;max-width:100%}
 .visual-readable .slot-backups{margin:0;width:100%}
 .visual-readable .slot-confirmation h2{font-size:1.2em;overflow-wrap:anywhere}
 .visual-readable .slot-confirmation button{margin:4px 0;width:100%}
@@ -205,3 +206,14 @@
 .slot-image-note{font-size:14px;margin:4px 0}
 .slot-confirmation-identity{border:1px solid #718c84;border-radius:8px;padding:12px;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
 .visual-readable .slot-image-note,.visual-readable .slot-confirmation-identity small{font:inherit}
+
+.slot-empty-identity{white-space:normal;overflow-wrap:anywhere;text-align:left}
+.slot-empty-identity strong{color:var(--slot-accent,#345c50)}
+.slot-storage-recovery{display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.slot-storage-recovery p{margin:0}
+
+.reading-history-host{line-height:1.5}
+.reading-history-body article{border-top:1px solid #718c84;padding-top:12px;margin-top:12px}
+.reading-history-body p{margin:.5em 0}
+.reading-history-text{white-space:pre-wrap}
+.reading-history-meta{font-weight:600}

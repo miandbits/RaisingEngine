@@ -8,7 +8,7 @@ inline Json default_player_preferences() {
   return {{"version",1},{"musicVolume",80},{"effectsVolume",80},{"fullscreen",false},{"textSpeed",40},{"autoAdvance",false},{"autoDelay",3},{"readingLayout","auto"},{"textScale",1.0},{"guidance",Json::object()}};
 }
 inline bool has_player_settings(const Json& visual,bool include_readable=true) {
-  if(include_readable&&visual.contains("readableLayout"))return true;
+  if(include_readable&&(visual.contains("readableLayout")||visual.contains("readingHistory")))return true;
   for(const auto* group:{"screens","components"})for(const auto& owner:visual.value(group,Json::array()))
     for(const auto& e:owner.value("elements",Json::array()))if((e.value("kind","")=="playerSettings"||e.value("action","")=="dialogueAuto"))return true;
   return false;

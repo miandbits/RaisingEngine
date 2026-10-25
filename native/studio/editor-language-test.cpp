@@ -65,6 +65,7 @@ int main(int argc, char **argv) {
   const auto expectedDiagnostic=(locale=="ja"?QString::fromUtf8("読み込み中に変更されました："):locale=="en"?QString("Changed while reading: "):QString::fromUtf8("읽는 동안 변경되었습니다: "))+opaque;
   if(editorDiagnostic(diagnosticSource)!=expectedDiagnostic)return 22;
   const QList<QStringList> readableDiagnostics{
+    {"UI_READING_HISTORY_REQUIRED","이 행동을 연결하기 전에 프로젝트 설정에서 최근 읽은 내용을 켜세요.","Enable recent reading in project settings before connecting this action.","この動作を接続する前に、プロジェクト設定で最近読んだ内容を有効にしてください。"},
     {"READABLE_GUIDANCE_COMPACT","계획 안내에는 간결한 단일 인물 일정이 필요합니다.","Planning guidance requires a compact single-character schedule.","計画ガイドには単一人物のコンパクトな予定が必要です。"},
     {"READABLE_SCHEDULE_KIND","간결한 일정 표시는 일정 요소에만 적용할 수 있습니다.","Compact planning applies only to schedule elements.","コンパクトな予定表示は予定要素にのみ適用できます。"},
     {"READABLE_PRIMARY_GROUP","주요 동작을 지정하려면 하단 버튼 묶기가 필요합니다.","A primary action requires grouped bottom actions.","主要操作を指定するには下部ボタンをまとめる設定が必要です。"},

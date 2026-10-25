@@ -24,6 +24,14 @@ The player automatically remembers a reading position for the same unchanged con
 
 The first version supports text, images, dialogue, choices, buttons, stats, meters, schedules, results, inputs, save/load records and native player settings. Unsupported specialised widgets need their own reading implementation before they can be selected. A Web export still checks the separate capability of each widget.
 
+## Recent reading
+
+In **File → Project settings → Reading**, enable **Recent reading** to let players reread dialogue already displayed and responses they actually selected. Players can open it from the reading menu, or you can select **Open recent reading** in an ordinary button’s action list. This also works with authored canvas screens; a reading layout is not required.
+
+The history exists only in memory during the current player session. It is not a transcript of hidden branches, does not restore earlier text from saves, and clears on a new game or accepted save restoration. Authoring previews do not record it. Reading or closing the history never advances the game.
+
+If validation reports `UI_READING_HISTORY_REQUIRED`, select that problem to open the Reading tab and enable the feature. To disable it later, first change any connected button actions, including those in reusable components. Applying settings is undoable; Cancel leaves the project unchanged. Export requires the `reading-history-v1` player capability.
+
 ## Review on the intended device
 
 Read the longest paragraph and choice, scroll every records list, open settings, save and resume at a pending choice, and rotate while playing. Check both hands and the smallest intended device. The engine uses safe areas, natural text height and controls of at least 44 logical points; these mechanisms do not establish VoiceOver support or complete accessibility conformance.

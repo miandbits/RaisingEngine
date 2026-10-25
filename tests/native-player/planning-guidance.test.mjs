@@ -9,7 +9,7 @@ import {buildSnapshot} from '../../dist/packages/project-service/snapshot.js';
 import {exportGame} from '../../dist/packages/export-service/export.js';
 import {desktopTarget,gameDirectory,playerExecutable} from '../../dist/packages/export-service/targets.js';
 
-import {decodePng} from '../../dist/packages/studio-service/png.js';
+import {decodePng,encodeRgbaPng} from '../../dist/packages/studio-service/png.js';
 
 const touch=id=>({scrollIntoView:id,touchWindow:id,waitFrames:2});
 const at=(r,name)=>r.steps.find(s=>s.command.checkpoint===name)?.ui;
@@ -131,6 +131,45 @@ test('native readable record identity stays visible through confirmation and can
   await writeFile(resolve('.cache/native-record-identity/latest.json'),JSON.stringify({ok:true,out},null,2));console.log('Native record identity evidence: '+out);
 });
 
+
+test('native readable save rows expose identity before thumbnails and keep empty records compact',{timeout:150000},async()=>{
+  await mkdir('.cache/native-record-density',{recursive:true});const out=await mkdtemp(resolve('.cache/native-record-density/run-')),geometry=[];
+  for(const locale of ['en','ja']){
+    const f=await fixture(out,{locale,guided:false}),profile='filled-'+locale;
+    await f.run('seed-'+locale,[...start(),touch('engine-reading-menu'),touch('save'),touch('records__slots-request')],{profile});
+    const file=join(out,profile,'progress.json'),base=JSON.parse(await readFile(file,'utf8')),slots=join(out,profile,'progress.slots');
+    const date=locale==='en'?'Year 2 · Phase 8':'二年目 · 八月';
+    base.playerPresentation.saveRecord={...base.playerPresentation.saveRecord,date,place:locale==='en'?'Copper roof workshop':'銅屋根の工房',phase:'planning',savedAt:'2026-10-24 17:08:09',sequence:12,thumbnail:'frame-identity-fixture.png'};
+    await writeFile(join(slots,'frame-identity-fixture.png'),encodeRgbaPng({width:16,height:9,pixels:Buffer.from(Array(16*9).fill([25,91,207,255]).flat())}));await writeFile(file,JSON.stringify(base));const before=await readFile(file);
+    for(const [width,height] of [[320,640],[390,844],[844,390]]){
+      const name=`${locale}-${width}`;
+      const empty=await f.run('empty-'+name,[...start(width,height),touch('engine-reading-menu'),touch('save'),{checkpoint:'empty',screenshot:join(out,`empty-${name}.png`)},touch('records__slots-slot-1'),{checkpoint:'selected'},touch('records__close'),{checkpoint:'returned'}]);
+      const ui=at(empty,'empty'),main=ui.readingLayout['reading-main'];fit(ui);unchanged(at(empty,'returned'),at(empty,'opened'));
+      for(const id of ['records__slots-manual','records__slots-auto']){const c=ui.readingLayout.controls.find(c=>c.id===id);assert.ok(c.height<=parseFloat(c.fontSize)*1.45+28,`Short group label must remain a whole word at ${name}: ${JSON.stringify(c)}`);}
+      const rows=ui.nodes.filter(n=>/^records__slots-slot-\d+$/.test(n.id)),complete=rows.filter(n=>n.y>=main.y-.5&&n.y+n.height<=main.y+main.height+.5);
+      if(width<height)assert.ok(complete.length>=2,`At ${name}, ${complete.length} complete empty identities were initially visible`);
+      assert.ok(rows.every(n=>!n.label.startsWith('●')));const html=ui.texts.records__slots;
+      assert.match(html,locale==='en'?/>Manual</:/>手動</);assert.match(html,locale==='en'?/>Auto</:/>自動</);
+      const selectedTag=at(empty,'selected').texts.records__slots.match(/<button[^>]*id="records__slots-slot-1"[^>]*>/)?.[0]??'';assert.match(selectedTag,/class="record-slot record-selected"/);assert.match(selectedTag,/aria-pressed="true"/);
+      const shot=join(out,`filled-${name}.png`),filled=await f.run('filled-'+name,[{resize:{width,height}},touch('engine-reading-menu'),touch('load'),{checkpoint:'filled',screenshot:shot},touch('load-records__slots-request'),{checkpoint:'confirm'},touch('load-records__slots-cancel'),touch('load-records__close'),{checkpoint:'returned'},{key:'F5'},touch('records__slots-auto'),{checkpoint:'protected'},touch('records__close')],{profile});
+      const view=at(filled,'filled'),box=view.readingLayout['reading-main'],row=view.nodes.find(n=>n.id==='load-records__slots-slot-0');fit(view);assert.equal(view.readingLayout['reading-main'].scrollTop,0);
+      const rml=view.texts['load-records__slots'],identityAt=rml.indexOf('class="record-identity"'),thumbnailAt=rml.indexOf('class="record-thumbnail"');assert.ok(identityAt>=0&&identityAt<thumbnailAt);assert.ok(rml.indexOf(date,identityAt)<thumbnailAt);
+      const image=decodePng(await readFile(shot)),scale=image.width/width,ink=[];
+      // Measured pixels prove two identity/date text lines are visible above the
+      // thumbnail, rather than only finding the right text in an offscreen DOM.
+      for(let y=Math.ceil((row.y+10)*scale);y<Math.floor(Math.min(row.y+125,box.y+box.height)*scale);y++){
+        let count=0;for(let x=Math.ceil((row.x+18)*scale);x<Math.floor((row.x+row.width-18)*scale);x++){const i=(y*image.width+x)*4;if(image.pixels[i]<110&&image.pixels[i+1]<110&&image.pixels[i+2]<110)count++;}
+        if(count>5){const last=ink.at(-1);if(last&&y-last.end<=Math.ceil(3*scale))last.end=y;else ink.push({start:y,end:y});}
+      }
+      assert.ok(ink.length>=2,`At ${name}, first record identity and date must render visibly before the thumbnail: ${JSON.stringify(ink)}`);
+      const confirmation=at(filled,'confirm').texts['load-records__slots'];assert.ok(confirmation.includes(date));assert.match(confirmation,locale==='en'?/local time as recorded/:/記録時の現地時刻/);
+      const request=at(filled,'protected').readingLayout.controls.find(c=>c.id==='records__slots-request');assert.equal(request.enabled,false,'Automatic records remain protected');
+      assert.equal(at(filled,'returned').state,null);assert.deepEqual(at(filled,'returned').commands,[]);assert.deepEqual(await readFile(file),before,'Browsing and confirmation cancellation preserve saved bytes');
+      geometry.push({locale,width,height,initialEmptyRows:complete.length,initialIdentityInkBands:ink.length,mainHeight:box.height});
+    }
+  }
+  await writeFile(resolve('.cache/native-record-density/latest.json'),JSON.stringify({ok:true,out,geometry},null,2));console.log('Native save density evidence: '+out);
+});
 
 test('native Japanese fallback ships licensed glyphs and renders real ink instead of missing-character boxes',{timeout:60000},async()=>{
   await mkdir('.cache/native-japanese-fallback',{recursive:true});const out=await mkdtemp(resolve('.cache/native-japanese-fallback/run-')),f=await fixture(out,{locale:'ja',guided:false,glyphs:true});

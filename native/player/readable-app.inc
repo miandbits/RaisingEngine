@@ -54,6 +54,17 @@
   }
   bool readable_action(const Json& action) {
     const auto type=action.value("type","");
+    if(type=="readingHistory") {
+      if(!markup.history_enabled()||preview()||editor_live||recalling()||game.gallery.active)return true;
+      history_return_view=markup.reading_options?"options":markup.reading_menu?"menu":"game";
+      history_return_focus=context&&context->GetFocusElement()?context->GetFocusElement()->GetId():"";
+      markup.planning_guide=markup.compact_picker=markup.reading_menu=markup.reading_options=false;markup.reading_history_open=true;reading_focus="engine-reading-history-close";
+      const auto entries=reading_history.snapshot().at("entries");reading_jump=entries.empty()?"engine-reading-history-current":"engine-reading-history-entry-"+std::to_string(entries.back().at("sequence").get<uint64_t>());
+      dirty=true;return true;
+    }
+    if(type=="readingHistoryClose"||(type=="uiBack"&&markup.reading_history_open)) {
+      markup.reading_history_open=false;markup.reading_options=history_return_view=="options";markup.reading_menu=history_return_view=="menu";reading_focus=history_return_focus;dirty=true;return true;
+    }
     if(type=="planningGuideOpen") {
       for(const auto& e:markup.render_elements)if(e.value("id","")==action.value("elementId","")&&markup.planning_guide_eligible(e)){
         markup.reading_menu=markup.reading_options=markup.compact_picker=false;markup.planning_guide=true;markup.planning_guide_seen=true;markup.planning_guide_step=0;markup.planning_guide_element=e.at("id");markup.planning_guide_owner=markup.screen_id;break;
