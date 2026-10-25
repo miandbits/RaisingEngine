@@ -9,7 +9,7 @@ void StudioWindow::showFirstGameChecklist() {
     intro->setWordWrap(true); layout->addWidget(intro);
     auto progress = new QLabel; progress->setWordWrap(true); progress->setObjectName("firstGameSummary"); layout->addWidget(progress);
     auto target=new QComboBox;target->setObjectName("firstGameTarget");
-    for(const auto &id:{"macos","windows","web","ios"})target->addItem(QString(id),QString(id));
+    for(const auto &item:QList<QPair<QString,QString>>{{"macos","macOS"},{"windows","Windows"},{"web","Web"},{"ios","iOS"}})target->addItem(item.second,item.first);
     layout->addWidget(new QLabel(tr("Where will people play?")));layout->addWidget(target);
     auto compatibility=new QLabel;compatibility->setWordWrap(true);compatibility->setObjectName("firstGameCompatibility");layout->addWidget(compatibility);
     connect(target,qOverload<int>(&QComboBox::currentIndexChanged),this,[this,target]{if(!busy())request("releaseTarget",{{"target",target->currentData().toString()}});});
@@ -66,20 +66,24 @@ void StudioWindow::updateFirstGameChecklist() {
   firstGameDock->findChild<QLabel*>("firstGameCompatibility")->setText(releaseCompatibility["summary"].toString());
   firstGameDock->findChild<QLabel*>("firstGameRecovery")->setText(recoveryState.contains("warning")?recoveryState["warning"].toString():recoveryState.contains("savedAt")?tr("Unsaved edits have a recovery copy. Save project to apply them to your project files."):tr("Project saves and player saves are separate. Recovery copies protect edits applied in the editor."));
   const auto rows = firstGameState.value("rows").toArray(); int complete = 0;
+  QSet<QString> completedChecks;
   for (int i = 0; i < 8; ++i) {
     auto button = firstGameDock->findChild<QPushButton*>("firstGameStep" + QString::number(i));
     auto help = firstGameDock->findChild<QLabel*>("firstGameHint" + QString::number(i));
     const auto row = i < rows.size() ? rows[i].toObject() : QJsonObject();
     button->setVisible(!row.isEmpty()); help->setVisible(!row.isEmpty());
     if (row.isEmpty()) continue;
-    const bool done = row.value("complete").toBool(); if (done) ++complete;
+    const bool done = row.value("complete").toBool();
+    if (done) { ++complete; completedChecks.insert(row.value("id").toString()); }
     button->setText((done ? QString::fromUtf8("✓ ") : QString::number(i + 1) + ". ") + row.value("title").toString());
     button->setProperty("complete", done); button->setEnabled(!busy());
     help->setText(row.value("description").toString());
   }
   firstGameDock->findChild<QLabel*>("firstGameSummary")->setText(rows.isEmpty()
     ? firstGameState.value("warning").toString(tr("Create a project with the recommended My first raising game starter to use this checklist."))
-    : tr("%1 of %2 steps completed · customization is optional").arg(complete).arg(rows.size()));
+    : completedChecks.contains("play") && completedChecks.contains("check") && completedChecks.contains("export")
+      ? tr("현재 버전을 엔딩까지 플레이하고 내보냈습니다. 추가 수정은 선택 사항입니다.")
+      : tr("%1 of %2 steps completed · customization is optional").arg(complete).arg(rows.size()));
 }
 void StudioWindow::observeFirstGamePlay(const QJsonObject &state) {
   const auto phase = state.value("phase").toString();

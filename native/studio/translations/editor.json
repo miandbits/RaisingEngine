@@ -3595,5 +3595,6 @@
 ["%1 · 처리 %2/%3 · 통과 %4 · 검사한 초안 r%5", "%1 · checked %2/%3 · passed %4 · tested draft r%5", "%1・処理 %2/%3・合格 %4・検査した下書き r%5"],
 ["검사 후 초안 또는 경로가 변경되었습니다. 이 결과는 이전 사본의 결과입니다.", "The draft or routes changed after capture. These results describe the earlier copy.", "取得後に下書きまたは経路が変更されました。この結果は以前のコピーのものです。"],
 ["검사 중 · 명령 %1/%2", "Checking · command %1/%2", "検査中・コマンド %1/%2"],
-["통과","Passed","合格"]
+["통과","Passed","合格"],
+["현재 버전을 엔딩까지 플레이하고 내보냈습니다. 추가 수정은 선택 사항입니다.", "This version has been played to an ending and exported. Customization is optional.", "このバージョンはエンディングまでプレイし、書き出し済みです。カスタマイズは任意です。"]
 ]

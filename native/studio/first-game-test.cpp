@@ -11,7 +11,7 @@ private slots:
   void createCustomizePlayAndExport() {
     const auto out=QDir::fromNativeSeparators(qEnvironmentVariable("RAISING_FIRST_GAME_PROOF"));
     if(out.isEmpty())QSKIP("Run scripts/test-first-game-ui.mjs with a built editor and player");
-    installEditorLanguage(*qApp,"en");applyStudioTheme(*qApp);
+    installEditorLanguage(*qApp,qEnvironmentVariable("RAISING_FIRST_GAME_LOCALE","en"));applyStudioTheme(*qApp);
     const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
     const auto root=out+"/designer-game";
     QTimer watchdog;connect(&watchdog,&QTimer::timeout,this,[]{if(auto m=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())){qWarning()<<m->text();m->reject();}});watchdog.start(3000);
@@ -26,6 +26,13 @@ private slots:
     QTRY_VERIFY(window.findChild<QDockWidget*>("firstGameChecklist"));
     auto step=[&](int n){return window.findChild<QPushButton*>("firstGameStep"+QString::number(n));};
     for(int n=0;n<8;++n){QVERIFY(step(n));QVERIFY(!step(n)->property("complete").toBool());}
+    const auto completedSummary=tr("현재 버전을 엔딩까지 플레이하고 내보냈습니다. 추가 수정은 선택 사항입니다.");
+    auto summary=window.findChild<QLabel*>("firstGameSummary");QVERIFY(summary);
+    QVERIFY(summary->text()!=completedSummary);
+    auto targetNames=window.findChild<QComboBox*>("firstGameTarget");QVERIFY(targetNames);
+    const QList<QPair<QString,QString>> platformNames{{"macos","macOS"},{"windows","Windows"},{"web","Web"},{"ios","iOS"}};
+    QCOMPARE(targetNames->count(),platformNames.size());
+    for(const auto &item:platformNames){const int index=targetNames->findData(item.first);QVERIFY(index>=0);QCOMPARE(targetNames->itemText(index),item.second);}
     QTimer::singleShot(50,&window,[&]{
       auto dialog=window.findChild<QDialog*>("projectSettingsDialog");QVERIFY(dialog);
       dialog->findChild<QLineEdit*>("projectTitle")->setText("Willow Days");
@@ -82,6 +89,8 @@ private slots:
     QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty(),90000);QCOMPARE(completed.first().first().toInt(),0);
     QTRY_VERIFY_WITH_TIMEOUT(!window.busy()&&step(6)->property("complete").toBool(),10000);
     QVERIFY(step(0)->property("complete").toBool());
+    QVERIFY(!step(7)->property("complete").toBool());
+    QVERIFY(summary->text()!=completedSummary);
     QFile report(window.playReport);QVERIFY(report.open(QIODevice::ReadOnly));
     const auto proof=QJsonDocument::fromJson(report.readAll()).object();QVERIFY(proof["ok"].toBool());
     bool finished=false;for(auto item:proof["steps"].toArray()){auto s=item.toObject();if(s["command"].toObject()["checkpoint"]=="ending")finished=s["ui"].toObject()["state"].toObject()["endingId"]=="together";}QVERIFY(finished);
@@ -118,6 +127,9 @@ private slots:
     QTimer::singleShot(45000,&window,[&]{if(auto d=window.findChild<QDialog*>("exportGameDialog")){qWarning()<<d->findChild<QLabel*>("exportResult")->text();d->reject();}});
     step(7)->click();
     QTRY_VERIFY_WITH_TIMEOUT(!window.busy()&&step(7)->property("complete").toBool(),10000);
+    QVERIFY(!step(4)->property("complete").toBool());
+    QVERIFY(!step(5)->property("complete").toBool());
+    QCOMPARE(summary->text(),completedSummary);
     QVERIFY(QFileInfo::exists(out+"/shipped-game/Game.zip"));
     QVERIFY(QFileInfo::exists(out+"/shipped-game/Project-backup.zip"));
     QVERIFY(window.grab().save(out+"/checklist.png"));
@@ -128,6 +140,21 @@ private slots:
     QTRY_VERIFY_WITH_TIMEOUT(!reopened.busy()&&reopened.findChild<QPushButton*>("firstGameStep7"),30000);
     QTRY_VERIFY(reopened.findChild<QPushButton*>("firstGameStep7")->property("complete").toBool());
     QVERIFY(reopened.findChild<QPushButton*>("firstGameStep2")->property("complete").toBool());
+    auto reopenedSummary=reopened.findChild<QLabel*>("firstGameSummary");QVERIFY(reopenedSummary);
+    QCOMPARE(reopenedSummary->text(),completedSummary);
+    // Completion belongs to the recorded content version, not the project forever.
+    QTimer::singleShot(50,&reopened,[&]{
+      auto dialog=reopened.findChild<QDialog*>("projectSettingsDialog");QVERIFY(dialog);
+      dialog->findChild<QLineEdit*>("projectTitle")->setText("Willow Days revised");
+      dialog->findChild<QDialogButtonBox*>("projectSettingsButtons")->button(QDialogButtonBox::Ok)->click();
+    });reopened.findChild<QPushButton*>("firstGameStep1")->click();
+    QTRY_VERIFY_WITH_TIMEOUT(!reopened.busy()&&!reopened.findChild<QPushButton*>("firstGameStep6")->property("complete").toBool(),10000);
+    QVERIFY(!reopened.findChild<QPushButton*>("firstGameStep7")->property("complete").toBool());
+    QVERIFY(reopenedSummary->text()!=completedSummary);
+    QVERIFY(reopened.grab().save(out+"/checklist-after-edit.png"));
+    reopened.findChild<QAction*>("undoEdit")->trigger();
+    QTRY_VERIFY_WITH_TIMEOUT(!reopened.busy()&&reopened.findChild<QPushButton*>("firstGameStep7")->property("complete").toBool(),10000);
+    QCOMPARE(reopenedSummary->text(),completedSummary);
     QVERIFY(reopened.close());
   }
 };
