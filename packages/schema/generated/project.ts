@@ -3867,6 +3867,7 @@ export type Element = {
     | "recollectionLoad"
     | "recollectionAuto"
     | "readingHistory"
+    | "resumeContext"
     | "dialogueAuto"
     | "recollectionSpeed"
     | "recollectionSkip"
@@ -3974,6 +3975,7 @@ export type Element = {
         | "recollectionLoad"
         | "recollectionAuto"
         | "readingHistory"
+        | "resumeContext"
         | "dialogueAuto"
         | "recollectionSpeed"
         | "recollectionSkip"
@@ -9295,6 +9297,7 @@ export type ComponentChild = {
     | "recollectionLoad"
     | "recollectionAuto"
     | "readingHistory"
+    | "resumeContext"
     | "dialogueAuto"
     | "recollectionSpeed"
     | "recollectionSkip"
@@ -11515,6 +11518,7 @@ export type ComponentChild = {
         | "recollectionLoad"
         | "recollectionAuto"
         | "readingHistory"
+        | "resumeContext"
         | "dialogueAuto"
         | "recollectionSpeed"
         | "recollectionSkip"
@@ -14362,6 +14366,15 @@ export interface Overrides {
   };
 }
 export interface VisualDesign {
+  resumeContext?: {
+    screenId: string;
+    /**
+     * @minItems 1
+     * @maxItems 64
+     */
+    elementIds: [string, ...string[]];
+    showAfterLoad?: true;
+  };
   readingHistory?: {};
   saveSystem?: {
     manualSlots?: number;

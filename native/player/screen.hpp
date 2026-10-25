@@ -9,6 +9,7 @@
 #include "preferences.hpp"
 #include "reading-history.hpp"
 #include "plan-reuse.hpp"
+#include "resume-context.hpp"
 #include <algorithm>
 #include <map>
 #include <iomanip>
@@ -125,7 +126,7 @@ public:
   int viewport_width=0,viewport_height=0;
   int window_width=0,window_height=0;
   Json safe_area=Json::object();
-  bool readable_active=false,reading_options=false,reading_menu=false,reading_history_open=false;
+  bool readable_active=false,reading_options=false,reading_menu=false,reading_history_open=false,resume_context_open=false;
   const raising_player::ReadingHistory* reading_history=nullptr;
   bool history_enabled() const {return !replay_controls&&!game.gallery.active&&display_content.at("project").at("visual").contains("readingHistory");}
   std::string history_text(const std::string& text) const {return history_enabled()?"<span class=\"reading-receipt-text\" style=\"margin:0;\">"+escape(text)+"</span>":escape(text);}
@@ -144,7 +145,7 @@ public:
   int compact_slot=0,compact_revision=-1;
   std::string compact_activity,compact_group,compact_element,compact_owner;
   std::string readable_view="game";
-  bool reading_overlay() const {return portable_open()||reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
+  bool reading_overlay() const {return portable_open()||resume_context_open||reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;
@@ -827,6 +828,7 @@ public:
         if(filter=="kind:"+gallery_kind||filter=="status:"+gallery_status||(!gallery_category.empty()&&filter=="category:"+gallery_category))label="● "+label;
       }
       if(type=="readingHistory")enabled=history_enabled();
+      if(type=="resumeContext")enabled=resume_context_enabled();
       if(type=="advance") {
         label=raw_phase=="planning"?settings_words("일정 확정","Confirm schedule","予定を確定"):raw_phase=="ready"?settings_words("활동 시작","Start activity","活動を開始"):raw_phase=="activity-result"?settings_words("결과 확인 · 다음","Continue","次へ"):raw_phase=="narrative"?settings_words("이야기 계속","Continue story","物語を続ける"):settings_words("다음","Next","次へ");
         enabled=raw_phase!="title"&&raw_phase!="finished"&&raw_phase!="battle"&&raw_phase!="expedition"&&phase()!="choice";
@@ -1064,7 +1066,7 @@ public:
       const auto prefix=ui_modal+"__";
       for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();e["_authoredModal"]=true;for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}break;
     }
-    if(portable_open()||((reading_history_open||reading_options)&&history_enabled()&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout")))){
+    if(portable_open()||resume_context_open||((reading_history_open||reading_options)&&(history_enabled()||resume_context_enabled())&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout")))){
       auto overlay_visual=visual;overlay_visual["readableLayout"]=visual.value("readableLayout",Json::object());auto overlay_screen=*reading_screen;overlay_screen["readableLayout"]={{"items",Json::array()},{"actions",Json::array()}};return readable_document(overlay_visual,overlay_screen);
     }
     if(readable_requested(visual,*reading_screen))return readable_document(visual,*reading_screen);
@@ -1116,7 +1118,7 @@ public:
     if(!authored_gallery()){out+=timeline_overlay();out+=direction_overlay();}
     out+=gallery_overlay();
     if(extensions&&!authored_gallery())extensions->end_sync();
-    if((visual.contains("readableLayout")&&reading_screen->contains("readableLayout"))||history_enabled()) {
+    if((visual.contains("readableLayout")&&reading_screen->contains("readableLayout"))||history_enabled()||resume_context_enabled()) {
       // The launcher owns a strip outside the authored canvas. Overlaying a
       // corner can intercept a designer's controls, even when visually compact.
       const int canvas_height=height;

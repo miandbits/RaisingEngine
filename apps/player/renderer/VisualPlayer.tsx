@@ -1,3 +1,4 @@
+import {useResumeContext} from './ResumeContext.js';
 import {slotWords,slotScreens,type SaveSlotAction} from '../../../packages/player-service/save-slots.js';
 import {useReadingHistory,readingHistoryDate} from './ReadingHistory.js';
 import {calendarText} from '../../../packages/core/calendar.js';
@@ -22,6 +23,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   act:(action:PlayerAction,onAccepted?:()=>void)=>void;newRun:(userValues?:Record<string,string>)=>void;save:()=>void;load:()=>void;sound:()=>void;muted:boolean;preview:boolean;error:string|null;notice:string|null;
 }) {
   const history=useReadingHistory();
+  const resume=useResumeContext();
   const modalRef=useRef<HTMLDivElement>(null),modalId=view.saveSlots?.screenId;
   useEffect(()=>{
     if(!modalId)return;const previous=document.activeElement as HTMLElement|null,root=modalRef.current;
@@ -135,6 +137,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
     if(action==='openModal'&&slots&&element.screenId){const kind=slotScreens(design,'save').includes(element.screenId)?'save':'load';slots({type:'open',kind,screenId:element.screenId});return;}
     if(modalId&&action==='save'){save();return;}if(modalId&&action==='load'){load();return;}
     if(modalId&&action!=='sound')return;
+    if(action==='resumeContext'){resume?.open();return;}
     if(action==='readingHistory'){history?.open();return;}
     if(action==='navigate'&&!s&&design.routing&&element.screenId){setTitleScreen(element.screenId);return;}
     const command=widgetCommand(element,s);if(command){run(command);return;}
@@ -142,7 +145,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
     else if(action==='commitPlan'&&s&&['planning','ready'].includes(s.phase))act({type:'commitPlan',activityIds:plan});
     else if(action==='advance'&&s){if(['planning','ready'].includes(s.phase)){if(s.roster)act(s.phase==='planning'?{type:'assignActivities',assignments:{...s.roster.assignments}}:{type:'execute'});else if(!s.schedule||plan.some((id,i)=>id!==s.schedule?.[i]))act({type:'schedule',activityIds:plan});else act({type:'execute'});}else act({type:'continue'});}
   };
-  return <ExtensionPlaybackRate.Provider value={view.timeline?.plan.resultPlayback?(view.timeline.cursor.paused?0:view.timeline.cursor.speed):1}><div className="visual-player" data-runtime-backend={view.runtimeBackend} aria-busy={busy}><div className="visual-status"><span>{view.title} · {busy?slotWords(view.locale,'처리 중…','Working…','処理中…'):preview?slotWords(view.locale,'초안 미리보기','Draft preview','下書きプレビュー'):slotWords(view.locale,'플레이 중','Playing','プレイ中')}</span><span>{muted?slotWords(view.locale,'소리 꺼짐','Sound off','消音'):slotWords(view.locale,'소리 켜짐','Sound on','音声あり')}</span></div>{error&&!modalId&&<div role="alert" className="alert">{error}</div>}{notice&&!modalId&&<p role="status" className="notice">{notice}</p>}
+  return <ExtensionPlaybackRate.Provider value={resume?.active?0:view.timeline?.plan.resultPlayback?(view.timeline.cursor.paused?0:view.timeline.cursor.speed):1}><div className="visual-player" data-runtime-backend={view.runtimeBackend} aria-busy={busy}><div className="visual-status"><span>{view.title} · {busy?slotWords(view.locale,'처리 중…','Working…','処理中…'):preview?slotWords(view.locale,'초안 미리보기','Draft preview','下書きプレビュー'):slotWords(view.locale,'플레이 중','Playing','プレイ中')}</span><span>{muted?slotWords(view.locale,'소리 꺼짐','Sound off','消音'):slotWords(view.locale,'소리 켜짐','Sound on','音声あり')}</span></div>{error&&!modalId&&<div role="alert" className="alert">{error}</div>}{notice&&!modalId&&<p role="status" className="notice">{notice}</p>}
     <div className="slot-gameplay" inert={!!modalId}><VisualSurface design={effectiveDesign} screenId={screen} context={{...context,userFields:view.userFields??[],userValues:s?.userValues??draft,userFieldsEditable:!s,...(view.dataUi?{dataUi:view.dataUi}:{})}} assetUrl={id=>assetUrl(id,view.generation)} busy={busy||!!pending} fitViewport onUserValue={(id,value)=>setDraft(previous=>({...previous,[id]:value}))} onAction={action} onCommitPlan={()=>act({type:'commitPlan',activityIds:plan})} onCommand={run} onChoice={(choiceId,text)=>{const receipt=context.historyReceipt;act({type:'choose',choiceId},()=>{if(receipt&&text)history?.record({...receipt,kind:'chosen-response',key:receipt.key+':'+choiceId,text});});}} onPlanReplace={onPlan} onPlan={(index,id)=>{const next:string[]=[...plan];next[index]=id;onPlan(next);}}>
       {pending&&<div className="transaction-overlay"><div className="transaction-dialog" role="dialog" aria-modal="true" aria-labelledby="transaction-title"><h3 id="transaction-title">{pending.confirmation.title??'거래 확인'}</h3><p>{pending.confirmation.message??'계속하시겠습니까?'}</p><p className="transaction-summary">{pending.summary}</p><small>효과는 능력치 범위에 따라 제한됩니다.</small><div><button autoFocus disabled={busy} onClick={confirm}>{pending.confirmation.confirmLabel??'확인'}</button><button disabled={busy} onClick={cancel}>{pending.confirmation.cancelLabel??'취소'}</button></div></div></div>}
     </VisualSurface></div>

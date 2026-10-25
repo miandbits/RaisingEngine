@@ -44,6 +44,14 @@ QString editorDiagnostic(const QString &sourceMessage) {
   // These new shared validation messages originate in English. Normalize only exact
   // engine-owned messages; third-party diagnostics and opaque parameters stay intact.
   static const QHash<QString,QString> readableMessages{
+    {"Configure current reminders in project settings before connecting this action.","이 행동을 연결하기 전에 프로젝트 설정에서 현재 알림을 구성하세요."},
+    {"Choose an existing screen for current reminders.","현재 알림에 사용할 기존 화면을 선택하세요."},
+    {"Select each reminder text only once.","각 알림 텍스트는 한 번만 선택하세요."},
+    {"This reminder text no longer exists on the selected screen.","선택한 화면에서 이 알림 텍스트를 찾을 수 없습니다."},
+    {"Current reminders can include text elements only.","현재 알림에는 텍스트 요소만 넣을 수 있습니다."},
+    {"Choose static text or a supported current-state binding for this reminder.","이 알림에는 고정 텍스트나 지원되는 현재 상태 연결을 선택하세요."},
+    {"Current reminders cannot use selected-row or data bindings.","현재 알림에는 선택한 행이나 데이터 연결을 사용할 수 없습니다."},
+
     {"Enable recent reading in project settings before connecting this action.","이 행동을 연결하기 전에 프로젝트 설정에서 최근 읽은 내용을 켜세요."},
     {"Planning guidance requires a compact single-character schedule.","계획 안내에는 간결한 단일 인물 일정이 필요합니다."},
     {"Plan reuse requires a compact single-character schedule.","계획 재사용에는 간결한 단일 인물 일정이 필요합니다."},

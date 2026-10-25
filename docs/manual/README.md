@@ -15,6 +15,7 @@ Start with [your first game](../getting-started/first-game.md). Templates are st
 | Time, schedules and reservations | [Unified time](unified-time.md), [sessions](time-progression-sessions.md) |
 | Screens, states and routing | [Free screens](free-screens.md), [states](custom-states.md), [routing](conditional-routing.md) |
 | Phone text, touch controls and reading order | [Phone reading layouts](phone-reading-layout.md) |
+| Current-state text after returning to a save | [Current reminders](current-reminders.md) |
 | Reusable UI and targets | [Components](component-context.md), [composition](ui-composition.md), [data binding](data-ui-binding.md) |
 | Presentation and animation | [Direction](direction-sequences.md), [timelines](activity-timelines.md), [narrative choice cards](narrative-choice-cards.md) |
 | Combat | [Battle HUD](battle-hud-authoring.md), [party tactics](party-tactics.md) |

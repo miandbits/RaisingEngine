@@ -9,6 +9,7 @@ Historical experiment reports are not the current support contract.
 | Integrate rules, tools or plugins | [Architecture](reference/architecture.md), [data contract](reference/data-format/contract.md), [MCP](reference/mcp.md) |
 | Build, test or contribute | [Development](development/README.md), [contribution guide](../CONTRIBUTING.md) |
 | Phone layouts and enlarged text | [No-code reading layouts](manual/phone-reading-layout.md) |
+| Designer-chosen current-state reminders | [Current reminders](manual/current-reminders.md) |
 | Sample player strategies and inspect resource balance | [Player priorities](manual/player-priorities.md) |
 | Deploy a game | [Platform support](development/platform-support.md), [export](manual/qt-game-export.md) |
 | Previous experiments and acceptance evidence | [Historical archive](archive/README.md) |

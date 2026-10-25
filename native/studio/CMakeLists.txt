@@ -111,3 +111,8 @@ add_executable(qt-analysis-priorities-test analysis-priorities-test.cpp)
 target_link_libraries(qt-analysis-priorities-test PRIVATE studio-ui Qt6::Test)
 add_test(NAME qt-analysis-priorities COMMAND qt-analysis-priorities-test)
 set_tests_properties(qt-analysis-priorities PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(qt-resume-context-test resume-context-test.cpp)
+target_link_libraries(qt-resume-context-test PRIVATE studio-ui Qt6::Test)
+add_test(NAME qt-resume-context COMMAND qt-resume-context-test)
+set_tests_properties(qt-resume-context PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

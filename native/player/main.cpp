@@ -147,7 +147,7 @@ public:
     const double dt=preview()?0:extension_dt*extension_playback_rate();extension_dt=0;
     extensions.update(dt);play_extension_sounds();extensions.frame();
   }
-  double extension_playback_rate() const {if(portable_active()||game.gallery.active||!markup.ui_modal.empty())return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
+  double extension_playback_rate() const {if(portable_active()||markup.resume_context_open||game.gallery.active||!markup.ui_modal.empty())return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
   void advance_extensions(double delta){if(recalling()){recollection->extensions.update(delta*recollection->speed);recollection->extensions.frame();return;}if(!extensions.active())return;extensions.update(delta*extension_playback_rate());play_extension_sounds();extensions.frame();}
   /** Event sounds of plugin notifications (presentation only): a missing file never stops the game. */
   uint64_t extension_sounds_played=0,extension_sound_errors=0,extension_sound_missing=0;
@@ -181,6 +181,7 @@ public:
   Json test_safe_area;
   #include "readable-app.inc"
   #include "portable-save-app.inc"
+  #include "resume-context-app.inc"
   int lifecycle_saves=0;
   std::map<std::string,std::string> entrance_keys;
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
@@ -192,7 +193,7 @@ public:
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
     markup.extensions=&extensions;markup.reading_history=&reading_history;
-    game.accepted_replacement=[this](const std::string& reason){++markup.reuse_generation;markup.plan_reuse_open=false;reset_reading_history(reason);};
+    game.accepted_replacement=[this](const std::string& reason){++markup.reuse_generation;markup.plan_reuse_open=false;reset_reading_history(reason);reset_resume_context(reason);};
     game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){
       // Conditions/routing may reveal a plugin only as a result of this command.
       // Synchronize logical mounts before its single observation, without displaying a window.
@@ -266,8 +267,8 @@ public:
     auto& markup=active_markup();
     const auto eventType=event.GetType();
     // Plugin hit tests (CONTRACT.md §7): observed for the animation, never consumed; the click goes on below.
-    if(portable_active()&&eventType!="click")return;
-    if(eventType=="click"&&!portable_active())ExtensionElement::observe_click(document,event);
+    if((portable_active()||markup.resume_context_open)&&eventType!="click")return;
+    if(eventType=="click"&&!portable_active()&&!markup.resume_context_open)ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.slot_confirmation.empty())markup.slot_confirmation.clear();else if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
@@ -411,6 +412,7 @@ public:
     editor_command=incoming;
     try {
       if(portable_action(incoming))return;
+      if(resume_context_action(incoming))return;
       if(readable_action(incoming))return;
       if(incoming.value("type","")=="readingRosterActivity"){
         const auto actor=incoming.value("actorId","");if(!markup.roster_draft.contains(actor))throw std::runtime_error("Unknown roster actor");
@@ -638,10 +640,11 @@ public:
     if(event.type==SDL_EVENT_KEY_DOWN) {
       if(portable_active()&&(event.key.key==SDLK_ESCAPE||event.key.key==SDLK_AC_BACK)){portable_action({{"type","portableCancel"}});return;}
       if(portable_active()&&(event.key.key==SDLK_F2||event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
+      if(event.key.key==SDLK_ESCAPE&&markup.resume_context_open){resume_context_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE&&markup.reading_overlay()){readable_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
-      if((markup.planning_guide||markup.reading_history_open||markup.plan_reuse_open)&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
+      if((markup.resume_context_open||markup.planning_guide||markup.reading_history_open||markup.plan_reuse_open)&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
       if(event.key.key==SDLK_F5){pending.push_back({{"type","save"}});return;}
       if(event.key.key==SDLK_F2){pending.push_back({{"type","nextLocale"}});return;}
       if(event.key.key==SDLK_F9){pending.push_back({{"type","load"}});return;}
@@ -681,6 +684,7 @@ public:
       const auto id=entry.value("id","");if(auto* element=document->GetElementById("node-"+id))texts[id]=element->GetInnerRML();
     }
     if(auto* history=document->GetElementById("engine-reading-history-panel"))texts["engine-reading-history-panel"]=history->GetInnerRML();
+    if(auto* reminders=document->GetElementById("engine-resume-context-panel"))texts["engine-resume-context-panel"]=reminders->GetInnerRML();
     if(auto* guide=document->GetElementById("engine-planning-guide"))texts["engine-planning-guide"]=guide->GetInnerRML();
     for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="saveSlots"||entry.value("kind","")=="loadSlots")if(auto* e=document->GetElementById("node-"+entry.value("id","")))texts[entry.value("id","")]=e->GetInnerRML();
     if(auto* fallback=document->GetElementById("node-system-widget"))texts["system-widget"]=fallback->GetInnerRML();
@@ -727,7 +731,7 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"resumeContext",{{"enabled",markup.resume_context_enabled()},{"open",markup.resume_context_open},{"projection",markup.resume_context_open?markup.resume_context_projection():Json()}}},{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
       {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},

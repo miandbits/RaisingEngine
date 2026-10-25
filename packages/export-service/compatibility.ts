@@ -17,6 +17,7 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   const visual=content.project.visual,requiredFeatures:string[]=[];
   if(content.project.calendar)requiredFeatures.push('calendar-v1');
   if(visual?.readableLayout||visual?.screens.some(s=>s.readableLayout))requiredFeatures.push('readable-layout-v1');
+  if(visual?.resumeContext)requiredFeatures.push('resume-context-v1');
   if(visual?.readingHistory)requiredFeatures.push('reading-history-v1');
   if(visual?.screens.some(s=>s.readableLayout?.actionLayout==='grouped'))requiredFeatures.push('readable-actions-v1');
   if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.schedulePresentation==='compact')))requiredFeatures.push('compact-planning-v1');

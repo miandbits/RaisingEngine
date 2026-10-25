@@ -13,16 +13,17 @@ await run('services',['--test','--test-concurrency=1',...['first-game','creator-
 await run('response-wait',['--test','tests/native/response-wait.test.mjs']);
 await run('balance-priorities',['--test','--test-concurrency=1','tests/analysis/priorities.test.mjs']);
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
-await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs']);
+await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs','tests/visual/resume-context.test.mjs']);
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
 if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/native-player/receipt-text.test.mjs','tests/journey/calendar-players.test.mjs']);
 if(args.includes('--web'))await run('plan-reuse-projection',['--test','tests/player/plan-reuse.test.mjs']);
-if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/journey/first-game-phone-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/planning-guidance-web.test.mjs','tests/journey/reading-history-web.test.mjs','tests/journey/plan-reuse-web.test.mjs']);
+if(args.includes('--web'))await run('web',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/journey/first-game-phone-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/planning-guidance-web.test.mjs','tests/journey/reading-history-web.test.mjs','tests/journey/plan-reuse-web.test.mjs','tests/journey/resume-context-web.test.mjs']);
 if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs']);
   await run('native-rendering',['--test','tests/native-player/asset-text-rendering.test.mjs']);
   await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs','tests/native-player/planning-guidance.test.mjs','tests/native-player/reading-history.test.mjs']);
+  await run('native-resume-context',['--test','tests/native-player/resume-context.test.mjs']);
   await run('native-plan-reuse',['--test','tests/native-player/plan-reuse.test.mjs']);
   await run('native-portable-input',['--test','tests/native-player/portable-save-input.test.mjs','tests/native-player/portable-save-files.test.mjs']);
   if(process.platform==='darwin')await run('ios-keyboard-patch',['--test','tests/mobile/ios-keyboard-patch.test.mjs']);
@@ -32,6 +33,7 @@ if(args.includes('--desktop')){
   await run('readable-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'readable-history.ini')},executable('qt-readable-layout-test'));
   await run('update-compatibility-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'update-compatibility-history.ini')},executable('qt-update-compatibility-test'));
   await run('analysis-priorities-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'analysis-priorities-history.ini')},executable('qt-analysis-priorities-test'));
+  await run('resume-context-authoring',[],{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'resume-context-history.ini')},executable('qt-resume-context-test'));
   await run('story-form',[],{},executable('qt-story-flow-dialog-test'));
   const fixture=path.join(out,'diagnostic-game');
   await run('diagnostic-fixture',['tests/qt-studio/validation-location-fixture.mjs',fixture]);

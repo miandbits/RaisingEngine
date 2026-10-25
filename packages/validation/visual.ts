@@ -1,3 +1,4 @@
+import {checkResumeContext} from './resume-context.js';
 import type { ProjectDocument, JsonObject } from './model.js';
 import { objectItems, type SemanticContext } from './context.js';
 import { checkDataUi } from './data-ui.js';
@@ -14,6 +15,7 @@ import { applyElementContext } from '../visual/context.js';
 import type { Element } from '../visual/model.js';
 import {resolveCollectionRow} from '../visual/data-ui.js';
 export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonObject):void {
+  checkResumeContext(ctx,doc,visual);
   checkDirection(ctx,doc,visual);
   checkReadableLayout(ctx,doc,visual);
   checkUiComposition(ctx,doc,visual);
@@ -37,6 +39,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      if(e.action==='resumeContext'&&!visual.resumeContext)ctx.report(doc,ep+'/action','UI_RESUME_CONTEXT_REQUIRED','Configure current reminders in project settings before connecting this action.');
       if(e.action==='readingHistory'&&!visual.readingHistory)ctx.report(doc,ep+'/action','UI_READING_HISTORY_REQUIRED','Enable recent reading in project settings before connecting this action.');
       if(e.activityIcons!==undefined){
         if(e.kind!=='schedule')ctx.report(doc,ep+'/activityIcons','UI_SCHEDULE_ICONS_KIND','활동 아이콘은 일정 요소에 연결하세요.');

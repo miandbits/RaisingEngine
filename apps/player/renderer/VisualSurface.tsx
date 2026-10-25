@@ -1,3 +1,4 @@
+import {useResumeContext} from './ResumeContext.js';
 import {PresentedHistoryText,useReadingHistory,historyTextVisible} from './ReadingHistory.js';
 import type {ReadingHistoryReceipt} from '../../../packages/visual/reading-history.js';
 import {ReadingDialog} from './ReadingDialog.js';
@@ -78,9 +79,9 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   design:ReadonlyDesign;screenId:ScreenId;context:VisualContext;assetUrl:(id:string)=>string;busy?:boolean;editing?:boolean;fitViewport?:boolean;
   onAction?:(action:NonNullable<Element['action']>,element:Element)=>void;onCommand?:(command:WidgetCommand)=>void;onPlan?:(index:number,id:string)=>void;onPlanReplace?:(ids:string[])=>void;onCommitPlan?:()=>void;onChoice?:(id:string,text?:string)=>void;onUserValue?:(id:string,value:string)=>void;children?:React.ReactNode;
 }) {
-  const preferences=usePlayerPreferences(),history=useReadingHistory();
+  const preferences=usePlayerPreferences(),history=useReadingHistory(),resume=useResumeContext();
   const [menuOpen,setMenuOpen]=useState(false);
-  useEffect(()=>{const close=()=>setMenuOpen(false);window.addEventListener('raising-open-reading-history',close);return()=>window.removeEventListener('raising-open-reading-history',close);},[]);
+  useEffect(()=>{const close=()=>setMenuOpen(false);window.addEventListener('raising-open-reading-history',close);window.addEventListener('raising-open-resume-context',close);return()=>{window.removeEventListener('raising-open-reading-history',close);window.removeEventListener('raising-open-resume-context',close);};},[]);
   const readingScroll=useRef<HTMLDivElement>(null),readingActions=useRef<HTMLDivElement>(null);
   const gesture=useRef({x:0,y:0,dragged:false});
   const host=useRef<HTMLDivElement>(null);const [viewport,setViewport]=useState({width:design.width,height:design.height,safeWidth:design.width,safeHeight:design.height});
@@ -177,7 +178,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
       if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={event=>{const label=event.currentTarget.querySelector('[data-history-choice-label]');onChoice?.(c.id,label&&historyTextVisible(label)?label.textContent??undefined:undefined);}}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span data-history-choice-label>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
-      if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||progressionUnavailable(element)} onClick={()=>{if(element.action){setMenuOpen(false);onAction?.(element.action,element);}}}>{buttonLabel(element)}</button>;
+      if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||progressionUnavailable(element)} onClick={event=>{if(element.action){if(element.action==='resumeContext')event.currentTarget.focus({preventScroll:true});setMenuOpen(false);onAction?.(element.action,element);}}}>{buttonLabel(element)}</button>;
       if(element.kind==='collection'){
         style.padding=0;
         const rows=context.dataUi?.collections[screenId]?.[element.id]??[];
@@ -219,6 +220,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       </div>:readable.actions.length>0&&<div className="readable-actions" ref={readingActions}>{readable.actions.map(item=>renderElement(item.element,item))}</div>}
       {grouped&&menuOpen&&<ReadingDialog id="engine-reading-menu" title={words('게임 메뉴','Game menu','ゲームメニュー')} onClose={()=>setMenuOpen(false)}>
         <div className="reading-dialog-body reading-menu-items">{secondary.map(item=>renderElement(item.element,item))}
+          {resume?.enabled&&<button data-reading-id="engine-resume-context" onClick={resume.open}>{words('현재 상황','Current reminders','現在のメモ')}</button>}
           {history?.enabled&&<button data-reading-id="engine-reading-history" onClick={history.open}>{words('최근 읽은 내용','Recent reading','最近の文章')}</button>}
           {preferences&&<button data-reading-id="engine-reading-options" onClick={()=>window.dispatchEvent(new Event('raising-open-reading-settings'))}>{words('소리·읽기 설정','Sound & reading settings','音声と読み方の設定')}</button>}
         </div><div className="reading-dialog-actions"><button data-reading-id="engine-reading-menu-close" onClick={()=>setMenuOpen(false)}>{words('닫기','Close','閉じる')}</button></div>

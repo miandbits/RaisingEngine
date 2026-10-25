@@ -30,15 +30,16 @@ export function PlayerSettingsControls({value,onChange,muted,onMuted,readableEna
     <label><input type="checkbox" checked={value.highContrast} onChange={e=>onChange({...value,highContrast:e.target.checked})}/>{words('조작 버튼 고대비','High contrast controls','操作ボタンの高コントラスト')}</label>
   </div>;
 }
-export function PlayerSettings({locale,locales,onLocale,localeBusy,onOpenChange,onReadingHistory,...settings}:{locale:string|undefined;locales?:readonly {id:string;label:string}[]|undefined;onLocale?:((locale:string)=>void)|undefined;localeBusy?:boolean;onOpenChange:(open:boolean)=>void;onReadingHistory?:(()=>void)|undefined}&PlayerSettingsState) {
+export function PlayerSettings({locale,locales,onLocale,localeBusy,onOpenChange,onReadingHistory,onResumeContext,...settings}:{locale:string|undefined;locales?:readonly {id:string;label:string}[]|undefined;onLocale?:((locale:string)=>void)|undefined;localeBusy?:boolean;onOpenChange:(open:boolean)=>void;onReadingHistory?:(()=>void)|undefined;onResumeContext?:(()=>void)|undefined}&PlayerSettingsState) {
   const dialog=useRef<HTMLDialogElement>(null),words=(ko:string,en:string,ja:string)=>slotWords(locale,ko,en,ja);
-  useEffect(()=>{const open=()=>{dialog.current?.showModal();onOpenChange(true);};window.addEventListener('raising-open-reading-settings',open);const close=()=>dialog.current?.close();window.addEventListener('raising-open-reading-history',close);return()=>{window.removeEventListener('raising-open-reading-settings',open);window.removeEventListener('raising-open-reading-history',close);};},[onOpenChange]);
+  useEffect(()=>{const open=()=>{dialog.current?.showModal();onOpenChange(true);};window.addEventListener('raising-open-reading-settings',open);const close=()=>dialog.current?.close();window.addEventListener('raising-open-reading-history',close);window.addEventListener('raising-open-resume-context',close);return()=>{window.removeEventListener('raising-open-reading-settings',open);window.removeEventListener('raising-open-reading-history',close);window.removeEventListener('raising-open-resume-context',close);};},[onOpenChange]);
   return <div className="player-quality">
     <button className="player-settings-open" onClick={()=>{dialog.current?.showModal();onOpenChange(true);}} aria-haspopup="dialog">{words('환경 설정','Settings','設定')}</button>
     <dialog ref={dialog} onClose={()=>onOpenChange(false)} aria-labelledby="player-settings-title" style={settings.readableEnabled?{fontSize:18*settings.value.textScale}:undefined}>
       <h2 id="player-settings-title">{words('소리·접근성','Sound & accessibility','音声とアクセシビリティ')}</h2>
       {settings.readableEnabled&&onLocale&&locales&&locales.length>1&&<div className="player-settings-controls"><label>{words('언어','Language','言語')}<select aria-label={words('언어','Language','言語')} value={locale} disabled={localeBusy} onChange={e=>onLocale(e.target.value)}>{locales.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>}
       <PlayerSettingsControls {...settings} locale={locale}/>
+      {onResumeContext&&<button data-reading-id="engine-resume-context" onClick={onResumeContext}>{words('현재 상황','Current reminders','現在のメモ')}</button>}
       {onReadingHistory&&<button data-reading-id="engine-reading-history" onClick={onReadingHistory}>{words('최근 읽은 내용','Recent reading','最近の文章')}</button>}
       <p>{words('설정은 이 기기에 보관됩니다. 이야기의 시간과 결과는 바뀌지 않습니다.','Settings stay on this device. Story timing and results are unchanged.','設定はこの端末に保存されます。物語の時間と結果は変わりません。')}</p>
       <button data-reading-id="engine-reading-close" onClick={()=>dialog.current?.close()}>{words('닫기','Close','閉じる')}</button>
