@@ -3,7 +3,7 @@
   // RmlUi measures natural text height; no character-count estimates are used.
   bool readable_requested(const Json& visual,const Json& screen) const {
     if(!visual.contains("readableLayout")||!screen.contains("readableLayout")||window_width<=0||window_height<=0)return false;
-    return reading_overlay()||player_preferences.value("readingLayout","auto")=="on"||std::min(safe_area.value("width",window_width),safe_area.value("height",window_height))<=visual.at("readableLayout").value("maxShortEdge",600);
+    return reading_overlay()||screen.at("readableLayout").value("activation","auto")=="always"||player_preferences.value("readingLayout","auto")=="on"||std::min(safe_area.value("width",window_width),safe_area.value("height",window_height))<=visual.at("readableLayout").value("maxShortEdge",600);
   }
   #include "reading-history-markup.inc"
   #include "resume-context-markup.inc"

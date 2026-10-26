@@ -884,6 +884,10 @@
             "items"
           ],
           "properties": {
+            "activation": {
+              "enum": ["auto", "always"],
+              "description": "auto follows the viewport threshold or player reading preference. always uses this screen's content-sized reading layout at every viewport without changing the player's preference. Omit to preserve auto behavior."
+            },
             "actionLayout": {
               "enum": ["grouped"],
               "description": "Keep one primary action and group the other bottom actions in a labeled utility menu. Omit for the existing wrapping action region."

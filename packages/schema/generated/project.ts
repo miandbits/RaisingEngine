@@ -16473,6 +16473,10 @@ export interface Screen {
   modal?: boolean;
   readableLayout?: {
     /**
+     * auto follows the viewport threshold or player reading preference. always uses this screen's content-sized reading layout at every viewport without changing the player's preference. Omit to preserve auto behavior.
+     */
+    activation?: "auto" | "always";
+    /**
      * Keep one primary action and group the other bottom actions in a labeled utility menu. Omit for the existing wrapping action region.
      */
     actionLayout?: "grouped";

@@ -20,7 +20,7 @@ await run('response-wait',['--test','tests/native/response-wait.test.mjs']);
 await run('balance-priorities',['--test','--test-concurrency=1','tests/analysis/priorities.test.mjs']);
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
 await run('route-batches',['--test','--test-concurrency=1','tests/qt-studio/goal-route-batches.test.mjs']);
-await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs','tests/visual/resume-context.test.mjs']);
+await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs','tests/visual/resume-context.test.mjs','tests/validation/readable-screen-activation.test.mjs']);
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
 if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/native-player/receipt-text.test.mjs','tests/journey/calendar-players.test.mjs']);
 if(args.includes('--web'))await run('plan-reuse-projection',['--test','tests/player/plan-reuse.test.mjs']);
@@ -28,7 +28,7 @@ if(args.includes('--web')){
   // Each thematic group keeps the same bounded deadline. The combined suite
   // outgrew five minutes on CI even when every completed assertion passed.
   await run('web-runtime',['--test','--test-concurrency=1','tests/native/web-content-cache.test.mjs','tests/journey/first-game-web.test.mjs','tests/native/web-save-slots.test.mjs','tests/journey/save-slots-web.test.mjs','tests/visual/save-slots-layout.test.mjs']);
-  await run('web-reading',['--test','--test-concurrency=1','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/reading-history-web.test.mjs']);
+  await run('web-reading',['--test','--test-concurrency=1','tests/journey/readable-layout-web.test.mjs','tests/journey/readable-ux-web.test.mjs','tests/journey/reading-history-web.test.mjs','tests/journey/reading-activation-web.test.mjs']);
   await run('web-planning',['--test','--test-concurrency=1','tests/journey/first-game-phone-web.test.mjs','tests/journey/planning-guidance-web.test.mjs','tests/journey/plan-reuse-web.test.mjs']);
   await run('web-schedule-details',['--test','tests/visual/schedule-details.test.mjs','tests/visual/progression-labels.test.mjs','tests/visual/control-sizing.test.mjs']);
   await run('web-surfaces',['--test','--test-concurrency=1','tests/visual/surfaces.test.mjs','tests/visual/surface-export-csp.test.mjs','tests/visual/activity-result-copy.test.mjs','tests/visual/scroll-groups.test.mjs','tests/visual/scroll-opacity.test.mjs','tests/visual/control-colors.test.mjs']);
@@ -39,7 +39,7 @@ if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs','tests/native-player/automation-wait.test.mjs']);
   await run('native-user-fields',['--test','tests/native-player/user-fields.test.mjs']);
-  await run('native-rendering',['--test','--test-concurrency=1','tests/native-player/asset-text-rendering.test.mjs','tests/native-player/surfaces.test.mjs','tests/native-player/activity-result-copy.test.mjs','tests/native-player/scroll-groups.test.mjs','tests/native-player/scroll-opacity.test.mjs','tests/native-player/control-colors.test.mjs']);
+  await run('native-rendering',['--test','--test-concurrency=1','tests/native-player/asset-text-rendering.test.mjs','tests/native-player/surfaces.test.mjs','tests/native-player/activity-result-copy.test.mjs','tests/native-player/scroll-groups.test.mjs','tests/native-player/scroll-opacity.test.mjs','tests/native-player/control-colors.test.mjs','tests/native-player/reading-activation.test.mjs']);
   await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs','tests/native-player/planning-guidance.test.mjs','tests/native-player/reading-history.test.mjs']);
   await run('native-resume-context',['--test','tests/native-player/resume-context.test.mjs','tests/native-player/resume-context-settlement.test.mjs']);
   await run('native-schedule-details',['--test','--test-concurrency=1','tests/native-player/schedule-details.test.mjs','tests/native-player/control-sizing.test.mjs']);

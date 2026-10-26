@@ -43,3 +43,11 @@ Read the longest paragraph and choice, scroll every records list, open settings,
 Reading layouts are part of exported content. Changing them changes the release fingerprint. Keep the previous release for players with old saves and use the explicit save migration workflow when publishing an update; do not replace fingerprints by hand.
 
 See [the reusable contract](../development/readable-layout-contract.md) for schema, runtime and automated regression details, and [exporting games](qt-game-export.md) for iOS source projects and signing boundaries.
+
+## Long pages on desktop
+
+In **Screens → Readable layout…**, select a screen, enable its reading order, and set **Reading activation → Always**. Use this for long credits, help, or journal pages that should scroll at their natural text height on desktop as well as phones. Include the full reading order and a bottom button to return to the previous screen. Elements omitted from that order remain omitted in reading mode.
+
+**Automatic** preserves the viewport threshold and the player's existing reading preference. **Always** applies only to the selected screen; it does not change the saved player preference or force other screens into reading mode. Text scaling, conditions, action grouping, and button actions keep their existing behavior. The project must have readable layout enabled. An exported player must support `readable-screen-activation-v1`; older players are rejected until rebuilt.
+
+Inspect the selected page at desktop and phone sizes with 100% and 200% text, scroll to the last line, then use its return action. This setting uses the existing reading layout; it does not promise identical font metrics across renderers or replace human accessibility checks.

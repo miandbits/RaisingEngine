@@ -44,6 +44,7 @@ jobs:
             .cache/native-layout-diagnostics/
             .cache/qt-layout-diagnostics/
             .cache/qt-surface-authoring/
+            .cache/readable-screen-activation/
             .cache/ui-surfaces/
             .cache/activity-result-copy/
             .cache/scroll-groups/
@@ -161,6 +162,7 @@ jobs:
             .cache/native-layout-diagnostics/
             .cache/qt-layout-diagnostics/
             .cache/qt-surface-authoring/
+            .cache/readable-screen-activation/
             .cache/ui-surfaces/
             .cache/activity-result-copy/
             .cache/scroll-groups/
@@ -258,6 +260,7 @@ jobs:
             .cache/native-layout-diagnostics/
             .cache/qt-layout-diagnostics/
             .cache/qt-surface-authoring/
+            .cache/readable-screen-activation/
             .cache/ui-surfaces/
             .cache/activity-result-copy/
             .cache/scroll-groups/

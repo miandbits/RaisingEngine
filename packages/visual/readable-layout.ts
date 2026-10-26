@@ -25,7 +25,7 @@ export function readableLayoutForScreen(design:ReadonlyDesign,screenId:ScreenId,
   const screen=design.screens.find(s=>s.id===screenId),authored=screen?.readableLayout;
   if(!design.readableLayout||!authored||!Number.isFinite(viewport.width)||!Number.isFinite(viewport.height)||viewport.width<=0||viewport.height<=0)return null;
   const config={...readableDefaults,...design.readableLayout},prefs=normalizeReadablePreferences(preferences);
-  if(prefs.readingLayout==='auto'&&Math.min(viewport.width,viewport.height)>config.maxShortEdge)return null;
+  if(authored.activation!=='always'&&prefs.readingLayout==='auto'&&Math.min(viewport.width,viewport.height)>config.maxShortEdge)return null;
   const elements=new Map(resolveScreenElements(design,screenId,undefined,{ignoreClipping:true}).map(e=>[e.id,e]));
   const seen=new Set<string>();
   const resolve=(id:string,fontSize?:number,imageHeight?:number,schedulePresentation?:'compact',planningGuidance?:'first-use',planReuse?:'last-committed'):ResolvedReadableItem|null=>{

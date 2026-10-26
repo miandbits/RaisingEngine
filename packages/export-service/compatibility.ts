@@ -19,6 +19,7 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   const visual=content.project.visual,requiredFeatures:string[]=[];
   if(surfaceReferences(visual).length)requiredFeatures.push('ui-surfaces-v1');
   if(controlStyleReferences(visual).length)requiredFeatures.push('ui-control-colors-v1');
+  if(visual?.screens.some(screen=>screen.readableLayout?.activation!==undefined))requiredFeatures.push('readable-screen-activation-v1');
   if(content.project.calendar)requiredFeatures.push('calendar-v1');
   if(visual?.readableLayout||visual?.screens.some(s=>s.readableLayout))requiredFeatures.push('readable-layout-v1');
   const hasForecast=(value:unknown):boolean=>!!value&&typeof value==='object'&&(Array.isArray(value)?value.some(hasForecast):(value as Record<string,unknown>).showPhaseForecast===true||Object.values(value).some(hasForecast));
