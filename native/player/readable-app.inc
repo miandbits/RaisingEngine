@@ -44,7 +44,7 @@
     reading_positions[reading_position_key]=current_reading_position();
   }
   void restore_reading_position() {
-    auto& m=active_markup();if(!m.readable_active){reading_position_key.clear();return;}
+    auto& m=active_markup();if(!m.readable_active){reading_position_key.clear();if(!reading_focus.empty()){if(auto* e=document->GetElementById(reading_focus))e->Focus();reading_focus.clear();}return;}
     const auto& state=recalling()?recollection->game.state:game.state;
     const std::string story=state.is_object()?state.value("activeNarrative",Json()).dump()+":"+std::to_string(state.value("periodIndex",0))+":"+state.value("phase",""):"title";
     reading_position_key=m.readable_screen_id+":"+m.readable_view+":"+story+":"+m.bind("story");
@@ -70,6 +70,15 @@
   }
   bool readable_action(const Json& action) {
     const auto type=action.value("type","");
+    if(markup.phase_forecast_open){
+      if(type=="phaseForecastClose"||type=="uiBack"){markup.phase_forecast_open=false;reading_focus="phase-forecast-"+markup.phase_forecast_element;dirty=true;}
+      return true;
+    }
+    if(type=="phaseForecastOpen"){
+      const auto id=action.value("elementId","");
+      if(!markup.reading_overlay()&&!recalling()&&markup.phase_forecast_eligible(id)){markup.open_phase_forecast(id);reading_focus="reading-main";reading_jump="engine-phase-forecast-panel";}
+      dirty=true;return true;
+    }
     if(markup.plan_reuse_open){
       if(type=="readingReuseCancel"||type=="uiBack"){markup.plan_reuse_open=false;reading_focus="board-reuse";dirty=true;return true;}
       if(type=="readingReuseApply"){

@@ -121,3 +121,8 @@ add_executable(qt-route-batches-test route-batches-test.cpp)
 target_link_libraries(qt-route-batches-test PRIVATE studio-ui Qt6::Test)
 add_test(NAME qt-route-batches COMMAND qt-route-batches-test)
 set_tests_properties(qt-route-batches PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(qt-layout-diagnostics-test layout-diagnostics-test.cpp)
+target_link_libraries(qt-layout-diagnostics-test PRIVATE studio-ui Qt6::Test)
+add_test(NAME qt-layout-diagnostics COMMAND qt-layout-diagnostics-test)
+set_tests_properties(qt-layout-diagnostics PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

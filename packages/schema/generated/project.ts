@@ -2995,6 +2995,10 @@ export type Element = {
   imageAssetId?: string;
   fit?: "cover" | "contain";
   /**
+   * Offer a read-only forecast of the current phase draft. Distinguishes determined changes from assumptions and blockers. Off by default.
+   */
+  showPhaseForecast?: boolean;
+  /**
    * Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default.
    */
   showActivityRules?: boolean;

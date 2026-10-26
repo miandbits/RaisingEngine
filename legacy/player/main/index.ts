@@ -68,6 +68,7 @@ window.webContents.session.setPermissionCheckHandler(() => false);
 window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
   callback({ cancel: !details.url.startsWith('file://') && !details.url.startsWith('raising-asset://') && !details.url.startsWith('devtools://') });
 });
+handle('player:forecast-phase', (ids: unknown, version: unknown) => controller.forecastPhase(ids, version));
 handle('player:view', () => controller.reply(startupError));
 handle('player:new', async (version, userValues) => {
   if (!controller.isCurrent(version)) return controller.reply('화면이 갱신되었습니다. 다시 선택해 주세요.');

@@ -9,6 +9,8 @@ Historical experiment reports are not the current support contract.
 | Integrate rules, tools or plugins | [Architecture](reference/architecture.md), [data contract](reference/data-format/contract.md), [MCP](reference/mcp.md) |
 | Build, test or contribute | [Development](development/README.md), [contribution guide](../CONTRIBUTING.md) |
 | Phone layouts and enlarged text | [No-code reading layouts](manual/phone-reading-layout.md) |
+| Check rendered clipping, touch targets and contrast | [Rendered layout diagnostics](rendered-layout-diagnostics.md) |
+| Review a phase plan’s costs and predictable changes | [Phase forecasts](manual/phase-forecasts.md) |
 | Designer-chosen current-state reminders | [Current reminders](manual/current-reminders.md) |
 | Sample player strategies and inspect resource balance | [Player priorities](manual/player-priorities.md) |
 | Check long campaigns and saved routes | [Readiness and remaining work](development/long-campaign-readiness.md), [route regression](manual/goal-route-regression.md) |

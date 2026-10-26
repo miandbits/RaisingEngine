@@ -1,3 +1,4 @@
+import {requestPhaseForecast,type PhaseForecastReply} from '../player-service/phase-forecast.js';
 import {deriveLastCommittedPlan,hasPlanReuse} from '../player-service/plan-reuse.js';
 import {calendarDate,calendarText} from '../core/calendar.js';
 import {resolveScreen} from '../visual/routing.js';
@@ -119,6 +120,10 @@ export class WebPlayerController implements PlayerBridge {
   }
   private current(version: Version | null): boolean {
     return this.session ? version?.generation === this.generation && version.revision === this.session.state.stateRevision : version === null;
+  }
+  async forecastPhase(activityIds:string[],version:Version):Promise<PhaseForecastReply|null> {
+    if(!this.session||!this.current(version)||!Array.isArray(activityIds)||activityIds.some(id=>typeof id!=='string'))return null;
+    return requestPhaseForecast(this.content,this.session.state,activityIds,input=>this.runtime.request(input));
   }
   async view() { return this.reply(); }
   async setLocale(locale:string){if(!this.content.project.localization?.locales.some(l=>l.id===locale))return this.reply('등록되지 않은 언어입니다.');this.locale=locale;return this.reply();}

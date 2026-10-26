@@ -18,7 +18,7 @@ while(!acquired){
   }
 }
 process.once('exit',()=>{if(acquired){try{unlinkSync(lock);}catch{}}});
-const names=['CMakeLists.txt','include/raising/runtime.hpp','include/raising/calendar.hpp','include/raising/json-calendar.hpp','include/raising/relationship-history.hpp','include/raising/choice-feedback.hpp','src/runtime.cpp','src/user-fields.inc','src/gameplay.inc','src/generic.inc','src/roster.inc', 'src/character-state.inc','src/custom-states.inc','src/progression.inc','src/unified-time.inc','src/view.inc','src/tactics.inc','src/systems.inc','src/systems-view.inc','src/protocol.inc','src/main.cpp','src/wasm.cpp','vendor/json.hpp'];
+const names=['CMakeLists.txt','include/raising/runtime.hpp','include/raising/calendar.hpp','include/raising/json-calendar.hpp','include/raising/relationship-history.hpp','include/raising/choice-feedback.hpp','src/runtime.cpp','src/user-fields.inc','src/gameplay.inc','src/generic.inc','src/roster.inc', 'src/character-state.inc','src/custom-states.inc','src/progression.inc','src/unified-time.inc','src/view.inc','src/tactics.inc','src/systems.inc','src/systems-view.inc','src/protocol.inc','src/phase-forecast.inc','src/main.cpp','src/wasm.cpp','vendor/json.hpp'];
 const files=names.map(name=>[name,readFileSync(resolve(root,'native',name))]);
 const hash=createHash('sha256').update('native-release-isolated-v2:'+process.platform);
 for(const [name,bytes] of files)hash.update(name).update(bytes);

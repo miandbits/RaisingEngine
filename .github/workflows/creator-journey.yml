@@ -35,6 +35,11 @@ jobs:
             .cache/creator-smoke/
             .cache/native-portable-host/
             .cache/native-schedule-details/
+            .cache/native-phase-forecast/
+            .cache/native-phase-forecast-layouts/
+            .cache/phase-forecast-web/
+            .cache/native-layout-diagnostics/
+            .cache/qt-layout-diagnostics/
             .cache/schedule-details-web/
             .cache/native-resume-context/
             .cache/resume-context-web/
@@ -54,7 +59,7 @@ jobs:
       BUILD_JOBS: '3'
       QT_ROOT: C:/Qt/6.10.1/mingw_64
       QT_COMPILER: C:/Qt/Tools/mingw1310_64/bin
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test
       QT_PACKAGE_OUT: release/qt-ci/RaisingStudio
       QT_INSTALLER_OUT: release/qt-ci/RaisingStudio-P1-Windows.exe
       QT_QPA_PLATFORM: offscreen
@@ -135,6 +140,11 @@ jobs:
             .cache/creator-smoke/
             .cache/native-portable-host/
             .cache/native-schedule-details/
+            .cache/native-phase-forecast/
+            .cache/native-phase-forecast-layouts/
+            .cache/phase-forecast-web/
+            .cache/native-layout-diagnostics/
+            .cache/qt-layout-diagnostics/
             .cache/schedule-details-web/
             .cache/native-resume-context/
             .cache/resume-context-web/
@@ -172,7 +182,7 @@ jobs:
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       BUILD_JOBS: '3'
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test
       MACOS_STUDIO_OUT: dist/macos/RaisingStudio.app
     steps:
       - uses: actions/checkout@v4
@@ -215,6 +225,11 @@ jobs:
             .cache/creator-smoke/
             .cache/native-portable-host/
             .cache/native-schedule-details/
+            .cache/native-phase-forecast/
+            .cache/native-phase-forecast-layouts/
+            .cache/phase-forecast-web/
+            .cache/native-layout-diagnostics/
+            .cache/qt-layout-diagnostics/
             .cache/schedule-details-web/
             .cache/native-resume-context/
             .cache/resume-context-web/

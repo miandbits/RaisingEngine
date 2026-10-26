@@ -95,7 +95,7 @@ function connection(executable:string):WorkerConnection {
  * the C++ subprocess, never to TypeScript rules. */
 export function nativeRequest(request: unknown, executable = nativeExecutable()): unknown {
   const c=connection(executable);
-  if(request&&typeof request==='object'&&'operation' in request&&['create','command','view','evaluate','replay'].includes(String(request.operation))&&'content' in request&&request.content&&typeof request.content==='object'&&immutableJson(request.content)){
+  if(request&&typeof request==='object'&&'operation' in request&&['create','command','view','evaluate','replay','forecastPhase'].includes(String(request.operation))&&'content' in request&&request.content&&typeof request.content==='object'&&immutableJson(request.content)){
     const content=request.content;
     let id=c.contents.get(content);
     if(!id){

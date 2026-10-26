@@ -1,3 +1,4 @@
+import {requestPhaseForecast,type PhaseForecastReply} from '../player-service/phase-forecast.js';
 import {deriveLastCommittedPlan,hasPlanReuse,type LastCommittedPlan} from '../player-service/plan-reuse.js';
 import type {SaveSlotsView,SaveSlotAction} from './save-slots.js';
 import type { CalendarProject } from '../core/calendar.js';
@@ -69,6 +70,7 @@ export type PlayerAction = GameplayCommand | SystemsCommand | TimelineAction | B
   | { type: 'commitPlan'; activityIds: string[] }
   | { type: 'scheduleStep' } | { type: 'execute' } | { type: 'continue' } | { type: 'choose'; choiceId: string };
 export interface PlayerBridge {
+  forecastPhase?(activityIds:string[],version:Version):Promise<PhaseForecastReply|null>;
   slots?(action:SaveSlotAction,version:Version|null):Promise<PlayerReply>;
   checkpoint?(version:Version):Promise<PlayerReply>;
   setLocale?(locale:string):Promise<PlayerReply>;
@@ -130,6 +132,10 @@ export class PlayerController {
     return v.generation === this.generation && v.revision === this.session.state.stateRevision;
   }
 
+  forecastPhase(activityIds:unknown,version:unknown):PhaseForecastReply|null {
+    if(!this.content||!this.session||!this.isCurrent(version)||!Array.isArray(activityIds)||activityIds.some(id=>typeof id!=='string'))return null;
+    return requestPhaseForecast(this.content,this.session.state,activityIds,nativeRequest);
+  }
   async openProject(root: string): Promise<PlayerReply> {
     const loaded = await loadProject(root);
     const built = await buildSnapshot(loaded);

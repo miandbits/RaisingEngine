@@ -17,6 +17,8 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   const visual=content.project.visual,requiredFeatures:string[]=[];
   if(content.project.calendar)requiredFeatures.push('calendar-v1');
   if(visual?.readableLayout||visual?.screens.some(s=>s.readableLayout))requiredFeatures.push('readable-layout-v1');
+  const hasForecast=(value:unknown):boolean=>!!value&&typeof value==='object'&&(Array.isArray(value)?value.some(hasForecast):(value as Record<string,unknown>).showPhaseForecast===true||Object.values(value).some(hasForecast));
+  if(hasForecast(visual))requiredFeatures.push('phase-forecast-v1');
   if(visual?.resumeContext)requiredFeatures.push('resume-context-v1');
   if(visual?.readingHistory)requiredFeatures.push('reading-history-v1');
   if(visual?.screens.some(s=>s.readableLayout?.actionLayout==='grouped'))requiredFeatures.push('readable-actions-v1');

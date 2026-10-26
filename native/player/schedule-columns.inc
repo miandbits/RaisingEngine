@@ -46,7 +46,9 @@
       for(const auto& a:display_content.at("activities"))out+="<option id=\"plan-"+std::to_string(i)+"-option-"+escape(a.value("id",""))+"\" value=\""+escape(a.value("id",""))+"\""+(plan[i]==a.at("id")?" selected=\"selected\"":"")+">"+escape(a.value("label",""))+"</option>";
       out+="</select></div>";
     }
-    out+="</div></div><div class=\"schedule-draft-note\">"+escape(settings_words("활동을 바꾸면 계획만 수정됩니다. 진행 버튼을 눌러 확정하세요.","Changes edit your draft only. Use the game's progression control to confirm.","活動の変更は下書きだけに反映されます。進行ボタンで確定してください。"))+"</div>";
-    out+="<div id=\"plan-details-"+escape(e.value("id",""))+"\" class=\"schedule-detail-pane\" style=\"height:"+number(std::max(40.0,height-186))+"px;\">"+schedule_detail(e,plan_slot)+"</div></div>";
+    out+="</div></div>";
+    if(e.value("showPhaseForecast",false))out+="<div class=\"schedule-forecast-bar\">"+phase_forecast_launcher(e)+"</div>";
+    else out+="<div class=\"schedule-draft-note\">"+escape(settings_words("확정할 때까지 변경은 초안에 남습니다.","Changes stay in your draft until you confirm.","確定するまで変更は下書きに保存されます。"))+"</div>";
+    out+="<div id=\"plan-details-"+escape(e.value("id",""))+"\" class=\"schedule-detail-pane\" style=\"height:"+number(std::max(40.0,height-(e.value("showPhaseForecast",false)?206:186)))+"px;\">"+schedule_detail(e,plan_slot)+"</div></div>";
     return out;
   }

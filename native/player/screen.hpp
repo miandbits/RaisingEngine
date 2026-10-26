@@ -135,6 +135,10 @@ public:
   std::string portable_status="idle",portable_notice,portable_filename;
   Json portable_incoming=Json::object(),portable_current=Json::object();
   bool portable_open() const {return portable_status!="idle";}
+  bool phase_forecast_open=false;
+  std::string phase_forecast_owner,phase_forecast_element;
+  Json phase_forecast_snapshot=nullptr,phase_forecast_cache_key=nullptr,phase_forecast_reply=nullptr;
+  int phase_forecast_requests=0;
   bool compact_picker=false,plan_reuse_open=false;
   uint64_t reuse_generation=0;
   std::string reuse_owner,reuse_element;
@@ -145,7 +149,7 @@ public:
   int compact_slot=0,compact_revision=-1;
   std::string compact_activity,compact_group,compact_element,compact_owner;
   std::string readable_view="game";
-  bool reading_overlay() const {return portable_open()||resume_context_open||reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
+  bool reading_overlay() const {return phase_forecast_open||portable_open()||resume_context_open||reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;
@@ -620,6 +624,7 @@ public:
     }
     return out;
   }
+  #include "phase-forecast.inc"
   #include "schedule-board.inc"
   #include "schedule-columns.inc"
   std::string calendar_schedule(const Json& e) {
@@ -637,7 +642,8 @@ public:
       auto time=display_projection.value("time",Json::object());const auto& p=display_content.at("project");
       const int year=time.is_object()?time.value("year",p.value("startYear",1)):p.value("startYear",1),month=time.is_object()?time.value("month",p.value("startMonth",1)):p.value("startMonth",1);
       const auto config=raising::dates::spec(p,locale);const raising::dates::Date date{year,month,period,game.state.is_null()?0:game.state.value("periodIndex",0)};const auto grid=raising::dates::grid(p,date);const int offset=grid.offset,days=grid.days;
-      const double cw=e.value("width",480.0)/7,ch=(e.value("height",480.0)-80)/grid.rows;
+      const double cw=e.value("width",480.0)/7,ch=e.value("showPhaseForecast",false)?std::max(44.0,(e.value("height",480.0)-80)/grid.rows):(e.value("height",480.0)-80)/grid.rows;
+      if(e.value("showPhaseForecast",false))out+="<div style=\"position:relative;height:"+number(80+grid.rows*ch)+"px;\">";
       out+="<div style=\"height:36px;text-align:center;font-size:26px;color:#e9a09e;\">"+escape(config.custom?raising::dates::text(config,date,false):std::to_string(year)+"년  "+std::to_string(month)+"월")+"</div>";
       const char* weeks_en[]={"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
       const char* weeks_ko[]={"일","월","화","수","목","금","토"};
@@ -650,7 +656,7 @@ public:
         else if(plan_selected&(1<<slot))out+="<div class=\"calendar-activity-name\" style=\"font-size:12px;line-height:16px;height:32px;width:"+number(std::max(1.0,cw-4))+"px;text-align:center;white-space:normal;word-break:break-word;\">"+escape(calendar_short_label(label(plan[slot])))+"</div>";
         out+="</button>";
       }
-      return out;
+      return e.value("showPhaseForecast",false)?out+"</div>":out;
     }
     out="";
     const Json* group=nullptr;for(const auto& g:groups)if(g.at("id")==plan_group)group=&g;
@@ -678,7 +684,10 @@ public:
     if(!ui_modal.empty()&&!raw.contains("_authoredModal")&&raw.value("binding","")=="player-notice")return "";
     if(raw.contains("_clipRect")) {
       const auto clip=raw.at("_clipRect");if(clip.value("width",0.0)<=0||clip.value("height",0.0)<=0)return "";
-      auto inner=raw;inner.erase("_clipRect");inner["x"]=raw.value("x",0.0)-clip.value("x",0.0);inner["y"]=raw.value("y",0.0)-clip.value("y",0.0);
+      auto inner=raw;inner.erase("_clipRect");
+      // Scroll descendants use world coordinates even when this wrapper rebases its box.
+      inner["_worldX"]=raw.value("_worldX",raw.value("x",0.0));inner["_worldY"]=raw.value("_worldY",raw.value("y",0.0));
+      inner["x"]=raw.value("x",0.0)-clip.value("x",0.0);inner["y"]=raw.value("y",0.0)-clip.value("y",0.0);
       return "<div style=\"position:absolute;pointer-events:none;overflow:hidden;clip:always;left:"+number(clip.value("x",0.0))+"px;top:"+number(clip.value("y",0.0))+"px;width:"+number(clip.value("width",0.0))+"px;height:"+number(clip.value("height",0.0))+"px;\">"+render_node(inner)+"</div>";
     }
     const auto e=resolved_style(display_content.at("project").at("visual"),raw);const auto kind=e.value("kind","panel");
@@ -880,11 +889,21 @@ public:
       int value=game.state.is_null()?r.value("initial",0):game.state.at("relationships").at(c.at("id").get<std::string>()).value(r.at("id").get<std::string>(),0);
       out+="<div class=\"row\">"+escape(c.value("name","")+" · "+r.value("label",""))+" <b>"+std::to_string(value)+"</b></div>";
     }
-    if(kind=="schedule"&&display_content.at("project").contains("roster"))return roster_schedule(e);
+    if(kind=="schedule"&&display_content.at("project").contains("roster"))return phase_forecast_launcher(e)+roster_schedule(e);
     if(kind=="schedule") {
       if(e.value("scheduleLayout","columns")=="board")return schedule_board(e);
-      if(e.value("scheduleLayout","columns")!="columns")return calendar_schedule(e);
-      if(e.value("showActivityRules",false)||e.value("showActivityDescription",false))return detailed_schedule_columns(e);
+      if(e.value("scheduleLayout","columns")!="columns"){
+        if(!e.value("showPhaseForecast",false))return calendar_schedule(e);
+        const auto visual=display_content.at("project").at("visual");
+        const double inset=e.value("padding",visual.value("widgetTheme","default")=="ornate"?0.0:6.0)+e.value("borderWidth",0.0);
+        const double content_height=std::max(44.0,e.value("height",480.0)-2*inset-52.0);
+        auto content=e;content["height"]=content_height;content["width"]=std::max(1.0,e.value("width",480.0)-2*inset-12.0);
+        content["padding"]=0;content["borderWidth"]=0;
+        // Absolute calendar cells and menu categories belong to the content box
+        // below the launcher. A short authored widget scrolls its content.
+        return "<div style=\"height:44px;margin-bottom:8px;\">"+phase_forecast_launcher(e)+"</div><div id=\"phase-forecast-content-"+escape(e.value("id",""))+"\" style=\"position:relative;height:"+number(content_height)+"px;width:100%;overflow-x:hidden;overflow-y:auto;pointer-events:auto;\">"+calendar_schedule(content)+"</div>";
+      }
+      if(e.value("showActivityRules",false)||e.value("showActivityDescription",false)||e.value("showPhaseForecast",false))return detailed_schedule_columns(e);
       ensure_plan();
       for(auto& id:plan)if(id.empty())id=display_content.at("activities").at(0).value("id","");
       plan_selected=(1<<game.periods())-1;
@@ -1058,6 +1077,7 @@ public:
     std::string extra_css="p{display:block;} .button>button{min-height:0;} .result .heading,.result .row,.result p{display:block;width:100%;box-sizing:border-box;} .result p{margin-top:4px;margin-bottom:4px;} .calendar-cell{padding:0;min-height:0;margin:0;border-radius:0;border-width:1px;background-color:transparent;font-size:24px;text-align:left;color:#fff0d0;} .calendar-cell:hover{background-color:#6d383a;} .plan-prompt{padding:8px 4px;}";
     extra_css+=".schedule button,.schedule select,.schedule selectbox,.schedule option{pointer-events:auto;} selectbox,option,selectarrow{color:#203a34;}";
     extra_css+=".schedule-detail-planner{width:100%;} .schedule-period-review{background-color:transparent;border-color:#8b9e92;min-height:44px;margin-bottom:0;padding:7px 8px;text-align:left;font-size:17px;white-space:normal;} .schedule-period-review:hover{background-color:transparent;border-color:#b38b49;} .schedule-period-review.selected{border-left-width:5px;border-color:#b38b49;} .schedule-draft-note{font-size:16px;line-height:22px;margin:0 8px 10px;} .schedule-detail-periods{pointer-events:auto;} .schedule-detail-pane{pointer-events:auto;box-sizing:border-box;width:100%;overflow-y:auto;overflow-x:hidden;padding:10px 14px;border-top-width:1px;border-color:#8b9e92;white-space:pre-wrap;word-break:break-word;tab-index:auto;} .schedule-detail-title{font-size:20px;line-height:29px;} .schedule-detail-text{font-size:17px;line-height:25px;margin-top:10px;}";
+    extra_css+=".schedule-forecast-bar{height:44px;margin:0 8px 8px;} .phase-forecast-launcher{pointer-events:auto;min-height:44px;font-size:17px;line-height:24px;margin:0;background-color:transparent;border-color:#8b9e92;} .phase-forecast-launcher:hover{background-color:transparent;border-color:#b38b49;}";
     if(visual.value("widgetTheme","default")=="ornate")extra_css+="body{color:#fff0d0;} .list{padding:0;} .list button{background-color:transparent;color:#fff0d0;border-width:0;border-radius:0;padding:4px 8px;margin-bottom:4px;text-align:left;min-height:30px;} .list button:hover{color:#ffe673;background-color:#733e42;} .list button:focus{border-color:#ffd979;border-width:1px;} .list .muted,.list .reason{color:#c8a999;} .list .heading{font-size:22px;} .list .row{border-bottom-width:0;padding:3px;} .list .offer{padding:2px;} .list .offer button{margin-top:2px;} .node.schedule{z-index:20;} .button>button{padding:0;min-height:0;text-align:center;} .status{background-color:#46262d;color:#ffdf9b;}";
     extra_css+=".plan-categories{position:absolute;right:0;top:210px;width:310px;padding:10px 4px;background-color:#46343e;border-width:2px;border-color:#e5c880;}.plan-options>button{display:inline-block;vertical-align:top;width:244px;height:78px;margin:0 16px 16px 0;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;white-space:normal;}.plan-icon{float:left;width:60px;height:60px;margin-right:6px;} .compact-stat{position:relative;height:32px;font-size:28px;line-height:32px;} .stat-name{display:inline-block;width:126px;background-color:#733c44;} .stat-number{display:inline-block;width:58px;text-align:right;} .stat-meter{position:absolute;left:184px;top:5px;height:22px;width:168px;border-width:1px;border-color:#ba8c84;background-color:#34151d;} .stat-meter>div{height:100%;background-color:#df5454;} .node.schedule .calendar-cell{border-width:1px;padding:0;margin:0;min-height:0;font-size:26px;background-color:transparent;}";
     extra_css+=".shop-card{display:inline-block;vertical-align:top;width:292px;height:112px;margin:0 12px 8px 0;}.shop-card>button{height:112px;border-width:2px;border-color:#ddcbbb;background-color:#46343e;font-size:24px;line-height:26px;}.shop-card .item-icon{float:left;width:56px;height:56px;margin-right:8px;}.card-description{clear:both;font-size:21px;padding-top:4px;}.purchase-dialog{position:absolute;z-index:100;right:8px;top:430px;width:304px;padding:12px;background-color:#46343e;color:#fff0d0;border-width:2px;border-color:#e5c880;}";
@@ -1069,7 +1089,8 @@ public:
       const auto prefix=ui_modal+"__";
       for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();e["_authoredModal"]=true;for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}break;
     }
-    if(portable_open()||resume_context_open||((reading_history_open||reading_options)&&(history_enabled()||resume_context_enabled())&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout")))){
+    if(phase_forecast_open&&!phase_forecast_valid())phase_forecast_open=false;
+    if(phase_forecast_open||portable_open()||resume_context_open||((reading_history_open||reading_options)&&(history_enabled()||resume_context_enabled())&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout")))){
       auto overlay_visual=visual;overlay_visual["readableLayout"]=visual.value("readableLayout",Json::object());auto overlay_screen=*reading_screen;overlay_screen["readableLayout"]={{"items",Json::array()},{"actions",Json::array()}};return readable_document(overlay_visual,overlay_screen);
     }
     if(readable_requested(visual,*reading_screen))return readable_document(visual,*reading_screen);

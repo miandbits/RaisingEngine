@@ -1,3 +1,5 @@
+import {PhaseForecast} from './PhaseForecast.js';
+import type {PhaseForecastReply} from '../../../packages/player-service/phase-forecast.js';
 import type {PlanningControl} from './PlanningGuide.js';
 import type {LastCommittedPlan} from '../../../packages/player-service/plan-reuse.js';
 import type {RunState} from '../../../packages/core/model.js';
@@ -18,6 +20,8 @@ export interface ScheduleActivity {
   previewAttributes?:readonly {attributeId:string;label?:string;valueFormat?:string}[];
 }
 export interface ScheduleContext {
+  forecastPhase?:((activityIds:string[])=>Promise<PhaseForecastReply|null>)|undefined;
+  forecastMask?:number;
   gameId?:string;generation?:number;lastCommittedPlan?:LastCommittedPlan;
   dataState?:Pick<RunState,'phase'|'periodIndex'|'schedule'|'activityIntermission'|'stateRevision'>|null;
   activities:readonly ScheduleActivity[]; plan:readonly string[]; period:number; phase:string;
@@ -55,12 +59,15 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
     let next=slot;for(let n=1;n<=count;n++){const candidate=(slot+n)%count;if(candidate>=context.period&&!(mask&(1<<candidate))){next=candidate;break;}}
     set({...planner,mask,slot:next,groupId:''});
   };
-  if(readable&&compact)return <><CompactSchedule id={element.id} context={context} labels={labels} groups={groups} disabled={disabled} chooseActivity={chooseActivity} guidance={guidance} planReuse={planReuse} selectionKey={JSON.stringify([ownerKey,planner])} applyPlan={onPlanReplace?ids=>{if(editable){onPlanReplace(ids);set({...planner,mask:full,slot:context.period,groupId:''});}}:undefined} control={planningControl??(element.scheduleLayout==='menu'&&onCommit?{label:context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정',effect:'confirm-and-execute'}:undefined)}/>{element.scheduleLayout==='menu'&&<button className="readable-schedule-commit" disabled={!editable} onClick={onCommit}>{context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정'}</button>}</>;
+  const selectionDriven=!readable&&['calendar','menu'].includes(element.scheduleLayout??'');
+  const forecastContext=selectionDriven?{...context,forecastMask:planner.mask,plan:context.plan.map((id,index)=>index>=context.period&&!(planner.mask&(1<<index))?'':id)}:context;
+  const forecast=element.showPhaseForecast?<PhaseForecast id={element.id} context={forecastContext} disabled={disabled}/>:null;
+  if(readable&&compact)return <>{forecast}<CompactSchedule id={element.id} context={context} labels={labels} groups={groups} disabled={disabled} chooseActivity={chooseActivity} guidance={guidance} planReuse={planReuse} selectionKey={JSON.stringify([ownerKey,planner])} applyPlan={onPlanReplace?ids=>{if(editable){onPlanReplace(ids);set({...planner,mask:full,slot:context.period,groupId:''});}}:undefined} control={planningControl??(element.scheduleLayout==='menu'&&onCommit?{label:context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정',effect:'confirm-and-execute'}:undefined)}/>{element.scheduleLayout==='menu'&&<button className="readable-schedule-commit" disabled={!editable} onClick={onCommit}>{context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정'}</button>}</>;
   if(!readable&&element.scheduleLayout==='calendar'){
     const {year,month}=context.calendarTime??{year:1,month:1};
     const project=context.calendarProject??{startYear:year,startMonth:month,periodsPerMonth:count};const grid=calendarGrid(project,{year,month,periodInMonth:context.period,periodIndex:0});const first=grid.offset,days=grid.days,custom=project.calendar,words=custom?calendarLabels(custom,context.locale):null;
     return <div className="schedule-calendar" data-testid="schedule-calendar">
-      <div className="schedule-calendar-title">{custom?calendarText({year,month,periodInMonth:context.period,periodIndex:0},custom,context.locale,false):`${year}년 ${month}월`}</div>
+      <div className="schedule-calendar-title">{forecast}{custom?calendarText({year,month,periodInMonth:context.period,periodIndex:0},custom,context.locale,false):`${year}년 ${month}월`}</div>
       <div className="schedule-calendar-week">{(words?.weekdays??['일','월','화','수','목','금','토']).map(day=><span key={day}>{day}</span>)}</div>
       <div className="schedule-calendar-days" style={{gridTemplateRows:`repeat(${grid.rows},minmax(0,1fr))`}}>{Array.from({length:grid.rows*7},(_,index)=>{
         const day=index-first+1;if(day<1||day>days)return <span key={index}/>;
@@ -78,7 +85,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
     const columns=Math.max(1,Math.floor((available+16)/236));
     const frame=element.frameAssetId?{backgroundImage:`url(${JSON.stringify(assetUrl(element.frameAssetId))})`,backgroundSize:'100% 100%'}:undefined;
     const entryFrame=element.entryFrameAssetId?{backgroundImage:`url(${JSON.stringify(assetUrl(element.entryFrameAssetId))})`,backgroundSize:'100% 100%'}:undefined;
-    return <div className="schedule-menu" data-testid="schedule-menu">
+    return <div className="schedule-menu" data-testid="schedule-menu">{forecast}
       {group?<><div className="schedule-menu-heading">{group.label} · {labels[planner.slot]}</div><div className="schedule-activity-grid" style={{gridTemplateColumns:`repeat(${columns},minmax(0,1fr))`}}>
         {group.activityIds.flatMap(id=>{const activity=context.activities.find(a=>a.id===id);if(!activity)return [];const summary=activityPreview(activity,context.stats);
           const costs=(activity.costs??[]).map(cost=>`${context.stats.find(s=>s.id===cost.attributeId)?.label??cost.attributeId} ${cost.amount}`).join(' · ');
@@ -97,7 +104,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
   }
   // Detailed canvas schedules keep every period editable while presenting prose
   // only once, at full width. Readable/roster planners retain their own contract.
-  if(!readable&&(element.showActivityRules||element.showActivityDescription)){
+  if(!readable&&(element.showActivityRules||element.showActivityDescription||element.showPhaseForecast)){
     const slot=Math.max(0,Math.min(count-1,planner.slot));
     const activity=context.activities.find(a=>a.id===context.plan[slot]);
     const summary=activity?activityPreview(activity,context.stats):'';
@@ -112,7 +119,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
           {context.activities.map(value=><option key={value.id} value={value.id}>{value.label}</option>)}
         </select>
       </div>)}</div>
-      <p className="schedule-draft-note">{words('활동을 바꾸면 계획만 수정됩니다. 진행 버튼을 눌러 확정하세요.',"Changes edit your draft only. Use the game's progression control to confirm.",'活動の変更は下書きだけに反映されます。進行ボタンで確定してください。')}</p>
+      <div className={`schedule-draft-note${element.showPhaseForecast?' has-forecast':''}`}>{forecast}<span>{words('확정할 때까지 변경은 초안에 남습니다.',"Changes stay in your draft until you confirm.",'確定するまで変更は下書きに保存されます。')}</span></div>
       <section key={`${slot}:${activity?.id}`} id={`plan-details-${element.id}`} className="schedule-detail-pane" tabIndex={0} aria-label={words('선택한 일정 상세','Selected period details','選択した予定の詳細')}>
         <strong className="schedule-detail-title">{detailLabels[slot]} · {activity?.label}</strong>
         {element.showActivityDescription&&activity?.description&&<div className="schedule-detail-text activity-description">{activity.description}</div>}
@@ -121,7 +128,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
       </section>
     </div>;
   }
-  return <><div className="schedule-columns">{labels.map((period,index)=>{
+  return <>{forecast}<div className="schedule-columns">{labels.map((period,index)=>{
     const activity=context.activities.find(a=>a.id===context.plan[index]);const summary=activity?activityPreview(activity,context.stats):'';
     return <label key={period}>{period}{readable&&activity&&<div className="readable-selected-activity">{activity.label}</div>}<select aria-label={`${period} 활동`} value={context.plan[index]??''} disabled={!editable||index<context.period} onChange={event=>chooseActivity(event.target.value,index)}>
       {context.activities.map(value=><option key={value.id} value={value.id}>{value.label}{value.previewAttributes?.length?` · ${activityPreview(value,context.stats)}`:''}</option>)}

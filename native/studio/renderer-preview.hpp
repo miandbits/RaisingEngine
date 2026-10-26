@@ -52,7 +52,8 @@ private:
   QSpinBox *width,*height;
   QPushButton *render,*cancel,*pin;
   QLabel *status,*caption,*referenceCaption,*readingStatus;
-  QTreeWidget *nodes;
+  QTreeWidget *nodes,*layoutIssues;
+  QLabel *layoutCoverage;
   QTreeWidget *reasons;
   QJsonArray documents;
   QJsonObject scenario,requestedScenario;

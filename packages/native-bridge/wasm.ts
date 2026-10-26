@@ -18,7 +18,7 @@ export class WasmRuntime {
     this.cache=cache;
   }
   request(request:unknown):unknown {
-    if(request&&typeof request==='object'&&'operation' in request&&['create','command','view','evaluate','inspect','replay'].includes(String(request.operation))&&'content' in request&&request.content&&typeof request.content==='object'&&immutableJson(request.content)){
+    if(request&&typeof request==='object'&&'operation' in request&&['create','command','view','evaluate','inspect','replay','forecastPhase'].includes(String(request.operation))&&'content' in request&&request.content&&typeof request.content==='object'&&immutableJson(request.content)){
       const content=request.content,cache=this.cache;
       let id=cache.contents.get(content);
       if(!id){

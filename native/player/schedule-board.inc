@@ -116,6 +116,7 @@
       for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[plan_slot])description=a.value("description","");
     out+="<div style=\""+at(left+gap,184,right-150,66)+"overflow-y:auto;pointer-events:auto;font-size:"+number(fs)+"px;line-height:"+number(fs*1.55)+"px;\">"+escape(description)+"</div>";
     if(plan_selected&(1<<plan_slot))out+=card("board-clear",std::to_string(plan_slot+1)+"주 비우기",{{"type","boardClear"}},w-136,184,136,44,false);
+    if(e.value("showPhaseForecast",false))return out+"<div style=\""+at(left+gap,253,right,52)+"\">"+phase_forecast_launcher(e)+"</div></div>";
     const auto forecast=plan_forecast();
     const bool predicted=forecast.value("ok",false);
     const bool incomplete=!forecast.value("complete",false);

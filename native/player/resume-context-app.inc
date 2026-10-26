@@ -32,7 +32,7 @@
     }
     if(type=="resumeContextClose")return true;
     if(type!="resumeContext")return false;
-    if(!markup.resume_context_enabled()||preview()||editor_live||recalling()||game.gallery.active||backgrounded||markup.compact_picker||markup.planning_guide||markup.plan_reuse_open||markup.reading_history_open||!markup.pending_purchase.is_null())return true;
+    if(!markup.resume_context_enabled()||preview()||editor_live||recalling()||game.gallery.active||backgrounded||markup.compact_picker||markup.planning_guide||markup.plan_reuse_open||markup.phase_forecast_open||markup.reading_history_open||!markup.pending_purchase.is_null())return true;
     resume_context_return_view=markup.reading_options?"options":markup.reading_menu?"menu":"game";
     resume_context_return_focus=context&&context->GetFocusElement()?context->GetFocusElement()->GetId():"";
     markup.reading_options=markup.reading_menu=false;markup.resume_context_open=true;

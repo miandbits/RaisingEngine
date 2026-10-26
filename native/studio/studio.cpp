@@ -965,6 +965,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   viewMenu->addAction(rendererPreview->toggleViewAction());
   auto inspectRender=toolbar->addAction(tr("실제 렌더러 검사"),this,[this]{rendererPreview->show();rendererPreview->raise();rendererPreview->begin();});
   inspectRender->setObjectName("inspectRenderer");
+  inspectRender->setToolTip(tr("배치 진단: 휴대전화, 글자 확대, 잘림, 터치 영역과 대비를 실제 렌더러로 검사합니다."));
   screenOnlyActions << inspectRender;
   connect(rendererPreview,&RendererPreviewDock::snapshotRequested,this,[this]{
     if(bridge.busy()){rendererPreview->fail(tr("현재 편집 처리가 끝난 뒤 다시 렌더링하세요."));return;}

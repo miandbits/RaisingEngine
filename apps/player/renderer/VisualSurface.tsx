@@ -1,3 +1,4 @@
+import {PhaseForecast} from './PhaseForecast.js';
 import {progressionButtonLabel} from './progression-label.js';
 import {useResumeContext} from './ResumeContext.js';
 import {PresentedHistoryText,useReadingHistory,historyTextVisible} from './ReadingHistory.js';
@@ -29,6 +30,7 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  forecastPhase?:import('./ScheduleWidget.js').ScheduleContext['forecastPhase'];
   historyReceipt?:Omit<ReadingHistoryReceipt,'text'|'speaker'>;
   gameId?:string;generation?:number;lastCommittedPlan?:import('../../../packages/player-service/plan-reuse.js').LastCommittedPlan;
   readingKey?:string;
@@ -91,7 +93,12 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const size=fitViewport?logicalViewport(design,viewport.width,viewport.height):{width:design.width,height:design.height};
   const scale=fitViewport?Math.min(viewport.width/size.width,viewport.height/size.height):viewport.width/design.width;
   const offset=fitViewport?{x:(viewport.width-size.width*scale)/2,y:(viewport.height-size.height*scale)/2}:{x:0,y:0};
-  const readable=fitViewport&&!editing?readableLayoutForScreen(design,screenId,{width:viewport.safeWidth,height:viewport.safeHeight},menuOpen||preferences?.readingOverlayActive?{...preferences?.value,readingLayout:'on'}:preferences?.value):null;
+  const defaultReadable=fitViewport&&!editing?readableLayoutForScreen(design,screenId,{width:viewport.safeWidth,height:viewport.safeHeight},preferences?.value):null;
+  // Retain the opening layout while a modal is present. Switching a desktop
+  // schedule into the reading tree would unmount the dialog that just opened.
+  const overlayReadable=useRef(!!defaultReadable),overlayActive=menuOpen||preferences?.readingOverlayActive;
+  if(!overlayActive)overlayReadable.current=!!defaultReadable;
+  const readable=overlayActive?(overlayReadable.current?readableLayoutForScreen(design,screenId,{width:viewport.safeWidth,height:viewport.safeHeight},{...preferences?.value,readingLayout:'on'}):null):defaultReadable;
   const elements=readable?[...readable.items,...readable.actions].map(item=>item.element):resolveScreenElements(design,screenId,size);
   const positionKey=JSON.stringify([screenId,context.readingKey??[context.dataState?.periodIndex,context.dataState?.activeNarrative,context.story,context.phase],screenId===context.saveSlots?.screenId?context.saveSlots?.confirmation??null:null]);
   const readingPosition=useReadingPosition(readingScroll,positionKey,JSON.stringify([viewport.width,viewport.height,readable?.textScale]),!!readable);
@@ -172,7 +179,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='meter')body=<div className="visual-meter" style={{'--meter-track':element.fill??'transparent'} as React.CSSProperties}><span>{element.text??element.label??''}</span><progress aria-label={element.label??element.text??element.id} style={element.meterThickness===undefined?undefined:{height:Math.min(element.height,element.meterThickness)}} max={Math.max(1,element.maxValue??100)} value={Math.max(0,Math.min(meterValue,element.maxValue??100))}/></div>;
       if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
       if(element.kind==='schedule')body=context.dataState?.roster
-        ?<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/>
+        ?<>{element.showPhaseForecast&&<PhaseForecast id={element.id} context={context} disabled={busy||!enabled||editing}/>}<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/></>
         :<ScheduleWidget ownerKey={screenId} readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} guidance={readingItem?.planningGuidance==='first-use'} planReuse={readingItem?.planReuse==='last-committed'} planningControl={planningControl} element={element} context={context} planning={planning} groups={element.scheduleGroups??scheduleGroups} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onPlanReplace={onPlanReplace} onCommit={onCommitPlan}/>;
       if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue"><PresentedHistoryText text={context.story} receipt={!editing?context.historyReceipt:undefined}/></p>;
       if(element.kind==='result')body=context.actorResults?.length

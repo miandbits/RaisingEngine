@@ -44,7 +44,7 @@ void RendererPreviewDock::editScenario(){
 }
 
 void RendererPreviewDock::showReasons(const QJsonObject& explanation){
-  reasons->clear();if(explanation.isEmpty())return;
+  reasons->clear();reasons->setVisible(!explanation.isEmpty());if(explanation.isEmpty())return;
   auto stateRow=new QTreeWidgetItem(reasons,{tr("검사 상태"),(explanation.value("source")=="validated-save"?tr("플레이 저장 · C++ 재현 일치"):tr("새 게임 초기 상태"))+(explanation.value("modified").toBool()?tr(" · 가상 값 변경됨"):QString())});stateRow->setToolTip(0,explanation.value("notice").toString());stateRow->setToolTip(1,explanation.value("notice").toString());
   auto values=new QTreeWidgetItem(reasons,{tr("능력치·자원 · 현재 / 기준"),explanation.value("actorName").toString()});
   for(auto value:explanation.value("values").toArray()){auto row=value.toObject();new QTreeWidgetItem(values,{row.value("label").toString()+" · "+row.value("scopeName").toString(row.value("scope").toString()),QString::number(row.value("value").toInt())+" / "+QString::number(row.value("baseline").toInt())});}

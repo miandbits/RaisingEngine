@@ -58,6 +58,10 @@ void StudioWindow::editWidgetSettings() {
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));
+  auto phaseForecast = new QCheckBox(tr("일정 전체 예상 결과 표시"));
+  phaseForecast->setObjectName("showPhaseForecast");phaseForecast->setChecked(value.value("showPhaseForecast").toBool());
+  auto forecastHelp=new QLabel(tr("비용, 회복, 정기 변화를 미리 확인합니다. 확률과 이야기 선택은 확정 결과로 표시하지 않습니다."));forecastHelp->setWordWrap(true);
+  if(kind=="schedule"){form->addRow(phaseForecast);form->addRow(forecastHelp);}else{phaseForecast->hide();forecastHelp->hide();}
   auto activityRules = new QCheckBox(tr("일정 칸·다인 배정에 비용과 기본 효과 표시 (최종 결과 예측 아님)"));
   activityRules->setObjectName("showActivityRules");
   activityRules->setChecked(value.value("showActivityRules").toBool());
@@ -124,6 +128,7 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="choices"){if(choiceEffects->isChecked())value["showChoiceEffects"]=true;else value.remove("showChoiceEffects");}
   if(kind=="schedule"){QJsonArray ids;for(int i=0;i<decreasing->count();i++)if(decreasing->item(i)->checkState()==Qt::Checked)ids.append(decreasing->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove("decreasingAttributeIds");else value["decreasingAttributeIds"]=ids;}
   if(kind=="schedule"){if(activityIcons.isEmpty())value.remove("activityIcons");else value["activityIcons"]=activityIcons;}
+  if(kind=="schedule"){if(phaseForecast->isChecked())value["showPhaseForecast"]=true;else value.remove("showPhaseForecast");}
   if(kind=="schedule"){if(activityRules->isChecked())value["showActivityRules"]=true;else value.remove("showActivityRules");}
   if(kind=="schedule"){if(activityDescription->isChecked())value["showActivityDescription"]=true;else value.remove("showActivityDescription");}
   auto project=projectData();auto visual=project["visual"].toObject();auto screens=visual["screens"].toArray();

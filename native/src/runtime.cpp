@@ -17,6 +17,8 @@ using J = nlohmann::json;
 constexpr int64_t SAFE = 9007199254740991LL;
 const std::string VERSION = "0.2.0";
 thread_local J *executionTrace = nullptr;
+// Forecasts must stop before consuming or revealing any random outcome.
+thread_local bool forecastNoRandom = false;
 void traceExecution(J row) {
   if (executionTrace && executionTrace->size() < 10000) executionTrace->push_back(std::move(row));
 }
@@ -289,6 +291,7 @@ J seedRandom(const J &seed) {
           {"draws", 0}};
 }
 uint32_t draw(J &r) {
+  need(!forecastNoRandom, "FORECAST_RANDOM", "A random outcome is not predictable.", "/rng");
   bool valid = r.value("algorithm", "") == "pcg32-xsh-rr-v1" && r.contains("state") &&
                r["state"].is_string() &&
                std::regex_match(str(r, "state"), std::regex("(0|[1-9][0-9]{0,19})")) &&
@@ -962,6 +965,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
 // clang-format off
 #include "view.inc"
 #include "systems-view.inc"
+#include "phase-forecast.inc"
 #include "protocol.inc"
 // clang-format on
 } // namespace raising
