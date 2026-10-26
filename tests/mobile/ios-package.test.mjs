@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir,mkdtemp,writeFile,readFile,readdir,symlink} from 'node:fs/promises';
+import {mkdir,mkdtemp,writeFile,readFile,readdir,symlink,rename,lstat,readlink} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 import {prepareIOSProject,configureIOSProject,validateIOSVersions,verifyIOSBundleMetadata} from '../../scripts/lib/ios-project.mjs';
 
 async function fixture() {
@@ -106,4 +107,79 @@ test('built iOS app metadata is verified independently for each SDK',{skip:proce
     await writeFile(plist,content('1'));await assert.rejects(verifyIOSBundleMetadata(out,{sdk}),/CFBundleVersion differs/);
     assert.deepEqual(await readFile(path.join(out,'ios-build.json')),sealed,'inspection never rewrites release metadata');
   }
+});
+
+async function relocationTools(root,t){
+ const bin=path.join(root,'tool shims');await mkdir(bin);
+ const cmake=path.join(bin,'cmake with spaces.command'),trace=path.join(root,'configure-arguments.txt');
+ await writeFile(cmake,`#!/bin/zsh
+set -eu
+printf '%s\\n' "$@" >> "$RAISING_RELOCATION_TRACE"
+[[ "$1" == --preset ]]
+sdk="$2"
+if [[ "\${RAISING_RELOCATION_FAIL:-}" == yes ]]; then exit 7; fi
+mkdir -p "build-$sdk/RaisingGame.xcodeproj"
+printf 'CMAKE_HOME_DIRECTORY:INTERNAL=%s\\nCMAKE_CACHEFILE_DIR:INTERNAL=%s\\n' "$PWD" "$PWD/build-$sdk" > "build-$sdk/CMakeCache.txt"
+`,{mode:0o755});
+ await writeFile(path.join(bin,'open'),'#!/bin/sh\nprintf "%s\\n" "$@" > "$RAISING_RELOCATION_OPEN"\n',{mode:0o755});
+ const keys=['CMAKE','PATH','RAISING_RELOCATION_TRACE','RAISING_RELOCATION_OPEN','RAISING_RELOCATION_FAIL'],previous=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+ Object.assign(process.env,{CMAKE:cmake,PATH:bin+path.delimiter+process.env.PATH,RAISING_RELOCATION_TRACE:trace,RAISING_RELOCATION_OPEN:path.join(root,'opened.txt')});delete process.env.RAISING_RELOCATION_FAIL;
+ t.after(()=>{for(const k of keys)if(previous[k]===undefined)delete process.env[k];else process.env[k]=previous[k];});
+ return {trace,open:path.join(root,'opened.txt')};
+}
+async function buildEntries(root){
+ const rows=[];async function walk(relative){const full=path.join(root,relative),s=await lstat(full),row={path:relative,mode:s.mode&0o7777};if(s.isSymbolicLink())rows.push({...row,type:'link',target:await readlink(full)});else if(s.isDirectory()){rows.push({...row,type:'directory'});for(const name of (await readdir(full)).sort())await walk(path.join(relative,name));}else rows.push({...row,type:'file',sha256:createHash('sha256').update(await readFile(full)).digest('hex')});}await walk('');return rows;
+}
+const relocatedFolders=async out=>(await readdir(out)).filter(x=>x.startsWith('.raising-moved-')).sort();
+async function runRelocation(mode,out,{sdk='iphonesimulator',team}={}){
+ if(mode==='service')return configureIOSProject(out,{sdk,team,recordStatus:false});
+ const r=spawnSync('/bin/zsh',[path.join(out,'Generate Xcode project.command'),sdk,team??''],{env:process.env,encoding:'utf8'});
+ if(r.status!==0)throw Error(r.stdout+'\n'+r.stderr);
+ return path.join(out,'build-'+sdk,'RaisingGame.xcodeproj');
+}
+
+test('iOS launcher and service preserve relocated caches and keep same-location builds incremental',{skip:process.platform!=='darwin'},async t=>{
+ const toolsRoot=await fixture(),tools=await relocationTools(toolsRoot.root,t);
+ for(const mode of ['service','launcher'])for(const mismatch of ['source','build']){
+  const {root,out:initial}=await fixture();await prepareIOSProject(initial,{root});
+  const out=path.join(root,"moved project 'quoted' $literal "+mode+'-'+mismatch);await rename(initial,out);
+  const build=path.join(out,'build-iphonesimulator');await mkdir(path.join(build,'custom settings'),{recursive:true});
+  const metadata=await readFile(path.join(out,'ios-build.json'));
+  const cache=`CMAKE_HOME_DIRECTORY:INTERNAL=${mismatch==='source'?path.join(root,'previous source'):out}\nCMAKE_CACHEFILE_DIR:INTERNAL=${mismatch==='build'?path.join(root,'previous build'):build}\n`;
+  await writeFile(path.join(build,'CMakeCache.txt'),cache);await writeFile(path.join(build,'custom settings','local-signing.txt'),Buffer.from([0,255,42,13,10]),{mode:0o751});await symlink('custom settings/local-signing.txt',path.join(build,'local-settings-link'));
+  const before=await buildEntries(build);
+  await runRelocation(mode,out,{team:'A1B2C3D4E5'});
+  const backups=await relocatedFolders(out);assert.equal(backups.length,1);
+  assert.deepEqual(await buildEntries(path.join(out,backups[0],'build-iphonesimulator')),before,'Every old build byte, mode and link is preserved');
+  assert.equal(await readFile(path.join(build,'CMakeCache.txt'),'utf8'),`CMAKE_HOME_DIRECTORY:INTERNAL=${out}\nCMAKE_CACHEFILE_DIR:INTERNAL=${build}\n`);
+  const inode=(await lstat(build)).ino;await writeFile(path.join(build,'incremental-sentinel'),'Retain same-location local build');
+  await runRelocation(mode,out);assert.equal((await lstat(build)).ino,inode);assert.deepEqual(await relocatedFolders(out),backups);assert.equal(await readFile(path.join(build,'incremental-sentinel'),'utf8'),'Retain same-location local build');
+  await writeFile(path.join(build,'CMakeCache.txt'),cache);const second=await buildEntries(build);await runRelocation(mode,out);
+  const all=await relocatedFolders(out);assert.equal(all.length,2,'A second relocation gets a distinct backup');
+  const next=all.find(x=>x!==backups[0]);assert.deepEqual(await buildEntries(path.join(out,next,'build-iphonesimulator')),second);assert.deepEqual(await buildEntries(path.join(out,backups[0],'build-iphonesimulator')),before,'Earlier backups are never overwritten');
+  assert.deepEqual(await readFile(path.join(out,'ios-build.json')),metadata,'Published release metadata stays byte-identical');
+ }
+ const args=await readFile(tools.trace,'utf8');assert.match(args,/-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=A1B2C3D4E5/);assert.ok(!args.includes('--fresh'),'CMake3.21.1 support does not require the newer --fresh option');assert.equal((await readFile(tools.open,'utf8')).trim(),'build-iphonesimulator/RaisingGame.xcodeproj');
+});
+
+test('iOS relocation refuses build/cache links and unidentified caches without changing their data',{skip:process.platform!=='darwin'},async t=>{
+ const toolsRoot=await fixture(),tools=await relocationTools(toolsRoot.root,t);
+ for(const mode of ['service','launcher'])for(const kind of ['build-link','cache-link','build-file','unidentified-cache']){
+  const {root,out}=await fixture();await prepareIOSProject(out,{root});const external=path.join(root,'outside');await mkdir(external);await writeFile(path.join(external,'sentinel'),'Never alter outside data');
+  const build=path.join(out,'build-iphonesimulator');
+  if(kind==='build-link')await symlink(external,build);
+  else if(kind==='build-file')await writeFile(build,'Existing file is not a build directory');
+  else{await mkdir(build);if(kind==='cache-link')await symlink(path.join(external,'sentinel'),path.join(build,'CMakeCache.txt'));else await writeFile(path.join(build,'CMakeCache.txt'),'Unidentified cache must not be discarded');}
+  const before=await buildEntries(out),outside=await buildEntries(external),trace=await readFile(tools.trace,'utf8').catch(()=>null);
+  await assert.rejects(runRelocation(mode,out),/symbolic link|source\/build identity/);
+  // Service diagnostics add only their owned log; compare all prior entries.
+  const after=(await buildEntries(out)).filter(x=>x.path!=='xcode-configure.log');assert.deepEqual(after,before);assert.deepEqual(await buildEntries(external),outside);assert.equal(await readFile(tools.trace,'utf8').catch(()=>null),trace,'Unsafe paths never reach CMake');assert.deepEqual(await relocatedFolders(out),[]);
+ }
+});
+
+test('iOS moved device cache remains preserved even when fresh configuration fails',{skip:process.platform!=='darwin'},async t=>{
+ const {root,out}=await fixture();await prepareIOSProject(out,{root});await relocationTools(root,t);
+ const build=path.join(out,'build-iphoneos');await mkdir(build);await writeFile(path.join(build,'CMakeCache.txt'),'CMAKE_HOME_DIRECTORY:INTERNAL=/old/project\nCMAKE_CACHEFILE_DIR:INTERNAL=/old/project/build-iphoneos\n');await writeFile(path.join(build,'signed-archive-sentinel'),'Preserve a prior local artifact even on failure');const before=await buildEntries(build);
+ process.env.RAISING_RELOCATION_FAIL='yes';await assert.rejects(configureIOSProject(out,{sdk:'iphoneos',recordStatus:false}),/failed \(7\)/);
+ const backups=await relocatedFolders(out);assert.equal(backups.length,1);assert.deepEqual(await buildEntries(path.join(out,backups[0],'build-iphoneos')),before);assert.equal(await lstat(build).catch(()=>null),null);
 });

@@ -54,7 +54,31 @@ test('activity board is readable at300px200%, keyboard/touch reachable and local
   const metric=await dialog.evaluate(d=>({width:innerWidth,box:d.getBoundingClientRect().toJSON(),overflow:d.scrollWidth-d.clientWidth,body:d.querySelector('.reading-dialog-body').getBoundingClientRect().toJSON(),buttons:[...d.querySelectorAll('button')].map(b=>({id:b.id,rect:b.getBoundingClientRect().toJSON(),overflow:b.scrollWidth-b.clientWidth}))}));assert.ok(metric.box.left>=0&&metric.box.right<=300&&metric.overflow<=1&&metric.body.height>=40,JSON.stringify(metric));for(const button of metric.buttons){assert.ok(button.rect.height>=44&&button.rect.width>=44&&button.overflow<=1,JSON.stringify(button));}geometry.push({locale,count,...metric});
   await dialog.locator('.reading-dialog-body').focus();await page.keyboard.press('End');await page.waitForFunction(()=>{const e=document.querySelector('dialog[open] .reading-dialog-body');return e.scrollTop+e.clientHeight>=e.scrollHeight-2;});assert.deepEqual(await inspect(),baseline);if(count===4)await page.screenshot({path:join(root,'phone-200-'+locale+'.png')});await page.keyboard.press('Escape');await ready();assert.equal(await dialog.count(),0);assert.deepEqual(await inspect(),baseline);assert.equal(await id('slot-'+(count-1)).evaluate(e=>e===document.activeElement),true);
  }
- await update({locale:'en',count:4});await ready();await id('slot-0').tap();await id('activity-work').tap();const before=await inspect();const body=page.locator('dialog[open] .reading-dialog-body');await body.focus();await page.keyboard.press('Home');const box=await body.boundingBox(),cdp=await page.context().newCDPSession(page);await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width*.7,y:box.y+box.height*.8}]});for(let i=1;i<=8;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:box.x+box.width*.7,y:box.y+box.height*(.8-.6*i/8)}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForFunction(()=>document.querySelector('dialog[open] .reading-dialog-body').scrollTop>0);assert.deepEqual(await inspect(),before);await id('apply').tap();assert.equal((await inspect()).draft.activities[0],'work');assert.deepEqual((await inspect()).state,before.state);assert.deepEqual(errors,[]);await writeFile(join(root,'phone-proof.json'),JSON.stringify({ok:true,geometry,checks:['300px200% EN/KO/JA ×1/4/12periods','initial static focus','Space inert','End reaches final rules','Escape restores owner focus','real touch drag does not apply','explicit touch Apply updates only draft']},null,2));
+ await update({locale:'en',count:4});await ready();await id('slot-0').tap();await id('activity-work').tap();await ready();
+ const before=await inspect(),body=page.locator('dialog[open] .reading-dialog-body');
+ await page.evaluate(()=>{window.boardTouchEvents=[];for(const type of ['touchstart','touchend','pointerdown','pointerup','click'])document.addEventListener(type,event=>{window.boardTouchEvents.push({type,time:performance.now(),target:event.target.closest?.('button')?.id??event.target.id});window.boardTouchEvents=window.boardTouchEvents.slice(-40);},true);});
+ let settlement;
+ try{
+  assert.equal(await id('activity-work').getAttribute('aria-pressed'),'true');assert.equal(await id('apply').isEnabled(),true);
+  await body.focus();await page.keyboard.press('Home');await page.waitForFunction(()=>document.querySelector('dialog[open] .reading-dialog-body').scrollTop<=1);
+  const box=await body.boundingBox(),cdp=await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width*.7,y:box.y+box.height*.8}]});
+  for(let i=1;i<=8;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:box.x+box.width*.7,y:box.y+box.height*(.8-.6*i/8)}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await page.waitForFunction(()=>document.querySelector('dialog[open] .reading-dialog-body').scrollTop>0);assert.deepEqual(await inspect(),before);
+  // A positive offset proves scrolling started, not that the touch fling finished.
+  // Wait for observed stable frames before the one real Apply tap; no retry click.
+  settlement=await body.evaluate(async element=>{const samples=[],start=performance.now();let previous=element.scrollTop,stable=0;while(stable<6&&performance.now()-start<5000){await new Promise(resolve=>requestAnimationFrame(resolve));const top=element.scrollTop;stable=Math.abs(top-previous)<.25?stable+1:0;previous=top;samples.push({time:performance.now(),top});}return{settled:stable>=6,samples};});
+  assert.ok(settlement.settled,JSON.stringify(settlement));assert.deepEqual(await inspect(),before);
+  assert.equal(await id('activity-work').getAttribute('aria-pressed'),'true');assert.equal(await id('apply').isEnabled(),true);
+  await id('apply').tap();
+  await page.waitForFunction(()=>window.inspect().draft.activities[0]==='work');
+  assert.equal((await inspect()).draft.activities[0],'work');assert.deepEqual((await inspect()).state,before.state);assert.deepEqual(errors,[]);
+ }catch(error){
+  const diagnostic=await page.evaluate(()=>{const dialog=document.querySelector('dialog[open]'),body=dialog?.querySelector('.reading-dialog-body'),apply=document.querySelector('#plan__board-apply');return{state:window.inspect(),dialogOpen:!!dialog,selected:document.querySelector('#plan__board-activity-work')?.getAttribute('aria-pressed'),applyDisabled:apply?.disabled,applyRect:apply?.getBoundingClientRect().toJSON(),scroll:body?{top:body.scrollTop,height:body.clientHeight,total:body.scrollHeight}:null,events:window.boardTouchEvents};});
+  const details={settlement,diagnostic};await writeFile(join(root,'touch-apply-failure.json'),JSON.stringify(details,null,2));console.error('Activity board touch Apply diagnostics: '+JSON.stringify(details));throw error;
+ }
+ await writeFile(join(root,'phone-proof.json'),JSON.stringify({ok:true,geometry,touchSettlement:settlement,checks:['300px200% EN/KO/JA ×1/4/12periods','initial static focus','Space inert','End reaches final rules','Escape restores owner focus','real touch drag does not apply','scroll settles before one real touch Apply','explicit touch Apply updates only draft']},null,2));
 });
 
 

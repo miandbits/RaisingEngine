@@ -7,6 +7,51 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const repository = fileURLToPath(new URL('../..', import.meta.url));
 const applicationPattern = /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*)+$/;
+// The exported launcher and service use exactly the same relocation preflight.
+// Preserve stale generated output; never delete prior builds or follow a build link.
+const iosConfigureScript = `set -eu
+export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
+cd -P -- .
+sdk="\${1:-iphonesimulator}"
+team="\${2:-}"
+case "$sdk" in iphonesimulator|iphoneos) ;; *) print -u2 -- "Choose iphonesimulator or iphoneos."; exit 1 ;; esac
+if [[ -n "$team" && ! "$team" =~ '^[A-Z0-9]{10}$' ]]; then
+  print -u2 -- "Apple development team must contain 10 uppercase letters or digits."
+  exit 1
+fi
+source_dir="$PWD"
+build_dir="$source_dir/build-$sdk"
+cache="$build_dir/CMakeCache.txt"
+if [[ -L "$build_dir" || ( -e "$build_dir" && ! -d "$build_dir" ) ]]; then
+  print -u2 -- "Xcode build folder must be a real directory, not a symbolic link or file: $build_dir"
+  exit 1
+fi
+if [[ -L "$cache" || ( -e "$cache" && ! -f "$cache" ) ]]; then
+  print -u2 -- "CMake cache must be a regular file, not a symbolic link: $cache"
+  exit 1
+fi
+if [[ -f "$cache" ]]; then
+  cached_source=$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' "$cache")
+  cached_build=$(sed -n 's/^CMAKE_CACHEFILE_DIR:INTERNAL=//p' "$cache")
+  if [[ -z "$cached_source" || -z "$cached_build" ]]; then
+    print -u2 -- "Existing CMake cache has no source/build identity. Preserve this build folder elsewhere before regenerating: $build_dir"
+    exit 1
+  fi
+  if [[ "$cached_source" != "$source_dir" || "$cached_build" != "$build_dir" ]]; then
+    backup=$(mktemp -d "$source_dir/.raising-moved-$sdk.XXXXXX")
+    mv -- "$build_dir" "$backup/build-$sdk"
+    print -- "Preserved the previous location's entire build folder at: $backup/build-$sdk"
+    print -- "The regenerated project uses the exported defaults. Reapply local signing or Xcode settings if needed."
+  fi
+fi
+typeset -a configure_args
+configure_args=(--preset "$sdk")
+if [[ -n "$team" ]]; then
+  configure_args+=("-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=$team" -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=YES)
+fi
+"\${CMAKE:-cmake}" "\${configure_args[@]}"
+`;
+
 /** Bounded numeric strings accepted by Apple's release/build version keys. */
 export function validateIOSVersions({version='0.1.0', buildNumber='1'} = {}) {
   if (typeof version !== 'string' || !/^[0-9]{1,9}(?:\.[0-9]{1,9}){2}$/.test(version)) throw new Error('Use an iOS release version with three numbers, such as 1.2.0. Preview suffixes are not supported by iOS.');
@@ -76,8 +121,8 @@ endforeach()
   }
   const presets = ['iphonesimulator','iphoneos'].map(sdk => ({name:sdk,generator:'Xcode',binaryDir:'${sourceDir}/build-'+sdk,cacheVariables:{CMAKE_SYSTEM_NAME:'iOS',CMAKE_OSX_SYSROOT:sdk,CMAKE_OSX_ARCHITECTURES:sdk==='iphonesimulator'&&process.arch==='x64'?'x86_64':'arm64',CMAKE_OSX_DEPLOYMENT_TARGET:'16.0',CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED:'NO'}}));
   await writeFile(path.join(directory,'CMakePresets.json'),JSON.stringify({version:3,configurePresets:presets},null,2));
-  await writeFile(path.join(directory,'Generate Xcode project.command'), '#!/bin/zsh\nset -eu\ncd -- "${0:A:h}"\nexport PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"\ncmake --preset iphonesimulator\nopen build-iphonesimulator/RaisingGame.xcodeproj\n',{mode:0o755});
-  await writeFile(path.join(directory,'IOS-README.txt'), 'Release version: '+version+'\nBuild number: '+buildNumber+'\nIncrease the build number for each new build you distribute. These values come from Export. To change these release values, export a new project with the new version and build number. Existing exports and their receipts remain unchanged.\n\nOpen build-iphonesimulator/RaisingGame.xcodeproj and choose raising-player plus an iPhone or iPad simulator. If you move this folder, double-click Generate Xcode project.command to regenerate it.\n\nDevice: configure the iphoneos preset, select your Apple development team, and enable code signing. A simulator or unsigned device build cannot be uploaded to the App Store. An explicitly imported icon is compiled from branding/AppIcon.xcassets. Signing, provisioning, device testing and store review remain release work. No credentials are stored in this project.\n\nGames with reading layouts support portrait and landscape, physical-size controls and text enlargement. Other games retain their authored orientation. The player supports touch input and application-private saves. Original engine and dependency licenses are included.\n');
+  await writeFile(path.join(directory,'Generate Xcode project.command'), '#!/bin/zsh\nset -eu\ncd -- "${0:A:h}"\n'+iosConfigureScript+'open "build-$sdk/RaisingGame.xcodeproj"\n',{mode:0o755});
+  await writeFile(path.join(directory,'IOS-README.txt'), 'Release version: '+version+'\nBuild number: '+buildNumber+'\nIncrease the build number for each new build you distribute. These values come from Export. To change these release values, export a new project with the new version and build number. Existing exports and their receipts remain unchanged.\n\nOpen build-iphonesimulator/RaisingGame.xcodeproj and choose raising-player plus an iPhone or iPad simulator. If you move this folder, double-click Generate Xcode project.command to regenerate it. A build cache from a different location is preserved intact inside a uniquely named .raising-moved-iphonesimulator folder before a fresh project is generated. Same-location builds remain incremental. Reapply any local signing or Xcode changes to the new project; the preserved project retains those old settings. Symbolic-link build folders are refused. For a moved device build, run this command with iphoneos as its first argument.\n\nDevice: configure the iphoneos preset, select your Apple development team, and enable code signing. A simulator or unsigned device build cannot be uploaded to the App Store. An explicitly imported icon is compiled from branding/AppIcon.xcassets. Signing, provisioning, device testing and store review remain release work. No credentials are stored in this project.\n\nGames with reading layouts support portrait and landscape, physical-size controls and text enlargement. Other games retain their authored orientation. The player supports touch input and application-private saves. Original engine and dependency licenses are included.\n');
   await writeFile(path.join(directory,'ios-build.json'),JSON.stringify({version:1,status:'source-prepared',applicationId,releaseVersion:version,buildNumber,contentFingerprint:bundle.content.contentFingerprint,minimumIOS:'16.0',...(branding?.displayName?{displayName:branding.displayName}:{}),appIcon:!!branding?.icon},null,2));
 }
 // Published releases keep their hashed source metadata immutable; standalone builds
@@ -86,9 +131,7 @@ export async function configureIOSProject(directory, {sdk='iphonesimulator',team
   if (process.platform !== 'darwin') throw new Error('Generating an iOS Xcode project requires macOS and Xcode.');
   if (!['iphonesimulator','iphoneos'].includes(sdk)) throw new Error('iOS SDK must be iphonesimulator or iphoneos.');
   if (team && !/^[A-Z0-9]{10}$/.test(team)) throw new Error('Apple development team must contain 10 uppercase letters or digits.');
-  const args = ['--preset',sdk];
-  if (team) args.push('-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM='+team,'-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=YES');
-  await runAppleTool(process.env.CMAKE ?? 'cmake',args,directory,{logFile:path.join(directory,'xcode-configure.log')});
+  await runAppleTool('/bin/zsh',['-c',iosConfigureScript,'raising-ios-configure',sdk,team??''],directory,{logFile:path.join(directory,'xcode-configure.log')});
   if (recordStatus) {
     const file=path.join(directory,'ios-build.json'), metadata=JSON.parse(await readFile(file,'utf8'));
     await writeFile(file,JSON.stringify({...metadata,status:'xcode-project-generated',sdk,signed:!!team},null,2));
