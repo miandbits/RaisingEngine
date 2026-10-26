@@ -17,6 +17,8 @@ export function hasPortraitTransforms(value: unknown): boolean {
 
 export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatures: readonly string[] = []): string[] {
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  const scheduleElements=visual?[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)]:[];
+  if(scheduleElements.some(e=>e.scheduleLayout==='activity-board'))requiredFeatures.push('activity-board-v1');
   if(surfaceReferences(visual).length)requiredFeatures.push('ui-surfaces-v1');
   if(controlStyleReferences(visual).length)requiredFeatures.push('ui-control-colors-v1');
   if(visual?.screens.some(screen=>screen.readableLayout?.activation!==undefined))requiredFeatures.push('readable-screen-activation-v1');
@@ -32,7 +34,7 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   if(visual?.screens.some(s=>s.readableLayout?.items.some(item=>item.planningGuidance==='first-use')))requiredFeatures.push('planning-guidance-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.binding==='narrative-actor'))requiredFeatures.push('narrative-actor-binding-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.showActivityRules))requiredFeatures.push('activity-rules-summary-v1');
-  if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.activityIcons?.length))requiredFeatures.push("schedule-board-icons-v1");
+  if(scheduleElements.some(e=>e.scheduleLayout!=='activity-board'&&e.activityIcons?.length))requiredFeatures.push("schedule-board-icons-v1");
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>["timelinePause","timelineSpeed","timelineSkip"].includes(e.action??"")||(e.binding==="activity-progress"&&e.valueFormat)))requiredFeatures.push("authored-playback-controls-v1");
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='meter'&&(e.dataBinding||e.meterThickness!==undefined)))requiredFeatures.push('data-meters-v1');
   if(visual&&[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)].some(e=>e.action==='dialogueAuto'))requiredFeatures.push('dialogue-controls-v1');

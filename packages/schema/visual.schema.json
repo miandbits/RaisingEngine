@@ -1110,7 +1110,8 @@
             "columns",
             "calendar",
             "menu",
-            "board"
+            "board",
+            "activity-board"
           ]
         },
         "statsLayout": {
@@ -3225,7 +3226,8 @@
             "columns",
             "calendar",
             "menu",
-            "board"
+            "board",
+            "activity-board"
           ]
         },
         "statsLayout": {

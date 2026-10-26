@@ -6,7 +6,7 @@
   bool reuse_element_eligible(const std::string& id) const {
     if(display_content.at("project").contains("roster")||!ui_modal.empty()||progress_pending())return false;
     bool opted=false;for(const auto& screen:display_content.at("project").at("visual").at("screens"))if(screen.at("id")==screen_id&&screen.contains("readableLayout"))
-      for(const auto& item:screen.at("readableLayout").at("items"))if(item.value("elementId","")==id&&item.value("schedulePresentation","")=="compact"&&item.value("planReuse","")=="last-committed")opted=true;
+      for(const auto& item:screen.at("readableLayout").at("items"))if(item.value("elementId","")==id&&(item.value("schedulePresentation","")=="compact"||activity_board_widget(id))&&item.value("planReuse","")=="last-committed")opted=true;
     if(!opted)return false;
     for(const auto& e:render_elements)if(e.value("id","")==id&&e.value("kind","")=="schedule")return planning_guide_eligible(e);
     return false;
@@ -28,8 +28,8 @@
   std::string reuse_launcher(const Json& e) {
     reuse_projection=reuse_source();const auto candidate=raising_player::plan_reuse_draft(reuse_projection,game.state,game.periods(),reuse_activity_ids());
     const bool ready=candidate.value("status","")=="ready"&&reuse_element_eligible(e.at("id"));
-    std::string out=button("board-reuse",reuse_label(),{{"type","readingReuseOpen"},{"elementId",e.at("id")}},ready);
-    if(!ready)out+="<p id=\"board-reuse-notice\">"+escape(reuse_reason(candidate))+"</p>";return out;
+    std::string out=button(e.value("scheduleLayout","")=="activity-board"?e.at("id").get<std::string>()+"__board-reuse":"board-reuse",reuse_label(),{{"type","readingReuseOpen"},{"elementId",e.at("id")}},ready);
+    if(!ready&&e.value("scheduleLayout","")!="activity-board")out+="<p id=\"board-reuse-notice\">"+escape(reuse_reason(candidate))+"</p>";return out;
   }
   std::string reuse_review_body() {
     std::string out="<div id=\"board-reuse-review\" class=\"reading-item\"><p><b>"+escape(settings_words("계획 검토","Review plan","計画を確認"))+"</b></p><p>"+escape(settings_words("초안만 바꿉니다.","Changes the draft only.","下書きだけを変更します。"))+"</p>";

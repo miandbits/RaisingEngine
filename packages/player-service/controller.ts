@@ -19,6 +19,7 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  scheduleDraft?:import('./save-metadata.js').ScheduleDraft;
   lastCommittedPlan?:LastCommittedPlan;
   /** Stable identity for game-local presentation preferences; omitted in detached previews. */
   gameId?: string;
@@ -70,6 +71,7 @@ export type PlayerAction = GameplayCommand | SystemsCommand | TimelineAction | B
   | { type: 'commitPlan'; activityIds: string[] }
   | { type: 'scheduleStep' } | { type: 'execute' } | { type: 'continue' } | { type: 'choose'; choiceId: string };
 export interface PlayerBridge {
+  setScheduleDraft?(draft:import('./save-metadata.js').ScheduleDraft,owner:import('./activity-board.js').ScheduleDraftOwner,version:Version,expected:import('./save-metadata.js').ScheduleDraft):Promise<PlayerReply>;
   forecastPhase?(activityIds:string[],version:Version):Promise<PhaseForecastReply|null>;
   slots?(action:SaveSlotAction,version:Version|null):Promise<PlayerReply>;
   checkpoint?(version:Version):Promise<PlayerReply>;

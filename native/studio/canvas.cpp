@@ -7,6 +7,7 @@
 #include "components.hpp"
 #include "selection-edit.hpp"
 #include "component-preview.hpp"
+#include "activity-board-preview.hpp"
 #include "schedule-preview.hpp"
 #include "choice-preview.hpp"
 #include <QGraphicsObject>
@@ -107,6 +108,8 @@ public:
       decoration();paintChoicePreview(p,box,data);
     } else if (kind == "schedule" && !data.value("_rosterPreview").toArray().isEmpty()) {
       paintRosterPreview(p,box,data,decoration);
+    } else if (kind == "schedule" && data["scheduleLayout"] == "activity-board") {
+      paintActivityBoardPreview(p,box,data,decoration);
     } else if (kind == "schedule" && data["scheduleLayout"] == "calendar") {
       p->fillRect(box, QColor("#080706")); decoration();p->setPen(QColor("#cba99d"));
       QFont font(data["_fontFamily"].toString("Noto Sans KR"));font.setPixelSize(data["fontSize"].toInt(24));p->setFont(font);
@@ -351,6 +354,10 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     const auto fontPath=paths.value(e["fontAssetId"].toString(),project["_defaultFontPath"].toString());
     const auto family=projectFontFamily(fontPath);if(!family.isEmpty())e["_fontFamily"]=family;
     if(e["kind"]=="schedule"){e["_calendarProject"]=QJsonObject{{"startYear",project["startYear"]},{"startMonth",project["startMonth"]},{"periodsPerMonth",project["periodsPerMonth"]},{"calendar",project["calendar"]}};e["_year"]=project["startYear"];e["_month"]=project["startMonth"];e["_rosterPreview"]=initialRosterPreview(project);}
+    if(e["kind"]=="schedule"&&e["scheduleLayout"]=="activity-board"){
+      e["_boardActivities"]=project.value("_previewActivities");QJsonObject art;for(auto it=paths.begin();it!=paths.end();++it)art[it.key()]=it.value();e["_boardAssets"]=art;
+      for(const auto& row:visual.value("styles").toArray())if(row.toObject().value("id")==e.value("controlStyleId"))e["_boardControlStyle"]=row.toObject();
+    }
     if(e["kind"]=="choices")e["_choicePreview"]=initialChoicePreview(project.value("_previewNarratives").toArray());
     if (e["hidden"].toBool() || project["_previewHiddenIds"].toArray().contains(e["id"]))
       continue;

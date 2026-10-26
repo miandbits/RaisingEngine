@@ -80,13 +80,13 @@
       dirty=true;return true;
     }
     if(markup.plan_reuse_open){
-      if(type=="readingReuseCancel"||type=="uiBack"){markup.plan_reuse_open=false;reading_focus="board-reuse";dirty=true;return true;}
+      if(type=="readingReuseCancel"||type=="uiBack"){markup.plan_reuse_open=false;reading_focus=markup.activity_board_widget(markup.reuse_element)?markup.reuse_element+"__board-reuse":"board-reuse";dirty=true;return true;}
       if(type=="readingReuseApply"){
         if(markup.reuse_review_valid()){
           markup.plan=markup.reuse_candidate.at("activityIds").get<std::vector<std::string>>();
           markup.plan_selected=(1<<game.periods())-1;markup.plan_slot=markup.reuse_candidate.at("firstEditableSlot");markup.plan_group.clear();
         }
-        markup.plan_reuse_open=false;reading_focus="board-reuse";dirty=true;return true;
+        markup.plan_reuse_open=false;reading_focus=markup.activity_board_widget(markup.reuse_element)?markup.reuse_element+"__board-reuse":"board-reuse";dirty=true;return true;
       }
       // A visible review is a presentation modal. Background actions, shortcuts
       // and delayed authored controls cannot confirm, load or alter its draft.

@@ -158,7 +158,7 @@ public:
   int compact_slot=0,compact_revision=-1;
   std::string compact_activity,compact_group,compact_element,compact_owner;
   std::string readable_view="game";
-  bool reading_overlay() const {return phase_forecast_open||portable_open()||resume_context_open||reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
+  bool reading_overlay() const {return (activity_board_open&&activity_board_reading)||phase_forecast_open||portable_open()||resume_context_open||reading_options||reading_menu||compact_picker||planning_guide||reading_history_open||plan_reuse_open;}
   std::string readable_screen_id;
   double readable_font=18,readable_target=44;
   std::string screen_id,preview_screen;
@@ -903,6 +903,7 @@ public:
       int value=game.state.is_null()?r.value("initial",0):game.state.at("relationships").at(c.at("id").get<std::string>()).value(r.at("id").get<std::string>(),0);
       out+="<div class=\"row\">"+escape(c.value("name","")+" · "+r.value("label",""))+" <b>"+std::to_string(value)+"</b></div>";
     }
+    if(kind=="schedule"&&e.value("scheduleLayout","")=="activity-board")return activity_board(e);
     if(kind=="schedule"&&display_content.at("project").contains("roster"))return phase_forecast_launcher(e)+roster_schedule(e);
     if(kind=="schedule") {
       if(e.value("scheduleLayout","columns")=="board")return schedule_board(e);
@@ -1117,8 +1118,9 @@ public:
       const auto prefix=ui_modal+"__";
       for(auto& e:modal_elements){e=apply_variant(e);e["id"]=prefix+e.at("id").get<std::string>();e["_authoredModal"]=true;for(const auto key:{"_collectionParent","_scrollParent","parentId"})if(e.contains(key))e[key]=prefix+e.at(key).get<std::string>();if(e.contains("_groupIds"))for(auto& id:e["_groupIds"])id=prefix+id.get<std::string>();render_elements.push_back(e);}break;
     }
+    if(activity_board_open&&!activity_board_valid())close_activity_board();
     if(phase_forecast_open&&!phase_forecast_valid())phase_forecast_open=false;
-    if(phase_forecast_open||portable_open()||resume_context_open||((reading_history_open||reading_options)&&(history_enabled()||resume_context_enabled())&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout")))){
+    if(phase_forecast_open||portable_open()||resume_context_open||plan_reuse_open||(planning_guide&&activity_board_widget(planning_guide_element))||((reading_history_open||reading_options)&&(history_enabled()||resume_context_enabled())&&(!visual.contains("readableLayout")||!reading_screen->contains("readableLayout")))){
       auto overlay_visual=visual;overlay_visual["readableLayout"]=visual.value("readableLayout",Json::object());auto overlay_screen=*reading_screen;overlay_screen["readableLayout"]={{"items",Json::array()},{"actions",Json::array()}};return readable_document(overlay_visual,overlay_screen);
     }
     if(readable_requested(visual,*reading_screen))return readable_document(visual,*reading_screen);

@@ -19,7 +19,8 @@ import {resultPlaybackText} from '../../../packages/visual/timeline.js';
 
 import { resolveScreen } from '../../../packages/visual/routing.js';
 
-export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,sound,muted,preview,error,notice,slots}: {
+export function VisualPlayer({view,design,busy,plan,onPlan,onScheduleDraft,act,newRun,save,load,sound,muted,preview,error,notice,slots}: {
+  onScheduleDraft?:import('./ScheduleWidget.js').ScheduleContext['onScheduleDraft'];
   slots?:(action:SaveSlotAction)=>void;
   view:PlayerView;design:ReadonlyDesign;busy:boolean;plan:string[];onPlan:(value:string[])=>void;
   act:(action:PlayerAction,onAccepted?:()=>void)=>void;newRun:(userValues?:Record<string,string>)=>void;save:()=>void;load:()=>void;sound:()=>void;muted:boolean;preview:boolean;error:string|null;notice:string|null;
@@ -117,6 +118,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   if(history?.enabled&&!preview&&node&&['dialogue','choice'].includes(node.type))context.historyReceipt={epoch:history.epoch,key:JSON.stringify([s?.periodIndex,s?.activeNarrative?.kind,s?.activeNarrative?.id,s?.activeNarrative?.nodeId,s?.activeNarrative?.actorId]),kind:node.type==='choice'?'prompt':'dialogue',...(view.locale?{locale:view.locale}:{}),date:readingHistoryDate(view.time,view.calendarProject?.calendar,view.locale)};
   const forecastBridge=window.player,requestForecast=forecastBridge?.forecastPhase?.bind(forecastBridge);
   context.forecastPhase=s&&requestForecast?ids=>requestForecast(ids,{generation:view.generation,revision:s.stateRevision}):undefined;
+  if(view.scheduleDraft)context.scheduleDraft=view.scheduleDraft;context.onScheduleDraft=onScheduleDraft;
   context.generation=view.generation;if(view.lastCommittedPlan&&!preview)context.lastCommittedPlan=view.lastCommittedPlan;
   context.readingKey=JSON.stringify([view.generation,s?.periodIndex,s?.activeNarrative?.kind,s?.activeNarrative?.id,s?.activeNarrative?.nodeId,context.phase]);
   if(view.gameId&&!preview)context.gameId=view.gameId;

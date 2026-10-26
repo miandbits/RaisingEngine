@@ -37,6 +37,7 @@ Open Raising Studio and choose **My first raising game · recommended**. Its gui
 - [App branding, explicit notices and verified backup restoration](docs/creator-release.md)
 - [Period-by-period balance and before/after comparison](docs/manual/balance-period-comparisons.md)
 - [Verified presentation updates that preserve saves](docs/manual/image-only-updates.md)
+- [Visual activity cards and period planning](docs/activity-board.md)
 
 ## Build from a clean checkout
 

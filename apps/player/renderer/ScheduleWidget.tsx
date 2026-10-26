@@ -1,3 +1,6 @@
+import {ActivityBoard} from './ActivityBoard.js';
+import type {ScheduleDraft} from '../../../packages/player-service/save-metadata.js';
+import type {ScheduleDraftOwner} from '../../../packages/player-service/activity-board.js';
 import {PhaseForecast} from './PhaseForecast.js';
 import type {PhaseForecastReply} from '../../../packages/player-service/phase-forecast.js';
 import type {PlanningControl} from './PlanningGuide.js';
@@ -13,13 +16,15 @@ import type {ContentSnapshot} from '../../../packages/core/model.js';
 import {activityPreview} from '../../../packages/visual/activity-summary.js';
 
 export interface ScheduleActivity {
-  id:string; label:string; iconAssetId?:string; description?:string;
+  id:string; label:string; iconAssetId?:string; description?:string;requirements?:ContentSnapshot['activities'][number]['requirements'];
   baseEffects?:ContentSnapshot['activities'][number]['baseEffects'];
   successCheck?:NonNullable<ContentSnapshot['activities'][number]['successCheck']>;
   costs?:readonly {attributeId:string;amount:number}[];
   previewAttributes?:readonly {attributeId:string;label?:string;valueFormat?:string}[];
 }
 export interface ScheduleContext {
+  scheduleDraft?:ScheduleDraft|undefined;
+  onScheduleDraft?:((draft:ScheduleDraft,owner:ScheduleDraftOwner)=>void)|undefined;
   forecastPhase?:((activityIds:string[])=>Promise<PhaseForecastReply|null>)|undefined;
   forecastMask?:number;
   gameId?:string;generation?:number;lastCommittedPlan?:LastCommittedPlan;
@@ -62,6 +67,7 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
   const selectionDriven=!readable&&['calendar','menu'].includes(element.scheduleLayout??'');
   const forecastContext=selectionDriven?{...context,forecastMask:planner.mask,plan:context.plan.map((id,index)=>index>=context.period&&!(planner.mask&(1<<index))?'':id)}:context;
   const forecast=element.showPhaseForecast?<PhaseForecast id={element.id} context={forecastContext} disabled={disabled}/>:null;
+  if(element.scheduleLayout==='activity-board')return <ActivityBoard element={element} context={context} planning={planning} assetUrl={assetUrl} ownerKey={ownerKey??''} disabled={disabled} readable={readable} guidance={guidance} planReuse={planReuse} control={planningControl} onPlanReplace={onPlanReplace}/>;
   if(readable&&compact)return <>{forecast}<CompactSchedule id={element.id} context={context} labels={labels} groups={groups} disabled={disabled} chooseActivity={chooseActivity} guidance={guidance} planReuse={planReuse} selectionKey={JSON.stringify([ownerKey,planner])} applyPlan={onPlanReplace?ids=>{if(editable){onPlanReplace(ids);set({...planner,mask:full,slot:context.period,groupId:''});}}:undefined} control={planningControl??(element.scheduleLayout==='menu'&&onCommit?{label:context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정',effect:'confirm-and-execute'}:undefined)}/>{element.scheduleLayout==='menu'&&<button className="readable-schedule-commit" disabled={!editable} onClick={onCommit}>{context.locale?.startsWith('en')?'Confirm schedule':context.locale?.startsWith('ja')?'予定を確定':'일정 확정'}</button>}</>;
   if(!readable&&element.scheduleLayout==='calendar'){
     const {year,month}=context.calendarTime??{year:1,month:1};

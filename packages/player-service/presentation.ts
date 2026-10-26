@@ -1,3 +1,4 @@
+import {hasActivityBoard,initialScheduleDraft,validBoardDraft} from './activity-board.js';
 import {directionValid,type DirectionCursor,type Direction} from '../visual/direction.js';
 import type {ContentSnapshot,RunState} from '../core/model.js';
 import {planActivityTimeline,createTimelineCursor,validateTimelineCursor,advanceTimeline,skipTimeline,type TimelineCursor,type TimelinePlan} from '../visual/timeline.js';
@@ -10,12 +11,18 @@ export type TimelineAction={type:'timelineTick';deltaMs:number}|{type:'timelineP
 
 /** UI-only playback. Never dispatches a simulation command or modifies a RunState. */
 export class PlayerPresentation {
+  scheduleDraft:ScheduleDraft|null=null;
+  draft(content:ContentSnapshot,state:RunState|null):ScheduleDraft|null {
+    if(!state||!hasActivityBoard(content))return null;
+    if(!validBoardDraft(content,state,this.scheduleDraft))this.scheduleDraft=initialScheduleDraft(state,content.project.periodsPerMonth);
+    return structuredClone(this.scheduleDraft);
+  }
   cursor:TimelineCursor|null=null;
   scheduleSpeed:1|4=1;
   battleSelection:BattleSelection|null=null;
   extensions:Record<string,unknown>={};
   direction:DirectionCursor|null=null;
-  clear(){this.scheduleSpeed=1;this.direction=null;this.cursor=null;this.battleSelection=null;this.extensions={};}
+  clear(){this.scheduleDraft=null;this.scheduleSpeed=1;this.direction=null;this.cursor=null;this.battleSelection=null;this.extensions={};}
   selectedBattle(content:ContentSnapshot,state:RunState|null):BattleSelection|null {
     if(this.battleSelection&&(!state||!validateBattleSelection(content,state,this.battleSelection)))this.battleSelection=null;
     return this.battleSelection?structuredClone(this.battleSelection):null;
@@ -28,7 +35,8 @@ export class PlayerPresentation {
   }
   envelope(content:ContentSnapshot,state:RunState):PlayerPresentationEnvelope {
     const selection=this.selectedBattle(content,state);
-    return {version:1,...(this.scheduleSpeed!==1?{scheduleSpeed:this.scheduleSpeed}:{}),...(this.direction?{direction:structuredClone(this.direction)}:{}),timeline:this.view(content,state)?.cursor??null,...(selection?{battleSelection:selection}:{}),...(Object.keys(this.extensions).length?{extensions:structuredClone(this.extensions)}:{})};
+    const draft=this.draft(content,state);
+    return {version:1,...(draft?{scheduleDraft:draft}:{}),...(this.scheduleSpeed!==1?{scheduleSpeed:this.scheduleSpeed}:{}),...(this.direction?{direction:structuredClone(this.direction)}:{}),timeline:this.view(content,state)?.cursor??null,...(selection?{battleSelection:selection}:{}),...(Object.keys(this.extensions).length?{extensions:structuredClone(this.extensions)}:{})};
   }
   restore(content:ContentSnapshot,state:RunState,envelope:PlayerPresentationEnvelope|undefined):string|null {
     if(envelope!==undefined&&(!envelope||typeof envelope!=='object'||!Object.hasOwn(envelope,'timeline')||Object.keys(envelope).some(key=>!['timeline','version','battleSelection','extensions','direction','scheduleSpeed','scheduleDraft','saveRecord'].includes(key))||envelope.version!==1))return '지원하지 않는 연출 저장 구조입니다.';
@@ -44,6 +52,7 @@ export class PlayerPresentation {
     if(envelope&&!plan&&cursor!==null)return '활동 결과가 없는 연출 저장입니다.';
     if(envelope?.battleSelection!==undefined&&envelope.battleSelection!==null&&!validateBattleSelection(content,state,envelope.battleSelection))return '전투 선택 저장이 현재 전투 상태와 일치하지 않습니다.';
     if(envelope?.direction&&!directionValid((content.project.visual?.direction??{actors:[],sequences:[]}) as Direction,envelope.direction))return '연출 저장 위치가 올바르지 않습니다.';
+    this.scheduleDraft=hasActivityBoard(content)&&envelope?.scheduleDraft?structuredClone(envelope.scheduleDraft):null;
     this.scheduleSpeed=envelope?.scheduleSpeed??(plan?.resultPlayback?cursor?.speed??1:1);
     this.direction=envelope?.direction?structuredClone(envelope.direction):null;
     this.cursor=cursor?structuredClone(cursor):null;this.battleSelection=envelope?.battleSelection?structuredClone(envelope.battleSelection):null;this.extensions=structuredClone(envelope?.extensions??{});return null;

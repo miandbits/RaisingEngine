@@ -41,6 +41,10 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      if(e.scheduleLayout==='activity-board'){
+        if(e.kind!=='schedule')ctx.report(doc,ep+'/scheduleLayout','UI_ACTIVITY_BOARD_KIND','Activity boards require a schedule widget.');
+        if(root.roster)ctx.report(doc,ep+'/scheduleLayout','UI_ACTIVITY_BOARD_ROSTER','Activity boards currently support single-character schedules. Choose another schedule layout for a roster project.');
+      }
       if(e.action==='resumeContext'&&!visual.resumeContext)ctx.report(doc,ep+'/action','UI_RESUME_CONTEXT_REQUIRED','Configure current reminders in project settings before connecting this action.');
       if(e.action==='readingHistory'&&!visual.readingHistory)ctx.report(doc,ep+'/action','UI_READING_HISTORY_REQUIRED','Enable recent reading in project settings before connecting this action.');
       if(e.activityIcons!==undefined){
@@ -92,14 +96,15 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if(e.imageAssetId){const asset=ctx.resolve(ctx.assets,String(e.imageAssetId),doc,ep+'/imageAssetId','이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,ep+'/imageAssetId','UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
       if(e.styleId&&!styleIds.has(String(e.styleId)))ctx.report(doc,ep+'/styleId','UI_STYLE_REFERENCE','연결된 공통 스타일이 없습니다.');
       for(const [a,id] of ((e.attributeIds??[]) as string[]).entries())ctx.resolve(ctx.attributes,id,doc,`${ep}/attributeIds/${a}`,'능력·자원');
-      for(const field of ['frameAssetId','entryFrameAssetId'])if(e[field])ctx.resolve(ctx.assets,String(e[field]),doc,`${ep}/${field}`,'이미지');
+      for(const field of ['frameAssetId','entryFrameAssetId'])if(e[field]){const asset=ctx.resolve(ctx.assets,String(e[field]),doc,`${ep}/${field}`,'이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,`${ep}/${field}`,'UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
+      if(e.scheduleGroups!==undefined&&e.kind!=='schedule')ctx.report(doc,ep+'/scheduleGroups','UI_SCHEDULE_GROUPS_KIND','Activity groups require a schedule widget.');
       const groupIds=new Set<string>();
       for(const [g,group] of objectItems(e.scheduleGroups).entries()) {
         const gp=`${ep}/scheduleGroups/${g}`;
         if(groupIds.has(String(group.id)))ctx.report(doc,`${gp}/id`,'UI_SCHEDULE_GROUP_DUPLICATE','일정 분류 ID가 중복되었습니다.');
         groupIds.add(String(group.id));
         for(const [a,id] of ((group.activityIds??[]) as string[]).entries())ctx.resolve(ctx.activities,id,doc,`${gp}/activityIds/${a}`,'활동');
-        if(group.iconAssetId)ctx.resolve(ctx.assets,String(group.iconAssetId),doc,`${gp}/iconAssetId`,'이미지');
+        if(group.iconAssetId){const asset=ctx.resolve(ctx.assets,String(group.iconAssetId),doc,`${gp}/iconAssetId`,'이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,`${gp}/iconAssetId`,'UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
       }
       if(e.scheduleLayout==='menu'&&!objectItems(e.scheduleGroups).length)ctx.report(doc,`${ep}/scheduleGroups`,'UI_SCHEDULE_GROUP_REQUIRED','분류 메뉴에는 활동 분류를 추가하세요.');
       const systemActions=['acceptQuest','claimQuest','equip','unequip','moveExpedition','returnFromExpedition','battleAction'];

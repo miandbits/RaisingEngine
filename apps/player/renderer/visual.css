@@ -293,3 +293,53 @@ button.engine-surface-host{position:relative;}
 [data-reading-control-colors~="hoverFill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):hover:not(:disabled){background-color:var(--control-hoverFill)}
 [data-reading-control-colors~="pressedFill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):active:not(:disabled){background-color:var(--control-pressedFill)}
 [data-reading-control-colors~="disabledColor"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):disabled{color:var(--control-disabledColor)}
+
+/* Opt-in activity board: real cards, content-sized labels and independent review state. */
+.activity-board{display:flex;flex-direction:column;height:100%;min-height:0;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;white-space:normal;overflow-wrap:anywhere;padding:6px;overscroll-behavior:contain;touch-action:pan-x pan-y;container-type:inline-size}
+.activity-board button{box-sizing:border-box;min-height:var(--canvas-control-min,44px);min-width:var(--canvas-control-min,44px);max-width:100%;font:inherit;line-height:1.4;white-space:normal;overflow-wrap:anywhere;padding:8px 10px;color:#263c36;background:#fffdf6;border:1px solid #718c84;border-radius:8px}
+.activity-board button:disabled{opacity:.65}
+.activity-board button:focus-visible,.activity-board-detail-body:focus-visible{outline:3px solid #b38b49;outline-offset:-3px}
+.activity-board button[aria-pressed=true]{border-width:3px;box-shadow:inset 0 0 0 1px currentColor}
+.activity-board-periods{display:flex;gap:8px;max-height:100px;min-height:68px;overflow:auto;flex-shrink:0;touch-action:pan-x pan-y}
+.activity-board-ticket{display:flex;flex-direction:column;flex:1 0 170px;align-items:stretch;text-align:left;gap:4px}
+.activity-board-assignment{display:flex;align-items:center;gap:8px;min-width:0}
+.activity-board-assignment strong{min-width:0;overflow-wrap:anywhere}
+.activity-board-ticket .activity-board-image{width:32px;height:32px;flex-shrink:0}
+.activity-board-period{font-size:.75em;letter-spacing:.04em}
+.activity-board-tools,.activity-board-categories,.activity-board-actions{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:6px 0;flex-shrink:0}
+.activity-board-tools>*,.activity-board-categories>*{min-width:0;max-width:100%}
+.activity-board-tools .phase-forecast-launcher{margin:0}
+.activity-board-tools{flex-wrap:nowrap;overflow-x:auto;touch-action:pan-x pan-y}
+.activity-board-tools>*{flex-shrink:0}
+.activity-board-tools .plan-reuse{margin:0}
+.plan-reuse-compact>p{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.activity-board-categories{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;touch-action:pan-x pan-y}
+.activity-board-categories>button{flex:0 0 auto}
+.activity-board-categories button{display:flex;gap:8px;align-items:center}
+.activity-board-categories img{width:28px;height:28px;object-fit:contain;flex-shrink:0}
+.activity-board-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch;flex:1;min-height:128px;overflow:hidden}
+.activity-board-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,148px),1fr));gap:10px;align-content:start;align-items:start;grid-auto-rows:max-content;overflow-y:auto;min-height:0;padding:2px;overscroll-behavior:contain}
+.activity-board-card{display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:8px;background-repeat:no-repeat}
+.activity-board-image{width:100%;height:90px;object-fit:cover;border-radius:4px;pointer-events:none}
+.activity-board-details{display:flex;flex-direction:column;min-width:0;min-height:0;line-height:1.5;white-space:pre-wrap;border:1px solid currentColor;border-radius:8px;overflow:hidden}
+.activity-board-detail-body{flex:1;min-height:0;overflow-y:auto;padding:10px;overscroll-behavior:contain}
+.activity-board-detail-title{font-weight:700}
+.activity-board-details p{margin:.75em 0}
+.activity-board-note{font-size:.9em}
+.activity-board-actions{padding:0 8px}
+.activity-board-actions>button{flex:1 1 130px}
+.activity-board-readable{height:auto;overflow:visible;padding:0;display:block}
+.activity-board-readable .activity-board-periods{display:flex;flex-direction:column;max-height:none;overflow:visible}
+.activity-board-readable .activity-board-ticket{flex:auto}
+.activity-board-readable .activity-board-tools{flex-wrap:wrap;overflow:visible}
+.activity-board-review .activity-board-workspace{display:flex;flex-direction:column;overflow:visible}
+.activity-board-review .activity-board-categories{max-height:none;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden}
+.activity-board-review .activity-board-cards,.activity-board-review .activity-board-details{width:100%;box-sizing:border-box;overflow:visible}
+.activity-board-review .activity-board-detail-body{overflow:visible}
+.activity-board-review .activity-board-card{font:inherit;min-height:44px}
+@container(max-width:560px){.activity-board:not(.activity-board-readable) .activity-board-workspace{grid-template-columns:1fr;overflow:visible;flex:none}.activity-board:not(.activity-board-readable) .activity-board-cards{max-height:280px}.activity-board:not(.activity-board-readable) .activity-board-detail-body{max-height:280px}}
+
+.activity-board-card>*{flex-shrink:0}
+
+/* A finger can pan a catalog strip even when it starts on a real button. */
+.visual-element .activity-board :is(.activity-board-periods,.activity-board-tools,.activity-board-categories) button{touch-action:pan-x pan-y}

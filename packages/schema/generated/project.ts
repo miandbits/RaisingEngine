@@ -3006,7 +3006,7 @@ export type Element = {
    * Show the selected activity's authored description below each schedule column. Off by default.
    */
   showActivityDescription?: boolean;
-  scheduleLayout?: "columns" | "calendar" | "menu" | "board";
+  scheduleLayout?: "columns" | "calendar" | "menu" | "board" | "activity-board";
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**
@@ -8467,7 +8467,7 @@ export type ComponentChild = {
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
-  scheduleLayout?: "columns" | "calendar" | "menu" | "board";
+  scheduleLayout?: "columns" | "calendar" | "menu" | "board" | "activity-board";
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**

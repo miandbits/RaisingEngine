@@ -199,7 +199,7 @@ public:
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
     markup.extensions=&extensions;markup.reading_history=&reading_history;
-    game.accepted_replacement=[this](const std::string& reason){++markup.reuse_generation;markup.plan_reuse_open=false;markup.phase_forecast_open=false;markup.phase_forecast_cache_key=nullptr;reset_reading_history(reason);reset_resume_context(reason);};
+    game.accepted_replacement=[this](const std::string& reason){++markup.reuse_generation;markup.close_activity_board();markup.plan_reuse_open=false;markup.phase_forecast_open=false;markup.phase_forecast_cache_key=nullptr;reset_reading_history(reason);reset_resume_context(reason);};
     game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){
       // Conditions/routing may reveal a plugin only as a result of this command.
       // Synchronize logical mounts before its single observation, without displaying a window.
@@ -279,8 +279,11 @@ public:
     if(eventType=="click"&&!portable_active()&&!markup.resume_context_open)ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.slot_confirmation.empty())markup.slot_confirmation.clear();else if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
-    if(eventType=="keydown"&&(event.GetTargetElement()->IsClassSet("schedule-detail-pane")||event.GetTargetElement()->IsClassSet("scroll-group")||event.GetTargetElement()->GetId()=="reading-main")) {
-      auto* pane=event.GetTargetElement();const auto key=event.GetParameter<int>("key_identifier",0);float y=pane->GetScrollTop();
+    if(eventType=="keydown"&&(event.GetTargetElement()->IsClassSet("activity-board-details")||event.GetTargetElement()->IsClassSet("activity-board-catalog")||event.GetTargetElement()->IsClassSet("activity-board")||event.GetTargetElement()->IsClassSet("activity-board-periods")||event.GetTargetElement()->IsClassSet("schedule-detail-pane")||event.GetTargetElement()->IsClassSet("scroll-group")||event.GetTargetElement()->GetId()=="reading-main")) {
+      auto* pane=event.GetTargetElement();const auto key=event.GetParameter<int>("key_identifier",0);
+      if(pane->IsClassSet("activity-board-details")&&markup.readable_active)for(auto* parent=pane->GetParentNode();parent;parent=parent->GetParentNode())if(parent->GetId()=="reading-main"||parent->IsClassSet("activity-board")){pane=parent;break;}
+      if(pane->IsClassSet("activity-board-periods")){float x=pane->GetScrollLeft();if(key==Rml::Input::KI_LEFT)x-=80;else if(key==Rml::Input::KI_RIGHT)x+=80;else if(key==Rml::Input::KI_HOME)x=0;else if(key==Rml::Input::KI_END)x=pane->GetScrollWidth();else return;pane->SetScrollLeft(x);event.StopPropagation();return;}
+      float y=pane->GetScrollTop();
       if(key==Rml::Input::KI_DOWN)y+=48;else if(key==Rml::Input::KI_UP)y-=48;
       else if(key==Rml::Input::KI_PRIOR)y-=pane->GetClientHeight()*.85f;else if(key==Rml::Input::KI_NEXT)y+=pane->GetClientHeight()*.85f;
       else if(key==Rml::Input::KI_HOME)y=0;else if(key==Rml::Input::KI_END)y=pane->GetScrollHeight();else return;
@@ -339,6 +342,7 @@ public:
       if(found!=markup.actions.end()) {if(!element->HasAttribute("disabled"))pending.push_back(found->second);return;}
     }
   }
+  #include "activity-board-app.inc"
   #include "save-slots-app.inc"
   void refresh_save_preview() {
     markup.saved_preview={{"status","empty"}};
@@ -368,6 +372,7 @@ public:
       if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))collection_scroll[markup.screen_id+"/roster-"+entry.value("id","")]=element->GetScrollTop();
     if(document)for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")
       if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id","")))collection_scroll[markup.screen_id+"/plan-periods-"+entry.value("id","")]=strip->GetScrollLeft();
+    if(document)for(const auto& entry:markup.render_elements)if(entry.value("scheduleLayout","")=="activity-board")for(const auto* part:{"periods","groups","catalog","viewport"})if(auto* e=document->GetElementById(markup.activity_board_id(entry,part)))collection_scroll[markup.screen_id+"/"+e->GetId()]=(std::string(part)=="periods"||std::string(part)=="groups")?e->GetScrollLeft():e->GetScrollTop();
     SDL_GetWindowSizeInPixels(window,&markup.viewport_width,&markup.viewport_height);
     SDL_GetWindowSize(window,&markup.window_width,&markup.window_height);
     SDL_Rect safe{};if(!SDL_GetWindowSafeArea(window,&safe))safe={0,0,markup.window_width,markup.window_height};
@@ -419,6 +424,7 @@ public:
       const auto found=collection_scroll.find(markup.screen_id+"/plan-periods-"+entry.value("id",""));
       if(found!=collection_scroll.end())if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id","")))strip->SetScrollLeft(found->second);
     }
+    for(const auto& entry:markup.render_elements)if(entry.value("scheduleLayout","")=="activity-board")for(const auto* part:{"periods","groups","catalog","viewport"})if(auto* e=document->GetElementById(markup.activity_board_id(entry,part))){const auto found=collection_scroll.find(markup.screen_id+"/"+e->GetId());if(found!=collection_scroll.end()){if(std::string(part)=="periods"||std::string(part)=="groups")e->SetScrollLeft(found->second);else e->SetScrollTop(found->second);}}
     std::map<std::string,std::string> next_entrance_keys;
     if(!preview())for(const auto& entry:markup.render_elements) {
       const auto motion=entry.value("motion","none");if(motion=="none")continue;
@@ -445,6 +451,7 @@ public:
     // A generated save action takes focus after the old list's reading anchor
     // is restored. Reveal its real target without changing other reading views.
     if(save_focus&&!explicit_return_focus){save_focus->Focus();context->Update();save_focus->ScrollIntoView(true);context->Update();}
+    if(!markup.activity_board_focus.empty()){if(auto* target=document->GetElementById(markup.activity_board_focus);target&&!target->HasAttribute("disabled")){target->Focus();context->Update();target->ScrollIntoView(true);context->Update();}markup.activity_board_focus.clear();}
     restore_portable_focus();
     entrance_keys=std::move(next_entrance_keys);dirty=false;
     try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
@@ -458,6 +465,8 @@ public:
     try {
       if(portable_action(incoming))return;
       if(resume_context_action(incoming))return;
+      if(activity_board_action(incoming))return;
+      if(markup.activity_board_open&&incoming.value("type","").rfind("activityBoard",0)!=0)markup.close_activity_board();
       if(readable_action(incoming))return;
       if(incoming.value("type","")=="readingRosterActivity"){
         const auto actor=incoming.value("actorId","");if(!markup.roster_draft.contains(actor))throw std::runtime_error("Unknown roster actor");
@@ -548,7 +557,7 @@ public:
         std::string reason;if(!game.available(action,&reason))throw std::runtime_error(reason);
         markup.pending_purchase=action;markup.pending_confirmation=transaction.value("confirmation",Json::object());markup.pending_revision=game.state.value("stateRevision",0);dirty=true;return;
       }
-      if(type=="start") {reading_positions.clear();reading_position_key.clear();markup.compact_picker=false;slot_auto_revision=-1;recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);game.settle();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
+      if(type=="start") {reading_positions.clear();reading_position_key.clear();markup.compact_picker=false;markup.close_activity_board();slot_auto_revision=-1;recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);game.settle();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
       else if(type=="quantity"){auto& value=markup.quantities[action.value("key","")];value=std::clamp(value+action.value("delta",0),1,std::max(1,action.value("maximum",1)));}
       else if(type=="confirmPurchase"){auto purchase=markup.pending_purchase;markup.pending_purchase=nullptr;if(!purchase.is_null()){
         if(game.state.value("stateRevision",-1)!=markup.pending_revision)throw std::runtime_error("상태가 변경되었습니다. 내용을 다시 확인해 주세요.");
@@ -696,6 +705,7 @@ public:
       if(portable_active()&&(event.key.key==SDLK_ESCAPE||event.key.key==SDLK_AC_BACK)){portable_action({{"type","portableCancel"}});return;}
       if(portable_active()&&(event.key.key==SDLK_F2||event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
       if(event.key.key==SDLK_ESCAPE&&markup.resume_context_open){resume_context_action({{"type","uiBack"}});return;}
+      if(event.key.key==SDLK_ESCAPE&&markup.activity_board_open){activity_board_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE&&markup.reading_overlay()){readable_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
@@ -769,6 +779,8 @@ public:
         nodes.push_back(rendered_node_report({{"id",detail->GetId()},{"kind","schedule-details"}},detail,markup.width,markup.height,context));
         nodes.back()["scrollTop"]=detail->GetScrollTop();nodes.back()["scrollHeight"]=detail->GetScrollHeight();nodes.back()["clientHeight"]=detail->GetClientHeight();nodes.back()["scrollWidth"]=detail->GetScrollWidth();nodes.back()["clientWidth"]=detail->GetClientWidth();
       }
+      if(entry.value("scheduleLayout","")=="activity-board")for(const auto* part:{"viewport","periods","groups","catalog","cards","details"})if(auto* node=document->GetElementById(markup.activity_board_id(entry,part))){nodes.push_back(rendered_node_report({{"id",node->GetId()},{"kind",std::string("activity-board-")+part},{"ownerId",entry.value("id","")}},node,markup.width,markup.height,context));nodes.back()["scrollTop"]=node->GetScrollTop();nodes.back()["scrollLeft"]=node->GetScrollLeft();nodes.back()["scrollHeight"]=node->GetScrollHeight();nodes.back()["clientHeight"]=node->GetClientHeight();nodes.back()["scrollWidth"]=node->GetScrollWidth();nodes.back()["clientWidth"]=node->GetClientWidth();}
+      if(entry.value("scheduleLayout","")=="activity-board"&&markup.activity_board_reading)if(auto* footer=document->GetElementById(entry.value("id","")+"__board-footer")){Rml::ElementList controls;footer->QuerySelectorAll(controls,"button");for(auto* control:controls)nodes.push_back(rendered_node_report({{"id",control->GetId()},{"kind","runtime-button"},{"ownerId",entry.value("id","")},{"label",markup.labels[control->GetId()]}},control,markup.width,markup.height,context));}
       if(element&&entry.value("kind","")!="button"){
         Rml::ElementList buttons;element->QuerySelectorAll(buttons,"button");
         for(auto* button:buttons){if(runtime_button_count++>=1024){runtime_buttons_truncated=true;break;}
@@ -801,7 +813,7 @@ public:
     return {{"windowTitle",SDL_GetWindowTitle(window)},{"layoutDiagnostics",layout_diagnostics},{"nativeTextInput",static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->KeyboardReport()},{"resumeContext",{{"enabled",markup.resume_context_enabled()},{"open",markup.resume_context_open},{"projection",markup.resume_context_open?markup.resume_context_projection():Json()}}},{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
-      {"phaseForecast",{{"enabled",markup.phase_forecast_enabled()},{"open",markup.phase_forecast_open},{"elementId",markup.phase_forecast_element},{"requests",markup.phase_forecast_requests},{"result",markup.phase_forecast_open?markup.phase_forecast_reply:Json()}}},{"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
+      {"phaseForecast",{{"enabled",markup.phase_forecast_enabled()},{"open",markup.phase_forecast_open},{"elementId",markup.phase_forecast_element},{"requests",markup.phase_forecast_requests},{"result",markup.phase_forecast_open?markup.phase_forecast_reply:Json()}}},{"activityBoard",{{"open",markup.activity_board_open},{"reading",markup.activity_board_reading},{"elementId",markup.activity_board_element},{"slot",markup.activity_board_slot},{"activityId",markup.activity_board_activity},{"group",markup.activity_board_group},{"valid",markup.activity_board_valid()}}},{"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
       {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicGain",audio.music_gain()},{"effectsGain",audio.effects_gain()},{"musicPlaying",audio.playing()},{"musicCursor",audio.cursor()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
   }

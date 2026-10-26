@@ -1,3 +1,8 @@
+import {hasActivityBoard,initialScheduleDraft,validBoardDraft,firstDraftSlot,type ScheduleDraftOwner} from '../player-service/activity-board.js';
+import type {ScheduleDraft} from '../player-service/save-metadata.js';
+import {resolveScreenElements} from '../visual/components.js';
+import {resolveElementStyle} from '../visual/styles.js';
+import {resolvePresentation,presentationActivity} from '../visual/variants.js';
 import {verifyPresentationVisual} from '../visual/presentation-update.js';
 import {requestPhaseForecast,type PhaseForecastReply} from '../player-service/phase-forecast.js';
 import {deriveLastCommittedPlan,hasPlanReuse} from '../player-service/plan-reuse.js';
@@ -102,7 +107,8 @@ export class WebPlayerController implements PlayerBridge {
     this.locale=localeId(this.content.project.localization,this.locale);
     const c = this.localizedContent(), state = this.session?.state ?? null, cursor = state?.activeNarrative;
     const projection = this.projection(state,c);
-    return { ...(hasPlanReuse(c)?{lastCommittedPlan:deriveLastCommittedPlan(this.session?.commands??[],c.project.periodsPerMonth,c.activities.map(a=>a.id))}:{}),gameId:c.project.gameId, ...(this.hasSlots?{saveSlots:{...this.slotView,rows:this.slotView.rows.map(row=>({...row,...(row.periodIndex!==undefined&&c.project.calendar?{date:calendarText(calendarDate(c.project,row.periodIndex),c.project.calendar,this.locale)}:{})})),...(state?{current:this.currentRecord()}:{}),checkpointPending:!!state&&(this.slotAutoGeneration!==this.generation||this.slotAutoRevision!==state.stateRevision)}}:{}), generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
+    const draft=this.presentation.draft(this.content,state);
+    return { ...(draft?{scheduleDraft:draft}:{}),...(hasPlanReuse(c)?{lastCommittedPlan:deriveLastCommittedPlan(this.session?.commands??[],c.project.periodsPerMonth,c.activities.map(a=>a.id))}:{}),gameId:c.project.gameId, ...(this.hasSlots?{saveSlots:{...this.slotView,rows:this.slotView.rows.map(row=>({...row,...(row.periodIndex!==undefined&&c.project.calendar?{date:calendarText(calendarDate(c.project,row.periodIndex),c.project.calendar,this.locale)}:{})})),...(state?{current:this.currentRecord()}:{}),checkpointPending:!!state&&(this.slotAutoGeneration!==this.generation||this.slotAutoRevision!==state.stateRevision)}}:{}), generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
       ...(c.project.localization?{localization:c.project.localization,locale:this.locale}:{}),
@@ -127,6 +133,22 @@ export class WebPlayerController implements PlayerBridge {
   async forecastPhase(activityIds:string[],version:Version):Promise<PhaseForecastReply|null> {
     if(!this.session||!this.current(version)||!Array.isArray(activityIds)||activityIds.some(id=>typeof id!=='string'))return null;
     return requestPhaseForecast(this.content,this.session.state,activityIds,input=>this.runtime.request(input));
+  }
+  async setScheduleDraft(draft:ScheduleDraft,owner:ScheduleDraftOwner,version:Version,expected:ScheduleDraft):Promise<PlayerReply> {
+    const state=this.session?.state,c=this.localizedContent(),visual=c.project.visual;
+    const rejected=()=>this.reply(this.words('계획 화면이 바뀌었습니다. 다시 선택해 주세요.','The plan changed. Please select again.','計画が変わりました。もう一度選んでください。'));
+    if(!state||!this.current(version)||!hasActivityBoard(c)||!visual||this.slotBusy||this.slotView.screenId||this.extensions?.restorationPending||this.extensions?.presentationPending||!['planning','ready'].includes(state.phase)||!validBoardDraft(c,state,draft)||canonical(expected)!==canonical(this.presentation.draft(this.content,state)))return rejected();
+    const projection=this.projection(state,c),data=projectDataUi(c,state,projection.gameplay,input=>this.runtime.request(input),{systems:projection.systems});
+    const screen=resolveScreen(visual,state,projection.narrative?.node.type,data.conditions);
+    if(!owner||owner.screenId!==screen||typeof owner.elementId!=='string'||projection.narrative?.node.type==='dialogue'||projection.narrative?.node.type==='choice')return rejected();
+    const source=resolveScreenElements(visual,screen,undefined,{ignoreClipping:true}).find(element=>element.id===owner.elementId);
+    if(!source)return rejected();
+    const passes=(condition:import('../visual/model.js').Element['visibleCondition'])=>!condition||data.conditions[JSON.stringify(condition)]===true;
+    const element=resolveElementStyle(visual,resolvePresentation(source,presentationActivity(state,source),passes));
+    const when=element.visibleWhen??'always';
+    if(element.kind!=='schedule'||element.scheduleLayout!=='activity-board'||element.hidden||(element.opacity??1)<=0||!['always','planning',state.phase].includes(when)||!passes(element.visibleCondition)||!passes(element.enabledCondition)||element.dataEnabled===false||data.availability[screen]?.[element.id]?.enabled===false||draft.slot<firstDraftSlot(state,c.project.periodsPerMonth))return rejected();
+    this.presentation.scheduleDraft=structuredClone(draft);
+    return this.reply();
   }
   async view() { return this.reply(); }
   async setLocale(locale:string){if(!this.content.project.localization?.locales.some(l=>l.id===locale))return this.reply('등록되지 않은 언어입니다.');this.locale=locale;return this.reply();}
@@ -158,6 +180,7 @@ export class WebPlayerController implements PlayerBridge {
     this.choiceFeedback=trackChoiceFeedback(this.choiceFeedback,this.content,session.state,r.transition.command,{state:r.state,transition:r.transition});
     this.session = { origin: session.origin, commands: [...session.commands, r.transition.command], state: r.state,
       relationshipChanges:trackRelationshipChanges(session.relationshipChanges??{},session.state,r.state) };
+    if(r.transition.command.type==='setSchedule'&&hasActivityBoard(this.content))this.presentation.scheduleDraft=initialScheduleDraft(r.state,this.content.project.periodsPerMonth);
     observing?.observePresentation(before, { state: r.state, narrative: this.projection(r.state).narrative }, command, r.state);
     cues.push(...r.transition.soundCues); return null;
   }
@@ -216,7 +239,7 @@ export class WebPlayerController implements PlayerBridge {
     if(!this.session)throw new Error('No game to save.');
     if(this.extensions?.presentationPending)throw new Error(this.words('화면 갱신 후 다시 저장해 주세요.','Wait for the screen to update, then save again.','画面の更新後にもう一度保存してください。'));
     const extensions=this.extensions?.save(true);
-    const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||extensions||record?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{}),...(record?{saveRecord:record}:{})}:undefined;
+    const presentation:PresentationEnvelope|undefined=this.presentation.view(this.content,this.session.state)||this.presentation.selectedBattle(this.content,this.session.state)||this.presentation.draft(this.content,this.session.state)||extensions||record?{...this.presentation.envelope(this.content,this.session.state),...(extensions?{extensions}:{}),...(record?{saveRecord:record}:{})}:undefined;
     const text=canonical({saveVersion:'1.0.0',coreVersion:CORE_VERSION,contentFingerprint:this.content.contentFingerprint,origin:this.session.origin,commands:this.session.commands,state:this.session.state,...(presentation?{playerPresentation:presentation}:{})});
     if(new TextEncoder().encode(text).length>MAX_BYTES)throw new Error('Save exceeds 16 MiB. Export an earlier checkpoint.');
     return text;
@@ -252,14 +275,15 @@ export class WebPlayerController implements PlayerBridge {
       const previousPresentation=structuredClone(this.presentation.cursor);
     const previousScheduleSpeed=this.presentation.scheduleSpeed;
     const previousBattleSelection=structuredClone(this.presentation.battleSelection);
+      const previousDraft=structuredClone(this.presentation.scheduleDraft);
       const presentationError=this.presentation.restore(this.content,state,saved.playerPresentation);
       if(presentationError)throw new Error(presentationError);
       this.session = { origin: structuredClone(saved.origin), commands: structuredClone(saved.commands) as Command[], state, relationshipChanges:replayed.relationshipChanges??{} };
       this.choiceFeedback=replayed.choiceFeedback??null;
       try {
         const error = this.settle([]);
-        if (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; return this.reply(error); }
-      } catch (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection; throw error; }
+        if (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection;this.presentation.scheduleDraft=previousDraft; return this.reply(error); }
+      } catch (error) { this.session = previous;this.choiceFeedback=previousChoice; this.presentation.cursor=previousPresentation;this.presentation.scheduleSpeed=previousScheduleSpeed; this.presentation.battleSelection=previousBattleSelection;this.presentation.scheduleDraft=previousDraft; throw error; }
       this.extensions?.reset(); this.extensions?.scheduleRestore(savedExtensions, true, this.session.state);
       this.generation++;this.slotView.screenId=null;this.slotView.confirmation=null;this.slotAutoGeneration=this.generation;this.slotAutoRevision=this.session.state.stateRevision;this.slotAutoPhase=this.session.state.phase; return this.reply(null, this.words('저장한 게임을 불러왔습니다.','Continued from your saved game.','保存したところから再開しました。'));
     } catch (e) { return this.reply(e instanceof Error ? e.message : String(e)); }

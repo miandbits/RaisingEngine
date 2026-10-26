@@ -100,6 +100,10 @@ endif()
 if(MINGW)
   target_compile_options(raising-player PRIVATE -finput-charset=UTF-8)
   target_link_options(raising-player PRIVATE -mwindows -static -static-libgcc -static-libstdc++)
+  # The redistributable runtime is branded before signing. PE resource editing
+  # cannot relocate MinGW's COFF symbol table; omit it from Release binaries.
+  # Keep symbols in Debug and RelWithDebInfo builds for native debugging.
+  target_link_options(raising-player PRIVATE "$<$<CONFIG:Release>:-s>")
 endif()
 add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
   ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:raising-player>/fonts)
