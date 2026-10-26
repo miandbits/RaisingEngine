@@ -9,6 +9,10 @@
 #include <QJsonDocument>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QScreen>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QWheelEvent>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -28,6 +32,85 @@ private slots:
     QCOMPARE(QObject::tr("처음 계획할 때 안내 표시"),locale=="ja"?QString::fromUtf8("初めて計画するときにガイドを表示"):locale=="ko"?QString::fromUtf8("처음 계획할 때 안내 표시"):QString("Show planning guidance on first use"));
     QCOMPARE(QObject::tr("마지막으로 확정한 계획 재사용 허용"),locale=="ja"?QString::fromUtf8("最後に確定した計画の再利用を許可"):locale=="ko"?QString::fromUtf8("마지막으로 확정한 계획 재사용 허용"):QString("Offer reuse of last confirmed plan"));
     const auto warning=QObject::tr("화면 %1의 누락, 중복 또는 미지원 요소를 수정하세요: %2").arg("phone","gone");QVERIFY(warning.contains("phone")&&warning.contains("gone"));if(locale!="ko")QVERIFY(!warning.contains(QString::fromUtf8("수정하세요")));
+  }
+  void shortWindowSettingsRemainReachable_data(){
+    QTest::addColumn<int>("height");QTest::addColumn<bool>("showDisableHelp");
+    QTest::newRow("672")<<672<<false;QTest::newRow("600")<<600<<false;
+    QTest::newRow("672-disabled-help")<<672<<true;QTest::newRow("600-disabled-help")<<600<<true;
+  }
+  void shortWindowSettingsRemainReachable(){
+    QFETCH(int,height);QFETCH(bool,showDisableHelp);
+    const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
+    QTemporaryDir temp(QDir::tempPath()+"/qt-reading-short-XXXXXX");QVERIFY(temp.isValid());
+    QVERIFY(copyFixture(engine+"/examples/my-first-raising-game",temp.path()));
+    StudioWindow w(engine);w.show();w.openProject(temp.path());
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+    const auto before=w.projectData();const auto revision=w.currentView().value("revision");
+    bool cancelled=false,saved=false;
+    QTimer::singleShot(100,&w,[&]{
+      auto d=w.findChild<QDialog*>("readableLayoutDialog");QVERIFY(d);
+      QTimer::singleShot(15000,d,&QDialog::reject);
+      QVERIFY(d->screen()->availableGeometry().contains(d->frameGeometry()));
+      auto screens=d->findChild<QComboBox*>("readableScreen");screens->setCurrentIndex(screens->findData("schedule"));
+      QVERIFY(choose(d->findChild<QListWidget*>("readableItems"),"schedule"));
+      auto enabled=d->findChild<QCheckBox*>("readableEnabled");enabled->setChecked(!showDisableHelp);
+      d->resize(940,height);QTest::qWait(50);QCOMPARE(d->size(),QSize(940,height));
+      auto area=d->findChild<QScrollArea*>("readableSettingsScroll");QVERIFY(area&&area->widgetResizable());
+      auto box=d->findChild<QDialogButtonBox*>("readableButtons");QVERIFY(box&&!area->isAncestorOf(box));
+      const auto footer=QRect(box->mapTo(d,QPoint()),box->size());
+      QVERIFY(d->rect().contains(footer));
+      QVERIFY(QRect(area->mapTo(d,QPoint()),area->size()).bottom()<footer.top());
+      for(auto button:box->buttons()){
+        const auto bounds=QRect(button->mapTo(d,QPoint()),button->size());
+        QVERIFY(d->rect().contains(bounds));QCOMPARE(d->childAt(bounds.center()),button);
+      }
+      auto bar=area->verticalScrollBar();QVERIFY(bar->maximum()>0);
+      auto preview=d->findChild<QComboBox*>("readablePreviewSize");
+      enabled->setFocus(Qt::TabFocusReason);bar->setValue(0);QTest::qWait(20);
+      for(int i=0;i<80&&!preview->hasFocus();++i){
+        QVERIFY(qApp->focusWidget());QTest::keyClick(qApp->focusWidget(),Qt::Key_Tab);QTest::qWait(5);
+      }
+      QVERIFY(preview->hasFocus());QVERIFY(bar->value()>0);
+      QVERIFY(area->viewport()->rect().contains(QRect(preview->mapTo(area->viewport(),QPoint()),preview->size())));
+      QCOMPARE(QRect(box->mapTo(d,QPoint()),box->size()),footer);
+      for(int i=0;i<80&&!enabled->hasFocus();++i){
+        QVERIFY(qApp->focusWidget());QTest::keyClick(qApp->focusWidget(),Qt::Key_Backtab);QTest::qWait(5);
+      }
+      QVERIFY(enabled->hasFocus());QCOMPARE(bar->value(),0);
+      const auto center=area->viewport()->rect().center();
+      QWheelEvent wheel(center,area->viewport()->mapToGlobal(center),QPoint(),QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+      QCoreApplication::sendEvent(area->viewport(),&wheel);QVERIFY(bar->value()>0);
+      QTest::keyClick(bar,Qt::Key_End);QCOMPARE(bar->value(),bar->maximum());
+      QCOMPARE(QRect(box->mapTo(d,QPoint()),box->size()),footer);
+      auto font=d->findChild<QSpinBox*>("readable-fontSize");font->setValue(20);
+      const auto evidence=engine+"/.cache/qt-readable-short";QVERIFY(QDir().mkpath(evidence));
+      QVERIFY(d->grab().save(evidence+"/"+editorLanguage()+"-"+QString::number(height)+(showDisableHelp?"-disabled-help":"")+".png"));
+      QTest::mouseClick(box->button(QDialogButtonBox::Cancel),Qt::LeftButton);cancelled=true;
+    });
+    w.findChild<QAction*>("readableLayout")->trigger();QVERIFY(cancelled);
+    QCOMPARE(w.projectData(),before);QCOMPARE(w.currentView().value("revision"),revision);
+    QTimer::singleShot(100,&w,[&]{
+      auto d=w.findChild<QDialog*>("readableLayoutDialog");QVERIFY(d);QTimer::singleShot(15000,d,&QDialog::reject);
+      d->resize(940,height);QTest::qWait(50);QCOMPARE(d->size(),QSize(940,height));
+      d->findChild<QSpinBox*>("readable-fontSize")->setValue(20);
+      auto area=d->findChild<QScrollArea*>("readableSettingsScroll");QTest::keyClick(area->verticalScrollBar(),Qt::Key_End);
+      auto save=d->findChild<QDialogButtonBox*>("readableButtons")->button(QDialogButtonBox::Save);
+      const auto bounds=QRect(save->mapTo(d,QPoint()),save->size());QVERIFY(d->rect().contains(bounds));QCOMPARE(d->childAt(bounds.center()),save);
+      auto background=d->findChild<QLineEdit*>("readableBackground");const auto originalColor=background->text();background->setText("invalid");
+      QTest::mouseClick(save,Qt::LeftButton);QVERIFY(d->isVisible());QTest::qWait(20);
+      auto error=d->findChild<QLabel*>("readableError");QVERIFY(error&&!error->text().isEmpty()&&!area->isAncestorOf(error));
+      QVERIFY(d->rect().contains(QRect(error->mapTo(d,QPoint()),error->size())));
+      QVERIFY(d->rect().contains(QRect(save->mapTo(d,QPoint()),save->size())));
+      background->setText(originalColor);QTest::mouseClick(save,Qt::LeftButton);saved=true;
+    });
+    w.findChild<QAction*>("readableLayout")->trigger();QVERIFY(saved);
+    QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
+    auto expected=before,visual=expected.value("visual").toObject(),reading=visual.value("readableLayout").toObject();
+    reading["fontSize"]=20;visual["readableLayout"]=reading;expected["visual"]=visual;QCOMPARE(w.projectData(),expected);
+    w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),before);
+    w.findChild<QAction*>("redoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),expected);
+    w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);
+    w.openProject(temp.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),expected);
   }
   void screenActivationRoundtrip(){
     const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());QTemporaryDir temp(engine+"/.cache/qt-reading-activation-XXXXXX");QVERIFY(temp.isValid());QVERIFY(copyFixture(engine+"/examples/my-first-raising-game",temp.path()));

@@ -13,6 +13,9 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QRegularExpression>
+#include <QScreen>
+#include <QScrollArea>
+#include <QTimer>
 #include <algorithm>
 
 namespace {
@@ -32,7 +35,10 @@ void StudioWindow::editReadableLayout() {
   auto project=projectData(),visual=project.value("visual").toObject();auto screens=visual.value("screens").toArray();if(screens.empty())return;
   const auto original=project;const auto revision=view.value("revision"),root=view.value("root");
   QDialog dialog(this);dialog.setObjectName("readableLayoutDialog");dialog.setWindowTitle(tr("읽기 편한 배치 · 휴대전화와 큰 글자"));dialog.resize(940,800);
-  auto outer=new QVBoxLayout(&dialog);
+  auto shell=new QVBoxLayout(&dialog);
+  auto scroll=new QScrollArea;scroll->setObjectName("readableSettingsScroll");scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);shell->addWidget(scroll,1);
+  auto body=new QWidget;body->setObjectName("readableSettingsBody");scroll->setWidget(body);
+  auto outer=new QVBoxLayout(body);outer->setContentsMargins(0,0,0,0);outer->setSizeConstraint(QLayout::SetMinimumSize);
   auto enabled=new QCheckBox(tr("이 프로젝트에서 읽기 편한 배치 사용"));enabled->setObjectName("readableEnabled");enabled->setChecked(visual.contains("readableLayout"));outer->addWidget(enabled);
   auto disableHelp=new QLabel(tr("이 기능을 끄고 저장하면 모든 화면의 읽기 순서가 제거됩니다. 실행 취소로 복원할 수 있습니다."));disableHelp->setObjectName("readableDisableHelp");disableHelp->setWordWrap(true);disableHelp->setVisible(!enabled->isChecked());outer->addWidget(disableHelp);
   auto global=new QHBoxLayout;outer->addLayout(global);const auto config=visual.value("readableLayout").toObject();QMap<QString,QSpinBox*> fields;
@@ -61,8 +67,8 @@ void StudioWindow::editReadableLayout() {
   auto reuseRow=new QHBoxLayout;outer->addLayout(reuseRow);auto reuse=new QCheckBox(tr("마지막으로 확정한 계획 재사용 허용"));reuse->setObjectName("readablePlanReuse");reuseRow->addWidget(reuse);auto reuseHelp=new QLabel;reuseHelp->setObjectName("readablePlanReuseHelp");reuseHelp->setWordWrap(true);reuseRow->addWidget(reuseHelp,1);auto repairReuse=new QPushButton(tr("계획 재사용 제거"));repairReuse->setObjectName("readableRepairPlanReuse");reuseRow->addWidget(repairReuse);
   auto previewRow=new QHBoxLayout;outer->addLayout(previewRow);auto preview=new QComboBox;preview->setObjectName("readablePreviewSize");preview->addItem("390 × 844",QSize(390,844));preview->addItem("320 × 568",QSize(320,568));preview->addItem("844 × 390",QSize(844,390));preview->addItem("1280 × 720",QSize(1280,720));previewRow->addWidget(new QLabel(tr("미리보기 화면 크기")));previewRow->addWidget(preview);auto previewState=new QLabel;previewState->setObjectName("readablePreviewStatus");previewState->setWordWrap(true);previewRow->addWidget(previewState,1);
   auto previewHelp=new QLabel(tr("저장 후 실제 렌더러 검사에서 이 화면 크기와 100~200% 글자 크기를 확인하세요. 미리보기는 게임 진행을 바꾸지 않습니다. 포인트는 웹의 CSS 픽셀에 해당합니다."));previewHelp->setWordWrap(true);outer->addWidget(previewHelp);
-  auto error=new QLabel;error->setObjectName("readableError");error->setWordWrap(true);outer->addWidget(error);
-  auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->setObjectName("readableButtons");auto openPreview=buttons->addButton(tr("저장하고 미리보기 열기"),QDialogButtonBox::ActionRole);openPreview->setObjectName("readableOpenPreview");outer->addWidget(buttons);
+  auto error=new QLabel;error->setObjectName("readableError");error->setWordWrap(true);shell->addWidget(error);
+  auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->setObjectName("readableButtons");auto openPreview=buttons->addButton(tr("저장하고 미리보기 열기"),QDialogButtonBox::ActionRole);openPreview->setObjectName("readableOpenPreview");shell->addWidget(buttons);
   int current=-1;bool filling=false,wantsPreview=false;QMap<QString,QJsonObject> leaves;QListWidget* selected=items;const bool roster=project.contains("roster");
   auto append=[&](QListWidget* list,QJsonObject value){const auto id=value.value("elementId").toString();const auto e=leaves.value(id);auto row=new QListWidgetItem(e.isEmpty()?tr("찾을 수 없음: %1").arg(id):e.value("label").toString(id)+" · "+e.value("kind").toString(),list);row->setData(Qt::UserRole,QVariant::fromValue(value));row->setToolTip(id);};
   auto serialize=[](QListWidget* list,bool ids){QJsonArray result;for(int i=0;i<list->count();++i)result.append(ids?QJsonValue(readingId(list->item(i))):QJsonValue(list->item(i)->data(Qt::UserRole).toJsonObject()));return result;};
@@ -97,6 +103,15 @@ void StudioWindow::editReadableLayout() {
     if(enabled->isChecked()){if(!QRegularExpression("^#[0-9a-fA-F]{6}$").match(background->text()).hasMatch()){error->setText(tr("배경색을 #RRGGBB 형식으로 지정하세요."));return;}auto next=config;for(auto it=fields.begin();it!=fields.end();++it)if(config.contains(it.key())||it.value()->value()!=QMap<QString,int>{{"maxShortEdge",600},{"fontSize",18},{"minTargetSize",44},{"padding",16},{"gap",12},{"maxWidth",760}}.value(it.key()))next[it.key()]=it.value()->value();if(config.contains("background")||background->text()!="#172c29")next["background"]=background->text();if(surface->value().isUndefined())next.remove("surface");else next["surface"]=surface->value();if(controlStyle->currentData().toString().isEmpty())next.remove("controlStyleId");else next["controlStyleId"]=controlStyle->currentData().toString();visual["readableLayout"]=next;}else visual.remove("readableLayout");visual["screens"]=screens;project["visual"]=visual;dialog.accept();};
   connect(buttons,&QDialogButtonBox::accepted,&dialog,save);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);connect(openPreview,&QPushButton::clicked,&dialog,[&]{wantsPreview=true;save();});
   screenChoice->setCurrentIndex(qMax(0,screenChoice->findData(managedScreenId())));if(current<0)loadScreen();
+  // Use the actual native frame after showing, so title bars and short work areas
+  // are included without changing saved settings or the user's later resize.
+  QTimer::singleShot(0,&dialog,[&]{
+    const auto available=dialog.screen()->availableGeometry();
+    const auto frame=dialog.frameGeometry().size()-dialog.size();
+    dialog.resize(dialog.size().boundedTo(available.size()-frame));
+    const auto bounds=dialog.frameGeometry();
+    dialog.move(qBound(available.left(),bounds.left(),qMax(available.left(),available.right()-bounds.width()+1)),qBound(available.top(),bounds.top(),qMax(available.top(),available.bottom()-bounds.height()+1)));
+  });
   if(dialog.exec()!=QDialog::Accepted)return;
   const auto size=preview->currentData().toSize();const auto target=screenChoice->currentData().toString();
   auto launchPreview=[this,size,target,root]{if(view.value("root")!=root||!lastError.isEmpty())return;openScreen(target);rendererPreview->setCanvasViewport(size);rendererPreview->show();rendererPreview->raise();};
