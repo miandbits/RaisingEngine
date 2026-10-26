@@ -1,8 +1,10 @@
 #pragma once
 #include "session.hpp"
+#include "planner-entry.hpp"
 #include "save-slots.hpp"
 #include "styles.hpp"
 #include "surface.hpp"
+#include "growth-summary.hpp"
 #include "localization.hpp"
 #include "layout.hpp"
 #include "extension-host.hpp"
@@ -58,6 +60,7 @@ public:
   Json user_values_draft=Json::object();
   #include "save-slots-markup.inc"
   #include "settings-markup.inc"
+  #include "growth-markup.inc"
   Json preview_scene=nullptr;
   Json display_scene() const {
     auto scene=game.state.is_null()?display_content.at("project").at("visual").value("defaultScene",Json::object()):game.state.at("presentation");
@@ -369,6 +372,19 @@ public:
     if (element.value("hidden",false)) return false;
     if(element.contains("visibleCondition")&&!visual_condition(element.at("visibleCondition")))return false;
     const auto when=element.value("visibleWhen","always"); return when=="always" || when==phase();
+  }
+  std::string planner_destination_error(const Json& entry) const {
+    const auto error=planner_entry_error(display_content,game.state,entry);if(!error.empty())return error;
+    if(progress_pending()||!ui_modal.empty()||!pending_purchase.is_null()||replay_controls||game.gallery.active)return "The planner is unavailable in this game state.";
+    const auto& design=display_content.at("project").at("visual");
+    for(const auto& screen:design.at("screens"))if(screen.at("id")==entry.at("screenId")){
+      const auto elements=expanded_elements(design,screen,width,height,phase());
+      for(const auto& element:elements)if(element.value("id","")==entry.value("plannerElementId","")){
+        const auto resolved=raising_player::presentation_variant(element,context_activity(game.state,element),[&](const Json& condition){return visual_condition(condition);});
+        return visible(resolved)&&resolved.value("opacity",1.0)>0&&resolved.value("_boundEnabled",true)&&(!resolved.contains("enabledCondition")||visual_condition(resolved.at("enabledCondition")))?"":"The target activity board is hidden or disabled.";
+      }
+    }
+    return "The target activity board is unavailable.";
   }
   bool visual_condition(const Json& condition) const {
     try { return game.call({{"operation","evaluate"},{"state",game.state},{"condition",condition}}).value("value",false); }
@@ -808,7 +824,7 @@ public:
       // An instance may override the action while retaining the definition's old
       // target fields. Only forward the fields belonging to the chosen command.
       static const std::map<std::string,std::vector<std::string>> parameters={
-        {"playSequence",{"sequenceId"}},{"openModal",{"screenId"}},{"selectRow",{"screenId","selectionKey","_rowId","_selectionSource"}},{"executeActorAction",{"actionId","actorId","quantity"}},{"navigate",{"screenId"}},{"visit",{"locationId"}},{"interact",{"interactionId"}},
+        {"playSequence",{"sequenceId"}},{"openModal",{"screenId"}},{"selectRow",{"screenId","selectionKey","_rowId","_selectionSource"}},{"executeActorAction",{"actionId","actorId","quantity"}},{"navigate",{"screenId"}},{"openPlanner",{"screenId","plannerElementId","plannerGroupId","plannerActivityId"}},{"visit",{"locationId"}},{"interact",{"interactionId"}},
         {"buy",{"shopId","itemId","quantity"}},{"sell",{"shopId","itemId","quantity"}},{"useService",{"serviceId","quantity"}},{"setDiet",{"dietId"}},{"equip",{"equipmentId"}},
         {"executeAction",{"actionId","quantity"}},{"selectPolicy",{"groupId","optionId"}},
         {"selectBattleAction",{"battleAction","itemId"}},{"selectBattleTarget",{"battleTarget"}},
@@ -872,6 +888,7 @@ public:
         // This covers authored quantities and conditions without committing state.
         if(enabled)try {game.call({{"operation","command"},{"state",game.state},{"command",boundAction},{"expectedRevision",game.state.at("stateRevision")}});}catch(...){enabled=false;}
       }
+      if(type=="openPlanner"){enabled=planner_destination_error(boundAction).empty();if(enabled)enabled=game.available({{"type","navigate"},{"screenId",boundAction.at("screenId")}});}
       if(type=="navigate"&&display_content.at("project").at("visual").contains("routing")) {
         enabled=false;for(const auto& s:display_content.at("project").at("visual").at("screens"))if(s.at("id")==boundAction.value("screenId",Json())&&!s.value("modal",false))enabled=true;
         if(enabled&&!game.state.is_null())enabled=game.available(boundAction);
@@ -987,6 +1004,7 @@ public:
     }
     if(kind=="inventory"&&!gp.is_null()) {if(gp.at("inventory").empty())out="<p class=\"muted\">가방이 비어 있습니다.</p>";for(const auto& item:gp.at("inventory"))out+="<div class=\"row\">"+item_icon(item.value("id",""))+escape(item.value("name",""))+" <b>× "+std::to_string(item.value("quantity",0))+"</b></div>";}
     if(kind=="interactions"&&!gp.is_null())for(const auto& interaction:gp.at("interactions"))out+=item_icon(interaction.value("itemId",""))+button("interact-"+interaction.value("id",""),interaction.value("name",""),{{"type","interact"},{"interactionId",interaction.at("id")}},interaction.value("enabled",false),interaction.value("reason",Json()).is_string()?interaction.at("reason").get<std::string>():"");
+    if(kind=="result"&&e.value("resultLayout","")=="growth")return growth_markup(e);
     if(kind=="result"&&game.timeline_active()&&game.timeline_plan.contains("resultPlayback"))return "<div data-result-playback=\"true\" data-result-fill=\""+escape(e.value("fill","#213c34e8"))+"\" data-result-color=\""+escape(e.value("color","#fff8e6"))+"\" data-result-changes=\""+std::string(e.value("resultLayout","summary")=="changes"?"true":"false")+"\" style=\"white-space:pre-wrap;line-height:38px;\">"+result_playback_markup(e.value("resultLayout","summary")=="changes",e)+"</div>";
     if(kind=="result"&&!game.state.is_null()&&!game.state.at("lastActivityResult").is_null()&&game.state.at("lastActivityResult").contains("actorResults")) {
       for(const auto& actor:game.state.at("lastActivityResult").at("actorResults")) {

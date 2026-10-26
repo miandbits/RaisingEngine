@@ -176,6 +176,7 @@
         ]
       }
     },
+    "activityTimelineCompletion": {"enum": ["reveal-result"], "description": "After presentation, reveal the committed activity result and wait for explicit advance, including continuous playback."},
     "resultPlayback": {
       "description": "Show committed activity changes sequentially inside result widgets. Existing authored activity timelines take precedence.",
       "type": "object",
@@ -1114,6 +1115,36 @@
             "activity-board"
           ]
         },
+        "activityBoard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "density": {
+              "enum": [
+                "compact"
+              ]
+            },
+            "showSummary": {
+              "type": "boolean"
+            },
+            "advanceAfterApply": {
+              "type": "boolean"
+            },
+            "forecast": {
+              "enum": [
+                "inline"
+              ]
+            },
+            "summaryAttributeIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 128,
+              "items": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
+        },
         "statsLayout": {
           "enum": [
             "bars",
@@ -1179,6 +1210,7 @@
             "load",
             "sound",
             "navigate",
+            "openPlanner",
             "visit",
             "buy",
             "interact",
@@ -1232,6 +1264,9 @@
             "timelineSkip"
           ]
         },
+        "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
         "screenId": {
           "$ref": "common.schema.json#/$defs/id"
         },
@@ -1456,6 +1491,7 @@
                       "load",
                       "sound",
                       "navigate",
+                      "openPlanner",
                       "visit",
                       "buy",
                       "interact",
@@ -1507,6 +1543,9 @@
                       "timelineSkip"
                     ]
                   },
+                  "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
                   "screenId": {
                     "$ref": "common.schema.json#/$defs/id"
                   },
@@ -2122,7 +2161,8 @@
           "type": "string",
           "enum": [
             "summary",
-            "changes"
+            "changes",
+            "growth"
           ]
         },
         "choiceLayout": {
@@ -3230,6 +3270,36 @@
             "activity-board"
           ]
         },
+        "activityBoard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "density": {
+              "enum": [
+                "compact"
+              ]
+            },
+            "showSummary": {
+              "type": "boolean"
+            },
+            "advanceAfterApply": {
+              "type": "boolean"
+            },
+            "forecast": {
+              "enum": [
+                "inline"
+              ]
+            },
+            "summaryAttributeIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 128,
+              "items": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
+        },
         "statsLayout": {
           "enum": [
             "bars",
@@ -3295,6 +3365,7 @@
             "load",
             "sound",
             "navigate",
+            "openPlanner",
             "visit",
             "buy",
             "interact",
@@ -3348,6 +3419,9 @@
             "timelineSkip"
           ]
         },
+        "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
         "screenId": {
           "$ref": "common.schema.json#/$defs/id"
         },
@@ -3746,6 +3820,7 @@
                       "load",
                       "sound",
                       "navigate",
+                      "openPlanner",
                       "visit",
                       "buy",
                       "interact",
@@ -3797,6 +3872,9 @@
                       "timelineSkip"
                     ]
                   },
+                  "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
                   "screenId": {
                     "$ref": "common.schema.json#/$defs/id"
                   },
@@ -4042,7 +4120,8 @@
           "type": "string",
           "enum": [
             "summary",
-            "changes"
+            "changes",
+            "growth"
           ]
         },
         "choiceLayout": {

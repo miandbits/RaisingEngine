@@ -1,3 +1,4 @@
+import {GrowthResult} from "./GrowthResult.js";
 import {SurfacePaint,hasSurface} from './SurfacePaint.js';
 import {resolveControlStyle} from '../../../packages/visual/control-styles.js';
 import {controlColorProps} from './ControlColors.js';
@@ -33,6 +34,8 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  onPlannerEntryConsumed?:(serial:number)=>void;
+  plannerEntry?:import('./ScheduleWidget.js').ScheduleContext['plannerEntry'];
   scheduleDraft?:import('./ScheduleWidget.js').ScheduleContext['scheduleDraft'];
   onScheduleDraft?:import('./ScheduleWidget.js').ScheduleContext['onScheduleDraft'];
   forecastPhase?:import('./ScheduleWidget.js').ScheduleContext['forecastPhase'];
@@ -216,12 +219,12 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       if(element.kind==='meter'&&element.meterThickness!==undefined)style.background='transparent';
       const meterValue=element.dataBinding?(dataBindingValue(element,context)??0):(element.value??0);
       if(element.kind==='meter')body=<div className="visual-meter" style={{'--meter-track':element.fill??'transparent'} as React.CSSProperties}><span>{element.text??element.label??''}</span><progress aria-label={element.label??element.text??element.id} style={element.meterThickness===undefined?undefined:{height:Math.min(element.height,element.meterThickness)}} max={Math.max(1,element.maxValue??100)} value={Math.max(0,Math.min(meterValue,element.maxValue??100))}/></div>;
-      if(element.kind==='stats')body=<div className="visual-stat-list">{context.stats.map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
+      if(element.kind==='stats')body=<div className={`visual-stat-list${element.statsLayout==='compact'?' visual-stats-compact':''}`}>{(element.attributeIds?.length?element.attributeIds.flatMap(id=>context.stats.filter(s=>s.id===id)):context.stats).map(s=><div key={s.id}><div><span>{s.label}</span><strong data-testid={`stat-${s.id}`}>{s.value}</strong></div><progress aria-label={s.label} value={s.value-s.min} max={s.max-s.min||1}/></div>)}</div>;
       if(element.kind==='schedule')body=element.scheduleLayout==='activity-board'&&context.dataState?.roster?<p role="status">{slotWords(context.locale,'활동 보드는 단일 인물 일정을 지원합니다.','The activity board supports single-character schedules.','活動ボードは単一キャラクターの予定に対応しています。')}</p>:context.dataState?.roster
         ?<>{element.showPhaseForecast&&<PhaseForecast id={element.id} context={context} disabled={busy||!enabled||editing}/>}<RosterSchedule context={context} disabled={busy||!enabled||editing} onCommand={onCommand} onExecute={()=>onAction?.('advance',element)} showActivityDescription={element.showActivityDescription??false} showActivityRules={element.showActivityRules??false}/></>
         :<ScheduleWidget ownerKey={screenId} readable={!!readingItem} compact={readingItem?.schedulePresentation==='compact'} guidance={(readingItem??(element.scheduleLayout==='activity-board'?design.screens.find(s=>s.id===screenId)?.readableLayout?.items.find(i=>i.elementId===element.id):undefined))?.planningGuidance==='first-use'} planReuse={(readingItem??(element.scheduleLayout==='activity-board'?design.screens.find(s=>s.id===screenId)?.readableLayout?.items.find(i=>i.elementId===element.id):undefined))?.planReuse==='last-committed'} planningControl={planningControl} element={element} context={context} planning={planning} groups={element.scheduleGroups??(element.scheduleLayout==='activity-board'?[]:scheduleGroups)} assetUrl={assetUrl} disabled={busy||!enabled||editing} onPlan={onPlan} onPlanReplace={onPlanReplace} onCommit={onCommitPlan}/>;
       if(element.kind==='dialogue')body=<p className="visual-dialogue" data-testid="dialogue"><PresentedHistoryText text={context.story} receipt={!editing?context.historyReceipt:undefined}/></p>;
-      if(element.kind==='result')body=context.actorResults?.length
+      if(element.kind==='result')body=element.resultLayout==='growth'?<GrowthResult context={context}/>:context.actorResults?.length
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||slotWords(context.locale,'활동 결과가 여기에 표시됩니다.','Activity results will appear here.','活動結果がここに表示されます。')}</div>;
       if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={event=>{const label=event.currentTarget.querySelector('[data-history-choice-label]');onChoice?.(c.id,label&&historyTextVisible(label)?label.textContent??undefined:undefined);}}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span data-history-choice-label>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>{slotWords(context.locale,'조건 미충족','Requirements not met','条件を満たしていません')}</small>}</span></button>)}</div>;

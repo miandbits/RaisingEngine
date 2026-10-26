@@ -116,7 +116,7 @@ export class WebPlayerController implements PlayerBridge {
       ...(c.project.calendar?{calendarProject:{startYear:c.project.startYear,startMonth:c.project.startMonth,periodsPerMonth:c.project.periodsPerMonth,calendar:c.project.calendar}}:{}),
       durationMonths: c.project.durationMonths, periodsPerMonth: c.project.periodsPerMonth, schedulePlayback: c.project.schedulePlayback ?? 'manual', attributes: c.attributes, characters: c.characters,
       activities: c.activities, assets: c.assets, state, relationshipChanges:this.session?.relationshipChanges, visual: c.project.visual ?? null,
-      timeline: this.presentation.view(c,state),
+      timeline: this.presentation.view(c,state,this.locale),
       battleSelection:this.presentation.selectedBattle(c,state),
       dataUi: projectDataUi(c,state,projection.gameplay,input=>this.runtime.request(input), {systems:projection.systems,battleSelection:this.presentation.selectedBattle(c,state)}),
       gameplayDefinition: c.project.gameplay ?? null, runtimeBackend: 'wasm',
@@ -203,7 +203,7 @@ export class WebPlayerController implements PlayerBridge {
     if(action.type==='scheduleStep'){
       const completionFlag=this.content.project.periodFlow?.intermission?.completionFlagId;
       if(this.session.state.activityIntermission&&completionFlag&&!this.session.state.flags[completionFlag])return this.reply();
-      const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state)); if(!next)return this.reply(); action={type:next};
+      const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state),this.content.project.visual?.activityTimelineCompletion); if(!next)return this.reply(); action={type:next};
     }
     if(['timelineTick','timelinePause','timelineSpeed','timelineSkip'].includes(action.type))return this.reply(this.presentation.act(this.content,this.session.state,action as TimelineAction));
     const timeline=this.presentation.view(this.content,this.session.state);

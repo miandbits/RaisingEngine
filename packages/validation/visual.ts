@@ -41,6 +41,23 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      if(e.resultLayout==='growth'&&e.kind!=='result')ctx.report(doc,ep+'/resultLayout','UI_GROWTH_KIND','Per-activity growth requires a result widget.');
+      if(e.activityBoard!==undefined){
+        if(e.kind!=='schedule'||e.scheduleLayout!=='activity-board')ctx.report(doc,ep+'/activityBoard','UI_ACTIVITY_BOARD_OPTIONS_KIND','Activity board options require an activity-board schedule widget.');
+        const options=e.activityBoard as JsonObject;
+        for(const [i,id]of ((options.summaryAttributeIds??[]) as string[]).entries())ctx.resolve(ctx.attributes,id,doc,`${ep}/activityBoard/summaryAttributeIds/${i}`,'능력·자원');
+        if(options.forecast==='inline'&&e.showPhaseForecast!==true)ctx.report(doc,ep+'/activityBoard/forecast','UI_ACTIVITY_BOARD_FORECAST','Enable phase forecasts before displaying an inline forecast.');
+      }
+      if(e.action==='openPlanner'){
+        if(e.kind!=='button')ctx.report(doc,ep+'/action','UI_PLANNER_ACTION_KIND','Open planner requires a button.');
+        if(!visual.routing)ctx.report(doc,ep+'/action','UI_ROUTING_REQUIRED','Configure screen routing before opening a planner.');
+        const screen=objectItems(visual.screens).find(s=>s.id===e.screenId&&!s.modal),board=screen&&objectItems(screen.elements).find(item=>item.id===e.plannerElementId&&item.kind==='schedule'&&item.scheduleLayout==='activity-board');
+        if(!board)ctx.report(doc,ep+'/plannerElementId','UI_PLANNER_TARGET','Choose an activity board on an ordinary screen.');
+        if(e.plannerGroupId!==undefined&&board&&!objectItems(board.scheduleGroups).some(g=>g.id===e.plannerGroupId))ctx.report(doc,ep+'/plannerGroupId','UI_PLANNER_GROUP','The chosen category does not exist on the target activity board.');
+        if(e.plannerGroupId!==undefined&&e.plannerActivityId!==undefined&&board){const group=objectItems(board.scheduleGroups).find(g=>g.id===e.plannerGroupId);if(group&&!((group.activityIds??[]) as string[]).includes(String(e.plannerActivityId)))ctx.report(doc,ep+'/plannerActivityId','UI_PLANNER_ACTIVITY_GROUP','Choose an activity in the selected planner category.');}
+        if(e.plannerActivityId!==undefined)ctx.resolve(ctx.activities,String(e.plannerActivityId),doc,ep+'/plannerActivityId','활동');
+      } else if(['plannerElementId','plannerGroupId','plannerActivityId'].some(key=>e[key]!==undefined))ctx.report(doc,ep+'/action','UI_PLANNER_ACTION_REQUIRED','Planner targets require the Open planner action.');
+
       if(e.scheduleLayout==='activity-board'){
         if(e.kind!=='schedule')ctx.report(doc,ep+'/scheduleLayout','UI_ACTIVITY_BOARD_KIND','Activity boards require a schedule widget.');
         if(root.roster)ctx.report(doc,ep+'/scheduleLayout','UI_ACTIVITY_BOARD_ROSTER','Activity boards currently support single-character schedules. Choose another schedule layout for a roster project.');

@@ -17,7 +17,7 @@
     auto html=button("phase-forecast-"+e.value("id",""),phase_forecast_label(),{{"type","phaseForecastOpen"},{"elementId",e.at("id")}},phase_forecast_eligible(e.at("id")));
     html.insert(html.find('>')," class=\"phase-forecast-launcher\""+(!readable_active?" style=\"color:"+css_color(e.value("color","#203a34"))+";\"":std::string()));return html;
   }
-  void open_phase_forecast(const std::string& id) {
+  void ensure_phase_forecast() {
     const auto token=phase_forecast_token();
     if(phase_forecast_cache_key!=token){
       auto draft=plan;const int first=game.state.value("periodIndex",0)%game.periods();
@@ -26,7 +26,9 @@
       catch(...){phase_forecast_reply={{"ok",false}};}
       phase_forecast_cache_key=token;++phase_forecast_requests;
     }
-    phase_forecast_element=id;phase_forecast_owner=screen_id;phase_forecast_snapshot=token;phase_forecast_open=true;
+  }
+  void open_phase_forecast(const std::string& id) {
+    ensure_phase_forecast();phase_forecast_element=id;phase_forecast_owner=screen_id;phase_forecast_snapshot=phase_forecast_token();phase_forecast_open=true;
   }
   std::string phase_forecast_issue(const std::string& code) const {
     if(code=="FORECAST_RANDOM")return settings_words("확률에 따라 결과가 달라집니다.","Random outcomes can change what happens next.","確率によって結果が変わります。");
@@ -76,4 +78,22 @@
     const auto& baseline=phase_forecast_reply.at("baseline");
     if(!phase_forecast_reply.at("forecast").value("complete",false)&&(!baseline.value("rows",Json::array()).empty()||baseline.value("complete",false)))out+=phase_forecast_projection(baseline,true);
     return out+"</div>";
+  }
+
+  std::string phase_forecast_brief(const Json& e) {
+    if(!e.value("showPhaseForecast",false))return "";
+    std::string out="<div id=\"phase-forecast-brief-"+escape(e.value("id",""))+"\" style=\"flex-shrink:0;display:flex;align-items:center;flex-wrap:wrap;border-width:1px;padding:4px 8px;margin-bottom:4px;\"><div style=\"flex:1;"+std::string(readable_active?"flex-basis:100%;":"")+"min-width:0;white-space:normal;word-break:break-word;font-size:.85em;line-height:1.35;\">";
+    if(phase_forecast_eligible(e.at("id")))ensure_phase_forecast();
+    if(!phase_forecast_eligible(e.at("id"))||!phase_forecast_reply.value("ok",false))out+=escape(settings_words("예상 불가","Forecast unavailable","見通しを確認できません"));
+    else {
+      const auto& exact=phase_forecast_reply.at("forecast");const auto& baseline=phase_forecast_reply.at("baseline");const auto& value=exact.value("complete",false)?exact:baseline.value("complete",false)?baseline:!exact.value("rows",Json::array()).empty()||baseline.value("rows",Json::array()).empty()?exact:baseline;
+      const bool estimate=value.value("basis","")=="activities-only",complete=value.value("complete",false);const auto rows=value.value("rows",Json::array()),issues=value.value("issues",Json::array());const bool incomplete=!issues.empty()&&issues.front().value("code","")=="FORECAST_INCOMPLETE";
+      out+="<b>"+escape(estimate?settings_words("활동만 고려한 예상","Activity-only estimate","活動のみの見積もり"):complete?settings_words("이번 일정 종료 시","End of this phase","今期の終了時"):incomplete?settings_words("미완료 계획","Incomplete plan","未完成の計画"):settings_words("계획 검토","Plan review","計画の確認"))+"</b>";
+      auto attributes=value.value("attributes",Json::array());std::vector<std::string> order;for(const auto& id:e.value("activityBoard",Json::object()).value("summaryAttributeIds",Json::array()))order.push_back(id);for(const auto& a:display_content.at("attributes"))if(std::find(order.begin(),order.end(),a.at("id").get<std::string>())==order.end())order.push_back(a.at("id"));
+      const auto rank=[&](const Json& row){return std::find(order.begin(),order.end(),row.at("attributeId").get<std::string>())-order.begin();};std::stable_sort(attributes.begin(),attributes.end(),[&](const Json& a,const Json& b){return rank(a)<rank(b);});int shown=0;
+      if(!rows.empty())for(const auto& row:attributes){if(row.value("delta",0.0)==0&&row.value("costs",0.0)==0&&row.value("effects",0.0)==0&&row.value("automatic",0.0)==0)continue;if(shown++==4)break;const double delta=row.value("delta",0.0);out+="<span style=\"display:inline-block;margin-left:12px;\">"+escape(attribute_name(row.at("attributeId")))+" "+number(row.value("before",0.0))+" → "+number(row.value("after",0.0))+" ("+(delta>0?"+":"")+number(delta)+")</span>";}
+      if(incomplete){const int first=activity_board_first();int planned=0;for(int i=first;i<game.periods();++i)if(plan_selected&(1<<i))++planned;out+="<span style=\"display:block;\">"+escape(settings_words("선택","Planned","選択"))+" "+std::to_string(planned)+" / "+std::to_string(game.periods()-first)+"</span>";}else if(!complete){out+="<span style=\"display:block;\">"+escape(rows.empty()?settings_words("미완료 계획","Incomplete plan","未完成の計画"):settings_words("부분 결과 · 최종 수치 아님","Partial result · not final values","途中の結果 · 最終値ではありません"));const auto issues=value.value("issues",Json::array());if(!issues.empty())out+=" · "+escape(phase_forecast_issue(issues.front().value("code","")));out+="</span>";}
+      if(estimate)out+="<span style=\"display:block;\">"+escape(settings_words("이야기·추가 선택 제외. 실제 결과는 다를 수 있습니다.","Excludes story effects and optional choices. Actual results may differ.","物語の効果・追加の選択を除きます。実際の結果は異なる場合があります。"))+"</span>";
+    }
+    out+="</div><div style=\"flex-shrink:0;"+std::string(readable_active?"width:100%;margin-top:6px;":"margin-left:8px;")+"\">";auto details=button("phase-forecast-"+e.value("id",""),settings_words("자세히","Details","詳細"),{{"type","phaseForecastOpen"},{"elementId",e.at("id")}},phase_forecast_eligible(e.at("id")));return out+details+"</div></div>";
   }

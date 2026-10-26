@@ -23,6 +23,8 @@ export interface ScheduleActivity {
   previewAttributes?:readonly {attributeId:string;label?:string;valueFormat?:string}[];
 }
 export interface ScheduleContext {
+  onPlannerEntryConsumed?:((serial:number)=>void)|undefined;
+  plannerEntry?:{screenId:string;elementId:string;serial:number;groupId?:string;activityId?:string}|undefined;
   scheduleDraft?:ScheduleDraft|undefined;
   onScheduleDraft?:((draft:ScheduleDraft,owner:ScheduleDraftOwner)=>void)|undefined;
   forecastPhase?:((activityIds:string[])=>Promise<PhaseForecastReply|null>)|undefined;

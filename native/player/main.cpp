@@ -90,6 +90,7 @@ public:
   fs::path save_file;
   RouteRecording recording;
   std::deque<Json> pending;
+  Json pending_planner_entry;
   std::map<std::string,float> collection_scroll;
   bool dirty=true, running=true, muted=false, backgrounded=false,timeline_manual_clock=false;
   bool editor_events=false,editor_live=false,editor_paused=false;
@@ -124,7 +125,7 @@ public:
     if(game.timeline_plan.contains("resultPlayback")){
       Rml::ElementList elements;document->GetElementsByTagName(elements,"div");
       for(auto* element:elements)if(element->GetAttribute<bool>("data-result-playback",false)){
-        const auto text=result_playback_text(game.timeline_plan,game.timeline_cursor,element->GetAttribute<bool>("data-result-changes",false));
+        const auto text=result_playback_text(plan_activity_timeline(markup.display_content,game.state,markup.locale),game.timeline_cursor,element->GetAttribute<bool>("data-result-changes",false),markup.locale);
         if(element->GetAttribute<std::string>("data-result-text","")!=text){element->SetInnerRML(markup.result_playback_markup(element->GetAttribute<bool>("data-result-changes",false),{{"fill",element->GetAttribute<std::string>("data-result-fill","#213c34e8")},{"color",element->GetAttribute<std::string>("data-result-color","#fff8e6")}}));element->SetAttribute("data-result-text",text);}
       }
       return;
@@ -377,7 +378,17 @@ public:
     SDL_GetWindowSize(window,&markup.window_width,&markup.window_height);
     SDL_Rect safe{};if(!SDL_GetWindowSafeArea(window,&safe))safe={0,0,markup.window_width,markup.window_height};
     markup.safe_area=test_safe_area.is_object()?test_safe_area:Json{{"x",safe.x},{"y",safe.y},{"width",safe.w},{"height",safe.h}};
-    const auto source=recalling()?recollection->document():markup.document();
+    auto source=recalling()?recollection->document():markup.document();
+    if(!recalling()&&!pending_planner_entry.is_null()){
+      // First-use guidance may temporarily own the surface. Keep the destination
+      // until guidance closes, but never replay it after load or a game command.
+      if(markup.screen_id!=pending_planner_entry.value("screenId","")||game.state!=pending_planner_entry.value("_state",Json()))pending_planner_entry=nullptr;
+      else if(!markup.planning_guide){
+        const auto entry=pending_planner_entry;pending_planner_entry=nullptr;
+        if(open_activity_board_context(entry.value("plannerElementId",""),entry.value("plannerGroupId",""),entry.value("plannerActivityId","")))source=markup.document();
+        else {game.message="The requested planner is unavailable.";source=markup.document();}
+      }
+    }
     if(!context)context=Rml::CreateContext("game",{markup.width,markup.height});
     if(!context)throw std::runtime_error("렌더링 컨텍스트를 만들지 못했습니다.");
     context->SetDimensions({markup.width,markup.height});
@@ -549,6 +560,10 @@ public:
         }dirty=true;return;
       }
       if(game.timeline_active()&&type!="save"&&type!="load"&&type!="sound"&&type!="nextLocale"&&!(type=="advance"&&game.timeline_cursor.value("completed",false)))throw std::runtime_error("활동 연출을 마치거나 건너뛴 뒤 계속해 주세요.");
+      if(type=="openPlanner"){
+        const auto error=markup.planner_destination_error(action);if(!error.empty())throw std::runtime_error(error);
+        game.send({{"type","navigate"},{"screenId",action.at("screenId")}});pending_planner_entry=action;pending_planner_entry["_state"]=game.state;dirty=true;return;
+      }
       if(type=="nextLocale"){markup.nextLocale();dirty=true;return;}
       if(type=="chooseTacticsSkill"){markup.tactics_skill=action.value("skillId","");dirty=true;return;}
       if(!markup.pending_purchase.is_null()&&type!="confirmPurchase"&&type!="cancelPurchase"&&type!="uiBack")return;

@@ -22,6 +22,7 @@ Start with [your first game](../getting-started/first-game.md). Templates are st
 | Current-state text after returning to a save | [Current reminders](current-reminders.md) |
 | Reusable UI and targets | [Components](component-context.md), [composition](ui-composition.md), [data binding](data-ui-binding.md) |
 | Presentation and animation | [Direction](direction-sequences.md), [timelines](activity-timelines.md), [narrative choice cards](narrative-choice-cards.md) |
+| Activity growth and contextual planning | [Growth results and planner entry](../activity-growth.md) |
 | Combat | [Battle HUD](battle-hud-authoring.md), [party tactics](party-tactics.md) |
 | Collections and replay | [Gallery](gallery-and-recollection.md), [choice branches](gallery-choice-branches.md) |
 | No-code player preferences and resource observations | [Player priorities and sampled balance](player-priorities.md) |

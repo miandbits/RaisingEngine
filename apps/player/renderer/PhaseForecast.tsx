@@ -23,7 +23,7 @@ export function forecastIssueText(code:string,locale?:string):string {
   }
 }
 const signed=(value:number)=>`${value>0?'+':''}${value}`;
-export function PhaseForecast({id,context,disabled=false}:{id:string;context:ScheduleContext;disabled?:boolean}) {
+export function PhaseForecast({id,context,disabled=false,inline=false,attributeIds}:{id:string;context:ScheduleContext;disabled?:boolean;inline?:boolean;attributeIds?:readonly string[]|undefined}) {
   const words=(ko:string,en:string,ja:string)=>slotWords(context.locale,ko,en,ja);
   const available=!disabled&&['planning','ready'].includes(context.dataState?.phase??context.phase);
   const period=(index:number)=>{const slot=index%(context.periodsPerMonth??3);return context.calendarProject?.calendar?periodLabel(slot,context.periodsPerMonth??3,context.calendarProject.calendar,context.locale):words('일정 '+(slot+1),'Period '+(slot+1),'予定 '+(slot+1));};
@@ -33,16 +33,17 @@ export function PhaseForecast({id,context,disabled=false}:{id:string;context:Sch
   const [open,setOpen]=useState(false),[reply,setReply]=useState<PhaseForecastReply|null>(null),[loading,setLoading]=useState(false);
   useEffect(()=>{serial.current++;setOpen(false);setReply(null);setLoading(false);},[key]);
   useEffect(()=>()=>{serial.current++;},[]);
-  const launch=async()=>{
-    if(!available||document.querySelector('dialog[open],.authored-slot-modal'))return;
-    const request=++serial.current;setOpen(true);
+  const fetchReply=async()=>{
+    const request=++serial.current;
     if(cache.current?.key===key){setReply(cache.current.reply);setLoading(false);return;}
     setReply(null);setLoading(true);
     let result:PhaseForecastReply|null=null;try{result=await context.forecastPhase?.([...context.plan])??null;}catch{}
     if(request!==serial.current||current.current!==key)return;
     cache.current={key,reply:result};setReply(result);setLoading(false);
   };
-  const close=()=>{serial.current++;setOpen(false);setLoading(false);};
+  useEffect(()=>{if(inline&&available)void fetchReply();},[inline,available,key]);
+  const launch=()=>{if(!available||document.querySelector('dialog[open],.authored-slot-modal'))return;setOpen(true);void fetchReply();};
+  const close=()=>{if(!inline)serial.current++;setOpen(false);if(!inline)setLoading(false);};
   const projection=(value:PhaseForecastProjection,baseline=false)=>{
     const title=baseline?words('활동만 고려한 예상','Activity-only estimate','活動のみの見積もり'):value.complete?words('이번 일정 종료 시','End of this phase','今期の終了時'):words('확인된 변화','Known changes','確認できる変化');
     const changed=value.attributes.filter(row=>row.delta!==0||row.costs!==0||row.effects!==0||row.automatic!==0);
@@ -59,7 +60,21 @@ export function PhaseForecast({id,context,disabled=false}:{id:string;context:Sch
       {value.issues.map((issue,index)=>{const slot=issue.periodIndex%(context.periodsPerMonth??3),activity=context.activities.find(a=>a.id===context.plan[slot]);return <p className="phase-forecast-issue" key={index}>{issue.periodIndex>=0?period(issue.periodIndex)+(activity?' · '+activity.label:'')+': ':''}{forecastIssueText(issue.code,context.locale)}</p>;})}
     </section>;
   };
-  return <><button type="button" className="phase-forecast-launcher" data-reading-id={`phase-forecast-${id}`} disabled={!available} aria-haspopup="dialog" onClick={()=>void launch()}>{words('일정 예상','Phase forecast','今期の見通し')}</button>
+  const brief=reply?.ok?(reply.forecast.complete?reply.forecast:reply.baseline.complete?reply.baseline:reply.forecast.rows.length||!reply.baseline.rows.length?reply.forecast:reply.baseline):null;
+  const baseline=brief?.basis==='activities-only',incomplete=brief?.issues[0]?.code==='FORECAST_INCOMPLETE';
+  const first=(context.dataState?.periodIndex??context.period)%(context.periodsPerMonth??3)+(context.dataState?.activityIntermission?1:0),remaining=context.plan.slice(first),planned=remaining.filter(Boolean).length;
+  const order=[...(attributeIds??[]),...context.stats.map(a=>a.id).filter(id=>!attributeIds?.includes(id))];
+  const rows=brief?.rows.length?[...brief.attributes].filter(row=>row.delta!==0||row.costs!==0||row.effects!==0||row.automatic!==0).sort((a,b)=>order.indexOf(a.attributeId)-order.indexOf(b.attributeId)).slice(0,4):[];
+  const summary=inline?<div className="phase-forecast-brief" data-reading-id={`phase-forecast-brief-${id}`} data-forecast-basis={brief?.basis} data-forecast-complete={brief?.complete}>
+    <strong>{baseline?words('활동만 고려한 예상','Activity-only estimate','活動のみの見積もり'):brief?.complete?words('이번 일정 종료 시','End of this phase','今期の終了時'):incomplete?words('미완료 계획','Incomplete plan','未完成の計画'):words('계획 검토','Plan review','計画の確認')}</strong>
+    {loading?<span role="status">{words('확인 중…','Checking…','確認中…')}</span>:!reply?.ok?<span>{words('예상 불가','Forecast unavailable','見通しを確認できません')}</span>:<>
+      {rows.map(row=><span className="phase-forecast-brief-value" key={row.attributeId} data-forecast-attribute={row.attributeId}>{context.stats.find(a=>a.id===row.attributeId)?.label??row.attributeId} {row.before} → {row.after} ({signed(row.delta)})</span>)}
+      {incomplete?<span>{words('선택','Planned','選択')} {planned} / {remaining.length}</span>:brief&&!brief.complete&&<span>{brief.rows.length?words('부분 결과 · 최종 수치 아님','Partial result · not final values','途中の結果 · 最終値ではありません'):words('미완료 계획','Incomplete plan','未完成の計画')}{brief.issues[0]?' · '+forecastIssueText(brief.issues[0].code,context.locale):''}</span>}
+      {baseline&&<span className="phase-forecast-brief-caveat">{words('이야기·추가 선택 제외. 실제 결과는 다를 수 있습니다.','Excludes story effects and optional choices. Actual results may differ.','物語の効果・追加の選択を除きます。実際の結果は異なる場合があります。')}</span>}
+    </>}
+  </div>:null;
+  const launcher=<button type="button" className="phase-forecast-launcher" data-reading-id={`phase-forecast-${id}`} disabled={!available} aria-haspopup="dialog" onClick={()=>void launch()}>{inline?words('자세히','Details','詳細'):words('일정 예상','Phase forecast','今期の見通し')}</button>;
+  return <>{inline?<div className="phase-forecast-inline">{summary}{launcher}</div>:launcher}
     {open&&<ReadingDialog id="engine-phase-forecast-panel" title={words('일정 예상','Phase forecast','今期の見通し')} onClose={close} initialFocus="heading">
       <div className="reading-dialog-body" tabIndex={0} role="region" aria-labelledby="engine-phase-forecast-panel-title" data-reading-id="engine-phase-forecast-summary">
         <p>{words('현재 초안을 검토합니다. 시간이나 자원을 사용하지 않습니다.','Reviewing the current draft uses no time or resources.','現在の下書きを確認します。時間や資源は消費しません。')}</p>

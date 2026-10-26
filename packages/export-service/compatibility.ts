@@ -19,6 +19,11 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   const visual=content.project.visual,requiredFeatures:string[]=[];
   const scheduleElements=visual?[...visual.screens.flatMap(s=>s.elements),...(visual.components??[]).flatMap(c=>c.elements)]:[];
   if(scheduleElements.some(e=>e.scheduleLayout==='activity-board'))requiredFeatures.push('activity-board-v1');
+  if(scheduleElements.some(e=>e.resultLayout==='growth'))requiredFeatures.push('activity-growth-v1');
+  if(scheduleElements.some(e=>e.activityBoard!==undefined))requiredFeatures.push('activity-board-options-v1');
+  const plannerAction=(value:unknown):boolean=>!!value&&typeof value==='object'&&(value as Record<string,unknown>).action==='openPlanner';
+  // Only declared element/action fields count; plugin props are opaque documents.
+  if(scheduleElements.some(e=>plannerAction(e)||[...((e as {variants?:readonly {values:unknown}[]}).variants??[]),...((e as {overrides?:readonly {values:unknown}[]}).overrides??[])].some(v=>plannerAction(v.values))))requiredFeatures.push('contextual-planner-v1');
   if(surfaceReferences(visual).length)requiredFeatures.push('ui-surfaces-v1');
   if(controlStyleReferences(visual).length)requiredFeatures.push('ui-control-colors-v1');
   if(visual?.screens.some(screen=>screen.readableLayout?.activation!==undefined))requiredFeatures.push('readable-screen-activation-v1');
@@ -72,6 +77,7 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   if(content.project.gallery?.branchScreenId||hasBranches(visual))requiredFeatures.push('gallery-branches-v1');
   if(content.project.gallery?.screenId||hasGalleryUi(visual))requiredFeatures.push('authored-gallery-v1');
   if(content.project.gallery){requiredFeatures.push('narrative-gallery-v1');if(content.project.gallery.entries.some(e=>e.kind==='cg'||e.kind==='music'||e.unlockCondition||e.lockedDisplay))requiredFeatures.push('media-gallery-v2');}
+  if(visual?.activityTimelineCompletion==='reveal-result')requiredFeatures.push('activity-result-review-v1');
   if(visual?.resultPlayback)requiredFeatures.push('inline-result-playback-v1');
   if(content.project.roster)requiredFeatures.push('roster-activities-v1');
   if((content.project.visual as any)?.direction)requiredFeatures.push('direction-sequences-v1');

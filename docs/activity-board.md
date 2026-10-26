@@ -17,3 +17,17 @@ Widget settings scroll independently of their fixed OK/Cancel footer. Cancel dis
 The layout supports a single-character schedule with 1–12 periods. Roster projects must choose another layout. Schedule widgets are currently authored directly on screens; putting this board inside a reusable component is not supported. Reuse its shared image assets and styles in other screen widgets or other projects instead. No specific game's data or artwork is required.
 
 Exports require the independent `activity-board-v1` runtime capability. The older `board` layout keeps its existing compatibility requirements. Adding or changing the activity board, groups or activity connections is a normal game update; it is not classified as a paint-only update compatible with an old gameplay snapshot.
+
+## Compact planning options
+
+The optional `activityBoard` settings work with the activity-board layout. `density: "compact"` changes cards to a small image beside their label, uses a wider catalog and shorter period tickets, and keeps generated targets at least 44 window points. Phone layouts retain horizontal period browsing and full-width readable details. Omitting these settings preserves the original board.
+
+`showSummary: true` adds literal authored cost and base-effect chips when **Show activity rules** is also enabled. Costs and effects stay separate; set effects retain `=`, and calculated, scoped, nonnumeric or outcome-dependent rules are explicitly indicated. These are authored rules, not predictions or final clamped values. `summaryAttributeIds` is an ordered list of existing attributes to show first; unspecified attributes retain project order. Bounded chips show a remaining count, with full rules in the detail pane.
+
+`advanceAfterApply: true` selects the next unfilled editable period after Apply, wrapping if necessary and skipping completed periods. A full plan keeps the current period. Inspecting periods, categories or cards and cancelling remain temporary; only Apply changes the saved draft.
+
+With **Show a phase forecast** enabled, `forecast: "inline"` displays a short version of the existing core forecast next to the plan. Incomplete drafts are identified without filling missing slots. Partial values are labelled as partial. An activity-only estimate visibly excludes story effects and optional choices; it is not guaranteed. **Details** opens the full forecast, including assumptions, blockers and cost/effect/automatic-rule breakdowns. No additional simulation algorithm or canonical command is introduced.
+
+A button with action `openPlanner` can open a named screen and its `plannerElementId`, optionally choosing that widget's `plannerGroupId` and inspecting a `plannerActivityId`. It validates availability before navigating, and does not assign an activity. Cancel or Apply then behaves exactly as ordinary card browsing. Context is consumed once so switching reading layouts cannot reopen a cancelled inspection.
+
+Explicit `activityBoard` options require `activity-board-options-v1`; contextual buttons require `contextual-planner-v1`. These capabilities are independent of the original board capability.

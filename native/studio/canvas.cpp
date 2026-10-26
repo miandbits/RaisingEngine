@@ -104,6 +104,9 @@ public:
       p->fillRect(QRectF(0,track.y(),box.width()*ratio,thickness),rgba(data.value("color").toString(),QColor("#68c6a0")));
       p->setPen(rgba(data.value("color").toString(),Qt::white));
       p->drawText(box,Qt::AlignCenter,data.value("text").toString());
+    } else if (kind == "result" && data.value("resultLayout")=="growth") {
+      p->fillRect(box,rgba(data.value("fill").toString(),QColor("#fff9e8")));decoration();QFont font(data["_fontFamily"].toString("Noto Sans KR"));font.setPixelSize(data.value("fontSize").toInt(20));p->setFont(font);p->setPen(rgba(data.value("color").toString(),QColor("#304d46")));
+      p->drawText(box.adjusted(12,12,-12,-12),Qt::AlignTop|Qt::TextWordWrap,QObject::tr("이번 활동 성장\n이전 → 이후 · 최종 변화\n실제 확정된 변화는 플레이에서 확인"));
     } else if (kind == "choices") {
       decoration();paintChoicePreview(p,box,data);
     } else if (kind == "schedule" && !data.value("_rosterPreview").toArray().isEmpty()) {

@@ -343,3 +343,34 @@ button.engine-surface-host{position:relative;}
 
 /* A finger can pan a catalog strip even when it starts on a real button. */
 .visual-element .activity-board :is(.activity-board-periods,.activity-board-tools,.activity-board-categories) button{touch-action:pan-x pan-y}
+
+/* Compact is authored opt-in: fewer repeated labels, never smaller hit targets. */
+.activity-board-compact{gap:4px}
+.activity-board-compact .activity-board-ticket{padding:5px 8px;gap:2px;flex-basis:150px}
+.activity-board-compact .activity-board-periods{min-height:60px;max-height:92px}
+.activity-board-compact .activity-board-ticket .activity-board-image{width:24px;height:24px}
+.activity-board-compact .activity-board-tools,.activity-board-compact .activity-board-categories{margin:0;gap:6px}
+.activity-board-compact .activity-board-tools button,.activity-board-compact .activity-board-categories button{padding:4px 8px}
+.activity-board-compact .activity-board-categories img{width:22px;height:22px}
+.activity-board-compact .activity-board-workspace{grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:8px;min-height:100px}
+.activity-board-compact .activity-board-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:6px}
+.activity-board-compact .activity-board-card{flex-direction:row;align-items:flex-start;padding:6px;gap:8px}
+.activity-board-compact .activity-board-card .activity-board-image{width:56px;height:64px;flex-shrink:0}
+.activity-board-card-copy{display:flex;flex:1 1 0;flex-direction:column;min-width:0;gap:4px;white-space:normal;overflow-wrap:anywhere}
+.activity-board-summary{display:flex;flex-wrap:wrap;gap:3px;font-size:.78em;line-height:1.35}
+.activity-board-summary>span{border:1px solid currentColor;border-radius:4px;padding:1px 4px}
+.activity-board-compact .activity-board-details p{margin:.35em 0}
+.activity-board-compact .activity-board-detail-body{padding:6px}
+.activity-board-compact .activity-board-actions{margin:3px 0;padding:0 4px}
+.phase-forecast-inline{display:flex;align-items:center;gap:8px;flex-shrink:0;border:1px solid currentColor;border-radius:6px;padding:4px 8px}
+.phase-forecast-brief{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;flex:1;min-width:0;font-size:.85em;line-height:1.35}
+.phase-forecast-inline .phase-forecast-launcher{margin:0;flex:0 0 auto}
+.phase-forecast-brief-caveat{flex-basis:100%}
+.activity-board-readable.activity-board-compact .activity-board-periods{max-height:none;min-height:0}
+.activity-board-readable .phase-forecast-inline{flex-wrap:wrap;margin:8px 0}
+.activity-board-readable .phase-forecast-brief{flex-basis:100%;font-size:1em}
+.activity-board-review.activity-board-compact .activity-board-cards{grid-template-columns:1fr}
+@container(max-width:560px){.activity-board-compact:not(.activity-board-readable) .activity-board-workspace{grid-template-columns:1fr}}
+
+.activity-board-readable.activity-board-compact .activity-board-periods{flex-direction:row;overflow-x:auto;overflow-y:hidden;touch-action:pan-x pan-y}
+.activity-board-readable.activity-board-compact .activity-board-ticket{flex:0 0 94%;min-width:0}

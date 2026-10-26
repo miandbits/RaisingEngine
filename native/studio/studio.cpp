@@ -667,6 +667,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField = new QComboBox;
   actionField->setObjectName("buttonAction");
   actionField->addItem(tr("화면 이동"), "navigate");
+  actionField->addItem(tr("활동 계획 열기 · 위젯 구성에서 대상 선택"), "openPlanner");
   actionField->addItem(tr("상점 열기 · 장소 이동"), "shop");
   actionField->addItem(tr("장소 이동"), "visit");
   actionField->addItem(tr("게임 저장"), "save");
@@ -1100,7 +1101,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     QString target = targetField->currentData().toString();
     updateElement([action, target](QJsonObject &e) {
       for (auto key :
-           {"screenId", "locationId", "shopId", "itemId", "interactionId", "battleAction", "battleTarget", "actionId", "entryId", "galleryFilter"})
+           {"plannerElementId", "plannerGroupId", "plannerActivityId", "screenId", "locationId", "shopId", "itemId", "interactionId", "battleAction", "battleTarget", "actionId", "entryId", "galleryFilter"})
         e.remove(key);
       e["action"] = action == "shop" ? "visit" : action;
       if (action == "executeAction") {e["actionId"]=target;e["quantity"]=1;}

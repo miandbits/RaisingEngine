@@ -1,3 +1,4 @@
+import {plannerEntryError} from '../../../packages/visual/planner-entry.js';
 import {activityResultText} from '../../../packages/visual/activity-result.js';
 import type {NumericTarget} from '../../../packages/core/model.js';
 import {useResumeContext} from './ResumeContext.js';
@@ -42,13 +43,21 @@ export function VisualPlayer({view,design,busy,plan,onPlan,onScheduleDraft,act,n
   useEffect(()=>{setDraft(defaults());},[view.generation,fieldsKey]);
   const savedValuesKey=JSON.stringify(view.state?.userValues??null);
   useEffect(()=>{if(view.state)setDraft({...view.state.userValues});},[savedValuesKey,!!view.state]);
-  type Pending={command:WidgetCommand;confirmation:Confirmation;summary:string;revision:number;generation:number};
+  type Pending={command:Exclude<WidgetCommand,{type:'openPlanner'}>;confirmation:Confirmation;summary:string;revision:number;generation:number};
   const [pending,setPending]=useState<Pending|null>(null);const pendingRef=useRef<Pending|null>(null);
   const cancel=()=>{pendingRef.current=null;setPending(null);};
   useEffect(()=>{cancel();},[view.generation,view.state?.stateRevision]);
   useEffect(()=>{if(!pending)return;const handler=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();cancel();}else if(event.key==='F5'||event.key==='F9'){event.preventDefault();event.stopImmediatePropagation();}};window.addEventListener('keydown',handler,true);return()=>window.removeEventListener('keydown',handler,true);},[pending]);
+  const [plannerEntry,setPlannerEntry]=useState<import('./ScheduleWidget.js').ScheduleContext['plannerEntry']>();
+  const entrySerial=useRef(0);
+  useEffect(()=>{setPlannerEntry(undefined);},[view.generation]);
   const run=(command:WidgetCommand)=>{
     if(busy||pendingRef.current)return;
+    if(command.type==='openPlanner'){
+      if(plannerEntryError(design,view.state,view.activities,command,condition=>view.dataUi?.conditions[JSON.stringify(condition)]===true))return;
+      act({type:'navigate',screenId:command.screenId},()=>setPlannerEntry({screenId:command.screenId,elementId:command.plannerElementId,serial:++entrySerial.current,...(command.plannerGroupId?{groupId:command.plannerGroupId}:{}),...(command.plannerActivityId?{activityId:command.plannerActivityId}:{})}));return;
+    }
+    if(command.type==='navigate')setPlannerEntry(undefined);
     const definition=view.gameplayDefinition;let confirmation:Confirmation|undefined,summary='',requires=false;
     const quantity='quantity'in command?command.quantity:1;
     if(command.type==='buy'||command.type==='sell'){
@@ -102,6 +111,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,onScheduleDraft,act,n
   for(const p of scene?.portraits??[]) {const id=view.characters.find(c=>c.id===p.characterId)?.portraits[p.portraitId];if(id)portraits[p.position]=id;}
   for(const p of scene?.portraits??[])portraitTransforms[p.position]=p;
   const screen:ScreenId=!s&&design.routing&&titleScreen?titleScreen:resolveScreen(design,s??null,node?.type,view.dataUi?.conditions);
+  useEffect(()=>{if(plannerEntry&&screen!==plannerEntry.screenId)setPlannerEntry(undefined);},[screen]);
   const result=s?.lastActivityResult;
 
   const needsSystemScreen = !design.routing && ['battle','expedition'].includes(screen) && !design.screens.some(candidate => candidate.id === screen && candidate.elements.some(element => (element.kind === screen||screen==='battle'&&(element.kind==='collection'&&element.source?.type==='battleActions'||element.kind==='button'&&['battleAction','selectBattleAction'].includes(element.action??''))) && isVisible(element, { phase: screen })));
@@ -119,6 +129,8 @@ export function VisualPlayer({view,design,busy,plan,onPlan,onScheduleDraft,act,n
   const forecastBridge=window.player,requestForecast=forecastBridge?.forecastPhase?.bind(forecastBridge);
   context.forecastPhase=s&&requestForecast?ids=>requestForecast(ids,{generation:view.generation,revision:s.stateRevision}):undefined;
   if(view.scheduleDraft)context.scheduleDraft=view.scheduleDraft;context.onScheduleDraft=onScheduleDraft;
+  if(plannerEntry)context.plannerEntry=plannerEntry;
+  context.onPlannerEntryConsumed=serial=>setPlannerEntry(previous=>previous?.serial===serial?undefined:previous);
   context.generation=view.generation;if(view.lastCommittedPlan&&!preview)context.lastCommittedPlan=view.lastCommittedPlan;
   context.readingKey=JSON.stringify([view.generation,s?.periodIndex,s?.activeNarrative?.kind,s?.activeNarrative?.id,s?.activeNarrative?.nodeId,context.phase]);
   if(view.gameId&&!preview)context.gameId=view.gameId;
@@ -131,7 +143,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,onScheduleDraft,act,n
     context.result=context.actorResults.map(row=>row.text).join('\n');
   }
   if(s?.phase==='ready'&&view.schedulePlayback==='continuous'&&design.resultPlayback&&!error)context.phase='auto-ready';
-  if(view.timeline?.plan.resultPlayback)context.result=resultPlaybackText(view.timeline.plan,view.timeline.cursor)??context.result;
+  if(view.timeline?.plan.resultPlayback)context.result=resultPlaybackText(view.timeline.plan,view.timeline.cursor,view.locale)??context.result;
   context.portraitTransforms=portraitTransforms;
   context.speakerPortrait=node?.type==='dialogue'&&node.speakerId
     ?view.characters.find(character=>character.id===node.speakerId)?.portraits.face??null:null;
@@ -158,6 +170,6 @@ export function VisualPlayer({view,design,busy,plan,onPlan,onScheduleDraft,act,n
       {pending&&<div className="transaction-overlay"><div className="transaction-dialog" role="dialog" aria-modal="true" aria-labelledby="transaction-title"><h3 id="transaction-title">{pending.confirmation.title??'거래 확인'}</h3><p>{pending.confirmation.message??'계속하시겠습니까?'}</p><p className="transaction-summary">{pending.summary}</p><small>효과는 능력치 범위에 따라 제한됩니다.</small><div><button autoFocus disabled={busy} onClick={confirm}>{pending.confirmation.confirmLabel??'확인'}</button><button disabled={busy} onClick={cancel}>{pending.confirmation.cancelLabel??'취소'}</button></div></div></div>}
     </VisualSurface></div>
     {modalId&&<div className="authored-slot-modal" role="dialog" aria-modal="true" aria-label={design.screens.find(s=>s.id===modalId)?.label??"Records"} ref={modalRef}>{error&&<div role="alert" className="alert">{error}</div>}{notice&&<p role="status" className="notice">{notice}</p>}<VisualSurface design={effectiveDesign} screenId={modalId} context={context} assetUrl={id=>assetUrl(id,view.generation)} busy={busy} fitViewport onAction={action}/></div>}
-    {!modalId&&<TimelineOverlay timeline={view.timeline??null} generation={view.generation} busy={busy} act={act} save={save} load={load}/>}
+    {!modalId&&<TimelineOverlay locale={view.locale} completion={design.activityTimelineCompletion} timeline={view.timeline??null} generation={view.generation} busy={busy} act={act} save={save} load={load}/>}
   </div></ExtensionPlaybackRate.Provider>;
 }

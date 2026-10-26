@@ -110,7 +110,7 @@ export class PlayerController {
       durationMonths: c.project.durationMonths, periodsPerMonth: c.project.periodsPerMonth, schedulePlayback: c.project.schedulePlayback ?? 'manual', attributes: c.attributes, characters: c.characters,
       activities: c.activities, assets: c.assets, state, relationshipChanges:this.session?.relationshipChanges,
       visual: c.project.visual ?? null,
-      timeline: this.presentation.view(c,state),
+      timeline: this.presentation.view(c,state,localeId(c.project.localization)),
       battleSelection:this.presentation.selectedBattle(c,state),
       dataUi: projectDataUi(c,state,projection.gameplay,nativeRequest, {systems:projection.systems,battleSelection:this.presentation.selectedBattle(c,state)}),
       gameplayDefinition: c.project.gameplay ?? null, gameplay: projection.gameplay,
@@ -167,7 +167,7 @@ export class PlayerController {
     if (!this.content || !this.session) return this.reply('새 게임을 시작해 주세요.');
     if (!action || typeof action !== 'object') return this.reply('알 수 없는 동작입니다.');
     let a = action as Partial<PlayerAction>;
-    if(a.type==='scheduleStep'){const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state));if(!next)return this.reply();a={type:next};}
+    if(a.type==='scheduleStep'){const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state),this.content.project.visual?.activityTimelineCompletion);if(!next)return this.reply();a={type:next};}
     if(['timelineTick','timelinePause','timelineSpeed','timelineSkip'].includes(a.type??''))return this.reply(this.presentation.act(this.content,this.session.state,a as TimelineAction));
     const timeline=this.presentation.view(this.content,this.session.state);
     if(timeline&&(a.type!=='continue'||!timeline.cursor.completed))return this.reply('활동 연출을 마치거나 건너뛴 뒤 다음으로 진행해 주세요.');

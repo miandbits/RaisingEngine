@@ -27,8 +27,8 @@ export class PlayerPresentation {
     if(this.battleSelection&&(!state||!validateBattleSelection(content,state,this.battleSelection)))this.battleSelection=null;
     return this.battleSelection?structuredClone(this.battleSelection):null;
   }
-  view(content:ContentSnapshot,state:RunState|null):TimelineView|null {
-    const plan=state?planActivityTimeline(content,state):null;
+  view(content:ContentSnapshot,state:RunState|null,locale='ko'):TimelineView|null {
+    const plan=state?planActivityTimeline(content,state,locale):null;
     if(!plan){this.cursor=null;return null;}
     if(!this.cursor||!validateTimelineCursor(plan,this.cursor))this.cursor={...createTimelineCursor(plan),...(plan.resultPlayback?{speed:this.scheduleSpeed}:{})};
     return {plan,cursor:structuredClone(this.cursor)};

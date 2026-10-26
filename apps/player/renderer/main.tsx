@@ -132,7 +132,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
   const slots=window.player.slots?(action:SaveSlotAction)=>{if(!resumeOpenRef.current)void request(()=>window.player.slots!(action,version),{reason:'restored'});}:undefined;
   useEffect(()=>{if(!window.player.checkpoint||!version||!view?.saveSlots?.checkpointPending||view.saveSlots.screenId||busy||hidden||settingsOpen||readingPaused)return;const timer=setTimeout(()=>void request(()=>window.player.checkpoint!(version)),40);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,view?.saveSlots?.checkpointPending,view?.saveSlots?.screenId,busy,hidden,settingsOpen,readingPaused]);
   const act = (action: PlayerAction,onAccepted?:()=>void) => { if(resumeOpenRef.current)return; if ((document.hidden || settingsOpen || readingPaused) && (action.type === 'scheduleStep' || action.type === 'timelineTick')) return; if (version) void request(() => window.player.act(action, version),{accepted:reply=>{if(reply.view?.generation===version.generation&&(reply.view.state?.stateRevision??-1)>version.revision)onAccepted?.();}}); };
-  const autoStep=scheduleStep(state??null,view?.schedulePlayback,view?.timeline);
+  const autoStep=scheduleStep(state??null,view?.schedulePlayback,view?.timeline,view?.visual?.activityTimelineCompletion);
   useEffect(()=>{if(settingsOpen||readingPaused||hidden||busy||error||view?.saveSlots?.screenId||view?.saveSlots?.checkpointPending||!autoStep||!version)return;const timer=setTimeout(()=>act({type:'scheduleStep'}),autoStep==='execute'?150:700);return()=>clearTimeout(timer);},[view?.generation,state?.stateRevision,autoStep,busy,error,hidden,settingsOpen,readingPaused,view?.saveSlots?.screenId,view?.saveSlots?.checkpointPending]);
   const canPlan = state?.phase === 'planning' || state?.phase === 'ready';
   const dirty = !state?.schedule || plan.some((id, index) => id !== state.schedule?.[index]);
@@ -246,7 +246,7 @@ export function Player({ preview = false }: { preview?: boolean }) {
         <footer className="game-footer"><span>선택은 당신의 몫, 성장은 우리의 이야기.</span><span>{busy ? '처리 중…' : '언제든 저장하고 이어갈 수 있습니다.'}</span></footer>
       </div>
     </main>}
-    {view&&<TimelineOverlay timeline={view.timeline??null} generation={view.generation} busy={busy} act={act} save={()=>version&&void request(()=>window.player.save(version))} load={()=>void request(()=>window.player.load(version))}/>}
+    {view&&<TimelineOverlay locale={view.locale} completion={view.visual?.activityTimelineCompletion} timeline={view.timeline??null} generation={view.generation} busy={busy} act={act} save={()=>version&&void request(()=>window.player.save(version))} load={()=>void request(()=>window.player.load(version))}/>}
   </div>;
 }
 

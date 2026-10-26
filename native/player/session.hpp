@@ -95,6 +95,7 @@ public:
       return state["flags"].value(flow["intermission"].value("completionFlagId",""),false)?"acknowledgeResult":"";
     }
     if(phase=="ready")return "executeActivity";
+    if(phase=="activity-result"&&content.at("project").value("visual",Json::object()).value("activityTimelineCompletion","")=="reveal-result")return "";
     if(phase=="activity-result"&&(!timeline_active()||timeline_cursor.value("completed",false)))return "acknowledgeResult";
     return "";
   }

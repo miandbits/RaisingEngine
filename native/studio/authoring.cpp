@@ -1,3 +1,4 @@
+#include "genre-widget-settings.hpp"
 #include "rule-extensions.hpp"
 #include "control-style-editor.hpp"
 #include "studio.hpp"
@@ -61,7 +62,7 @@ void StudioWindow::editWidgetSettings() {
   if (kind == "schedule") {key="scheduleLayout"; mode->addItem(tr("일정 칸 목록"),"columns"); mode->addItem(tr("월간 달력"),"calendar"); mode->addItem(tr("분류 → 활동 메뉴"),"menu"); mode->addItem(tr("활동 카드 · 계획 · 예상 변화"),"board");mode->addItem(tr("활동 보드 · 카드와 일정 칸"),"activity-board");}
   if (kind == "stats") {key="statsLayout"; mode->addItem(tr("능력 막대"),"bars"); mode->addItem(tr("압축 표"),"compact");}
   if (kind == "shop") {key="shopLayout"; mode->addItem(tr("목록"),"list"); mode->addItem(tr("상품 카드"),"cards");}
-  if (kind == "result") {key="resultLayout"; mode->addItem(tr("활동 결과 요약"),"summary"); mode->addItem(tr("연출에 맞춰 변화만 표시"),"changes");}
+  if (kind == "result") {key="resultLayout"; mode->addItem(tr("활동 결과 요약"),"summary"); mode->addItem(tr("연출에 맞춰 변화만 표시"),"changes");mode->addItem(tr("이번 활동 성장 · 이전 / 이후 / 변화"),"growth");}
   if (kind == "choices") {key="choiceLayout"; mode->addItem(tr("기본 선택지 목록"),"list"); mode->addItem(tr("번호가 있는 선택 카드"),"cards");}
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
@@ -136,10 +137,13 @@ void StudioWindow::editWidgetSettings() {
   add->setEnabled(table->rowCount()<12);
   if(kind=="schedule"){layout->addWidget(new QLabel(tr("분류를 선택한 뒤 포함할 활동을 체크하세요.")));layout->addWidget(table);layout->addLayout(buttons);layout->addWidget(list);if(!groups.empty())table->setCurrentCell(0,0);}
   else {table->hide();add->hide();remove->hide();if(kind=="stats"||kind=="actions"){layout->addWidget(new QLabel(tr("표시할 항목 (선택하지 않으면 전체)")));layout->addWidget(list);}else list->hide();}
+  auto genreSettings=new GenreWidgetSettings(value,projectData(),view.value("documents").toArray());if(kind=="schedule"||kind=="button")layout->addWidget(genreSettings);else genreSettings->hide();
+  if(kind=="result"){auto help=new QLabel(tr("이번 활동 성장 표시는 확정된 한 활동의 수치만 비교합니다. 기간 전체 합계나 예상 결과가 아닙니다."));help->setWordWrap(true);layout->addWidget(help);}
   auto error=new QLabel;error->setObjectName("widgetSettingsError");error->setWordWrap(true);error->hide();shell->addWidget(error);
   auto ok = new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);ok->setObjectName("widgetSettingsButtons");shell->addWidget(ok);
   connect(ok,&QDialogButtonBox::accepted,&dialog,[&]{
     auto fail=[&](const QString& message){error->setText(message);error->show();};
+    const auto genreError=genreSettings->validate(mode->currentData().toString(),activityRules->isChecked(),phaseForecast->isChecked());if(!genreError.isEmpty()){fail(genreError);return;}
     if(view.value("revision")!=openedRevision||view.value("root")!=openedRoot){fail(tr("프로젝트가 변경되었습니다. 취소한 뒤 다시 열어 주세요."));return;}
     if(kind=="schedule"){
       if(mode->currentData()=="activity-board"&&projectData().contains("roster")){fail(tr("활동 보드는 한 명을 육성하는 프로젝트에서 사용할 수 있습니다. 다인 육성에서는 다른 표시 방식을 선택하세요."));return;}
@@ -156,6 +160,7 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="schedule") {for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();g["id"]=table->item(i,0)->text().trimmed();g["label"]=table->item(i,1)->text();const auto icon=qobject_cast<QComboBox*>(table->cellWidget(i,2))->currentData().toString();if(icon.isEmpty())g.remove("iconAssetId");else g["iconAssetId"]=icon;groups[i]=g;}value["scheduleGroups"]=groups;}
   if(kind=="stats"||kind=="actions"){QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove(selectionField);else value[selectionField]=ids;}
   if(supportsControlStyle(kind)){if(controlStyle->currentData().toString().isEmpty())value.remove("controlStyleId");else value["controlStyleId"]=controlStyle->currentData().toString();}
+  genreSettings->apply(value);
   if(kind=="button")value["autoLabel"]=autoLabel->isChecked();
   if(kind=="choices"){if(choiceEffects->isChecked())value["showChoiceEffects"]=true;else value.remove("showChoiceEffects");}
   if(kind=="schedule"){QJsonArray ids;for(int i=0;i<decreasing->count();i++)if(decreasing->item(i)->checkState()==Qt::Checked)ids.append(decreasing->item(i)->data(Qt::UserRole).toString());if(ids.empty())value.remove("decreasingAttributeIds");else value["decreasingAttributeIds"]=ids;}

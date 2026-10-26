@@ -150,3 +150,8 @@ add_executable(qt-activity-board-test activity-board-test.cpp)
 target_link_libraries(qt-activity-board-test PRIVATE studio-ui Qt6::Test)
 add_test(NAME qt-activity-board COMMAND qt-activity-board-test)
 set_tests_properties(qt-activity-board PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(qt-growth-authoring-test growth-authoring-test.cpp)
+target_link_libraries(qt-growth-authoring-test PRIVATE studio-ui Qt6::Test)
+add_test(NAME qt-growth-authoring COMMAND qt-growth-authoring-test)
+set_tests_properties(qt-growth-authoring PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

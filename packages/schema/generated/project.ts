@@ -3007,6 +3007,16 @@ export type Element = {
    */
   showActivityDescription?: boolean;
   scheduleLayout?: "columns" | "calendar" | "menu" | "board" | "activity-board";
+  activityBoard?: {
+    density?: "compact";
+    showSummary?: boolean;
+    advanceAfterApply?: boolean;
+    forecast?: "inline";
+    /**
+     * @maxItems 128
+     */
+    summaryAttributeIds?: string[];
+  };
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**
@@ -3831,6 +3841,7 @@ export type Element = {
     | "load"
     | "sound"
     | "navigate"
+    | "openPlanner"
     | "visit"
     | "buy"
     | "interact"
@@ -3882,6 +3893,9 @@ export type Element = {
     | "timelinePause"
     | "timelineSpeed"
     | "timelineSkip";
+  plannerElementId?: string;
+  plannerGroupId?: string;
+  plannerActivityId?: string;
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -3944,6 +3958,7 @@ export type Element = {
         | "load"
         | "sound"
         | "navigate"
+        | "openPlanner"
         | "visit"
         | "buy"
         | "interact"
@@ -3993,6 +4008,9 @@ export type Element = {
         | "timelinePause"
         | "timelineSpeed"
         | "timelineSkip";
+      plannerElementId?: string;
+      plannerGroupId?: string;
+      plannerActivityId?: string;
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -8371,7 +8389,7 @@ export type Element = {
     "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
   activityId?: string;
   decreasingAttributeIds?: string[];
-  resultLayout?: "summary" | "changes";
+  resultLayout?: "summary" | "changes" | "growth";
   choiceLayout?: "list" | "cards";
   /**
    * Show authored consequence text and immediate choice effects below each option.
@@ -8468,6 +8486,16 @@ export type ComponentChild = {
   imageAssetId?: string;
   fit?: "cover" | "contain";
   scheduleLayout?: "columns" | "calendar" | "menu" | "board" | "activity-board";
+  activityBoard?: {
+    density?: "compact";
+    showSummary?: boolean;
+    advanceAfterApply?: boolean;
+    forecast?: "inline";
+    /**
+     * @maxItems 128
+     */
+    summaryAttributeIds?: string[];
+  };
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**
@@ -9292,6 +9320,7 @@ export type ComponentChild = {
     | "load"
     | "sound"
     | "navigate"
+    | "openPlanner"
     | "visit"
     | "buy"
     | "interact"
@@ -9343,6 +9372,9 @@ export type ComponentChild = {
     | "timelinePause"
     | "timelineSpeed"
     | "timelineSkip";
+  plannerElementId?: string;
+  plannerGroupId?: string;
+  plannerActivityId?: string;
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -11518,6 +11550,7 @@ export type ComponentChild = {
         | "load"
         | "sound"
         | "navigate"
+        | "openPlanner"
         | "visit"
         | "buy"
         | "interact"
@@ -11567,6 +11600,9 @@ export type ComponentChild = {
         | "timelinePause"
         | "timelineSpeed"
         | "timelineSkip";
+      plannerElementId?: string;
+      plannerGroupId?: string;
+      plannerActivityId?: string;
       screenId?: string;
       locationId?: string;
       shopId?: string;
@@ -13766,7 +13802,7 @@ export type ComponentChild = {
     "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
   activityId?: string;
   decreasingAttributeIds?: string[];
-  resultLayout?: "summary" | "changes";
+  resultLayout?: "summary" | "changes" | "growth";
   choiceLayout?: "list" | "cards";
   meterThickness?: number;
   /**
@@ -14477,6 +14513,10 @@ export interface VisualDesign {
       };
     }[];
   }[];
+  /**
+   * After presentation, reveal the committed activity result and wait for explicit advance, including continuous playback.
+   */
+  activityTimelineCompletion?: "reveal-result";
   /**
    * Show committed activity changes sequentially inside result widgets. Existing authored activity timelines take precedence.
    */
