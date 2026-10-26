@@ -20,6 +20,35 @@
     }
     return out+"</div>";
   }
+  bool readable_timeline_visible() const {
+    return ui_modal.empty()&&game.timeline_active()&&!(game.timeline_cursor.value("completed",false)&&display_content.at("project").value("visual",Json::object()).value("activityTimelineCompletion","")=="reveal-result");
+  }
+  std::string readable_timeline_body(double availableWidth,double availableHeight) {
+    const auto plan=plan_activity_timeline(display_content,game.state,locale);const auto& cursor=game.timeline_cursor;
+    const bool completed=cursor.value("completed",false),paused=cursor.value("paused",false);
+    std::string out="<div id=\"timeline-overlay\" class=\"reading-item\"><p id=\"timeline-status\"><b>"+(completed?settings_words("재생 완료","Presentation complete","演出完了"):paused?settings_words("일시 정지","Paused","一時停止中"):settings_words("활동 연출","Activity presentation","活動の演出"))+"</b></p>";
+    if(plan.contains("resultPlayback")){
+      out+="<div id=\"timeline-text\" data-result-playback=\"true\" data-result-changes=\"false\" style=\"white-space:pre-wrap;line-height:1.45;\">"+result_playback_markup(false,Json::object())+"</div>";
+    }else{
+      const auto& clip=plan.at("clips").at(std::min(cursor.at("clipIndex").get<size_t>(),plan.at("clips").size()-1));
+      if(clip.contains("stage")||clip.contains("imageAssetId")){
+        const double mediaWidth=std::max(44.0,availableWidth),mediaHeight=std::min(mediaWidth*.5625,std::max(72.0,availableHeight*.25));
+        out+="<div id=\"timeline-visual\" style=\"position:relative;pointer-events:none;width:"+number(mediaWidth)+"px;height:"+number(mediaHeight)+"px;overflow:hidden;clip:always;margin-bottom:12px;\">";
+        if(clip.contains("stage"))out+=timeline_stage(clip.at("stage"),timeline_clip_elapsed(clip,cursor),mediaWidth,mediaHeight);
+        else out+=image({{"imageAssetId",clip.at("imageAssetId")},{"width",mediaWidth},{"height",mediaHeight},{"fit","contain"}});
+        out+="</div>";
+      }
+      // The narrative stays in normal flow, independent of the media fade and source canvas geometry.
+      out+="<p id=\"timeline-text\" style=\"white-space:pre-wrap;line-height:1.45;\">"+escape(clip.value("text",""))+"</p>";
+    }
+    out+="</div>";
+    const auto control=[&](const std::string& id,const std::string& label,const std::string& type,bool enabled=true){return "<div class=\"reading-item\">"+button(id,label,{{"type",type}},enabled)+"</div>";};
+    out+=control("timeline-speed",settings_words("재생 속도 ×","Speed ×","速度 ×")+std::to_string(cursor.value("speed",1)),"timelineSpeed",!completed);
+    out+=control("timeline-save",settings_words("저장","Save","保存"),"save");
+    out+=control("timeline-load",settings_words("불러오기","Load","読み込む"),"load");
+    out+="<div class=\"reading-item\">"+button("engine-reading-options",settings_words("읽기 설정","Reading options","読み方の設定"),{{"type","readingOptions"},{"open",true}})+"</div>";
+    return out;
+  }
   std::string timeline_overlay() {
     if(!game.timeline_active())return "";
     const auto plan=plan_activity_timeline(display_content,game.state,locale);const auto& cursor=game.timeline_cursor;

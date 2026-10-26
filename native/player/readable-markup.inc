@@ -182,7 +182,7 @@
     if(!guided.is_null()&&!reading_overlay()&&!planning_guide_seen&&!player_preferences.value("guidance",Json::object()).value("compact-planning-v1",false)&&!planning_guide_suppressed){
       planning_guide=true;planning_guide_seen=true;planning_guide_step=0;planning_guide_element=guided.at("id");planning_guide_owner=screen_id;
     }
-    readable_view=portable_open()?"portable:"+portable_status:resume_context_open?"resume-context":phase_forecast_open?"phase-forecast":plan_reuse_open?"reuse":reading_history_open?"history":planning_guide?"guide:"+std::to_string(planning_guide_step):reading_options?"options":reading_menu?"menu":activity_board_open&&activity_board_reading?"activity-board:"+activity_board_element+":"+std::to_string(activity_board_slot):compact_picker?"picker:"+std::to_string(compact_slot):"game";
+    readable_view=portable_open()?"portable:"+portable_status:resume_context_open?"resume-context":phase_forecast_open?"phase-forecast":plan_reuse_open?"reuse":reading_history_open?"history":planning_guide?"guide:"+std::to_string(planning_guide_step):reading_options?"options":reading_menu?"menu":activity_board_open&&activity_board_reading?"activity-board:"+activity_board_element+":"+std::to_string(activity_board_slot):compact_picker?"picker:"+std::to_string(compact_slot):readable_timeline_visible()?"timeline:"+std::to_string(game.timeline_cursor.value("clipIndex",0)):"game";
     if(portable_open()){
       main=portable_review_body();
       footer=wrap(button("engine-portable-cancel",settings_words("취소","Cancel","キャンセル"),{{"type","portableCancel"}}));
@@ -207,6 +207,13 @@
       selected=Json::array({{{"id","engine-reading-settings"},{"kind","playerSettings"}}});
       main="<div id=\"node-engine-reading-settings\" class=\"reading-item\">"+readable_settings({{"id","engine-reading-settings"},{"_readingOnly",true}})+"</div>";
       footer=wrap(button("engine-reading-close",settings_words("게임으로 돌아가기","Back to game","ゲームへ戻る"),{{"type","readingOptions"},{"open",false}}));
+    }else if(readable_timeline_visible()){
+      // A presentation replaces the authored result only while its cursor still owns progression.
+      // It is deliberately not a reading_overlay(): the presentation clock must keep running.
+      main=readable_timeline_body(cw-2*pad-12,sh-2*pad);
+      const bool completed=game.timeline_cursor.value("completed",false);
+      if(!completed)footer=wrap(button("timeline-pause",game.timeline_cursor.value("paused",false)?settings_words("계속 재생","Resume","再開"):settings_words("일시정지","Pause","一時停止"),{{"type","timelinePause"}}));
+      footer+=wrap(button(completed?"timeline-continue":"timeline-skip",completed?settings_words("결과 확인 · 계속","Review result · continue","結果を確認 · 続ける"):settings_words("건너뛰기","Skip","スキップ"),{{"type",completed?"advance":"timelineSkip"}}));
     }else if(activity_board_open&&activity_board_reading&&activity_board_valid()){
       if(const auto* raw=activity_board_widget(activity_board_element)){auto e=resolved_style(visual,*raw);e["fontSize"]=readable_font;selected.push_back(e);main="<div id=\"node-"+escape(activity_board_element)+"\" class=\"reading-item schedule\">"+colored_controls(activity_board_groups(e)+activity_board_cards(e)+activity_board_details(e),control_colors(e,true))+"</div>";footer="<div id=\""+escape(activity_board_element)+"__board-footer\" style=\"display:flex;flex-wrap:wrap;width:100%;\">"+colored_controls(activity_board_footer(e),control_colors(e,true))+"</div>";}
     }else if(compact_picker){
@@ -242,5 +249,5 @@
     // Put notices into flow so they cannot cover the final action on short phones.
     if(!game.message.empty()&&!portable_open()&&!resume_context_open)main+="<p class=\"reading-notice\">"+escape(game.message)+"</p>";
     css+=control_fallback_css;
-    const auto modal=screen.value("modal",false);return "<rml><head><style>"+css+"</style></head><body"+SurfacePaint::marker(config.value("surface",Json()))+"><div "+std::string(modal?"id=\"ui-modal\" ":"")+"class=\"reading-root\"><div id=\"reading-main\" class=\"reading-main\""+std::string(phase_forecast_open?" style=\"tab-index:auto;\"":"")+">"+main+"</div><div id=\"reading-actions\" class=\"reading-actions\">"+footer+"</div></div></body></rml>";
+    const auto modal=screen.value("modal",false);return "<rml><head><style>"+css+"</style></head><body"+SurfacePaint::marker(config.value("surface",Json()))+"><div "+std::string(modal?"id=\"ui-modal\" ":"")+"class=\"reading-root\"><div id=\"reading-main\" class=\"reading-main\""+std::string((phase_forecast_open||readable_timeline_visible())?" style=\"tab-index:auto;\"":"")+">"+main+"</div><div id=\"reading-actions\" class=\"reading-actions\">"+footer+"</div></div></body></rml>";
   }
