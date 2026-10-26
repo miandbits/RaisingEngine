@@ -69,7 +69,10 @@
   std::string activity_board_tickets(const Json& e) {
     const auto id=e.at("id").get<std::string>();const bool own=activity_board_open&&activity_board_element==id;const int selected=own?activity_board_slot:activity_board_display_slot();
     const double width=std::max(1.0,e.value("width",800.0)-2*(e.value("padding",6.0)+e.value("borderWidth",0.0))-16);
-    const double ticket=std::max(minimum_control_extent()+32,std::max(readable_active?144.0:160.0,(width-8*(std::min(4,game.periods())-1))/std::min(4,game.periods())));
+    // Reading text grows independently of window points. Grow each ticket
+    // with its rendered font, then keep one complete ticket inside the pane.
+    const double desired=std::max(minimum_control_extent()+32,std::max(readable_active?144.0*std::max(1.0,readable_font/18.0):160.0,(width-8*(std::min(4,game.periods())-1))/std::min(4,game.periods())));
+    const double ticket=readable_active?std::min(width,desired):desired;
     std::string out="<div id=\""+escape(activity_board_id(e,"periods"))+"\" class=\"activity-board-periods\" style=\"flex-shrink:0;width:100%;overflow-x:auto;overflow-y:hidden;pointer-events:auto;tab-index:auto;padding-bottom:10px;\"><div style=\"display:flex;width:"+number((ticket+8)*game.periods()-8)+"px;\">";
     for(int i=0;i<game.periods();++i){const bool assigned=plan_selected&(1<<i);const auto name=assigned?activity_board_name(plan[i]):settings_words("활동 선택","Choose activity","活動を選ぶ");const auto period=compact_period(i);const auto icon=assigned?activity_board_icon(e,plan[i]):"";
       const auto content="<span style=\"display:block;font-size:.85em;margin-bottom:6px;\">"+escape(period)+"</span>"+"<span style=\"display:flex;align-items:center;\">"+activity_board_inline_image(icon,24)+"<span style=\"display:block;flex:1;min-width:0;\">"+escape(name)+"</span></span>"+(i<activity_board_first()?"<span style=\"display:block;font-size:.85em;\">"+escape(settings_words("진행 완료","Already played","進行済み"))+"</span>":std::string());
@@ -114,7 +117,9 @@
     for(const auto& name:{std::string("apply"),std::string("cancel")})out+="<div class=\"activity-board-action\" style=\"flex:1;"+std::string(stacked?"flex-basis:100%;":"")+"min-width:0;margin:4px;\">"+activity_board_button(e,name,name=="apply"?settings_words("이 활동 적용","Apply activity","この活動を適用"):settings_words("취소","Cancel","キャンセル"),name=="apply"?"Apply":"Cancel",Json::object(),own&&(name=="cancel"||!activity_board_activity.empty()))+"</div>";return out;
   }
   std::string activity_board_tools(const Json& e) {
-    const auto wrap=[](const std::string& html){return html.empty()?std::string():"<div style=\"flex:1;min-width:120px;margin:4px 8px 0 0;\">"+html+"</div>";};
+    const double available=std::max(1.0,e.value("width",800.0)-2*(e.value("padding",6.0)+e.value("borderWidth",0.0))-16);
+    const double minimum=readable_active?std::min(available,120.0*std::max(1.0,readable_font/18.0)):120.0;
+    const auto wrap=[&](const std::string& html){return html.empty()?std::string():"<div style=\"flex:1;min-width:"+number(minimum)+"px;margin:4px 8px 0 0;\">"+html+"</div>";};
     std::string out="<div style=\"display:flex;flex-wrap:wrap;flex-shrink:0;\">"+wrap(phase_forecast_launcher(e));const auto item=activity_board_item(e.at("id"));
     if(item.value("planReuse","")=="last-committed")out+=wrap(reuse_launcher(e));
     out+=wrap(button(activity_board_id(e,"help"),settings_words("계획 방법 보기","How planning works","計画の立て方"),{{"type","planningGuideOpen"},{"elementId",e.at("id")}},planning_guide_eligible(e)));return out+"</div>";

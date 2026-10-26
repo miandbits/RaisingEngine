@@ -9,7 +9,7 @@ import {exportGame} from '../../dist/packages/export-service/export.js';
 import {desktopTarget,gameDirectory,playerExecutable} from '../../dist/packages/export-service/targets.js';
 import {createSession,dispatchSession} from '../../dist/packages/runtime-service/index.js';
 import {encodeSave} from '../../dist/packages/runtime-service/save.js';
-import {encodeRgbaPng} from '../../dist/packages/studio-service/png.js';
+import {decodePng,encodeRgbaPng} from '../../dist/packages/studio-service/png.js';
 const at=(r,k)=>r.steps.find(s=>s.command.checkpoint===k)?.ui;
 const hit=id=>[{scrollIntoView:id,waitFrames:2},{clickWindow:id,waitFrames:2}];
 const touch=id=>[{scrollIntoView:id,waitFrames:2},{touchWindow:id,waitFrames:2}];
@@ -63,6 +63,62 @@ test('native activity board supports localized one/twelve periods, phone 200%, k
   else if(periods===12)assert.ok(node(at(r,'cancel'),bid('periods')).scrollLeft>0,'Last period stays in view after Cancel');
   assert.deepEqual(at(r,'confirmed').commands,[{type:'setSchedule',activityIds:Array(periods).fill('rest')}]);assert.deepEqual(at(r,'executed').commands,[{type:'setSchedule',activityIds:Array(periods).fill('rest')},{type:'executeActivity'}]);same(at(r,'disabled'),at(r,'executed'));
   console.log('Activity board layout evidence: '+out);
+ }
+});
+
+// Inspect actual text ink, not just an un-clipped button box: narrow buttons
+// can be geometrically valid while splitting ordinary English words in half.
+function boardInkBands(image,viewport,box) {
+ const sx=image.width/viewport.width,sy=image.height/viewport.height,rows=[];
+ for(let y=Math.ceil((box.y+8)*sy);y<Math.floor((box.y+box.height-8)*sy);y++){
+  let ink=0;for(let x=Math.ceil((box.x+8)*sx);x<Math.floor((box.x+box.width-8)*sx);x++){
+   const at=(y*image.width+x)*4;
+   if(Math.abs(image.pixels[at]-32)<24&&Math.abs(image.pixels[at+1]-58)<24&&Math.abs(image.pixels[at+2]-52)<24)ink++;
+  }
+  if(ink>=Math.max(1,Math.floor(sx)))rows.push(y);
+ }
+ const bands=[];for(const y of rows){const last=bands.at(-1);if(last&&y-last.bottom<=Math.ceil(3*sy))last.bottom=y;else bands.push({top:y,bottom:y});}
+ return bands.map(b=>({top:b.top/sy,height:(b.bottom-b.top+1)/sy}));
+}
+
+test('native readable board scales ticket and helper widths with text, preserving whole words and touch browsing',{timeout:240000},async()=>{
+ for(const [locale,width,height,periods]of [['en',390,844,4],['en',300,568,12],['ja',300,568,4]]){
+  const out=await workspace('readable-width-'+locale+'-'+width),f=await fixture(out,{periods,reading:true,locale});
+  const session=createSession(f.content,42,{mode:'full'}).session,saved=await encodeSave(f.content,session);assert.equal(saved.ok,true);await writeFile(f.save,saved.text);
+  const steps=[{resize:{width,height}},touch('load'),{checkpoint:'initial',screenshot:join(out,'initial.png')},
+   {touchDrag:{fromX:width-48,fromY:80,toX:40,toY:80},waitFrames:2},{checkpoint:'swiped'}];
+  for(let i=0;i<periods;i++)steps.push(touch(bid('slot-'+i)),{checkpoint:'period-'+i},touch(bid('cancel')),{checkpoint:'cancel-'+i});
+  steps.push(touch(bid('slot-'+(periods-1))),touch(bid('group-option-learning')),{checkpoint:'category'},touch(bid('activity-study')),{checkpoint:'inspected',screenshot:join(out,'inspected.png')},touch(bid('cancel')),{checkpoint:'cancel'},
+   {scrollIntoView:'phase-forecast-planner',waitFrames:2},{checkpoint:'forecast-label',screenshot:join(out,'forecast-label.png')},touch('phase-forecast-planner'),{checkpoint:'forecast'},touch('engine-phase-forecast-close'),
+   {scrollIntoView:bid('reuse'),waitFrames:2},{checkpoint:'reuse-label',screenshot:join(out,'reuse-label.png')},
+   {scrollIntoView:bid('help'),waitFrames:2},{checkpoint:'help-label',screenshot:join(out,'help-label.png')},touch(bid('help')),{checkpoint:'help'},touch('engine-planning-guide-skip'),{checkpoint:'returned'});
+  const r=await f.run('readable-width',steps,['--text-scale','2']),initial=at(r,'initial');
+  for(const step of r.steps)if(step.command.checkpoint)same(step.ui,initial);
+  const strip=node(initial,bid('periods')),ticket=node(initial,bid('slot-0'));
+  assert.equal(initial.readingLayout.active,true);assert.equal(ticket.fontSize,'36px');
+  assert.ok(ticket.width>=strip.clientWidth*.8&&ticket.width<=strip.clientWidth,JSON.stringify({ticket,strip}));
+  assert.ok(Math.abs(ticket.visibleHitbox.width-ticket.hitbox.width)<.1&&Math.abs(ticket.visibleHitbox.height-ticket.hitbox.height)<.1,'One complete ticket remains visible at 200%');
+  assert.ok(node(at(r,'swiped'),bid('periods')).scrollLeft>strip.scrollLeft,'Real horizontal touch drag browses the strip without choosing an activity');
+  const image=decodePng(await readFile(join(out,'initial.png'))),bands=boardInkBands(image,{width,height},ticket);
+  if(locale==='en'){
+   assert.equal(ticket.label,'Period 1 · Choose activity');
+   assert.ok(bands.length>=2&&bands.length<=3,'Period and the two complete English words use two or three lines, never four fragmented word lines: '+JSON.stringify(bands));
+   assert.ok(bands.every(b=>b.height>=18),'Every ticket text line retains full glyph height: '+JSON.stringify(bands));
+  }
+  for(let i=0;i<periods;i++){assert.equal(at(r,'period-'+i).activityBoard.slot,i);assert.equal(at(r,'cancel-'+i).focusedId,bid('slot-'+i));}
+  assert.equal(at(r,'category').activityBoard.group,'learning');assert.equal(at(r,'inspected').activityBoard.activityId,'study');
+  const helpers=[];
+  for(const [checkpoint,id]of [['forecast-label','phase-forecast-planner'],['reuse-label',bid('reuse')],['help-label',bid('help')]]){
+   const u=at(r,checkpoint),control=node(u,id),main=u.readingLayout['reading-main'];helpers.push({checkpoint,control});
+   assert.ok(control.width>=main.clientWidth-10,'Large-text helpers use independent full-width rows: '+JSON.stringify(control));
+   assert.ok(Math.abs(control.visibleHitbox.width-control.hitbox.width)<.1&&Math.abs(control.visibleHitbox.height-control.hitbox.height)<=1,'Full helper target is reachable within one point of scroll rounding: '+JSON.stringify(control));
+   assert.equal(control.overflowX,false);assert.equal(control.overflowY,false);
+   assert.ok(main.scrollWidth<=main.clientWidth+1,'Only the period strip scrolls horizontally');
+  }
+  assert.equal(at(r,'forecast').phaseForecast.open,true);assert.equal(at(r,'help').readingLayout.guidanceOpen,true);
+  assert.equal(await readFile(f.save,'utf8'),saved.text,'Browsing, categories and helpers never rewrite a player save');
+  await writeFile(join(out,'readable-width-proof.json'),JSON.stringify({ok:true,locale,width,height,periods,textScale:2,ticket,strip,bands,helpers,saveBytesUnchanged:true,canonicalAndDraftUnchanged:true},null,2));
+  console.log('Activity board readable width evidence: '+out);
  }
 });
 

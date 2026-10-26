@@ -249,9 +249,9 @@ private slots:
     const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
     StudioWindow owner(engine);owner.resize(1000,680);owner.show();owner.openProject(root);
     QTRY_VERIFY_WITH_TIMEOUT(!owner.busy()&&!owner.projectData().isEmpty(),20000);
-    auto tree=owner.findChild<QTreeWidget*>("hierarchy");QVERIFY(tree);QString id;
-    for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->childCount()==0&&!(*it)->data(0,Qt::UserRole).toString().isEmpty()){id=(*it)->data(0,Qt::UserRole).toString();tree->setCurrentItem(*it);break;}
-    QVERIFY(!id.isEmpty());auto field=owner.findChild<QLineEdit*>("elementName");QVERIFY(field&&field->isEnabled());
+    auto tree=owner.findChild<QTreeWidget*>("hierarchy");QVERIFY(tree);QString id,selectedScreenId;
+    for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->childCount()==0&&!(*it)->data(0,Qt::UserRole).toString().isEmpty()){id=(*it)->data(0,Qt::UserRole).toString();selectedScreenId=(*it)->data(0,Qt::UserRole+1).toString();tree->setCurrentItem(*it);break;}
+    QVERIFY(!id.isEmpty());QVERIFY(!selectedScreenId.isEmpty());auto field=owner.findChild<QLineEdit*>("elementName");QVERIFY(field&&field->isEnabled());
     owner.activateWindow();field->setFocus();QCoreApplication::processEvents();field->setText("Saved through command search 한글");
     QTimer::singleShot(10000,&owner,[&]{if(auto d=owner.findChild<QDialog*>("authoringToolSearch"))d->reject();});
     bool choseSave=false;
@@ -263,9 +263,12 @@ private slots:
     });
     owner.findChild<QAction*>("findAuthoringTool")->trigger();QVERIFY(choseSave);
     QTRY_VERIFY_WITH_TIMEOUT(!owner.busy()&&!owner.currentView()["dirty"].toBool(),15000);
-    const auto saved=owner.projectData();bool found=false;
-    for(auto screen:saved["visual"].toObject()["screens"].toArray())for(auto element:screen.toObject()["elements"].toArray())if(element.toObject()["id"]==id)found=element.toObject()["label"]=="Saved through command search 한글";
-    QVERIFY(found);QVERIFY(owner.close());
+    const auto saved=owner.projectData();int selectedMatches=0;
+    for(auto screen:saved["visual"].toObject()["screens"].toArray())if(screen.toObject()["id"]==selectedScreenId)
+      for(auto element:screen.toObject()["elements"].toArray())if(element.toObject()["id"]==id){
+        ++selectedMatches;QCOMPARE(element.toObject()["label"].toString(),QString("Saved through command search 한글"));
+      }
+    QCOMPARE(selectedMatches,1);QVERIFY(owner.close());
     StudioWindow reopened(engine);reopened.show();reopened.openProject(root);QTRY_VERIFY_WITH_TIMEOUT(!reopened.busy()&&!reopened.projectData().isEmpty(),20000);QCOMPARE(reopened.projectData(),saved);QVERIFY(reopened.close());
   }
   void panelNavigationWithoutProject() {
