@@ -180,7 +180,8 @@ public:
   Json editor_command=Json::object();
   std::optional<SDL_FingerID> active_finger;
   Rml::Element* touch_scroll=nullptr;
-  float touch_start_x=0,touch_start_y=0,touch_scroll_start=0;
+  float touch_start_x=0,touch_start_y=0,touch_scroll_start=0,touch_scroll_start_x=0;
+  bool touch_scroll_vertical=false,touch_scroll_horizontal=false;
   bool touch_dragged=false;
   Json test_safe_area;
   #include "readable-app.inc"
@@ -388,13 +389,20 @@ public:
     if(!active_modal.empty()){Rml::ElementList all;document->QuerySelectorAll(all,"button,select,input");for(auto* e:all){bool inside=false;for(auto* p=e;p;p=p->GetParentNode())if(p->GetId()==active_modal)inside=true;if(!inside)e->SetAttribute("disabled","disabled");}}
     if(recalling()){Rml::ElementList controls;document->QuerySelectorAll(controls,"button,select,input");for(auto* control:controls)if(!markup.actions.count(control->GetId()))control->SetAttribute("disabled","disabled");}
     apply_preview();context->Update();
+    const bool explicit_return_focus=!reading_focus.empty()||!portable_focus_pending.empty();
+    Rml::Element* save_focus=nullptr;
     if(!active_modal.empty())if(auto* modal=document->GetElementById(active_modal)){
       Rml::Element* focus=nullptr;
       if(!markup.slot_confirmation.empty())for(const auto& [id,action]:markup.actions)if(action.value("type","")=="cancelSlot")focus=document->GetElementById(id);
       if(!focus&&(previous_focus.size()>8&&(previous_focus.substr(previous_focus.size()-8)=="-confirm"||previous_focus.substr(previous_focus.size()-7)=="-cancel")))for(const auto& [id,action]:markup.actions)
         if(action.value("type","")=="selectSaveSlot"&&action.value("index",-1)==markup.slot_selected&&action.value("automatic",false)==markup.slot_auto)focus=document->GetElementById(id);
       if(!focus&&!previous_focus.empty())if(auto* prior=document->GetElementById(previous_focus);prior&&!prior->HasAttribute("disabled"))for(auto* parent=prior;parent;parent=parent->GetParentNode())if(parent==modal)focus=prior;
-      if(!focus)focus=modal->QuerySelector("button:not([disabled])");if(focus)focus->Focus();
+      if(!focus)focus=modal->QuerySelector("button:not([disabled])");
+      if(focus){
+        focus->Focus();
+        const auto action=markup.actions.find(focus->GetId());
+        if(!markup.slot_confirmation.empty()||(action!=markup.actions.end()&&action->second.value("type","")=="selectSaveSlot"))save_focus=focus;
+      }
     }
     for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll")) {
       const auto found=collection_scroll.find(markup.screen_id+"/"+entry.value("id",""));
@@ -431,6 +439,9 @@ public:
     if(previous_screen==markup.screen_id&&!previous_focus.empty()&&active_modal.empty())
       if(auto* focus=document->GetElementById(previous_focus);focus&&!focus->HasAttribute("disabled"))focus->Focus();
     restore_reading_position();
+    // A generated save action takes focus after the old list's reading anchor
+    // is restored. Reveal its real target without changing other reading views.
+    if(save_focus&&!explicit_return_focus){save_focus->Focus();context->Update();save_focus->ScrollIntoView(true);context->Update();}
     restore_portable_focus();
     entrance_keys=std::move(next_entrance_keys);dirty=false;
     try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
@@ -643,11 +654,16 @@ public:
       if(event.type==SDL_EVENT_FINGER_DOWN) {
         if(active_finger||x<0||y<0||x>=markup.width||y>=markup.height)return;
         active_finger=finger.fingerID;touch_start_x=x;touch_start_y=y;touch_dragged=false;touch_scroll=nullptr;
-        if(active_markup().readable_active)for(auto* e=context->GetElementAtPoint({x,y});e;e=e->GetParentNode())if(e->GetProperty("overflow-y")->ToString()=="auto"&&e->GetScrollHeight()>e->GetClientHeight()+1){touch_scroll=e;touch_scroll_start=e->GetScrollTop();break;}
+        for(auto* e=context->GetElementAtPoint({x,y});e;e=e->GetParentNode()){
+          const auto sy=e->GetProperty("overflow-y")->ToString(),sx=e->GetProperty("overflow-x")->ToString();
+          const bool vertical=(sy=="auto"||sy=="scroll")&&e->GetScrollHeight()>e->GetClientHeight()+1;
+          const bool horizontal=(sx=="auto"||sx=="scroll")&&e->GetScrollWidth()>e->GetClientWidth()+1;
+          if(vertical||horizontal){touch_scroll=e;touch_scroll_vertical=vertical;touch_scroll_horizontal=horizontal;touch_scroll_start=e->GetScrollTop();touch_scroll_start_x=e->GetScrollLeft();break;}
+        }
         context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);context->ProcessMouseButtonDown(0,0);
       } else if(active_finger&&*active_finger==finger.fingerID) {
-        if(active_markup().readable_active&&!touch_dragged&&std::hypot(x-touch_start_x,y-touch_start_y)>8){touch_dragged=true;context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
-        if(touch_dragged&&touch_scroll)touch_scroll->SetScrollTop(touch_scroll_start+touch_start_y-y);
+        if((active_markup().readable_active||touch_scroll)&&!touch_dragged&&std::hypot(x-touch_start_x,y-touch_start_y)>active_markup().minimum_control_extent(8)){touch_dragged=true;context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
+        if(touch_dragged&&touch_scroll){if(touch_scroll_vertical)touch_scroll->SetScrollTop(touch_scroll_start+touch_start_y-y);if(touch_scroll_horizontal)touch_scroll->SetScrollLeft(touch_scroll_start_x+touch_start_x-x);}
         else {
           if(event.type==SDL_EVENT_FINGER_CANCELED)context->ProcessMouseMove(-1,-1,0);
           else context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);
@@ -660,7 +676,7 @@ public:
     // Keep physical dimensions out of the simulation. Responsive layouts rebuild
     // the logical canvas; legacy fit layouts retain their authored dimensions.
     if(event.type==SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED||event.type==SDL_EVENT_WINDOW_RESIZED||event.type==SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED||event.type==SDL_EVENT_WINDOW_SAFE_AREA_CHANGED) {
-      if(game.content.at("project").at("visual").value("viewportMode","fit")=="responsive"||game.content.at("project").at("visual").contains("readableLayout"))dirty=true;
+      dirty=true; // Fit canvases also recompute generated control minima in window points.
       if(context){context->SetDimensions({markup.width,markup.height});context->SetDensityIndependentPixelRatio(1.f);}return;
     }
     if(event.type==SDL_EVENT_GAMEPAD_ADDED){auto* pad=SDL_OpenGamepad(event.gdevice.which);if(pad)gamepads[event.gdevice.which]=pad;return;}

@@ -68,15 +68,15 @@ export function ScheduleWidget({element,context,planning,groups,assetUrl,disable
     const project=context.calendarProject??{startYear:year,startMonth:month,periodsPerMonth:count};const grid=calendarGrid(project,{year,month,periodInMonth:context.period,periodIndex:0});const first=grid.offset,days=grid.days,custom=project.calendar,words=custom?calendarLabels(custom,context.locale):null;
     return <div className="schedule-calendar" data-testid="schedule-calendar">
       <div className="schedule-calendar-title">{forecast}{custom?calendarText({year,month,periodInMonth:context.period,periodIndex:0},custom,context.locale,false):`${year}년 ${month}월`}</div>
-      <div className="schedule-calendar-week">{(words?.weekdays??['일','월','화','수','목','금','토']).map(day=><span key={day}>{day}</span>)}</div>
-      <div className="schedule-calendar-days" style={{gridTemplateRows:`repeat(${grid.rows},minmax(0,1fr))`}}>{Array.from({length:grid.rows*7},(_,index)=>{
+      <div className="schedule-calendar-body"><div className="schedule-calendar-week">{(words?.weekdays??['일','월','화','수','목','금','토']).map(day=><span key={day}>{day}</span>)}</div>
+      <div className="schedule-calendar-days" style={{gridTemplateRows:`repeat(${grid.rows},minmax(var(--canvas-control-min,44px),1fr))`,minHeight:`calc(${grid.rows} * var(--canvas-control-min,44px))`}}>{Array.from({length:grid.rows*7},(_,index)=>{
         const day=index-first+1;if(day<1||day>days)return <span key={index}/>;
         const slot=calendarDaySlot(day,count,days,!!custom),activity=context.activities.find(a=>a.id===context.plan[slot]);
         const selected=!!(planner.mask&(1<<slot));const chars=Array.from(activity?.label??'');
         return <button key={index} type="button" data-calendar-day={day} data-slot={slot} aria-label={`${words?words.day+' '+day:day+'일'} · ${selected?activity?.label??'':'미선택'}`} title={activity?.label} className={slot===planner.slot?'selected-slot':''} disabled={!editable||slot<context.period} onClick={()=>chooseSlot(slot)}>
           <span>{day}</span>{selected&&activity&&(activity.iconAssetId?<img src={assetUrl(activity.iconAssetId)} alt=""/>:<small className="calendar-activity-name">{chars.slice(0,4).join('')}{chars.length>4?'…':''}</small>)}
         </button>;
-      })}</div>
+      })}</div></div>
     </div>;
   }
   if(!readable&&element.scheduleLayout==='menu'){

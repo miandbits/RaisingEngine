@@ -28,7 +28,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   useEffect(()=>{
     if(!modalId)return;const previous=document.activeElement as HTMLElement|null,root=modalRef.current;
     const focusable=()=>Array.from(root?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex="0"]')??[]);
-    (root?.querySelector<HTMLElement>('[autofocus]')??focusable()[0])?.focus();
+    (root?.querySelector<HTMLElement>('[data-slot-action="cancel"]')??root?.querySelector<HTMLElement>('[autofocus]')??focusable()[0])?.focus();
     const handler=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();slots?.({type:view.saveSlots?.confirmation?'cancel':'close'});}else if(event.key==='Tab'){const list=focusable(),first=list[0],last=list.at(-1);if(!list.includes(document.activeElement as HTMLElement)){event.preventDefault();first?.focus();}else if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};
     window.addEventListener('keydown',handler,true);return()=>{window.removeEventListener('keydown',handler,true);previous?.focus({preventScroll:true});};
   },[modalId,view.saveSlots?.confirmation]);

@@ -35,13 +35,16 @@
     // width made otherwise fitting periods overflow the scroll viewport.
     const double padding=e.value("padding",display_content.at("project").at("visual").value("widgetTheme","")=="ornate"?0.0:6.0);
     const double width=std::max(1.0,e.value("width",888.0)-2*padding-2*e.value("borderWidth",0.0));
-    const double height=e.value("height",400.0),cw=std::max(180.0,(width-4)/game.periods());
-    std::string out="<div class=\"schedule-detail-planner\"><div id=\"plan-periods-"+escape(e.value("id",""))+"\" class=\"schedule-detail-periods\" style=\"width:100%;height:128px;overflow-x:auto;overflow-y:visible;\"><div style=\"width:"+number(cw*game.periods())+"px;\">";
+    const double control=std::max(44.0,minimum_control_extent()),cw=std::max(std::max(180.0,control+16),(width-4)/game.periods());
+    // Two controls, their gap and row padding; reserve a scrollbar only when
+    // the authored width really needs one. The detail pane receives the rest.
+    const double periods_height=control*2+24+(cw*game.periods()>width?14:0);
+    std::string out="<div class=\"schedule-detail-planner\"><div id=\"plan-periods-"+escape(e.value("id",""))+"\" class=\"schedule-detail-periods\" style=\"width:100%;min-height:"+number(periods_height)+"px;overflow-x:auto;overflow-y:visible;\"><div style=\"width:"+number(cw*game.periods())+"px;\">";
     for(int i=0;i<game.periods();++i){
       const auto label=display_content.at("project").contains("calendar")?raising::dates::spec(display_content.at("project"),locale).period+" "+std::to_string(i+1):settings_words("일정 "+std::to_string(i+1),"Period "+std::to_string(i+1),"予定 "+std::to_string(i+1));
       out+="<div class=\"schedule-row\" style=\"width:"+number(cw)+"px;\">";
       auto review=button("plan-review-"+std::to_string(i),label+settings_words(" · 자세히"," · Details"," · 詳細"),{{"type","planInspect"},{"slot",i}});
-      review.insert(review.find('>')," class=\"schedule-period-review"+std::string(i==plan_slot?" selected":"")+"\"");out+=review;
+      review.insert(review.find('>')," class=\"schedule-period-review"+std::string(i==plan_slot?" selected":"")+"\" style=\"color:"+css_color(e.value("color",display_content.at("project").at("visual").value("widgetTheme","")=="ornate"?"#fff0d0":"#203a34"))+";\"");out+=review;
       out+="<select style=\"width:"+number(cw-16)+"px;\" id=\"plan-"+std::to_string(i)+"\""+(i<period||!editable?" disabled=\"disabled\"":"")+">";
       for(const auto& a:display_content.at("activities"))out+="<option id=\"plan-"+std::to_string(i)+"-option-"+escape(a.value("id",""))+"\" value=\""+escape(a.value("id",""))+"\""+(plan[i]==a.at("id")?" selected=\"selected\"":"")+">"+escape(a.value("label",""))+"</option>";
       out+="</select></div>";
@@ -49,6 +52,6 @@
     out+="</div></div>";
     if(e.value("showPhaseForecast",false))out+="<div class=\"schedule-forecast-bar\">"+phase_forecast_launcher(e)+"</div>";
     else out+="<div class=\"schedule-draft-note\">"+escape(settings_words("확정할 때까지 변경은 초안에 남습니다.","Changes stay in your draft until you confirm.","確定するまで変更は下書きに保存されます。"))+"</div>";
-    out+="<div id=\"plan-details-"+escape(e.value("id",""))+"\" class=\"schedule-detail-pane\" style=\"height:"+number(std::max(40.0,height-(e.value("showPhaseForecast",false)?206:186)))+"px;\">"+schedule_detail(e,plan_slot)+"</div></div>";
+    out+="<div id=\"plan-details-"+escape(e.value("id",""))+"\" class=\"schedule-detail-pane\">"+schedule_detail(e,plan_slot)+"</div></div>";
     return out;
   }

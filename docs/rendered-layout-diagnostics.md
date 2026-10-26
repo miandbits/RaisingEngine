@@ -15,6 +15,10 @@ The inspector reports:
 
 Intentional scrolling is counted as coverage. Scrolled-off descendants are not automatically reported as clipped or outside the viewport. A scroll region that is itself cut off by a fixed parent is reported separately.
 
+The engine's generated planner and save/load controls reserve at least 44 × 44 window points when the authored canvas is fitted into a smaller window. Their layout is recalculated after resizing, including space used by the reading-options toolbar. Save confirmation buttons grow with wrapped labels, and the surrounding flow scrolls when needed so its actions remain reachable.
+
+Authored buttons keep the rectangles the designer chose. They are not automatically enlarged into neighboring elements; undersized or clipped authored controls still appear in Layout checks. Inspect each selected screen and state after changing its viewport or language, and verify scrolling, focus and touch interaction separately.
+
 The coverage summary records the actual screen, locale, viewport, requested text scale, and whether readable layout was active. **200% text only reflows screens configured for readable layout.** An inactive readable layout is shown explicitly. Use **Configure authoring state** to inspect an eligible saved state or virtual inspection state, then rerender. The default is the game's initial state, not every phase of the game.
 
 Cancel is available while the snapshot is being prepared and while the native player is rendering. Rendering times out after 60 seconds. Inspection does not save the project, execute game actions, or write to the user's game save.

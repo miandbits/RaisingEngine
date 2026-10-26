@@ -35,12 +35,15 @@ jobs:
             .cache/creator-smoke/
             .cache/native-portable-host/
             .cache/native-schedule-details/
+            .cache/native-control-sizing/
+            .cache/save-slots-layout/
             .cache/native-phase-forecast/
             .cache/native-phase-forecast-layouts/
             .cache/phase-forecast-web/
             .cache/native-layout-diagnostics/
             .cache/qt-layout-diagnostics/
             .cache/schedule-details-web/
+            .cache/control-sizing-web/
             .cache/native-resume-context/
             .cache/resume-context-web/
             .cache/qt-resume-context-acceptance.json
@@ -140,12 +143,15 @@ jobs:
             .cache/creator-smoke/
             .cache/native-portable-host/
             .cache/native-schedule-details/
+            .cache/native-control-sizing/
+            .cache/save-slots-layout/
             .cache/native-phase-forecast/
             .cache/native-phase-forecast-layouts/
             .cache/phase-forecast-web/
             .cache/native-layout-diagnostics/
             .cache/qt-layout-diagnostics/
             .cache/schedule-details-web/
+            .cache/control-sizing-web/
             .cache/native-resume-context/
             .cache/resume-context-web/
             .cache/qt-resume-context-acceptance.json
@@ -225,12 +231,15 @@ jobs:
             .cache/creator-smoke/
             .cache/native-portable-host/
             .cache/native-schedule-details/
+            .cache/native-control-sizing/
+            .cache/save-slots-layout/
             .cache/native-phase-forecast/
             .cache/native-phase-forecast-layouts/
             .cache/phase-forecast-web/
             .cache/native-layout-diagnostics/
             .cache/qt-layout-diagnostics/
             .cache/schedule-details-web/
+            .cache/control-sizing-web/
             .cache/native-resume-context/
             .cache/resume-context-web/
             .cache/qt-resume-context-acceptance.json

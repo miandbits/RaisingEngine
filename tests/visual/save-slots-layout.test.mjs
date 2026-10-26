@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdir,mkdtemp,readFile,writeFile} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {build} from 'esbuild';
+import {chromium} from 'playwright';
+
+test('scaled save controls and wrapped confirmations keep labels inside real hit bounds across locales',{timeout:120000},async t=>{
+ const bundle=await build({stdin:{contents:`
+  import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+  import {VisualPlayer} from './apps/player/renderer/VisualPlayer.tsx';import {PlayerPreferencesContext} from './apps/player/renderer/PlayerSettings.tsx';
+  const base={rows:Array.from({length:8},(_,index)=>({automatic:false,index,status:'ready',date:'Season 12 — the long return journey',record:{date:'Year 8, phase 12, week 4',savedAt:'2026-10-25T12:34:56Z',place:'A long named reading room beside the eastern archive. '.repeat(8)+'FINAL PLACE DETAIL',phase:'planning',sequence:index+1}})),screenId:'records',automatic:false,selected:0,page:0,confirmation:null,available:true,current:{date:'Year 8, phase 12, week 4',place:'The western archive '.repeat(10),phase:'planning'}};
+  window.actions=[];function App(){const [config,setConfig]=useState({locale:'en',textScale:1,width:1120}),[view,setView]=useState(base);window.configure=o=>{setConfig({locale:'en',textScale:1,width:1120,...o});setView({...base,confirmation:o.confirmation??null});window.actions=[];};window.inspect=()=>({view,actions:window.actions});
+   const design={width:1280,height:777,readableLayout:{fontSize:18},routing:{defaultScreenId:'main',phases:[{phase:'title',screenId:'main'}]},screens:[{id:'main',label:'Main',elements:[]},{id:'records',label:'Records',modal:true,elements:[{id:'slots',kind:'loadSlots',x:80,y:80,width:config.width,height:530,fill:'#f5efdf',color:'#263c36'}],readableLayout:{items:[{elementId:'slots'}],actions:[]}}]};
+   const action=a=>{window.actions.push(a);setView(v=>a.type==='cancel'?{...v,confirmation:null}:a.type==='load'?{...v,confirmation:'load'}:a.type==='group'?{...v,automatic:a.automatic}:a.type==='select'?{...v,selected:a.index}:a.type==='page'?{...v,page:Math.max(0,Math.min(1,v.page+a.delta))}:v);};
+   const playerView={generation:1,title:'Records',description:'',initialState:{attributes:{},relationships:{}},durationMonths:1,periodsPerMonth:4,attributes:[],characters:[],activities:[],schedulePlayback:'manual',assets:[],state:null,time:null,narrative:null,visual:design,gameplayDefinition:null,gameplay:null,systems:null,saveSlots:view,locale:config.locale};
+   return <PlayerPreferencesContext.Provider value={{value:{music:0,effects:0,reducedMotion:true,highContrast:false,readingLayout:'auto',textScale:config.textScale},muted:true,onMuted:()=>{},onChange:()=>{}}}><VisualPlayer view={playerView} design={design} busy={false} plan={[]} onPlan={()=>{}} act={()=>{}} newRun={()=>{}} save={()=>{}} load={()=>{}} sound={()=>{}} muted={true} preview={false} error={null} notice={null} slots={action}/></PlayerPreferencesContext.Provider>;
+  }createRoot(document.getElementById('root')).render(<App/>);
+ `,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},logLevel:'silent'});
+ await mkdir('.cache/save-slots-layout/web',{recursive:true});const out=await mkdtemp(resolve('.cache/save-slots-layout/web/run-'));
+ const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL??process.env.RAISING_BROWSER_CHANNEL??'chrome'});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent('<style>html,body,#root{margin:0;width:100%;height:100%;overflow:hidden}</style><div id="root"></div>');await page.addStyleTag({content:await readFile('apps/player/renderer/visual.css','utf8')});await page.addScriptTag({content:bundle.outputFiles[0].text});await page.locator('.web-save-slots').waitFor();
+ const paint=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ const metrics=async()=>page.locator('.web-save-slots button').evaluateAll(buttons=>buttons.map(b=>{const r=b.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(b);return {card:b.classList.contains('slot-card'),text:b.textContent,x:r.x,y:r.y,width:r.width,height:r.height,clientWidth:b.clientWidth,scrollWidth:b.scrollWidth,clientHeight:b.clientHeight,scrollHeight:b.scrollHeight,textBounds:[...range.getClientRects()].map(t=>({x:t.x,y:t.y,right:t.right,bottom:t.bottom})),right:r.right,bottom:r.bottom};}));
+ const assertFit=async()=>{const rows=await metrics();for(const b of rows){assert.ok(b.width>=43.5&&b.height>=43.5,JSON.stringify(b));assert.ok(b.scrollHeight<=b.clientHeight+1&&b.scrollWidth<=b.clientWidth+1,'Label overflows its hit bounds: '+JSON.stringify(b));for(const line of b.card?[]:b.textBounds)assert.ok(line.x>=b.x-1&&line.right<=b.right+1&&line.y>=b.y-1&&line.bottom<=b.bottom+1,'Text line must stay inside actual button: '+JSON.stringify(b));}return rows;};
+ const results=[];
+ for(const locale of ['en','ko','ja'])for(const[name,width,height,textScale,widgetWidth]of[['desktop',1280,720,1,1120],['short',1024,640,1,1120],['wrapped',1280,720,1,440],['phone',390,844,2,1120]]){
+  await page.setViewportSize({width,height});await page.evaluate(o=>window.configure(o),{locale,textScale,width:widgetWidth});await paint();await assertFit();
+  const request=page.locator('.slot-footer>button');if(name==='desktop'||name==='short'){const bounds=await request.boundingBox(),panel=await page.locator('.web-save-slots').boundingBox();assert.ok(bounds&&panel&&bounds.y>=panel.y-1&&bounds.y+bounds.height<=Math.min(panel.y+panel.height,height)+1,'Primary action stays visible while cards scroll');}await request.click();await paint();const cancel=page.locator('[data-slot-action="cancel"]'),confirm=page.locator('[data-slot-action="confirm"]');
+  assert.equal(await cancel.evaluate(e=>e===document.activeElement),true,locale+'/'+name+' Cancel receives initial confirmation focus; actual '+await page.evaluate(()=>document.activeElement?.outerHTML));assert.match(await page.locator('[data-testid="selected-checkpoint"]').innerText(),/FINAL PLACE DETAIL/);
+  await page.keyboard.press('Tab');assert.equal(await confirm.evaluate(e=>e===document.activeElement),true);await page.keyboard.press('Shift+Tab');assert.equal(await cancel.evaluate(e=>e===document.activeElement),true);
+  const rows=await assertFit();const rect=await cancel.boundingBox();assert.ok(rect);if(name==='wrapped'&&locale==='en')assert.ok(rect.height>60,'Narrow case actually wraps the cancel label onto multiple lines');await page.screenshot({path:join(out,locale+'-'+name+'.png')});
+  // Hit the lower content line, rather than delegating to an element click.
+  await page.mouse.click(rect.x+rect.width/2,rect.y+rect.height-10);await page.locator('.slot-confirmation').waitFor({state:'detached'});assert.deepEqual(await page.evaluate(()=>window.actions),[{type:'load'},{type:'cancel'}]);assert.equal(await page.evaluate(()=>window.inspect().view.selected),0);
+  results.push({locale,name,rows});
+ }
+ assert.deepEqual(errors,[]);await writeFile(join(out,'proof.json'),JSON.stringify({ok:true,results,limits:['Rendered component checks action dispatch; exported save journey separately verifies persistent save/load semantics.']},null,2));console.log(JSON.stringify({evidence:out}));
+});

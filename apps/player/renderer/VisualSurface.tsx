@@ -236,7 +236,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       {children}
     </div>;
   }
-  return <div className={`visual-viewport ${fitViewport?'visual-fit':''}`} ref={host} style={fitViewport?{}:{aspectRatio:`${design.width}/${design.height}`}}><div className="visual-stage" data-screen={screenId} style={{width:size.width,height:size.height,left:offset.x,top:offset.y,transform:`scale(${scale})`}}>
+  return <div className={`visual-viewport ${fitViewport?'visual-fit':''}`} ref={host} style={fitViewport?{}:{aspectRatio:`${design.width}/${design.height}`}}><div className="visual-stage" data-screen={screenId} style={{width:size.width,height:size.height,left:offset.x,top:offset.y,transform:`scale(${scale})`,'--canvas-control-min':`${Math.ceil(44/Math.max(scale,0.01))}px`} as React.CSSProperties}>
     <style>{fontCss}</style>
     {elements.map(element=>renderElement(element))}{children}
   </div></div>;

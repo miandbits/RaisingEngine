@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile,mkdir,mkdtemp,writeFile} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {build} from 'esbuild';
+import {chromium} from 'playwright';
+import {decodePng} from '../../dist/packages/studio-service/png.js';
+
+test('Web generated schedules use actual fitted target sizes and reserve space at desktop scales',{timeout:120000},async t=>{
+ const bundle=await build({stdin:{contents:`
+  import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {VisualSurface} from './apps/player/renderer/VisualSurface.tsx';
+  window.commands=[];const activities=[{id:'study',label:'Workshop',description:'Practice carefully, then leave time to recover.',costs:[],baseEffects:[]},{id:'rest',label:'Rest',description:'Recover energy.',costs:[],baseEffects:[]}];
+  function App(){const [mode,setMode]=useState('details'),[plan,setPlan]=useState(Array(12).fill('study'));window.configure=setMode;window.inspect=()=>({plan,commands:window.commands});
+   const count=mode==='plain'?12:4,element={id:'schedule',kind:'schedule',x:40,y:110,width:mode==='calendar'?300:mode==='plain'?540:864,height:300,color:'#203a3b',fill:'#f3ead4',fontSize:18,scheduleLayout:mode==='calendar'?'calendar':'columns',showActivityDescription:mode==='details',showPhaseForecast:mode!=='plain'};
+   const design={width:1280,height:777,screens:[{id:'schedule',elements:[element]}]},context={title:'',description:'',calendar:'',ending:'',speaker:'',story:'',phase:'planning',background:null,portraits:{},activities,plan:plan.slice(0,count),period:0,periodsPerMonth:count,locale:'en',stats:[],choices:[],result:'',calendarProject:{startYear:1,startMonth:1,periodsPerMonth:count,calendar:{monthsPerYear:12,daysPerMonth:28,periodLabel:'Week'}},calendarTime:{year:1,month:1}};
+   return <div className="visual-player"><VisualSurface design={design} screenId="schedule" context={context} assetUrl={()=>''} fitViewport onPlan={(index,id)=>setPlan(old=>old.map((v,i)=>i===index?id:v))} onCommand={c=>window.commands.push(c)}/></div>;
+  }createRoot(document.getElementById('root')).render(<App/>);
+ `,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},logLevel:'silent'});
+ await mkdir('.cache/control-sizing-web',{recursive:true});const out=await mkdtemp(resolve('.cache/control-sizing-web/run-'));
+ const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL??'chrome'});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent('<style>html,body,#root{margin:0;width:100%;height:100%}</style><div id="root"></div>');await page.addStyleTag({content:await readFile('apps/player/renderer/visual.css','utf8')});await page.addScriptTag({content:bundle.outputFiles[0].text});await page.locator('.schedule-detail-pane').waitFor();
+ const frame=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ const reports=[];
+ for(const size of [{width:1280,height:720},{width:1024,height:680},{width:1600,height:1000},{width:1280,height:720}]){
+  await page.setViewportSize(size);await frame();await page.locator('.schedule-period-review').first().focus();
+  const geometry=await page.evaluate(()=>{const box=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom,right:r.right};};return{size:{w:innerWidth,h:innerHeight},review:box('.schedule-period-review'),select:box('.schedule-detail-period select'),forecast:box('.phase-forecast-launcher'),detail:box('.schedule-detail-pane'),planner:box('.visual-schedule'),strip:{client:document.querySelector('.schedule-detail-periods').clientWidth,scroll:document.querySelector('.schedule-detail-periods').scrollWidth}};});reports.push(geometry);
+  for(const key of ['review','select','forecast'])assert.ok(geometry[key].w>=43.5&&geometry[key].h>=43.5,JSON.stringify(geometry));
+  assert.ok(geometry.review.bottom<=geometry.select.y+.5);assert.ok(geometry.select.bottom<=geometry.forecast.y+.5);assert.ok(geometry.forecast.bottom<=geometry.detail.y+.5);assert.ok(geometry.detail.bottom<=geometry.planner.bottom+.5);assert.ok(geometry.strip.scroll<=geometry.strip.client+1);
+ }
+ const before=await page.evaluate(()=>window.inspect());await page.locator('.schedule-period-review').nth(2).click();assert.deepEqual(await page.evaluate(()=>window.inspect()),before);
+ await page.locator('select').nth(0).selectOption('rest');const draft=await page.evaluate(()=>window.inspect());assert.equal(draft.plan[0],'rest');assert.deepEqual(draft.commands,[]);
+ await page.locator('.phase-forecast-launcher').click();await page.locator('[data-reading-id="engine-phase-forecast-close"]').click();assert.deepEqual(await page.evaluate(()=>window.inspect()),draft);
+ await page.screenshot({path:join(out,'desktop.png')});
+ await page.evaluate(()=>window.configure('plain'));await page.locator('.schedule-columns').waitFor();await page.setViewportSize({width:1024,height:680});await frame();
+ const plain=await page.locator('.schedule-columns').evaluate(e=>({client:e.clientWidth,scroll:e.scrollWidth,controls:[...e.querySelectorAll('select')].map(s=>{const r=s.getBoundingClientRect();return{w:r.width,h:r.height};})}));assert.ok(plain.scroll>plain.client);assert.equal(plain.controls.length,12);assert.ok(plain.controls.every(c=>c.w>=43.5&&c.h>=43.5),JSON.stringify(plain));await page.locator('select').nth(11).selectOption('rest');assert.equal((await page.evaluate(()=>window.inspect())).plan[11],'rest');
+ await page.evaluate(()=>window.configure('calendar'));await page.locator('.schedule-calendar-body').waitFor();await frame();
+ const calendar=await page.locator('.schedule-calendar-body').evaluate(e=>({client:e.clientWidth,scroll:e.scrollWidth,clientHeight:e.clientHeight,scrollHeight:e.scrollHeight,controls:[...e.querySelectorAll('button')].map(s=>{const r=s.getBoundingClientRect();return{w:r.width,h:r.height};})}));assert.ok(calendar.scroll>calendar.client&&calendar.scrollHeight>calendar.clientHeight,JSON.stringify(calendar));assert.ok(calendar.controls.every(c=>c.w>=43.5&&c.h>=43.5),JSON.stringify(calendar));
+ const outer=()=>page.locator('.visual-schedule').evaluate(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,ancestors:[...function*(n){while(n){yield n;n=n.parentElement}}(e)].map(n=>({class:n.className,x:n.getBoundingClientRect().x,scrollLeft:n.scrollLeft,scrollTop:n.scrollTop}))}});const outerBefore=await outer();await page.screenshot({path:join(out,'calendar-before.png')});await page.locator('[data-calendar-day="28"]').click();await frame();const outerAfter=await outer();await writeFile(join(out,'outer.json'),JSON.stringify({outerBefore,outerAfter},null,2));assert.equal(outerAfter.x,outerBefore.x,'Last-day click scrolls the calendar body without moving the authored widget');assert.equal(outerAfter.y,outerBefore.y);assert.ok(outerAfter.x>=31.5,'Authored x40 remains at32window points at80%fit');assert.ok(await page.locator('.schedule-calendar-body').evaluate(e=>e.scrollTop>0&&e.scrollLeft>0),'Actual last-day click scrolls both axes into view');assert.deepEqual((await page.evaluate(()=>window.inspect())).commands,[]);await frame();await page.screenshot({path:join(out,'narrow-calendar.png')});await page.locator('.visual-schedule').screenshot({path:join(out,'calendar-element.png')});await writeFile(join(out,'calendar-styles.json'),JSON.stringify(await page.evaluate(()=>['.visual-schedule','.schedule-calendar','.schedule-calendar-body','.schedule-calendar-week','.schedule-calendar-days'].map(s=>{const e=document.querySelector(s),r=e.getBoundingClientRect(),c=getComputedStyle(e);return{s,x:r.x,y:r.y,w:r.width,h:r.height,clientWidth:e.clientWidth,scrollWidth:e.scrollWidth,scrollLeft:e.scrollLeft,scrollTop:e.scrollTop,overflow:c.overflow,background:c.backgroundColor,position:c.position}})),null,2));assert.deepEqual(errors,[]);
+ const raster=decodePng(await readFile(join(out,'narrow-calendar.png'))),pixel=(x,y)=>[...raster.pixels.slice((y*raster.width+x)*4,(y*raster.width+x)*4+3)],boundary=[];
+ // Header and every visible grid band: internal horizontal scrolling must not
+ // leak pixels outside the authored rectangle, even under a fitted transform.
+ for(let y=Math.ceil(outerAfter.y)+3;y<Math.floor(outerAfter.y+outerAfter.h)-2;y+=9){for(const x of [0,Math.floor(outerAfter.x)-1,Math.ceil(outerAfter.x+outerAfter.w)]){const rgb=pixel(x,y);assert.deepEqual(rgb,[23,44,41],JSON.stringify({x,y,rgb,outerAfter}));boundary.push({x,y,rgb});}}
+ await writeFile(join(out,'proof.json'),JSON.stringify({ok:true,reports,plain,calendar,outerBefore,outerAfter,rasterBoundary:boundary},null,2));console.log('Web control evidence: '+out);
+});
