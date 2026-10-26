@@ -11,11 +11,11 @@ test('rendered advance labels describe confirmation, execution and results in ea
     import {progressionButtonLabel} from './apps/player/renderer/progression-label.ts';
     window.label=progressionButtonLabel;window.actions=[];
     const base=()=>({mode:'full',phase:'planning',stateRevision:0,periodIndex:0,schedule:null,activeNarrative:null,attributes:{},flags:{},relationships:{},lastActivityResult:null,presentation:{backgroundAssetId:null,musicAssetId:null,portraits:[]}});
-    function App(){const [state,setState]=useState(base),[plan,setPlan]=useState(['study','rest']),[locale,setLocale]=useState('en'),[override,setOverride]=useState(false);
-      window.configure=(options={})=>{setState({...base(),...options.state});setPlan(options.plan??['study','rest']);setLocale(options.locale??'en');setOverride(options.override??false);window.actions=[];};window.inspect=()=>({state,plan,actions:window.actions});
+    function App(){const [state,setState]=useState(base),[plan,setPlan]=useState(['study','rest']),[locale,setLocale]=useState('en'),[override,setOverride]=useState(false),[forecast,setForecast]=useState(false);
+      window.configure=(options={})=>{setState({...base(),...options.state});setPlan(options.plan??['study','rest']);setLocale(options.locale??'en');setOverride(options.override??false);setForecast(!!options.forecast);window.actions=[];};window.inspect=()=>({state,plan,actions:window.actions});
       const leaf=(id,kind,extra={})=>({id,kind,x:32,y:32,width:1050,height:360,...extra});
       const controls=[leaf('advance','button',{x:32,y:560,width:260,height:64,action:'advance',text:override?'I choose my own pace':'Continue',...(override?{autoLabel:false}:{})}),leaf('commit','button',{x:320,y:560,width:260,height:64,action:'commitPlan',text:'Begin this plan'})];
-      const visual={width:1280,height:720,readableLayout:{maxShortEdge:600},routing:{defaultScreenId:'main',phases:[{phase:'dialogue',screenId:'main'},{phase:'choice',screenId:'main'},{phase:'finished',screenId:'main'}]},screens:[{id:'main',label:'Planning',elements:[leaf('schedule','schedule'),...controls],readableLayout:{items:[{elementId:'schedule',schedulePresentation:'compact',planningGuidance:'first-use'}],actions:['advance','commit'],actionLayout:'grouped',primaryAction:'advance'}}]};
+      const visual={width:1280,height:720,readableLayout:{maxShortEdge:600},routing:{defaultScreenId:'main',phases:[{phase:'dialogue',screenId:'main'},{phase:'choice',screenId:'main'},{phase:'finished',screenId:'main'}]},screens:[{id:'main',label:'Planning',elements:[leaf('schedule','schedule',forecast?{showPhaseForecast:true}:{}),...controls],readableLayout:{items:[{elementId:'schedule',schedulePresentation:'compact',planningGuidance:'first-use'}],actions:['advance','commit'],actionLayout:'grouped',primaryAction:'advance'}}]};
       const view={generation:1,title:'Progression labels',description:'',initialState:{attributes:{},relationships:{}},durationMonths:1,periodsPerMonth:2,attributes:[],characters:[],activities:[{id:'study',label:'Study'},{id:'rest',label:'Rest'}],schedulePlayback:'manual',assets:[],state,time:{year:1,month:1,periodInMonth:0,periodIndex:0},calendarProject:{startYear:1,startMonth:1,periodsPerMonth:2,calendar:{monthsPerYear:12,daysPerMonth:28}},narrative:null,visual,gameplayDefinition:null,gameplay:null,systems:null,locale};
       const act=action=>{window.actions.push(action);setState(s=>({...s,stateRevision:s.stateRevision+1,...(action.type==='schedule'?{phase:'ready',schedule:[...action.activityIds]}:action.type==='execute'?s.activityIntermission?{phase:'ready',activityIntermission:false}:{phase:'activity-result'}:action.type==='commitPlan'?{phase:'activity-result',schedule:[...action.activityIds]}:{phase:'planning',schedule:null})}));};
       return <VisualPlayer view={view} design={visual} busy={false} plan={plan} onPlan={setPlan} act={act} newRun={()=>{}} save={()=>{}} load={()=>{}} sound={()=>{}} muted={true} error={null} notice={null}/>;
@@ -27,6 +27,15 @@ test('rendered advance labels describe confirmation, execution and results in ea
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));assert.deepEqual(errors,[]);
   const advance=page.locator('[data-element-id="advance"] button'),commit=page.locator('[data-element-id="commit"] button');await advance.waitFor();
   const configure=async options=>{await page.evaluate(options=>window.configure(options),options);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));};
+  assert.equal(await page.evaluate(()=>typeof window.player),'undefined','Standalone renderer fixture has no installed player bridge');
+  assert.equal(await page.locator('[data-reading-id="phase-forecast-schedule"]').count(),0,'Forecast remains opt-in without a bridge');
+  for(const missingMethod of [false,true]){
+    if(missingMethod)await page.evaluate(()=>window.player={});
+    await configure({forecast:true});await page.locator('[data-reading-id="phase-forecast-schedule"]').click();
+    assert.match(await page.locator('[data-reading-id="engine-phase-forecast-summary"]').innerText(),/A forecast is unavailable for this view/);
+    await page.locator('[data-reading-id="engine-phase-forecast-close"]').click();assert.deepEqual(await page.evaluate(()=>window.actions),[]);
+  }
+  await page.evaluate(()=>delete window.player);await configure({});
   for(const [locale,confirm,start,continued] of [['en','Confirm schedule','Start activity','Continue'],['ko','일정 확정','활동 시작','결과 확인 · 다음'],['ja','予定を確定','活動を開始','次へ']]){
     await configure({locale});assert.equal(await advance.innerText(),confirm);assert.equal(await commit.innerText(),'Begin this plan');
     await advance.click();assert.equal(await advance.innerText(),start);assert.deepEqual(await page.evaluate(()=>window.actions),[{type:'schedule',activityIds:['study','rest']}]);
