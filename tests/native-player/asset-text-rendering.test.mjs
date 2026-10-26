@@ -114,7 +114,10 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
     { waitFrames: 12 },
     { checkpoint: `density-${index}`, screenshot: join(out, `density-${index}-${density}x.png`) },
   ]);
-  steps.push({ click: 'start' }, { select: 'plan-0', value: 'rest' }, { waitFrames: 12 },
+  // Density probes intentionally shrink the SDL window on Retina. Restore a
+  // normal window for the separate full-pane word-wrap proof: generated
+  // controls retain 44 window points, so a 320x180-point probe must scroll.
+  steps.push({ resize: canvas }, { waitFrames: 12 }, { click: 'start' }, { select: 'plan-0', value: 'rest' }, { waitFrames: 12 },
     { checkpoint: 'english-wrap', screenshot: join(out, 'english-wrap.png') },
     { select: 'plan-1', value: 'work' }, { waitFrames: 12 },
     { checkpoint: 'cjk-wrap', screenshot: join(out, 'cjk-wrap.png') }, { click: 'sound' }, { checkpoint: 'muted' }, { click: 'sound' }, { checkpoint: 'unmuted' }, { key: 'F5' }, { checkpoint: 'saved' }, { key: 'F9' }, { checkpoint: 'loaded' });
@@ -135,6 +138,8 @@ test('exported native assets and naturally wrapped text survive Unicode paths an
     const bandsFor = async (checkpoint, gap = 1) => {
       const ui = report.steps.find(step => step.command.checkpoint === checkpoint).ui;
       assert.ok(ui.audio.initialized && ui.audio.musicPlaying && ui.audio.loadedSounds === 1, 'Unicode music paths must reach the live decoder and audio engine');
+      const measured = ui.layoutDiagnostics.configuration;
+      assert.deepEqual({ width: measured.windowWidth, height: measured.windowHeight }, canvas, 'Full-pane word wrapping is sampled at 640x360 window points, separately from raster-density probes');
       const pane = ui.nodes.find(node => node.id === 'plan-details-plan');
       assert.ok(pane?.rendered && !pane.clipped && !pane.outsideViewport, `${checkpoint} detail pane must be fully rendered: ${JSON.stringify(pane)}`);
       const screenshot = decodePng(await readFile(join(out, `${checkpoint}.png`)));
