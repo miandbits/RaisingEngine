@@ -233,5 +233,5 @@
     for(const auto& raw:render_elements){const auto e=resolved_style(visual,raw);const auto id=e.value("id","");const auto selector="#node-"+id+" button";css+=selector+"{color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#e3e8df"))+";}";}
     // Put notices into flow so they cannot cover the final action on short phones.
     if(!game.message.empty()&&!portable_open()&&!resume_context_open)main+="<p class=\"reading-notice\">"+escape(game.message)+"</p>";
-    const auto modal=screen.value("modal",false);return "<rml><head><style>"+css+"</style></head><body><div "+std::string(modal?"id=\"ui-modal\" ":"")+"class=\"reading-root\"><div id=\"reading-main\" class=\"reading-main\" style=\"tab-index:auto;\">"+main+"</div><div id=\"reading-actions\" class=\"reading-actions\">"+footer+"</div></div></body></rml>";
+    const auto modal=screen.value("modal",false);return "<rml><head><style>"+css+"</style></head><body><div "+std::string(modal?"id=\"ui-modal\" ":"")+"class=\"reading-root\"><div id=\"reading-main\" class=\"reading-main\""+std::string(phase_forecast_open?" style=\"tab-index:auto;\"":"")+">"+main+"</div><div id=\"reading-actions\" class=\"reading-actions\">"+footer+"</div></div></body></rml>";
   }
