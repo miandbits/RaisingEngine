@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "hierarchy-lock.hpp"
+#include "authoring-labels.hpp"
 #include <QMessageBox>
 #include <QSet>
 #include <QSignalBlocker>
@@ -19,23 +20,22 @@ void StudioWindow::rebuildHierarchy(){
   for(const auto& screenValue:screens){
     const auto screen=screenValue.toObject();if(screen.isEmpty())continue;
     const auto owner=screen.value("id").toString();
-    auto root=new QTreeWidgetItem(hierarchy,{screen.value("label").toString(owner)+(searching?" · "+owner:QString())});
-    root->setData(0,Qt::UserRole+1,owner);
+    auto root=new QTreeWidgetItem(hierarchy,{authoringLabel(screen)+(searching?" · "+owner:QString())});
+    root->setData(0,Qt::UserRole+1,owner);root->setToolTip(0,owner);
     root->setFlags(Qt::ItemIsEnabled|(searching?Qt::ItemIsSelectable:Qt::ItemIsDropEnabled));
     root->setData(0,Qt::UserRole+2,screen.value("label").toString()+" "+owner);
     QMap<QString,QTreeWidgetItem*> items;const auto elements=screen.value("elements").toArray();
+    QMap<QString,QJsonObject> namedElements;for(auto value:elements){const auto element=value.toObject();namedElements.insert(element.value("id").toString(),element);}
     QMap<QString,int> siblingOrder;
     for(auto value:elements){
       const auto e=value.toObject();const auto id=e.value("id").toString();
-      auto displayName=e.value("label").toString().trimmed();
-      if(displayName.isEmpty())displayName=e.value("text").toString().trimmed();
-      if(displayName.isEmpty())displayName=id;
+      const auto displayName=authoringDistinctLabel(e,namedElements);
       auto item=new QTreeWidgetItem({displayName+(e.value("locked").toBool()?tr(" [잠금]"):QString())+(e.value("hidden").toBool()?tr(" [숨김]"):QString())});
       item->setData(0,Qt::UserRole,id);item->setData(0,Qt::UserRole+1,owner);
-      item->setData(0,Qt::UserRole+2,QStringList{id,e.value("label").toString(),e.value("text").toString(),e.value("kind").toString()}.join(" "));
-      item->setToolTip(0,e.value("kind").toString()+" · "+id);
+      item->setData(0,Qt::UserRole+2,QStringList{id,displayName,e.value("label").toString(),e.value("text").toString(),e.value("kind").toString(),authoringKind(e.value("kind").toString())}.join(" "));
+      item->setToolTip(0,authoringKind(e.value("kind").toString())+" · "+id);
       item->setText(1,QString::number(++siblingOrder[e.value("parentId").toString()]));
-      item->setText(2,e.value("kind").toString());
+      item->setText(2,authoringKind(e.value("kind").toString()));
       item->setToolTip(1,tr("같은 부모 안의 그리기 순서입니다. 큰 번호가 앞에 표시됩니다."));
       const auto lockOwner=elementLockOwner(elements,id);
       if(!lockOwner.isEmpty()&&lockOwner!=id)item->setText(0,item->text(0)+tr(" [부모 잠금]"));

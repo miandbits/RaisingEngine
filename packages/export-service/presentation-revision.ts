@@ -3,6 +3,7 @@ import type { ContentSnapshot } from '../core/model.js';
 import type { GameExtensions } from '../plugin-host/bundle.js';
 import { canonicalJson } from '../project-service/snapshot.js';
 import type { GameBundle, PresentationRevision } from './model.js';
+import { presentationSemantics, verifyPresentationVisual, presentationVisualChanges } from '../visual/presentation-update.js';
 
 function verifySnapshot(content: ContentSnapshot): void {
   const { contentFingerprint, ...payload } = content;
@@ -14,9 +15,9 @@ function verifySnapshot(content: ContentSnapshot): void {
     throw new Error('PRESENTATION_BASE_INVALID: asset checksums are incomplete.');
 }
 
-/** Keep a published simulation snapshot intact while explicitly revising its image files.
- * This is deliberately narrower than save migration: no rules, layouts, text, audio,
- * fonts or plugin documents/runtimes may change. Actual source bytes are still checked
+/** Keep a published simulation snapshot intact while revising permitted presentation.
+ * Rules, story, actions, bindings, audio, font bytes and plugins cannot change.
+ * Actual source bytes are still checked
  * against the NEW snapshot by exportGame before publishing.
  */
 export function preparePresentationRevision(content: ContentSnapshot, base: GameBundle,
@@ -25,8 +26,12 @@ export function preparePresentationRevision(content: ContentSnapshot, base: Game
   verifySnapshot(base.content); verifySnapshot(content);
   const { contentFingerprint: _oldFingerprint, assetHashes: oldHashes, ...oldData } = base.content;
   const { contentFingerprint: _newFingerprint, assetHashes: newHashes, ...newData } = content;
-  if (canonicalJson(oldData) !== canonicalJson(newData))
-    throw new Error('PRESENTATION_CONTENT_CHANGED: image-only updates cannot change content, rules, layouts or asset definitions.');
+  const semantics = (data: typeof oldData) => ({...data, project:{...data.project,
+    ...(data.project.visual ? {visual:presentationSemantics(data.project.visual)} : {})}});
+  if (canonicalJson(semantics(oldData)) !== canonicalJson(semantics(newData)))
+    throw new Error('PRESENTATION_CONTENT_CHANGED: Rules, story, actions, bindings, structure and asset definitions must remain unchanged.');
+  const visualChanged = canonicalJson(base.content.project.visual ?? null) !== canonicalJson(content.project.visual ?? null);
+  if (visualChanged) verifyPresentationVisual(base.content.project.visual, content.project.visual);
   if (canonicalJson(base.extensions ?? null) !== canonicalJson(extensions ?? null))
     throw new Error('PRESENTATION_PLUGINS_CHANGED: image-only updates cannot change plugin documents or runtimes.');
   const images: PresentationRevision['images'] = {};
@@ -38,5 +43,7 @@ export function preparePresentationRevision(content: ContentSnapshot, base: Game
   }
   return { content: structuredClone(base.content), presentationRevision: {
     formatVersion: '1', sourceContentFingerprint: content.contentFingerprint, images,
+    ...(visualChanged ? {visual:structuredClone(content.project.visual!),policy:'paint-layout-v1' as const,
+      changedPaths:presentationVisualChanges(base.content.project.visual,content.project.visual)} : {}),
   } };
 }

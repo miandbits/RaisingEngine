@@ -1,5 +1,6 @@
 import type {ContentSnapshot,RunState} from '../core/model.js';
 import type {PriorityProfile} from './priorities.js';
+import {initialPeriodSeries,observePeriodSeries,mergePeriodSeries,type TracePeriodSeries,type BalancePeriodSeries} from './balance-series.js';
 
 export type BalanceTermination='finished'|'blocked'|'command-limit'|'time-limit'|'cancelled'|'target'|'error'|'state-limit'|'incomplete';
 export interface BalancePosition {commandIndex:number;periodIndex:number}
@@ -9,16 +10,16 @@ export interface BalanceAttribute {
   min:number;max:number;atMin:boolean;atMax:boolean;belowBand:boolean;aboveBand:boolean;
   firstBelow?:BalancePosition;firstAbove?:BalancePosition;
 }
-export interface TraceBalance {version:1;termination?:BalanceTermination;observedStates:number;attributes:Record<string,BalanceAttribute>}
+export interface TraceBalance {periodSeries?:TracePeriodSeries;version:1;termination?:BalanceTermination;observedStates:number;attributes:Record<string,BalanceAttribute>}
 export interface AggregateBalanceAttribute {
   label:string;kind:string;declaredMin:number;declaredMax:number;bandMin?:number;bandMax?:number;
   min:number;max:number;runsAtMin:number;runsAtMax:number;runsBelowBand:number;runsAboveBand:number;
   firstBelow?:BalanceWitness;firstAbove?:BalanceWitness;
 }
-export interface AnalysisBalance {version:1;terminations:Partial<Record<BalanceTermination,number>>;observedRuns:number;observedStates:number;attributes:Record<string,AggregateBalanceAttribute>}
+export interface AnalysisBalance {periodSeries?:BalancePeriodSeries;version:1;terminations:Partial<Record<BalanceTermination,number>>;observedRuns:number;observedStates:number;attributes:Record<string,AggregateBalanceAttribute>}
 export function initialBalance(content:ContentSnapshot,state:RunState,profile?:PriorityProfile):TraceBalance {
   const bands=new Map(profile?.bands.map(band=>[band.attributeId,band])??[]);
-  const result:TraceBalance={version:1,observedStates:0,attributes:Object.fromEntries(content.attributes.map(attribute=>{
+  const result:TraceBalance={periodSeries:initialPeriodSeries(content,state),version:1,observedStates:0,attributes:Object.fromEntries(content.attributes.map(attribute=>{
     const band=bands.get(attribute.id),value=state.attributes[attribute.id]!;
     return [attribute.id,{label:attribute.label,kind:attribute.kind,declaredMin:attribute.min,declaredMax:attribute.max,
       ...(band?.min===undefined?{}:{bandMin:band.min}),...(band?.max===undefined?{}:{bandMax:band.max}),
@@ -29,6 +30,7 @@ export function initialBalance(content:ContentSnapshot,state:RunState,profile?:P
 /** Call only for states on the selected trace, including each command in a bundle. */
 export function observeBalance(result:TraceBalance,state:RunState,commandIndex:number):void {
   result.observedStates++;
+  if(result.periodSeries)observePeriodSeries(result.periodSeries,state,commandIndex);
   for(const [id,row] of Object.entries(result.attributes)){
     const value=state.attributes[id]!;row.min=Math.min(row.min,value);row.max=Math.max(row.max,value);
     row.atMin||=value===row.declaredMin;row.atMax||=value===row.declaredMax;
@@ -41,6 +43,7 @@ export function mergeBalance(result:AnalysisBalance|undefined,trace:TraceBalance
   result??={version:1,terminations:{},observedRuns:0,observedStates:0,attributes:{}};
   const termination=trace.termination??'incomplete';result.terminations[termination]=(result.terminations[termination]??0)+1;
   result.observedRuns++;result.observedStates+=trace.observedStates;
+  if(trace.periodSeries)result.periodSeries=mergePeriodSeries(result.periodSeries,trace.periodSeries,termination);
   for(const [id,row] of Object.entries(trace.attributes)){
     let aggregate=Object.hasOwn(result.attributes,id)?result.attributes[id]:undefined;
     if(!aggregate){

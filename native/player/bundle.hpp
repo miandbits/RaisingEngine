@@ -1,5 +1,6 @@
 #pragma once
 #include "session.hpp"
+#include "presentation-update.hpp"
 #include <set>
 
 // Export-time JSON Schema remains the full content contract. These checks guard
@@ -53,4 +54,11 @@ inline void validate_bundle(const Json& bundle,const fs::path& root) {
   }
   for(const auto* key:{"attributes","characters","activities","events","endings"})if(!content.contains(key)||!content.at(key).is_array())fail(std::string("content.")+key);
   if(content.at("activities").empty())fail("content.activities: empty");
+  if(bundle.contains("presentationRevision")&&bundle.at("presentationRevision").contains("visual")){
+    const auto& revision=bundle.at("presentationRevision");
+    if(revision.value("formatVersion",Json())!="1"||revision.value("policy",Json())!="paint-layout-v1")fail("presentationRevision.policy");
+    verify_presentation_visual(visual,revision.at("visual"));
+    auto rendered=bundle;rendered.erase("presentationRevision");rendered["content"]["project"]["visual"]=revision.at("visual");
+    validate_bundle(rendered,root);
+  }
 }

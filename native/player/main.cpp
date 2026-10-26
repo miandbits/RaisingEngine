@@ -11,6 +11,7 @@
 #include "screen.hpp"
 #include "audio.hpp"
 #include "bundle.hpp"
+#include "application-title.hpp"
 #include "preview.hpp"
 #include "layout-diagnostics.hpp"
 #include "scene-preview.hpp"
@@ -209,7 +210,9 @@ public:
     game.extension_state=[this]{return extensions.save(true);};
     game.planner_state=[this]{return markup.plan_save();};
     game.planner_restore=[this](const Json& draft){markup.restore_plan(draft);markup.forecast_key.clear();};
-    game.content=bundle.at("content"); game.refresh();
+    game.content=bundle.at("content");
+    markup.presentation_visual=bundle.value("presentationRevision",Json::object()).value("visual",Json());
+    game.refresh();
     refresh_save_preview();
     game.gallery_content=[this]{return localized_content(game.content,markup.locale);};
     if(game.content.at("project").contains("gallery"))game.gallery.open(this->save_file.parent_path()/("collection-"+game.content.at("project").value("gameId","game")+".json"),game.content.at("project").value("gameId","game"));
@@ -795,7 +798,7 @@ public:
     float origin_x=0,origin_y=0,unit_x=0,unit_y=0;SDL_RenderCoordinatesToWindow(renderer,0,0,&origin_x,&origin_y);SDL_RenderCoordinatesToWindow(renderer,1,1,&unit_x,&unit_y);
     const auto layout_diagnostics=LayoutDiagnostics::report(document,nodes,float(markup.width),float(markup.height),unit_x-origin_x,unit_y-origin_y,
       {{"screenId",markup.screen_id},{"locale",markup.locale},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"viewportWidth",markup.width},{"viewportHeight",markup.height},{"textScale",markup.player_preferences.value("textScale",1.0)},{"readableActive",markup.readable_active},{"stateSource",preview()?preview_source:"live-game"}});
-    return {{"layoutDiagnostics",layout_diagnostics},{"nativeTextInput",static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->KeyboardReport()},{"resumeContext",{{"enabled",markup.resume_context_enabled()},{"open",markup.resume_context_open},{"projection",markup.resume_context_open?markup.resume_context_projection():Json()}}},{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    return {{"windowTitle",SDL_GetWindowTitle(window)},{"layoutDiagnostics",layout_diagnostics},{"nativeTextInput",static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->KeyboardReport()},{"resumeContext",{{"enabled",markup.resume_context_enabled()},{"open",markup.resume_context_open},{"projection",markup.resume_context_open?markup.resume_context_projection():Json()}}},{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
       {"phaseForecast",{{"enabled",markup.phase_forecast_enabled()},{"open",markup.phase_forecast_open},{"elementId",markup.phase_forecast_element},{"requests",markup.phase_forecast_requests},{"result",markup.phase_forecast_open?markup.phase_forecast_reply:Json()}}},{"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
@@ -890,6 +893,7 @@ int main(int argc,char** argv) {
   }
     const auto bundle=read_json(bundle_root/"game.json");
     validate_bundle(bundle,bundle_root);
+    const auto host_title=application_title(bundle);
     if(!editor_directory.empty()){
 #if !defined(_WIN32) && !defined(SDL_PLATFORM_MACOS)
       throw std::runtime_error("Live editor preview currently requires Windows or macOS");
@@ -909,13 +913,13 @@ int main(int argc,char** argv) {
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
-    const auto& visual=bundle.at("content").at("project").at("visual");
+    const auto& visual=bundle.contains("presentationRevision")&&bundle.at("presentationRevision").contains("visual")?bundle.at("presentationRevision").at("visual"):bundle.at("content").at("project").at("visual");
     SDL_SetHint(SDL_HINT_ORIENTATIONS,visual.contains("readableLayout")?"Portrait LandscapeLeft LandscapeRight":visual.at("width").get<int>()>=visual.at("height").get<int>()?"LandscapeLeft LandscapeRight":"Portrait PortraitUpsideDown");
 #endif
     if(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD))throw std::runtime_error(SDL_GetError());
     if(save_file.empty()) {auto* pref=SDL_GetPrefPath("RaisingEngine",bundle.at("content").at("project").value("gameId","game").c_str());if(!pref)throw std::runtime_error(SDL_GetError());save_file=fs::u8path(pref)/"slot-1.json";SDL_free(pref);}
     auto flags=SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|(hidden?SDL_WINDOW_HIDDEN:0);
-    auto* window=SDL_CreateWindow(bundle.at("content").at("project").value("title","Raising Player").c_str(),1280,720,flags);
+    auto* window=SDL_CreateWindow(host_title.c_str(),1280,720,flags);
     if(!window)throw std::runtime_error(SDL_GetError());
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);

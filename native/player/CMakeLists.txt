@@ -145,4 +145,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${RAISING_GAME_BUNDLE}" $<TARGET_BUNDLE_CONTENT_DIR:raising-player>/game)
   endif()
+  if(RAISING_IOS_RELEASE_NAME_SCRIPT)
+    add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND}
+      "-DAPP_BUNDLE=$<TARGET_BUNDLE_DIR:raising-player>" -P "${RAISING_IOS_RELEASE_NAME_SCRIPT}" VERBATIM)
+  endif()
 endif()

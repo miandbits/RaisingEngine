@@ -9,6 +9,8 @@
 #include "tabular-input.hpp"
 #include "table-logic.hpp"
 #include "tool-search.hpp"
+#include "creator-tasks.hpp"
+#include "authoring-labels.hpp"
 #include "toolbar-access.hpp"
 #include "editor-input.hpp"
 #include <QShortcut>
@@ -313,10 +315,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   previewSizeField->addItem(tr("설계 크기 · 배치 가능"),0.0);previewSizeField->addItem(tr("16:9 미리보기"),16.0/9);previewSizeField->addItem(tr("4:3 미리보기"),4.0/3);previewSizeField->addItem(tr("9:16 미리보기"),9.0/16);canvasTools->addWidget(previewSizeField);
   previewSizeField->setToolTip(tr("미리보기에서는 배치를 잠급니다. 위치·크기는 기준 설계 좌표로 편집하세요."));
   connect(previewSizeField,qOverload<int>(&QComboBox::activated),this,[this]{refresh(true);});
-  auto conditions=canvasTools->addAction(tr("조건 보기…"),this,[this]{editConditionPreview();});
+  auto conditions=canvasTools->addAction(tr("조건 보기…"),this,[this]{if(canvasState)canvasState->showAllElements();editConditionPreview();});
   conditions->setObjectName("conditionPreviewAction");
   conditions->setToolTip(tr("게임 데이터를 바꾸지 않고 임시 값으로 표시 조건을 검사합니다."));
-  auto allElements=canvasTools->addAction(tr("전체 요소"),this,[this]{conditionPreview={};refresh();});
+  auto allElements=canvasTools->addAction(tr("전체 요소"),this,[this]{conditionPreview={};if(canvasState)canvasState->showAllElements();refresh();});
   allElements->setObjectName("conditionPreviewClear");
   canvasTools->addAction(tr("화면 맞춤"), this,
                          [this] { canvas->fitCanvas(); });
@@ -956,6 +958,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   canvasState=new CanvasStateBar(canvas,this);
   centerLayout->insertWidget(2,canvasState);
   canvasState->busy=[this]{return bridge.busy();};
+  canvasState->snapshotBusy=[this]{return bridge.busy()||bridge.backgroundBusy();};
   connect(canvasState,&CanvasStateBar::playRequested,this,[this](QJsonObject params){
     request("preview",params,[this](QJsonObject reply){
       if(!reply.value("error").toString().isEmpty()||!reply.contains("play")){canvasState->failPlay(reply.value("error").toString(tr("미리보기를 준비할 수 없습니다.")));return;}
@@ -963,8 +966,15 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     });
   });
   connect(canvasState,&CanvasStateBar::snapshotRequested,this,[this]{
-    auto renderer=canvasState->renderer();
-    request("preview",renderer->previewRequest(),[renderer](QJsonObject reply){
+    auto renderer=QPointer<RendererPreviewDock>(canvasState->renderer());
+    const auto previewRoot=view.value("root"),previewRevision=view.value("revision");const auto previewKey=renderer->currentKey();
+    auto params=renderer->previewRequest();params["revision"]=previewRevision;
+    // Passive canvas refresh must not disable controls or drop an accepted
+    // dialog edit. The service serializes this snapshot before any queued edit;
+    // its old reply is never applied as the editor's current view.
+    bridge.requestBackground("preview",params,[this,renderer,previewRoot,previewRevision,previewKey](QJsonObject reply){
+      if(!renderer)return;
+      if(view.value("root")!=previewRoot||view.value("revision")!=previewRevision||renderer->currentKey()!=previewKey){renderer->fail(tr("준비 중 프로젝트 버전이 변경되었습니다. 다시 렌더링하세요."));return;}
       if(!reply.value("error").toString().isEmpty()||!reply.contains("play")){renderer->fail(reply.value("error").toString(tr("미리보기를 준비할 수 없습니다.")));return;}
       renderer->launch(reply.value("play").toObject());
     });
@@ -983,6 +993,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(rendererPreview,&RendererPreviewDock::elementPicked,this,[this](QString id){
     for(auto e:currentScreen()["elements"].toArray()){auto element=e.toObject();const auto candidate=element["id"].toString();if(candidate==id||(element["kind"]=="component"&&id.startsWith(candidate+"__"))){selectElement(candidate);break;}}
   });
+  auto tasks=new QAction(tr("작업 선택…"),this);tasks->setObjectName("creatorTasks");
+  connect(tasks,&QAction::triggered,this,[this]{showCreatorTasks(this,[this]{return !projectData().isEmpty()&&!busy();});});
+  toolbar->insertAction(toolbar->actions().value(0),tasks);
+  viewMenu->addAction(tasks);
   defaultLayout = saveState(1);
   QSettings settings;
   if (!qEnvironmentVariableIsSet("RAISING_QT_TEST")) {
@@ -1218,9 +1232,11 @@ void StudioWindow::request(QString method, QJsonObject params,
       const auto screens =
           projectData()["visual"].toObject()["screens"].toArray();
       screenId.clear();
-      for (auto s : screens)
-        if (s.toObject()["id"] == "home")
-          screenId = "home";
+      const auto routing=projectData().value("visual").toObject().value("routing").toObject();
+      QStringList entryScreens;
+      for(auto phase:routing.value("phases").toArray())if(phase.toObject().value("phase")=="title")entryScreens<<phase.toObject().value("screenId").toString();
+      entryScreens<<"title"<<routing.value("defaultScreenId").toString()<<"home";
+      for(const auto& id:entryScreens){if(id.isEmpty())continue;for(auto value:screens)if(value.toObject().value("id")==id){screenId=id;break;}if(!screenId.isEmpty())break;}
       if (screenId.isEmpty() && !screens.isEmpty())
         screenId = screens[0].toObject()["id"].toString();
       if (!screenId.isEmpty())
@@ -1294,10 +1310,9 @@ void StudioWindow::refresh(bool fit) {
     }
   for (auto s : screens) {
     auto screen = s.toObject();
-    auto item = new QListWidgetItem(screen["label"].toString() + "  ·  " +
-                                        screen["id"].toString(),
-                                    projectList);
+    auto item = new QListWidgetItem(authoringLabel(screen),projectList);
     item->setData(Qt::UserRole, screen["id"].toString());
+    item->setToolTip(screen["id"].toString());
     if (screen["id"].toString() == (screenId.isEmpty() ? managedId : screenId))
       projectList->setCurrentItem(item);
   }

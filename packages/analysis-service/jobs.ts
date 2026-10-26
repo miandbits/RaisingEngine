@@ -12,6 +12,7 @@ import {createRun,dispatchCommand} from '../native-bridge/backend.js';
 import {applyCommands} from './runner.js';
 import {readArchive,type StoredRun} from './archive.js';
 import {loadRouteTree} from './route-tree.js';
+import {compareBalanceJobs} from './balance-compare.js';
 
 export async function atomicJson(file: string, value: unknown) {
   const temp = `${file}.${randomUUID()}.tmp`;
@@ -84,6 +85,10 @@ export class AnalysisJobs {
     if (content.contentFingerprint !== job.fingerprint) throw new Error('분석 스냅샷이 기록과 다릅니다.');
     freeze(content);
     return { job, content };
+  }
+  async compareBalance(root:string,beforeId:string,afterId:string){
+    const [before,after]=await Promise.all([this.stored(root,beforeId,false),this.stored(root,afterId,false)]);
+    return compareBalanceJobs(before.job,after.job);
   }
   async runs(root:string,id:string,options:{offset?:number;limit?:number;nodeId?:string;edgeId?:string;outcome?:string;endingId?:string;attributeId?:string;min?:number;max?:number;routePrefix?:string[]}={}){
     const offset=options.offset??0,limit=options.limit??100;

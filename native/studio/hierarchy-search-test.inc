@@ -1,4 +1,5 @@
 #include <QTreeWidgetItemIterator>
+#include "authoring-labels.hpp"
 
 void StudioTests::hierarchyBoundTextLabels(){
   const auto root=qEnvironmentVariable("RAISING_MAGICAL_PROJECT");
@@ -9,7 +10,7 @@ void StudioTests::hierarchyBoundTextLabels(){
   const auto before=w.projectData();
   int count=0;QTreeWidgetItem *money=nullptr;
   for(QTreeWidgetItemIterator i(tree);*i;++i){auto id=(*i)->data(0,Qt::UserRole).toString();if(id.isEmpty())continue;++count;QVERIFY2(!(*i)->text(0).trimmed().isEmpty(),qPrintable(id));if(id=="hud-money")money=*i;}
-  QVERIFY(count>=26);QVERIFY(money);QCOMPARE(money->text(0),QString("hud-money"));
+  QVERIFY(count>=26);QVERIFY(money);QMap<QString,QJsonObject> siblings;for(auto screen:before.value("visual").toObject().value("screens").toArray())if(screen.toObject().value("id").toString()==money->data(0,Qt::UserRole+1).toString())for(auto value:screen.toObject().value("elements").toArray()){const auto element=value.toObject();siblings.insert(element.value("id").toString(),element);}QCOMPARE(money->text(0),authoringDistinctLabel(siblings.value("hud-money"),siblings));QVERIFY(money->toolTip(0).endsWith(" · hud-money"));
   search->setText("hud-money");
   money=nullptr;for(QTreeWidgetItemIterator i(tree);*i;++i)if((*i)->data(0,Qt::UserRole)=="hud-money"&&(*i)->data(0,Qt::UserRole+1)=="home")money=*i;
   QVERIFY(money);QVERIFY(!money->isHidden());tree->setCurrentItem(money);QCOMPARE(w.selectedId(),QString("hud-money"));

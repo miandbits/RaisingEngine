@@ -1,4 +1,6 @@
 #pragma once
+#include "analysis-periods.hpp"
+#include <QTabWidget>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -15,13 +17,14 @@ class AnalysisBalance final:public QWidget {
   static QString fraction(int count,int total){return QString::number(count)+" / "+QString::number(total);}
   static QTableWidgetItem* cell(const QString& text){auto item=new QTableWidgetItem(text);item->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable);item->setToolTip(text);return item;}
 public:
+  AnalysisPeriods* periods;
   std::function<void(int,int)> replayWitness;std::function<void(QString)> endingRuns;
-  explicit AnalysisBalance(QWidget* parent=nullptr):QWidget(parent){setObjectName("analysisBalancePage");auto outer=new QVBoxLayout(this);auto scroll=new QScrollArea;scroll->setWidgetResizable(true);outer->addWidget(scroll);auto body=new QWidget;scroll->setWidget(body);auto layout=new QVBoxLayout(body);
+  explicit AnalysisBalance(QWidget* parent=nullptr):QWidget(parent){setObjectName("analysisBalancePage");auto outer=new QVBoxLayout(this);auto scroll=new QScrollArea;scroll->setWidgetResizable(true);auto views=new QTabWidget;views->setObjectName("analysisBalanceViews");outer->addWidget(views);views->addTab(scroll,tr("요약"));periods=new AnalysisPeriods;auto periodScroll=new QScrollArea;periodScroll->setObjectName("analysisPeriodsScroll");periodScroll->setWidgetResizable(true);periodScroll->setWidget(periods);views->addTab(periodScroll,tr("기간별 추이 · 비교"));auto body=new QWidget;scroll->setWidget(body);auto layout=new QVBoxLayout(body);
     summary_=new QLabel;summary_->setObjectName("analysisBalanceSummary");summary_->setWordWrap(true);layout->addWidget(summary_);scope_=new QLabel;scope_->setObjectName("analysisBalanceScope");scope_->setWordWrap(true);
     auto title=new QLabel(tr("자원·조건 관측"));layout->addWidget(title);resources_=new QTableWidget(0,5);resources_->setObjectName("analysisBalanceResources");resources_->setHorizontalHeaderLabels({tr("자원·조건"),tr("관측 최솟값 · 최댓값"),tr("범위 이탈"),tr("한도 도달"),tr("실제 회차 재생")});resources_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);resources_->horizontalHeaderItem(2)->setToolTip(tr("안심 범위 이탈 회차"));resources_->horizontalHeaderItem(3)->setToolTip(tr("선언 한도 도달 회차"));resources_->verticalHeader()->hide();resources_->setWordWrap(true);resources_->setMinimumHeight(190);layout->addWidget(resources_);layout->addWidget(scope_);
     auto endingsTitle=new QLabel(tr("엔딩 분포"));layout->addWidget(endingsTitle);endings_=new QTableWidget(0,3);endings_->setObjectName("analysisBalanceEndings");endings_->setHorizontalHeaderLabels({tr("엔딩 ID"),tr("관측 회차"),tr("기록 열기")});endings_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);endings_->verticalHeader()->hide();endings_->setMinimumHeight(150);layout->addWidget(endings_);layout->addStretch();update({});
   }
-  void update(const QJsonObject& job){const auto result=job.value("result").toObject(),outcomes=result.value("outcomes").toObject();const int recorded=result.value("completed").toInt(),requested=result.value("requested").toInt();
+  void update(const QJsonObject& job){periods->setJob(job);const auto result=job.value("result").toObject(),outcomes=result.value("outcomes").toObject();const int recorded=result.value("completed").toInt(),requested=result.value("requested").toInt();
     summary_->setText(tr("기록된 회차 %1 / 요청 %2\n완주 %3 · 막힘 %4 · 미완료·제한 %5 · 오류 %6 · 목표 도달 %7\n작업 종료 사유: %8").arg(recorded).arg(requested).arg(fraction(outcomes.value("finished").toInt(),recorded)).arg(fraction(outcomes.value("blocked").toInt(),recorded)).arg(fraction(outcomes.value("limit").toInt(),recorded)).arg(fraction(outcomes.value("error").toInt(),recorded)).arg(fraction(outcomes.value("target").toInt(),recorded)).arg(result.value("stopReason").toString(tr("기록 없음"))));
     auto options=job.value("options").toObject();if(options.value("priorityProfile").isObject()){const auto p=options.value("priorityProfile").toObject();summary_->setText(summary_->text()+tr("\n사용한 우선순위: %1 · %2").arg(p.value("name").toString(tr("직접 지정")),p.value("id").toString()));}
     resources_->setRowCount(0);endings_->setRowCount(0);

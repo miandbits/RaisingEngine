@@ -1,3 +1,4 @@
+import {verifyPresentationVisual} from '../visual/presentation-update.js';
 import {requestPhaseForecast,type PhaseForecastReply} from '../player-service/phase-forecast.js';
 import {deriveLastCommittedPlan,hasPlanReuse} from '../player-service/plan-reuse.js';
 import {calendarDate,calendarText} from '../core/calendar.js';
@@ -67,16 +68,18 @@ export class WebPlayerController implements PlayerBridge {
   generation = 1;
   presentation = new PlayerPresentation();
   constructor(readonly content: ContentSnapshot, private readonly runtime: RuntimeRequest,
-    private readonly files: WebFiles, private readonly validateSave: SaveValidator, readonly extensions: ExtensionHost | null = null, private readonly slotStorage:SlotStorage|null=null) {
+    private readonly files: WebFiles, private readonly validateSave: SaveValidator, readonly extensions: ExtensionHost | null = null, private readonly slotStorage:SlotStorage|null=null, private readonly presentationVisual?:NonNullable<ContentSnapshot['project']['visual']>) {
     // A running game owns a fixed snapshot; registration must never mask mutations.
     this.content=freeze(structuredClone(content));
+    if(presentationVisual){verifyPresentationVisual(content.project.visual,presentationVisual);this.presentationVisual=freeze(structuredClone(presentationVisual));}
   }
   private localized:{locale:string;content:ContentSnapshot}|null=null;
   private readonly projections=new WeakMap<ContentSnapshot,{state:RunState|null;result:Exclude<Projection,Failure>}>();
   private localizedContent():ContentSnapshot {
     const locale=localeId(this.content.project.localization,this.locale);
     if(this.localized?.locale===locale)return this.localized.content;
-    const content=freeze(localizeContent(this.content,this.content.project.localization,locale));
+    const source=this.presentationVisual?{...this.content,project:{...this.content.project,visual:this.presentationVisual}}:this.content;
+    const content=freeze(localizeContent(source,this.content.project.localization,locale));
     this.localized={locale,content};return content;
   }
 

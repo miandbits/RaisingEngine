@@ -1,3 +1,4 @@
+import {prepareRelease} from '../../dist/packages/export-service/release-metadata.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {readFile,writeFile,open,mkdir,lstat,realpath,readdir,rename,rm} from 'node:fs/promises';
 import path from 'node:path';
@@ -40,6 +41,8 @@ export async function projectFiles(editor) {
     // Several asset IDs may intentionally refer to the same source file.
     if(!files.has(name))files.set(name,await readFile(await regularFile(root,name)));
   }
+  const release=await prepareRelease(root,editor.documents.find(d=>d.kind==='assets')?.data?.release);
+  for(const file of release.files){if(documents.has(file.path)||files.has(file.path))throw Error('Release file overlaps another project resource: '+file.path);files.set(file.path,file.bytes);}
   // Named routes and approved expectations are source, unlike local saves/caches.
   for(const group of ['routes','baselines']) {
     const directory=path.join(root,'playtests',group);

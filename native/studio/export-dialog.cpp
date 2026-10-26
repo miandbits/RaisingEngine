@@ -22,6 +22,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QJsonDocument>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -73,6 +74,7 @@ void StudioWindow::exportGameDialog() {
   auto start = new QPushButton(tr("내보내기")); start->setObjectName("exportStart"); row->addWidget(start); auto close = new QPushButton(tr("닫기")); row->addWidget(close); connect(close, &QPushButton::clicked, &dialog, &QDialog::reject);
   connect(open, &QPushButton::clicked, &dialog, [open] { QDesktopServices::openUrl(QUrl::fromLocalFile(open->property("directory").toString())); });
 #include "update-compatibility.inc"
+#include "presentation-update.inc"
   QTimer waitForEditor; waitForEditor.setInterval(50); QElapsedTimer waiting;
   connect(&waitForEditor, &QTimer::timeout, &dialog, [&] {
     if (!bridge.busy()) { waitForEditor.stop(); start->setEnabled(true); start->click(); }
@@ -92,12 +94,13 @@ void StudioWindow::exportGameDialog() {
     QPointer<QDialog> guard = &dialog; QPointer<QPushButton> startGuard = start, closeGuard = close, openGuard = open, launchGuard = launch; QPointer<QLabel> statusGuard = status;
     QJsonObject params{{"target",target->currentData().toString()},{"destination",destination}};if(archives->isChecked())params["releaseVersion"]=version->text();
     if(target->currentData()=="ios"){params["iosVersion"]=version->text();params["iosBuildNumber"]=iosBuildNumber->text();}
-    if(!updateCheck->isEmpty())params["updateCheck"]=*updateCheck;
-    request("export", params, [guard, startGuard, closeGuard, openGuard, launchGuard, statusGuard, updateCheck, updateSummary, migrateUpdate](QJsonObject reply) {
+    if(!presentationSelection->isEmpty())params["presentationCheck"]=presentationSelection->value("checkId");
+    else if(!updateCheck->isEmpty())params["updateCheck"]=*updateCheck;
+    request("export", params, [guard, startGuard, closeGuard, openGuard, launchGuard, statusGuard, updateCheck, updateSummary, migrateUpdate, clearPresentation](QJsonObject reply) {
       if (!guard || !startGuard || !closeGuard || !openGuard || !launchGuard || !statusGuard) return;
       startGuard->setEnabled(true); closeGuard->setEnabled(true);
       if (!reply.value("error").toString().isEmpty() || !reply.contains("exported")) {
-        updateCheck->clear();migrateUpdate->setEnabled(false);updateSummary->setProperty("classification",QVariant());updateSummary->setText(QObject::tr("아직 확인하지 않았습니다. 기존 릴리스와 저장 파일을 보관하세요."));
+        clearPresentation();updateCheck->clear();migrateUpdate->setEnabled(false);updateSummary->setProperty("classification",QVariant());updateSummary->setText(QObject::tr("아직 확인하지 않았습니다. 기존 릴리스와 저장 파일을 보관하세요."));
         statusGuard->setText(reply.value("error").toString(QObject::tr("내보내기 결과를 받지 못했습니다.")) + "\n" + QObject::tr("문제를 해결한 뒤 다시 내보내세요. 실패한 작업의 임시 파일은 정리되며, 기존 출력 폴더는 보존합니다. 프로젝트를 변경했다면 이 창을 다시 열어 주세요."));
         return;
       }

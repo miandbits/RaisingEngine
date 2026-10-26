@@ -1,3 +1,6 @@
+import {verifyProjectBackup,restoreProjectBackup} from './backup-restore.mjs';
+import {applyProjectReleaseSettings} from '../../dist/packages/studio-service/release-import.js';
+import {prepareRelease} from '../../dist/packages/export-service/release-metadata.js';
 import {GoalRouteBatches} from './goal-route-batches.mjs';
 import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePriorityProfile} from './analysis-priorities.mjs';
 import {packagedStudioPluginStore} from './storage-paths.mjs';
@@ -9,6 +12,7 @@ import { FirstGameProgress } from './first-game.mjs';
 import { desktopTarget, gameDirectory, playerExecutable } from '../../dist/packages/export-service/targets.js';
 import { saveMigration } from './save-migration.mjs';
 import { UpdateCompatibility } from './update-compatibility.mjs';
+import { PresentationUpdates } from './presentation-updates.mjs';
 import {GoalCiReports} from './goal-ci.mjs';
 import {GitHubGoalReports} from './goal-github.mjs';
 import {runGoalRegression} from './goal-regression.mjs';
@@ -51,6 +55,7 @@ const engineRoot = fileURLToPath(new URL('../..', import.meta.url));
 const LOCK_FILE = 'plugins/lock.json';
 export class QtStudioService {
   updateCompatibility = new UpdateCompatibility();
+  presentationUpdates = new PresentationUpdates();
   recovery = new DraftRecovery();
   releases = new GameReleases();
   firstGame = new FirstGameProgress();
@@ -106,6 +111,7 @@ export class QtStudioService {
     const { method, params = {} } = request;
     if (method === 'saveMigrationPreview' || method === 'saveMigrationPublish') return saveMigration(method, params);
     if (method === 'updateCompatibility') return {error:null,updateCompatibility:await this.updateCompatibility.check(this.editor,params)};
+    if (method === 'presentationUpdateCheck') return {error:null,presentationUpdate:await this.presentationUpdates.check(this,params)};
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
     if(method==='goalRouteBatchStatus'||method==='goalRouteBatchStop'){
       if(params.root!==this.editor.root)throw Error('This route batch does not belong to the current project.');
@@ -113,9 +119,10 @@ export class QtStudioService {
       return {error:null,goalRouteBatch};
     }
     if(method==='goalSearchStatus'||method==='goalSearchStop')return {error:null,goalSearch:method==='goalSearchStop'?this.goalSearchJobs.cancel(params.root,params.jobId):this.goalSearchJobs.public(this.goalSearchJobs.get(params.root,params.jobId))};
-    if(['analysisList','analysisStatus','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
+    if(['analysisList','analysisStatus','analysisBalanceCompare','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
       const jobs=this.analysisJobs;let analysis;
-      if(method==='analysisList')analysis={jobs:(await jobs.list(params.root)).map(job=>({...job,result:{...job.result,routeGraph:undefined,traces:[]}}))};
+      if(method==='analysisList')analysis={jobs:(await jobs.list(params.root)).map(job=>({...job,result:{...job.result,routeGraph:undefined,traces:[],...(job.result.balance?{balance:{...job.result.balance,periodSeries:undefined}}:{})}}))};
+      else if(method==='analysisBalanceCompare'){if(this.editor.root&&params.root!==this.editor.root)throw Error('Open the project for this comparison first.');analysis={comparison:await jobs.compareBalance(params.root,params.beforeJobId,params.jobId)};}
       else if(method==='analysisStatus'){const job=await jobs.get(params.root,params.jobId,params.includeGraph!==false);analysis={job:params.includeGraph===false?{...job,result:{...job.result,routeGraph:undefined,traces:[]}}:job};}
       else if(method==='analysisStop')analysis={job:await jobs.cancel(params.root,params.jobId)};
       else if(method==='analysisRuns'){const runs=await jobs.runs(params.root,params.jobId,params);analysis={runs:params.includePaths?runs:{...runs,rows:runs.rows.map(({nodeIds,edgeIds,traceHash,...row})=>row)}};}
@@ -292,6 +299,8 @@ export class QtStudioService {
       }
       case 'view': break;
       case 'releaseTarget': this.editor.current(params.revision); await this.releases.preference(this.editor, params.target); break;
+      case 'releaseBackupVerify': this.editor.current(params.revision); extra.backupVerification=await verifyProjectBackup(params.file); this.editor.current(params.revision); break;
+      case 'releaseBackupRestore': this.editor.current(params.revision); extra.backupRestored=await restoreProjectBackup(params.file,{destination:params.destination,expectedSha256:params.sha256,originalRoot:this.editor.root}); break;
       case 'releaseLaunch': extra.launch = await this.releases.launch(params.token); break;
       case 'recoveryList': extra.recoveries = await this.recovery.list(this.editor.root); break;
       case 'recoveryRestore': this.editor.current(params.revision); extra.restoredProject = await this.recovery.restore(this.editor.root, {...params,revision:params.recoveryRevision}); break;
@@ -353,6 +362,9 @@ export class QtStudioService {
       case 'importSprites':
         extra = { spriteImport: await importSprites(this.editor, params, params.revision) };
         await this.editor.validate(this.editor.revision); break;
+      case 'projectReleaseSettings':
+        await applyProjectReleaseSettings(this.editor,params,params.revision);
+        await this.editor.validate(this.editor.revision); break;
       case 'importFont':
         extra = { importedAssetId: await importFont(this.editor, params.file, params.revision) };
         await this.editor.validate(this.editor.revision); break;
@@ -382,30 +394,39 @@ export class QtStudioService {
         this.editor.current(revision);
         if (!['windows', 'web', 'macos', 'ios'].includes(params.target)) throw new Error('지원하지 않는 내보내기 대상입니다.');
         if (typeof params.destination !== 'string' || !path.isAbsolute(params.destination)) throw new Error('새 출력 폴더의 절대 경로를 지정하세요.');
-        await this.releases.preference(this.editor, params.target);
         await this.editor.validate(revision);
         if (this.editor.diagnostics.some(d => d.severity === 'error')) throw new Error('내보내기 전에 문제 패널의 오류를 수정하세요.');
         await this.editor.assertDiskUnchanged();
         this.editor.current(revision);
         const built = await this.editor.snapshot(revision);
         if (!built.ok) throw new Error('내보내기 스냅샷을 만들 수 없습니다.');
+        if(params.presentationCheck&&params.updateCheck)throw Error('Choose either a verified presentation update or the ordinary content-update workflow.');
+        const presentation=params.presentationCheck?await this.presentationUpdates.verify(this,params.presentationCheck,{revision,target:params.target}):null;
         if(params.updateCheck)await this.updateCompatibility.verify(this.editor,params.updateCheck);
         const extensions = await this.editor.exportExtensions(revision, built.snapshot, params.target, await this.playerFeatures(params.target));
-        const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root,
+        const release=await prepareRelease(this.editor.root,this.editor.documents.find(d=>d.kind==='assets')?.data?.release);
+        this.editor.current(revision);
+        const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root, release,
+          ...(presentation?{presentationBase:presentation.base}:{}),
           destination: params.destination, target: params.target, runtimes: this.runtimes, extensions,
           prepareBundle: async directory => {
             if(params.target==='ios') await prepareIOSProject(directory, {root:engineRoot, applicationId:'org.raisingengine.'+built.snapshot.project.gameId, ...iosVersions});
             if(params.target==='macos' && process.platform==='darwin') await runAppleTool('/usr/bin/codesign', ['--force','--deep','--sign','-',path.join(directory,'RaisingPlayer.app')], directory);
-            if(params.releaseVersion) await this.releases.prepare(directory, {editor:this.editor, target:params.target, version:params.releaseVersion, content:built.snapshot, contentFingerprint:built.snapshot.contentFingerprint, engineRoot});
+            if(params.releaseVersion) await this.releases.prepare(directory, {editor:this.editor, target:params.target, version:params.releaseVersion, content:built.snapshot, contentFingerprint:presentation?.report.baselineFingerprint??built.snapshot.contentFingerprint, engineRoot});
           },
           beforePublish: async () => {
             await this.editor.assertDiskUnchanged(); this.editor.current(revision);
             if(params.updateCheck)await this.updateCompatibility.verify(this.editor,params.updateCheck);
+            if(params.presentationCheck)await this.presentationUpdates.verify(this,params.presentationCheck,{revision,target:params.target});
           } });
         extra = { exported: {...exported, launchToken:this.releases.register(exported), ...(params.releaseVersion ? {releaseVersion:params.releaseVersion,gameArchive:path.join(exported.directory,'Game.zip'),projectArchive:path.join(exported.directory,'Project-backup.zip')} : {})} };
+        // Failed validation/export must not persist a target preference. A settings
+        // failure after publication is a warning, never a claim that no game exists.
+        try {await this.releases.preference(this.editor,params.target);}
+        catch(error){extra.exported.warning='Game exported, but the preferred target could not be saved: '+error.message;}
         if (params.target === 'ios') {
           try { extra.exported.xcodeProject = await configureIOSProject(exported.directory,{recordStatus:false}); }
-          catch (error) { extra.exported.warning = 'Game and iOS sources exported. Xcode generation needs attention: ' + error.message + '\nUse Generate Xcode project.command after installing Xcode and CMake.'; }
+          catch (error) { extra.exported.warning = [extra.exported.warning,'Game and iOS sources exported. Xcode generation needs attention: ' + error.message + '\nUse Generate Xcode project.command after installing Xcode and CMake.'].filter(Boolean).join('\n'); }
         }
         try { await this.firstGame.exported(this.editor, exported); }
         catch (error) { extra.checklistWarning = error.message; }

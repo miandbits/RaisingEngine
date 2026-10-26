@@ -16,6 +16,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QToolButton>
 
 namespace {
 bool copyFixture(QString source,QString target){QDirIterator it(source,QDir::Files|QDir::NoDotAndDotDot,QDirIterator::Subdirectories);while(it.hasNext()){auto file=it.next(),dest=target+"/"+QDir(source).relativeFilePath(file);if(!QDir().mkpath(QFileInfo(dest).absolutePath())||!QFile::copy(file,dest))return false;}return true;}
@@ -51,6 +52,7 @@ private slots:
       auto d=w.findChild<QDialog*>("readableLayoutDialog");QVERIFY(d);
       QTimer::singleShot(15000,d,&QDialog::reject);
       QVERIFY(d->screen()->availableGeometry().contains(d->frameGeometry()));
+      d->findChild<QToolButton*>("readableAdvancedToggle")->setChecked(true);
       auto screens=d->findChild<QComboBox*>("readableScreen");screens->setCurrentIndex(screens->findData("schedule"));
       QVERIFY(choose(d->findChild<QListWidget*>("readableItems"),"schedule"));
       auto enabled=d->findChild<QCheckBox*>("readableEnabled");enabled->setChecked(!showDisableHelp);

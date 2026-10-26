@@ -1,3 +1,4 @@
+#include "release-settings.hpp"
 #include "calendar.hpp"
 #include "resume-context-settings.hpp"
 #include "studio.hpp"
@@ -47,6 +48,9 @@ void StudioWindow::editProjectSettings(bool focusReadingHistory) {
   if(bridge.busy()||projectData().empty())return;
   auto project=projectData();QDialog dialog(this);dialog.setObjectName("projectSettingsDialog");dialog.setWindowTitle(tr("프로젝트 설정"));dialog.resize(640,650);
   auto layout=new QVBoxLayout(&dialog);auto tabs=new QTabWidget;tabs->setElideMode(Qt::ElideNone);tabs->setUsesScrollButtons(true);layout->addWidget(tabs);auto basic=new QWidget;auto form=new QFormLayout(basic);tabs->addTab(basic,tr("기본 · 달력"));
+  QJsonObject releaseMetadata;for(auto document:view.value("documents").toArray())if(document.toObject().value("kind")=="assets")releaseMetadata=document.toObject().value("data").toObject().value("release").toObject();
+  auto releaseSettings=new StudioRelease::Settings(releaseMetadata,view.value("root").toString());tabs->addTab(releaseSettings,tr("출시"));
+  connect(releaseSettings->backup,&QPushButton::clicked,&dialog,[&]{StudioRelease::restoreDialog(&dialog,[this](QString method,QJsonObject params,std::function<void(QJsonObject)> done){request(method,params,done);});});
   auto title=new QLineEdit(project.value("title").toString());title->setObjectName("projectTitle");form->addRow(tr("게임 제목"),title);
   auto id=new QLineEdit(project.value("gameId").toString());id->setObjectName("projectGameId");id->setMaxLength(64);form->addRow(tr("게임 ID"),id);
   auto description=new QPlainTextEdit(project.value("description").toString());description->setObjectName("projectDescription");description->setMaximumHeight(90);form->addRow(tr("설명"),description);
@@ -121,5 +125,5 @@ void StudioWindow::editProjectSettings(bool focusReadingHistory) {
   if(readingHistory->isChecked()!=originalVisual.contains("readingHistory")){auto visual=project.value("visual").toObject();if(readingHistory->isChecked())visual["readingHistory"]=QJsonObject{};else visual.remove("readingHistory");project["visual"]=visual;}
   if(resumeEnabled->isChecked()||originalVisual.contains("resumeContext")){auto visual=project.value("visual").toObject();if(resumeEnabled->isChecked())visual["resumeContext"]=resumeConfig;else visual.remove("resumeContext");project["visual"]=visual;}
   auto nextInitial=initial,nextAttributes=initialAttributes;for(auto it=initialFields.begin();it!=initialFields.end();++it)if(it.value()->value()!=it.value()->property("originalValue").toInt())nextAttributes[it.key()]=it.value()->value();nextInitial["attributes"]=nextAttributes;project["initialState"]=nextInitial;
-  replaceProject(project);
+  request("projectReleaseSettings",{{"project",project},{"release",releaseSettings->values()},{"iconFile",releaseSettings->iconFile},{"noticeFiles",releaseSettings->imports()}});
 }

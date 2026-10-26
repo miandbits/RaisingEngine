@@ -53,6 +53,7 @@ public:
   int replay_speed=1;
   size_t replay_cursor=0,replay_count=0;
   std::string replay_notice,replay_title;
+  Json presentation_visual=nullptr;
   Json assets,display_content,display_projection,render_elements=Json::array();
   Json user_values_draft=Json::object();
   #include "save-slots-markup.inc"
@@ -91,7 +92,8 @@ public:
   void refreshDisplay(){
     const auto config=game.content.at("project").value("localization",Json::object());bool valid=false;for(const auto& l:config.value("locales",Json::array()))if(l.at("id")==locale)valid=true;
     if(!valid)locale=config.value("defaultLocale","");
-    display_content=localized_content(game.content,locale);
+    auto presentation=game.content;if(presentation_visual.is_object())presentation["project"]["visual"]=presentation_visual;
+    display_content=localized_content(presentation,locale);
     display_projection=Json::parse(raising::process(Json({{"operation","view"},{"content",display_content},{"state",game.state}}).dump()));
     if(!display_projection.value("ok",false))throw std::runtime_error("Localized view failed");
   }

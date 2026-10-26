@@ -1,3 +1,4 @@
+import {verifyProjectBackup} from './backup-restore.mjs';
 import {readFile,writeFile,lstat,mkdir,rm,realpath} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {createServer} from 'node:http';
@@ -91,12 +92,14 @@ export class GameReleases {
     const dependencyFile=path.join(engineRoot,'config/native-dependencies.json');
     const dependencies=JSON.parse(await readFile(dependencyFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '{}';throw e;}));
     const hashes=[];for(const file of files)hashes.push({file,sha256:digest(await readFile(path.join(directory,file)))});
-    const manifest={formatVersion:1,version,target,contentFingerprint,createdAt:new Date().toISOString(),engineVersion:'0.1.0',node:process.version,host:process.platform,architecture:process.arch,dependencies,pluginDependencies,files:hashes,
+    const manifest={formatVersion:1,version,target,contentFingerprint,...(contentFingerprint!==content.contentFingerprint?{sourceContentFingerprint:content.contentFingerprint,presentationPolicy:'paint-layout-v1'}:{}),createdAt:new Date().toISOString(),engineVersion:'0.1.0',node:process.version,host:process.platform,architecture:process.arch,dependencies,pluginDependencies,files:hashes,
       sourceFiles:[...sourceFiles].map(([file,bytes])=>({file,sha256:digest(bytes)})),
       saveCompatibility:'Keep this exact release and project backup. Changed game rules/content can invalidate player saves; use explicit save migration and replay verification before promising compatibility.',
       reproduction:'The game ZIP preserves the exact exported player and content bytes. The project ZIP preserves editable draft documents, referenced assets, named test routes and saved player-priority profiles. Rebuilding engine binaries requires the matching toolchain; byte-identical recompilation is not claimed.'};
     await writeFile(path.join(source,'RELEASE.json'),JSON.stringify(manifest,null,2));
     await writeZip(source,await treeFiles(source),path.join(directory,'Project-backup.zip'));await rm(source,{recursive:true});
+    const backupVerification=await verifyProjectBackup(path.join(directory,'Project-backup.zip'));
+    manifest.backupVerification=backupVerification;
     await writeZip(directory,files,path.join(directory,'Game.zip'));
     manifest.archives={game:{file:'Game.zip',sha256:digest(await readFile(path.join(directory,'Game.zip')))},project:{file:'Project-backup.zip',sha256:digest(await readFile(path.join(directory,'Project-backup.zip')))}};
     await writeFile(path.join(directory,'RELEASE.json'),JSON.stringify(manifest,null,2));
@@ -112,7 +115,7 @@ export class GameReleases {
       return {kind:'native',executable:playerExecutable(exported.target,root),directory:root};
     }
     if(this.previews.has(token))return {kind:'web',url:this.previews.get(token).url};
-    const files=new Set(await treeFiles(root)),mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.json':'application/json','.wasm':'application/wasm','.css':'text/css','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ttf':'font/ttf','.ogg':'audio/ogg','.mp3':'audio/mpeg'};
+    const files=new Set(await treeFiles(root)),mime={'.txt':'text/plain; charset=utf-8','.webmanifest':'application/manifest+json','.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.json':'application/json','.wasm':'application/wasm','.css':'text/css','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ttf':'font/ttf','.ogg':'audio/ogg','.mp3':'audio/mpeg'};
     const server=createServer(async(req,res)=>{
       try {
         const host=req.headers.host;if(host!==`127.0.0.1:${server.address().port}`)throw Error('Invalid host');

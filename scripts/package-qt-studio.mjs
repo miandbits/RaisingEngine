@@ -82,7 +82,7 @@ async function dependency(name,from=join(root,'package.json')){
  await copy(dirname(file),'engine/node_modules/'+name);
  for(const child of Object.keys(p.dependencies||{}))await dependency(child,file);
 }
-for(const name of ['ajv','jsonc-parser','yauzl'])await dependency(name);
+for(const name of ['ajv','jsonc-parser','yauzl','resedit'])await dependency(name);
 // Retain licenses for JS code embedded in the Web runtime as well as Node services.
 for(const name of ['react','react-dom','scheduler']){
  const p=join(root,'node_modules',name);await copy(join(p,'LICENSE'),'engine/dist/web/licenses/'+name+'.txt');

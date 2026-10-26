@@ -72,7 +72,7 @@ async function dependency(name,from=path.join(root,'package.json')) {
   dependencies.set(name,p.version);await copy(path.dirname(manifest),'engine/node_modules/'+name);
   for(const child of Object.keys(p.dependencies??{}))await dependency(child,manifest);
 }
-for(const name of ['ajv','jsonc-parser','yauzl'])await dependency(name);
+for(const name of ['ajv','jsonc-parser','yauzl','resedit'])await dependency(name);
 await writeFile(path.join(resources,'package-manifest.json'),JSON.stringify({version:1,platform:'darwin',arch:process.arch,node:nodeInfo.version,templates:studioTemplates,dependencies:Object.fromEntries(dependencies),publicReleaseReady:false,notes:'Local development bundle. Distribution still requires Qt corresponding-source/license review, Developer ID signing, notarization and a clean-machine test.'},null,2));
 execFileSync('/usr/bin/codesign',['--force','--deep','--sign','-',out],{stdio:'inherit'});
 execFileSync('/usr/bin/codesign',['--verify','--deep','--strict',out],{stdio:'inherit'});

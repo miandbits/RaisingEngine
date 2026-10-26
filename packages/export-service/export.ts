@@ -1,3 +1,5 @@
+import {applyReleaseBranding} from './branding.js';
+import {prepareRelease,savedReleaseMetadata,verifyPreparedRelease,packageNotices,type PreparedRelease} from './release-metadata.js';
 import {controlStyleReferences} from '../visual/control-styles.js';
 import {surfaceReferences,surfaceInsetsProblem} from '../visual/surfaces.js';
 import {validatedPngDimensions} from '../media/png.js';
@@ -16,10 +18,12 @@ import { preparePresentationRevision } from './presentation-revision.js';
 export interface ExportOptions {
   content: ContentSnapshot; projectRoot: string; destination: string; target: ExportTarget;
   runtimes: { web: string; windows: string; macos?: string; ios?: string };
+  /** Current draft declarations, detached and hashed before exporting. Omit to read saved declarations. */
+  release?: PreparedRelease;
   prepareBundle?: (directory: string) => Promise<void>;
   /** Plugin runtime modules + documents from StudioEditor.exportExtensions (null/absent when no plugin element is used). */
   extensions?: PreparedExtensions | null | undefined;
-  /** Published bundle to preserve for a strictly image-only update. No implicit save migration. */
+  /** Published simulation baseline for an explicitly verified presentation update. */
   presentationBase?: GameBundle;
   /** Recheck the source immediately before publishing the owned staging directory. */
   beforePublish?: () => Promise<void>;
@@ -40,6 +44,9 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   const runtimeContent = presentation?.content ?? content;
   if (!['web', 'windows', 'macos', 'ios'].includes(target)) throw new Error('지원하지 않는 내보내기 대상입니다.');
   const projectRoot = await realpath(options.projectRoot);
+  if(options.release)await verifyPreparedRelease(projectRoot,options.release);
+  // Detach bytes and declarations from a caller that may retain and mutate its preparation.
+  const release=await prepareRelease(projectRoot,options.release?.metadata??await savedReleaseMetadata(projectRoot));
   const destination = path.resolve(options.destination);
   if (inside(destination, projectRoot)) throw new Error('프로젝트 폴더 또는 그 상위 폴더에 내보낼 수 없습니다.');
   if (await exists(destination)) throw new Error('대상 폴더가 이미 있습니다. 새 폴더 이름을 선택해 주세요.');
@@ -54,6 +61,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
   if (capabilities.formatVersion !== '1' || !Array.isArray(capabilities.imageExtensions) || !Array.isArray(capabilities.audioExtensions))
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const requiredFeatures = requiredPlayerFeatures(content, options.extensions?.features ?? []);
+  if(presentation?.presentationRevision.visual)requiredFeatures.push('presentation-visual-updates-v1');
   const visual = content.project.visual;
   for(const ref of controlStyleReferences(visual))if(!visual?.styles?.some(style=>style.id===ref.styleId))throw new Error(`Generated control style does not exist at ${ref.pointer}: ${ref.styleId}`);
   const surfaces=surfaceReferences(visual);
@@ -145,6 +153,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     // `extensions` is omitted entirely for plugin-free games so their bundles stay byte-identical.
     const bundle: GameBundle = extensions ? { formatVersion: '1', content: runtimeContent, assets, extensions: extensions.game } : { formatVersion: '1', content: runtimeContent, assets };
     if (presentation) bundle.presentationRevision = presentation.presentationRevision;
+    if(release.metadata.displayName)bundle.application={displayName:release.metadata.displayName};
     await writeFile(path.join(data, 'game.json'), JSON.stringify(bundle), { flag: 'wx' });
     await writeFile(path.join(staging, 'README.txt'), target === 'web'
       ? `${content.project.title}\n\n이 폴더 전체를 정적 웹 호스팅에 올리세요. index.html은 HTTP 또는 HTTPS에서 열어야 합니다.\n저장하기는 JSON 파일을 내려받고 불러오기는 그 파일을 선택합니다.\nC++ 코어의 WebAssembly 빌드로 실행합니다.\n`
@@ -154,7 +163,10 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     await writeFile(path.join(staging, 'export.json'), JSON.stringify({ formatVersion: '1', target,
       contentFingerprint: runtimeContent.contentFingerprint, coreVersion: '0.2.0', assetCount: content.assets.length,
       ...(presentation ? { presentationRevision: presentation.presentationRevision } : {}) }, null, 2), { flag: 'wx' });
+    await packageNotices(data,release);
+    await applyReleaseBranding(staging,target,release);
     await options.prepareBundle?.(staging);
+    await verifyPreparedRelease(projectRoot,release);
     await options.beforePublish?.();
     // A competing export or user-created directory must never be replaced.
     if (await exists(actualDestination)) throw new Error('출력 폴더가 이미 있습니다. 새 이름을 선택하세요.');

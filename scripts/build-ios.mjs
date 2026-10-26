@@ -22,8 +22,8 @@ if(!projectArg){
  const relative=path.relative(source,output);if(!relative||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)))throw Error('Output must be outside the source bundle.');
  await mkdir(output,{recursive:true});
  const filter=async file=>{if((await lstat(file)).isSymbolicLink())throw Error('Bundle symlinks are unsupported.');return true;};
- for(const file of ['game.json','fonts','licenses',...new Set(Object.values(game.assets))]){
-  if(!existsSync(path.join(source,file))) { if(file==='licenses')continue; throw Error(`Missing game resource: ${file}`); }
+ for(const file of ['game.json','fonts','licenses','branding','release-branding.json',...new Set(Object.values(game.assets))]){
+  if(!existsSync(path.join(source,file))) { if(['licenses','branding','release-branding.json'].includes(file))continue; throw Error(`Missing game resource: ${file}`); }
   await mkdir(path.dirname(path.join(output,file)),{recursive:true});await cp(path.join(source,file),path.join(output,file),{recursive:true,filter});
  }
  await prepareIOSProject(output,{applicationId:option('--application-id','org.raisingengine.'+game.content.project.gameId),...versions});

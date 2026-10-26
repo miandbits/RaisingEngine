@@ -33,6 +33,10 @@ Open Raising Studio and choose **My first raising game · recommended**. Its gui
 - [Authoring manual](docs/manual/README.md)
 - [Public examples](examples/README.md)
 - [Game export](docs/manual/qt-game-export.md)
+- [Task navigation and game-state previews](docs/creator-workflow.md)
+- [App branding, explicit notices and verified backup restoration](docs/creator-release.md)
+- [Period-by-period balance and before/after comparison](docs/manual/balance-period-comparisons.md)
+- [Verified presentation updates that preserve saves](docs/manual/image-only-updates.md)
 
 ## Build from a clean checkout
 
