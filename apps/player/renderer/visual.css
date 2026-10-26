@@ -363,6 +363,8 @@ button.engine-surface-host{position:relative;}
 .activity-board-compact .activity-board-detail-body{padding:6px}
 .activity-board-compact .activity-board-actions{margin:3px 0;padding:0 4px}
 .phase-forecast-inline{display:flex;align-items:center;gap:8px;flex-shrink:0;border:1px solid currentColor;border-radius:6px;padding:4px 8px}
+/* The 44px Details control already sets the compact forecast row's minimum. */
+.activity-board-compact:not(.activity-board-readable) .phase-forecast-inline{padding-block:0}
 .phase-forecast-brief{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;flex:1;min-width:0;font-size:.85em;line-height:1.35}
 .phase-forecast-inline .phase-forecast-launcher{margin:0;flex:0 0 auto}
 .phase-forecast-brief-caveat{flex-basis:100%}

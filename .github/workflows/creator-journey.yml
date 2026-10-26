@@ -164,6 +164,7 @@ jobs:
             .cache/qt-layout-diagnostics/
             .cache/qt-surface-authoring/
             .cache/growth-summary/
+            .cache/activity-board/
             .cache/readable-screen-activation/
             .cache/ui-surfaces/
             .cache/activity-result-copy/
@@ -263,6 +264,7 @@ jobs:
             .cache/qt-layout-diagnostics/
             .cache/qt-surface-authoring/
             .cache/growth-summary/
+            .cache/activity-board/
             .cache/readable-screen-activation/
             .cache/ui-surfaces/
             .cache/activity-result-copy/
