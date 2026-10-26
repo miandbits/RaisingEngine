@@ -24,7 +24,7 @@ inline Json report(Rml::Element* document,const Json& nodes,float viewport_width
   for(size_t i=0;i<elements.size();++i)for(int j=0;j<elements[i]->GetNumChildren();++j){if(elements.size()>=4096){truncated=true;break;}elements.push_back(elements[i]->GetChild(j));}
   const std::unordered_set<Rml::Element*> inspected(elements.begin(),elements.end());
   std::unordered_map<Rml::Element*,bool> complex_surface;
-  for(auto it=elements.rbegin();it!=elements.rend();++it){auto* e=*it;auto* decoration=e->GetProperty("decorator");bool complex=e->GetTagName()=="img"||(decoration&&!decoration->ToString().empty()&&decoration->ToString()!="none");
+  for(auto it=elements.rbegin();it!=elements.rend();++it){auto* e=*it;auto* decoration=e->GetProperty("decorator");bool complex=e->HasAttribute("data-engine-surface")||e->GetTagName()=="img"||(decoration&&!decoration->ToString().empty()&&decoration->ToString()!="none");
     for(int i=0;i<e->GetNumChildren()&&!complex;++i){auto* child=e->GetChild(i);if(!inspected.count(child)){complex=true;break;}complex=complex_surface[child]||child->GetComputedValues().background_color().alpha!=0;}complex_surface[e]=complex;}
   std::unordered_set<std::string> seen;
   for(auto* element:elements){

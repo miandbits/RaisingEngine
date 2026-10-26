@@ -267,3 +267,29 @@
 .visual-readable .web-save-slots{overflow:visible;--canvas-control-min:var(--readable-target,44px)}
 .visual-readable .web-save-slots.slot-confirmation{padding:0}
 .visual-readable .web-save-slots .slot-grid{flex:none;overflow:visible}
+
+/* Surface paint is independent of the live box's border/padding and controls. */
+.engine-surface-host{isolation:isolate;}
+button.engine-surface-host{position:relative;}
+.engine-surface-paint{position:absolute;inset:0;z-index:-1;pointer-events:none;user-select:none;display:block;background-repeat:repeat;background-position:left top;overflow:hidden;}
+.engine-surface-paint>svg{display:block;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;}
+.visual-element[style*="--style-hover"] button.engine-surface-host:hover:not(:disabled)>.engine-surface-paint,
+.visual-element[style*="--style-pressed"] button.engine-surface-host:active:not(:disabled)>.engine-surface-paint{visibility:hidden;}
+
+/* Opt-in generated control colors. No selector changes layout or authored actions. */
+.visual-element[data-control-owner][data-control-colors~="fill"] :is(button,select,option,input),[data-reading-control-colors~="fill"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input){background-color:var(--control-fill);}
+.visual-element[data-control-owner][data-control-colors~="color"] :is(button,select,option,input),[data-reading-control-colors~="color"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input){color:var(--control-color);}
+.visual-element[data-control-owner][data-control-colors~="color"] :is(.slot-details strong,.slot-empty-identity strong,.slot-latest){color:var(--control-color)}
+.visual-element[data-control-owner][data-control-colors~="borderColor"] :is(button,select,option,input),[data-reading-control-colors~="borderColor"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input){border-color:var(--control-borderColor);}
+.visual-element[data-control-owner][data-control-colors~="hoverFill"] :is(button,select,option,input):hover:not(:disabled),[data-reading-control-colors~="hoverFill"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input):hover:not(:disabled){background-color:var(--control-hoverFill);}
+.visual-element[data-control-owner][data-control-colors~="pressedFill"] :is(button,select,option,input):active:not(:disabled),[data-reading-control-colors~="pressedFill"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input):active:not(:disabled){background-color:var(--control-pressedFill);}
+.visual-element[data-control-owner][data-control-colors~="disabledColor"] :is(button,select,option,input):disabled,[data-reading-control-colors~="disabledColor"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input):disabled{color:var(--control-disabledColor);}
+.visual-element[data-control-owner][data-control-colors~="fill"][data-control-colors~="borderColor"],.visual-element[data-control-owner][data-control-colors~="fill"][data-control-colors~="borderColor"] *,[data-reading-control-colors~="fill"][data-reading-control-colors~="borderColor"] :is(.readable-scroll,.reading-dialog-body){scrollbar-color:var(--control-borderColor) var(--control-fill)}
+
+/* The generated utility strip shares the reading-tool palette even beside a canvas. */
+[data-reading-control-colors~="fill"] :is(.player-readable-toolbar,.player-legacy-toolbar),[data-reading-control-colors~="fill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input){background-color:var(--control-fill)}
+[data-reading-control-colors~="color"] :is(.player-readable-toolbar,.player-legacy-toolbar),[data-reading-control-colors~="color"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input){color:var(--control-color)}
+[data-reading-control-colors~="borderColor"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input){border-color:var(--control-borderColor)}
+[data-reading-control-colors~="hoverFill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):hover:not(:disabled){background-color:var(--control-hoverFill)}
+[data-reading-control-colors~="pressedFill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):active:not(:disabled){background-color:var(--control-pressedFill)}
+[data-reading-control-colors~="disabledColor"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):disabled{color:var(--control-disabledColor)}

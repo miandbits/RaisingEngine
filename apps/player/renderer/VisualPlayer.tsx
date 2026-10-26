@@ -1,3 +1,5 @@
+import {activityResultText} from '../../../packages/visual/activity-result.js';
+import type {NumericTarget} from '../../../packages/core/model.js';
 import {useResumeContext} from './ResumeContext.js';
 import {slotWords,slotScreens,type SaveSlotAction} from '../../../packages/player-service/save-slots.js';
 import {useReadingHistory,readingHistoryDate} from './ReadingHistory.js';
@@ -100,14 +102,18 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   for(const p of scene?.portraits??[])portraitTransforms[p.position]=p;
   const screen:ScreenId=!s&&design.routing&&titleScreen?titleScreen:resolveScreen(design,s??null,node?.type,view.dataUi?.conditions);
   const result=s?.lastActivityResult;
-  const noNumericChanges=result&&!result.changes.some(c=>c.kind==='numeric'&&c.delta!==0);
 
   const needsSystemScreen = !design.routing && ['battle','expedition'].includes(screen) && !design.screens.some(candidate => candidate.id === screen && candidate.elements.some(element => (element.kind === screen||screen==='battle'&&(element.kind==='collection'&&element.source?.type==='battleActions'||element.kind==='button'&&['battleAction','selectBattleAction'].includes(element.action??''))) && isVisible(element, { phase: screen })));
   const effectiveDesign = needsSystemScreen ? { ...design, screens: [...design.screens.filter(candidate => candidate.id !== screen), ...systemsScreens(design.width, design.height).filter(candidate => candidate.id === screen)] } : design;
   const attributeName=(id:string)=>view.attributes.find(a=>a.id===id)?.label??id;
   const itemName=(id:string)=>view.gameplayDefinition?.items.find(item=>item.id===id)?.name??id;
-  const context:VisualContext={dataState:s??null,activeDietId:s?.gameplay?.dietId??null,systems:view.systems,items:view.gameplayDefinition?.items??[],gameplay:view.gameplay,location:view.gameplay?.location.name??'',relationships:view.characters.flatMap(c=>c.relationships.map(r=>({id:`${c.id}-${r.id}`,characterId:c.id,relationshipId:r.id,name:c.name,label:r.label,delta:view.relationshipChanges?.[c.id]?.[r.id]??0,value:s?.relationships[c.id]?.[r.id]??view.initialState.relationships?.[c.id]?.[r.id]??r.initial,min:r.min,max:r.max}))),title:view.title,description:view.description,calendar:view.time?(view.calendarProject?.calendar?calendarText(view.time,view.calendarProject.calendar,view.locale):`${view.time.year}년 ${view.time.month}월 · ${periodLabel(view.time.periodInMonth,view.periodsPerMonth??3)}`):'',ending:view.endingLabel??'',speaker:node?.type==='dialogue'&&node.speakerId?view.characters.find(c=>c.id===node.speakerId)?.name??'이야기':view.storyLabel??'이야기',story:node?.type==='dialogue'?node.text:node?.type==='choice'?node.prompt:'',phase:node?.type==='choice'?'choice':node?.type==='dialogue'?'dialogue':s?.phase??'title',background:s?s.presentation.backgroundAssetId:design.defaultScene?.backgroundAssetId??null,portraits,stats:view.attributes.map(a=>({...a,value:s?.attributes[a.id]??view.initialState.attributes?.[a.id]??a.initial})),activities:view.activities,plan,period:view.time?.periodInMonth??0,choices:view.narrative?.choices??[],result:result?`${view.activities.find(a=>a.id===result.activityId)?.label??''} 완료${result.success?` · ${result.success.passed?'성공':'실패'}`:''}\n`+result.changes.filter(c=>c.kind==='numeric'&&c.delta!==0).map(c=>c.kind==='numeric'?`${c.target.kind==='attribute'?attributeName(c.target.attributeId):c.target.kind==='inventory'?itemName(c.target.itemId):'관계'} ${c.delta>0?'+':''}${c.delta}`:'').join(' · '):''};
-  if(noNumericChanges)context.result+='능력 변화 없음';
+  const resultTargetName=(target:NumericTarget)=>{
+    if(target.kind==='attribute')return attributeName(target.attributeId);
+    if(target.kind==='inventory')return itemName(target.itemId);
+    const character=view.characters.find(c=>c.id===target.characterId);
+    return character?`${character.name} / ${character.relationships.find(r=>r.id===target.relationshipId)?.label??target.relationshipId}`:target.relationshipId;
+  };
+  const context:VisualContext={dataState:s??null,activeDietId:s?.gameplay?.dietId??null,systems:view.systems,items:view.gameplayDefinition?.items??[],gameplay:view.gameplay,location:view.gameplay?.location.name??'',relationships:view.characters.flatMap(c=>c.relationships.map(r=>({id:`${c.id}-${r.id}`,characterId:c.id,relationshipId:r.id,name:c.name,label:r.label,delta:view.relationshipChanges?.[c.id]?.[r.id]??0,value:s?.relationships[c.id]?.[r.id]??view.initialState.relationships?.[c.id]?.[r.id]??r.initial,min:r.min,max:r.max}))),title:view.title,description:view.description,calendar:view.time?(view.calendarProject?.calendar?calendarText(view.time,view.calendarProject.calendar,view.locale):`${view.time.year}년 ${view.time.month}월 · ${periodLabel(view.time.periodInMonth,view.periodsPerMonth??3)}`):'',ending:view.endingLabel??'',speaker:node?.type==='dialogue'&&node.speakerId?view.characters.find(c=>c.id===node.speakerId)?.name??'이야기':view.storyLabel??'이야기',story:node?.type==='dialogue'?node.text:node?.type==='choice'?node.prompt:'',phase:node?.type==='choice'?'choice':node?.type==='dialogue'?'dialogue':s?.phase??'title',background:s?s.presentation.backgroundAssetId:design.defaultScene?.backgroundAssetId??null,portraits,stats:view.attributes.map(a=>({...a,value:s?.attributes[a.id]??view.initialState.attributes?.[a.id]??a.initial})),activities:view.activities,plan,period:view.time?.periodInMonth??0,choices:view.narrative?.choices??[],result:result?activityResultText(result,view.activities.find(a=>a.id===result.activityId)?.label??result.activityId,resultTargetName,view.locale):''};
   if(history?.enabled&&!preview&&node&&['dialogue','choice'].includes(node.type))context.historyReceipt={epoch:history.epoch,key:JSON.stringify([s?.periodIndex,s?.activeNarrative?.kind,s?.activeNarrative?.id,s?.activeNarrative?.nodeId,s?.activeNarrative?.actorId]),kind:node.type==='choice'?'prompt':'dialogue',...(view.locale?{locale:view.locale}:{}),date:readingHistoryDate(view.time,view.calendarProject?.calendar,view.locale)};
   const forecastBridge=window.player,requestForecast=forecastBridge?.forecastPhase?.bind(forecastBridge);
   context.forecastPhase=s&&requestForecast?ids=>requestForecast(ids,{generation:view.generation,revision:s.stateRevision}):undefined;
@@ -119,9 +125,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,act,newRun,save,load,
   context['choice-result']=view.choiceFeedback??'';
   context.choices=context.choices.map(choice=>({...choice,hint:view.choiceHints?.[choice.id]??''}));
   if(result?.actorResults?.length&&!view.timeline?.plan.resultPlayback){
-    context.actorResults=result.actorResults.map(({characterId,result:actorResult})=>({characterId,text:
-      `${view.characters.find(c=>c.id===characterId)?.name??characterId} · ${view.activities.find(a=>a.id===actorResult.activityId)?.label??actorResult.activityId}\n`+
-      actorResult.changes.filter(c=>c.kind==='numeric'&&c.delta!==0).map(c=>c.kind==='numeric'?`${c.target.kind==='attribute'?attributeName(c.target.attributeId):c.target.kind==='inventory'?itemName(c.target.itemId):'관계'} ${c.delta>0?'+':''}${c.delta}`:'').join('\n')}));
+    context.actorResults=result.actorResults.map(({characterId,result:actorResult})=>({characterId,text:activityResultText(actorResult,view.activities.find(a=>a.id===actorResult.activityId)?.label??actorResult.activityId,resultTargetName,view.locale,view.characters.find(c=>c.id===characterId)?.name??characterId)}));
     context.result=context.actorResults.map(row=>row.text).join('\n');
   }
   if(s?.phase==='ready'&&view.schedulePlayback==='continuous'&&design.resultPlayback&&!error)context.phase='auto-ready';

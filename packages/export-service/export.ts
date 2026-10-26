@@ -1,4 +1,7 @@
-import { requiredPlayerFeatures } from './compatibility.js';
+import {controlStyleReferences} from '../visual/control-styles.js';
+import {surfaceReferences,surfaceInsetsProblem} from '../visual/surfaces.js';
+import {validatedPngDimensions} from '../media/png.js';
+import { requiredPlayerFeatures, missingPlayerFeatures } from './compatibility.js';
 export { hasPortraitTransforms } from './compatibility.js';
 import { gameDirectory, playerExecutable } from './targets.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -52,12 +55,14 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     throw new Error('플레이어 지원 형식 정보가 올바르지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
   const requiredFeatures = requiredPlayerFeatures(content, options.extensions?.features ?? []);
   const visual = content.project.visual;
+  for(const ref of controlStyleReferences(visual))if(!visual?.styles?.some(style=>style.id===ref.styleId))throw new Error(`Generated control style does not exist at ${ref.pointer}: ${ref.styleId}`);
+  const surfaces=surfaceReferences(visual);
+  for(const {surface} of surfaces)if(surface.mode!=='none'){const asset=content.assets.find(a=>a.id===surface.imageAssetId);if(!asset||asset.kind!=='image'||path.extname(asset.path).toLowerCase()!=='.png')throw new Error(`UI surface requires a whole PNG image asset: ${surface.imageAssetId}`);}
   const pluginElementCount = visual ? visual.screens.reduce((n, screen) => n + screen.elements.filter(element => element.kind === 'plugin').length, 0) : 0;
   const supportedFeatures=Array.isArray(capabilities.visualFeatures)?capabilities.visualFeatures:[];
   // Older party-capable players already implement conditional expedition exits.
   // The narrower feature must never imply support for party battles or encounters.
-  const missingFeatures=requiredFeatures.filter(feature=>!supportedFeatures.includes(feature)&&
-    !(feature==='expedition-conditions-v1'&&supportedFeatures.includes('party-tactics-v1')));
+  const missingFeatures=missingPlayerFeatures(requiredFeatures,supportedFeatures);
   if(missingFeatures.length)throw new Error(`${target} 플레이어가 지원하지 않는 UI 기능입니다: ${missingFeatures.join(', ')}. 내보내기용 플레이어를 다시 빌드해 주세요.`);
   // Every plugin used on a screen must ship its runtime; never export a game that silently drops it.
   const extensions = options.extensions ?? null;
@@ -112,11 +117,14 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     const assets: Record<string, string> = Object.create(null) as Record<string, string>;
     for (const asset of content.assets) {
       if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(asset.id)) throw new Error(`유효하지 않은 에셋 ID: ${asset.id}`);
+      const assetSurfaces=surfaces.filter(ref=>ref.surface.mode!=='none'&&ref.surface.imageAssetId===asset.id);
+      if(omitted.has(asset.id)&&assetSurfaces.length)throw new Error(`UI surface PNG cannot be omitted from an export: ${asset.id}`);
       if (omitted.has(asset.id)) continue;
       const source = await realpath(path.resolve(projectRoot, asset.path));
       if (!inside(projectRoot, source) || !(await lstat(source)).isFile()) throw new Error(`프로젝트 밖의 에셋입니다: ${asset.id}`);
       const bytes = await readFile(source);
       if (hash(bytes) !== content.assetHashes[asset.id]) throw new Error(`검증 이후 에셋이 변경되었습니다: ${asset.id}. 다시 검증해 주세요.`);
+      if(assetSurfaces.length){const dimensions=validatedPngDimensions(bytes);for(const {surface} of assetSurfaces){const problem=surfaceInsetsProblem(surface,dimensions);if(problem)throw new Error(`UI surface ${asset.id}: ${problem}`);}}
       const extension = path.extname(asset.path).toLowerCase();
       if (!/^\.[a-z0-9]+$/.test(extension)) throw new Error(`지원하지 않는 에셋 확장자: ${asset.id}`);
       const relative = `assets/${asset.id}${extension}`;

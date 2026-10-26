@@ -2,6 +2,7 @@
 #include "session.hpp"
 #include "save-slots.hpp"
 #include "styles.hpp"
+#include "surface.hpp"
 #include "localization.hpp"
 #include "layout.hpp"
 #include "extension-host.hpp"
@@ -170,6 +171,8 @@ public:
     if (rel.empty() || *rel.begin() == ".." || !fs::is_regular_file(candidate)) return "";
     return candidate.generic_u8string();
   }
+#include "surface-markup.inc"
+  #include "control-colors.inc"
   Json gameplay() const { return display_projection.value("gameplay", Json()); }
   Json transaction_definition(const Json& action) const {
     const auto config=display_content.at("project").value("gameplay",Json::object());
@@ -705,7 +708,7 @@ public:
     if(e.contains("padding"))style+="padding:"+number(e.at("padding"))+"px;";
     if(e.contains("borderWidth")&&!choice_cards)style+="border-width:"+number(e.at("borderWidth"))+"px;border-color:"+css_color(e.value("borderColor","#ffffff"))+";";
     style+="font-size:"+number(e.value("fontSize",20.0))+"px;border-radius:"+number(e.value("radius",0.0))+"px;opacity:"+number(e.value("opacity",1.0))+";text-align:"+e.value("align","left")+";";
-    if(kind=="group"&&e.value("overflow","")=="scroll")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
+    if(kind=="group"&&e.value("overflow","")=="scroll")style+="padding:0;overflow-x:hidden;overflow-y:auto;tab-index:auto;";
     if(kind=="playerSettings"&&display_content.at("project").at("visual").contains("readableLayout"))style+="overflow-x:hidden;overflow-y:auto;";
     if(kind=="collection")style+="padding:0;overflow-x:hidden;overflow-y:auto;";
     if(kind=="plugin")style+="overflow:visible;";
@@ -717,6 +720,7 @@ public:
     if(kind=="schedule"&&e.value("scheduleLayout","")=="calendar"&&!e.value("showPhaseForecast",false))style+="overflow:auto;pointer-events:auto;";
     if(kind=="schedule"&&e.value("scheduleLayout","columns")=="menu")for(const auto& a:display_content.at("activities"))if(!a.value("previewAttributes",Json::array()).empty()){style+="overflow-x:hidden;overflow-y:auto;pointer-events:auto;";break;}
     auto body=element_body(e);
+    if(kind=="schedule"||kind=="saveSlots"||kind=="loadSlots")body=colored_controls(body,control_colors(e));
     if(!e.value("_boundEnabled",true)||(e.contains("enabledCondition")&&!visual_condition(e.at("enabledCondition")))) {
       for(const std::string tag:{"<button ","<select ","<input "})for(size_t at=0;(at=body.find(tag,at))!=std::string::npos;) {
         const auto end=body.find('>',at);if(body.substr(at,end-at).find(" disabled")==std::string::npos)body.insert(at+tag.size(),"disabled=\"disabled\" ");at=body.find('>',at)+1;
@@ -724,7 +728,7 @@ public:
     }
     if(kind=="meter"&&e.contains("meterThickness"))style+="background-color:transparent;";
     if(kind=="button"&&body.substr(0,body.find('>')).find("disabled=")!=std::string::npos)style+="opacity:"+number(e.value("opacity",1.0)*0.45)+";";
-    return "<div id=\"node-"+escape(e.value("id",""))+"\" data-tooltip=\""+escape(e.value("tooltip",""))+"\" class=\"node "+kind+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
+    return "<div id=\"node-"+escape(e.value("id",""))+"\""+SurfacePaint::marker(e.value("surface",Json()))+" data-tooltip=\""+escape(e.value("tooltip",""))+"\" class=\"node "+kind+(kind=="group"&&e.value("overflow","")=="scroll"?" scroll-group":"")+(kind=="image"||kind=="panel"||kind=="text"||kind=="button"||kind=="meter"||kind=="group"||kind=="input"||kind=="plugin"?"":" list")+"\" style=\""+style+"\">"+body+"</div>";
   }
   std::string roster_stats() {
     if(game.state.is_null())return "새 게임을 시작하면 대상별 능력을 표시합니다.";
@@ -986,8 +990,10 @@ public:
         std::string name=actor.value("characterId","");for(const auto& c:display_content.at("characters"))if(c.at("id")==actor.at("characterId"))name=c.value("name",name);
         const auto& result=actor.at("result");std::string label=result.value("activityId","");for(const auto& a:display_content.at("activities"))if(a.at("id")==result.at("activityId"))label=a.value("label",label);
         out+="<div style=\"display:inline-block;width:46%;margin:1%;vertical-align:top;\"><div><b>"+escape(name+" · "+label)+"</b></div>";
-        if(!result.at("success").is_null())out+="<div>"+std::string(result.at("success").value("passed",false)?"성공":"실패")+"</div>";
-        for(const auto& change:result.at("changes"))if(change.value("kind","")=="numeric"&&change.value("delta",0)!=0)out+="<div>"+escape(target_name(change.at("target")))+" "+(change.value("delta",0)>0?"+":"")+std::to_string(change.value("delta",0))+"</div>";
+        if(!result.at("success").is_null())out+="<div>"+settings_words(result.at("success").value("passed",false)?"성공":"실패",result.at("success").value("passed",false)?"Success":"Failure",result.at("success").value("passed",false)?"成功":"失敗")+"</div>";
+        bool any_change=false;
+        for(const auto& change:result.at("changes"))if(change.value("kind","")=="numeric"&&change.value("delta",0)!=0){any_change=true;out+="<div>"+escape(target_name(change.at("target")))+" "+(change.value("delta",0)>0?"+":"")+std::to_string(change.value("delta",0))+"</div>";}
+        if(!any_change)out+="<div>"+settings_words("수치 변화 없음","No numeric changes","数値の変化なし")+"</div>";
         out+="</div>";
       }
       return out;
@@ -995,8 +1001,8 @@ public:
     if(kind=="result"&&!game.state.is_null()&&!game.state.at("lastActivityResult").is_null()) {
       // Explicit content widths avoid RmlUi's intrinsic paragraph/scrollbar width cycle.
       const auto line_style=" style=\"display:block;width:"+number(std::max(1.0,e.value("width",448.0)-16))+"px;height:26px;line-height:26px;padding:0;margin:0;font-size:22px;\"";
-      const auto result=game.state.at("lastActivityResult");for(const auto& a:display_content.at("activities"))if(a.at("id")==result.at("activityId"))out+="<div"+line_style+">"+escape(a.value("label",""))+" 완료</div>";
-      const auto success=result.at("success");if(!success.is_null())out+="<div"+line_style+">"+std::string(success.value("passed",false)?"성공":"실패")+"</div>";
+      const auto result=game.state.at("lastActivityResult");for(const auto& a:display_content.at("activities"))if(a.at("id")==result.at("activityId"))out+="<div"+line_style+">"+escape(a.value("label",""))+" "+settings_words("완료","complete","完了")+"</div>";
+      const auto success=result.at("success");if(!success.is_null())out+="<div"+line_style+">"+settings_words(success.value("passed",false)?"성공":"실패",success.value("passed",false)?"Success":"Failure",success.value("passed",false)?"成功":"失敗")+"</div>";
       std::map<std::string,std::pair<std::string,int>> totals;
       for(const auto& change:result.at("changes"))if(change.value("kind","")=="numeric"&&change.value("delta",0)!=0) {
         auto target=change.at("target");std::string label=target_name(target);
@@ -1004,7 +1010,7 @@ public:
       }
       bool any_change=false;
       for(const auto& [key,total]:totals)if(total.second!=0){any_change=true;out+="<div"+line_style+">"+escape(total.first)+" "+(total.second>0?"+":"")+std::to_string(total.second)+"</div>";}
-      if(!any_change)out+="<div"+line_style+">능력 변화 없음</div>";
+      if(!any_change)out+="<div"+line_style+">"+settings_words("수치 변화 없음","No numeric changes","数値の変化なし")+"</div>";
       if(!systems().is_null())out+=battle_result(systems());
     }
     return out;
@@ -1033,6 +1039,7 @@ public:
   #include "readable-markup.inc"
   std::string title_screen;
   std::string document() {
+    control_fallback_css.clear();
     refreshDisplay();
     readable_active=false;readable_screen_id.clear();
     if(extensions&&!authored_gallery())extensions->begin_sync();
@@ -1149,7 +1156,7 @@ public:
     // RmlUi has no browser user-agent stylesheet. Unspecified scrollbar width
     // consumes the whole containing block when a long widget starts scrolling.
     extra_css+="scrollbarvertical{width:14px;} scrollbarhorizontal{height:14px;} scrollbarvertical slidertrack,scrollbarhorizontal slidertrack{background-color:#302c3a;} scrollbarvertical sliderbar,scrollbarhorizontal sliderbar{min-width:12px;min-height:24px;background-color:#8e809c;} scrollbarvertical sliderarrowdec,scrollbarvertical sliderarrowinc{height:12px;} scrollbarhorizontal sliderarrowdec,scrollbarhorizontal sliderarrowinc{width:12px;}";
-    out.insert(out.find("</style>"),extra_css);
+    out.insert(out.find("</style>"),extra_css+surface_styles(visual,render_elements)+control_colors_css(render_elements));
     out.insert(out.find("</style>"),".timeline-control button{width:100%;height:44px;min-height:0;padding:6px;border-width:1px;border-color:#acc6b3;background-color:#355c4c;color:#ffffff;font-size:18px;} .timeline-disabled button{background-color:#69796e;color:#bcc9c0;}");
     std::string base;for(const auto& raw:render_elements)if(!raw.contains("_authoredModal")&&!raw.contains("_collectionParent")&&!raw.contains("_scrollParent"))base+=render_node(raw);
     if(!authored_gallery()&&!ui_modal.empty()){
@@ -1176,8 +1183,11 @@ public:
       const int strip=canvas_toolbar_height;height+=strip;
       out.insert(out.find("</style>"),"body{height:"+std::to_string(height)+"px;} #engine-reading-toolbar button{height:"+number(minimum_control_extent())+"px;min-height:"+number(minimum_control_extent())+"px;margin:0;padding:0 12px;font-size:"+number(18*units)+"px;}");
       out.insert(out.find("<body>")+6,"<div id=\"authored-canvas\" style=\"position:relative;width:"+std::to_string(width)+"px;height:"+std::to_string(canvas_height)+"px;\">");
-      out+="</div><div id=\"engine-reading-toolbar\" style=\"position:absolute;left:0;top:"+std::to_string(canvas_height)+"px;width:100%;height:"+std::to_string(strip)+"px;box-sizing:border-box;padding:"+number(4*units)+"px "+number(12*units)+"px;background-color:#172c29;\"><div style=\"width:"+number(240*units)+"px;\">"+button("engine-reading-options",settings_words("읽기 설정","Reading options","読み方の設定"),{{"type","readingOptions"},{"open",true}})+"</div></div>";
+      const auto toolbar_colors=control_colors(Json::object(),true);
+      out.insert(out.find("</style>"),control_color_css(toolbar_colors,"#engine-reading-toolbar","engine-reading-control"));
+      out+="</div><div id=\"engine-reading-toolbar\" style=\"position:absolute;left:0;top:"+std::to_string(canvas_height)+"px;width:100%;height:"+std::to_string(strip)+"px;box-sizing:border-box;padding:"+number(4*units)+"px "+number(12*units)+"px;background-color:"+(toolbar_colors.contains("fill")?css_color(toolbar_colors.at("fill")):"#172c29")+";\"><div style=\"width:"+number(240*units)+"px;\">"+colored_controls(button("engine-reading-options",settings_words("읽기 설정","Reading options","読み方の設定"),{{"type","readingOptions"},{"open",true}}),toolbar_colors,true)+"</div></div>";
     }
+    out.insert(out.find("</style>"),control_fallback_css);
     return out+"</body></rml>";
   }
 };

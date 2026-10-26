@@ -2,6 +2,7 @@
 #include <QObject>
 #include "save-migration.hpp"
 #include "studio.hpp"
+#include "control-style-editor.hpp"
 #include "canvas-state.hpp"
 #include "project-environment.hpp"
 #include "component-preview.hpp"
@@ -493,6 +494,13 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   styleField = new QComboBox;
   styleField->setObjectName("elementStyle");
   appearance->addRow(tr("공통 스타일"), styleField);
+  controlStyleField=new QComboBox;controlStyleField->setObjectName("elementControlStyle");
+  auto controlStyleLabel=new QLabel(tr("컨트롤 색 스타일"));controlStyleLabel->setObjectName("elementControlStyleLabel");
+  appearance->addRow(controlStyleLabel,controlStyleField);
+  auto controlHelp=new QLabel(controlStyleHelp());controlHelp->setObjectName("elementControlStyleHelp");controlHelp->setWordWrap(true);appearance->addRow(controlHelp);
+  connect(controlStyleField,qOverload<int>(&QComboBox::activated),this,[this]{
+    if(!filling)updateElement([this](QJsonObject& e){if(!supportsControlStyle(e.value("kind").toString()))return;const auto id=controlStyleField->currentData().toString();if(id.isEmpty())e.remove("controlStyleId");else e["controlStyleId"]=id;});
+  });
   auto inherit = new QPushButton(tr("개별 모양 지우고 스타일 상속"));
   inherit->setObjectName("inheritStyle");
   appearance->addRow(inherit);
@@ -517,6 +525,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   appearance->addRow(tr("배경 색"), fillField);
   appearance->addRow(tr("문자 색"), colorField);
   appearance->addRow(tr("글자 크기"), fontField);
+  auto surfaceButton=new QPushButton(tr("배경 표면…"));surfaceButton->setObjectName("elementSurface");appearance->addRow(surfaceButton);connect(surfaceButton,&QPushButton::clicked,this,&StudioWindow::editSelectedSurface);
   auto dataForm = group(tr("이미지 · 데이터 연결"));
   auto dataBindingButton=new QPushButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
   auto variantsButton=new QPushButton(tr("조건별 표현 · 이미지·동작 연결…"));variantsButton->setObjectName("presentationVariants");dataForm->addRow(variantsButton);connect(variantsButton,&QPushButton::clicked,this,&StudioWindow::editPresentationVariants);
@@ -1521,6 +1530,9 @@ void StudioWindow::updateInspector() {
   styleField->clear();styleField->addItem(tr("프로젝트 기본"),QString());
   for(auto s:projectData()["visual"].toObject()["styles"].toArray())styleField->addItem(s.toObject()["label"].toString(),s.toObject()["id"].toString());
   styleField->setCurrentIndex(qMax(0,styleField->findData(e["styleId"].toString())));
+  const bool hasControlStyle=supportsControlStyle(e.value("kind").toString());
+  fillControlStyles(controlStyleField,projectData()["visual"].toObject(),e.value("controlStyleId").toString());
+  controlStyleField->setVisible(hasControlStyle);findChild<QLabel*>("elementControlStyleLabel")->setVisible(hasControlStyle);findChild<QLabel*>("elementControlStyleHelp")->setVisible(hasControlStyle);
   const auto effective=resolvedStyle(projectData()["visual"].toObject(),e);
   fontField->setValue(e["fontSize"].toInt(9));
   fontField->setToolTip(tr("적용 값: %1 px").arg(effective["fontSize"].toInt(20)));

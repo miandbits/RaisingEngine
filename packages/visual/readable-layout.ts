@@ -1,10 +1,10 @@
-import type { Element, ReadonlyDesign, ScreenId } from './model.js';
+import type { Element, ReadonlyDesign, ScreenId, Surface } from './model.js';
 import { resolveScreenElements, type ResolvedElement, type ViewportSize } from './components.js';
 
 export const readableKinds = new Set<Element['kind']>([
   'text','image','dialogue','choices','button','stats','meter','schedule','result','input','saveSlots','loadSlots','playerSettings',
 ]);
-export interface ReadableConfig {maxShortEdge:number;fontSize:number;minTargetSize:number;padding:number;gap:number;maxWidth:number;background:string}
+export interface ReadableConfig {maxShortEdge:number;fontSize:number;minTargetSize:number;padding:number;gap:number;maxWidth:number;background:string;controlStyleId?:string;surface?:Surface}
 export const readableDefaults:Readonly<ReadableConfig> = Object.freeze({maxShortEdge:600,fontSize:18,minTargetSize:44,padding:16,gap:12,maxWidth:760,background:'#172c29'});
 export interface ReadablePreferences {readingLayout:'auto'|'on';textScale:1|1.25|1.5|2}
 export interface ResolvedReadableItem {element:ResolvedElement;fontSize:number;imageHeight:number;schedulePresentation?:'compact';planningGuidance?:'first-use';planReuse?:'last-committed'}

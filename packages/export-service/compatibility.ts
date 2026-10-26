@@ -1,3 +1,5 @@
+import {controlStyleReferences} from '../visual/control-styles.js';
+import {surfaceReferences} from '../visual/surfaces.js';
 import {slotScreens} from '../player-service/save-slots.js';
 import {resolveScreenElements} from '../visual/components.js';
 import type { ContentSnapshot } from '../core/model.js';
@@ -15,6 +17,8 @@ export function hasPortraitTransforms(value: unknown): boolean {
 
 export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatures: readonly string[] = []): string[] {
   const visual=content.project.visual,requiredFeatures:string[]=[];
+  if(surfaceReferences(visual).length)requiredFeatures.push('ui-surfaces-v1');
+  if(controlStyleReferences(visual).length)requiredFeatures.push('ui-control-colors-v1');
   if(content.project.calendar)requiredFeatures.push('calendar-v1');
   if(visual?.readableLayout||visual?.screens.some(s=>s.readableLayout))requiredFeatures.push('readable-layout-v1');
   const hasForecast=(value:unknown):boolean=>!!value&&typeof value==='object'&&(Array.isArray(value)?value.some(hasForecast):(value as Record<string,unknown>).showPhaseForecast===true||Object.values(value).some(hasForecast));
@@ -76,7 +80,8 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   // save-slots-v1 includes its record modals. Keep the broader composition gate
   // for ordinary modals, scrolling, sorting, selection, tooltips and nested components.
   if(ui){const recordModals=new Set(slotScreens(ui));
-    if(ui.screens.some(s=>s.modal&&!recordModals.has(s.id)||resolveScreenElements(ui,s.id).some(e=>recordModals.has(s.id)&&(!['panel','text','image','stats','meter','group','component','button','saveSlots','loadSlots'].includes(e.kind)||!!e.action&&!['openModal','closeModal','save','load','sound'].includes(e.action))||e.action==='openModal'&&!recordModals.has(e.screenId??'')||e.action==='closeModal'&&!recordModals.has(s.id)))||[...ui.screens.flatMap(s=>s.elements),...(ui.components??[]).flatMap(c=>c.elements)].some(e=>e.flowLayout||e.overflow||e.sort||e.selectionKey||e.tooltip||e.action==='selectRow')||(ui.components??[]).some(c=>c.elements.some(e=>e.kind==='component')))requiredFeatures.push('ui-composition-v1');
+    if([...ui.screens.flatMap(s=>s.elements),...(ui.components??[]).flatMap(c=>c.elements)].some(e=>e.kind==='group'&&e.overflow))requiredFeatures.push('ui-scroll-groups-v1');
+    if(ui.screens.some(s=>s.modal&&!recordModals.has(s.id)||resolveScreenElements(ui,s.id).some(e=>recordModals.has(s.id)&&(!['panel','text','image','stats','meter','group','component','button','saveSlots','loadSlots'].includes(e.kind)||!!e.action&&!['openModal','closeModal','save','load','sound'].includes(e.action))||e.action==='openModal'&&!recordModals.has(e.screenId??'')||e.action==='closeModal'&&!recordModals.has(s.id)))||[...ui.screens.flatMap(s=>s.elements),...(ui.components??[]).flatMap(c=>c.elements)].some(e=>e.flowLayout||(e.overflow&&e.kind!=='group')||e.sort||e.selectionKey||e.tooltip||e.action==='selectRow')||(ui.components??[]).some(c=>c.elements.some(e=>e.kind==='component')))requiredFeatures.push('ui-composition-v1');
   }
   if(content.project.roster?.stateModel==='character-v1')requiredFeatures.push('character-scoped-rules-v1');
   const personalStory=(v:unknown):boolean=>!!v&&typeof v==='object'&&(Array.isArray(v)?v.some(personalStory):((v as any).trigger==='after-event'||(['flag','setFlag'].includes((v as any).op)&&!!(v as any).owner)||Object.values(v).some(personalStory)));
@@ -114,5 +119,5 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
 }
 
 export function missingPlayerFeatures(required: readonly string[], supported: readonly string[]): string[] {
-  return required.filter(feature => !supported.includes(feature) && !(feature === 'expedition-conditions-v1' && supported.includes('party-tactics-v1')) && !(feature === 'commit-plan-action-v1' && supported.includes('schedule-board-v1')));
+  return required.filter(feature => !supported.includes(feature) && !(feature === 'ui-scroll-groups-v1' && supported.includes('ui-composition-v1')) && !(feature === 'expedition-conditions-v1' && supported.includes('party-tactics-v1')) && !(feature === 'commit-plan-action-v1' && supported.includes('schedule-board-v1')));
 }

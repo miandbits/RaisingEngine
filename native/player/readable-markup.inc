@@ -130,6 +130,7 @@
     e["statsLayout"]="bars";e["x"]=0;e["y"]=0;e["height"]=item.value("imageHeight",160.0);
     std::string body=kind=="saveSlots"||kind=="loadSlots"?readable_slots(e):kind=="playerSettings"?readable_settings(e):kind=="schedule"?(item.value("schedulePresentation","")=="compact"?compact_schedule(e,item.value("planningGuidance","")=="first-use",item.value("planReuse","")=="last-committed"):readable_schedule(e)):element_body(e);
     if(kind=="schedule")body=phase_forecast_launcher(e)+body;
+    if(kind=="schedule"||kind=="saveSlots"||kind=="loadSlots"||kind=="playerSettings")body=colored_controls(body,control_colors(e,true));
     if(kind=="text"||kind=="dialogue")body=readable_text(e.value("id",""),kind=="dialogue"?bind("story"):e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
     if(body.empty())return "";
     // Legacy result/choice fragments contain fixed line metrics. Reading mode
@@ -148,7 +149,7 @@
     if(kind=="image")style+="height:"+number(item.value("imageHeight",160.0))+"px;";
     if(kind=="meter")style+="height:"+number(std::max(12.0,e.value("meterThickness",12.0)))+"px;";
     const auto id=e.value("id","");
-    return "<div id=\"node-"+escape(id)+"\" class=\"reading-item "+kind+(action?" reading-action":"")+"\" style=\""+style+"\">"+body+"</div>";
+    return "<div id=\"node-"+escape(id)+"\""+SurfacePaint::marker(e.value("surface",Json()))+" class=\"reading-item "+kind+(action?" reading-action":"")+"\" style=\""+style+"\">"+body+"</div>";
   }
   std::string readable_document(const Json& visual,const Json& screen) {
     readable_active=true;readable_screen_id=screen.at("id");width=window_width;height=window_height;
@@ -231,7 +232,10 @@
     css+=".record-groups{display:flex;flex-wrap:wrap;} .reading-item .record-group{flex-grow:1;flex-basis:auto;width:auto;word-break:normal;margin-right:8px;padding-left:8px;padding-right:8px;} .reading-item .record-group:last-child{margin-right:0;} .reading-item .record-slot,.reading-item .record-group{border-width:3px;} .reading-item .record-selected{border-color:#345c50;background-color:#d6e2d8;}.reading-item .record-slot:focus,.reading-item .record-group:focus{border-color:#b38b49;} .record-identity{display:block;} .record-saved{display:block;font-size:0.85em;margin-top:6px;} .record-thumbnail{display:block;width:144px;height:81px;margin-top:8px;} .reading-notice{white-space:normal;word-break:break-word;} .reading-paragraph{margin-bottom:"+number(gap)+"px;}";
     if(phase_forecast_open||portable_open()||resume_context_open||grouped||compact_picker||planning_guide||reading_history_open||plan_reuse_open)css+=".reading-actions{max-height:none;overflow-y:visible;} .reading-action{flex-basis:"+number(120*player_preferences.value("textScale",1.0))+"px;}";
     for(const auto& raw:render_elements){const auto e=resolved_style(visual,raw);const auto id=e.value("id","");const auto selector="#node-"+id+" button";css+=selector+"{color:"+css_color(e.value("color","#263c36"))+";background-color:"+css_color(e.value("fill","#e3e8df"))+";}";}
+    css+=surface_styles(visual,render_elements,config.value("surface",Json()))+control_colors_css(render_elements,true);
+    main=colored_controls(main,reading_control_colors(),true);footer=colored_controls(footer,reading_control_colors(),true);
     // Put notices into flow so they cannot cover the final action on short phones.
     if(!game.message.empty()&&!portable_open()&&!resume_context_open)main+="<p class=\"reading-notice\">"+escape(game.message)+"</p>";
-    const auto modal=screen.value("modal",false);return "<rml><head><style>"+css+"</style></head><body><div "+std::string(modal?"id=\"ui-modal\" ":"")+"class=\"reading-root\"><div id=\"reading-main\" class=\"reading-main\""+std::string(phase_forecast_open?" style=\"tab-index:auto;\"":"")+">"+main+"</div><div id=\"reading-actions\" class=\"reading-actions\">"+footer+"</div></div></body></rml>";
+    css+=control_fallback_css;
+    const auto modal=screen.value("modal",false);return "<rml><head><style>"+css+"</style></head><body"+SurfacePaint::marker(config.value("surface",Json()))+"><div "+std::string(modal?"id=\"ui-modal\" ":"")+"class=\"reading-root\"><div id=\"reading-main\" class=\"reading-main\""+std::string(phase_forecast_open?" style=\"tab-index:auto;\"":"")+">"+main+"</div><div id=\"reading-actions\" class=\"reading-actions\">"+footer+"</div></div></body></rml>";
   }

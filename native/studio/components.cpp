@@ -1,6 +1,7 @@
 #include <QObject>
 #include "rule-extensions.hpp"
 #include "studio.hpp"
+#include "surface-editor.hpp"
 #include "selection-edit.hpp"
 #include "component-context-editor.hpp"
 #include "component-preview.hpp"
@@ -21,7 +22,7 @@ namespace {
 QSet<QString> componentSubtree(const QJsonArray &elements,QString id){QSet<QString> result{id};bool changed=true;while(changed){changed=false;for(auto value:elements){auto e=value.toObject();auto key=e.value("id").toString();if(result.contains(e.value("parentId").toString())&&!result.contains(key)){result.insert(key);changed=true;}}}return result;}
 QPoint componentOrigin(const QJsonArray &elements,QString id){QPoint p;QSet<QString> seen;while(!id.isEmpty()&&!seen.contains(id)){seen.insert(id);QJsonObject e;for(auto value:elements)if(value.toObject().value("id")==id)e=value.toObject();if(e.empty())break;p+=QPoint(e.value("x").toInt(),e.value("y").toInt());id=e.value("parentId").toString();}return p;}
 QString componentHierarchyError(const QJsonArray &elements){QMap<QString,QJsonObject> byId;for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString();if(byId.contains(id))return QObject::tr("중복 요소 ID: ")+id;byId[id]=e;}for(auto value:elements){auto e=value.toObject();auto id=e.value("id").toString(),parent=e.value("parentId").toString();QSet<QString> seen{id};int depth=0;while(!parent.isEmpty()){if(seen.contains(parent))return QObject::tr("부모 순환: ")+id;if(!byId.contains(parent)||byId[parent].value("kind")!="group")return QObject::tr("없는 부모 그룹: ")+parent;if(++depth>32)return QObject::tr("부모 깊이는 32단계까지입니다: ")+id;seen.insert(parent);parent=byId[parent].value("parentId").toString();}}return {};}
-QStringList overrideKeys(){return {"text","label","imageAssetId","action","screenId","locationId","shopId","itemId","interactionId","actionId","quantity","styleId","fill","color","fontSize","value","maxValue","battleAction","battleTarget","entryId","branchId","galleryFilter"};}
+QStringList overrideKeys(){return {"text","label","imageAssetId","action","screenId","locationId","shopId","itemId","interactionId","actionId","quantity","styleId","controlStyleId","surface","fill","color","fontSize","value","maxValue","battleAction","battleTarget","entryId","branchId","galleryFilter"};}
 QJsonObject primitive(QString id,QString kind,int x,int y,int w,int h,QString text={}){
   QJsonObject e{{"id",id},{"kind",kind},{"x",x},{"y",y},{"width",w},{"height",h}};
   if(!text.isEmpty())e["text"]=text;
@@ -45,6 +46,7 @@ class ChildForm : public QWidget {
 public:
   QMap<QString,QWidget*> fields;
   QJsonObject original;
+  SurfaceField* surface;
   bool overrides;
   ChildForm(const QJsonObject& project,const QJsonArray& assets,bool instance,QWidget* parent=nullptr):QWidget(parent),overrides(instance){
     auto form=new QFormLayout(this);form->setContentsMargins(6,6,6,6);
@@ -62,6 +64,7 @@ public:
     }
     number("fontSize",tr("글자 크기 (9=상속)"),9,120);line("fill",tr("배경색"));line("color",tr("글자색"));
     auto style=combo("styleId",tr("공통 스타일"));for(auto s:project["visual"].toObject()["styles"].toArray())style->addItem(s.toObject()["label"].toString(),s.toObject()["id"].toString());
+    surface=new SurfaceField(assets);surface->setObjectName("child-surface");form->addRow(tr("배경 표면"),surface);
     auto image=combo("imageAssetId",tr("이미지"));for(auto a:assets)if(a.toObject()["kind"]=="image")image->addItem(a.toObject()["id"].toString(),a.toObject()["id"].toString());
     auto action=combo("action",tr("클릭 행동"));for(auto p:QList<QPair<QString,QString>>{{QObject::tr("화면 이동"),"navigate"},{QObject::tr("장소 방문"),"visit"},{QObject::tr("상품 구매"),"buy"},{QObject::tr("교류"),"interact"},{QObject::tr("저장"),"save"},{QObject::tr("불러오기"),"load"},{QObject::tr("새 게임"),"start"},{QObject::tr("진행"),"advance"},{QObject::tr("소리"),"sound"},{QObject::tr("공통 행동 실행"),"executeAction"},{QObject::tr("부품 실행 인물의 행동"),"executeActorAction"},{QObject::tr("부품 인물에게 활동 배정"),"assignActivity"},{QObject::tr("전투 행동 선택"),"selectBattleAction"},{QObject::tr("전투 대상 선택"),"selectBattleTarget"},{QObject::tr("선택한 전투 행동 실행"),"confirmBattleAction"},{QObject::tr("전투 선택 취소"),"cancelBattleAction"},{QObject::tr("도감 열기"),"galleryOpen"},{QObject::tr("도감 닫기"),"galleryClose"},{QObject::tr("도감 목록으로"),"galleryBack"},{QObject::tr("도감 항목 보기"),"galleryView"},{QObject::tr("도감 필터"),"galleryFilter"},{QObject::tr("원본 연출 회상"),"galleryReplay"},{QObject::tr("도감 음악 재생 · 일시정지"),"galleryMusicToggle"},{QObject::tr("도감 음악 정지"),"galleryMusicStop"},{QObject::tr("선택 분기 목록"),"galleryBranches"},{QObject::tr("선택 분기 회상"),"galleryBranch"},{QObject::tr("도감 다른 기록"),"galleryVariant"},{QObject::tr("이전 회상"),"recollectionPrev"},{QObject::tr("다음 회상"),"recollectionNext"},{QObject::tr("회상 종료"),"recollectionClose"},{QObject::tr("회상 위치 저장"),"recollectionSave"},{QObject::tr("회상 위치 불러오기"),"recollectionLoad"},{QObject::tr("자동 재생 · 멈춤"),"recollectionAuto"},{QObject::tr("대화 자동 진행 · 켜기/끄기"),"dialogueAuto"},{QObject::tr("일정 연출 · 일시정지/재개"),"timelinePause"},{QObject::tr("일정 연출 · 배속 변경"),"timelineSpeed"},{QObject::tr("일정 연출 · 현재 활동 넘기기"),"timelineSkip"},{QObject::tr("회상 배속 변경"),"recollectionSpeed"},{QObject::tr("회상 끝으로 건너뛰기"),"recollectionSkip"}})action->addItem(p.first,p.second);
     const auto visual=project["visual"].toObject(),gameplay=project["gameplay"].toObject();
@@ -75,7 +78,7 @@ public:
     auto battleTarget=combo("battleTarget",tr("전투 대상"));battleTarget->addItem(tr("자신"),"self");battleTarget->addItem(tr("적"),"enemy");
   }
   void load(QJsonObject e){
-    original=e;setEnabled(!e.isEmpty());
+    original=e;setEnabled(!e.isEmpty());surface->setValue(e.value("surface"));
     for(auto it=fields.begin();it!=fields.end();++it){const auto key=it.key();
       if(auto f=qobject_cast<QCheckBox*>(it.value())){f->setChecked(e.value(key).toBool());f->setVisible(e.value("kind")=="group");}
       if(auto f=qobject_cast<QLineEdit*>(it.value()))f->setText(e[key].toString());
@@ -98,6 +101,7 @@ public:
       if(key=="quantity"&&!original.contains(key)&&value.toInt()==1)continue;
       out[key]=value;
     }
+    if(surface->value().isUndefined())out.remove("surface");else out["surface"]=surface->value();
     return out;
   }
 };
@@ -191,9 +195,9 @@ void StudioWindow::editComponentInstance(){
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout->addWidget(buttons);
   auto overrides=instance["overrides"].toArray();int current=-1;
   auto commit=[&]{if(current<0)return;auto base=component["elements"].toArray()[current].toObject(),edited=form->value();QJsonObject diff;for(auto key:overrideKeys())if(edited.contains(key)&&edited[key]!=base[key])diff[key]=edited[key];QJsonArray next;for(auto o:overrides)if(o.toObject()["elementId"]!=base["id"])next.append(o);if(!diff.isEmpty())next.append(QJsonObject{{"elementId",base["id"]},{"values",diff}});overrides=next;};
-  auto load=[&](int row){commit();current=row;if(row<0){form->load({});return;}auto e=component["elements"].toArray()[row].toObject();for(auto o:overrides)if(o.toObject()["elementId"]==e["id"]){auto values=o.toObject()["values"].toObject();for(auto it=values.begin();it!=values.end();++it)e[it.key()]=it.value();}form->load(e);};
+  auto load=[&](int row){commit();current=row;if(row<0){form->load({});return;}auto e=component["elements"].toArray()[row].toObject();QJsonValue localSurface=QJsonValue::Undefined;for(auto o:overrides)if(o.toObject()["elementId"]==e["id"]){auto values=o.toObject()["values"].toObject();localSurface=values.value("surface");for(auto it=values.begin();it!=values.end();++it)e[it.key()]=it.value();}form->load(e);form->surface->setValue(localSurface);};
   connect(list,qOverload<int>(&QComboBox::currentIndexChanged),&dialog,load);
-  connect(reset,&QPushButton::clicked,&dialog,[&]{if(current>=0)form->load(component["elements"].toArray()[current].toObject());});
+  connect(reset,&QPushButton::clicked,&dialog,[&]{if(current>=0){form->load(component["elements"].toArray()[current].toObject());form->surface->setValue(QJsonValue::Undefined);}});
   connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{commit();dialog.accept();});connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);load(list->currentIndex());
   if(dialog.exec()==QDialog::Accepted){if(busy()||view.value("revision")!=openedRevision||view.value("root")!=openedRoot||selection!=openedSelection||screenId!=openedScreen){errorLabel->setText(tr("편집 대상이 변경되었습니다. 다시 열어 주세요."));return;}updateElement([&](QJsonObject&e){if(overrides.isEmpty())e.remove("overrides");else e["overrides"]=overrides;if(instance.contains("uiContext"))e["uiContext"]=instance["uiContext"];else e.remove("uiContext");});}
 }

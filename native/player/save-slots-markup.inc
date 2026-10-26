@@ -71,6 +71,7 @@
   std::string slots_body(const Json& e) {
     const bool saving=e.value("kind","")=="saveSlots";
     const std::string id=e.at("id"),ink=e.value("color","#263C36"),paper=e.value("fill","#F5EFDF"),line=e.value("borderColor","#C7B99A"),accent=e.value("hoverFill","#345C50");
+    const auto palette=control_colors(e);const std::string card_ink=palette.value("color",ink),card_accent=palette.value("color",accent);
     // Buttons retain at least 44 window points after canvas-fit scaling. Rows
     // grow with their wrapped labels; the authored widget owns any scrolling.
     const double target=minimum_control_extent(),inset=e.value("padding",6.0)+e.value("borderWidth",0.0),w=std::max(1.0,e.value("width",1100.0)-2*inset-40),h=e.value("height",530.0)-2*inset,gap=14,cardh=std::max({124.0,target,(h-180)/3});
@@ -130,10 +131,10 @@
       if(status=="invalid")detail=slot_words("손상된 기록 · 원본 보존","Unreadable · original kept","読めない記録 · 原本を保持");
       if(status=="incompatible")detail=slot_words("다른 버전 · 불러오기 불가","Different version · cannot load","異なる版 · 読み込み不可");
       const auto place=r.value("record",Json::object()).value("place","");
-      card+=box(tx,7,cardw-tx-12,27,escape(label+(selected?slot_words(" · 선택됨"," · selected"," · 選択中"):"")),"pointer-events:none;font-size:20px;line-height:26px;color:"+accent+";");
-      card+=box(tx,36,cardw-tx-12,24,escape(detail),"pointer-events:none;font-size:19px;line-height:23px;overflow:hidden;");
-      card+=box(tx,60,cardw-tx-12,24,escape(place+(slot_auto&&n==0&&!empty?slot_words(" · 가장 최근"," · latest"," · 最新"):"")),"pointer-events:none;font-size:19px;line-height:23px;overflow:hidden;");
-      card+=box(tx,84,cardw-tx-12,24,escape(r.value("record",Json::object()).value("savedAt","")),"pointer-events:none;font-size:19px;line-height:23px;overflow:hidden;");
+      card+=box(tx,7,cardw-tx-12,27,escape(label+(selected?slot_words(" · 선택됨"," · selected"," · 選択中"):"")),"pointer-events:none;font-size:20px;line-height:26px;color:"+card_accent+";");
+      card+=box(tx,36,cardw-tx-12,24,escape(detail),"pointer-events:none;font-size:19px;line-height:23px;overflow:hidden;color:"+card_ink+";");
+      card+=box(tx,60,cardw-tx-12,24,escape(place+(slot_auto&&n==0&&!empty?slot_words(" · 가장 최근"," · latest"," · 最新"):"")),"pointer-events:none;font-size:19px;line-height:23px;overflow:hidden;color:"+card_ink+";");
+      card+=box(tx,84,cardw-tx-12,24,escape(r.value("record",Json::object()).value("savedAt","")),"pointer-events:none;font-size:19px;line-height:23px;overflow:hidden;color:"+card_ink+";");
       out+=box(x,y,cardw,cardh,card);
     }
     out+="</div></div>";

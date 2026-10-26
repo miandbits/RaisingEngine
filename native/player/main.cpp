@@ -276,7 +276,7 @@ public:
     if(eventType=="click"&&!portable_active()&&!markup.resume_context_open)ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.slot_confirmation.empty())markup.slot_confirmation.clear();else if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
-    if(eventType=="keydown"&&(event.GetTargetElement()->IsClassSet("schedule-detail-pane")||event.GetTargetElement()->GetId()=="reading-main")) {
+    if(eventType=="keydown"&&(event.GetTargetElement()->IsClassSet("schedule-detail-pane")||event.GetTargetElement()->IsClassSet("scroll-group")||event.GetTargetElement()->GetId()=="reading-main")) {
       auto* pane=event.GetTargetElement();const auto key=event.GetParameter<int>("key_identifier",0);float y=pane->GetScrollTop();
       if(key==Rml::Input::KI_DOWN)y+=48;else if(key==Rml::Input::KI_UP)y-=48;
       else if(key==Rml::Input::KI_PRIOR)y-=pane->GetClientHeight()*.85f;else if(key==Rml::Input::KI_NEXT)y+=pane->GetClientHeight()*.85f;

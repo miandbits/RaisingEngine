@@ -1,3 +1,6 @@
+import {SurfacePaint,hasSurface} from './SurfacePaint.js';
+import {resolveControlStyle} from '../../../packages/visual/control-styles.js';
+import {controlColorProps} from './ControlColors.js';
 import {PhaseForecast} from './PhaseForecast.js';
 import {progressionButtonLabel} from './progression-label.js';
 import {useResumeContext} from './ResumeContext.js';
@@ -59,6 +62,15 @@ export interface VisualContext {
   calendarTime?:{year:number;month:number}; planningKey?:string; scheduleCommitted?:boolean;
   choices:readonly {id:string;text:string;enabled:boolean;hint?:string}[]; result:string;
 }
+// Hierarchy resolution already multiplies ancestor opacity. Scroll containers
+// must paint their own decoration with that alpha rather than composite the
+// whole DOM subtree, preserving the native and original flat-render semantics.
+function paintAlpha(colour:string,opacity:number):string {
+  const match=/^#([\da-f]{6})([\da-f]{2})?$/i.exec(colour);
+  if(!match)return colour;
+  const rgb=match[1]!,alpha=(match[2]?parseInt(match[2],16)/255:1)*Math.max(0,Math.min(1,opacity));
+  return `rgba(${parseInt(rgb.slice(0,2),16)},${parseInt(rgb.slice(2,4),16)},${parseInt(rgb.slice(4,6),16)},${alpha})`;
+}
 export function isVisible(element:Pick<Element,'hidden'|'visibleWhen'>, context:Pick<VisualContext, 'phase'>): boolean {
   if(element.hidden)return false;
   const when=element.visibleWhen??'always';
@@ -99,7 +111,11 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const overlayReadable=useRef(!!defaultReadable),overlayActive=menuOpen||preferences?.readingOverlayActive;
   if(!overlayActive)overlayReadable.current=!!defaultReadable;
   const readable=overlayActive?(overlayReadable.current?readableLayoutForScreen(design,screenId,{width:viewport.safeWidth,height:viewport.safeHeight},{...preferences?.value,readingLayout:'on'}):null):defaultReadable;
-  const elements=readable?[...readable.items,...readable.actions].map(item=>item.element):resolveScreenElements(design,screenId,size);
+  // Native scroll groups retain children outside the initial clip. Resolve the
+  // same tree for DOM scrolling; preserve the existing flat path on other screens.
+  const flatElements=resolveScreenElements(design,screenId,size);
+  const scrollGroups=!readable&&flatElements.some(element=>element.kind==='group'&&element.overflow==='scroll');
+  const elements=readable?[...readable.items,...readable.actions].map(item=>item.element):scrollGroups?resolveScreenElements(design,screenId,size,{ignoreClipping:true}):flatElements;
   const positionKey=JSON.stringify([screenId,context.readingKey??[context.dataState?.periodIndex,context.dataState?.activeNarrative,context.story,context.phase],screenId===context.saveSlots?.screenId?context.saveSlots?.confirmation??null:null]);
   const readingPosition=useReadingPosition(readingScroll,positionKey,JSON.stringify([viewport.width,viewport.height,readable?.textScale]),!!readable);
   useEffect(()=>{setMenuOpen(false);readingActions.current?.scrollTo(0,0);},[positionKey]);
@@ -126,7 +142,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   const progressionUnavailable=(element:Element)=>element.action==='advance'&&['choice','finished','title'].includes(context.phase)||element.action==='commitPlan'&&!['planning','ready'].includes(context.phase);
   const planningButton=readable?[...elements].sort((a,b)=>Number(b.id===readable.primaryAction)-Number(a.id===readable.primaryAction)).map(e=>resolveElementStyle(design,resolvePresentation(e,presentationActivity(context.dataState,e),conditionPasses))).find(e=>e.kind==='button'&&['advance','commitPlan'].includes(e.action??'')&&!progressionUnavailable(e)&&(e.opacity??1)>0&&isVisible(e,context)&&conditionPasses(e.visibleCondition)&&conditionPasses(e.enabledCondition)&&e.dataEnabled!==false&&context.dataUi?.availability[screenId]?.[e.id]?.enabled!==false):undefined;
   const planningControl=planningButton?{label:buttonLabel(planningButton),effect:planningButton.action==='commitPlan'?'confirm-and-execute' as const:context.dataState?.schedule&&context.plan.every((id,i)=>context.dataState!.schedule![i]===id)?(context.dataState.phase==='ready'&&context.dataState.activityIntermission?'acknowledge' as const:'execute' as const):'confirm' as const}:undefined;
-  const renderElement=(raw:BoundElement,readingItem?:ResolvedReadableItem):React.ReactNode=>{
+  const renderElement=(raw:BoundElement,readingItem?:ResolvedReadableItem,groupChildren?:React.ReactNode,parent?:BoundElement):React.ReactNode=>{
       let element=resolveElementStyle(design,editing?raw:resolvePresentation(raw,presentationActivity(context.dataState,raw),conditionPasses));
       if(readingItem&&readable)element={...element,fontSize:readingItem.fontSize,width:Math.max(44,Math.min(viewport.width,readable.config.maxWidth)-2*readable.config.padding),height:readingItem.imageHeight};
       const portrait=!readingItem&&element.kind==='image'&&element.imageSource?.startsWith('portrait-')?context.portraitTransforms?.[element.imageSource.slice(9)]:undefined;
@@ -138,11 +154,27 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       const style:React.CSSProperties={left:element.x,top:element.y,width:element.width,height:element.height,background:element.fill??'transparent',color:element.color??(readingItem&&readable?readableInk(element.fill??readable.config.background):'#304d46'),fontSize:element.fontSize??22,borderRadius:element.radius??0,opacity:editing&&!isVisible(element,context)?0.3:element.opacity??1,textAlign:element.align??'left'};
       if(readingItem&&readable&&element.color===undefined)Object.assign(style,{'--readable-control-ink':'#263c36','--readable-slot-ink':readableInk(element.fill??'#f5efdf')});
       if(!readingItem&&raw._clipRect){const clip=raw._clipRect,left=Math.max(0,clip.x-element.x),top=Math.max(0,clip.y-element.y),right=Math.max(0,element.x+element.width-clip.x-clip.width),bottom=Math.max(0,element.y+element.height-clip.y-clip.height);if(left+right>=element.width||top+bottom>=element.height)return null;style.clipPath=`inset(${top}px ${right}px ${bottom}px ${left}px)`;}
-      if(element.kind==='group')style.pointerEvents='none';
+      if(parent){
+        // Resolved coordinates are absolute; DOM children use the padding box.
+        const border=resolveElementStyle(design,parent).borderWidth??0;
+        style.left=element.x-parent.x-border;style.top=element.y-parent.y-border;
+        style.pointerEvents='auto';
+      }
+      if(element.kind==='group'){
+        style.pointerEvents=scrollGroups&&element.overflow==='scroll'?'auto':'none';
+        if(scrollGroups){style.overflow=element.clipChildren||element.overflow==='hidden'?'hidden':'visible';if(element.overflow==='scroll'){style.overflowX='hidden';style.overflowY='auto';}style.padding=0;}
+      }
       if(element.fontAssetId)style.fontFamily=`"engine-${element.fontAssetId}", sans-serif`;
-      if(element.padding!==undefined)style.padding=element.padding;
+      if(element.padding!==undefined&&!(scrollGroups&&element.kind==='group'))style.padding=element.padding;
       else if(element.kind==='text'&&element.uiContext)style.padding=0;
       if(element.borderWidth!==undefined){style.borderWidth=element.borderWidth;style.borderStyle='solid';style.borderColor=element.borderColor??'#57806c';}
+      const groupPaintOpacity=scrollGroups&&element.kind==='group'?Number(style.opacity):1;
+      if(scrollGroups&&element.kind==='group'){
+        style.opacity=1;
+        style.background=paintAlpha(element.fill??'transparent',groupPaintOpacity);
+        style.backgroundClip='padding-box';
+        if(element.borderWidth!==undefined)style.borderColor=paintAlpha(element.borderColor??'#57806c',groupPaintOpacity);
+      }
       if(element.kind==='text'&&!readingItem){
         // Compact authored labels should not scroll just because the default
         // paragraph leading exceeds their box. Keep normal leading in taller
@@ -164,6 +196,11 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
         Object.assign(style,{position:'relative',left:undefined,top:undefined,width:undefined,height:element.kind==='image'?readingItem.imageHeight:undefined,minWidth:0,lineHeight:1.5,overflow:element.kind==='image'?'hidden':'visible'});
         if(element.kind==='text')style.padding=element.padding??0;
       }
+      const controlOwner=['schedule','saveSlots','loadSlots'].includes(element.kind)||(!!readingItem&&element.kind==='playerSettings');
+      const controlProps:ReturnType<typeof controlColorProps>|{style?:React.CSSProperties}=controlOwner?controlColorProps(resolveControlStyle(design,element.controlStyleId,!!readingItem)):{};
+      Object.assign(style,controlProps.style);
+      const surface=element.surface,painted=hasSurface(surface),surfaceSource=painted?assetUrl(surface.imageAssetId):'';
+      const surfacePaint=painted?<SurfacePaint surface={element.surface} src={surfaceSource} identity={context.gameId??''} opacity={groupPaintOpacity}/>:null;
       let body:React.ReactNode=null;
       if(element.kind==='image')body=source?<TransitionImage src={assetUrl(source)} element={element}/>:editing?<div className="visual-placeholder">{element.imageSource??'이미지'} · 에셋 선택</div>:null;
       if(element.kind==='text')body=element.binding==='story'&&!editing?<PresentedHistoryText text={text} receipt={context.historyReceipt}/>:<span {...(element.binding==='speaker'?{'data-history-speaker':true}:{})}>{text}</span>;
@@ -186,7 +223,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
         ?<div className="visual-actor-results">{context.actorResults.map(row=><div key={row.characterId}>{row.text}</div>)}</div>
         :<div className="visual-result">{context.result||'활동 결과가 여기에 표시됩니다.'}</div>;
       if(element.kind==='choices')body=<div className={`visual-choices${element.choiceLayout==='cards'?' choice-cards':''}`} style={{gap:element.gap??12}}>{(editing&&!context.choices.length?[{id:'preview-one',text:'함께 도전한다',enabled:true,hint:''},{id:'preview-two',text:'조금 더 준비한다',enabled:true,hint:''}]:context.choices).map((c,index)=><button key={c.id} style={readingItem?{minHeight:readable!.config.minTargetSize}:element.choiceLayout==='cards'?{minHeight:element.rowHeight??80}:undefined} disabled={busy||!enabled||!c.enabled} onClick={event=>{const label=event.currentTarget.querySelector('[data-history-choice-label]');onChoice?.(c.id,label&&historyTextVisible(label)?label.textContent??undefined:undefined);}}>{element.choiceLayout==='cards'&&<span className="choice-number" aria-hidden="true">{String(index+1).padStart(2,'0')}</span>}<span className="choice-copy"><span data-history-choice-label>{c.text}</span>{element.showChoiceEffects&&c.hint&&<small className="choice-hint">{c.hint}</small>}{!c.enabled&&<small>조건 미충족</small>}</span></button>)}</div>;
-      if(element.kind==='button')body=<button className="visual-action" title={reason||undefined} disabled={busy||!enabled||progressionUnavailable(element)} onClick={event=>{if(element.action){if(element.action==='resumeContext')event.currentTarget.focus({preventScroll:true});setMenuOpen(false);onAction?.(element.action,element);}}}>{buttonLabel(element)}</button>;
+      if(element.kind==='button')body=<button className={`visual-action${painted?' engine-surface-host':''}`} title={reason||undefined} disabled={busy||!enabled||progressionUnavailable(element)} onClick={event=>{if(element.action){if(element.action==='resumeContext')event.currentTarget.focus({preventScroll:true});setMenuOpen(false);onAction?.(element.action,element);}}}>{surfacePaint}{buttonLabel(element)}</button>;
       if(element.kind==='collection'){
         style.padding=0;
         const rows=context.dataUi?.collections[screenId]?.[element.id]??[];
@@ -209,19 +246,21 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
           :null;
         body=<SystemsWidget kind={element.kind} systems={context.systems} busy={busy||!enabled} editing={editing} onCommand={onCommand}>{nodeActions}</SystemsWidget>;
       }
-      return <div className={`visual-element visual-${element.kind} ${raw.styleId||design.defaultStyle?'visual-styled':''}`} style={style} key={element.id} data-element-id={element.id}>{body}</div>;
+      return <div className={`visual-element visual-${element.kind} ${raw.styleId||design.defaultStyle?'visual-styled':''}${painted&&element.kind!=='button'?' engine-surface-host':''}`} {...controlProps} {...(controlOwner?{'data-control-owner':true}:{})} style={style} key={element.id} data-element-id={element.id} {...(scrollGroups&&element.kind==='group'&&element.overflow==='scroll'?{tabIndex:0,role:'region','aria-label':element.label??slotWords(context.locale,'스크롤 콘텐츠','Scrollable content','スクロールコンテンツ')}:{} )} {...(painted?{'data-engine-surface':'image'}:{})}>{element.kind!=='button'&&surfacePaint}{body}{groupChildren}</div>;
   };
+  const renderGroupTree=(parent?:BoundElement):React.ReactNode=>elements.filter(element=>(element._groupIds?.at(-1)??undefined)===parent?.id).map(element=>renderElement(element,undefined,element.kind==='group'?renderGroupTree(element):undefined,parent));
   if(readable){
     const {config}=readable,vars={'--readable-target':`${config.minTargetSize}px`,'--readable-gap':`${config.gap}px`,'--readable-padding':`${config.padding}px`,'--readable-width':`${config.maxWidth}px`,fontSize:config.fontSize*readable.textScale,background:config.background,'--readable-background':config.background,'--readable-ink':readableInk(config.background)} as React.CSSProperties;
+    const readingColors=controlColorProps(resolveControlStyle(design,undefined,true),true);Object.assign(vars,readingColors.style);
     const grouped=readable.actionLayout==='grouped',words=(ko:string,en:string,ja:string)=>slotWords(context.locale,ko,en,ja);
     const primary=grouped?readable.actions.find(item=>item.element.id===readable.primaryAction&&isVisible(item.element,context)&&conditionPasses(item.element.visibleCondition)&&conditionPasses(item.element.enabledCondition)&&context.dataUi?.availability[screenId]?.[item.element.id]?.enabled!==false&&!progressionUnavailable(item.element)):undefined;
     const secondary=readable.actions.filter(item=>item!==primary);
-    return <div className={`visual-viewport visual-fit visual-readable${grouped?' readable-grouped':''}`} data-screen={screenId} data-readable-layout="true" ref={host} style={vars}
+    return <div className={`visual-viewport visual-fit visual-readable${grouped?' readable-grouped':''}${hasSurface(config.surface)?' engine-surface-host':''}`} {...readingColors} data-screen={screenId} data-readable-layout="true" {...(hasSurface(config.surface)?{'data-engine-surface':'image'}:{})} ref={host} style={vars}
       onPointerDownCapture={event=>{gesture.current={x:event.clientX,y:event.clientY,dragged:false};}}
       onPointerMoveCapture={event=>{if(Math.hypot(event.clientX-gesture.current.x,event.clientY-gesture.current.y)>8)gesture.current.dragged=true;}}
       onPointerCancelCapture={()=>{gesture.current.dragged=true;}}
       onClickCapture={event=>{if(event.detail>0&&gesture.current.dragged){event.preventDefault();event.stopPropagation();gesture.current.dragged=false;}}}>
-      <style>{fontCss}</style><div className="readable-scroll" ref={readingScroll} {...readingPosition} tabIndex={0} role="region" aria-label={design.screens.find(s=>s.id===screenId)?.label??screenId}><div className="readable-items">{readable.items.map(item=>renderElement(item.element,item))}</div></div>
+      {hasSurface(config.surface)&&<SurfacePaint surface={config.surface} src={assetUrl(config.surface.imageAssetId)} identity={context.gameId??''}/>}<style>{fontCss}</style><div className="readable-scroll" ref={readingScroll} {...readingPosition} tabIndex={0} role="region" aria-label={design.screens.find(s=>s.id===screenId)?.label??screenId}><div className="readable-items">{readable.items.map(item=>renderElement(item.element,item))}</div></div>
       {grouped?<div className="readable-actions readable-grouped-actions" ref={readingActions}>
         {primary&&renderElement(primary.element,primary)}
         <button className="reading-menu-launcher" data-reading-id="engine-reading-menu" aria-haspopup="dialog" onClick={()=>setMenuOpen(true)}>{words('메뉴','Menu','メニュー')}</button>
@@ -238,7 +277,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
   }
   return <div className={`visual-viewport ${fitViewport?'visual-fit':''}`} ref={host} style={fitViewport?{}:{aspectRatio:`${design.width}/${design.height}`}}><div className="visual-stage" data-screen={screenId} style={{width:size.width,height:size.height,left:offset.x,top:offset.y,transform:`scale(${scale})`,'--canvas-control-min':`${Math.ceil(44/Math.max(scale,0.01))}px`} as React.CSSProperties}>
     <style>{fontCss}</style>
-    {elements.map(element=>renderElement(element))}{children}
+    {scrollGroups?renderGroupTree():elements.map(element=>renderElement(element))}{children}
   </div></div>;
 }
 

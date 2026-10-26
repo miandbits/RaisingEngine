@@ -3,6 +3,7 @@ import { diagnostic, sortDiagnostics, type LoadedProject, type ProjectDocument, 
 import { validateStructure } from './structure.js';
 import { validateSemantics } from './semantics.js';
 import { validatePlugins } from './plugins.js';
+import { validateSurfaceAssets } from './ui-surfaces.js';
 import { compileRules } from '../rule-extensions/compiler.js';
 
 export type ValidatedDocument = { [K in keyof ContentByKind]: Omit<ProjectDocument, 'kind' | 'data'> & { kind: K; data: ContentByKind[K] } }[keyof ContentByKind];
@@ -29,6 +30,7 @@ export async function validateProject(project: LoadedProject): Promise<Validatio
     if (manifest) diagnostics.push(diagnostic(manifest, '', 'SEMANTICS_DEFERRED',
       '프로젝트 형식 오류를 먼저 수정하세요. 문서 간 참조·규칙 검사는 수정 후 재검증됩니다.', [], 'warning'));
   }
+  diagnostics.push(...await validateSurfaceAssets(project, documents));
   const plugins = await validatePlugins(project, documents);
   diagnostics.push(...plugins.diagnostics);
   const structured = plugins.rejected.size ? documents.filter((d) => !plugins.rejected.has(d)) : documents;

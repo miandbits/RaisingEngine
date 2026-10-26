@@ -15,6 +15,8 @@ Start with [your first game](../getting-started/first-game.md). Templates are st
 | Time, schedules and reservations | [Unified time](unified-time.md), [sessions](time-progression-sessions.md) |
 | Screens, states and routing | [Free screens](free-screens.md), [states](custom-states.md), [routing](conditional-routing.md) |
 | Phone text, touch controls and reading order | [Phone reading layouts](phone-reading-layout.md) |
+| Add tiled or nine-slice backgrounds | [Decorative UI surfaces](../ui-surfaces.md) |
+| Style generated planner, save and reading controls | [Shared control colors](control-colors.md) |
 | Check rendered clipping, touch targets and contrast | [Rendered layout diagnostics](../rendered-layout-diagnostics.md) |
 | Review a phase plan’s costs and predictable changes | [Phase forecasts](phase-forecasts.md) |
 | Current-state text after returning to a save | [Current reminders](current-reminders.md) |

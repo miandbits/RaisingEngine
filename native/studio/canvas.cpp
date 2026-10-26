@@ -2,6 +2,8 @@
 #include <QObject>
 #include "canvas.hpp"
 #include "design.hpp"
+#include "surface-paint.hpp"
+#include "surface-image.hpp"
 #include "components.hpp"
 #include "selection-edit.hpp"
 #include "component-preview.hpp"
@@ -29,6 +31,7 @@ class VisualItem : public QGraphicsObject {
 public:
   QJsonObject data;
   QPixmap image;
+  QImage surfaceImage;
   ScreenCanvas *canvas;
   QSize bounds;
   QRectF box;
@@ -76,7 +79,9 @@ public:
     if(data.contains("_clipRect"))p->setClipRect(canvasClipRect(data.value("_clipRect").toObject()).translated(-pos()));
     p->setOpacity(data["opacity"].toDouble(1));
     const auto kind = data["kind"].toString();
+    const auto decoration=[&]{const auto inset=qMax(0.,data.value("borderWidth").toDouble());paintSurface(p,box.adjusted(inset,inset,-inset,-inset),surfaceImage,data.value("surface").toObject());};
     if (kind == "image" && !image.isNull()) {
+      decoration();
       const bool contain = data["fit"].toString() == "contain";
       QSizeF scaled = image.size();
       scaled.scale(box.size(), contain ? Qt::KeepAspectRatio
@@ -87,8 +92,9 @@ public:
       p->setClipRect(box,Qt::IntersectClip);
       p->drawPixmap(target, image, QRectF(image.rect()));
     } else if (kind == "plugin") {
-      paintPlugin(p);
+      decoration();paintPlugin(p);
     } else if (kind == "meter") {
+      decoration();
       const double thickness=qMin(box.height(),data.value("meterThickness").toDouble(box.height()));
       const QRectF track(0,(box.height()-thickness)/2,box.width(),thickness);
       p->fillRect(track,rgba(data.value("fill").toString(),QColor("#16242e")));
@@ -98,11 +104,11 @@ public:
       p->setPen(rgba(data.value("color").toString(),Qt::white));
       p->drawText(box,Qt::AlignCenter,data.value("text").toString());
     } else if (kind == "choices") {
-      paintChoicePreview(p,box,data);
+      decoration();paintChoicePreview(p,box,data);
     } else if (kind == "schedule" && !data.value("_rosterPreview").toArray().isEmpty()) {
-      paintRosterPreview(p,box,data);
+      paintRosterPreview(p,box,data,decoration);
     } else if (kind == "schedule" && data["scheduleLayout"] == "calendar") {
-      p->fillRect(box, QColor("#080706")); p->setPen(QColor("#cba99d"));
+      p->fillRect(box, QColor("#080706")); decoration();p->setPen(QColor("#cba99d"));
       QFont font(data["_fontFamily"].toString("Noto Sans KR"));font.setPixelSize(data["fontSize"].toInt(24));p->setFont(font);
       const auto project=data.value("_calendarProject").toObject();const auto config=StudioCalendar::spec(project);const auto date=StudioCalendar::date(project,0);const auto grid=raising::dates::grid(config,date,project.value("startYear").toInt(1),project.value("startMonth").toInt(1),qMax(1,project.value("periodsPerMonth").toInt(3)));
       p->drawText(QRectF(0,0,box.width(),36),Qt::AlignCenter,StudioCalendar::label(project,0,false));
@@ -110,6 +116,7 @@ public:
       for(int i=0;i<7;i++)p->drawText(QRectF(i*cw,40,cw,32),Qt::AlignCenter,QString::fromStdString(config.weekdays[i]));
       for(int day=1;day<=grid.days;day++){int cell=grid.offset+day-1;QRectF r((cell%7)*cw,80+(cell/7)*ch,cw,ch);p->drawRect(r);p->drawText(r.adjusted(3,2,-3,-2),Qt::AlignLeft|Qt::AlignTop,QString::number(day));}
     } else if (kind == "schedule" && data["scheduleLayout"] == "menu") {
+      decoration();
       auto groups=data["scheduleGroups"].toArray();QRectF r(box.width()-320,210,320,qMax(90,groups.size()*42+32));
       p->fillRect(r,QColor("#46343e"));p->setPen(QColor("#e5c880"));p->drawRect(r);
       QFont font(data["_fontFamily"].toString("Noto Sans KR"));font.setPixelSize(data["fontSize"].toInt(28));p->setFont(font);
@@ -124,6 +131,7 @@ public:
       p->setPen(Qt::NoPen);
       if(data["borderWidth"].toDouble()>0)p->setPen(QPen(QColor(data["borderColor"].toString("#57806c")),data["borderWidth"].toDouble()));
       p->drawRoundedRect(box, data["radius"].toInt(6), data["radius"].toInt(6));
+      decoration();
       if (kind != "panel" && kind != "group") {
         QString text = data["text"].toString();
         if (text.isEmpty() && !data.contains("text"))
@@ -325,6 +333,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
                QBrush(QColor("#dce9df")))
       ->setZValue(-1);
   QMap<QString, QString> paths;
+  QMap<QString,QImage> surfaceImages;
   for (auto a : assets) {
     auto v = a.toObject();
     paths[v["id"].toString()] = v["absolutePath"].toString();
@@ -409,6 +418,8 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     if (!file.isEmpty() && !imageCache.contains(file))
       imageCache[file] = QPixmap(file);
     auto item = new VisualItem(e, imageCache.value(file), this, canvasSize);
+    const auto surfaceFile=paths.value(e.value("surface").toObject().value("imageAssetId").toString());
+    if(!surfaceFile.isEmpty()){if(!surfaceImages.contains(surfaceFile))surfaceImages[surfaceFile]=loadSurfaceImage(surfaceFile);item->surfaceImage=surfaceImages.value(surfaceFile);}
     if(e["_componentChild"].toBool()||project["_responsivePreview"].toBool()) {
       item->setFlag(QGraphicsItem::ItemIsSelectable,false);
       item->setFlag(QGraphicsItem::ItemIsFocusable,false);

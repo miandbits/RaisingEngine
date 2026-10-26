@@ -759,6 +759,13 @@
           "type": "string",
           "pattern": "^#[0-9a-fA-F]{6}$",
           "description": "Opaque reading surface color. Default #172c29."
+        },
+        "controlStyleId": {
+          "$ref": "common.schema.json#/$defs/id",
+          "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+        },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
         }
       }
     }
@@ -769,6 +776,85 @@
     "screens"
   ],
   "$defs": {
+    "uiSurface": {
+      "title": "UiSurface",
+      "description": "Optional decorative whole-PNG surface. Missing inherits; none clears. One source pixel equals one logical unit. Tile repeats both axes from the top-left; nine-slice preserves source-pixel edge widths.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "none"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "imageAssetId"
+          ],
+          "properties": {
+            "mode": {
+              "const": "tile"
+            },
+            "imageAssetId": {
+              "$ref": "common.schema.json#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "imageAssetId",
+            "insets"
+          ],
+          "properties": {
+            "mode": {
+              "const": "nine-slice"
+            },
+            "imageAssetId": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "insets": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "top",
+                "right",
+                "bottom",
+                "left"
+              ],
+              "properties": {
+                "top": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "right": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "bottom": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "left": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     "screen": {
       "type": "object",
       "additionalProperties": false,
@@ -1270,11 +1356,18 @@
         "portraitId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "controlStyleId": {
+          "$ref": "common.schema.json#/$defs/id",
+          "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+        },
         "styleId": {
           "$ref": "common.schema.json#/$defs/id"
         },
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
         },
         "padding": {
           "type": "number",
@@ -1429,8 +1522,15 @@
                     "minimum": 1,
                     "maximum": 999
                   },
+                  "controlStyleId": {
+                    "$ref": "common.schema.json#/$defs/id",
+                    "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+                  },
                   "styleId": {
                     "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "surface": {
+                    "$ref": "#/$defs/uiSurface"
                   },
                   "fill": {
                     "type": "string",
@@ -2903,6 +3003,9 @@
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
+        },
         "padding": {
           "type": "number",
           "minimum": 0,
@@ -2970,6 +3073,9 @@
         },
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
         },
         "padding": {
           "type": "number",
@@ -3365,11 +3471,18 @@
         "portraitId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "controlStyleId": {
+          "$ref": "common.schema.json#/$defs/id",
+          "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+        },
         "styleId": {
           "$ref": "common.schema.json#/$defs/id"
         },
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
         },
         "padding": {
           "type": "number",
@@ -3698,8 +3811,15 @@
                     "minimum": 1,
                     "maximum": 999
                   },
+                  "controlStyleId": {
+                    "$ref": "common.schema.json#/$defs/id",
+                    "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+                  },
                   "styleId": {
                     "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "surface": {
+                    "$ref": "#/$defs/uiSurface"
                   },
                   "fill": {
                     "type": "string",
@@ -4790,6 +4910,13 @@
               "type": "number",
               "minimum": 0,
               "maximum": 1
+            },
+            "controlStyleId": {
+              "$ref": "common.schema.json#/$defs/id",
+              "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+            },
+            "surface": {
+              "$ref": "#/$defs/uiSurface"
             },
             "extensionRef": {
               "$ref": "common.schema.json#/$defs/id"

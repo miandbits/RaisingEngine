@@ -127,7 +127,7 @@ private:
   QLineEdit *nameField, *textField, *fillField, *colorField;
   QLineEdit *assetSearch;
   QSpinBox *xField, *yField, *widthField, *heightField, *fontField;
-  QComboBox *actionField, *targetField, *styleField;
+  QComboBox *actionField, *targetField, *styleField, *controlStyleField;
   QComboBox *previewLocaleField;
   QComboBox *anchorXField, *anchorYField, *viewportModeField, *previewSizeField;
   QComboBox *imageField, *bindingField, *attributeField, *relationshipField, *visibilityField, *userFieldField;
@@ -146,6 +146,7 @@ private:
   void refresh(bool fit = false);
   void updateInspector();
   void editVisibilityCondition();
+  void editSelectedSurface();
   void updateTargets(const QString &action, const QJsonObject &element);
   void selectElement(const QString &id);
   void selectElements(const QStringList &ids);

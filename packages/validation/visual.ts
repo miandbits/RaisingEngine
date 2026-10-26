@@ -1,3 +1,4 @@
+import {controlStyleReferences} from '../visual/control-styles.js';
 import {checkResumeContext} from './resume-context.js';
 import type { ProjectDocument, JsonObject } from './model.js';
 import { objectItems, type SemanticContext } from './context.js';
@@ -25,6 +26,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   const checkStyle=(style:JsonObject,p:string)=>{if(style.fontAssetId){const asset=ctx.resolve(ctx.assets,String(style.fontAssetId),doc,p+'/fontAssetId','폰트');if(asset&&asset.data.kind!=='font')ctx.report(doc,p+'/fontAssetId','UI_FONT_KIND','폰트 에셋을 선택하세요.');}};
   checkStyle((visual.defaultStyle??{}) as JsonObject,'/visual/defaultStyle');
   for(const [i,s] of objectItems(visual.styles).entries()){if(styleIds.has(String(s.id)))ctx.report(doc,`/visual/styles/${i}/id`,'UI_STYLE_DUPLICATE','공통 스타일 ID가 중복되었습니다.');styleIds.add(String(s.id));checkStyle(s,`/visual/styles/${i}`);}
+  for(const ref of controlStyleReferences(visual))if(!styleIds.has(ref.styleId))ctx.report(doc,ref.pointer,'UI_CONTROL_STYLE_REFERENCE','The named style for generated controls does not exist.');
   const allScreens=new Set(objectItems(visual.screens).map(s=>s.id));
   const root=doc.data as JsonObject;
   const gameplay=(root.gameplay??{}) as JsonObject;

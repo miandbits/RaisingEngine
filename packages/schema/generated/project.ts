@@ -3912,8 +3912,13 @@ export type Element = {
   frameAssetId?: string;
   entryFrameAssetId?: string;
   portraitId?: string;
+  /**
+   * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+   */
+  controlStyleId?: string;
   styleId?: string;
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -3994,7 +3999,12 @@ export type Element = {
       itemId?: string;
       interactionId?: string;
       quantity?: number;
+      /**
+       * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+       */
+      controlStyleId?: string;
       styleId?: string;
+      surface?: UiSurface;
       fill?: string;
       color?: string;
       fontSize?: number;
@@ -8376,6 +8386,27 @@ export type Element = {
     imageAssetId: string;
   }[];
 };
+/**
+ * Optional decorative whole-PNG surface. Missing inherits; none clears. One source pixel equals one logical unit. Tile repeats both axes from the top-left; nine-slice preserves source-pixel edge widths.
+ */
+export type UiSurface =
+  | {
+      mode: "none";
+    }
+  | {
+      mode: "tile";
+      imageAssetId: string;
+    }
+  | {
+      mode: "nine-slice";
+      imageAssetId: string;
+      insets: {
+        top: number;
+        right: number;
+        bottom: number;
+        left: number;
+      };
+    };
 export type ComponentChild = {
   [k: string]: unknown;
 } & {
@@ -9342,8 +9373,13 @@ export type ComponentChild = {
   frameAssetId?: string;
   entryFrameAssetId?: string;
   portraitId?: string;
+  /**
+   * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+   */
+  controlStyleId?: string;
   styleId?: string;
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -11537,7 +11573,12 @@ export type ComponentChild = {
       itemId?: string;
       interactionId?: string;
       quantity?: number;
+      /**
+       * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+       */
+      controlStyleId?: string;
       styleId?: string;
+      surface?: UiSurface;
       fill?: string;
       color?: string;
       fontSize?: number;
@@ -16351,6 +16392,11 @@ export interface VisualDesign {
      * Opaque reading surface color. Default #172c29.
      */
     background?: string;
+    /**
+     * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+     */
+    controlStyleId?: string;
+    surface?: UiSurface;
   };
 }
 export interface Scene {
@@ -16494,6 +16540,11 @@ export interface PresentationVariant {
     color?: string;
     fill?: string;
     opacity?: number;
+    /**
+     * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+     */
+    controlStyleId?: string;
+    surface?: UiSurface;
     extensionRef?: string;
   };
 }
@@ -16514,6 +16565,7 @@ export interface StyleValues {
   radius?: number;
   align?: "left" | "center" | "right";
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -16530,6 +16582,7 @@ export interface NamedStyle {
   radius?: number;
   align?: "left" | "center" | "right";
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;
