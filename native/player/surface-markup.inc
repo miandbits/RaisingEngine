@@ -33,7 +33,7 @@
     add(root_surface,"body");
     for(const auto& raw:elements){const auto e=resolved_style(visual,raw),surface=e.value("surface",Json());const auto selector="#node-"+e.value("id","")+(e.value("kind","")=="button"?">button":"");add(surface,selector);
       if(SurfacePaint::active(surface)&&e.value("kind","")=="button"){
-        for(const auto& pair:std::vector<std::pair<std::string,std::string>>{{"hoverFill",":hover"},{"pressedFill",":active"}})if(e.contains(pair.first))rules+=selector+pair.second+"{decorator:none;background-color:"+css_color(e.at(pair.first))+";}";
+        for(const auto& pair:std::vector<std::pair<std::string,std::string>>{{"hoverFill",":hover:not([disabled])"},{"pressedFill",":active:not([disabled])"}})if(e.contains(pair.first))rules+=selector+pair.second+"{decorator:none;background-color:"+css_color(e.at(pair.first))+";}";
       }
     }
     return definitions+rules;

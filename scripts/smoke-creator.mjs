@@ -39,7 +39,7 @@ if(args.includes('--desktop')){
   await run('editor',['scripts/test-first-game-ui.mjs']);
   await run('native',['--test','tests/native-player/first-game.test.mjs','tests/native-player/automation-wait.test.mjs']);
   await run('native-user-fields',['--test','tests/native-player/user-fields.test.mjs']);
-  await run('native-rendering',['--test','--test-concurrency=1','tests/native-player/asset-text-rendering.test.mjs','tests/native-player/surfaces.test.mjs','tests/native-player/activity-result-copy.test.mjs','tests/native-player/scroll-groups.test.mjs','tests/native-player/scroll-opacity.test.mjs','tests/native-player/control-colors.test.mjs','tests/native-player/reading-activation.test.mjs']);
+  await run('native-rendering',['--test','--test-concurrency=1','tests/native-player/asset-text-rendering.test.mjs','tests/native-player/surfaces.test.mjs','tests/native-player/activity-result-copy.test.mjs','tests/native-player/scroll-groups.test.mjs','tests/native-player/scroll-opacity.test.mjs','tests/native-player/control-colors.test.mjs','tests/native-player/disabled-paint.test.mjs','tests/native-player/reading-activation.test.mjs']);
   await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs','tests/native-player/planning-guidance.test.mjs','tests/native-player/reading-history.test.mjs']);
   await run('native-resume-context',['--test','tests/native-player/resume-context.test.mjs','tests/native-player/resume-context-settlement.test.mjs']);
   await run('native-schedule-details',['--test','--test-concurrency=1','tests/native-player/schedule-details.test.mjs','tests/native-player/control-sizing.test.mjs']);

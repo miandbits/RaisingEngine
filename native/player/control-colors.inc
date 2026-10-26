@@ -19,7 +19,7 @@
     std::string base,rules;const auto selector=scope+" ."+marker;
     for(const auto& pair:std::vector<std::pair<std::string,std::string>>{{"fill","background-color"},{"color","color"},{"borderColor","border-color"}})if(colors.contains(pair.first))base+=pair.second+":"+css_color(colors.at(pair.first))+";";
     rules+=selector+","+selector+" selectvalue,"+selector+" selectarrow,"+selector+" selectbox{"+base+"}";
-    for(const auto& pair:std::vector<std::pair<std::string,std::string>>{{"hoverFill",":hover"},{"pressedFill",":active"}})if(colors.contains(pair.first))rules+=selector+pair.second+","+selector+pair.second+" selectvalue,"+selector+pair.second+" selectarrow{background-color:"+css_color(colors.at(pair.first))+";}";
+    for(const auto& pair:std::vector<std::pair<std::string,std::string>>{{"hoverFill",":hover:not([disabled])"},{"pressedFill",":active:not([disabled])"}})if(colors.contains(pair.first))rules+=selector+pair.second+","+selector+pair.second+" selectvalue,"+selector+pair.second+" selectarrow{background-color:"+css_color(colors.at(pair.first))+";}";
     if(colors.contains("disabledColor"))rules+=selector+"[disabled],"+selector+"[disabled] selectvalue,"+selector+"[disabled] selectarrow{color:"+css_color(colors.at("disabledColor"))+";}";
     // The selected/focus cues remain structural and distinct from normal paint.
     rules+=selector+".slot-selected,"+selector+".record-selected{border-color:#345c50;}"+selector+":focus{border-color:#b38b49;}";
@@ -53,7 +53,7 @@
       // When a generated reading control had inline defaults, its per-ID
       // fallback also needs equally specific state selectors.
       if(global&&!id.empty()){
-        for(const auto& pair:std::vector<std::pair<std::string,std::string>>{{"hoverFill",":hover"},{"pressedFill",":active"}})if(colors.contains(pair.first))control_fallback_css+="#"+id+".engine-reading-control"+pair.second+"{background-color:"+css_color(colors.at(pair.first))+";}";
+        for(const auto& pair:std::vector<std::pair<std::string,std::string>>{{"hoverFill",":hover:not([disabled])"},{"pressedFill",":active:not([disabled])"}})if(colors.contains(pair.first))control_fallback_css+="#"+id+".engine-reading-control"+pair.second+"{background-color:"+css_color(colors.at(pair.first))+";}";
         if(colors.contains("disabledColor"))control_fallback_css+="#"+id+".engine-reading-control[disabled]{color:"+css_color(colors.at("disabledColor"))+";}";
       }
       const std::string name=global?"engine-reading-control":"engine-control";const auto cls=open.find("class=\"");if(cls==std::string::npos)open+=" class=\""+name+"\"";else open.insert(cls+7,name+" ");
