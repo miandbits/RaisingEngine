@@ -1,6 +1,7 @@
 #include "studio.hpp"
 #include "canvas-state.hpp"
 #include "editor-language.hpp"
+#include "existing-file-identity.hpp"
 #include <QtTest>
 #include <QtWidgets>
 
@@ -24,6 +25,30 @@ private slots:
   QVERIFY(temp.isValid());engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());qputenv("RAISING_EDITOR_SETTINGS",(temp.path()+"/settings.ini").toUtf8());qputenv("RAISING_PROJECT_HISTORY",(temp.path()+"/history.ini").toUtf8());QVERIFY(installEditorLanguage(*qApp,qEnvironmentVariable("RAISING_TEST_EDITOR_LOCALE","en")));QVERIFY(QDir().mkpath(engine+"/.cache/qt-presentation-update"));
   QProcess fixture;fixture.setWorkingDirectory(engine);fixture.start(qEnvironmentVariable("RAISING_NODE","node"),{engine+"/tests/qt-studio/presentation-update-fixture.mjs",temp.path()});QVERIFY(fixture.waitForFinished(30000));QVERIFY2(fixture.exitCode()==0,fixture.readAllStandardError().constData());paths=QJsonDocument::fromJson(fixture.readAllStandardOutput()).object();QVERIFY(paths.contains("previousBundle"));capture=temp.path()+"/requests.jsonl";
   qputenv("NODE_OPTIONS",qgetenv("NODE_OPTIONS")+" --import="+QUrl::fromLocalFile(engine+"/tests/qt-studio/capture-presentation-export.mjs").toEncoded());qputenv("RAISING_TEST_PRESENTATION_CAPTURE",capture.toUtf8());
+ }
+ void existingFileIdentityAcceptsPlatformSpellings(){
+  const auto selected=QFileInfo(paths["previousBundle"].toString()).canonicalFilePath();QVERIFY(!selected.isEmpty());
+  const auto native=QDir::toNativeSeparators(selected);QVERIFY(StudioPaths::sameExistingFile(selected,native));QVERIFY(StudioPaths::sameExistingFile(native,selected));
+#ifdef Q_OS_WIN
+  QVERIFY(native.contains('\\'));QVERIFY(selected.contains('/'));QVERIFY(native!=selected);
+#else
+  QCOMPARE(native,selected);
+  // These two actual Unix files must stay distinct; replacing all backslashes
+  // with slashes would incorrectly identify them as the same selected file.
+  const auto literal=temp.path()+"/literal\\name.json",nested=temp.path()+"/literal/name.json";QVERIFY(QDir().mkpath(QFileInfo(nested).path()));
+  for(const auto& name:{literal,nested}){QFile file(name);QVERIFY(file.open(QIODevice::WriteOnly));QCOMPARE(file.write("same bytes"),qint64(10));}
+  QVERIFY(StudioPaths::sameExistingFile(literal,literal));QVERIFY(!StudioPaths::sameExistingFile(literal,nested));
+#endif
+  const auto alias=QFileInfo(selected).path()+"/./"+QFileInfo(selected).fileName();QVERIFY(QFileInfo(alias).isFile());QVERIFY(StudioPaths::sameExistingFile(selected,alias));
+ }
+ void existingFileIdentityRejectsDifferentAndInvalidFiles(){
+  const auto selected=QFileInfo(paths["previousBundle"].toString()).canonicalFilePath(),different=temp.path()+"/different-bundle.json";QVERIFY(QFile::copy(selected,different));QCOMPARE(read(different),read(selected));QVERIFY(!StudioPaths::sameExistingFile(selected,different));
+  // Hosted Windows may keep the checkout and system temp on different drives.
+  // Place this fixture on the working-directory volume so it is truly relative.
+  QTemporaryDir local(QDir::currentPath()+"/.cache/qt-presentation-update/relative-XXXXXX");QVERIFY(local.isValid());const auto localFile=local.path()+"/existing-bundle.json";QVERIFY(QFile::copy(selected,localFile));
+  const auto relative=QDir::current().relativeFilePath(localFile),missing=temp.path()+"/missing-bundle.json";QVERIFY(QFileInfo(relative).isFile());QVERIFY(!QDir::isAbsolutePath(relative));QVERIFY(!QFileInfo::exists(missing));
+  for(const auto& invalid:{QString(),relative,missing,temp.path()}){QVERIFY(!StudioPaths::sameExistingFile(selected,invalid));QVERIFY(!StudioPaths::sameExistingFile(invalid,selected));QVERIFY(!StudioPaths::sameExistingFile(invalid,invalid));}
+  QVERIFY(QFile::remove(different));QVERIFY(!StudioPaths::sameExistingFile(different,different));
  }
  void explicitReviewAndCancelledAlternativePreserveAcceptedToken(){
   StudioWindow w(engine);open(w);const auto before=w.currentView();const auto save=read(paths["save"].toString()),base=read(paths["previousBundle"].toString());QString accepted;bool visited=false;

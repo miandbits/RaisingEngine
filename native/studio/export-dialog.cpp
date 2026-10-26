@@ -1,5 +1,6 @@
 #include "studio.hpp"
 #include "save-migration.hpp"
+#include "existing-file-identity.hpp"
 #include <QToolButton>
 #include <QScrollArea>
 #include <QPlainTextEdit>
