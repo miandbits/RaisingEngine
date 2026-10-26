@@ -258,7 +258,8 @@
 .web-save-slots>*{flex-shrink:0}
 .web-save-slots button{box-sizing:border-box;min-width:var(--canvas-control-min,44px);min-height:var(--canvas-control-min,44px);height:auto;white-space:normal;overflow-wrap:anywhere;line-height:1.5;flex-shrink:0}
 .web-save-slots .slot-toolbar,.web-save-slots .slot-footer,.web-save-slots .slot-footer>div,.web-save-slots .slot-backups{flex-wrap:wrap;min-width:0}
-.web-save-slots .slot-grid{flex:1 1 0;min-height:var(--canvas-control-min,44px);overflow:auto;grid-template-rows:repeat(3,minmax(88px,1fr))}
+.web-save-slots .slot-grid{flex:1 1 0;min-height:var(--canvas-control-min,44px);overflow:auto;grid-template-rows:repeat(3,minmax(min-content,1fr))}
+.web-save-slots .slot-details>*{flex-shrink:0}
 .web-save-slots .slot-footer>button,.web-save-slots .slot-backups>button{flex:1 1 180px;max-width:100%}
 .web-save-slots.slot-confirmation{justify-content:flex-start;align-items:stretch;text-align:left;padding:16px;overflow-wrap:anywhere}
 .slot-confirmation-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;width:100%;min-width:0}
