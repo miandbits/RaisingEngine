@@ -105,8 +105,11 @@ if(MINGW)
   # Keep symbols in Debug and RelWithDebInfo builds for native debugging.
   target_link_options(raising-player PRIVATE "$<$<CONFIG:Release>:-s>")
 endif()
-add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
-  ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:raising-player>/fonts)
+# macOS resources belong in Resources, not the nested-code MacOS directory.
+if(NOT APPLE OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:raising-player>/fonts)
+endif()
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set_target_properties(raising-player PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED YES)
   target_sources(raising-player PRIVATE platform-macos.mm)
@@ -117,8 +120,12 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set_target_properties(raising-portable-host-test PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED YES)
     target_link_libraries(raising-portable-host-test PRIVATE "-framework Cocoa")
   endif()
-  add_custom_command(TARGET raising-player POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_BUNDLE_CONTENT_DIR:raising-player>/Resources/fonts)
+  # Remove the old generated duplicate on incremental builds as well.
+  add_custom_command(TARGET raising-player POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_FILE_DIR:raising-player>/fonts
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_BUNDLE_CONTENT_DIR:raising-player>/Resources/fonts
+    VERBATIM)
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set_target_properties(raising-player PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED YES)

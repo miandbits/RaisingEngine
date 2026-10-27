@@ -1,7 +1,7 @@
 import { nativePlayerCapabilities } from './lib/native-player-capabilities.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, copyFile, cp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, copyFile, cp, readFile, writeFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -21,7 +21,11 @@ await mkdir(path.join(artifact, 'licenses'), { recursive: true });
 const filename = process.platform === 'win32' ? 'RaisingPlayer.exe' : 'RaisingPlayer';
 const mac = process.platform === 'darwin';
 const relativeExecutable = mac ? 'RaisingPlayer.app/Contents/MacOS/RaisingPlayer' : filename;
-if (mac) await cp(path.join(output, 'RaisingPlayer.app'), path.join(artifact, 'RaisingPlayer.app'), { recursive: true });
+if (mac) {
+  await cp(path.join(output, 'RaisingPlayer.app'), path.join(artifact, 'RaisingPlayer.app'), { recursive: true });
+  // cp merges existing artifacts; remove only the legacy generated resource copy.
+  await rm(path.join(artifact, 'RaisingPlayer.app/Contents/MacOS/fonts'), { recursive: true, force: true });
+}
 else await copyFile(path.join(output, filename), path.join(artifact, filename));
 // Fonts rarely change; skipping identical files keeps a running player/studio from blocking the copy (EBUSY).
 const same = async (a, b) => existsSync(b) && (await readFile(a)).equals(await readFile(b));

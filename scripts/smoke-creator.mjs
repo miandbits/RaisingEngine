@@ -47,7 +47,7 @@ if(args.includes('--desktop')){
   await run('native-growth-result',['--test','tests/native-player/growth-summary.test.mjs']);
   await run('native-activity-board',['--test','--test-concurrency=1','tests/native-player/activity-board.test.mjs']);
   await run('editor',['scripts/test-first-game-ui.mjs']);
-  await run('native',['--test','tests/native-player/first-game.test.mjs','tests/native-player/automation-wait.test.mjs']);
+  await run('native',['--test','tests/native-player/first-game.test.mjs','tests/native-player/automation-wait.test.mjs','tests/native-player/macos-resources.test.mjs']);
   await run('native-user-fields',['--test','tests/native-player/user-fields.test.mjs']);
   await run('native-rendering',['--test','--test-concurrency=1','tests/native-player/asset-text-rendering.test.mjs','tests/native-player/surfaces.test.mjs','tests/native-player/activity-result-copy.test.mjs','tests/native-player/scroll-groups.test.mjs','tests/native-player/scroll-opacity.test.mjs','tests/native-player/control-colors.test.mjs','tests/native-player/disabled-paint.test.mjs','tests/native-player/reading-activation.test.mjs']);
   await run('native-readable',['--test','tests/native-player/readable-layout.test.mjs','tests/native-player/reading-workflow.test.mjs','tests/native-player/planning-guidance.test.mjs','tests/native-player/reading-history.test.mjs']);

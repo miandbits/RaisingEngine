@@ -33,8 +33,8 @@ const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.st
 const help=spawnSync(executable,['--help'],{env,encoding:'utf8',timeout:30000,cwd:'/tmp'});assert.equal(help.status,0,help.stderr);
 await mkdir('.cache/first-game-package',{recursive:true});const out=await mkdtemp(path.resolve('.cache/first-game-package/run-'));
 const source=`import {QtStudioService} from ${JSON.stringify(pathToFileURL(path.join(engine,'apps/qt-studio/service.mjs')).href)};
-import {spawnSync} from 'node:child_process';
-import {readFile} from 'node:fs/promises';
+import {spawnSync,execFileSync} from 'node:child_process';
+import {readFile,cp,access} from 'node:fs/promises';
 const service=new QtStudioService();
 await service.handle({method:'create',params:{root:${JSON.stringify(path.join(out,'game'))},template:'my-first-raising-game'}});
 const result=await service.handle({method:'play',params:{revision:service.editor.revision}});
@@ -43,6 +43,13 @@ if(run.status!==0)throw Error(run.stderr);
 const exported=await service.handle({method:'export',params:{revision:service.editor.revision,target:'macos',releaseVersion:'0.1.0',destination:${JSON.stringify(path.join(out,'shipped'))}}});
 const manifest=JSON.parse(await readFile(exported.exported.directory+'/RELEASE.json','utf8'));
 if(!manifest.dependencies.dependencies?.length||!manifest.archives?.game?.sha256)throw Error('Release manifest is incomplete');
+const gameApp=exported.exported.directory+'/RaisingPlayer.app';
+await access(gameApp+'/Contents/Resources/fonts/NotoSansJP.ttf');
+await access(gameApp+'/Contents/MacOS/fonts').then(()=>{throw Error('Legacy resources remain in MacOS');},error=>{if(error.code!=='ENOENT')throw error;});
+const copiedApp=exported.exported.directory+'-copied.app',unzipped=exported.exported.directory+'-unzipped';
+await cp(gameApp,copiedApp,{recursive:true});
+execFileSync('/usr/bin/unzip',['-q',exported.exported.directory+'/Game.zip','-d',unzipped]);
+for(const candidate of [gameApp,copiedApp,unzipped+'/RaisingPlayer.app'])execFileSync('/usr/bin/codesign',['--verify','--deep','--strict',candidate]);
 const shipped=spawnSync(${JSON.stringify(path.join(out,'shipped/RaisingPlayer.app/Contents/MacOS/RaisingPlayer'))},['--frames','3','--hidden','--report',${JSON.stringify(path.join(out,'shipped-report.json'))}],{encoding:'utf8',env:process.env,timeout:30000,cwd:'/tmp'});
 if(shipped.status!==0)throw Error(shipped.stderr);
 let ios;
@@ -50,7 +57,7 @@ if(${process.argv.includes('--ios')}) {
   ios=(await service.handle({method:'export',params:{revision:service.editor.revision,target:'ios',releaseVersion:'0.1.0',destination:${JSON.stringify(path.join(out,'ios'))}}})).exported;
   if(!ios.xcodeProject||ios.warning)throw Error(ios.warning??'Xcode project missing');
 }
-console.log(JSON.stringify({project:service.editor.root,exported:exported.exported,ios}));`;
+console.log(JSON.stringify({project:service.editor.root,exported:exported.exported,macSignatures:{original:true,ordinaryCopy:true,gameArchive:true},ios}));`;
 const run=spawnSync(path.join(engine,'node'),['--input-type=module','-e',source],{env,encoding:'utf8',timeout:process.argv.includes('--ios')?900000:90000,cwd:'/tmp'});assert.equal(run.status,0,run.stderr);
 await writeResult();
 async function writeResult(){const {writeFile}=await import('node:fs/promises');await writeFile(path.join(out,'result.json'),JSON.stringify({ok:true,app,checkedBinaries:files.length,result:JSON.parse(run.stdout)},null,2));console.log('Standalone package proof: '+out);}

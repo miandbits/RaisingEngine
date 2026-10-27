@@ -28,7 +28,7 @@ import {listGoalRoutes, importGoalRecording, saveGoalRoute, checkGoalRoutes} fro
 // Qt and Electron use the same authoring transactions, validator and exporter.
 // stdout is a JSON-lines protocol; diagnostics belong on stderr.
 import { createInterface } from 'node:readline';
-import { mkdir, mkdtemp, realpath, access, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, access, readFile, writeFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
@@ -411,7 +411,15 @@ export class QtStudioService {
           destination: params.destination, target: params.target, runtimes: this.runtimes, extensions,
           prepareBundle: async directory => {
             if(params.target==='ios') await prepareIOSProject(directory, {root:engineRoot, applicationId:'org.raisingengine.'+built.snapshot.project.gameId, ...iosVersions});
-            if(params.target==='macos' && process.platform==='darwin') await runAppleTool('/usr/bin/codesign', ['--force','--deep','--sign','-',path.join(directory,'RaisingPlayer.app')], directory);
+            if(params.target==='macos' && process.platform==='darwin') {
+              const app=path.join(directory,'RaisingPlayer.app');
+              // Old templates put data in MacOS, where codesign treats it as nested
+              // code. Its xattr signatures disappear on ordinary copies and ZIPs.
+              const legacyFonts=await lstat(path.join(app,'Contents/MacOS/fonts')).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+              if(legacyFonts)throw Error('Rebuild the macOS player runtime: bundled fonts must be in Contents/Resources/fonts, not Contents/MacOS/fonts.');
+              await runAppleTool('/usr/bin/codesign', ['--force','--deep','--sign','-',app], directory);
+              await runAppleTool('/usr/bin/codesign', ['--verify','--deep','--strict',app], directory);
+            }
             if(params.releaseVersion) await this.releases.prepare(directory, {editor:this.editor, target:params.target, version:params.releaseVersion, content:built.snapshot, contentFingerprint:presentation?.report.baselineFingerprint??built.snapshot.contentFingerprint, engineRoot});
           },
           beforePublish: async () => {
