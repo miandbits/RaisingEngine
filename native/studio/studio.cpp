@@ -199,6 +199,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("GitHub Actions · CI 경로 검토…"),this,[this]{goalCiDialog();})->setObjectName("goalCiOpen");
   designMenu->addAction(tr("연출 작업실…"),this,&StudioWindow::editDirection)->setObjectName("editDirection");
   designMenu->addAction(tr("다인 전투 · 탐험 · 성장…"),this,&StudioWindow::editTactics)->setObjectName("editTactics");
+  designMenu->addAction(tr("육성 게임 화면 흐름 만들기…"),this,&StudioWindow::createRaisingScreenFlow)->setObjectName("raisingScreenFlow");
+  designMenu->addAction(tr("화면 영역을 여러 화면에 공유…"),this,&StudioWindow::shareScreenSection)->setObjectName("shareScreenSection");
   designMenu->addAction(tr("UI 조합 · 중첩 / 배치 / 선택 / 모달…"),this,&StudioWindow::editUiComposition)->setObjectName("editUiComposition");
   designMenu->addAction(tr("제작 작업실 · 데이터 / 행동 / 진행…"),this,&StudioWindow::showAuthoringWorkspace)->setObjectName("showAuthoringWorkspace");
   designMenu->addAction(tr("선택 요소 연결 따라가기…"),this,&StudioWindow::followSelectedElement)->setObjectName("followSelectedElement");

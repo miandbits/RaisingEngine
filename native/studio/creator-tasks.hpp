@@ -30,7 +30,7 @@ inline void showCreatorTasks(QMainWindow* window,std::function<bool()> projectRe
     layout->addStretch();
   };
   page(QObject::tr("콘텐츠 만들기"),"creatorContentTasks",{"newProject","showProjectManager","showAuthoringWorkspace","storyFlowAction","editRoster"});
-  page(QObject::tr("화면 디자인"),"creatorDesignTasks",{"screenSettings","editDesignSystem","readableLayout","editComponents"});
+  page(QObject::tr("화면 디자인"),"creatorDesignTasks",{"raisingScreenFlow","shareScreenSection","editTimelines","screenSettings","editDesignSystem","readableLayout","editComponents"});
   page(QObject::tr("플레이 확인"),"creatorCheckTasks",{"inspectRenderer","validateProject","playProject","showAnalysis"});
   page(QObject::tr("출시 준비"),"creatorReleaseTasks",{"projectSettings","saveProject","exportGame"});
   auto notice=new QLabel;notice->setObjectName("creatorTaskNotice");notice->setWordWrap(true);shell->addWidget(notice);

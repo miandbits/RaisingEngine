@@ -12,7 +12,8 @@ Historical experiment reports are not the current support contract.
 | Add tiled or nine-slice backgrounds | [Decorative UI surfaces](ui-surfaces.md) |
 | Style generated planner, save and reading controls | [Shared control colors](manual/control-colors.md) |
 | Check rendered clipping, touch targets and contrast | [Rendered layout diagnostics](rendered-layout-diagnostics.md) |
-| Build home, outing, planning and growth screens | [Activity boards](activity-board.md), [activity growth and contextual planning](activity-growth.md) |
+| Build home, outing, planning and growth screens | [Screen flow wizard](manual/raising-screen-flow.md), [Activity boards](activity-board.md), [activity growth and contextual planning](activity-growth.md) |
+| Reuse a HUD or link many activity presentations | [Shared screen sections](manual/shared-screen-sections.md), [batch activity presentations](manual/batch-activity-presentations.md) |
 | Review a phase plan’s costs and predictable changes | [Phase forecasts](manual/phase-forecasts.md) |
 | Designer-chosen current-state reminders | [Current reminders](manual/current-reminders.md) |
 | Sample player strategies and inspect resource balance | [Player priorities](manual/player-priorities.md) |

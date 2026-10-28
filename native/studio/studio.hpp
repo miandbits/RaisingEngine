@@ -171,6 +171,8 @@ private:
   void applyTextBindingBatch();
   void editLocalization();
   void editComponents();
+  void createRaisingScreenFlow();
+  void shareScreenSection();
   void openComponentSource();
   QString componentToOpen;
   void editDataUi();
