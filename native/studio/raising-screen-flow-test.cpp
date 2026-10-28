@@ -24,6 +24,16 @@ private slots:
   RaisingScreenFlowOptions tooMany;for(int i=0;i<101;++i)tooMany.attributeIds.append("attribute-"+QString::number(i));QVERIFY(!planRaisingScreenFlow(p,tooMany).error.isEmpty());
   auto second=planRaisingScreenFlow(accepted.project,o);QVERIFY(second.error.isEmpty());QVERIFY(second.homeId!=accepted.homeId);QCOMPARE(screen(second.project,accepted.homeId),screen(accepted.project,accepted.homeId));
  }
+ void transparentPortraitPreservesBackgroundAndContent(){
+  const auto original=read(qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath())+"/examples/my-first-raising-game/project.json");
+  RaisingScreenFlowOptions options;options.attributeIds={"skill"};options.backgroundId="background";options.portraitId="transparent-portrait";
+  const auto plan=planRaisingScreenFlow(original,options);QVERIFY2(plan.error.isEmpty(),qPrintable(plan.error));
+  const auto portrait=element(plan.project,plan.homeId,"portrait"),background=element(plan.project,plan.homeId,"home-art");
+  QCOMPARE(portrait["fill"].toString(),QString("#00000000"));QCOMPARE(portrait["fit"].toString(),QString("contain"));QCOMPARE(portrait["imageAssetId"].toString(),options.portraitId);
+  QCOMPARE(background["fill"].toString(),QString("#f1f5f9"));QCOMPARE(background["imageAssetId"].toString(),options.backgroundId);
+  auto before=original,after=plan.project;before.remove("visual");after.remove("visual");QCOMPARE(before,after);
+  for(auto screenValue:original["visual"].toObject()["screens"].toArray()){const auto old=screenValue.toObject();QCOMPARE(screen(plan.project,old["id"].toString()),old);}
+ }
  void keyboardFocusAcrossSetupAndReview(){
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());QDir().mkpath(engine+"/.cache/raising-screen-flow");QTemporaryDir dir(engine+"/.cache/raising-flow-focus-XXXXXX");QVERIFY(dir.isValid());QVERIFY(copy(engine+"/examples/my-first-raising-game",dir.path()));
   StudioWindow w(engine);w.resize(1100,700);w.show();w.openProject(dir.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);const auto before=w.projectData();w.findChild<QAction*>("raisingScreenFlow")->trigger();auto d=w.findChild<QDialog*>("raisingScreenFlowDialog");QVERIFY(d);

@@ -45,7 +45,7 @@ RaisingScreenFlowPlan planRaisingScreenFlow(const QJsonObject& project,const Rai
   auto item=[](QString id){return QJsonObject{{"elementId",id}};};
   auto home=common(text("거처","Home","ホーム"));const int sidebar=340,left=width-sidebar-64;
   if(!o.backgroundId.isEmpty())home.append(image("home-art",o.backgroundId,32,110,left,height-220));
-  if(!o.portraitId.isEmpty())home.append(image("portrait",o.portraitId,64,height-470,qMin(300,left-64),360));
+  if(!o.portraitId.isEmpty()){auto portrait=image("portrait",o.portraitId,64,height-470,qMin(300,left-64),360);portrait["fill"]="#00000000";home.append(portrait);}
   auto calendar=label("calendar","",width-sidebar,116,sidebar-32,75);calendar["binding"]="calendar";home.append(calendar);
   auto next=button("continue",text("다음 활동 시작","Start next activity","次の活動を始める"),"advance",width-sidebar,210,sidebar-32);
   next["visibleCondition"]=QJsonObject{{"op","compare"},{"comparator","gt"},{"left",QJsonObject{{"op","time"},{"field","periodInMonth"}}},{"right",QJsonObject{{"op","literal"},{"value",0}}}};home.append(next);
