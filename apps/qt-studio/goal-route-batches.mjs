@@ -55,8 +55,8 @@ export class GoalRouteBatches {
       if(prepared&&prepared.root!==base)throw Error('Captured routes belong to another project.');
       if(!entries.length||ids.length&&entries.length!==ids.length)throw Error('One or more selected routes are missing. Refresh the route list.');
       if(params.routeRevisions!==undefined){const expected=params.routeRevisions;if(!expected||typeof expected!=='object'||Array.isArray(expected)||Object.keys(expected).length!==entries.length||entries.some(e=>expected[e.route?.id??path.basename(e.file,'.json')]!==(e.revision??null)))throw Error('Routes changed. Refresh the route list before starting.');}
-      const impact=prepared?.impact??null;
-      const inputs=JSON.stringify({content,entries,...(impact?{impact}:{})});if(Buffer.byteLength(inputs)>MAX_INPUT)throw Error('A route batch snapshot and routes must fit within 64 MiB. Select fewer routes.');
+      const impact=prepared?.impact??null,baseline=prepared?.baseline??null;
+      const inputs=JSON.stringify({content,entries,...(impact?{impact}:{}),...(baseline?{baseline}:{})});if(Buffer.byteLength(inputs)>MAX_INPUT)throw Error('A route batch snapshot and routes must fit within 64 MiB. Select fewer routes.');
       const dir=await directory(base);await guard();
       // Bound only this feature's owned archives; unrelated automatic reports are retained.
       const files=[];
@@ -66,21 +66,24 @@ export class GoalRouteBatches {
       for(const file of files.slice(0,Math.max(0,files.length-RETAIN+1))){await unlink(path.join(dir,file));const input=path.join(dir,file.replace(/\.json$/,'.inputs.json'));const info=await lstat(input).catch(e=>{if(e.code!=='ENOENT')throw e;return null;});if(info?.isFile())await unlink(input);}
       while(this.jobs.size>=RETAIN){const old=[...this.jobs.values()].find(j=>!['running','cancelling'].includes(j.status));if(!old)break;this.jobs.delete(old.id);}
       const id=randomUUID(),stem=Date.now()+'-'+id,file=path.join(dir,stem+'.json');
-      const job={version:1,kind:'goal-route-batch',id,root:base,revision,testedRevision:revision,sourceVersion,contentFingerprint:content.contentFingerprint,snapshotHash:hash(content),inputHash:hash(inputs),routeSelection:identity(entries),limits,status:'running',ok:false,createdAt:new Date().toISOString(),activeIndex:null,completed:0,reports:entries.map(e=>({id:e.route?.id??path.basename(e.file,'.json'),name:e.route?.name??path.basename(e.file),routeRevision:e.revision??null,status:'not-run',ok:false})),file};
+      const job={version:1,kind:'goal-route-batch',id,root:base,revision,testedRevision:revision,sourceVersion,contentFingerprint:content.contentFingerprint,snapshotHash:hash(content),inputHash:hash(inputs),routeSelection:identity(entries),limits,...(baseline?{mode:'baseline'}:{}),status:'running',ok:false,createdAt:new Date().toISOString(),activeIndex:null,completed:0,reports:entries.map(e=>({id:e.route?.id??path.basename(e.file,'.json'),name:e.route?.name??path.basename(e.file),...(baseline?{baselineName:baseline.names[e.route?.id]}:{}),routeRevision:e.revision??null,status:'not-run',ok:false})),file};
       const inputFile=file.replace(/\.json$/,'.inputs.json');
       await writeFile(inputFile,inputs,{flag:'wx'});
       try{await guard();const fresh=new Map(identity(prepared?entries:await capture(base,ids)).map(e=>[e.id,e]));if(job.routeSelection.some(e=>JSON.stringify(fresh.get(e.id))!==JSON.stringify(e)))throw Error('Routes changed while preparing the batch. Refresh and try again.');}catch(error){await unlink(inputFile).catch(()=>{});throw error;}
-      let worker;try{worker=fork(new URL('./goal-route-batch-worker.mjs',import.meta.url),[],{detached:process.platform!=='win32',windowsHide:true,serialization:'advanced',stdio:['ignore','ignore','pipe','ipc'],execArgv:['--max-old-space-size=512'],env:{...process.env,NODE_OPTIONS:''}});}catch(error){await unlink(inputFile).catch(()=>{});throw error;}
+      // The process V8 ceiling also bounds its replay thread; a smaller parent
+      // flag overrides the thread's resourceLimits even with empty execArgv.
+      let worker;try{worker=fork(new URL('./goal-route-batch-worker.mjs',import.meta.url),[],{detached:process.platform!=='win32',windowsHide:true,serialization:'advanced',stdio:['ignore','ignore','pipe','ipc'],execArgv:['--max-old-space-size='+(baseline?1024:512)],env:{...process.env,NODE_OPTIONS:''}});}catch(error){await unlink(inputFile).catch(()=>{});throw error;}
       job.worker=worker;job.completion=new Promise(resolve=>{job.resolveCompletion=resolve;});this.jobs.set(id,job);
       const finish=async(reason)=>{
         if(job.finished)return;job.finished=true;clearTimeout(job.timer);clearTimeout(job.grace);clearTimeout(job.routeTimer);
+        if(job.publication)await job.publication;
         if(job.activeIndex!==null&&job.reports[job.activeIndex].status==='running')Object.assign(job.reports[job.activeIndex],{status:reason==='cancelled'?'cancelled':reason==='timed-out'?'timed-out':'failed',failure:{step:0,code:reason==='cancelled'?'CANCELLED':reason==='timed-out'?'TIMEOUT':'WORKER_ERROR',message:job.error??'The route did not complete.'}});
         job.activeIndex=null;job.completed=job.reports.filter(r=>!['not-run','running'].includes(r.status)).length;
         const terminalStatus=reason??(job.reports.every(r=>r.ok)?'completed':job.reports.some(r=>r.status==='timed-out')?'timed-out':'failed');
         const terminalOk=terminalStatus==='completed'&&job.reports.every(r=>r.ok);job.finishedAt=new Date().toISOString();
         let completionError=null;
         if(job.goalImpact?.id){try{job.goalImpact=await archiveGoalImpacts(base,job.goalImpact);}catch(error){job.goalImpact={...job.goalImpact,stale:true,complete:false,error:'Could not save comparison report: '+error.message};}}
-        try{await retireProcess(worker);}catch(error){completionError=String(error.message);}
+        try{await retireProcess(worker);if(baseline)for(let index=0;index<entries.length;index++)await unlink(file+'.baseline-'+index+'.pending').catch(error=>{if(error.code!=='ENOENT')throw error;});}catch(error){completionError=String(error.message);}
         if(completionError)job.error=completionError;
         job.persistence=writeFile(file,JSON.stringify({...this.public(job),status:completionError?'failed':terminalStatus,ok:!completionError&&terminalOk},null,2),{flag:'wx'}).catch(e=>{completionError='Could not save batch report: '+e.message;});
         await job.persistence;
@@ -88,22 +91,40 @@ export class GoalRouteBatches {
         job.resolveCompletion();job.worker=null;job.finish=null;job.resolveCompletion=null;
       };
       job.finish=finish;
-      worker.on('message',message=>{if(job.finished)return;if(message.fatal){job.error=message.fatal;void finish(job.stopReason??'failed');return;}if(message.active!==undefined){job.activeIndex=message.active;job.reports[message.active].status='running';clearTimeout(job.routeTimer);job.routeTimer=setTimeout(()=>{job.error='A route exceeded its deadline without yielding. Remaining routes were not run.';void finish('timed-out');},limits.routeTimeoutMs+2000);job.routeTimer.unref();}
+      worker.on('message',message=>{if(job.finished)return;
+        if(message.publishBaseline){
+          const {index,metadata}=message.publishBaseline;
+          if(!baseline||!Number.isInteger(index)||index!==job.activeIndex||index<0||index>=entries.length||job.publication){job.error='Invalid baseline publication request.';void finish('failed');return;}
+          clearTimeout(job.routeTimer);
+          const respond=value=>{if(worker.connected&&!job.finished)worker.send({baselinePublication:{index,...value}},()=>{});};
+          const checkOwned=()=>{if(job.finished||job.stopReason)throw Object.assign(Error('Baseline publication cancelled.'),{code:'CANCELLED'});};
+          job.publication=(async()=>{
+            try{
+              checkOwned();
+              const saved=await prepared.publishBaseline(file+'.baseline-'+index+'.pending',metadata,index,checkOwned);
+              Object.assign(job.reports[index],{status:'passed',ok:true,baseline:saved});
+              respond({ok:true,baseline:saved});
+            }catch(error){const failure={step:job.reports[index].executed??0,code:error.code??'PUBLICATION_FAILED',message:String(error.message)};Object.assign(job.reports[index],{status:failure.code==='CANCELLED'?'cancelled':'failed',ok:false,failure});respond({ok:false,failure});}
+            job.completed=job.reports.filter(r=>!['not-run','running'].includes(r.status)).length;
+          })().finally(()=>{job.publication=null;});
+          return;
+        }
+if(message.fatal){job.error=message.fatal;void finish(job.stopReason??'failed');return;}if(message.active!==undefined){job.activeIndex=message.active;job.reports[message.active].status='running';clearTimeout(job.routeTimer);job.routeTimer=setTimeout(()=>{job.error='A route exceeded its deadline without yielding. Remaining routes were not run.';void finish('timed-out');},limits.routeTimeoutMs+2000);job.routeTimer.unref();}
         if(message.stage)job.stage=message.stage;
         if(message.goalImpact)job.goalImpact=message.goalImpact;
         if(message.progress)Object.assign(job.reports[message.index],message.progress);
-        if(message.report){clearTimeout(job.routeTimer);if(job.stopReason==='timed-out'&&message.report.failure?.code==='CANCELLED')message.report={...message.report,status:'timed-out',failure:{...message.report.failure,code:'TIMEOUT',message:'The whole batch deadline was reached.'}};const old=job.reports[message.index];job.reports[message.index]={...old,...message.report};job.completed++;job.activeIndex=null;}
+        if(message.report){clearTimeout(job.routeTimer);if(job.stopReason==='timed-out'&&message.report.failure?.code==='CANCELLED')message.report={...message.report,status:'timed-out',failure:{...message.report.failure,code:'TIMEOUT',message:'The whole batch deadline was reached.'}};const old=job.reports[message.index];job.reports[message.index]={...old,...message.report};job.completed=job.reports.filter(r=>!['not-run','running'].includes(r.status)).length;job.activeIndex=null;}
         if(message.done)void finish(job.stopReason??message.reason);
       });
       worker.stderr.on('data',data=>{job.workerError=((job.workerError??'')+data.toString()).slice(-4096);});
       worker.on('error',error=>{job.error=error.message;void finish(job.stopReason??'failed');});
       worker.on('exit',code=>{if(!job.finished){job.error=`Route worker exited without a result (${code}). `+(job.workerError??'');void finish(job.stopReason??'failed');}});
-      try{worker.send({content,entries,limits,...(impact?{impact}:{})},error=>{if(error&&!job.finished){job.error=error.message;void finish('failed');}});}catch(error){job.error=error.message;void finish('failed');}
+      try{worker.send({content,entries,limits,...(impact?{impact}:{}),...(baseline?{baseline:{...baseline,stagingPrefix:file}}:{})},error=>{if(error&&!job.finished){job.error=error.message;void finish('failed');}});}catch(error){job.error=error.message;void finish('failed');}
       job.timer=setTimeout(()=>this.stopJob(job,'timed-out'),limits.batchTimeoutMs);job.timer.unref();
       return this.public(job);
     }finally{this.starting=false;}
   }
-  public(job){const {worker,workerError,timer,routeTimer,grace,finish,finished,persistence,completion,resolveCompletion,routeCheckAt,routeCheck,routeCheckComplete,routesChanged,routeCheckError,...view}=job;return structuredClone(view);}
+  public(job){const {worker,workerError,timer,routeTimer,grace,finish,finished,persistence,publication,completion,resolveCompletion,routeCheckAt,routeCheck,routeCheckComplete,routesChanged,routeCheckError,...view}=job;return structuredClone(view);}
   get(root,id){const job=this.jobs.get(id);if(!uuid.test(id??'')||!job||job.root!==root)throw Error('This route batch does not belong to the current project.');return job;}
   stopJob(job,reason='cancelled'){if(job.finished||!['running','cancelling'].includes(job.status))return;job.stopReason??=reason;job.status='cancelling';if(job.worker?.connected)job.worker.send({cancel:true},()=>{});if(!job.grace){job.grace=setTimeout(()=>void job.finish(job.stopReason),2000);job.grace.unref();}}
   stop(root,id){const job=this.get(root,id);this.stopJob(job);return this.public(job);}

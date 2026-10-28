@@ -17,7 +17,8 @@ function label(content:ContentSnapshot,raw:unknown):string {
   const activities=(c.activityIds??[]).map((id:string)=>content.activities.find(a=>a.id===id)?.label??id);
   return `${names[c.type]??c.type}${activities.length?' · '+activities.join(' / '):id?' · '+id:''}`;
 }
-async function replay(content:ContentSnapshot,input:unknown,limit:{bytes:number;started:number;timeoutMs?:number}):Promise<RouteTrace>{
+export interface GoalReplayOptions {timeoutMs?:number;cancelled?:()=>boolean;progress?:(value:{executed:number;commands:number})=>void}
+async function replay(content:ContentSnapshot,input:unknown,limit:{bytes:number;started:number}&GoalReplayOptions):Promise<RouteTrace>{
   const route=validateGoalRoute(input);if(route.gameId!==content.project.gameId)throw Error('다른 게임의 경로입니다.');
   const target=routeTarget(route),created=createSession(content,route.origin.seed,route.origin);
   if(!created.ok)throw Error(`시작 상태 오류: ${created.error.message}`);
@@ -27,19 +28,22 @@ async function replay(content:ContentSnapshot,input:unknown,limit:{bytes:number;
   const count=(s:RunState)=>{limit.bytes+=Buffer.byteLength(JSON.stringify(s));if(limit.bytes>64*1024*1024)throw Error('경로 상태가 64 MiB를 넘었습니다. 더 짧은 경로로 나누어 비교하세요.');};count(session.state);
   for(const [index,command] of route.commands.entries()){
     if(index%16===0)await new Promise<void>(r=>setImmediate(r));
-    if(Date.now()-limit.started>(limit.timeoutMs??60000))throw Error('비교 재생 시간 60초를 넘었습니다. 더 짧은 경로로 나누어 비교하세요.');
+    if(limit.cancelled?.())throw Object.assign(Error('비교 재생을 취소했습니다.'),{code:'CANCELLED'});
+    if(Date.now()-limit.started>(limit.timeoutMs??60000))throw Object.assign(Error('비교 재생 시간 제한을 넘었습니다. 더 짧은 경로로 나누어 비교하세요.'),{code:'TIMEOUT'});
+    if(index%16===0)limit.progress?.({executed:index,commands:route.commands.length});
     const result=dispatchSession(content,session,command,session.state.stateRevision);
     if(result.ok){session=result.session;executed++;reached ||= targetReached(session.state,target);}
     else failure={step:index+1,...result.error};
     count(session.state);states.push(session.state);steps.push({step:index+1,command,label:label(content,command),ok:result.ok,period:session.state.periodIndex,phase:session.state.phase,...(!result.ok?{error:result.error}:{})});
     if(!result.ok)break;
   }
+  limit.progress?.({executed,commands:route.commands.length});
   if(!failure&&!reached)failure={step:steps.length-1,code:'TARGET_NOT_REACHED',message:`목표 ${target.kind}:${target.id}에 도달하지 못했습니다. 실제 엔딩: ${session.state.endingId??'없음'}`};
   return {route,states,steps,reached,failure,unexecuted:route.commands.length-executed-(failure&&!(steps.at(-1)?.ok)?1:0)};
 }
 const comparable=(s:RunState)=>({...s,stateRevision:0,contentFingerprint:"",coreVersion:""});
-export async function compareGoalRoutes(content:ContentSnapshot,left:unknown|null,right:unknown,options:{timeoutMs?:number}={}):Promise<RouteComparison>{
-  const limit={bytes:0,started:Date.now(),timeoutMs:options.timeoutMs??60000},a=left?await replay(content,left,limit):null,b=await replay(content,right,limit);
+export async function compareGoalRoutes(content:ContentSnapshot,left:unknown|null,right:unknown,options:GoalReplayOptions={}):Promise<RouteComparison>{
+  const limit={...options,bytes:0,started:Date.now(),timeoutMs:options.timeoutMs??60000},a=left?await replay(content,left,limit):null,b=await replay(content,right,limit);
   return compareTraces(content,a,b);
 }
 export function compareTraces(content:ContentSnapshot,a:RouteTrace|null,b:RouteTrace):RouteComparison {

@@ -11,7 +11,17 @@
 #include <QTest>
 #include <QSignalSpy>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QDirIterator>
 #include <QTreeWidgetItemIterator>
+
+namespace {
+bool copyInteractionFixture(const QString &source,const QString &target){
+  QDirIterator files(source,QDir::Files,QDirIterator::Subdirectories);
+  while(files.hasNext()){const auto path=files.next(),dest=target+"/"+QDir(source).relativeFilePath(path);if(!QDir().mkpath(QFileInfo(dest).path())||!QFile::copy(path,dest))return false;}
+  return true;
+}
+}
 
 class EditorInteractionTests : public QObject {
   Q_OBJECT
@@ -390,6 +400,20 @@ private slots:
     qInfo() << "1000x680 keyboard copy/paste, text undo/redo, element undo/redo, panel restore, Escape cancel, Ctrl+S and reopen passed";
     QVERIFY(reopened.close());
   }
+
+void contentSearchSelectsVisibleDocument() {
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());QTemporaryDir temp(engine+"/.cache/qt-content-filter-XXXXXX");QVERIFY(temp.isValid());QVERIFY(copyInteractionFixture(engine+"/examples/starlight-three-months",temp.path()));
+  StudioWindow window(engine);window.show();window.openProject(temp.path());QTRY_VERIFY_WITH_TIMEOUT(!window.busy()&&!window.projectData().isEmpty(),20000);auto search=window.findChild<QLineEdit*>("contentSearch");auto list=window.findChild<QListWidget*>("contentList");auto edit=window.findChild<QPushButton*>("contentEdit");QVERIFY(search&&list&&edit);auto tabs=window.findChild<QTabWidget*>("bottomTabs");QVERIFY(tabs);tabs->setCurrentWidget(list->parentWidget());
+  auto find=[&](QString suffix)->QListWidgetItem*{for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toString().endsWith(suffix))return list->item(i);return nullptr;};auto attributes=find("attributes.json");QVERIFY(attributes);list->setCurrentItem(attributes);search->setText("activities/rest.json");QVERIFY(attributes->isHidden());QVERIFY(list->currentItem());QVERIFY(!list->currentItem()->isHidden());QVERIFY(list->currentItem()->data(Qt::UserRole).toString().endsWith("activities/rest.json"));QVERIFY(edit->isEnabled());
+  bool opened=false;auto inspect=[&]{auto dialog=window.findChild<QDialog*>("contentEditor");QVERIFY(dialog);QVERIFY(dialog->windowTitle().endsWith("activities/rest.json"));opened=true;dialog->reject();};QTimer::singleShot(20,&window,inspect);edit->click();QVERIFY(opened);
+  // A service refresh must not restore the earlier hidden current row.
+  window.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!window.busy(),10000);QVERIFY(list->currentItem()&&!list->currentItem()->isHidden());QVERIFY(list->currentItem()->data(Qt::UserRole).toString().endsWith("activities/rest.json"));
+  opened=false;window.activateWindow();list->setFocus();QTRY_VERIFY(list->hasFocus());QTimer::singleShot(20,&window,inspect);QTest::keyClick(list,Qt::Key_Return);QTRY_VERIFY(opened);
+  search->setText("no-content-matches-this-query");QVERIFY(!list->currentItem());QVERIFY(list->selectedItems().isEmpty());QVERIFY(!edit->isEnabled());QTest::keyClick(list,Qt::Key_Return);QTest::qWait(50);QVERIFY(!window.findChild<QDialog*>("contentEditor"));
+  // Defensive activation cannot open a programmatically selected hidden row.
+  attributes=find("attributes.json");QVERIFY(attributes&&attributes->isHidden());list->setCurrentItem(attributes);QVERIFY(!edit->isEnabled());QVERIFY(QMetaObject::invokeMethod(list,"itemDoubleClicked",Qt::DirectConnection,Q_ARG(QListWidgetItem*,attributes)));QVERIFY(!window.findChild<QDialog*>("contentEditor"));search->clear();QVERIFY(list->currentItem()&&!list->currentItem()->isHidden());QVERIFY(edit->isEnabled());
+}
+
 };
 QTEST_MAIN(EditorInteractionTests)
 #include "editor-interaction-test.moc"

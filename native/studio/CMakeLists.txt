@@ -173,3 +173,5 @@ set_tests_properties(qt-timeline-batch PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 
 # Saved-project checks stay independent of foreground authoring requests.
 target_sources(studio-ui PRIVATE goal-save-checks.cpp)
+
+target_sources(studio-ui PRIVATE goal-baseline-batch.cpp)

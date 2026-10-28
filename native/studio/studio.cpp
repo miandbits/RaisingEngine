@@ -196,6 +196,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("제작 시험 검증…"),this,&StudioWindow::runAssuranceDialog)->setObjectName("runAssurance");
   designMenu->addAction(tr("목표 경로 기록 · 회귀 검사…"),this,&StudioWindow::goalRoutesDialog)->setObjectName("goalRoutes");
   designMenu->addAction(tr("저장 검사 진행 · 결과…"),this,&StudioWindow::goalSaveChecksDialog)->setObjectName("goalSaveChecks");
+  designMenu->addAction(tr("기준 기록 일괄 등록…"),this,[this]{goalBaselineBatchDialog();})->setObjectName("goalBaselineBatch");
   designMenu->addAction(tr("저장 기준 비교 결과…"),this,[this]{goalImpactDialog();})->setObjectName("goalImpact");
   designMenu->addAction(tr("GitHub Actions · CI 경로 검토…"),this,[this]{goalCiDialog();})->setObjectName("goalCiOpen");
   designMenu->addAction(tr("연출 작업실…"),this,&StudioWindow::editDirection)->setObjectName("editDirection");
@@ -866,7 +867,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   editSelectedContent->setEnabled(false);
   contentLayout->addWidget(editSelectedContent);
   connect(editSelectedContent, &QPushButton::clicked, this, &StudioWindow::editContent);
-  connect(contentList, &QListWidget::currentItemChanged, this, [editSelectedContent](QListWidgetItem *item) { editSelectedContent->setEnabled(item != nullptr); });
+  connect(contentList, &QListWidget::currentItemChanged, this, [this,editSelectedContent](QListWidgetItem *item) { editSelectedContent->setEnabled(item && !item->isHidden() && !bridge.busy()); });
   contentLayout->addWidget(contentList);
   for (auto key : {Qt::Key_Return, Qt::Key_Enter}) {
     auto shortcut = new QShortcut(QKeySequence(key), contentList);
@@ -882,6 +883,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
               auto item = contentList->item(i);
               item->setHidden(!(item->text()+" "+item->data(Qt::UserRole).toString()).contains(q, Qt::CaseInsensitive));
             }
+            ensureVisibleContentSelection();
           });
   auto contentMenu = menuBar()->addMenu(tr("콘텐츠"));
   contentMenu->addAction(tr("이야기 제작 · 인물 → 활동 → 만남…"),this,&StudioWindow::editStoryFlow)->setObjectName("storyFlowMenuAction");
@@ -1162,6 +1164,16 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
 StudioWindow::~StudioWindow() {
   // Plugin deactivate() may still query the window; run it before members die.
   plugins->unloadAll();
+  // QWidget's base destructor can hide a focused child and emit editingFinished
+  // after our JSON members have died. Retire owned signals and asynchronous
+  // replies while those members still exist; normal close/save runs beforehand.
+  for(auto timer:findChildren<QTimer*>())timer->stop();
+  for(auto child:findChildren<QObject*>())QObject::disconnect(child,nullptr,this,nullptr);
+  if(auto focused=QApplication::focusWidget();focused&&isAncestorOf(focused)){
+    const QSignalBlocker silence(focused);focused->clearFocus();
+  }
+  player.disconnect(this);
+  bridge.shutdown();
 }
 
 QJsonObject StudioWindow::projectData() const {
@@ -1227,7 +1239,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
-      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckPolling->stop();
+      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckPolling->stop();lastGoalBaselineBatch={};
       if(auto dialog=findChild<QDialog*>("goalSaveChecksDialog"))dialog->close();
       firstGameObserved.clear();
       ProjectManager::remember(view.value("root").toString());

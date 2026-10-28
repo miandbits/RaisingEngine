@@ -42,6 +42,7 @@ public:
   QJsonObject lastGoalReport;
   QJsonObject lastGoalImpact;
   QJsonObject lastGoalSaveCheck;
+  QJsonObject lastGoalBaselineBatch;
   QString lastError;
   /** Automation: package file used by 패키지 설치… instead of the file dialog. */
   QString pluginPackagePath;
@@ -63,6 +64,7 @@ signals:
   void goalReportReady(QJsonObject report);
   void goalImpactReady(QJsonObject report);
   void goalSaveCheckReady(QJsonObject check);
+  void goalBaselinesReady(QJsonObject batch);
   void followAuthoringItem(QString key);
 
 protected:
@@ -213,6 +215,7 @@ private:
   void createBenchmark();
   void runAssuranceDialog();
   void goalRoutesDialog();
+  void goalBaselineBatchDialog(QString routeId = {}, QString name = {});
   void setupGoalSaveChecks();
   void goalSaveChecksDialog();
   void acceptGoalSaveCheck(QJsonObject check);
@@ -236,6 +239,7 @@ private:
   void editContent();
   void editWidgetSettings();
   void refreshContent();
+  void ensureVisibleContentSelection();
   void openScreen(const QString &id);
   void closeScreen(int index);
   void createScreen(bool duplicate = false);

@@ -9,9 +9,10 @@ const send=value=>{if(process.connected)process.send(value);};
 const failed=error=>{if(done)return;done=true;send({fatal:String(error?.message??error).slice(0,4096)});};
 process.on('message',message=>{
   if(message.cancel){Atomics.store(cancel,0,1);return;}
+  if(message.baselinePublication){runner?.postMessage(message.baselinePublication);return;}
   if(runner)return;
   try{
-    runner=new Worker(new URL('./goal-route-batch-runner.mjs',import.meta.url),{workerData:{...message,cancelBuffer:cancel.buffer},execArgv:[],resourceLimits:{maxOldGenerationSizeMb:512}});
+    runner=new Worker(new URL('./goal-route-batch-runner.mjs',import.meta.url),{workerData:{...message,cancelBuffer:cancel.buffer},execArgv:[],resourceLimits:{maxOldGenerationSizeMb:message.baseline?1024:512}});
     runner.on('message',value=>{if(done)return;if(value.done)done=true;send(value);});
     runner.on('error',failed);
     runner.on('exit',code=>{if(!done)failed(`Replay worker exited without a result (${code}).`);});

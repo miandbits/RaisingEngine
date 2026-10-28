@@ -3,6 +3,7 @@ import {applyProjectReleaseSettings} from '../../dist/packages/studio-service/re
 import {prepareRelease} from '../../dist/packages/export-service/release-metadata.js';
 import {GoalRouteBatches} from './goal-route-batches.mjs';
 import {SavedGoalChecks} from './goal-save-checks.mjs';
+import {startGoalBaselineBatch} from './goal-baseline-batches.mjs';
 import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePriorityProfile} from './analysis-priorities.mjs';
 import {packagedStudioPluginStore} from './storage-paths.mjs';
 import { DraftRecovery } from './recovery.mjs';
@@ -115,6 +116,13 @@ export class QtStudioService {
     if (method === 'updateCompatibility') return {error:null,updateCompatibility:await this.updateCompatibility.check(this.editor,params)};
     if (method === 'presentationUpdateCheck') return {error:null,presentationUpdate:await this.presentationUpdates.check(this,params)};
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
+    if(method==='goalBaselineBatchStatus'||method==='goalBaselineBatchStop'){
+      if(params.root!==this.editor.root)throw Error('This baseline batch does not belong to the current project.');
+      const job=this.goalRouteBatches.get(params.root,params.jobId);
+      if(job.mode!=='baseline')throw Error('This job is not a baseline capture.');
+      if(method==='goalBaselineBatchStop')this.goalRouteBatches.stop(params.root,params.jobId);
+      return {error:null,goalBaselineBatch:await this.goalRouteBatches.status(params.root,params.jobId,this.editor.draftVersion())};
+    }
     if(method==='goalSaveCheckStatus'||method==='goalSaveCheckStop'){
       if(params.root!==this.editor.root)throw Error('Saved checks do not belong to the current project.');
       if(method==='goalSaveCheckStop')this.savedGoalChecks.stop(params.checkId);
@@ -210,6 +218,7 @@ export class QtStudioService {
         if(params.route?.gameId!==this.editor.documents.find(d=>d.kind==='project')?.data.gameId)throw new Error('현재 게임의 목표 경로만 저장할 수 있습니다.');
         extra={goalRouteSaved:await saveGoalRoute(this.editor.root,params.route,params.expectedRevision??null)};break;
       }
+      case 'goalBaselineBatchStart': {extra={goalBaselineBatch:await startGoalBaselineBatch(this,params)};break;}
       case 'goalRouteBatchStart': {
         const root=this.editor.root,content=await this.debugSnapshot(params.revision),version=this.editor.draftVersion();
         const guard=async()=>{this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before the batch started.');await this.editor.assertDiskUnchanged();this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before the batch started.');};

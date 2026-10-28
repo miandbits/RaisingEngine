@@ -335,7 +335,7 @@ void StudioWindow::refreshContent() {
     item->setToolTip(doc["file"].toString());
     item->setHidden(
         search && !(item->text()+" "+doc["file"].toString()).contains(search->text(), Qt::CaseInsensitive));
-    if (doc["file"] == selected)
+    if (doc["file"] == selected && !item->isHidden())
       contentList->setCurrentItem(item);
   }
   // Plugin-owned documents are listed read-only here; their editor is the plugin's.
@@ -350,12 +350,24 @@ void StudioWindow::refreshContent() {
     item->setData(Qt::UserRole, doc["file"].toString());
     item->setToolTip(doc["file"].toString());
     item->setHidden(search && !(item->text()+" "+doc["file"].toString()).contains(search->text(), Qt::CaseInsensitive));
-    if (doc["file"] == selected) contentList->setCurrentItem(item);
+    if (doc["file"] == selected && !item->isHidden()) contentList->setCurrentItem(item);
   }
+  ensureVisibleContentSelection();
+}
+
+void StudioWindow::ensureVisibleContentSelection() {
+  auto current=contentList->currentItem();
+  if(!current||current->isHidden()){
+    contentList->clearSelection();current=nullptr;
+    for(int row=0;row<contentList->count();++row)if(!contentList->item(row)->isHidden()){current=contentList->item(row);break;}
+    contentList->setCurrentItem(current);
+  }
+  if(current)current->setSelected(true);
+  if(auto edit=findChild<QPushButton*>("contentEdit"))edit->setEnabled(current&&!current->isHidden()&&!bridge.busy());
 }
 
 void StudioWindow::editContent() {
-  if (bridge.busy() || !contentList->currentItem())
+  if (bridge.busy() || !contentList->currentItem() || contentList->currentItem()->isHidden())
     return;
   const auto file = contentList->currentItem()->data(Qt::UserRole).toString();
   QJsonObject data;

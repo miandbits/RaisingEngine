@@ -43,7 +43,10 @@ StudioBridge::StudioBridge(const QString &engineRoot, QObject *parent)
   process.start(qEnvironmentVariable("RAISING_NODE", QFileInfo::exists(bundledNode)?bundledNode:"node"),
                 {QDir(engineRoot).filePath("apps/qt-studio/service.mjs")});
 }
-StudioBridge::~StudioBridge() {
+StudioBridge::~StudioBridge() { shutdown(); }
+void StudioBridge::shutdown() {
+  if(shuttingDown)return;
+  shuttingDown=true;callback=nullptr;backgroundCallback=nullptr;
   process.disconnect(this);
   process.closeWriteChannel();
   // Allow owned workers to observe EOF, cancel, and retire their process tree.
