@@ -6,6 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {studioTemplates} from '../dist/packages/studio-service/templates.js';
 import {replaceReleaseMedia,auditReleaseMedia} from './release-sample-media.mjs';
+import {prepareCocoaRepair,deployedCocoaRepair,sha256} from './lib/qt-cocoa-repair.mjs';
 
 if(process.platform!=='darwin')throw Error('Build the macOS editor package on a Mac.');
 const root=fileURLToPath(new URL('..',import.meta.url));
@@ -20,18 +21,28 @@ const linked=execFileSync('/usr/bin/otool',['-L',node],{encoding:'utf8'}).split(
 if(linked.some(s=>!s.startsWith('/usr/lib/')&&!s.startsWith('/System/Library/')))throw Error('The bundled Node must be standalone; Homebrew Node requires external libraries. Use an official nodejs.org archive.');
 const qt=process.env.QT_ROOT??['/opt/homebrew/opt/qt','/usr/local/opt/qt'].find(p=>existsSync(path.join(p,'bin/macdeployqt')));
 if(!qt)throw Error('Set QT_ROOT to a Qt 6 macOS installation.');
-await cp(path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio','RaisingStudioQt.app'),out,{recursive:true,force:false,errorOnExist:true});
 const query=key=>execFileSync(path.join(qt,'bin/qtpaths'),['--query',key],{encoding:'utf8'}).trim();
 const pluginRoot=query('QT_INSTALL_PLUGINS'),libraryRoot=query('QT_INSTALL_LIBS');
+// Validate an explicit repair before creating any package output. The installed kit is never modified.
+const cocoa=await prepareCocoaRepair(process.env.MACOS_QT_COCOA_REPAIR,{qt,libraryRoot});
+await cp(path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio','RaisingStudioQt.app'),out,{recursive:true,force:false,errorOnExist:true});
 const pluginPaths=[];
 for(const name of ['platforms/libqcocoa.dylib','imageformats/libqjpeg.dylib','imageformats/libqwebp.dylib','imageformats/libqsvg.dylib']) {
-  const source=path.join(pluginRoot,name);if(!existsSync(source))throw Error('Missing Qt plugin: '+source);
+  const source=name==='platforms/libqcocoa.dylib'&&cocoa?cocoa.plugin:path.join(pluginRoot,name);if(!existsSync(source))throw Error('Missing Qt plugin: '+source);
   const destination=path.join(out,'Contents/PlugIns',name);await mkdir(path.dirname(destination),{recursive:true});await cp(source,destination,{dereference:true});pluginPaths.push(destination);
 }
 const deployed=spawnSync(path.join(qt,'bin/macdeployqt'),[out,'-always-overwrite','-no-strip','-no-plugins','-no-codesign','-libpath='+libraryRoot,...pluginPaths.map(p=>'-executable='+p)],{encoding:'utf8'});
 if(deployed.error)throw deployed.error;
 if(deployed.status||/ERROR:/.test(deployed.stdout+deployed.stderr))throw Error('Qt deployment failed:\n'+deployed.stdout+deployed.stderr);
 const resources=path.join(out,'Contents/Resources');
+const cocoaPackage=await deployedCocoaRepair(cocoa,out);
+if(cocoa) {
+  const notices=path.join(resources,'licenses/qt-cocoa-repair');await mkdir(notices,{recursive:true});
+  await cp(cocoa.sourceKit,path.join(notices,'source-kit.tar.gz'),{errorOnExist:true,force:false});
+  await writeFile(path.join(notices,'NOTICE.txt'),cocoa.notice);
+  await writeFile(path.join(notices,'repair.json'),JSON.stringify(cocoaPackage,null,2)+'\n');
+  await writeFile(path.join(notices,'native-regression.json'),JSON.stringify({passed:true,case:cocoa.manifest.nativeRegression.case,originalLogSha256:cocoa.manifest.nativeRegression.logSha256},null,2)+'\n');
+}
 await writeFile(path.join(resources,'qt.conf'),'[Paths]\nPlugins=PlugIns\n');
 const copy=async(from,to)=>{
   await mkdir(path.dirname(path.join(resources,to)),{recursive:true});
@@ -73,7 +84,15 @@ async function dependency(name,from=path.join(root,'package.json')) {
   for(const child of Object.keys(p.dependencies??{}))await dependency(child,manifest);
 }
 for(const name of ['ajv','jsonc-parser','yauzl','resedit'])await dependency(name);
-await writeFile(path.join(resources,'package-manifest.json'),JSON.stringify({version:1,platform:'darwin',arch:process.arch,node:nodeInfo.version,templates:studioTemplates,dependencies:Object.fromEntries(dependencies),publicReleaseReady:false,notes:'Local development bundle. Distribution still requires Qt corresponding-source/license review, Developer ID signing, notarization and a clean-machine test.'},null,2));
+const packageManifest={version:1,platform:'darwin',arch:process.arch,node:nodeInfo.version,templates:studioTemplates,dependencies:Object.fromEntries(dependencies),...(cocoaPackage?{qtCocoaRepair:cocoaPackage}:{}),publicReleaseReady:false,notes:'Local development bundle. Distribution still requires Qt corresponding-source/license review, Developer ID signing, notarization and a clean-machine test.'};
+await writeFile(path.join(resources,'package-manifest.json'),JSON.stringify(packageManifest,null,2));
 execFileSync('/usr/bin/codesign',['--force','--deep','--sign','-',out],{stdio:'inherit'});
+if(cocoaPackage) {
+  cocoaPackage.signedPluginSha256=sha256(await readFile(path.join(out,'Contents/PlugIns/platforms/libqcocoa.dylib')));
+  await writeFile(path.join(resources,'package-manifest.json'),JSON.stringify(packageManifest,null,2));
+  await writeFile(path.join(resources,'licenses/qt-cocoa-repair/repair.json'),JSON.stringify(cocoaPackage,null,2)+'\n');
+  // Resource receipts changed after nested signing; re-sign only the containing app.
+  execFileSync('/usr/bin/codesign',['--force','--sign','-',out],{stdio:'inherit'});
+}
 execFileSync('/usr/bin/codesign',['--verify','--deep','--strict',out],{stdio:'inherit'});
 console.log(`macOS editor app: ${await realpath(out)}`);
