@@ -1227,7 +1227,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
-      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelPending=false;goalSaveCheckPolling->stop();
+      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckPolling->stop();
       if(auto dialog=findChild<QDialog*>("goalSaveChecksDialog"))dialog->close();
       firstGameObserved.clear();
       ProjectManager::remember(view.value("root").toString());

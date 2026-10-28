@@ -117,7 +117,7 @@ export class QtStudioService {
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
     if(method==='goalSaveCheckStatus'||method==='goalSaveCheckStop'){
       if(params.root!==this.editor.root)throw Error('Saved checks do not belong to the current project.');
-      if(method==='goalSaveCheckStop')this.savedGoalChecks.stop();
+      if(method==='goalSaveCheckStop')this.savedGoalChecks.stop(params.checkId);
       return {error:null,goalSaveCheck:await this.savedGoalChecks.status(params.root,this.editor.draftVersion())};
     }
     if(method==='goalRouteBatchStatus'||method==='goalRouteBatchStop'){

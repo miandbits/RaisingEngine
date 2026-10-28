@@ -104,3 +104,19 @@ test('expired retained history stays readable as stale and the next save creates
   assert.equal(expired.id,first.id);assert.equal(expired.historyExpired,true);assert.equal(expired.stale,true);assert.match(expired.error,/retained batch history/);
   const next=(await saveAndWait(service)).goalSaveCheck;assert.notEqual(next.id,first.id);assert.equal(next.status,'completed');assert.equal(next.stale,false);
 });
+
+test('a delayed cancellation token cannot stop the automatic check from a newer save',{timeout:15000},async t=>{
+  const {service,call,long}=await fixture(t);
+  await call('goalRouteSave',{route:long,expectedRevision:null});
+  await call('goalRouteBatchStart',{ids:['a-long'],limits:{routeTimeoutMs:10000,batchTimeoutMs:15000}});
+  const old=(await call('save')).goalSaveCheck;
+  const doc=service.editor.documents.find(d=>d.kind==='project');
+  await call('edit',{edit:{type:'replace',file:doc.file,data:{...doc.data,description:'A newer saved revision'}}});
+  const current=(await call('save')).goalSaveCheck;
+  assert.notEqual(current.id,old.id);assert.equal(current.status,'queued');
+  const delayed=(await call('goalSaveCheckStop',{checkId:old.id})).goalSaveCheck;
+  assert.equal(delayed.id,current.id);assert.equal(delayed.status,'queued','Old UI cancellation must not own a replacement check.');
+  assert.equal(service.savedGoalChecks.pending.id,current.id);
+  const cancelled=(await call('goalSaveCheckStop',{checkId:current.id})).goalSaveCheck;
+  assert.equal(cancelled.id,current.id);assert.equal(cancelled.status,'cancelled');
+});

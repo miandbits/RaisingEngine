@@ -68,9 +68,12 @@ export class SavedGoalChecks {
       }catch(error){record.status=record.status==='cancelled'?'cancelled':'failed';record.ok=false;record.error=String(error.message);delete record.content;delete record.prepared;}
     }
   }
-  stop(){
+  stop(expectedId){
     const record=this.latest;
     if(!record)return null;
+    // A deferred UI cancellation owns the check that was visible when clicked.
+    // A newer save may have replaced it while another bridge request completed.
+    if(expectedId!==undefined&&record.id!==expectedId)return this.public(record);
     if(record.status==='queued'){record.status='cancelled';record.ok=false;delete record.content;delete record.prepared;if(this.pending===record)this.pending=null;}
     else if(record.batchId&&busy(record)){this.batches.stop(record.root,record.batchId);record.status='cancelling';}
     return this.public(record);

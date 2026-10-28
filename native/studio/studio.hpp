@@ -222,7 +222,7 @@ private:
   QTimer *goalSaveCheckPolling=nullptr;
   QPushButton *goalSaveCheckButton=nullptr;
   QString goalSaveCheckRoot, goalSaveCheckReportedId;
-  bool goalSaveCheckCancelPending=false;
+  QString goalSaveCheckCancelId;
   void goalSearchDialog(QJsonObject source = {});
   void goalCompareDialog(QString jobId = {}, QJsonObject impactLink = {});
   void goalImpactDialog(QJsonObject report = {});

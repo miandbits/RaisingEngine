@@ -34,7 +34,7 @@ void StudioWindow::setupGoalSaveChecks() {
   connect(goalSaveCheckPolling,&QTimer::timeout,this,&StudioWindow::pollGoalSaveCheck);
   connect(this,&StudioWindow::updated,this,[this]{
     if(goalSaveCheckRoot!=view.value("root").toString()){
-      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelPending=false;goalSaveCheckPolling->stop();
+      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckPolling->stop();
       if(auto dialog=findChild<QDialog*>("goalSaveChecksDialog"))dialog->close();
     }
     refreshGoalSaveCheck();
@@ -49,9 +49,10 @@ void StudioWindow::acceptGoalSaveCheck(QJsonObject check) {
   if(lastGoalSaveCheck.value("root")==check.value("root")&&lastGoalSaveCheck.value("testedRevision").toInt(-1)>check.value("testedRevision").toInt(-1))return;
   if(lastGoalSaveCheck.value("id")==check.value("id")&&!activeCheck(lastGoalSaveCheck)&&activeCheck(check))return;
   check["stale"]=check.value("stale").toBool()||check.value("sourceVersion")!=view.value("draftVersion");
+  if(!goalSaveCheckCancelId.isEmpty()&&goalSaveCheckCancelId!=check.value("id").toString())goalSaveCheckCancelId.clear();
   goalSaveCheckRoot=check.value("root").toString();lastGoalSaveCheck=check;
   if(activeCheck(check))goalSaveCheckPolling->start();else{
-    goalSaveCheckPolling->stop();goalSaveCheckCancelPending=false;
+    goalSaveCheckPolling->stop();goalSaveCheckCancelId.clear();
     const auto id=check.value("id").toString();
     const bool firstResult=!id.isEmpty()&&goalSaveCheckReportedId!=id;
     if(firstResult){goalSaveCheckReportedId=id;if(!check.value("reports").toArray().isEmpty())acceptGoalReport(check);}
@@ -83,22 +84,27 @@ void StudioWindow::refreshGoalSaveCheck() {
 void StudioWindow::pollGoalSaveCheck() {
   if(goalSaveCheckRoot.isEmpty()||goalSaveCheckRoot!=view.value("root").toString()){goalSaveCheckPolling->stop();return;}
   if(bridge.busy()||bridge.backgroundBusy())return;
-  const auto root=goalSaveCheckRoot;const bool cancelling=goalSaveCheckCancelPending;
-  bridge.requestBackground(cancelling?"goalSaveCheckStop":"goalSaveCheckStatus",{{"root",root}},[this,root,cancelling](QJsonObject reply){
+  const auto root=goalSaveCheckRoot,cancelId=goalSaveCheckCancelId,requestedId=lastGoalSaveCheck.value("id").toString();const bool cancelling=!cancelId.isEmpty();
+  QJsonObject params{{"root",root}};if(cancelling)params["checkId"]=cancelId;
+  bridge.requestBackground(cancelling?"goalSaveCheckStop":"goalSaveCheckStatus",params,[this,root,cancelId,requestedId](QJsonObject reply){
     if(root!=view.value("root").toString())return;
+    // A save/reopen can replace the job while this passive request is in flight.
+    // Its error, null result or old result must not overwrite the replacement.
+    const auto currentId=lastGoalSaveCheck.value("id").toString();
+    if(requestedId!=currentId&&(!reply.value("error").toString().isEmpty()||reply.value("goalSaveCheck").toObject().value("id").toString()!=currentId))return;
     if(!reply.value("error").toString().isEmpty()){
-      goalSaveCheckPolling->stop();goalSaveCheckCancelPending=false;
+      goalSaveCheckPolling->stop();goalSaveCheckCancelId.clear();
       lastGoalSaveCheck["status"]="failed";lastGoalSaveCheck["ok"]=false;lastGoalSaveCheck["error"]=reply.value("error");
       refreshGoalSaveCheck();return;
     }
-    if(cancelling)goalSaveCheckCancelPending=false;
+    if(goalSaveCheckCancelId==cancelId)goalSaveCheckCancelId.clear();
     acceptGoalSaveCheck(reply.value("goalSaveCheck").toObject());
   });
 }
 
 void StudioWindow::stopGoalSaveCheck() {
   if(lastGoalSaveCheck.isEmpty()||!activeCheck(lastGoalSaveCheck))return;
-  goalSaveCheckCancelPending=true;goalSaveCheckPolling->start();refreshGoalSaveCheck();pollGoalSaveCheck();
+  goalSaveCheckCancelId=lastGoalSaveCheck.value("id").toString();goalSaveCheckPolling->start();refreshGoalSaveCheck();pollGoalSaveCheck();
 }
 
 void StudioWindow::goalSaveChecksDialog() {
@@ -111,11 +117,11 @@ void StudioWindow::goalSaveChecksDialog() {
   auto bar=new QHBoxLayout;layout->addLayout(bar);auto cancel=new QPushButton(tr("검사 취소"));cancel->setObjectName("goalSaveCheckCancel");bar->addWidget(cancel);auto routes=new QPushButton(tr("목표 경로 기록 · 회귀 검사…"));routes->setObjectName("goalSaveCheckManual");bar->addWidget(routes);auto impact=new QPushButton(tr("저장 기준 비교 결과…"));impact->setObjectName("goalSaveCheckImpact");bar->addWidget(impact);bar->addStretch();auto close=new QPushButton(tr("닫기"));bar->addWidget(close);
   connect(cancel,&QPushButton::clicked,this,&StudioWindow::stopGoalSaveCheck);connect(routes,&QPushButton::clicked,this,&StudioWindow::goalRoutesDialog);connect(impact,&QPushButton::clicked,this,[this]{if(lastGoalSaveCheck.value("goalImpact").isObject())goalImpactDialog(lastGoalImpact);});connect(close,&QPushButton::clicked,dialog,&QDialog::close);
   auto render=[=,this](QJsonObject check){
-    cancel->setEnabled(activeCheck(check)&&check.value("status")!="cancelling"&&!goalSaveCheckCancelPending);impact->setEnabled(check.value("goalImpact").isObject()&&!activeCheck(check));
+    cancel->setEnabled(activeCheck(check)&&check.value("status")!="cancelling"&&goalSaveCheckCancelId.isEmpty());impact->setEnabled(check.value("goalImpact").isObject()&&!activeCheck(check));
     if(check.isEmpty()){summary->setText(tr("아직 저장 검사가 없습니다. 경로가 등록된 프로젝트를 저장하면 검사가 시작됩니다."));table->setRowCount(0);comparison->clear();return;}
     const auto reports=check.value("reports").toArray();int passed=0;
     for(auto value:reports)if(value.toObject().value("ok").toBool())++passed;
-    auto text=tr("%1 · 처리 %2/%3 · 통과 %4 · 저장한 사본 r%5").arg(goalSaveCheckCancelPending?tr("취소 중…"):checkStatus(check.value("status").toString())).arg(check.value("completed").toInt()).arg(reports.size()).arg(passed).arg(check.value("testedRevision").toInt());
+    auto text=tr("%1 · 처리 %2/%3 · 통과 %4 · 저장한 사본 r%5").arg(!goalSaveCheckCancelId.isEmpty()?tr("취소 중…"):checkStatus(check.value("status").toString())).arg(check.value("completed").toInt()).arg(reports.size()).arg(passed).arg(check.value("testedRevision").toInt());
     if(activeCheck(check)&&check.value("stage")=="comparison")text+="\n"+tr("경로 검사가 끝나 기준 기록과 비교하는 중입니다.");
     if(check.value("stale").toBool())text+="\n"+tr("검사 후 초안 또는 경로가 변경되었습니다. 이 결과는 이전 사본의 결과입니다.");
     if(!check.value("error").toString().isEmpty())text+="\n"+check.value("error").toString();
