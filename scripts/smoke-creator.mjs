@@ -26,7 +26,7 @@ await run('presentation-updates',['--test','--test-concurrency=1','tests/visual/
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
 await run('route-batches',['--test','--test-concurrency=1','tests/qt-studio/goal-route-batches.test.mjs']);
 await run('background-baselines',['--test','--test-concurrency=1','tests/qt-studio/baseline-background.test.mjs','tests/native/inspect-cache.test.mjs','tests/analysis/goal-history.test.mjs']);
-await run('background-save',['--test','--test-concurrency=1','tests/qt-studio/save-background.test.mjs','tests/analysis/goal-impact.test.mjs','tests/analysis/goal-approvals.test.mjs','tests/analysis/goal-partial.test.mjs','tests/analysis/goal-review-graph.test.mjs']);
+await run('background-save',['--test','--test-concurrency=1','tests/qt-studio/save-background.test.mjs','tests/analysis/goal-impact.test.mjs','tests/analysis/goal-impact-capacity.test.mjs','tests/analysis/goal-approvals.test.mjs','tests/analysis/goal-partial.test.mjs','tests/analysis/goal-review-graph.test.mjs']);
 await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs','tests/visual/resume-context.test.mjs','tests/validation/readable-screen-activation.test.mjs']);
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
 if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/native-player/receipt-text.test.mjs','tests/journey/calendar-players.test.mjs']);

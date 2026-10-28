@@ -5,6 +5,7 @@ import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 import {saveAndWait} from '../helpers/save-check.mjs';
+import {mkdirSync,rmdirSync} from 'node:fs';
 
 async function fixture(t){
   await mkdir('.cache/save-background',{recursive:true});
@@ -119,4 +120,26 @@ test('a delayed cancellation token cannot stop the automatic check from a newer 
   assert.equal(service.savedGoalChecks.pending.id,current.id);
   const cancelled=(await call('goalSaveCheckStop',{checkId:current.id})).goalSaveCheck;
   assert.equal(cancelled.id,current.id);assert.equal(cancelled.status,'cancelled');
+});
+
+test('archive failure remains visible after completion and identical save retries after recovery',{timeout:30000},async t=>{
+  const {service,root,call}=await fixture(t);
+  for(const entry of (await call('goalRoutesList')).goalRoutes)await call('goalBaselineSave',{routeId:entry.route.id,name:'Before editing · '+entry.route.name});
+  const first=(await saveAndWait(service)).goalSaveCheck;assert.equal(first.goalImpact.ok,true);assert.equal(first.goalImpact.archived,true);
+  const manager=service.goalRouteBatches,start=manager.start.bind(manager);manager.jobs.delete(first.batchId);
+  let blockedFile;
+  manager.start=async(...args)=>{
+    const job=await start(...args);manager.start=start;
+    manager.get(root,job.id).worker.prependListener('message',message=>{
+      if(message.goalImpact?.id){blockedFile=path.join(root,'.studio','goal-impact-'+message.goalImpact.id+'.json');mkdirSync(blockedFile);}
+    });return job;
+  };
+  const failed=(await saveAndWait(service)).goalSaveCheck;
+  assert.equal(failed.status,'completed','Route completion remains separate from comparison archival.');
+  assert.equal(failed.goalImpact.archived,false);assert.equal(failed.goalImpact.ok,false);assert.equal(failed.goalImpact.complete,false);assert.equal(failed.goalImpact.stale,true);assert.ok(failed.goalImpact.archiveError);
+  const persisted=JSON.parse(await readFile(failed.file,'utf8'));assert.equal(persisted.goalImpact.archiveError,failed.goalImpact.archiveError);
+  assert.equal((await readFile(failed.file,'utf8')).includes('\n  '),false,'Large enclosing batch reports use compact lossless JSON.');
+  rmdirSync(blockedFile);
+  const latest=(await call('goalImpactLatest')).goalImpact;assert.equal(latest.id,failed.goalImpact.id,'An older successful disk report must not hide the latest archive failure.');assert.equal(latest.ok,false);assert.ok(latest.archiveError);
+  const retry=(await saveAndWait(service)).goalSaveCheck;assert.notEqual(retry.id,failed.id);assert.equal(retry.goalImpact.archived,true);assert.equal(retry.goalImpact.ok,true);
 });

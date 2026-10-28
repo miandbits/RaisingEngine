@@ -1,4 +1,7 @@
 [
+["비교 보고서 저장 실패 · 승인과 호환성 확인에 사용할 수 없습니다.","Comparison report could not be saved · unavailable for approval or compatibility confirmation.","比較レポートを保存できませんでした・承認や互換性の確認には使用できません。"],
+["기준 비교 처리 오류 · 결과를 승인하거나 호환성 통과로 사용할 수 없습니다.","Baseline comparison processing error · results cannot be approved or treated as compatible.","基準比較の処理エラー・結果の承認や互換性の確認には使用できません。"],
+[" · 비교 오류"," · comparison error","・比較エラー"],
 ["상세 기록 %1/%2","Recording details %1/%2","詳細記録 %1/%2"],
 ["경로 재생 %1/%2","Replaying route %1/%2","経路再生 %1/%2"],
 ["등록 완료","Registered","登録完了"],

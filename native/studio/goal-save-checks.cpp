@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "goal-impact-status.hpp"
 #include <QDialog>
 #include <QHeaderView>
 #include <QPushButton>
@@ -59,10 +60,12 @@ void StudioWindow::acceptGoalSaveCheck(QJsonObject check) {
     // Cache baseline results without opening a dialog or stealing typing focus.
     // A repeated save may retain this check while advancing the view revision.
     if(check.value("goalImpact").isObject()){
+      auto previous=lastGoalImpact;previous.remove("viewRevision");
       lastGoalImpact=check.value("goalImpact").toObject();lastGoalImpact["sourceVersion"]=check.value("sourceVersion");
       lastGoalImpact["viewRevision"]=check.value("sourceVersion")==view.value("draftVersion")?view.value("revision"):check.value("testedRevision");
       if(check.value("stale").toBool())lastGoalImpact["stale"]=true;
-      if(firstResult)emit goalImpactReady(lastGoalImpact);
+      auto comparable=lastGoalImpact;comparable.remove("viewRevision");
+      if(firstResult||previous!=comparable)emit goalImpactReady(lastGoalImpact);
     }
   }
   refreshGoalSaveCheck();
@@ -75,7 +78,9 @@ void StudioWindow::refreshGoalSaveCheck() {
   if(!check.isEmpty()){
     const bool stale=check.value("stale").toBool()||check.value("sourceVersion")!=view.value("draftVersion");check["stale"]=stale;
     auto text=tr("저장 검사 · %1 · %2/%3").arg(checkStatus(check.value("status").toString())).arg(check.value("completed").toInt()).arg(check.value("reports").toArray().size());
-    if(stale)text+=tr(" · 이전 사본");
+    const bool comparisonFailed=goalImpactFatal(check.value("goalImpact").toObject());
+    if(comparisonFailed)text+=tr(" · 비교 오류");
+    if(stale&&(!comparisonFailed||check.value("sourceVersion")!=view.value("draftVersion")||check.value("routesChanged").toBool()||check.value("baselinesChanged").toBool()))text+=tr(" · 이전 사본");
     goalSaveCheckButton->setText(text);goalSaveCheckButton->setAccessibleName(text);
   }
   emit goalSaveCheckReady(check);
@@ -123,7 +128,8 @@ void StudioWindow::goalSaveChecksDialog() {
     for(auto value:reports)if(value.toObject().value("ok").toBool())++passed;
     auto text=tr("%1 · 처리 %2/%3 · 통과 %4 · 저장한 사본 r%5").arg(!goalSaveCheckCancelId.isEmpty()?tr("취소 중…"):checkStatus(check.value("status").toString())).arg(check.value("completed").toInt()).arg(reports.size()).arg(passed).arg(check.value("testedRevision").toInt());
     if(activeCheck(check)&&check.value("stage")=="comparison")text+="\n"+tr("경로 검사가 끝나 기준 기록과 비교하는 중입니다.");
-    if(check.value("stale").toBool())text+="\n"+tr("검사 후 초안 또는 경로가 변경되었습니다. 이 결과는 이전 사본의 결과입니다.");
+    const bool inputsChanged=check.value("sourceVersion")!=view.value("draftVersion")||check.value("routesChanged").toBool()||check.value("baselinesChanged").toBool();
+    if(inputsChanged||(check.value("stale").toBool()&&!goalImpactFatal(check.value("goalImpact").toObject())))text+="\n"+tr("검사 후 초안 또는 경로가 변경되었습니다. 이 결과는 이전 사본의 결과입니다.");
     if(!check.value("error").toString().isEmpty())text+="\n"+check.value("error").toString();
     summary->setText(text);summary->setToolTip(check.value("contentFingerprint").toString()+"\n"+check.value("file").toString());
     table->setRowCount(reports.size());
@@ -132,9 +138,7 @@ void StudioWindow::goalSaveChecksDialog() {
     if(result.isEmpty())comparison->setText(tr("기준 비교는 경로 검사와 별도입니다. 기준이 없거나 검사가 끝나지 않으면 호환성 통과로 볼 수 없습니다."));
     else {
       QStringList lines;
-      if(result.value("stale").toBool())lines<<tr("기준 비교가 현재 초안과 다릅니다. 이전 사본의 결과입니다.");
-      if(!result.value("error").toString().isEmpty())lines<<tr("기준 비교 오류: %1").arg(result.value("error").toString());
-      if(!result.value("complete").toBool())lines<<tr("기준 비교 미완료 · 호환성 통과가 아닙니다.");
+      const auto problem=goalImpactWarning(result);if(!problem.isEmpty())lines<<problem;
       if(!counts.isEmpty())lines<<tr("기준 비교 · 기준 없음 %1 · 변화 %2 · 실패 %3 · 미완료 %4 · 오류 %5").arg(counts.value("missing-baseline").toInt()).arg(counts.value("changed").toInt()).arg(counts.value("failed").toInt()).arg(counts.value("incomplete").toInt()).arg(counts.value("error").toInt()+result.value("baselineErrors").toArray().size());
       if(lines.isEmpty())lines<<tr("기준 비교 결과를 열어 확인하세요.");
       comparison->setText(lines.join("\n"));

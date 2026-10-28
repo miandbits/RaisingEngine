@@ -191,7 +191,12 @@ export class QtStudioService {
         catch(error){extra.goalImpact={rows:[],error:'기준 변경은 완료되었으나 재검사에 실패했습니다: '+error.message,stale:true,complete:false};}
         break;
       }
-      case 'goalImpactLatest': {const content=await this.debugSnapshot(params.revision);extra={goalImpact:await latestGoalImpact(this.editor.root,content)};break;}
+      case 'goalImpactLatest': {
+        const content=await this.debugSnapshot(params.revision),saved=await this.savedGoalChecks.status(this.editor.root,this.editor.draftVersion());
+        // A newest comparison whose archive failed must remain visible instead
+        // of silently falling back to an older successful report on disk.
+        extra={goalImpact:saved?.goalImpact?.archiveError&&!['queued','running','cancelling'].includes(saved.status)?{...saved.goalImpact,stale:true}:await latestGoalImpact(this.editor.root,content)};break;
+      }
       case 'goalBaselineList': this.editor.current(params.revision);extra={goalBaselines:await listGoalBaselines(this.editor.root)};break;
       case 'goalBaselineSave': {
         const content=await this.debugSnapshot(params.revision);

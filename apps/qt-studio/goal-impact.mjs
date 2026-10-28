@@ -12,21 +12,24 @@ import {canonicalJson} from '../../dist/packages/project-service/snapshot.js';
 
 export const routeDigest=route=>createHash('sha256').update(canonicalJson(route)).digest('hex');
 const validId=id=>typeof id==='string'&&/^[0-9a-f-]{36}$/.test(id);
+// Full, exact observations drive partial approval. Long campaigns can exceed
+// the former 8 MiB summary limit; keep the same finite budget as each baseline.
+export const MAX_GOAL_IMPACT_BYTES=64*1024*1024;
 const same=(a,b)=>canonicalJson(a??null)===canonicalJson(b??null);
 function inside(root,file){const p=path.relative(root,file);if(p.startsWith('..')||path.isAbsolute(p))throw Error('프로젝트 밖의 검사 결과는 열 수 없습니다.');}
 async function folder(root){const base=await realpath(root),dir=path.join(base,'.studio');await mkdir(dir,{recursive:true});inside(base,await realpath(dir));return dir;}
-async function bounded(file){if((await stat(file)).size>8*1024*1024)throw Error('저장 비교 결과가 크기 제한을 넘었습니다.');return JSON.parse(await readFile(file,'utf8'));}
+async function bounded(file){if((await stat(file)).size>MAX_GOAL_IMPACT_BYTES)throw Error('저장 비교 결과가 64 MiB 제한을 넘었습니다.');const bytes=await readFile(file);if(bytes.length>MAX_GOAL_IMPACT_BYTES)throw Error('저장 비교 결과가 64 MiB 제한을 넘었습니다.');return JSON.parse(bytes.toString('utf8'));}
 export async function readGoalImpact(root,id){
   if(!validId(id))throw Error('잘못된 저장 비교 결과 ID입니다.');
   const dir=await folder(root),file=path.join(dir,'goal-impact-'+id+'.json');inside(dir,await realpath(file));const report=await bounded(file);
-  if(report.version!==1||report.id!==id||!Array.isArray(report.rows))throw Error('지원하지 않거나 손상된 저장 비교 결과입니다.');return report;
+  if(report.version!==1||report.id!==id||!Array.isArray(report.rows))throw Error('지원하지 않거나 손상된 저장 비교 결과입니다.');return {...report,archived:true};
 }
 export async function archiveGoalImpacts(root,report){
   const dir=await folder(root),file=path.join(dir,'goal-impact-'+report.id+'.json');
-  const text=JSON.stringify(report);if(Buffer.byteLength(text)>8*1024*1024)throw Error('저장 비교 결과가 8 MiB를 넘었습니다. 경로를 나누어 검사하세요.');
+  const text=JSON.stringify(report);if(Buffer.byteLength(text)>MAX_GOAL_IMPACT_BYTES)throw Error('저장 비교 결과가 64 MiB를 넘었습니다. 경로를 나누어 검사하세요.');
   const temp=path.join(dir,'.impact-'+randomUUID()+'.tmp');
   try{await writeFile(temp,text,{flag:'wx'});await rename(temp,file);}finally{await unlink(temp).catch(()=>{});}
-  return {...report,file};
+  return {...report,file,archived:true};
 }
 export async function latestGoalImpact(root,content){
   const dir=await folder(root),files=(await readdir(dir)).filter(f=>/^goal-impact-[0-9a-f-]{36}\.json$/.test(f));
@@ -97,6 +100,7 @@ export async function publishGoalImpacts(editor,content,revision,report){
 }
 export async function resolveGoalImpact(root,content,id,index){
   const report=await readGoalImpact(root,id);
+  if(report.error||report.archiveError||report.archived===false)throw Error('비교 보고서를 저장하지 못했습니다. 다시 저장해 검사하세요.');
   if(report.stale)throw Error('검사 도중 기준 기록이 변경되었습니다. 다시 검사하세요.');
   if(report.fingerprint!==content.contentFingerprint)throw Error('검사 이후 콘텐츠가 변경되었습니다. 다시 저장해 검사한 뒤 그래프를 여세요.');
   if(!Number.isInteger(index)||index<0||index>=report.rows.length)throw Error('잘못된 저장 비교 결과 행입니다.');

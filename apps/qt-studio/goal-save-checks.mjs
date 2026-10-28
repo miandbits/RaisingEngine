@@ -22,7 +22,8 @@ export class SavedGoalChecks {
     const baselineStamp=await goalBaselineInputStamp(root);
     const identity=digest({sourceVersion,routes:prepared.entries.map(e=>[e.file,e.sourceHash]),baselineStamp});
     // Repeated saves of exactly the same inputs do not restart useful work.
-    if(this.latest?.root===root&&this.latest.identity===identity&&(['queued','running'].includes(this.latest.status)||this.latest.status==='completed'&&this.batches.jobs.has(this.latest.batchId)))return this.public(this.latest);
+    const impact=this.latest?.goalImpact,reusableComparison=!impact?.error&&!impact?.archiveError&&impact?.archived!==false&&!impact?.counts?.error&&!impact?.counts?.incomplete;
+    if(this.latest?.root===root&&this.latest.identity===identity&&(['queued','running'].includes(this.latest.status)||this.latest.status==='completed'&&this.batches.jobs.has(this.latest.batchId)&&reusableComparison))return this.public(this.latest);
     this.stop();
     const record={id:randomUUID(),root,origin:'save',status:'queued',stage:'routes',revision,testedRevision:revision,sourceVersion,baselineStamp,contentFingerprint:content.contentFingerprint,createdAt:new Date().toISOString(),ok:false,completed:0,stale:false,limits:{routeTimeoutMs:120000,batchTimeoutMs:900000},reports:prepared.entries.map(e=>({id:e.route?.id??path.basename(e.file,'.json'),name:e.route?.name??path.basename(e.file),routeRevision:e.revision??null,status:'not-run',ok:false})),identity,content,prepared:{...prepared,impact:{root,revision,baselineStamp}},epoch:this.epoch};
     this.latest=record;this.pending=record;

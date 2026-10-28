@@ -82,10 +82,10 @@ export class GoalRouteBatches {
         const terminalStatus=reason??(job.reports.every(r=>r.ok)?'completed':job.reports.some(r=>r.status==='timed-out')?'timed-out':'failed');
         const terminalOk=terminalStatus==='completed'&&job.reports.every(r=>r.ok);job.finishedAt=new Date().toISOString();
         let completionError=null;
-        if(job.goalImpact?.id){try{job.goalImpact=await archiveGoalImpacts(base,job.goalImpact);}catch(error){job.goalImpact={...job.goalImpact,stale:true,complete:false,error:'Could not save comparison report: '+error.message};}}
+        if(job.goalImpact?.id){try{job.goalImpact=await archiveGoalImpacts(base,job.goalImpact);}catch(error){job.goalImpact={...job.goalImpact,stale:true,complete:false,ok:false,archived:false,archiveError:String(error.message),error:'Could not save comparison report: '+error.message};}}
         try{await retireProcess(worker);if(baseline)for(let index=0;index<entries.length;index++)await unlink(file+'.baseline-'+index+'.pending').catch(error=>{if(error.code!=='ENOENT')throw error;});}catch(error){completionError=String(error.message);}
         if(completionError)job.error=completionError;
-        job.persistence=writeFile(file,JSON.stringify({...this.public(job),status:completionError?'failed':terminalStatus,ok:!completionError&&terminalOk},null,2),{flag:'wx'}).catch(e=>{completionError='Could not save batch report: '+e.message;});
+        job.persistence=writeFile(file,JSON.stringify({...this.public(job),status:completionError?'failed':terminalStatus,ok:!completionError&&terminalOk}),{flag:'wx'}).catch(e=>{completionError='Could not save batch report: '+e.message;});
         await job.persistence;
         job.status=completionError?'failed':terminalStatus;job.ok=!completionError&&terminalOk;if(completionError)job.error=completionError;
         job.resolveCompletion();job.worker=null;job.finish=null;job.resolveCompletion=null;
