@@ -2,6 +2,7 @@ import {verifyProjectBackup,restoreProjectBackup} from './backup-restore.mjs';
 import {applyProjectReleaseSettings} from '../../dist/packages/studio-service/release-import.js';
 import {prepareRelease} from '../../dist/packages/export-service/release-metadata.js';
 import {GoalRouteBatches} from './goal-route-batches.mjs';
+import {SavedGoalChecks} from './goal-save-checks.mjs';
 import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePriorityProfile} from './analysis-priorities.mjs';
 import {packagedStudioPluginStore} from './storage-paths.mjs';
 import { DraftRecovery } from './recovery.mjs';
@@ -63,6 +64,7 @@ export class QtStudioService {
   debugSession = null;
   analysisJobs = new AnalysisJobs();
   goalRouteBatches = new GoalRouteBatches();
+  savedGoalChecks = new SavedGoalChecks(this.goalRouteBatches);
   goalSearchJobs = new GoalSearchJobs();
   goalComparisons = new GoalComparisons();
   goalCiReports = new GoalCiReports();
@@ -113,6 +115,11 @@ export class QtStudioService {
     if (method === 'updateCompatibility') return {error:null,updateCompatibility:await this.updateCompatibility.check(this.editor,params)};
     if (method === 'presentationUpdateCheck') return {error:null,presentationUpdate:await this.presentationUpdates.check(this,params)};
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
+    if(method==='goalSaveCheckStatus'||method==='goalSaveCheckStop'){
+      if(params.root!==this.editor.root)throw Error('Saved checks do not belong to the current project.');
+      if(method==='goalSaveCheckStop')this.savedGoalChecks.stop();
+      return {error:null,goalSaveCheck:await this.savedGoalChecks.status(params.root,this.editor.draftVersion())};
+    }
     if(method==='goalRouteBatchStatus'||method==='goalRouteBatchStop'){
       if(params.root!==this.editor.root)throw Error('This route batch does not belong to the current project.');
       const goalRouteBatch=method==='goalRouteBatchStop'?this.goalRouteBatches.stop(params.root,params.jobId):await this.goalRouteBatches.status(params.root,params.jobId,this.editor.draftVersion());
@@ -373,17 +380,13 @@ export class QtStudioService {
         await this.editor.validate(this.editor.revision); break;
       case 'save': {
         await this.editor.save(params.revision);
-        const hasRoutes=await access(path.join(this.editor.root,'playtests','routes')).then(()=>true,()=>false);
-        if(hasRoutes){
-          let content;
-          try {content=await this.debugSnapshot(this.editor.revision);}catch(error){extra={goalReport:{ok:false,reports:[],error:error.message},goalImpact:{rows:[],error:error.message,complete:false,stale:true}};}
-          if(content){
-            try {if((await listGoalRoutes(this.editor.root)).length){const report=await checkGoalRoutes(this.editor.root,content);await this.editor.assertDiskUnchanged();extra.goalReport={...report,testedRevision:this.editor.revision};}}
-            catch(error){extra.goalReport={ok:false,reports:[],error:error.message,testedRevision:this.editor.revision};}
-            try {const report=await checkGoalImpacts(this.editor.root,content,this.editor.revision);extra.goalImpact=await publishGoalImpacts(this.editor,content,this.editor.revision,report);}
-            catch(error){extra.goalImpact={rows:[],error:error.message,complete:false,stale:true,testedRevision:this.editor.revision};}
-          }
-        }
+        // Disk persistence is complete. Check startup is a separate outcome;
+        // replay and impact comparison run from this immutable saved snapshot.
+        try {
+          const hasRoutes=await access(path.join(this.editor.root,'playtests','routes')).then(()=>true,()=>false);
+          if(hasRoutes){const content=await this.debugSnapshot(this.editor.revision);extra.goalSaveCheck=await this.savedGoalChecks.enqueue(this.editor.root,content,this.editor.draftVersion(),this.editor.revision);}
+          else {this.savedGoalChecks.stop();extra.goalSaveCheck=null;}
+        }catch(error){extra.goalSaveCheck=this.savedGoalChecks.failed(this.editor.root,this.editor.draftVersion(),this.editor.revision,error);}
         break;
       }
       case 'validate': await this.editor.validate(params.revision); break;

@@ -3940,5 +3940,22 @@
 ["능력·자원은 최대 100개까지 선택할 수 있습니다.","Select up to 100 attributes and resources.","能力・資源は100個まで選択できます。"],
 ["중립적인 읽기 모양 사용 (모든 읽기 화면의 배경과 공통 버튼)","Use neutral reading appearance (background and shared controls on all readable screens)","中立色の読む表示を使う（すべての読みやすい画面の背景と共通ボタン）"],
 ["\n공통 읽기 배경을 중립적인 진한 남색으로, 공통 버튼을 밝은 색으로 변경합니다.","\nChange the shared reading background to neutral dark slate and shared controls to a light palette.","\n共通の読む背景を濃いスレート色に、共通ボタンを明るい配色に変更します。"],
-["선택…","Choose…","選択…"]
+["선택…","Choose…","選択…"],
+["대기 중", "Queued", "待機中"],
+["저장 검사 진행 · 결과…", "Saved-game checks…", "保存時チェックの進行・結果…"],
+["저장 검사 진행 · 결과", "Saved-game checks", "保存時チェックの進行・結果"],
+["저장된 사본의 검사 진행과 결과를 확인합니다. 편집을 계속할 수 있습니다.", "View checks of the saved snapshot. You can keep editing.", "保存時点のコピーのチェック状況と結果を確認します。編集は続けられます。"],
+["저장 검사 · %1 · %2/%3", "Saved checks · %1 · %2/%3", "保存時チェック・%1・%2/%3"],
+[" · 이전 사본", " · Earlier snapshot", "・以前のコピー"],
+["저장은 이미 완료되었습니다. 검사는 저장 당시의 고정 사본을 사용하며 이 창을 닫아도 계속됩니다. 다시 저장하면 최신 사본으로 교체합니다. 프로젝트를 바꾸거나 에디터를 종료하면 진행 중인 검사를 취소합니다.", "Your project is saved. Checks use a fixed snapshot and continue when this window closes. Saving again replaces it with the latest snapshot. Changing projects or quitting the editor cancels active checks.", "プロジェクトは保存済みです。チェックは保存時点の固定コピーを使い、このウィンドウを閉じても続行します。再保存すると最新のコピーに切り替わります。プロジェクトの変更やエディターの終了で進行中のチェックを中止します。"],
+["아직 저장 검사가 없습니다. 경로가 등록된 프로젝트를 저장하면 검사가 시작됩니다.", "No saved-game check yet. Save a project with registered routes to begin.", "保存時チェックはまだありません。経路が登録されたプロジェクトを保存すると開始します。"],
+["%1 · 처리 %2/%3 · 통과 %4 · 저장한 사본 r%5", "%1 · Processed %2/%3 · Passed %4 · Saved snapshot r%5", "%1・処理 %2/%3・合格 %4・保存時点のコピー r%5"],
+["경로 검사가 끝나 기준 기록과 비교하는 중입니다.", "Routes finished; comparing with baseline records.", "経路チェックが完了し、基準記録と比較しています。"],
+["기준 비교는 경로 검사와 별도입니다. 기준이 없거나 검사가 끝나지 않으면 호환성 통과로 볼 수 없습니다.", "Baseline comparison is separate from route replay. Missing baselines or incomplete checks do not establish compatibility.", "基準比較と経路再生は別のチェックです。基準がない場合やチェックが未完了の場合、互換性を確認したことにはなりません。"],
+["기준 비교가 현재 초안과 다릅니다. 이전 사본의 결과입니다.", "Baseline comparison refers to an earlier snapshot, not the current draft.", "基準比較は現在の下書きではなく、以前のコピーの結果です。"],
+["기준 비교 오류: %1", "Baseline comparison error: %1", "基準比較エラー：%1"],
+["기준 비교 미완료 · 호환성 통과가 아닙니다.", "Baseline comparison incomplete · Compatibility is not verified.", "基準比較は未完了・互換性は未確認です。"],
+["기준 비교 · 기준 없음 %1 · 변화 %2 · 실패 %3 · 미완료 %4 · 오류 %5", "Baseline comparison · Missing %1 · Changed %2 · Failed %3 · Incomplete %4 · Errors %5", "基準比較・基準なし %1・変更 %2・失敗 %3・未完了 %4・エラー %5"],
+["기준 비교 결과를 열어 확인하세요.", "Open the baseline comparison to review its results.", "基準比較を開いて結果を確認してください。"],
+["수동 검사는 현재 초안과 경로의 고정 사본을 사용합니다. 편집은 계속할 수 있습니다. 취소·시간 초과·미실행은 통과가 아닙니다. 최근 8개의 종료된 배치 보고서와 입력을 보관합니다. 저장 검사는 별도로 백그라운드에서 진행하며 상태 표시줄에서 확인할 수 있습니다.", "Manual checks use fixed copies of the current draft and routes. You can keep editing. Cancelled, timed-out and unrun routes are not passes. The latest eight completed batch reports and inputs are retained. Saved-game checks run separately in the background; follow them in the status bar.", "手動チェックは現在の下書きと経路の固定コピーを使います。編集は続けられます。中止、時間切れ、未実行は合格ではありません。直近8件の終了したバッチの報告と入力を保持します。保存時チェックは別途バックグラウンドで進み、ステータスバーで確認できます。"]
 ]

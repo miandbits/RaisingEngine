@@ -1,3 +1,4 @@
+import {saveAndWait} from '../helpers/save-check.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdtemp,cp,mkdir} from 'node:fs/promises';
@@ -26,14 +27,14 @@ test('committed pilot routes: recording import, latest content replay, every sav
  // A harmless content edit changes the fingerprint; stored commands are re-run, not invalidated.
  const manifest=service.editor.documents.find(d=>d.file==='project.json');const data=structuredClone(manifest.data);data.description+=' 회귀 검사 문구 변경';
  await call('edit',{edit:{type:'replace',file:'project.json',data}});
- const afterEdit=await call('save');assert.equal(afterEdit.goalReport.ok,true);assert.ok(afterEdit.goalReport.reports.every(r=>r.contentChanged));
+ const afterEdit=await saveAndWait(service);assert.equal(afterEdit.goalReport.ok,true);assert.ok(afterEdit.goalReport.reports.every(r=>r.contentChanged));
  // A legal balance edit keeps commands valid but changes the achieved ending.
  const ending=service.editor.documents.find(d=>d.kind==='ending'&&d.data.id==='knight');const harder=structuredClone(ending.data);
  harder.requirements={op:'compare',comparator:'gte',left:{op:'read',target:{kind:'attribute',attributeId:'skill'}},right:{op:'literal',value:80}};
  await call('edit',{edit:{type:'replace',file:ending.file,data:harder}});
- const changed=await call('save');assert.equal(changed.error,null);assert.equal(changed.goalReport.ok,false);const failed=changed.goalReport.reports.find(r=>r.id==='success');assert.equal(failed.failure.code,'TARGET_NOT_REACHED');assert.equal(failed.failure.step,failed.commands);assert.equal(failed.actualEnding,'neighbor');
+ const changed=await saveAndWait(service);assert.equal(changed.error,null);assert.equal(changed.goalReport.ok,false);const failed=changed.goalReport.reports.find(r=>r.id==='success');assert.equal(failed.failure.code,'TARGET_NOT_REACHED');assert.equal(failed.failure.step,failed.commands);assert.equal(failed.actualEnding,'neighbor');
  assert.equal(changed.goalReport.reports.filter(r=>r.ok).length,2);
- await call('edit',{edit:{type:'replace',file:ending.file,data:ending.data}});assert.equal((await call('save')).goalReport.ok,true);
+ await call('edit',{edit:{type:'replace',file:ending.file,data:ending.data}});assert.equal((await saveAndWait(service)).goalReport.ok,true);
  // A removed referenced command fails at its exact index, and the stored witness survives.
  const routes=await listGoalRoutes(root),original=routes.find(e=>e.route.id==='success');const invalid=structuredClone(original.route);invalid.commands[4]={type:'executeAction',actionId:'deleted-action',quantity:1};
  const snapshot=(await buildSnapshot(await loadProject(root))).snapshot;const failure=await runGoalRoute(snapshot,invalid);assert.equal(failure.ok,false);assert.equal(failure.failure.step,5);assert.equal(failure.executed,4);

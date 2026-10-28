@@ -195,6 +195,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("완결 샘플 제작…"),this,&StudioWindow::createBenchmark)->setObjectName("createBenchmark");
   designMenu->addAction(tr("제작 시험 검증…"),this,&StudioWindow::runAssuranceDialog)->setObjectName("runAssurance");
   designMenu->addAction(tr("목표 경로 기록 · 회귀 검사…"),this,&StudioWindow::goalRoutesDialog)->setObjectName("goalRoutes");
+  designMenu->addAction(tr("저장 검사 진행 · 결과…"),this,&StudioWindow::goalSaveChecksDialog)->setObjectName("goalSaveChecks");
   designMenu->addAction(tr("저장 기준 비교 결과…"),this,[this]{goalImpactDialog();})->setObjectName("goalImpact");
   designMenu->addAction(tr("GitHub Actions · CI 경로 검토…"),this,[this]{goalCiDialog();})->setObjectName("goalCiOpen");
   designMenu->addAction(tr("연출 작업실…"),this,&StudioWindow::editDirection)->setObjectName("editDirection");
@@ -955,6 +956,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(pluginHealth, &QPushButton::clicked, this, &StudioWindow::showPluginManager);
   status = new QLabel;
   statusBar()->addPermanentWidget(status);
+  setupGoalSaveChecks();
   resizeDocks({treeDock, propertiesDock}, {210, 330}, Qt::Horizontal);
   resizeDocks({bottomDock}, {180}, Qt::Vertical);
   rendererPreview=new RendererPreviewDock(this);
@@ -1225,6 +1227,8 @@ void StudioWindow::request(QString method, QJsonObject params,
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
+      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelPending=false;goalSaveCheckPolling->stop();
+      if(auto dialog=findChild<QDialog*>("goalSaveChecksDialog"))dialog->close();
       firstGameObserved.clear();
       ProjectManager::remember(view.value("root").toString());
       if(recordingRoot!=view.value("root").toString()){lastRecording.clear();lastGoalReport={};lastGoalImpact={};recordingRoot=view.value("root").toString();if(auto dialog=findChild<QDialog*>("goalRoutesDialog"))dialog->close();}
@@ -1257,7 +1261,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     }
     if (done)
       done(reply);
-    if(reply.value("goalImpact").isObject()&&method=="save")acceptGoalImpact(reply.value("goalImpact").toObject());
+    if(method=="save"&&reply.contains("goalSaveCheck"))acceptGoalSaveCheck(reply.value("goalSaveCheck").toObject());
     // Loading runs after the caller's continuation so a plugin's activate()
     // request cannot pre-empt a chained editor request.
     if (pluginReply) applyPluginState(plugins->state());

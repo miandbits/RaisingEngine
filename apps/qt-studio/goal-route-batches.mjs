@@ -4,6 +4,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {mkdir,realpath,readFile,readdir,writeFile,unlink,stat,lstat,open} from 'node:fs/promises';
 import path from 'node:path';
 import {listGoalRoutes,readGoalRouteBytes} from './goal-routes.mjs';
+import {archiveGoalImpacts} from './goal-impact.mjs';
 const hash=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
 const uuid=/^[a-f0-9-]{36}$/;
 const MAX_INPUT=64*1024*1024, RETAIN=8;
@@ -38,17 +39,24 @@ async function retireProcess(child){
 }
 export class GoalRouteBatches {
   jobs=new Map(); starting=false;
-  async start(root,content,sourceVersion,revision,params={},guard=async()=>{}){
+  async prepare(root,params={}){
+    const base=await realpath(root),ids=params.ids??[];
+    if(!Array.isArray(ids)||ids.length>128||ids.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id))||new Set(ids).size!==ids.length)throw Error('Choose distinct valid route IDs.');
+    return {root:base,entries:await capture(base,ids)};
+  }
+  async start(root,content,sourceVersion,revision,params={},guard=async()=>{},prepared=null){
     if(this.starting||[...this.jobs.values()].some(j=>j.status==='running'||j.status==='cancelling'))throw Error('A route batch is already running. Wait or cancel it first.');
     this.starting=true;
     try{
       const limits=batchLimits(params.limits),base=await realpath(root);
       const ids=params.ids??[];
       if(!Array.isArray(ids)||ids.length>128||ids.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id))||new Set(ids).size!==ids.length)throw Error('Choose distinct valid route IDs.');
-      const entries=await capture(base,ids);
+      const entries=prepared?structuredClone(prepared.entries):await capture(base,ids);
+      if(prepared&&prepared.root!==base)throw Error('Captured routes belong to another project.');
       if(!entries.length||ids.length&&entries.length!==ids.length)throw Error('One or more selected routes are missing. Refresh the route list.');
       if(params.routeRevisions!==undefined){const expected=params.routeRevisions;if(!expected||typeof expected!=='object'||Array.isArray(expected)||Object.keys(expected).length!==entries.length||entries.some(e=>expected[e.route?.id??path.basename(e.file,'.json')]!==(e.revision??null)))throw Error('Routes changed. Refresh the route list before starting.');}
-      const inputs=JSON.stringify({content,entries});if(Buffer.byteLength(inputs)>MAX_INPUT)throw Error('A route batch snapshot and routes must fit within 64 MiB. Select fewer routes.');
+      const impact=prepared?.impact??null;
+      const inputs=JSON.stringify({content,entries,...(impact?{impact}:{})});if(Buffer.byteLength(inputs)>MAX_INPUT)throw Error('A route batch snapshot and routes must fit within 64 MiB. Select fewer routes.');
       const dir=await directory(base);await guard();
       // Bound only this feature's owned archives; unrelated automatic reports are retained.
       const files=[];
@@ -61,7 +69,7 @@ export class GoalRouteBatches {
       const job={version:1,kind:'goal-route-batch',id,root:base,revision,testedRevision:revision,sourceVersion,contentFingerprint:content.contentFingerprint,snapshotHash:hash(content),inputHash:hash(inputs),routeSelection:identity(entries),limits,status:'running',ok:false,createdAt:new Date().toISOString(),activeIndex:null,completed:0,reports:entries.map(e=>({id:e.route?.id??path.basename(e.file,'.json'),name:e.route?.name??path.basename(e.file),routeRevision:e.revision??null,status:'not-run',ok:false})),file};
       const inputFile=file.replace(/\.json$/,'.inputs.json');
       await writeFile(inputFile,inputs,{flag:'wx'});
-      try{await guard();const fresh=new Map(identity(await capture(base,ids)).map(e=>[e.id,e]));if(job.routeSelection.some(e=>JSON.stringify(fresh.get(e.id))!==JSON.stringify(e)))throw Error('Routes changed while preparing the batch. Refresh and try again.');}catch(error){await unlink(inputFile).catch(()=>{});throw error;}
+      try{await guard();const fresh=new Map(identity(prepared?entries:await capture(base,ids)).map(e=>[e.id,e]));if(job.routeSelection.some(e=>JSON.stringify(fresh.get(e.id))!==JSON.stringify(e)))throw Error('Routes changed while preparing the batch. Refresh and try again.');}catch(error){await unlink(inputFile).catch(()=>{});throw error;}
       let worker;try{worker=fork(new URL('./goal-route-batch-worker.mjs',import.meta.url),[],{detached:process.platform!=='win32',windowsHide:true,serialization:'advanced',stdio:['ignore','ignore','pipe','ipc'],execArgv:['--max-old-space-size=512'],env:{...process.env,NODE_OPTIONS:''}});}catch(error){await unlink(inputFile).catch(()=>{});throw error;}
       job.worker=worker;job.completion=new Promise(resolve=>{job.resolveCompletion=resolve;});this.jobs.set(id,job);
       const finish=async(reason)=>{
@@ -71,6 +79,7 @@ export class GoalRouteBatches {
         const terminalStatus=reason??(job.reports.every(r=>r.ok)?'completed':job.reports.some(r=>r.status==='timed-out')?'timed-out':'failed');
         const terminalOk=terminalStatus==='completed'&&job.reports.every(r=>r.ok);job.finishedAt=new Date().toISOString();
         let completionError=null;
+        if(job.goalImpact?.id){try{job.goalImpact=await archiveGoalImpacts(base,job.goalImpact);}catch(error){job.goalImpact={...job.goalImpact,stale:true,complete:false,error:'Could not save comparison report: '+error.message};}}
         try{await retireProcess(worker);}catch(error){completionError=String(error.message);}
         if(completionError)job.error=completionError;
         job.persistence=writeFile(file,JSON.stringify({...this.public(job),status:completionError?'failed':terminalStatus,ok:!completionError&&terminalOk},null,2),{flag:'wx'}).catch(e=>{completionError='Could not save batch report: '+e.message;});
@@ -80,6 +89,8 @@ export class GoalRouteBatches {
       };
       job.finish=finish;
       worker.on('message',message=>{if(job.finished)return;if(message.fatal){job.error=message.fatal;void finish(job.stopReason??'failed');return;}if(message.active!==undefined){job.activeIndex=message.active;job.reports[message.active].status='running';clearTimeout(job.routeTimer);job.routeTimer=setTimeout(()=>{job.error='A route exceeded its deadline without yielding. Remaining routes were not run.';void finish('timed-out');},limits.routeTimeoutMs+2000);job.routeTimer.unref();}
+        if(message.stage)job.stage=message.stage;
+        if(message.goalImpact)job.goalImpact=message.goalImpact;
         if(message.progress)Object.assign(job.reports[message.index],message.progress);
         if(message.report){clearTimeout(job.routeTimer);if(job.stopReason==='timed-out'&&message.report.failure?.code==='CANCELLED')message.report={...message.report,status:'timed-out',failure:{...message.report.failure,code:'TIMEOUT',message:'The whole batch deadline was reached.'}};const old=job.reports[message.index];job.reports[message.index]={...old,...message.report};job.completed++;job.activeIndex=null;}
         if(message.done)void finish(job.stopReason??message.reason);
@@ -87,7 +98,7 @@ export class GoalRouteBatches {
       worker.stderr.on('data',data=>{job.workerError=((job.workerError??'')+data.toString()).slice(-4096);});
       worker.on('error',error=>{job.error=error.message;void finish(job.stopReason??'failed');});
       worker.on('exit',code=>{if(!job.finished){job.error=`Route worker exited without a result (${code}). `+(job.workerError??'');void finish(job.stopReason??'failed');}});
-      try{worker.send({content,entries,limits},error=>{if(error&&!job.finished){job.error=error.message;void finish('failed');}});}catch(error){job.error=error.message;void finish('failed');}
+      try{worker.send({content,entries,limits,...(impact?{impact}:{})},error=>{if(error&&!job.finished){job.error=error.message;void finish('failed');}});}catch(error){job.error=error.message;void finish('failed');}
       job.timer=setTimeout(()=>this.stopJob(job,'timed-out'),limits.batchTimeoutMs);job.timer.unref();
       return this.public(job);
     }finally{this.starting=false;}
@@ -105,5 +116,5 @@ export class GoalRouteBatches {
     if(job.finished){if(job.routeCheck)await job.routeCheck;if(!job.routeCheckComplete){check();await job.routeCheck;}}
     return {...this.public(job),stale:job.sourceVersion!==sourceVersion||!!job.routesChanged,routesChanged:!!job.routesChanged,...(job.routeCheckError?{routeCheckError:job.routeCheckError}:{})};
   }
-  async close(){for(const job of this.jobs.values())this.stopJob(job);await Promise.all([...this.jobs.values()].map(job=>job.completion));}
+  async close(){this.beforeClose?.();for(const job of this.jobs.values())this.stopJob(job);await Promise.all([...this.jobs.values()].map(job=>job.completion));await this.afterClose?.();}
 }

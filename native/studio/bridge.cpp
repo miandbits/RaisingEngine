@@ -46,7 +46,9 @@ StudioBridge::StudioBridge(const QString &engineRoot, QObject *parent)
 StudioBridge::~StudioBridge() {
   process.disconnect(this);
   process.closeWriteChannel();
-  if (!process.waitForFinished(1500)) {
+  // Allow owned workers to observe EOF, cancel, and retire their process tree.
+  // The service has a bounded 2 s cancellation grace plus Windows taskkill (5 s).
+  if (!process.waitForFinished(10000)) {
     process.kill();
     process.waitForFinished(1500);
   }

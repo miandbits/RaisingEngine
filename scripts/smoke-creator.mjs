@@ -25,6 +25,7 @@ await run('balance-periods',['--test','--test-concurrency=1','tests/analysis/bal
 await run('presentation-updates',['--test','--test-concurrency=1','tests/visual/presentation-update.test.mjs','tests/journey/presentation-revision.test.mjs','tests/qt-studio/presentation-updates.test.mjs']);
 await run('named-playtests',['--test','--test-concurrency=1','tests/analysis/goal-regression-cli.test.mjs','tests/analysis/goal-ci.test.mjs','tests/analysis/goal-compare.test.mjs','tests/analysis/goal-routes.test.mjs']);
 await run('route-batches',['--test','--test-concurrency=1','tests/qt-studio/goal-route-batches.test.mjs']);
+await run('background-save',['--test','--test-concurrency=1','tests/qt-studio/save-background.test.mjs','tests/analysis/goal-impact.test.mjs','tests/analysis/goal-approvals.test.mjs','tests/analysis/goal-partial.test.mjs','tests/analysis/goal-review-graph.test.mjs']);
 await run('readable-contract',['--test','tests/visual/readable-layout.test.mjs','tests/visual/reading-history.test.mjs','tests/visual/resume-context.test.mjs','tests/validation/readable-screen-activation.test.mjs']);
 await run('calendar-core',['--test','tests/runtime/calendar.test.mjs']);
 if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-players',['--test','tests/native-player/receipt-text.test.mjs','tests/journey/calendar-players.test.mjs']);

@@ -18,6 +18,7 @@
 class RendererPreviewDock;
 class CanvasStateBar;
 class QPushButton;
+class QTimer;
 class QDockWidget;
 class QMenu;
 class QStackedWidget;
@@ -40,6 +41,7 @@ public:
   QString lastRecording, recordingRoot;
   QJsonObject lastGoalReport;
   QJsonObject lastGoalImpact;
+  QJsonObject lastGoalSaveCheck;
   QString lastError;
   /** Automation: package file used by 패키지 설치… instead of the file dialog. */
   QString pluginPackagePath;
@@ -60,6 +62,7 @@ signals:
   void playerFinished(int code);
   void goalReportReady(QJsonObject report);
   void goalImpactReady(QJsonObject report);
+  void goalSaveCheckReady(QJsonObject check);
   void followAuthoringItem(QString key);
 
 protected:
@@ -210,6 +213,16 @@ private:
   void createBenchmark();
   void runAssuranceDialog();
   void goalRoutesDialog();
+  void setupGoalSaveChecks();
+  void goalSaveChecksDialog();
+  void acceptGoalSaveCheck(QJsonObject check);
+  void refreshGoalSaveCheck();
+  void pollGoalSaveCheck();
+  void stopGoalSaveCheck();
+  QTimer *goalSaveCheckPolling=nullptr;
+  QPushButton *goalSaveCheckButton=nullptr;
+  QString goalSaveCheckRoot, goalSaveCheckReportedId;
+  bool goalSaveCheckCancelPending=false;
   void goalSearchDialog(QJsonObject source = {});
   void goalCompareDialog(QString jobId = {}, QJsonObject impactLink = {});
   void goalImpactDialog(QJsonObject report = {});

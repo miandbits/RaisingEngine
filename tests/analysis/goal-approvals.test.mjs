@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdtemp,cp} from 'node:fs/promises';
 import path from 'node:path';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
+import {saveAndWait} from '../helpers/save-check.mjs';
 import {saveGoalRoute} from '../../apps/qt-studio/goal-routes.mjs';
 import {goalBaselineSelection} from '../../apps/qt-studio/goal-approvals.mjs';
 
@@ -18,7 +19,7 @@ test('review one route, preserve other regressions, reject stale approvals, rest
  const bytes=await readFile(original.file,'utf8');
  const doc=service.editor.documents.find(d=>d.kind==='project'),data=structuredClone(doc.data);data.gameplay.actions.find(a=>a.id==='action-1').costs[0].amount=7;
  await call('edit',{edit:{type:'replace',file:doc.file,data}});
- const report=(await call('save')).goalImpact,index=report.rows.findIndex(r=>r.routeId==='review-a');
+ const report=(await saveAndWait(service)).goalImpact,index=report.rows.findIndex(r=>r.routeId==='review-a');
  assert.equal(report.rows[index].status,'changed');
  const params={impactReportId:report.id,impactRow:index,note:'비용 7로 의도한 조정',name:'승인된 비용'};
  const other=new QtStudioService();await other.handle({method:'open',params:{root}});
@@ -39,10 +40,10 @@ test('review one route, preserve other regressions, reject stale approvals, rest
  assert.equal(latest.stale,false);assert.equal(latest.rows.find(r=>r.routeId==='review-a').baselineId,original.id);
  // A newly captured record cannot silently replace an explicitly selected/rolled-back baseline.
  await call('goalBaselineSave',{routeId:'review-a',name:'별도 참고 기록'});
- assert.equal((await call('save')).goalImpact.rows.find(r=>r.routeId==='review-a').baselineId,original.id);
+ assert.equal((await saveAndWait(service)).goalImpact.rows.find(r=>r.routeId==='review-a').baselineId,original.id);
  // Failed goals remain failures and cannot be hidden by approval.
  const ending=service.editor.documents.find(d=>d.kind==='ending'&&d.data.id==='knight');await call('edit',{edit:{type:'replace',file:ending.file,data:{...ending.data,requirements:{op:'always'}}}});
- const failed=(await call('save')).goalImpact;assert.equal(failed.rows.find(r=>r.routeId==='review-a').status,'failed');
+ const failed=(await saveAndWait(service)).goalImpact;assert.equal(failed.rows.find(r=>r.routeId==='review-a').status,'failed');
  await assert.rejects(call('goalBaselineApprove',{impactReportId:failed.id,impactRow:failed.rows.findIndex(r=>r.routeId==='review-a')}),/목표에 도달/);
  const ledger=path.join(root,'playtests/baselines/.approvals');await writeFile(ledger,'corrupt');
  await assert.rejects(goalBaselineSelection(root),/승인 기록을 읽을 수/);
