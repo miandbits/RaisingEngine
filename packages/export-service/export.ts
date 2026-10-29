@@ -1,4 +1,5 @@
 import {applyReleaseBranding} from './branding.js';
+import {assertDistributableRuntimePath} from './distribution-files.js';
 import {prepareRelease,savedReleaseMetadata,verifyPreparedRelease,packageNotices,type PreparedRelease} from './release-metadata.js';
 import {controlStyleReferences} from '../visual/control-styles.js';
 import {surfaceReferences,surfaceInsetsProblem} from '../visual/surfaces.js';
@@ -118,7 +119,7 @@ export async function exportGame(options: ExportOptions): Promise<ExportResult> 
     // Copy entries into the owned staging directory: Electron's fs.cp rejects an existing root with errorOnExist.
     for (const name of (await readdir(runtime)).filter(name => target !== 'ios' || ['fonts', 'licenses', 'capabilities.json'].includes(name))) await cp(path.join(runtime, name), path.join(staging, name), {
       recursive: true, force: false, errorOnExist: true,
-      filter: async source => { if ((await lstat(source)).isSymbolicLink()) throw new Error('런타임 파일의 심볼릭 링크는 내보낼 수 없습니다.'); return true; } });
+      filter: async source => { assertDistributableRuntimePath(path.relative(runtime,source)); if ((await lstat(source)).isSymbolicLink()) throw new Error('런타임 파일의 심볼릭 링크는 내보낼 수 없습니다.'); return true; } });
     const data = gameDirectory(target, staging);
     await mkdir(data, { recursive: true });
     await mkdir(path.join(data, 'assets'), { recursive: true });

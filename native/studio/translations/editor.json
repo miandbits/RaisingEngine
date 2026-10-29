@@ -1,4 +1,6 @@
 [
+["현재 내보내기는 콘텐츠를 암호화하거나 구매 여부를 확인하지 않습니다. 플레이어에게는 게임만 배포하고, 편집 가능한 프로젝트 백업은 비공개로 보관하세요.","Exports currently do not encrypt content or verify ownership. Distribute only the game to players and keep editable project backups private.","現在の書き出しはコンテンツの暗号化や購入確認を行いません。プレイヤーにはゲームだけを配布し、編集可能なプロジェクトのバックアップは非公開で保管してください。"],
+["작업 단계를 선택하세요. 도구를 열어도 이 안내와 선택한 단계는 유지됩니다. 단계 선택은 검증 완료를 뜻하지 않습니다.","Choose a work stage. This guide and your selected stage stay open when you use a tool. Choosing a stage does not mark checks as passed.","作業段階を選んでください。ツールを開いてもガイドと選んだ段階は維持されます。段階の選択は検証完了を意味しません。"],
 ["비교 보고서 저장 실패 · 승인과 호환성 확인에 사용할 수 없습니다.","Comparison report could not be saved · unavailable for approval or compatibility confirmation.","比較レポートを保存できませんでした・承認や互換性の確認には使用できません。"],
 ["기준 비교 처리 오류 · 결과를 승인하거나 호환성 통과로 사용할 수 없습니다.","Baseline comparison processing error · results cannot be approved or treated as compatible.","基準比較の処理エラー・結果の承認や互換性の確認には使用できません。"],
 [" · 비교 오류"," · comparison error","・比較エラー"],

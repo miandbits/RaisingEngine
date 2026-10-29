@@ -1,5 +1,6 @@
 #include <QObject>
 #include "renderer-preview.hpp"
+#include "renderer-geometry.hpp"
 #include <QCheckBox>
 #include <QDialog>
 #include <QDir>
@@ -26,12 +27,10 @@ public:
   RenderImage(QWidget* parent=nullptr):QWidget(parent){setMinimumSize(160,180);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
   QRectF imageRect() const {QSizeF size=pixels.size();size.scale(this->size(),Qt::KeepAspectRatio);return QRectF(QPointF((width()-size.width())/2,(height()-size.height())/2),size);}
   QRectF nodeRect(QJsonObject node) const {
-    const auto viewport=ui["viewport"].toObject();const double w=viewport["width"].toDouble(pixels.width()),h=viewport["height"].toDouble(pixels.height());
-    if(w<=0||h<=0||pixels.isNull())return {};
-    const auto presentation=ui["presentation"].toObject();
-    const double fit=presentation.isEmpty()?qMin(pixels.width()/w,pixels.height()/h):presentation["width"].toDouble()/w,display=imageRect().width()/pixels.width();
-    const QPointF offset=presentation.isEmpty()?QPointF((pixels.width()-w*fit)/2,(pixels.height()-h*fit)/2):QPointF(presentation["x"].toDouble(),presentation["y"].toDouble());
-    return QRectF(imageRect().topLeft()+(offset+QPointF(node["x"].toDouble(),node["y"].toDouble())*fit)*display,QSizeF(node["width"].toDouble(),node["height"].toDouble())*fit*display);
+    if(pixels.isNull())return {};
+    const auto raster=rendererRasterTransform(ui,pixels.size()).mapRect(rendererNodeRectangle(node));
+    const double display=imageRect().width()/pixels.width();
+    return QRectF(imageRect().topLeft()+raster.topLeft()*display,raster.size()*display);
   }
   void paintEvent(QPaintEvent*) override {
     QPainter p(this);p.fillRect(rect(),QColor("#171d24"));if(pixels.isNull()){p.setPen(QColor("#a9b8c8"));p.drawText(rect(),Qt::AlignCenter,QObject::tr("실제 렌더링 결과가 여기에 표시됩니다"));return;}

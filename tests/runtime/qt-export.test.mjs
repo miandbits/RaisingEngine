@@ -35,6 +35,24 @@ test('Qt export includes the dirty draft in both targets and preserves source di
  editor.edit({type:'redo'},editor.revision);assert.equal(editor.documents.find(d=>d.kind==='project').data.title,'Redo remains');editor.edit({type:'undo'},editor.revision);assert.equal(editor.documents.find(d=>d.kind==='project').data.title,'Unsaved export');await unchangedAfterExport(root,disk,'web');
 });
 
+test('player export rejects private runtime files and keeps the authored project unchanged',async()=>{
+ const {root,work,service}=await fixture(),runtime=path.join(work,'runtime');
+ const before=stable(service.editor.view()),disk=await hashes(root);
+ for(const [index,name] of ['.env.local','.git/config','.studio/recovery/private.json','Project-backup.zip','keys/Signing.P12'].entries()){
+  const file=path.join(runtime,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,'private fixture');
+  const destination=path.join(work,'blocked-'+index);
+  await assert.rejects(service.handle({method:'export',params:{revision:service.editor.revision,target:'windows',destination}}),/non-distributable/);await assert.rejects(access(destination));
+  assert.deepEqual(stable(service.editor.view()),before);assert.deepEqual(await hashes(root),disk);assert.equal(await readFile(file,'utf8'),'private fixture');
+  await unlink(file);
+  // Empty private directories must also be rejected, so remove this fixture tree.
+  const top=name.split('/')[0];if(top!==name){const {rm}=await import('node:fs/promises');await rm(path.join(runtime,top),{recursive:true});}
+  assert.ok(!(await readdir(work)).some(entry=>entry.startsWith('.raising-export-')));
+ }
+ await writeFile(path.join(root,'author-private-notes.txt'),'never a game asset');
+ const destination=path.join(work,'clean');const reply=await service.handle({method:'export',params:{revision:service.editor.revision,target:'windows',destination}});
+ assert.ok(reply.exported,reply.error);await assert.rejects(access(path.join(destination,'author-private-notes.txt')));
+});
+
 test('Qt export rejects invalid targets, relative/existing destinations, stale revisions and invalid content without losing edits',async()=>{
  const {root,work,service,change}=await fixture(),editor=service.editor,disk=await hashes(root),original=stable(editor.view());
  for(const params of [{target:'android',destination:path.join(work,'invalid-target')},{target:'windows',destination:'relative-path'}]){

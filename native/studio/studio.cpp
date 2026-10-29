@@ -533,6 +533,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   appearance->addRow(tr("글자 크기"), fontField);
   auto surfaceButton=new QPushButton(tr("배경 표면…"));surfaceButton->setObjectName("elementSurface");appearance->addRow(surfaceButton);connect(surfaceButton,&QPushButton::clicked,this,&StudioWindow::editSelectedSurface);
   auto dataForm = group(tr("이미지 · 데이터 연결"));
+  dataForm->setObjectName("elementDataForm");
   auto dataBindingButton=new QPushButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
   auto variantsButton=new QPushButton(tr("조건별 표현 · 이미지·동작 연결…"));variantsButton->setObjectName("presentationVariants");dataForm->addRow(variantsButton);connect(variantsButton,&QPushButton::clicked,this,&StudioWindow::editPresentationVariants);
   imageField = new QComboBox;
@@ -599,6 +600,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto bindingHint = new QLabel(
       tr("표시 형식: {label} · {value}\n관계의 {delta}: 최근 변화량 (+3 / -1 / 0)\n에셋 더블클릭으로 이미지 배치"));
   bindingHint->setWordWrap(true);
+  bindingHint->setObjectName("bindingHint");
   dataForm->addRow(bindingHint);
   auto batchBinding=new QPushButton(tr("다른 화면에 이 텍스트 연결 적용…"));batchBinding->setObjectName("textBindingBatch");dataForm->addRow(batchBinding);connect(batchBinding,&QPushButton::clicked,this,&StudioWindow::applyTextBindingBatch);
   auto widgetSettings = new QPushButton(tr("위젯 구성 · 분류 / 표시 항목"));
@@ -711,6 +713,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   targetField = new QComboBox;
   targetField->setObjectName("actionTarget");
   action->addRow(tr("행동"), actionField);
+  action->parentWidget()->parentWidget()->setObjectName("elementActionGroup");
   action->addRow(tr("대상"), targetField);
   actionHelp = new QLabel;
   actionHelp->setWordWrap(true);
@@ -1001,7 +1004,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     for(auto e:currentScreen()["elements"].toArray()){auto element=e.toObject();const auto candidate=element["id"].toString();if(candidate==id||(element["kind"]=="component"&&id.startsWith(candidate+"__"))){selectElement(candidate);break;}}
   });
   auto tasks=new QAction(tr("작업 선택…"),this);tasks->setObjectName("creatorTasks");
-  connect(tasks,&QAction::triggered,this,[this]{showCreatorTasks(this,[this]{return !projectData().isEmpty()&&!busy();});});
+  connect(tasks,&QAction::triggered,this,[this]{showCreatorTasks(this,[this]{return !projectData().isEmpty()&&!busy();},[this]{return projectData().isEmpty()?QString():projectData().value("title").toString()+" · "+authoringLabel(currentScreen())+(selection.isEmpty()?QString():" · "+authoringLabel(currentElement()));});});
   toolbar->insertAction(toolbar->actions().value(0),tasks);
   viewMenu->addAction(tasks);
   defaultLayout = saveState(1);
@@ -1658,6 +1661,20 @@ void StudioWindow::updateInspector() {
   setText(valueFormatField, e["valueFormat"].toString("{label}: {value}"));
   valueFormatField->setEnabled(e["kind"] == "text" &&
                                (binding.endsWith("value")||binding=="user-field"));
+  // Only show rows relevant to the selected kind/binding. Hiding never writes
+  // values, so switching elements cannot erase advanced or imported settings.
+  auto dataForm=findChild<QFormLayout*>("elementDataForm");
+  if(dataForm){
+    dataForm->setRowVisible(imageField,e["kind"]=="image");
+    dataForm->setRowVisible(bindingField,e["kind"]=="text");
+    dataForm->setRowVisible(userFieldField,e["kind"]=="input"||(e["kind"]=="text"&&binding=="user-field"));
+    dataForm->setRowVisible(attributeField,e["kind"]=="text"&&binding=="attribute-value");
+    dataForm->setRowVisible(relationshipField,e["kind"]=="text"&&binding=="relationship-value");
+    dataForm->setRowVisible(valueFormatField,e["kind"]=="text"&&(binding.endsWith("value")||binding=="user-field"));
+    dataForm->setRowVisible(findChild<QLabel*>("bindingHint"),e["kind"]=="text"&&(binding.endsWith("value")||binding=="user-field"));
+    dataForm->setRowVisible(findChild<QPushButton*>("textBindingBatch"),e["kind"]=="text");
+  }
+  findChild<QWidget*>("elementActionGroup")->setVisible(e["kind"]=="button");
   visibilityField->setCurrentIndex(
       visibilityField->findData(e["visibleWhen"].toString("always")));
   updatePluginInspector(e);

@@ -8,7 +8,11 @@ The opening document prefers the authored title route, then a title screen, the 
 
 ## Find a task
 
-The first toolbar action, **Tasks**, groups existing commands under **Create content**, **Design screens**, **Check play** and **Prepare release**. It is also in the View menu. The task dialog dispatches the same live actions as menus, including their disabled state and command guards. Its **Find any tool** button opens the existing command search; Cmd+K on macOS and Ctrl+K on Windows remain available. A project must be loaded and its pending operation finished before project-specific tasks become available.
+The first toolbar action, **Tasks**, opens a movable, dockable panel with **Create content**, **Design screens**, **Check play** and **Prepare release** stages. It is also in the View menu. The panel stays open while a tool is used, retains its selected stage when closed and reopened in the same editor session, and shows the current project, screen and element by name. A stage is navigation, not a passed checklist. Commands use the same live actions, availability and input guards as menus. **Find any tool** opens command search; Cmd+K on macOS and Ctrl+K on Windows remain available. A project must be loaded and its pending operation finished before project-specific tasks become available.
+
+The inspector hides image, value-binding and button-action rows that do not apply to the selected element. Switching selections does not change or delete their stored settings. Runtime-preview selection and movement use the same logical-to-raster transform as the player image, including Retina and letterboxed snapshots; keyboard movement remains in authored pixels.
+
+**Project version control** accepts Windows `.exe` files, macOS `.app` bundles and Unix executable files. Application bundles open the project through macOS Launch Services; executable files receive one literal project-path argument. The panel still only reads Git status, diffs and history. Commit, merge and push remain external-tool operations.
 
 ## Reading order before detailed styling
 

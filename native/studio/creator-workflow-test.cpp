@@ -4,6 +4,7 @@
 #include "creator-tasks.hpp"
 #include "authoring-labels.hpp"
 #include "editor-language.hpp"
+#include "external-tool.hpp"
 #include <QtTest>
 #include <QtWidgets>
 
@@ -16,6 +17,24 @@ class CreatorWorkflowTest:public QObject {
  Q_OBJECT
  QTemporaryDir settings;
 private slots:
+ void externalToolsKeepLiteralProjectPaths(){
+  QTemporaryDir dir;QVERIFY(dir.isValid());const auto project=dir.path()+"/Game spaces ' quotes $(literal)";QVERIFY(QDir().mkpath(project));
+  const auto app=dir.path()+"/Version Tool.app";QVERIFY(QDir().mkpath(app+"/Contents/MacOS"));
+  QVERIFY(externalToolLaunch(app,project,ExternalToolPlatform::MacOS).program.isEmpty());
+  QFile plist(app+"/Contents/Info.plist");QVERIFY(plist.open(QIODevice::WriteOnly));plist.write("<plist/>");plist.close();
+  const auto mac=externalToolLaunch(app,project,ExternalToolPlatform::MacOS);QCOMPARE(mac.program,QString("/usr/bin/open"));QCOMPARE(mac.arguments,QStringList({"-a",app,project}));
+  QVERIFY(externalToolLaunch(app,project,ExternalToolPlatform::Windows).program.isEmpty());
+  QFile exe(dir.path()+"/Version Tool.EXE");QVERIFY(exe.open(QIODevice::WriteOnly));exe.close();
+  const auto win=externalToolLaunch(exe.fileName(),project,ExternalToolPlatform::Windows);QCOMPARE(win.program,exe.fileName());QCOMPARE(win.arguments,QStringList{project});
+  QFile command(dir.path()+"/tool");QVERIFY(command.open(QIODevice::WriteOnly));command.close();
+  QVERIFY(externalToolLaunch(command.fileName(),project,ExternalToolPlatform::Windows).program.isEmpty());
+#ifndef Q_OS_WIN
+  QVERIFY(externalToolLaunch(command.fileName(),project,ExternalToolPlatform::Unix).program.isEmpty());
+  QVERIFY(command.setPermissions(QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+  const auto unixTool=externalToolLaunch(command.fileName(),project,ExternalToolPlatform::Unix);QCOMPARE(unixTool.program,command.fileName());QCOMPARE(unixTool.arguments,QStringList{project});
+#endif
+  QVERIFY(externalToolLaunch(dir.path()+"/missing",project).program.isEmpty());
+ }
  void initTestCase(){QVERIFY(settings.isValid());qputenv("RAISING_EDITOR_SETTINGS",(settings.path()+"/settings.ini").toUtf8());qputenv("RAISING_PROJECT_HISTORY",(settings.path()+"/history.ini").toUtf8());QVERIFY(installEditorLanguage(*qApp,qEnvironmentVariable("RAISING_TEST_EDITOR_LOCALE","en")));}
  void namesDescribeBindingsAndDisambiguateDuplicates(){
   const QJsonObject calendar{{"id","calendar"},{"kind","text"},{"binding","calendar"}},plan{{"id","schedule"},{"kind","schedule"}},second{{"id","alternate-plan"},{"kind","schedule"}},named{{"id","advance"},{"kind","button"},{"text","Continue"}};
@@ -40,10 +59,20 @@ private slots:
  }
  void taskLauncherUsesLiveCommands(){
   QMainWindow w;w.show();bool ready=false;auto action=new QAction("A named screen tool",&w);action->setObjectName("readableLayout");auto search=new QAction("Find commands",&w);search->setObjectName("findAuthoringTool");QSignalSpy called(action,&QAction::triggered),searched(search,&QAction::triggered);
-  QTimer::singleShot(30,&w,[&]{auto d=w.findChild<QDialog*>("creatorTasksDialog");QVERIFY(d);QTimer::singleShot(10000,d,&QDialog::reject);auto tabs=d->findChild<QTabWidget*>("creatorTaskTabs");QCOMPARE(tabs->count(),4);tabs->setCurrentIndex(1);auto button=d->findChild<QPushButton*>("creatorTask-readableLayout");QVERIFY(button&&!button->isEnabled());ready=true;QTest::qWait(150);QVERIFY(button->isEnabled());action->setEnabled(false);QVERIFY(!button->isEnabled());action->setEnabled(true);QVERIFY(button->isEnabled());QTest::mouseClick(button,Qt::LeftButton);});
-  showCreatorTasks(&w,[&]{return ready;});QCOMPARE(called.count(),1);
-  QTimer::singleShot(30,&w,[&]{auto d=w.findChild<QDialog*>("creatorTasksDialog");QVERIFY(d);QTest::mouseClick(d->findChild<QPushButton*>("creatorFindTools"),Qt::LeftButton);});showCreatorTasks(&w,[&]{return ready;});QCOMPARE(searched.count(),1);QCOMPARE(called.count(),1);
-  QTimer::singleShot(30,&w,[&]{auto d=w.findChild<QDialog*>("creatorTasksDialog");QVERIFY(d);QTest::keyClick(d,Qt::Key_Escape);});showCreatorTasks(&w,[&]{return ready;});QCOMPARE(called.count(),1);
+  QString context="Home · Title";showCreatorTasks(&w,[&]{return ready;},[&]{return context;});
+  auto d=w.findChild<QDockWidget*>("creatorTasksDock");QVERIFY(d);QVERIFY(!QApplication::activeModalWidget());auto tabs=d->findChild<QTabWidget*>("creatorTaskTabs");QCOMPARE(tabs->count(),4);tabs->setCurrentIndex(1);
+  auto button=d->findChild<QPushButton*>("creatorTask-readableLayout");QVERIFY(button&&!button->isEnabled());ready=true;QTRY_VERIFY(button->isEnabled());action->setEnabled(false);QVERIFY(!button->isEnabled());action->setEnabled(true);QVERIFY(button->isEnabled());QTest::mouseClick(button,Qt::LeftButton);QCOMPARE(called.count(),1);QVERIFY(d->isVisible());QCOMPARE(tabs->currentIndex(),1);
+  QTest::mouseClick(d->findChild<QPushButton*>("creatorFindTools"),Qt::LeftButton);QCOMPARE(searched.count(),1);QCOMPARE(called.count(),1);
+  context="Plan · Schedule";QTRY_COMPARE(d->findChild<QLabel*>("creatorTaskContext")->text(),context);d->close();showCreatorTasks(&w,[&]{return ready;});QCOMPARE(w.findChildren<QDockWidget*>("creatorTasksDock").size(),1);QVERIFY(d->isVisible());QCOMPARE(tabs->currentIndex(),1);QCOMPARE(called.count(),1);
+  ready=false;QTRY_VERIFY(!button->isEnabled());QTest::mouseClick(button,Qt::LeftButton);QCOMPARE(called.count(),1);
+ }
+ void inspectorShowsApplicableFieldsWithoutEditing(){
+  QTemporaryDir project;QVERIFY(copyProject(engineRoot()+"/examples/my-first-raising-game",project.path()));
+  StudioWindow w(engineRoot());w.show();w.findChild<CanvasStateBar*>("canvasStateBar")->showAllElements();w.openProject(project.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),30000);openScreen(w,"schedule");const auto before=w.currentView();auto tree=w.findChild<QTreeWidget*>("hierarchy");
+  auto select=[&](QString id){for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole)==id&&(*it)->data(0,Qt::UserRole+1)==QString("schedule")){tree->setCurrentItem(*it,0,QItemSelectionModel::ClearAndSelect);return;}QFAIL("Missing fixture element");};
+  select("calendar");QVERIFY(!w.findChild<QComboBox*>("textBinding")->isHidden());QVERIFY(w.findChild<QComboBox*>("imageAsset")->isHidden());QVERIFY(w.findChild<QComboBox*>("bindingAttribute")->isHidden());QVERIFY(w.findChild<QWidget*>("elementActionGroup")->isHidden());
+  select("advance");QVERIFY(w.findChild<QComboBox*>("textBinding")->isHidden());QVERIFY(!w.findChild<QWidget*>("elementActionGroup")->isHidden());select("calendar");
+  for(auto key:{"documents","revision","dirty","undo","redo"})QCOMPARE(w.currentView()[key],before[key]);
  }
  void initialStateIsDefaultAndAllElementsIsExplicit(){
   QTemporaryDir project;QVERIFY(project.isValid());QVERIFY(copyProject(engineRoot()+"/examples/my-first-raising-game",project.path()));

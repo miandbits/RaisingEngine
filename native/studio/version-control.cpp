@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "external-tool.hpp"
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -45,13 +46,14 @@ void StudioWindow::showVersionControl() {
   auto configure=new QPushButton(tr("외부 도구 지정…"));tools->addWidget(configure);
   auto program=new QLabel(QSettings().value("versionControlProgram").toString());program->setWordWrap(true);layout->addWidget(program);
   connect(configure,&QPushButton::clicked,&dialog,[&dialog,program]{
-    const auto selected=QFileDialog::getOpenFileName(&dialog,QObject::tr("프로젝트 폴더를 인자로 받는 버전 관리 프로그램"),{},QObject::tr("실행 파일 (*.exe)"));
+    const auto filter=externalToolPlatform()==ExternalToolPlatform::Windows?QObject::tr("실행 파일 (*.exe)"):QString();
+    const auto selected=QFileDialog::getOpenFileName(&dialog,QObject::tr("프로젝트 폴더를 인자로 받는 버전 관리 프로그램"),{},filter);
     if(selected.isEmpty())return;program->setText(selected);QSettings().setValue("versionControlProgram",selected);
   });
   connect(external,&QPushButton::clicked,&dialog,[program,root,output]{
-    const QFileInfo file(program->text());
-    if(!file.isFile()||file.suffix().compare("exe",Qt::CaseInsensitive)!=0){output->setPlainText(QObject::tr("외부 도구 실행 파일을 먼저 지정하세요. 프로젝트 폴더 하나를 인자로 전달합니다."));return;}
-    if(!QProcess::startDetached(file.absoluteFilePath(),{root},root))output->setPlainText(QObject::tr("외부 도구를 실행하지 못했습니다."));
+    const auto launch=externalToolLaunch(program->text(),root);
+    if(launch.program.isEmpty()){output->setPlainText(QObject::tr("외부 도구 실행 파일을 먼저 지정하세요. 프로젝트 폴더 하나를 인자로 전달합니다."));return;}
+    if(!QProcess::startDetached(launch.program,launch.arguments,root))output->setPlainText(QObject::tr("외부 도구를 실행하지 못했습니다."));
   });
   auto folder=new QPushButton(tr("프로젝트 폴더 열기"));tools->addWidget(folder);connect(folder,&QPushButton::clicked,&dialog,[root]{QDesktopServices::openUrl(QUrl::fromLocalFile(root));});
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Close);buttons->button(QDialogButtonBox::Close)->setText(tr("닫기"));layout->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);

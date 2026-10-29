@@ -1,6 +1,7 @@
 #include "calendar.hpp"
 #include <QObject>
 #include "canvas.hpp"
+#include "renderer-geometry.hpp"
 #include "design.hpp"
 #include "surface-paint.hpp"
 #include "surface-image.hpp"
@@ -42,11 +43,25 @@ public:
   bool multipleDrag=false;
   bool runtimeLayer=false,runtimeVisible=true;
   QRectF runtimeBase;
+  QPointF runtimeScale{1,1};
+  QTransform runtimeTransform;
   void setRuntimeGeometry(QRectF rect){prepareGeometryChange();setPos(rect.topLeft());box.setSize(rect.size());}
+  QRectF authoredAbsolute(QRectF rectangle) const {
+    if(!runtimeLayer)return rectangle;
+    return QRectF(data["x"].toDouble()+(rectangle.x()-runtimeBase.x())/runtimeScale.x(),
+      data["y"].toDouble()+(rectangle.y()-runtimeBase.y())/runtimeScale.y(),
+      data["width"].toDouble()+(rectangle.width()-runtimeBase.width())/runtimeScale.x(),
+      data["height"].toDouble()+(rectangle.height()-runtimeBase.height())/runtimeScale.y());
+  }
+  QRectF displayedRectangle(QRectF rectangle) const {
+    if(!runtimeLayer)return rectangle;
+    return QRectF(runtimeBase.x()+(rectangle.x()-data["x"].toDouble())*runtimeScale.x(),
+      runtimeBase.y()+(rectangle.y()-data["y"].toDouble())*runtimeScale.y(),
+      runtimeBase.width()+(rectangle.width()-data["width"].toDouble())*runtimeScale.x(),
+      runtimeBase.height()+(rectangle.height()-data["height"].toDouble())*runtimeScale.y());
+  }
   QRect authoredRectangle(QRectF rectangle) const {
-    if(runtimeLayer)rectangle=QRectF(QPointF(data["x"].toDouble(),data["y"].toDouble())+rectangle.topLeft()-runtimeBase.topLeft(),
-      QSizeF(data["width"].toDouble(),data["height"].toDouble())+rectangle.size()-runtimeBase.size());
-    return rectangle.toRect().translated(-qRound(data.value("_parentX").toDouble()),-qRound(data.value("_parentY").toDouble()));
+    return authoredAbsolute(rectangle).toRect().translated(-qRound(data.value("_parentX").toDouble()),-qRound(data.value("_parentY").toDouble()));
   }
   VisualItem(QJsonObject value, QPixmap pixmap, ScreenCanvas *view, QSize size)
       : data(value), image(pixmap), canvas(view), bounds(size) {
@@ -63,7 +78,7 @@ public:
     if(runtimeLayer&&!runtimeVisible&&!isSelected())return p;
     if(data.value("kind")=="group"&&!isSelected()) {p.addRect(box.adjusted(-3,-3,3,3));p.addRect(box.adjusted(3,3,-3,-3));p.setFillRule(Qt::OddEvenFill);}
     else p.addRect(box);
-    if(data.contains("_clipRect")){QPainterPath clip;clip.addRect(canvasClipRect(data.value("_clipRect").toObject()).translated(-pos()));return p.intersected(clip);}
+    if(data.contains("_clipRect")){QPainterPath clip;auto rect=canvasClipRect(data.value("_clipRect").toObject());if(runtimeLayer&&runtimeVisible)rect=runtimeTransform.mapRect(rect);clip.addRect(rect.translated(-pos()));return p.intersected(clip);}
     return p;
   }
   void paint(QPainter *p, const QStyleOptionGraphicsItem *,
@@ -263,18 +278,20 @@ public:
     if (data["locked"].toBool())
       return;
     QPointF delta = e->scenePos() - origin;
-    QRectF next = before;
+    if(runtimeLayer)delta={delta.x()/runtimeScale.x(),delta.y()/runtimeScale.y()};
+    const auto authoredBefore=authoredAbsolute(before);
+    QRectF next = authoredBefore;
     if (corner < 0)
       next.translate(delta);
     else {
       if (corner == 0)
-        next.setTopLeft(before.topLeft() + delta);
+        next.setTopLeft(authoredBefore.topLeft() + delta);
       if (corner == 1)
-        next.setTopRight(before.topRight() + delta);
+        next.setTopRight(authoredBefore.topRight() + delta);
       if (corner == 2)
-        next.setBottomLeft(before.bottomLeft() + delta);
+        next.setBottomLeft(authoredBefore.bottomLeft() + delta);
       if (corner == 3)
-        next.setBottomRight(before.bottomRight() + delta);
+        next.setBottomRight(authoredBefore.bottomRight() + delta);
       if (next.width() < 16 || next.height() < 16)
         return;
     }
@@ -288,6 +305,7 @@ public:
         qBound(nested?data.value("_parentX").toDouble()-3840.:0., rounded(next.x()), nested?data.value("_parentX").toDouble()+3840.:double(bounds.width()) - next.width()));
     next.moveTop(
         qBound(nested?data.value("_parentY").toDouble()-2160.:0., rounded(next.y()), nested?data.value("_parentY").toDouble()+2160.:double(bounds.height()) - next.height()));
+    next=displayedRectangle(next);
     prepareGeometryChange();
     box.setSize(next.size());
     setPos(next.topLeft());
@@ -296,8 +314,8 @@ public:
   }
   void mouseReleaseEvent(QGraphicsSceneMouseEvent *e) override {
     if(multipleDrag){canvas->finishSelectionDrag();multipleDrag=false;e->accept();return;}
-    const QRect rectangle = QRectF(pos(), box.size()).toRect();
-    if (rectangle != before.toRect())
+    const QRectF rectangle(pos(), box.size());
+    if (rectangle != before)
       emit canvas->geometryEdited(data["id"].toString(), authoredRectangle(rectangle));
     e->accept();
   }
@@ -325,7 +343,7 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
                              const QJsonObject &screen,
                              const QJsonArray &assets, const QString &selected,
                              bool fit) {
-  cachedProject=project;cachedScreen=screen;cachedAssets=assets;runtimeActive=false;runtimeUi={};
+  cachedProject=project;cachedScreen=screen;cachedAssets=assets;runtimeActive=false;runtimeUi={};runtimeScale={1,1};
   refreshing = true;
   sourceElements=screen.value("elements").toArray();dragStart.clear();dragDelta={};
   scene.clear();
@@ -453,16 +471,17 @@ void ScreenCanvas::setRuntimePreview(const QJsonObject& ui,const QImage& pixels)
   if(pixels.isNull()||ui.value("screenId")!=cachedScreen.value("id"))return;
   clearRuntimePreview();runtimeActive=true;runtimeUi=ui;
   QMap<QString,QJsonObject> nodes;for(auto value:ui.value("nodes").toArray()){auto n=value.toObject();nodes[n.value("id").toString()]=n;}
-  const auto presentation=ui.value("presentation").toObject();
-  const double sx=canvasSize.width()/qMax(1.,presentation.value("width").toDouble(canvasSize.width()));
-  const double sy=canvasSize.height()/qMax(1.,presentation.value("height").toDouble(canvasSize.height()));
+  QTransform display;display.scale(double(canvasSize.width())/pixels.width(),double(canvasSize.height())/pixels.height());
+  const auto transform=rendererRasterTransform(ui,pixels.size())*display;
+  runtimeScale={transform.m11(),transform.m22()};
   for(auto item:scene.items()){
     auto visual=dynamic_cast<VisualItem*>(item);if(!visual){item->hide();continue;}
     auto node=nodes.value(visual->data.value("id").toString());visual->runtimeLayer=true;
     visual->runtimeVisible=node.value("visible").toBool()&&node.value("rendered").toBool()&&!node.value("outsideViewport").toBool();
     if(visual->runtimeVisible){
-      visual->setRuntimeGeometry(QRectF((node.value("x").toDouble()-presentation.value("x").toDouble())*sx,(node.value("y").toDouble()-presentation.value("y").toDouble())*sy,node.value("width").toDouble()*sx,node.value("height").toDouble()*sy));
+      visual->setRuntimeGeometry(transform.mapRect(rendererNodeRectangle(node)));
     }
+    visual->runtimeScale=visual->runtimeVisible?runtimeScale:QPointF(1,1);visual->runtimeTransform=transform;
     visual->runtimeBase=QRectF(visual->pos(),visual->box.size());
     visual->setToolTip(ui.value("texts").toObject().value(visual->data.value("id").toString()).toString());visual->update();
   }
@@ -488,9 +507,9 @@ void ScreenCanvas::startSelectionDrag(){
   for(auto item:scene.items()){const auto id=item->data(0).toString();bool include=affected.contains(id);for(const auto &root:affected)include=include||id.startsWith(root+"__");if(include)dragStart[item]=item->pos();}
 }
 void ScreenCanvas::previewSelectionDrag(QPoint delta){
-  const int grid=snap?8:1;dragDelta={qRound(double(delta.x())/grid)*grid,qRound(double(delta.y())/grid)*grid};QJsonArray next;QString error;
+  const int grid=snap?8:1;dragDelta={qRound(delta.x()/runtimeScale.x()/grid)*grid,qRound(delta.y()/runtimeScale.y()/grid)*grid};QJsonArray next;QString error;
   const bool valid=editSelection(sourceElements,selectedIds(),canvasSize,{{"mode","move"},{"dx",dragDelta.x()},{"dy",dragDelta.y()}},next,error);
-  for(auto it=dragStart.begin();it!=dragStart.end();++it)it.key()->setPos(it.value()+(valid?dragDelta:QPoint()));
+  for(auto it=dragStart.begin();it!=dragStart.end();++it){auto visual=dynamic_cast<VisualItem*>(it.key());const auto scale=visual?visual->runtimeScale:QPointF(1,1);it.key()->setPos(it.value()+(valid?QPointF(dragDelta.x()*scale.x(),dragDelta.y()*scale.y()):QPointF()));}
 }
 void ScreenCanvas::finishSelectionDrag(){const auto delta=dragDelta;for(auto it=dragStart.begin();it!=dragStart.end();++it)it.key()->setPos(it.value());dragStart.clear();dragDelta={};if(!delta.isNull())emit selectionMoved(delta);}
 void ScreenCanvas::fitCanvas() {
@@ -553,12 +572,11 @@ void ScreenCanvas::keyPressEvent(QKeyEvent *e) {
       delta = {0, step};
     if (item && !item->data["locked"].toBool() && !delta.isNull()) {
       auto rect =
-          QRectF(item->pos(), item->box.size()).toRect().translated(delta);
+          item->authoredAbsolute(QRectF(item->pos(), item->box.size())).toRect().translated(delta);
       const bool nested=item->data.value("_hasParent").toBool();
       const QPoint parent(qRound(item->data.value("_parentX").toDouble()),qRound(item->data.value("_parentY").toDouble()));
       if(nested){rect.translate(-parent);rect.moveLeft(qBound(-3840,rect.x(),3840));rect.moveTop(qBound(-2160,rect.y(),2160));}
       else {rect.moveLeft(qBound(0, rect.x(), canvasSize.width() - rect.width()));rect.moveTop(qBound(0, rect.y(), canvasSize.height() - rect.height()));}
-      if(item->runtimeLayer)rect=item->authoredRectangle(QRectF(item->pos(),item->box.size()).translated(delta));
       emit geometryEdited(item->data["id"].toString(), rect);
       return;
     }
